@@ -66,6 +66,20 @@ async function bundle(entry: PublicEntry): Promise<BundleMeasurement> {
 }
 
 describe('@llui/components package boundaries', () => {
+  it('shares the interactions singleton with the host application', () => {
+    const packageJson = JSON.parse(
+      readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8'),
+    ) as {
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+      peerDependencies?: Record<string, string>
+    }
+
+    expect(packageJson.peerDependencies?.['@llui/interactions']).toBe('workspace:^')
+    expect(packageJson.devDependencies?.['@llui/interactions']).toBe('workspace:*')
+    expect(packageJson.dependencies).not.toHaveProperty('@llui/interactions')
+  })
+
   it('publishes granular format and utils modules without dropping the aggregate utils seam', () => {
     const packageJson = JSON.parse(
       readFileSync(resolve(import.meta.dirname, '../package.json'), 'utf8'),

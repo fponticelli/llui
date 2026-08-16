@@ -11,10 +11,10 @@ const optionalPeers = (pkg: { peerDependenciesMeta?: Record<string, { optional?:
   )
 
 describe('packaging: the editor package owns the rich-editor dependency closure', () => {
-  it('satisfies every required @llui/markdown-editor peer except shared @llui/dom', () => {
+  it('satisfies required @llui/markdown-editor peers except shared singleton peers', () => {
     const optional = optionalPeers(markdownEditor)
     const required = Object.keys(markdownEditor.peerDependencies)
-      .filter((name) => name !== '@llui/dom' && !optional.has(name))
+      .filter((name) => !['@llui/dom', '@llui/interactions'].includes(name) && !optional.has(name))
       .sort()
 
     expect(required.length).toBeGreaterThan(0)
@@ -28,16 +28,19 @@ describe('packaging: the editor package owns the rich-editor dependency closure'
     for (const peer of required) expect(self.dependencies).toHaveProperty(peer)
   })
 
-  it('shares both singleton-bearing packages with the host', () => {
+  it('shares all singleton-bearing packages with the host', () => {
     expect(self.peerDependencies).toMatchObject({
       '@llui/devmode-annotate': 'workspace:^',
       '@llui/dom': 'workspace:^',
+      '@llui/interactions': 'workspace:^',
     })
     expect(self.dependencies).not.toHaveProperty('@llui/devmode-annotate')
     expect(self.dependencies).not.toHaveProperty('@llui/dom')
+    expect(self.dependencies).not.toHaveProperty('@llui/interactions')
     expect(self.devDependencies).toMatchObject({
       '@llui/devmode-annotate': 'workspace:*',
       '@llui/dom': 'workspace:*',
+      '@llui/interactions': 'workspace:*',
     })
   })
 

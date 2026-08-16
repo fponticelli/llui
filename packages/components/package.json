@@ -573,6 +573,7 @@
   },
   "peerDependencies": {
     "@llui/dom": "workspace:^",
+    "@llui/interactions": "workspace:^",
     "tailwindcss": "^4.0.0"
   },
   "peerDependenciesMeta": {
@@ -583,6 +584,7 @@
   "devDependencies": {
     "@llui/compiler": "workspace:*",
     "@llui/dom": "workspace:*",
+    "@llui/interactions": "workspace:*",
     "typescript": "^6.0.0",
     "vitest": "^4.1.2"
   },
@@ -591,7 +593,6 @@
     "./dist/styles/theme-dark.css"
   ],
   "dependencies": {
-    "@llui/interactions": "workspace:^",
     "@standard-schema/spec": "^1.0.0"
   },
   "description": "66 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",

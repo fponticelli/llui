@@ -14,7 +14,8 @@ parts.
 pnpm add @llui/a2ui
 ```
 
-`@llui/dom` is a peer dependency; `@llui/components` comes along for the ride.
+`@llui/dom` and `@llui/interactions` are peer dependencies; `@llui/components` comes along for
+the ride. The peers keep one shared signal runtime and one set of interaction registries.
 
 ## Usage
 

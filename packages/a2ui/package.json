@@ -20,15 +20,16 @@
     "test": "vitest run"
   },
   "peerDependencies": {
-    "@llui/dom": "workspace:^"
+    "@llui/dom": "workspace:^",
+    "@llui/interactions": "workspace:^"
   },
   "dependencies": {
     "@llui/components": "workspace:^",
-    "@llui/interactions": "workspace:^",
     "@llui/security": "workspace:^"
   },
   "devDependencies": {
     "@llui/dom": "workspace:*",
+    "@llui/interactions": "workspace:*",
     "jsdom": "^29.0.1",
     "typescript": "^6.0.0",
     "vitest": "^4.1.2"

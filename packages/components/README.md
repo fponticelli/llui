@@ -28,7 +28,8 @@ What stays the **consumer's** responsibility (deliberately not shipped):
 pnpm add @llui/components
 ```
 
-Peer dependency: `@llui/dom`.
+Peer dependencies: `@llui/dom` and `@llui/interactions`. Both carry shared runtime registries,
+so the application and its libraries must resolve one instance of each.
 
 ## Usage
 
@@ -156,6 +157,15 @@ smallest possible dependency edge:
 import { TreeCollection } from '@llui/components/utils/tree-collection'
 import { formatNumber } from '@llui/components/format/format-number'
 ```
+
+The formatter extraction question from
+[#49](https://github.com/fponticelli/llui/issues/49) was evaluated separately. The in-repo
+runtime consumers are the dashboard and i18n-lazy examples, which also import LLui component
+machines, plus the date-picker implementation inside this package. GitHub code searches for
+`@llui/components/format`, `@llui/components/format/format-number`, and external root imports of
+`formatNumber` found no standalone consumer. Without a separate install-graph use case, the
+formatters remain in `@llui/components`; the granular `./format/*` exports keep that decision
+reversible without making consumers pull the component graph.
 
 | Utility          | Purpose                                                                  |
 | ---------------- | ------------------------------------------------------------------------ |

@@ -26,7 +26,8 @@
   },
   "peerDependencies": {
     "@llui/devmode-annotate": "workspace:^",
-    "@llui/dom": "workspace:^"
+    "@llui/dom": "workspace:^",
+    "@llui/interactions": "workspace:^"
   },
   "dependencies": {
     "@lexical/code-core": "^0.49.0",
@@ -38,7 +39,6 @@
     "@lexical/selection": "^0.49.0",
     "@lexical/utils": "^0.49.0",
     "@llui/components": "workspace:^",
-    "@llui/interactions": "workspace:^",
     "@llui/lexical": "workspace:^",
     "@llui/markdown": "workspace:^",
     "@llui/markdown-editor": "workspace:^",
@@ -47,6 +47,7 @@
   "devDependencies": {
     "@llui/devmode-annotate": "workspace:*",
     "@llui/dom": "workspace:*",
+    "@llui/interactions": "workspace:*",
     "jsdom": "^29.0.1",
     "typescript": "^6.0.2",
     "vitest": "^4.1.2"

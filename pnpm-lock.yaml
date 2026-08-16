@@ -395,9 +395,6 @@ importers:
       '@llui/components':
         specifier: workspace:^
         version: link:../components
-      '@llui/interactions':
-        specifier: workspace:^
-        version: link:../interactions
       '@llui/security':
         specifier: workspace:^
         version: link:../security
@@ -405,6 +402,9 @@ importers:
       '@llui/dom':
         specifier: workspace:*
         version: link:../dom
+      '@llui/interactions':
+        specifier: workspace:*
+        version: link:../interactions
       jsdom:
         specifier: ^29.0.1
         version: 29.0.1
@@ -521,9 +521,6 @@ importers:
 
   packages/components:
     dependencies:
-      '@llui/interactions':
-        specifier: workspace:^
-        version: link:../interactions
       '@standard-schema/spec':
         specifier: ^1.0.0
         version: 1.1.0
@@ -537,6 +534,9 @@ importers:
       '@llui/dom':
         specifier: workspace:*
         version: link:../dom
+      '@llui/interactions':
+        specifier: workspace:*
+        version: link:../interactions
       typescript:
         specifier: ^6.0.0
         version: 6.0.2
@@ -607,9 +607,6 @@ importers:
       '@llui/components':
         specifier: workspace:^
         version: link:../components
-      '@llui/interactions':
-        specifier: workspace:^
-        version: link:../interactions
       '@llui/lexical':
         specifier: workspace:^
         version: link:../lexical
@@ -629,6 +626,9 @@ importers:
       '@llui/dom':
         specifier: workspace:*
         version: link:../dom
+      '@llui/interactions':
+        specifier: workspace:*
+        version: link:../interactions
       jsdom:
         specifier: ^29.0.1
         version: 29.0.1
