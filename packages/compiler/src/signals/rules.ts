@@ -526,7 +526,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     ) {
       return true
     }
-    return ts.isIdentifier(e.expression) && bindings.resolve(e.expression) === 'derived'
+    return bindings.resolveCall(e) === 'derived'
   }
 
   // ---- inside a .map/derived body: pure-derive + no-node-construction ----
@@ -535,15 +535,15 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     const walk = (n: ts.Node): void => {
       if (ts.isCallExpression(n)) {
         const callee = n.expression
-        if (ts.isIdentifier(callee)) {
-          const canon = bindings.resolve(callee)
-          if (canon !== null && NODE_HELPERS.has(canon)) {
-            push(
-              'no-node-construction-in-body',
-              `Building DOM (${callee.text}()) inside a .map/derived body; use a structural primitive (each/branch/show) instead.`,
-              n,
-            )
-          } else if (SIDE_EFFECT_CALLS.has(callee.text)) {
+        const canon = bindings.resolveCall(n)
+        if (canon !== null && NODE_HELPERS.has(canon)) {
+          push(
+            'no-node-construction-in-body',
+            `Building DOM (${callee.getText(sf)}()) inside a .map/derived body; use a structural primitive (each/branch/show) instead.`,
+            n,
+          )
+        } else if (ts.isIdentifier(callee)) {
+          if (SIDE_EFFECT_CALLS.has(callee.text)) {
             push(
               'pure-derive-body',
               `Side effect (${callee.text}()) inside a .map/derived body; derives must be pure — move it to an effect.`,
@@ -661,8 +661,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   const elementCall = (
     node: ts.CallExpression,
   ): { tag: string; props: ts.ObjectLiteralExpression | null } | null => {
-    const callee = node.expression
-    const canon = ts.isIdentifier(callee) ? bindings.resolve(callee) : null
+    const canon = bindings.resolveCall(node)
     if (canon !== null && ELEMENT_TAGS.has(canon)) {
       const a0 = node.arguments[0]
       return { tag: canon, props: a0 && ts.isObjectLiteralExpression(a0) ? a0 : null }
@@ -775,8 +774,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   // the lowering-only `ELEMENT_TAGS` — because they share the same call forms.
   const lintEmptyProps = (node: ts.CallExpression): void => {
     const callee = node.expression
-    if (!ts.isIdentifier(callee)) return
-    const canon = bindings.resolve(callee)
+    const canon = bindings.resolveCall(node)
     if (canon === null || !ALL_ELEMENT_HELPERS.has(canon)) return
     // Only the two provably-rewritable shapes: `tag({})` and `tag({}, [ … ])`.
     const args = node.arguments
@@ -785,7 +783,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     if (!ts.isObjectLiteralExpression(props) || props.properties.length > 0) return
     if (args.length === 2 && !ts.isArrayLiteralExpression(args[1]!)) return
 
-    const name = callee.text
+    const name = callee.getText(sf)
     const children = args[1]
     // Delete the props argument AND its separator. With children, that is
     // everything up to where the children argument starts; without, everything up
@@ -1116,7 +1114,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
           }
         }
       }
-      if (ts.isIdentifier(node.expression) && bindings.resolve(node.expression) === 'derived') {
+      if (bindings.resolveCall(node) === 'derived') {
         const fn = node.arguments[1]
         if (fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) lintDeriveBody(fn, roots)
       }
@@ -1145,8 +1143,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       } else if (ts.isCallExpression(node)) {
         const isMap =
           ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'map'
-        const isDerived =
-          ts.isIdentifier(node.expression) && bindings.resolve(node.expression) === 'derived'
+        const isDerived = bindings.resolveCall(node) === 'derived'
         if ((isMap && c === node.arguments[0]) || (isDerived && c === node.arguments[1])) {
           childPeek = true
         }

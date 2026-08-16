@@ -111,16 +111,13 @@ describe('SignalComponentHandle — agent/HMR parity', () => {
     const h = mountSignalComponent<S, M>(container, {
       init: () => ({ count: 0 }),
       update: (s) => s,
-      // The tag deliberately names a DIFFERENT variant from the one the
-      // handler dispatches, so the assertion below can only pass if the
-      // descriptor comes from `__lluiVariants` rather than from the `send`
-      // call. It used to say `'Inc'` — not a Msg variant at all — which stopped
-      // compiling when #118 narrowed `libraryVariants` to `readonly M['type'][]`;
-      // `'noop'` is a real variant and keeps the tag ≠ dispatched-type property
-      // the test exists to check.
-      view: ({ send }) => [
-        el('button', { onClick: tagSend(send, ['noop'], () => send({ type: 'inc' })) }, []),
-      ],
+      // A no-op handler makes the source of the descriptor unambiguous: there is
+      // no dispatch to infer, so `'noop'` can only come from `__lluiVariants`.
+      // This used to prove the same point with a deliberately drifted `inc`
+      // dispatch. Now that helper provenance follows this file's relative import,
+      // `tag-send-drift` correctly sees that mismatch (#146), so retaining it
+      // would make the runtime-parity fixture invalid compiler input.
+      view: ({ send }) => [el('button', { onClick: tagSend(send, ['noop'], () => undefined) }, [])],
     })
     expect(h.getBindingDescriptors()).toEqual([{ variant: 'noop' }])
   })

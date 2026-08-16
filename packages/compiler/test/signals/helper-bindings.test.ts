@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
+import { fileURLToPath } from 'node:url'
 import { HelperBindings, scopeIntroduces } from '../../src/signals/helper-bindings.js'
 
-function parse(src: string): ts.SourceFile {
-  return ts.createSourceFile('t.tsx', src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
+const THIS_FILE = fileURLToPath(import.meta.url)
+
+function parse(src: string, fileName = 't.tsx'): ts.SourceFile {
+  return ts.createSourceFile(fileName, src, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
 }
 
 /** Every call-expression callee identifier with the given name, in source order. */
@@ -19,10 +22,22 @@ function calleeIdents(sf: ts.SourceFile, name: string): ts.Identifier[] {
   return out
 }
 
-const resolveOnly = (src: string, name: string): (string | null)[] => {
-  const sf = parse(src)
+const resolveOnly = (src: string, name: string, fileName?: string): (string | null)[] => {
+  const sf = parse(src, fileName)
   const b = HelperBindings.fromSourceFile(sf)
   return calleeIdents(sf, name).map((id) => b.resolve(id))
+}
+
+const resolveCalls = (src: string, fileName?: string): (string | null)[] => {
+  const sf = parse(src, fileName)
+  const bindings = HelperBindings.fromSourceFile(sf)
+  const out: (string | null)[] = []
+  const walk = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) out.push(bindings.resolveCall(node))
+    node.forEachChild(walk)
+  }
+  walk(sf)
+  return out
 }
 
 describe('HelperBindings.resolve', () => {
@@ -40,6 +55,78 @@ describe('HelperBindings.resolve', () => {
   it('resolves an import from a @llui/dom SUBPATH', () => {
     expect(resolveOnly("import { each } from '@llui/dom/x'\neach(xs, {})", 'each')).toEqual([
       'each',
+    ])
+  })
+
+  it('resolves a helper through a barrel re-export by tracing its export origin', () => {
+    const src = [
+      "import { div, box } from '../fixtures/helper-bindings-forwarding-barrel.js'",
+      'div([])',
+      'box([])',
+    ].join('\n')
+    expect(resolveCalls(src, THIS_FILE)).toEqual(['div', 'span'])
+  })
+
+  it('resolves a relative import inside the real @llui/dom package by package identity', () => {
+    const src = [
+      "import { tagSend as tag } from '../../../dom/src/binding-descriptors.js'",
+      "tag(send, ['open'], () => send({ type: 'open' }))",
+    ].join('\n')
+    expect(resolveCalls(src, THIS_FILE)).toEqual(['tagSend', 'send'])
+  })
+
+  it('resolves members of a namespace imported from @llui/dom or a barrel', () => {
+    expect(resolveCalls("import * as ui from '@llui/dom'\nui.div([])", THIS_FILE)).toEqual(['div'])
+    expect(
+      resolveCalls(
+        "import * as ui from '../fixtures/helper-bindings-forwarding-barrel.js'\nui.box([])",
+        THIS_FILE,
+      ),
+    ).toEqual(['span'])
+  })
+
+  it('does NOT trust an unrelated module that exports the same helper names', () => {
+    const named = [
+      "import { div } from '../fixtures/helper-bindings-unrelated.js'",
+      'div([])',
+    ].join('\n')
+    const namespace = [
+      "import * as ui from '../fixtures/helper-bindings-unrelated.js'",
+      'ui.div([])',
+    ].join('\n')
+    expect(resolveCalls(named, THIS_FILE)).toEqual([null])
+    expect(resolveCalls(namespace, THIS_FILE)).toEqual([null])
+  })
+
+  it('does NOT trust a consumer-owned relative module with the defining-module basename', () => {
+    const src = [
+      "import { tagSend } from '../fixtures/binding-descriptors.js'",
+      "tagSend(send, ['open'], () => send({ type: 'open' }))",
+    ].join('\n')
+    expect(resolveCalls(src, THIS_FILE)).toEqual([null, 'send'])
+  })
+
+  it('fails closed for cyclic and ambiguous barrel graphs', () => {
+    const cyclic = ["import { div } from '../fixtures/helper-bindings-cycle-a.js'", 'div([])'].join(
+      '\n',
+    )
+    const ambiguous = [
+      "import { widget } from '../fixtures/helper-bindings-ambiguous.js'",
+      'widget([])',
+    ].join('\n')
+    const unrelatedCollision = [
+      "import { div } from '../fixtures/helper-bindings-ambiguous-unrelated.js'",
+      'div([])',
+    ].join('\n')
+    expect(resolveCalls(cyclic, THIS_FILE)).toEqual([null])
+    expect(resolveCalls(ambiguous, THIS_FILE)).toEqual([null])
+    expect(resolveCalls(unrelatedCollision, THIS_FILE)).toEqual([null])
+  })
+
+  it('does NOT treat type-only imports as runtime helper bindings', () => {
+    expect(resolveCalls("import type { div } from '@llui/dom'\ndiv([])", THIS_FILE)).toEqual([null])
+    expect(resolveCalls("import type * as ui from '@llui/dom'\nui.div([])", THIS_FILE)).toEqual([
+      null,
     ])
   })
 
