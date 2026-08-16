@@ -1,4 +1,5 @@
 import type { Send, Signal } from '@llui/dom'
+import { allFiniteNumbers } from '../utils/number.js'
 import { tagSend } from '@llui/dom'
 import { cascadeSelectLocale } from '../locale/cascade-select.js'
 
@@ -60,6 +61,7 @@ export function update(
   state: CascadeSelectState,
   msg: CascadeSelectMsg,
 ): [CascadeSelectState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   // `setLevels` is the HOST's data write and always lands; `setValue` and
   // `clear` are the user's actions and are gated. The test used to be
   // inverted — a disabled instance accepted `clear` and could never be given

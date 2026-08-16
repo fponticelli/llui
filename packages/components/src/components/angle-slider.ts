@@ -1,7 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { clamp, clampToStep, finiteBound, stepBy } from '../utils/number.js'
+import { allFiniteNumbers, clamp, clampToStep, finiteBound, stepBy } from '../utils/number.js'
 
 /**
  * Angle slider — a circular input that selects a value in 0..360 degrees
@@ -71,6 +71,13 @@ export function init(opts: AngleSliderInit = {}): AngleSliderState {
 }
 
 export function update(state: AngleSliderState, msg: AngleSliderMsg): [AngleSliderState, never[]] {
+  if (
+    (msg.type === 'increment' || msg.type === 'decrement') &&
+    msg.steps !== undefined &&
+    !allFiniteNumbers(msg.steps)
+  ) {
+    return [state, []]
+  }
   if (state.disabled || state.readonly) {
     if (msg.type === 'setValue' || msg.type === 'increment' || msg.type === 'decrement') {
       return [state, []]

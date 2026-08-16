@@ -1,5 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
+import { allFiniteNumbers } from '../utils/number.js'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import {
   init as stepsInit,
@@ -125,6 +126,7 @@ export function update(
   msg: WizardMsg,
   validators: WizardValidators = {},
 ): [WizardState, WizardEffect[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   switch (msg.type) {
     case 'next': {
       // Guard against double-advance while an async validation is pending.

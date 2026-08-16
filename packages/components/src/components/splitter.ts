@@ -1,7 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { clamp, finiteBound, finiteOrDefault } from '../utils/number.js'
+import { allFiniteNumbers, clamp, finiteBound, finiteOrDefault } from '../utils/number.js'
 
 /**
  * Splitter — resizable panes with a draggable handle. The handle's position
@@ -69,6 +69,13 @@ export function init(opts: SplitterInit = {}): SplitterState {
 }
 
 export function update(state: SplitterState, msg: SplitterMsg): [SplitterState, never[]] {
+  if (
+    (msg.type === 'increment' || msg.type === 'decrement') &&
+    msg.multiplier !== undefined &&
+    !allFiniteNumbers(msg.multiplier)
+  ) {
+    return [state, []]
+  }
   if (state.disabled && msg.type !== 'endDrag' && msg.type !== 'setDir') return [state, []]
   switch (msg.type) {
     case 'setPosition':

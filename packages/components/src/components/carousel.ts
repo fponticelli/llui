@@ -211,6 +211,7 @@ function reduce(state: CarouselState, msg: CarouselMsg): CarouselState {
       if (!state.dragging) return state
       if (!allFiniteNumbers(msg.x)) return state
       const deltaX = msg.x - state.dragging.startX
+      if (!Number.isFinite(deltaX)) return state
       if (deltaX === state.dragging.deltaX) return state
       return { ...state, dragging: { ...state.dragging, deltaX } }
     }

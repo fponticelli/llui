@@ -9,6 +9,7 @@ import {
   isTypeaheadKey,
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
+import { allFiniteNumbers } from '../utils/number.js'
 import { indexMap, membershipSet } from '../utils/derive.js'
 import {
   applySelection,
@@ -147,6 +148,7 @@ function highlightOnOpen(state: SelectState): string | null {
 }
 
 export function update(state: SelectState, msg: SelectMsg): [SelectState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   if (state.disabled && msg.type !== 'setItems') return [state, []]
   switch (msg.type) {
     case 'open':
@@ -253,6 +255,8 @@ export function update(state: SelectState, msg: SelectMsg): [SelectState, never[
       return [{ ...state, items: msg.items, disabledItems: disabled, value, highlightedValue }, []]
     }
     case 'typeahead': {
+      const typeaheadExpiresAt = msg.now + TYPEAHEAD_TIMEOUT_MS
+      if (!Number.isFinite(typeaheadExpiresAt)) return [state, []]
       const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
       const match = typeaheadMatchByItems(
         state.items,
@@ -264,7 +268,7 @@ export function update(state: SelectState, msg: SelectMsg): [SelectState, never[
         {
           ...state,
           typeahead: acc,
-          typeaheadExpiresAt: msg.now + TYPEAHEAD_TIMEOUT_MS,
+          typeaheadExpiresAt,
           highlightedValue: match === null ? state.highlightedValue : valueAt(state.items, match),
         },
         [],

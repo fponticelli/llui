@@ -65,6 +65,15 @@ export function init(opts: RatingGroupInit = {}): RatingGroupState {
 
 export function update(state: RatingGroupState, msg: RatingGroupMsg): [RatingGroupState, never[]] {
   if (msg.type === 'setDir') return [{ ...state, dir: msg.dir }, []]
+  if (
+    (msg.type === 'hover' && msg.value !== null && !allFiniteNumbers(msg.value)) ||
+    ((msg.type === 'hoverItem' || msg.type === 'clickItem') && !allFiniteNumbers(msg.index)) ||
+    ((msg.type === 'incrementValue' || msg.type === 'decrementValue') &&
+      msg.step !== undefined &&
+      !allFiniteNumbers(msg.step))
+  ) {
+    return [state, []]
+  }
   if (state.disabled || state.readonly) {
     if (msg.type === 'hover') return [{ ...state, hoveredValue: null }, []]
     return [state, []]

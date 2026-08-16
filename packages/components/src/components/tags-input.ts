@@ -4,7 +4,7 @@ import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { rovingTabStop } from '../utils/list-navigation.js'
 import { deriveOnce, deriveOnceN } from '../utils/derive.js'
-import { finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, finiteBound } from '../utils/number.js'
 import { tagsInputLocale } from '../locale/tags-input.js'
 
 /** No individual chip is disabled; the whole widget is or isn't. */
@@ -70,6 +70,7 @@ export function init(opts: TagsInputInit = {}): TagsInputState {
 }
 
 export function update(state: TagsInputState, msg: TagsInputMsg): [TagsInputState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   if (state.disabled && msg.type !== 'setValue') return [state, []]
   switch (msg.type) {
     case 'setInput':

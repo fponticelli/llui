@@ -163,10 +163,12 @@ function applyResize(
     height -= dy
     y += dy
   }
+  if (!allFiniteNumbers(x, y, width, height)) return state
   const size = clampSize(width, height, state.minSize, state.maxSize)
   // If clamping changed width/height, undo the x/y shift by that delta.
   if (handle.includes('w')) x += width - size.width
   if (handle.includes('n')) y += height - size.height
+  if (!allFiniteNumbers(x, y, size)) return state
   return { ...state, position: { x, y }, size }
 }
 
@@ -228,6 +230,9 @@ export function update(
     case 'dragMove':
       if (!state.dragging) return [state, []]
       if (!allFiniteNumbers(msg.dx, msg.dy)) return [state, []]
+      if (!allFiniteNumbers(state.position.x + msg.dx, state.position.y + msg.dy)) {
+        return [state, []]
+      }
       return [
         {
           ...state,

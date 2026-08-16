@@ -87,6 +87,7 @@ export function update(state: TimerState, msg: TimerMsg): [TimerState, never[]] 
       if (!state.running || state.startedAt === null) return [state, []]
       if (!allFiniteNumbers(msg.now)) return [state, []]
       const elapsed = state.elapsedMs + (msg.now - state.startedAt)
+      if (!Number.isFinite(elapsed)) return [state, []]
       return [{ ...state, running: false, elapsedMs: elapsed, startedAt: null }, []]
     }
     case 'reset':
@@ -95,6 +96,7 @@ export function update(state: TimerState, msg: TimerMsg): [TimerState, never[]] 
       if (!state.running || state.startedAt === null) return [state, []]
       if (!allFiniteNumbers(msg.now)) return [state, []]
       const elapsed = state.elapsedMs + (msg.now - state.startedAt)
+      if (!Number.isFinite(elapsed)) return [state, []]
       // Countdown: auto-stop at target.
       if (state.direction === 'down' && state.targetMs > 0 && elapsed >= state.targetMs) {
         return [{ ...state, running: false, elapsedMs: state.targetMs, startedAt: null }, []]

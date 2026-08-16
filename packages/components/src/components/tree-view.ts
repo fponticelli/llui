@@ -10,6 +10,7 @@ import {
 import { focusRovingItem } from '../utils/roving.js'
 import { deriveOnceN, membershipSet } from '../utils/derive.js'
 import { pruneToEnabled, rovingTabStop } from '../utils/list-navigation.js'
+import { allFiniteNumbers } from '../utils/number.js'
 
 /** A tree row is never "disabled" — the whole visible list is navigable. */
 const NO_DISABLED: readonly string[] = []
@@ -346,6 +347,7 @@ function expandNode(state: TreeViewState, id: string): [TreeViewState, TreeViewE
 }
 
 export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, TreeViewEffect[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   if (
     state.disabled &&
     msg.type !== 'setVisibleItems' &&
@@ -469,6 +471,8 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
     }
     case 'typeahead': {
       if (state.visibleItems.length === 0) return [state, []]
+      const typeaheadExpiresAt = msg.now + TYPEAHEAD_TIMEOUT_MS
+      if (!Number.isFinite(typeaheadExpiresAt)) return [state, []]
       const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
       // Fall back to matching ids if labels weren't provided.
       const labels = state.visibleLabels.length > 0 ? state.visibleLabels : state.visibleItems
@@ -480,10 +484,7 @@ export function update(state: TreeViewState, msg: TreeViewMsg): [TreeViewState, 
       const matchIdx = typeaheadMatch(labels, disabledMask, acc, startIdx)
       const focused =
         matchIdx === null ? state.focused : (state.visibleItems[matchIdx] ?? state.focused)
-      return [
-        { ...state, typeahead: acc, typeaheadExpiresAt: msg.now + TYPEAHEAD_TIMEOUT_MS, focused },
-        [],
-      ]
+      return [{ ...state, typeahead: acc, typeaheadExpiresAt, focused }, []]
     }
     case 'toggleChecked': {
       // Toggle the item, cascading to ENABLED descendants, then re-derive

@@ -90,9 +90,23 @@ export function positiveFiniteOrDefault(raw: number | null | undefined, fallback
   return positiveFinite(raw) ?? fallback
 }
 
-/** Whether every number required by one atomic runtime message is usable. */
-export function allFiniteNumbers(...values: readonly number[]): boolean {
-  return values.every(Number.isFinite)
+/**
+ * Whether every number nested in one atomic runtime payload is usable.
+ * Non-numeric leaves are ignored; arrays and plain payload objects are walked
+ * so callers cannot accidentally validate one coordinate while committing a
+ * bad sibling. Cycles are harmless because an already-seen object contains no
+ * new numeric leaves.
+ */
+export function allFiniteNumbers(...values: readonly unknown[]): boolean {
+  const seen = new WeakSet<object>()
+  const visit = (value: unknown): boolean => {
+    if (typeof value === 'number') return Number.isFinite(value)
+    if (value === null || typeof value !== 'object') return true
+    if (seen.has(value)) return true
+    seen.add(value)
+    return Object.values(value).every(visit)
+  }
+  return values.every(visit)
 }
 
 /**

@@ -197,6 +197,7 @@ function applyResize(
     height -= dy
     y += dy
   }
+  if (!allFiniteNumbers(x, y, width, height)) return state
   // Aspect ratio: if set, let the axis with the bigger delta drive the
   // other, keeping the handle's corner anchored.
   if (state.aspectRatio !== null) {
@@ -230,6 +231,7 @@ function applyResize(
       }
     }
   }
+  if (!allFiniteNumbers(x, y, width, height)) return state
   // Min size + fit to image, both ratio-aware: two independent minSize clamps
   // squashed a locked crop back to 1:1 the moment either axis hit the floor.
   return {
@@ -289,6 +291,7 @@ export function update(
         x: state.crop.x + msg.dx,
         y: state.crop.y + msg.dy,
       }
+      if (!allFiniteNumbers(crop)) return [state, []]
       return [{ ...state, crop: fitCrop(crop, state.image, state.aspectRatio, state.minSize) }, []]
     }
     case 'dragEnd':

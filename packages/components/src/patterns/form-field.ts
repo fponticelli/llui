@@ -1,6 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
+import { allFiniteNumbers } from '../utils/number.js'
 import {
   init as fieldInit,
   type FieldState,
@@ -166,6 +167,7 @@ function applyIssues(
 }
 
 export function update(state: FormFieldState, msg: FormFieldMsg): [FormFieldState, never[]] {
+  if ('requestId' in msg && !allFiniteNumbers(msg.requestId)) return [state, []]
   switch (msg.type) {
     case 'validate': {
       const result = validateSchema(msg.schema, msg.values)

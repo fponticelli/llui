@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend, onTeardown, __currentBuildInfo } from '@llui/dom'
 import { fileUploadLocale } from '../locale/file-upload.js'
-import { finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, finiteBound } from '../utils/number.js'
 
 /**
  * File upload — input element + drag-and-drop zone. Tracks selected files,
@@ -343,6 +343,7 @@ export function validateFiles(
 }
 
 export function update(state: FileUploadState, msg: FileUploadMsg): [FileUploadState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   if (state.disabled && msg.type !== 'clear' && msg.type !== 'clearRejected') {
     return [state, []]
   }

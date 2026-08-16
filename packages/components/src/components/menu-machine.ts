@@ -10,6 +10,7 @@ import {
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
 import { deriveOnce, membershipSet } from '../utils/derive.js'
+import { allFiniteNumbers } from '../utils/number.js'
 
 /**
  * Shared menu item-tree machine — the single source of truth behind `menu`,
@@ -271,6 +272,7 @@ export function activeMenuHighlight(
  * reference on a no-op so the reconciler can skip the commit.
  */
 export function reduceMenuTree<S extends MenuTreeState>(state: S, msg: MenuTreeMsg): [S, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   switch (msg.type) {
     case 'close':
       return [{ ...state, ...closedPatch(state) }, []]
@@ -354,6 +356,8 @@ export function reduceMenuTree<S extends MenuTreeState>(state: S, msg: MenuTreeM
       return [{ ...state, items: msg.items }, []]
     case 'typeahead': {
       if (!state.open) return [state, []]
+      const typeaheadExpiresAt = msg.now + TYPEAHEAD_TIMEOUT_MS
+      if (!Number.isFinite(typeaheadExpiresAt)) return [state, []]
       const nav = navigable(levelItems(state.items, msg.level))
       const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
       const current = state.highlights[msg.level] ?? null
@@ -365,7 +369,7 @@ export function reduceMenuTree<S extends MenuTreeState>(state: S, msg: MenuTreeM
         {
           ...state,
           typeahead: acc,
-          typeaheadExpiresAt: msg.now + TYPEAHEAD_TIMEOUT_MS,
+          typeaheadExpiresAt,
           highlights: setHighlight(state.highlights, msg.level, match ?? current),
         },
         [],

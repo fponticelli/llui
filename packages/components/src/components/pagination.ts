@@ -71,7 +71,13 @@ export function init(opts: PaginationInit = {}): PaginationState {
 
 export function totalPages(state: PaginationState): number {
   if (state.pageSize <= 0 || state.total <= 0) return 0
-  return Math.max(1, Math.ceil(state.total / state.pageSize))
+  const quotient = state.total / state.pageSize
+  return Number.isFinite(quotient) ? Math.max(1, Math.ceil(quotient)) : Number.MAX_VALUE
+}
+
+function finiteArithmeticResult(value: number): number {
+  if (Number.isFinite(value)) return value
+  return value < 0 ? -Number.MAX_VALUE : Number.MAX_VALUE
 }
 
 function clampPage(page: number, total: number): number {
@@ -103,15 +109,15 @@ export function update(state: PaginationState, msg: PaginationMsg): [PaginationS
       const pageSize = finiteBound(msg.pageSize)
       if (pageSize === undefined || pageSize <= 0) return [state, []]
       // Preserve first visible item when pageSize changes
-      const firstItem = (state.page - 1) * state.pageSize
-      const nextPage = Math.floor(firstItem / pageSize) + 1
-      const nextPages = Math.max(1, Math.ceil(state.total / pageSize))
+      const firstItem = finiteArithmeticResult((state.page - 1) * state.pageSize)
+      const nextPage = finiteArithmeticResult(Math.floor(firstItem / pageSize) + 1)
+      const nextPages = totalPages({ ...state, pageSize })
       return [{ ...state, pageSize, page: Math.min(nextPage, nextPages) }, []]
     }
     case 'setTotal': {
       const total = finiteBound(msg.total)
       if (total === undefined) return [state, []]
-      const nextPages = Math.max(1, Math.ceil(total / state.pageSize))
+      const nextPages = totalPages({ ...state, total })
       return [{ ...state, total, page: Math.min(state.page, nextPages) }, []]
     }
   }

@@ -22,6 +22,7 @@ import {
   createMenuTreeParts,
   activeMenuHighlight,
 } from './menu-machine.js'
+import { allFiniteNumbers } from '../utils/number.js'
 
 /**
  * Context menu — right-click (contextmenu) triggered menu positioned at the
@@ -135,6 +136,7 @@ function isVisible(state: ContextMenuState): boolean {
 }
 
 export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMenuState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   switch (msg.type) {
     case 'openAt':
       return [

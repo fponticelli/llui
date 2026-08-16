@@ -1,4 +1,5 @@
 import type { Send, Signal } from '@llui/dom'
+import { allFiniteNumbers } from '../utils/number.js'
 import {
   init as tableInit,
   update as tableUpdate,
@@ -194,6 +195,7 @@ export function update(
   state: DataTableState,
   msg: DataTableMsg,
 ): [DataTableState, DataTableEffect[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   switch (msg.type) {
     case 'toggleSort': {
       const [table] = tableUpdate(state.table, { type: 'toggleSort', columnId: msg.columnId })

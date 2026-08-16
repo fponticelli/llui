@@ -1,6 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { sortableLocale } from '../locale/sortable.js'
+import { allFiniteNumbers } from '../utils/number.js'
 
 /**
  * Sortable — pointer-based reorderable list.
@@ -113,6 +114,7 @@ export function init(): SortableState {
 }
 
 export function update(state: SortableState, msg: SortableMsg): [SortableState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   switch (msg.type) {
     case 'start':
       return [
@@ -183,6 +185,7 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
     case 'moveBy': {
       if (!state.dragging) return [state, []]
       const next = Math.max(0, state.dragging.currentIndex + msg.delta)
+      if (!Number.isFinite(next)) return [state, []]
       if (next === state.dragging.currentIndex) return [state, []]
       return [{ dragging: { ...state.dragging, currentIndex: next } }, []]
     }

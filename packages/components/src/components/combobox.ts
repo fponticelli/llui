@@ -11,6 +11,7 @@ import {
   lastEnabledIndex,
   nextEnabledIndex,
 } from '../utils/list-navigation.js'
+import { allFiniteNumbers } from '../utils/number.js'
 
 /**
  * Combobox — text input paired with a filtered listbox dropdown. User
@@ -248,6 +249,7 @@ function commitSelection(state: ComboboxState, picked: string): [ComboboxState, 
 }
 
 export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, ComboboxEffect[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   if (state.disabled && msg.type !== 'setItems') return [state, []]
   switch (msg.type) {
     case 'open':

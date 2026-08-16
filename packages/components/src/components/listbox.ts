@@ -6,6 +6,7 @@ import {
   isTypeaheadKey,
   TYPEAHEAD_TIMEOUT_MS,
 } from '../utils/typeahead.js'
+import { allFiniteNumbers } from '../utils/number.js'
 import { membershipSet } from '../utils/derive.js'
 import {
   applySelection,
@@ -96,6 +97,7 @@ function rehighlight(state: ListboxState, items: string[]): number | null {
 }
 
 export function update(state: ListboxState, msg: ListboxMsg): [ListboxState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'select':
@@ -167,6 +169,8 @@ export function update(state: ListboxState, msg: ListboxMsg): [ListboxState, nev
       ]
     }
     case 'typeahead': {
+      const typeaheadExpiresAt = msg.now + TYPEAHEAD_TIMEOUT_MS
+      if (!Number.isFinite(typeaheadExpiresAt)) return [state, []]
       const acc = typeaheadAccumulate(state.typeahead, msg.char, msg.now, state.typeaheadExpiresAt)
       const match = typeaheadMatchByItems(
         state.items,
@@ -178,7 +182,7 @@ export function update(state: ListboxState, msg: ListboxMsg): [ListboxState, nev
         {
           ...state,
           typeahead: acc,
-          typeaheadExpiresAt: msg.now + TYPEAHEAD_TIMEOUT_MS,
+          typeaheadExpiresAt,
           highlightedIndex: match ?? state.highlightedIndex,
         },
         [],

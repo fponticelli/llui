@@ -120,11 +120,12 @@ function todayIso(): string {
   return toIso(now.getFullYear(), now.getMonth() + 1, now.getDate())
 }
 
-function addDays(iso: string, days: number): string {
+function addDays(iso: string, days: number): string | null {
   const p = parseIso(iso)
-  if (!p) return iso
+  if (!p) return null
   const d = new Date(p.y, p.m - 1, p.d)
   d.setDate(d.getDate() + days)
+  if (!Number.isFinite(d.getTime())) return null
   return toIso(d.getFullYear(), d.getMonth() + 1, d.getDate())
 }
 
@@ -291,6 +292,7 @@ export function update(state: DatePickerState, msg: DatePickerMsg): [DatePickerS
     case 'moveFocus': {
       if (!allFiniteNumbers(msg.days)) return [state, []]
       const next = addDays(state.focused, msg.days)
+      if (next === null) return [state, []]
       return [syncVisibleMonth({ ...state, focused: next }, next), []]
     }
     case 'focusStartOfWeek': {
