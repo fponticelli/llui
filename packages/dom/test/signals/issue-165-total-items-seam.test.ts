@@ -481,11 +481,9 @@ describe('#165 — the reported shape: a nested each under an arm swapped loadin
 // The first cut of #165 guarded every mount, which quietly changed a documented
 // schedule: a row mounted mid-`send` was contained, so the round COMPLETED and
 // DISPATCHED effects that `commit-scope.ts` says a round which throws must drop.
-// That was reverted deliberately. Two findings decided it: the in-round guard is
-// the only thing that changes the schedule, and it bought NOTHING for #165's own
-// trigger shape (a `branch` loading→ready arm is re-run in the same round by the
-// parent's children sweep — the unguarded `update` path — so it throws anyway).
-// Widening it is #216, to be judged on its own evidence.
+// That was reverted deliberately. A binding in a row/arm mounted mid-send throws
+// directly from `mount`; #225's deferral of that fresh scope's child traversal does
+// not contain or reschedule the failure.
 //
 // So these four traces pin BOTH directions of the boundary. The in-round three are
 // byte-identical to `origin/main`; the out-of-round one is the #165 fix.
@@ -499,8 +497,8 @@ describe('#165 B3 — the effect frame when a SUBTREE is mounted during a send',
   it('a ROW mounted mid-send throws and DROPS the round’s effects, exactly as on main', () => {
     // The trace the narrowing exists to preserve. The row's scope mounts from inside
     // `commitToDom`'s reconcile, so `commitRoundDepth > 0` and the guard stands
-    // down: the throw escapes, `drain` never reaches its dispatch, and the effects
-    // this round collected are dropped. Contain this and the schedule changes.
+    // down: the throw escapes directly from mount, `drain` never reaches its
+    // dispatch, and the effects this round collected are dropped.
     const c = container()
     const log: string[] = []
     const h = mountSignalComponent<RowS, { type: 'add' }, FX>(c, {
@@ -569,16 +567,10 @@ describe('#165 B3 — the effect frame when a SUBTREE is mounted during a send',
   })
 
   it('an ARM mounted mid-send still throws and still DROPS the round’s effects', () => {
-    // UNCHANGED from origin/main. The arm mounts from inside the round, so the guard
-    // stands down for the same reason the row's does — and it would escape even if
-    // it did not, because the parent's `for (const c of this.children)
-    // c.update(...)` sweep re-runs the fresh arm IN THE SAME ROUND on the unguarded
-    // `update` path.
-    //
-    // Worth stating plainly, because a reader will otherwise credit the boundary:
-    // for the `branch` loading→ready shape that #165's incident actually took, the
-    // mount boundary buys NOTHING. That page is saved by the items seam (parts 1
-    // and 2), not by part 3.
+    // The arm mounts from inside the round, so the guard stands down for the same
+    // reason the row's does. The binding throws directly from `scope.mount`; it
+    // does not depend on a redundant same-round child sweep (#225 removes that
+    // sweep without changing this failure/effect schedule).
     const c = container()
     const log: string[] = []
     interface ArmS {
