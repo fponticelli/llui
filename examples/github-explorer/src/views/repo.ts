@@ -174,12 +174,12 @@ function fileTree(pageSignal: Signal<Page>, send: Send<Msg>): Renderable {
   return [
     div({ class: 'file-tree' }, [
       each(
-        pageSignal.map((r) => {
+        pageSignal.map((page) => {
           let tree: TreeEntry[] = []
-          if (r.page === 'repo' && r.tab === 'code' && r.data.type === 'success')
-            tree = r.data.data.tree
-          else if (r.page === 'tree' && r.data.type === 'success' && 'tree' in r.data.data)
-            tree = r.data.data.tree
+          if (page.page === 'repo' && page.tab === 'code' && page.data.type === 'success')
+            tree = page.data.data.tree
+          else if (page.page === 'tree' && page.data.type === 'success' && 'tree' in page.data.data)
+            tree = page.data.data.tree
           // Sort: directories first, then alphabetical
           return [...tree].sort((a, b) => {
             if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
@@ -219,18 +219,18 @@ function issuesList(pageSignal: Signal<Page>): Renderable {
   return [
     show(
       pageSignal.map(
-        (r) =>
-          r.page === 'repo' &&
-          r.tab === 'issues' &&
-          r.data.type === 'success' &&
-          r.data.data.issues.length === 0,
+        (page) =>
+          page.page === 'repo' &&
+          page.tab === 'issues' &&
+          page.data.type === 'success' &&
+          page.data.data.issues.length === 0,
       ),
       () => [div({ class: 'loading' }, [text('No open issues.')])],
     ),
     each(
-      pageSignal.map((r) => {
-        if (r.page === 'repo' && r.tab === 'issues' && r.data.type === 'success')
-          return r.data.data.issues
+      pageSignal.map((page) => {
+        if (page.page === 'repo' && page.tab === 'issues' && page.data.type === 'success')
+          return page.data.data.issues
         return [] as Issue[]
       }),
       {

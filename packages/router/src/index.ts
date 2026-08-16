@@ -711,7 +711,9 @@ function canonicalCodecValue(
   assertSerializableRouteValue(result.value, context)
   const formatted = (codec.format as (input: unknown) => string | readonly string[])(result.value)
   const roundTrip = validate(codec.schema as AnySchema, formatted)
-  return roundTrip.ok && valuesEqual(roundTrip.value, result.value) ? result : { ok: false }
+  if (!roundTrip.ok) return roundTrip
+  assertSerializableRouteValue(roundTrip.value, context)
+  return valuesEqual(roundTrip.value, result.value) ? result : { ok: false }
 }
 
 function cloneRouteValue(value: unknown): unknown {

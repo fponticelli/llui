@@ -17,9 +17,9 @@ function decodeBase64Utf8(b64: string): string {
   return new TextDecoder().decode(bytes)
 }
 
-function fileProps(r: Page): FileProps {
-  if (r.page === 'tree' && r.data.type === 'success' && 'file' in r.data.data) {
-    const file = r.data.data.file
+function fileProps(page: Page): FileProps {
+  if (page.page === 'tree' && page.data.type === 'success' && 'file' in page.data.data) {
+    const file = page.data.data.file
     let content: string
     try {
       content = decodeBase64Utf8(file.content)

@@ -299,6 +299,23 @@ describe('named route locations', () => {
     expect(lossy.match('/value/1.5')).toBeNull()
   })
 
+  it('rejects non-serializable output from a codec round-trip before returning a location', () => {
+    const asymmetricSchema = fixtureSchema<string, { value: string }>((input) => {
+      const value = { value: 'semantic' }
+      if (input === 'canonical') Object.defineProperty(value, 'hidden', { value: true })
+      return { value }
+    })
+    const asymmetric = routeCodec(asymmetricSchema, () => 'canonical')
+    const asymmetricRouter = createRouter({
+      value: route('/value/:value', { params: { value: asymmetric } }),
+    })
+
+    expect(() => asymmetricRouter.match('/value/source')).toThrow(/serializable.*value/i)
+    expect(() => asymmetricRouter.href('value', { value: { value: 'semantic' } })).toThrow(
+      /valid location|serializable.*value/i,
+    )
+  })
+
   it('returns route locations that survive an exact JSON round-trip', () => {
     const optional = createRouter({
       docs: route('/docs/:language?', { query: { tags } }),

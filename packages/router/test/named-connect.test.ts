@@ -219,6 +219,36 @@ describe('connected named routes', () => {
     mounted.dispose()
   })
 
+  it('does not offer a codec result with non-serializable round-trip output to browser guards', () => {
+    const asymmetricSchema: StandardSchemaV1<string, { value: string }> = {
+      '~standard': {
+        version: 1,
+        vendor: 'asymmetric-fixture',
+        validate: (input) => {
+          const value = { value: 'semantic' }
+          if (input === 'canonical') Object.defineProperty(value, 'hidden', { value: true })
+          return { value }
+        },
+      },
+    }
+    const asymmetric = routeCodec(asymmetricSchema, () => 'canonical')
+    const env = new TestEnv('#/values/source')
+    const beforeEnter = vi.fn()
+    const routing = connectRouter(
+      createRouter({ value: route('/values/:value', { params: { value: asymmetric } }) }),
+      { env, beforeEnter },
+    )
+    env.writes.length = 0
+    const send = vi.fn()
+    const mounted = mountListener(routing.listener(send))
+
+    expect(() => env.emit('popstate')).toThrow(/serializable.*value/i)
+    expect(beforeEnter).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    expect(env.writes).toEqual([])
+    mounted.dispose()
+  })
+
   it('uses configurable navigation and unmatched messages at every connector boundary', () => {
     const env = new TestEnv('#/users/%ZZ')
     const routing = connectRouter(createRouter(registry), {
