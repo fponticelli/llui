@@ -243,8 +243,33 @@ Only if the documents agree while the **editors** differ is it ours.
 `test/network.ts` is a multi-peer in-memory network with delay, reordering and
 disconnect knobs; `test/convergence.test.ts` and `test/convergence-attack.test.ts`
 drive the real binding through it, ending in randomized three-peer property
-tests. Raising their round counts is how you hunt for new bugs — it is what found
-every real defect fixed so far.
+tests.
+
+The default `pnpm --filter @llui/lexical-loro test` command is the bounded PR
+lane. Independent seeded trials are separate tests so one trial owns one shared
+30-second budget. Re-run the contention qualification with:
+
+```bash
+pnpm --filter @llui/lexical-loro test:contention
+```
+
+That command starts one CPU spinner per available processor, runs every normal
+seeded collaboration/permutation trial with verbose per-test timing, and always
+reaps the spinners. Set `LLUI_CPU_CONTENTION_WORKERS` to repeat a result with an
+explicit worker count.
+
+Deep accumulated-history coverage belongs to the separate deterministic stress
+lane because upstream Loro rich-text import cost grows with document history:
+
+```bash
+pnpm --filter @llui/lexical-loro test:stress
+```
+
+The stress command holds one three-peer network open for 200+ operations that
+include real moves and stale/interleaved delivery. It is excluded from default
+tests and runs in CI only on the daily schedule or manual workflow dispatch,
+under a dedicated finite test and job budget. Test names and failures include
+the seed and operation position needed to reproduce the workload.
 
 `test/constraints.test.ts` is different in kind: rather than testing that the
 code honours the ordering rules, it demonstrates **what breaks without them**. A

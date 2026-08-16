@@ -44,7 +44,6 @@ import {
   UNDO_COMMAND,
   type ElementNode,
   type LexicalEditor,
-  type LexicalNode,
 } from 'lexical'
 import { HeadingNode, QuoteNode } from '@lexical/rich-text'
 import { $createListItemNode, $createListNode, ListItemNode, ListNode } from '@lexical/list'
@@ -65,7 +64,13 @@ import {
   type ElementContainer,
 } from '../src/index.js'
 import { appendElement, appendText, moveChild } from './children.js'
-import { expectConverged, Network, projectEditor, type Peer } from './network.js'
+import {
+  expectAllWellFormed,
+  expectConverged,
+  Network,
+  projectEditor,
+  type Peer,
+} from './network.js'
 
 const NODES = [HeadingNode, QuoteNode, ListNode, ListItemNode, LLuiDecoratorNode]
 
@@ -153,30 +158,6 @@ function undo(peer: Peer): void {
 function redo(peer: Peer): void {
   peer.editor.dispatchCommand(REDO_COMMAND, undefined)
   flush(peer)
-}
-
-function expectWellFormed(peer: Peer): void {
-  peer.editor.getEditorState().read(() => {
-    const visit = (node: LexicalNode, depth: number): void => {
-      if (depth > 50) throw new Error(`${peer.name}: tree deeper than 50 — probable cycle`)
-      if (!$isElementNode(node)) return
-      for (const [index, child] of node.getChildren().entries()) {
-        const parent = child.getParent()
-        if (parent === null || !parent.is(node)) {
-          throw new Error(
-            `${peer.name}: child ${child.getKey()} (${child.getType()}) at index ${index} ` +
-              `does not point back at its parent ${node.getKey()} (${node.getType()})`,
-          )
-        }
-        visit(child, depth + 1)
-      }
-    }
-    visit($getRoot(), 0)
-  })
-}
-
-function expectAllWellFormed(network: Network): void {
-  for (const peer of network.peers) expectWellFormed(peer)
 }
 
 /**
@@ -1243,10 +1224,11 @@ describe('attack — nested structure and randomized volume', () => {
    * The per-remote-update cost rises ~7x across a single 200-op run (0.5 ms →
    * 3.5 ms per event batch) while the projected document does not grow at all.
    * What DOES grow is history — the snapshot goes 9 KB → 26 KB over those 200
-   * ops — so each import resolves containers against a longer op log. A raw
-   * `LoroDoc.import` of primitive map writes is FLAT at ~0.01 ms/op, so this is
-   * the container-resolving inbound path, not `import` itself. (Whether that is
-   * reducible is a question for the binding, not for this file.)
+   * ops. Controlled diagnosis in #222 subsequently localized that growth to
+   * upstream Loro rich-text import, before LLui's subscription callback; the
+   * binding's dirty resolution, reconciliation, text read and fallback rate
+   * stay flat. This test design must accommodate that upstream cost without
+   * misattributing it to LLui's binding.
    *
    * The consequence for test design is the whole point: op count buys SAMPLES of
    * concurrent interleaving, and staleness depth is set by the flush cadence
@@ -1284,18 +1266,12 @@ describe('attack — nested structure and randomized volume', () => {
    * lives (2000 adversarial inserts, 2000 appends, 5000 carriers) — and nothing
    * about convergence.
    *
-   * The real partial backfill is `convergence-attack.test.ts`'s 150-operation
-   * three-peer burst, which is genuinely concurrent and genuinely deeper than
-   * these — but it deliberately EXCLUDES move. So the specific combination of
-   * depth AND moves is what no test now reaches.
-   *
-   * That is not a shortcut taken for speed: the depth is UNAFFORDABLE, and #222
-   * is why. Cost grows as (trials x length^2), so one 120-op trial costs ~9x a
-   * 40-op one — 37–53 s at load ~900, past the 30 s budget — and even 60 ops
-   * reaches ~21 s at the top of the measured band. Restoring the depth requires
-   * making a long history cheap to accumulate through the binding, which is
-   * exactly #222. Until then the trials, the total operations and the
-   * assertions all went UP, and the depth did not come back.
+   * Normal CI separately samples no-move registry churn in three seeded 50-op
+   * trials. The specific depth-plus-moves property is preserved by the dedicated
+   * `test:stress` lane, which accumulates 200+ operations in one network lifetime
+   * and runs daily/manually under its own finite budget. It cannot safely live in
+   * the 30-second PR lane: upstream history cost grows roughly as
+   * (trials x length^2), so one 120-op trial measured 37–53 s at load ~900.
    */
   const BURST_SEEDS = [
     0x5eed1234, 0x1234abcd, 0x0badc0de, 0x13572468, 0x0ff1ce55, 0x2468ace0,
@@ -1310,44 +1286,47 @@ describe('attack — nested structure and randomized volume', () => {
     }
 
     const network = collabNetwork(['a', 'b', 'c'])
-    setParagraphs(network.a, ['p0', 'p1', 'p2', 'p3'])
-    network.settle()
+    try {
+      setParagraphs(network.a, ['p0', 'p1', 'p2', 'p3'])
+      network.settle()
 
-    for (let op = 0; op < ops; op++) {
-      const peer = network.peers[Math.floor(random() * network.peers.length)]!
-      const action = Math.floor(random() * 4)
-      const size = blocks(peer).length
-      if (size === 0) {
-        edit(peer, () => {
-          $getRoot().append($createParagraphNode().append($createTextNode('re')))
-        })
-      } else if (action === 0) {
-        appendTo(peer, Math.floor(random() * size), op.toString(36))
-      } else if (action === 1) {
-        edit(peer, () => {
-          const at = Math.floor(random() * size)
-          $getRoot()
-            .getChildAtIndex(at)
-            ?.insertAfter($createParagraphNode().append($createTextNode(`n${op}`)))
-        })
-      } else if (action === 2 && size > 1) {
-        // The formerly-excluded operation.
-        moveBlock(peer, Math.floor(random() * size), Math.floor(random() * size))
-      } else if (size > 1) {
-        edit(peer, () => {
-          $getRoot()
-            .getChildAtIndex(Math.floor(random() * size))
-            ?.remove()
-        })
+      for (let op = 0; op < ops; op++) {
+        const peer = network.peers[Math.floor(random() * network.peers.length)]!
+        const action = Math.floor(random() * 4)
+        const size = blocks(peer).length
+        if (size === 0) {
+          edit(peer, () => {
+            $getRoot().append($createParagraphNode().append($createTextNode('re')))
+          })
+        } else if (action === 0) {
+          appendTo(peer, Math.floor(random() * size), op.toString(36))
+        } else if (action === 1) {
+          edit(peer, () => {
+            const at = Math.floor(random() * size)
+            $getRoot()
+              .getChildAtIndex(at)
+              ?.insertAfter($createParagraphNode().append($createTextNode(`n${op}`)))
+          })
+        } else if (action === 2 && size > 1) {
+          // The formerly-excluded operation.
+          moveBlock(peer, Math.floor(random() * size), Math.floor(random() * size))
+        } else if (size > 1) {
+          edit(peer, () => {
+            $getRoot()
+              .getChildAtIndex(Math.floor(random() * size))
+              ?.remove()
+          })
+        }
+        // Randomized partial delivery, so peers routinely act on stale state.
+        for (const other of network.peers) if (random() < 0.5) other.flushInbox()
       }
-      // Randomized partial delivery, so peers routinely act on stale state.
-      for (const other of network.peers) if (random() < 0.5) other.flushInbox()
-    }
 
-    network.settle()
-    expectConverged(network)
-    expectAllWellFormed(network)
-    network.dispose()
+      network.settle()
+      expectConverged(network)
+      expectAllWellFormed(network)
+    } finally {
+      network.dispose()
+    }
   }
 
   /** One randomized multi-block-paste + move burst across three peers. */
@@ -1359,26 +1338,29 @@ describe('attack — nested structure and randomized volume', () => {
     }
 
     const network = collabNetwork(['a', 'b', 'c'])
-    setParagraphs(network.a, ['head', 'tail'])
-    network.settle()
+    try {
+      setParagraphs(network.a, ['head', 'tail'])
+      network.settle()
 
-    for (let op = 0; op < ops; op++) {
-      const peer = network.peers[Math.floor(random() * network.peers.length)]!
-      const size = blocks(peer).length
-      if (random() < 0.5) {
-        const count = 2 + Math.floor(random() * 4)
-        const labels = Array.from({ length: count }, (_, i) => `${op}-${i}`)
-        pasteAfter(peer, Math.floor(random() * size), labels)
-      } else if (size > 1) {
-        moveBlock(peer, Math.floor(random() * size), Math.floor(random() * size))
+      for (let op = 0; op < ops; op++) {
+        const peer = network.peers[Math.floor(random() * network.peers.length)]!
+        const size = blocks(peer).length
+        if (random() < 0.5) {
+          const count = 2 + Math.floor(random() * 4)
+          const labels = Array.from({ length: count }, (_, i) => `${op}-${i}`)
+          pasteAfter(peer, Math.floor(random() * size), labels)
+        } else if (size > 1) {
+          moveBlock(peer, Math.floor(random() * size), Math.floor(random() * size))
+        }
+        for (const other of network.peers) if (random() < 0.5) other.flushInbox()
       }
-      for (const other of network.peers) if (random() < 0.5) other.flushInbox()
-    }
 
-    network.settle()
-    expectConverged(network)
-    expectAllWellFormed(network)
-    network.dispose()
+      network.settle()
+      expectConverged(network)
+      expectAllWellFormed(network)
+    } finally {
+      network.dispose()
+    }
   }
 
   // ONE TEST PER SEED, not one test looping over the seeds. `testTimeout` is a
@@ -1400,7 +1382,7 @@ describe('attack — nested structure and randomized volume', () => {
     // to `LoroMovableList`. A move is now an ordinary register write, so it can
     // and must be fuzzed alongside everything else — including against the
     // concurrent deletes that used to be fatal.
-    it(`survives a randomized burst INCLUDING MOVES across three peers (seed ${hex})`, () => {
+    it(`survives 40 randomized operations INCLUDING MOVES across three peers (seed ${hex})`, () => {
       runMixedBurst(seed, 40)
     })
 
@@ -1408,7 +1390,7 @@ describe('attack — nested structure and randomized volume', () => {
     // register moves, under randomized delivery. Batches are what make two peers
     // mint keys in the same interval, so this is where a batch-allocation
     // regression would surface as divergence rather than as mere interleaving.
-    it(`survives a randomized burst of MULTI-BLOCK pastes and moves (seed ${hex})`, () => {
+    it(`survives 15 randomized MULTI-BLOCK paste/move operations (seed ${hex})`, () => {
       runPasteBurst(seed, 15)
     })
   }

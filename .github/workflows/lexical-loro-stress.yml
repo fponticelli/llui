@@ -1,0 +1,42 @@
+name: Lexical Loro stress
+
+on:
+  schedule:
+    - cron: '23 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lexical-loro-stress
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TURBO_TELEMETRY_DISABLED: '1'
+  DO_NOT_TRACK: '1'
+
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The direct package command is intentionally the same entry point used
+      # locally. Build its dependency closure first so workspace package exports
+      # resolve exactly as they do in the main CI job.
+      - run: pnpm turbo build --filter=@llui/lexical-loro...
+
+      - name: Deep move collaboration history
+        run: pnpm --filter @llui/lexical-loro test:stress

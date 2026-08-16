@@ -286,6 +286,7 @@ export interface NetworkOptions {
 export class Network {
   readonly peers: readonly Peer[]
   #seq = 0
+  readonly #unsubscribeLocalUpdates: (() => void)[] = []
 
   constructor(options: NetworkOptions = {}) {
     const names = options.names ?? ['a', 'b']
@@ -294,12 +295,14 @@ export class Network {
       (name, index) => new Peer({ name, peerId: BigInt(index + 1), nodes, bind: options.bind }),
     )
     for (const peer of this.peers) {
-      peer.doc.subscribeLocalUpdates((bytes: Uint8Array) => {
-        const envelope: Envelope = { seq: this.#seq++, from: peer.name, bytes }
-        for (const other of this.peers) {
-          if (other !== peer && other.online) other.inbox.push(envelope)
-        }
-      })
+      this.#unsubscribeLocalUpdates.push(
+        peer.doc.subscribeLocalUpdates((bytes: Uint8Array) => {
+          const envelope: Envelope = { seq: this.#seq++, from: peer.name, bytes }
+          for (const other of this.peers) {
+            if (other !== peer && other.online) other.inbox.push(envelope)
+          }
+        }),
+      )
     }
   }
 
@@ -354,6 +357,7 @@ export class Network {
   }
 
   dispose(): void {
+    for (const unsubscribe of this.#unsubscribeLocalUpdates.splice(0)) unsubscribe()
     for (const peer of this.peers) peer.dispose()
   }
 }
@@ -363,6 +367,29 @@ export class Network {
 // ---------------------------------------------------------------------------
 
 const stable = (value: unknown): string => JSON.stringify(value, null, 2)
+
+/** Assert every peer's Lexical tree has consistent child/parent structure. */
+export function expectAllWellFormed(network: Network): void {
+  for (const peer of network.peers) {
+    peer.editor.getEditorState().read(() => {
+      const visit = (node: LexicalNode, depth: number): void => {
+        if (depth > 50) throw new Error(`${peer.name}: tree deeper than 50 — probable cycle`)
+        if (!$isElementNode(node)) return
+        for (const [index, child] of node.getChildren().entries()) {
+          const parent = child.getParent()
+          if (parent === null || !parent.is(node)) {
+            throw new Error(
+              `${peer.name}: child ${child.getKey()} (${child.getType()}) at index ${index} ` +
+                `does not point back at its parent ${node.getKey()} (${node.getType()})`,
+            )
+          }
+          visit(child, depth + 1)
+        }
+      }
+      visit($getRoot(), 0)
+    })
+  }
+}
 
 /**
  * Assert every peer's Loro document is identical.
