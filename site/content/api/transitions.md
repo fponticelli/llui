@@ -239,7 +239,9 @@ and its offset parent; the shared chain adds the ancestor's two offsets, two
 client-border reads, and its offset parent. Total: 4 rects, 10 row/ancestor
 offsets, 2 client-border reads, 5 offset-parent reads, one forced layout, and
 computed style only for the two rows that actually glide (zero style reads
-for every settled row).
+for every settled row). Carrying the accumulated error bound is arithmetic
+only and adds no DOM read. Five nested 0.49px ancestors changing to positioned
+previously glided every untouched row 2px; the bound now keeps all four still.
 
 Interruption: the live `Animation` is retained per element and cancelled
 before the next one starts, and the translation the running glide had already

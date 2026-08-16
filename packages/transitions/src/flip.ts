@@ -16,6 +16,12 @@ interface Point {
   top: number
 }
 
+interface QuantizedPoint {
+  point: Point
+  /** Maximum rounding error accumulated along each axis. */
+  error: Point
+}
+
 const NO_TRANSLATION: Point = { left: 0, top: 0 }
 
 /**
@@ -23,11 +29,12 @@ const NO_TRANSLATION: Point = { left: 0, top: 0 }
  * measurement alone is both transform-free and sub-pixel exact, and the delta
  * needs to be both.
  *
- * - {@link TrackedPosition.layout} is `offsetLeft`/`offsetTop`: the layout box
- *   itself, by definition, with no transform of anyone's folded in — but the
- *   CSSOM returns it as a `long`, so it is quantized to whole pixels (measured
- *   in Chromium 143: rows on a 33.333px pitch report 0/33/67/100/133/167 against
- *   true tops of 0/33.33/66.66/99.98/133.31/166.64).
+ * - {@link TrackedPosition.layout} is the row's `offsetLeft`/`offsetTop`
+ *   normalized through its offset-parent chain: the layout box itself, with no
+ *   transform or scroll folded in. Every CSSOM term is a `long`, so the value
+ *   carries the sum of their rounding-error bounds (measured in Chromium 143:
+ *   rows on a 33.333px pitch report 0/33/67/100/133/167 against true tops of
+ *   0/33.33/66.66/99.98/133.31/166.64).
  * - {@link TrackedPosition.visual} is `getBoundingClientRect()` with our own
  *   glide subtracted back out: sub-pixel exact, but it carries the row's AUTHOR
  *   transform, every ancestor transform, and the scroll position with it.
@@ -35,7 +42,7 @@ const NO_TRANSLATION: Point = { left: 0, top: 0 }
  * See {@link layoutDelta} for how the two combine.
  */
 interface TrackedPosition {
-  layout: Point
+  layout: QuantizedPoint
   visual: Point
 }
 
@@ -48,45 +55,53 @@ interface TrackedPosition {
  * parent, so the usual homogeneous list pays for one chain walk while a list
  * containing a hidden/fixed row remains correct too.
  */
-function offsetParentOrigin(offsetParent: Element | null): Point {
+/** Maximum absolute rounding error of one CSSOM `long` geometry read. */
+const CSSOM_LONG_ERROR = 0.5
+
+function offsetParentOrigin(offsetParent: Element | null): QuantizedPoint {
   let current = offsetParent instanceof HTMLElement ? offsetParent : null
   let left = 0
   let top = 0
+  let leftError = 0
+  let topError = 0
 
   // BODY/HTML are the stable root of the offset coordinate system. Stopping
   // here also avoids four reads whose values cannot rebase a descendant.
   while (current && current !== document.body && current !== document.documentElement) {
     left += current.offsetLeft + current.clientLeft
     top += current.offsetTop + current.clientTop
+    leftError += CSSOM_LONG_ERROR * 2
+    topError += CSSOM_LONG_ERROR * 2
     const next = current.offsetParent
     current = next instanceof HTMLElement ? next : null
   }
-  return { left, top }
+  return {
+    point: { left, top },
+    error: { left: leftError, top: topError },
+  }
 }
 
-function layoutPosition(el: HTMLElement, origins: Map<Element | null, Point>): Point {
+function layoutPosition(
+  el: HTMLElement,
+  origins: Map<Element | null, QuantizedPoint>,
+): QuantizedPoint {
   const offsetParent = el.offsetParent
   let origin = origins.get(offsetParent)
   if (!origin) {
     origin = offsetParentOrigin(offsetParent)
     origins.set(offsetParent, origin)
   }
-  return { left: el.offsetLeft + origin.left, top: el.offsetTop + origin.top }
+  return {
+    point: {
+      left: el.offsetLeft + origin.point.left,
+      top: el.offsetTop + origin.point.top,
+    },
+    error: {
+      left: CSSOM_LONG_ERROR + origin.error.left,
+      top: CSSOM_LONG_ERROR + origin.error.top,
+    },
+  }
 }
-
-/**
- * The widest a delta of two whole-pixel layout positions can differ from the
- * true one.
- *
- * Rounding puts each position's residue in the HALF-OPEN interval
- * `(-0.5, +0.5]` — half a pixel IS attained at the top (`Math.round(0.5) === 1`)
- * and is NOT at the bottom — so the two residues of a difference cannot sit at
- * opposite closed ends and the difference is off by strictly less than one.
- * (Measured sup over a 1/64 grid: 0.984375.) The bound is 1 because the interval
- * is half-open, NOT because either residue is under half a pixel — it is exactly
- * half a pixel that often.
- */
-const QUANTIZATION = 1
 
 /**
  * How far the row's LAYOUT box moved along one axis, between the pass that
@@ -95,7 +110,10 @@ const QUANTIZATION = 1
  * `fine` — the sub-pixel rect delta — is the layout delta PLUS whatever changed
  * about the row's author transform, its ancestors' transforms, and the scroll
  * position in between. `coarse` — the offset delta — is the layout delta alone,
- * to within {@link QUANTIZATION}.
+ * to within the COMBINED rounding-error bounds stored with both measurements.
+ * Every `offset*`/`client*` term in a normalized position is a CSSOM `long` and
+ * contributes at most 0.5px; summing a nested offset-parent chain without
+ * summing those bounds made five 0.49px ancestors look like a 2px move (#217).
  *
  * So the two agreeing means nothing but layout moved, and `fine` is then the
  * same number at higher precision. The two DISAGREEING is the whole of issue
@@ -104,7 +122,8 @@ const QUANTIZATION = 1
  * answer that exists, and it is exact to under a pixel where the alternative was
  * wrong by the entire change (measured: a row whose author transform went
  * `translateY(-20px)` → `translateY(-50px)` while settled glided 90px for a 60px
- * move, and jumped 30px at glide start).
+ * move, and jumped 30px at glide start). A pure layout move always agrees
+ * within the accumulated bound and therefore keeps the exact `fine` result.
  *
  * Reading the author transform per row instead would make `fine` usable
  * everywhere — and would put a `getComputedStyle` on every SETTLED row of every
@@ -112,23 +131,25 @@ const QUANTIZATION = 1
  * `offsetLeft`/`offsetTop` are reads like the rect: they force no layout of
  * their own once the pass's first read has flushed one.
  *
- * THE COST, stated at its real size: preferring `fine` absorbs a non-layout
- * change too small to be told apart from quantization, and that window is just
- * under TWO pixels, not one. Agreement is `|A - e| <= 1` for a non-layout change
- * `A` against a quantization residue `e` that is itself under 1, so any
- * `|A| < 2` can be taken for a move. Brute-force sweep over a 1/64 grid: worst
- * absorbed 1.984375px (at `p = -2.515625`, `c = -2.5`), worst error when the
- * fallback DOES fire 0.984375px, and a pure layout move (`A = 0`) is never
- * misrouted and always exact. Reproduced in Chromium rather than only derived: a
- * row at a 0.4375px offset moving 10.125px while its author transform changes by
- * 1.875px emits `translate(0px, -12px)` — `fine` 12 against `coarse` 11 — and
- * the pre-#185 code emits the same keyframe there. Bounded by the change itself,
- * against the WHOLE change (30px, 33.66px) before #185, but it is 2px, not 1.
+ * THE COST, stated at its real size: preferring `fine` can absorb a non-layout
+ * change too small to be told apart from quantization. For the ordinary
+ * root-relative row, each position has one integer term, so the delta bound is
+ * 1px and the window is just under TWO pixels, not one. Brute-force sweep over a
+ * 1/64 grid: worst absorbed 1.984375px (at `p = -2.515625`, `c = -2.5`), worst
+ * fallback error 0.984375px. Reproduced in Chromium: a row at a 0.4375px offset
+ * moving 10.125px while its author transform changes by 1.875px emits
+ * `translate(0px, -12px)` — `fine` 12 against `coarse` 11 — as did the pre-#185
+ * code. A deeper normalized chain has a proportionally wider honest bound: if
+ * the two positions together contain N integer terms, fallback error is at most
+ * N/2 px and a non-layout change under N px can in the worst case be absorbed.
+ * That uncertainty exists in the integer CSSOM inputs themselves; ignoring it
+ * instead turns their rounding residue into guaranteed phantom motion.
  */
 function layoutDelta(prev: TrackedPosition, current: TrackedPosition, axis: keyof Point): number {
   const fine = current.visual[axis] - prev.visual[axis]
-  const coarse = current.layout[axis] - prev.layout[axis]
-  return Math.abs(fine - coarse) <= QUANTIZATION ? fine : coarse
+  const coarse = current.layout.point[axis] - prev.layout.point[axis]
+  const error = current.layout.error[axis] + prev.layout.error[axis]
+  return Math.abs(fine - coarse) <= error ? fine : coarse
 }
 
 /**
@@ -305,7 +326,9 @@ function endRunOnFinish(
  * client-border reads, and its offset parent. Total: 4 rects, 10 row/ancestor
  * offsets, 2 client-border reads, 5 offset-parent reads, one forced layout, and
  * computed style only for the two rows that actually glide (zero style reads
- * for every settled row).
+ * for every settled row). Carrying the accumulated error bound is arithmetic
+ * only and adds no DOM read. Five nested 0.49px ancestors changing to positioned
+ * previously glided every untouched row 2px; the bound now keeps all four still.
  *
  * Interruption: the live `Animation` is retained per element and cancelled
  * before the next one starts, and the translation the running glide had already
@@ -402,7 +425,7 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
   const captureAfterFrame = (els: HTMLElement[]): void => {
     const run = (): void => {
       // run-scope-exempt: per-capture coordinate origins, dead when this callback returns
-      const origins = new Map<Element | null, Point>()
+      const origins = new Map<Element | null, QuantizedPoint>()
       for (const el of els) {
         if (!el.isConnected) continue
         const rect = el.getBoundingClientRect()
@@ -447,7 +470,7 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
         glide: Point
       }> = []
       // run-scope-exempt: per-pass coordinate origins, dead when this pass returns
-      const origins = new Map<Element | null, Point>()
+      const origins = new Map<Element | null, QuantizedPoint>()
       for (const child of Array.from(parent.children)) {
         if (!(child instanceof HTMLElement)) continue
         if (leaving.has(child)) continue
