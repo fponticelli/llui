@@ -11255,8 +11255,17 @@ const frameEnv: RouterEnv = {
   go: (delta) => frame.history.go(delta),
   scrollTo: (x, y) => frame.scrollTo(x, y),
   onUrlChange: (event, handler) => {
-    frame.addEventListener(event, handler)
-    return () => frame.removeEventListener(event, handler)
+    const listener = (change: Event) => {
+      if (event === 'hashchange') {
+        // Use the event's destination. A guard may already have rewritten the
+        // live frame.location.hash while handling the preceding popstate.
+        handler(new URL((change as HashChangeEvent).newURL).hash)
+      } else {
+        handler()
+      }
+    }
+    frame.addEventListener(event, listener)
+    return () => frame.removeEventListener(event, listener)
   },
 }
 

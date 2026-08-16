@@ -4,6 +4,7 @@ import { connectRouter, browserRouterEnv } from '../src/connect'
 import type { RouterEnv } from '../src/connect'
 import { mountApp, component, text } from '@llui/dom'
 import connectSource from '../src/connect.ts?raw'
+import routerDocs from '../../../site/content/api/router.md?raw'
 
 // Issue #111 (residual 2) — `connectRouter` reached for `location` / `history` /
 // `window` directly, guarded in two places and unguarded in seven. Verified not
@@ -742,5 +743,18 @@ describe('browserRouterEnv()', () => {
   it('constructs without touching the globals, so module load is DOM-free', () => {
     // The getters delegate lazily — the same contract `browserEnv()` keeps.
     expect(() => browserRouterEnv()).not.toThrow()
+  })
+})
+
+describe('RouterEnv custom-adapter documentation', () => {
+  it('forwards the hashchange destination instead of passing the router callback as a listener', () => {
+    const start = routerDocs.indexOf('const frameEnv: RouterEnv = {')
+    const end = routerDocs.indexOf('const framed =', start)
+    expect(start).toBeGreaterThanOrEqual(0)
+    expect(end).toBeGreaterThan(start)
+    const example = routerDocs.slice(start, end)
+
+    expect(example).toContain('handler(new URL((change as HashChangeEvent).newURL).hash)')
+    expect(example).not.toContain('addEventListener(event, handler)')
   })
 })

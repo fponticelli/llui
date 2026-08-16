@@ -90,7 +90,9 @@ export interface RouterEnv {
    * caller never has to hold the handler identity to detach it. A hashchange
    * supplies the fragment from the event's `newURL`; this remains the traversal
    * destination even when a guard synchronously rewrites `location.hash` while
-   * handling the preceding popstate.
+   * handling the preceding popstate. Call the handler without an argument for
+   * popstate. Custom adapters must derive the hash argument from
+   * `HashChangeEvent.newURL`, not from the live location.
    */
   onUrlChange(event: 'popstate' | 'hashchange', handler: (newHash?: string) => void): () => void
 }
@@ -833,18 +835,19 @@ export function connectRouter<R>(
    * mode the old boolean had (#103/#108).
    */
   function consumeHashEcho(): boolean {
-    if (!hasHashEcho()) return false
+    if (!validatePendingHashEcho()) return false
     pendingEchoCount--
     if (pendingEchoCount === 0) pendingEchoHash = null
     return true
   }
 
   /**
-   * Whether the current entry is the destination of one of our queued hash
-   * writes. A write whose destination is no longer showing is stale and is
-   * discarded exactly as {@link consumeHashEcho} has always done.
+   * Validate that the current entry is the destination of a queued hash write.
+   * A write whose destination is no longer showing is stale, so validation also
+   * discards the count and destination rather than leaving them armed to swallow
+   * a later genuine event.
    */
-  function hasHashEcho(): boolean {
+  function validatePendingHashEcho(): boolean {
     if (pendingEchoCount === 0) return false
     if (pendingEchoHash !== null && sameHash(env.hash, pendingEchoHash)) return true
     pendingEchoCount = 0
@@ -1200,7 +1203,7 @@ export function connectRouter<R>(
                 }
                 if (consumeHashEcho()) return
               } else {
-                const consumeEchoWithPair = hasHashEcho()
+                const consumeEchoWithPair = validatePendingHashEcho()
                 pendingHashchangePair = {
                   hash: normHash(env.hash),
                   consumeEcho: consumeEchoWithPair,
