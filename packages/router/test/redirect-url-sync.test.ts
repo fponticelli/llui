@@ -308,11 +308,15 @@ interface Recorded {
 
 function recordingEnv(initial?: { hash?: string; pathname?: string }): Recorded {
   const calls: string[] = []
-  const handlers: Array<() => void> = []
+  const handlers: Array<{
+    event: 'popstate' | 'hashchange'
+    handler: (newHash?: string) => void
+  }> = []
   let hash = initial?.hash ?? ''
   let pathname = initial?.pathname ?? '/'
   let historyState: unknown = null
   let historyLength = 1
+  let observedHash = hash
 
   /** A fragment-only url addresses the hash; anything else the path. */
   const applyUrl = (url: string) => {
@@ -364,10 +368,11 @@ function recordingEnv(initial?: { hash?: string; pathname?: string }): Recorded 
     scrollTo(x, y) {
       calls.push(`scrollTo:${x},${y}`)
     },
-    onUrlChange(_event, handler) {
-      handlers.push(handler)
+    onUrlChange(event, handler) {
+      const entry = { event, handler }
+      handlers.push(entry)
       return () => {
-        handlers.splice(handlers.indexOf(handler), 1)
+        handlers.splice(handlers.indexOf(entry), 1)
       }
     },
   }
@@ -383,7 +388,15 @@ function recordingEnv(initial?: { hash?: string; pathname?: string }): Recorded 
       historyLength++
     },
     fire() {
-      handlers.forEach((h) => h())
+      const landedHash = hash
+      const fragmentChanged = observedHash !== hash
+      handlers.filter(({ event }) => event === 'popstate').forEach(({ handler }) => handler())
+      if (fragmentChanged) {
+        handlers
+          .filter(({ event }) => event === 'hashchange')
+          .forEach(({ handler }) => handler(landedHash))
+      }
+      observedHash = hash
     },
   }
 }

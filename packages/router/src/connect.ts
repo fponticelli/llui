@@ -87,9 +87,14 @@ export interface RouterEnv {
 
   /**
    * Subscribe to a browser-driven URL change. Returns the unsubscribe, so the
-   * caller never has to hold the handler identity to detach it.
+   * caller never has to hold the handler identity to detach it. A hashchange
+   * supplies the fragment from the event's `newURL`; this remains the traversal
+   * destination even when a guard synchronously rewrites `location.hash` while
+   * handling the preceding popstate. Call the handler without an argument for
+   * popstate. Custom adapters must derive the hash argument from
+   * `HashChangeEvent.newURL`, not from the live location.
    */
-  onUrlChange(event: 'popstate' | 'hashchange', handler: () => void): () => void
+  onUrlChange(event: 'popstate' | 'hashchange', handler: (newHash?: string) => void): () => void
 }
 
 /**
@@ -131,9 +136,17 @@ export function browserRouterEnv(): RouterEnv {
     go: (delta) => history.go(delta),
     scrollTo: (x, y) => window.scrollTo(x, y),
     onUrlChange: (event, handler) => {
-      window.addEventListener(event, handler)
+      const listener = (browserEvent: Event) => {
+        if (event !== 'hashchange') {
+          handler()
+          return
+        }
+        const newUrl = (browserEvent as HashChangeEvent).newURL
+        handler(newUrl === '' ? undefined : new URL(newUrl).hash)
+      }
+      window.addEventListener(event, listener)
       return () => {
-        window.removeEventListener(event, handler)
+        window.removeEventListener(event, listener)
       }
     },
   }
@@ -822,15 +835,24 @@ export function connectRouter<R>(
    * mode the old boolean had (#103/#108).
    */
   function consumeHashEcho(): boolean {
-    if (pendingEchoCount === 0) return false
-    if (pendingEchoHash === null || !sameHash(env.hash, pendingEchoHash)) {
-      pendingEchoCount = 0
-      pendingEchoHash = null
-      return false
-    }
+    if (!validatePendingHashEcho()) return false
     pendingEchoCount--
     if (pendingEchoCount === 0) pendingEchoHash = null
     return true
+  }
+
+  /**
+   * Validate that the current entry is the destination of a queued hash write.
+   * A write whose destination is no longer showing is stale, so validation also
+   * discards the count and destination rather than leaving them armed to swallow
+   * a later genuine event.
+   */
+  function validatePendingHashEcho(): boolean {
+    if (pendingEchoCount === 0) return false
+    if (pendingEchoHash !== null && sameHash(env.hash, pendingEchoHash)) return true
+    pendingEchoCount = 0
+    pendingEchoHash = null
+    return false
   }
 
   /**
@@ -1011,15 +1033,10 @@ export function connectRouter<R>(
     if (landed.run !== currentRun) return
     const delta = currentIndex - landed.index
     if (delta === 0) return
-    if (router.mode === 'hash') {
-      // `location.hash = restore` cannot be the mechanism — assigning the hash
-      // PUSHES, which grows history.length on every block and truncates every
-      // forward entry above the blocked one (#103). The traversal echoes a
-      // hashchange, which is suppressed like any of our own writes.
-      armEcho(router.href(currentRoute))
-      env.go(delta)
-      return
-    }
+    // This position also identifies the restoration in hash mode. A fragment-
+    // changing restore emits popstate + hashchange and the listener pairs them;
+    // a same-fragment restore emits popstate alone. Treating either as a queued
+    // hash-write echo would leave a stale suppression behind in the latter case.
     pendingRestore = { index: currentIndex, run: currentRun }
     env.go(delta)
   }
@@ -1161,12 +1178,41 @@ export function connectRouter<R>(
       // (popstate/hashchange); the navigate() effect no longer depends on it.
       return [
         onMount(() => {
-          const event = router.mode === 'hash' ? 'hashchange' : 'popstate'
-          const handler = () => {
-            // Swallow the echo event our own URL mutation triggered — it was
-            // already dispatched (navigate) or is URL-only (push/replace).
+          // Chromium delivers an ordinary fragment traversal as popstate then
+          // hashchange, but a same-fragment traversal has only the popstate.
+          // Remember the popstate's LANDED fragment: its hashchange pair still
+          // shows that same fragment, while any later genuine hashchange must
+          // have moved away from it. That value scopes the suppression to one
+          // physical traversal without a timer or a broad "ignore next" flag.
+          let pendingHashchangePair: { hash: string; consumeEcho: boolean } | null = null
+
+          const handler = (event: 'popstate' | 'hashchange', eventHash?: string) => {
             if (router.mode === 'hash') {
-              if (consumeHashEcho()) return
+              if (event === 'hashchange') {
+                if (pendingHashchangePair !== null) {
+                  const pair = pendingHashchangePair
+                  pendingHashchangePair = null
+                  if (sameHash(eventHash ?? env.hash, pair.hash)) {
+                    // A programmatic hash write is already handled by its
+                    // effect. Its popstate arrives first, but the hashchange is
+                    // the echo the write armed and therefore the event that
+                    // consumes it.
+                    if (pair.consumeEcho) consumeHashEcho()
+                    return
+                  }
+                }
+                if (consumeHashEcho()) return
+              } else {
+                const consumeEchoWithPair = validatePendingHashEcho()
+                pendingHashchangePair = {
+                  hash: normHash(env.hash),
+                  consumeEcho: consumeEchoWithPair,
+                }
+                if (consumePopstateRestore()) return
+                // Do not consume here: when this is a fragment-changing write,
+                // its hashchange follows and is the queued echo setHash armed.
+                if (consumeEchoWithPair) return
+              }
             } else if (consumePopstateRestore()) {
               return
             }
@@ -1187,9 +1233,20 @@ export function connectRouter<R>(
             currentRoute = outcome.route
             send(factory(outcome.route))
           }
-          // The env hands back its own unsubscribe, so the mount teardown never
-          // has to name the target it registered on.
-          return env.onUrlChange(event, handler)
+          // History mode retains its one popstate subscription. Hash mode needs
+          // both: popstate is the only event for a same-fragment traversal, and
+          // the pair above collapses an ordinary traversal back to one action.
+          if (router.mode === 'history') {
+            return env.onUrlChange('popstate', () => handler('popstate'))
+          }
+          const unsubscribePopstate = env.onUrlChange('popstate', () => handler('popstate'))
+          const unsubscribeHashchange = env.onUrlChange('hashchange', (newHash) =>
+            handler('hashchange', newHash),
+          )
+          return () => {
+            unsubscribePopstate()
+            unsubscribeHashchange()
+          }
         }),
       ]
     },
