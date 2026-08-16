@@ -1,7 +1,7 @@
 import { createRouter, route, routeCodec, type StandardSchemaV1 } from '../src/index.js'
 import { connectRouter } from '../src/connect.js'
 
-const numberSchema = null as unknown as StandardSchemaV1<string, number>
+declare const numberSchema: StandardSchemaV1<string, number>
 const numberCodec = routeCodec(numberSchema, String)
 // @ts-expect-error codecs may only override parameters declared by the template
 route('/users/:id', { params: { wrong: numberCodec } })
@@ -9,10 +9,7 @@ route('/users/:id', { params: { wrong: numberCodec } })
 route('/users/:id', { defaults: { wrong: 1 } })
 // @ts-expect-error path and query parameters share one normalized namespace
 route('/users/:id', { query: { id: numberCodec } })
-const derivingRefinement = null as unknown as StandardSchemaV1<
-  { id: number },
-  { id: number; derived: string }
->
+declare const derivingRefinement: StandardSchemaV1<{ id: number }, { id: number; derived: string }>
 // @ts-expect-error whole-route refinement must preserve the normalized shape
 route('/users/:id', { params: { id: numberCodec }, refine: derivingRefinement })
 const router = createRouter({

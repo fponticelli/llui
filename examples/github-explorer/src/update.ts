@@ -67,12 +67,14 @@ function issuesHttp(owner: string, name: string) {
   })
 }
 
-// True when the current route targets the given repo. A resource response whose
+// True when the current page targets the given repo. A resource response whose
 // owner/name doesn't match has been superseded by a later navigation, so it must
-// be dropped rather than merged into the now-current route's data.
-function routeMatches(state: State, owner: string, name: string): boolean {
-  const r = state.page
-  return (r.page === 'repo' || r.page === 'tree') && r.owner === owner && r.name === name
+// be dropped rather than merged into the now-current page's data.
+function pageMatches(state: State, owner: string, name: string): boolean {
+  const page = state.page
+  return (
+    (page.page === 'repo' || page.page === 'tree') && page.owner === owner && page.name === name
+  )
 }
 
 export function update(state: State, msg: Msg): [State, Effect[]] {
@@ -80,22 +82,22 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     case 'navigate':
       // From popstate (browser back/forward) or router.link click
       // router.link already calls pushState, so no push needed here
-      return loadRoute(state, pageForLocation(msg.location))
+      return loadPage(state, pageForLocation(msg.location))
 
     case 'unmatched':
-      return loadRoute(state, pageForUnmatched(msg.url))
+      return loadPage(state, pageForUnmatched(msg.url))
 
     case 'setQuery': {
       const q = msg.value
       if (!q.trim()) {
-        const route: Page =
+        const page: Page =
           state.page.page === 'search'
             ? { ...state.page, q: '', data: { type: 'idle' } }
             : state.page
-        return [{ ...state, query: q, page: route }, [cancel('search')]]
+        return [{ ...state, query: q, page }, [cancel('search')]]
       }
-      // Debounce: set route to loading, fire delayed search
-      const route: Page =
+      // Debounce: set the page to loading, then fire the delayed search.
+      const page: Page =
         state.page.page === 'search'
           ? {
               ...state.page,
@@ -107,17 +109,14 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
               },
             }
           : { page: 'search', q, p: 1, data: { type: 'loading' } }
-      return [
-        { ...state, query: q, page: route },
-        [debounce('search', 300, searchHttp(searchUrl(q, 0)))],
-      ]
+      return [{ ...state, query: q, page }, [debounce('search', 300, searchHttp(searchUrl(q, 0)))]]
     }
 
     case 'submitSearch': {
       if (!state.query.trim()) return [state, []]
-      const route: Page = { page: 'search', q: state.query, p: 1, data: { type: 'loading' } }
+      const page: Page = { page: 'search', q: state.query, p: 1, data: { type: 'loading' } }
       return [
-        { ...state, page: route },
+        { ...state, page },
         [
           routing.push('search', { q: state.query, p: 1 }),
           cancel('search', searchHttp(searchUrl(state.query, 0))),
@@ -127,7 +126,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
 
     case 'searchOk': {
       const q = state.query
-      const route: Page =
+      const page: Page =
         state.page.page === 'search'
           ? {
               ...state.page,
@@ -140,33 +139,33 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
           : state.page
       const effects: Effect[] = []
       // Update URL to reflect search query (from debounce or submit)
-      if (route.page === 'search' && route.q) {
-        effects.push(routing.replace('search', { q: route.q, p: route.p }))
+      if (page.page === 'search' && page.q) {
+        effects.push(routing.replace('search', { q: page.q, p: page.p }))
       }
-      return [{ ...state, page: route }, effects]
+      return [{ ...state, page }, effects]
     }
 
     case 'repoOk':
       // Drop a response the user has navigated away from (stale race winner).
-      if (!routeMatches(state, msg.owner, msg.name)) return [state, []]
+      if (!pageMatches(state, msg.owner, msg.name)) return [state, []]
       return withRepoLoaded(state, msg.payload)
 
     case 'contentsOk':
-      if (!routeMatches(state, msg.owner, msg.name)) return [state, []]
+      if (!pageMatches(state, msg.owner, msg.name)) return [state, []]
       return withContentsLoaded(state, msg.payload)
 
     case 'readmeOk':
-      if (!routeMatches(state, msg.owner, msg.name)) return [state, []]
+      if (!pageMatches(state, msg.owner, msg.name)) return [state, []]
       return withReadmeLoaded(state, msg.payload)
 
     case 'issuesOk':
-      if (!routeMatches(state, msg.owner, msg.name)) return [state, []]
+      if (!pageMatches(state, msg.owner, msg.name)) return [state, []]
       return withIssuesLoaded(state, msg.payload)
 
     case 'apiError':
       // Only set failure if data hasn't already loaded successfully
       if (state.page.data.type !== 'success') {
-        return [setRouteData(state, { type: 'failure', error: msg.error }), []]
+        return [setPageData(state, { type: 'failure', error: msg.error }), []]
       }
       return [state, []]
 
@@ -177,7 +176,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     case 'contentsError':
       // Contents error on an otherwise loaded page — don't destroy repo data
       if (state.page.data.type === 'success') return [state, []]
-      return [setRouteData(state, { type: 'failure', error: msg.error }), []]
+      return [setPageData(state, { type: 'failure', error: msg.error }), []]
 
     case 'nextPage':
       return changePage(state, 1)
@@ -186,12 +185,14 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
       return changePage(state, -1)
 
     case 'openPath': {
-      const r = state.page
-      const owner = r.page === 'repo' || r.page === 'tree' ? r.owner : ''
-      const name = r.page === 'repo' || r.page === 'tree' ? r.name : ''
+      const currentPage = state.page
+      const owner =
+        currentPage.page === 'repo' || currentPage.page === 'tree' ? currentPage.owner : ''
+      const name =
+        currentPage.page === 'repo' || currentPage.page === 'tree' ? currentPage.name : ''
       if (!owner) return [state, []]
-      const route: Page = { page: 'tree', owner, name, path: msg.path, data: { type: 'loading' } }
-      const [s, effects] = loadRoute(state, route)
+      const page: Page = { page: 'tree', owner, name, path: msg.path, data: { type: 'loading' } }
+      const [s, effects] = loadPage(state, page)
       return [
         s,
         [
@@ -206,49 +207,49 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
 // ── Navigation ───────────────────────────────────────────────────
 
 /**
- * Load data for a route. Does NOT push to history — the caller
+ * Load data for a page. Does NOT push to history — the caller
  * decides whether to push (user action) or not (popstate).
  */
-function loadRoute(state: State, route: Page): [State, Effect[]] {
-  if (route.page === 'notFound') {
+function loadPage(state: State, page: Page): [State, Effect[]] {
+  if (page.page === 'notFound') {
     return [
-      { ...state, page: route, query: '' },
+      { ...state, page, query: '' },
       [cancel('search'), cancel('repo'), cancel('contents'), cancel('readme'), cancel('issues')],
     ]
   }
   const effects: Effect[] = []
-  const r = { ...route, data: { type: 'loading' as const } }
+  const nextPage = { ...page, data: { type: 'loading' as const } }
 
-  switch (r.page) {
+  switch (nextPage.page) {
     case 'search':
-      if (r.q) {
-        effects.push(searchHttp(searchUrl(r.q, r.p - 1)))
-        return [{ ...state, page: r, query: r.q }, effects]
+      if (nextPage.q) {
+        effects.push(searchHttp(searchUrl(nextPage.q, nextPage.p - 1)))
+        return [{ ...state, page: nextPage, query: nextPage.q }, effects]
       }
-      return [{ ...state, page: { ...r, data: { type: 'idle' } }, query: '' }, []]
+      return [{ ...state, page: { ...nextPage, data: { type: 'idle' } }, query: '' }, []]
 
     case 'repo':
       // Each resource fetch is keyed so a new navigation cancels any in-flight
       // request of the same kind (belt; the owner/name guard in `update` is the
       // suspenders). Together they prevent repo A's response landing in repo B.
-      effects.push(cancel('repo', repoHttp(r.owner, r.name)))
-      if (r.tab === 'code') {
-        effects.push(cancel('contents', contentsHttp(r.owner, r.name, '')))
-        effects.push(cancel('readme', readmeHttp(r.owner, r.name)))
+      effects.push(cancel('repo', repoHttp(nextPage.owner, nextPage.name)))
+      if (nextPage.tab === 'code') {
+        effects.push(cancel('contents', contentsHttp(nextPage.owner, nextPage.name, '')))
+        effects.push(cancel('readme', readmeHttp(nextPage.owner, nextPage.name)))
         effects.push(cancel('issues'))
       } else {
-        effects.push(cancel('issues', issuesHttp(r.owner, r.name)))
+        effects.push(cancel('issues', issuesHttp(nextPage.owner, nextPage.name)))
         effects.push(cancel('contents'))
         effects.push(cancel('readme'))
       }
-      return [{ ...state, page: r }, effects]
+      return [{ ...state, page: nextPage }, effects]
 
     case 'tree':
-      effects.push(cancel('repo', repoHttp(r.owner, r.name)))
-      effects.push(cancel('contents', contentsHttp(r.owner, r.name, r.path)))
+      effects.push(cancel('repo', repoHttp(nextPage.owner, nextPage.name)))
+      effects.push(cancel('contents', contentsHttp(nextPage.owner, nextPage.name, nextPage.path)))
       effects.push(cancel('readme'))
       effects.push(cancel('issues'))
-      return [{ ...state, page: r }, effects]
+      return [{ ...state, page: nextPage }, effects]
   }
 }
 
@@ -296,44 +297,45 @@ export function pageForLocation(location: Location): Page {
 
 // ── State update helpers ─────────────────────────────────────────
 
-function setRouteData(state: State, data: { type: string; [k: string]: unknown }): State {
+function setPageData(state: State, data: { type: string; [k: string]: unknown }): State {
   return { ...state, page: { ...state.page, data } as Page }
 }
 
 function withRepoLoaded(state: State, repo: Repo): [State, Effect[]] {
-  const r = state.page
-  if (r.page === 'repo' && r.tab === 'code') {
-    const prev = r.data.type === 'success' ? r.data.data : { repo, tree: [], readme: '' }
-    return [{ ...state, page: { ...r, data: { type: 'success', data: { ...prev, repo } } } }, []]
+  const page = state.page
+  if (page.page === 'repo' && page.tab === 'code') {
+    const prev = page.data.type === 'success' ? page.data.data : { repo, tree: [], readme: '' }
+    return [{ ...state, page: { ...page, data: { type: 'success', data: { ...prev, repo } } } }, []]
   }
-  if (r.page === 'repo' && r.tab === 'issues') {
-    const prev = r.data.type === 'success' ? r.data.data : { repo, issues: [] }
-    return [{ ...state, page: { ...r, data: { type: 'success', data: { ...prev, repo } } } }, []]
+  if (page.page === 'repo' && page.tab === 'issues') {
+    const prev = page.data.type === 'success' ? page.data.data : { repo, issues: [] }
+    return [{ ...state, page: { ...page, data: { type: 'success', data: { ...prev, repo } } } }, []]
   }
-  if (r.page === 'tree') {
-    const prev = r.data.type === 'success' ? r.data.data : { repo, tree: [] }
-    return [{ ...state, page: { ...r, data: { type: 'success', data: { ...prev, repo } } } }, []]
+  if (page.page === 'tree') {
+    const prev = page.data.type === 'success' ? page.data.data : { repo, tree: [] }
+    return [{ ...state, page: { ...page, data: { type: 'success', data: { ...prev, repo } } } }, []]
   }
   return [state, []]
 }
 
 function withContentsLoaded(state: State, payload: TreeEntry[] | FileContent): [State, Effect[]] {
-  const r = state.page
-  if (r.page === 'repo' && r.tab === 'code' && Array.isArray(payload)) {
-    const prev = r.data.type === 'success' ? r.data.data : { repo: null, tree: [], readme: '' }
+  const page = state.page
+  if (page.page === 'repo' && page.tab === 'code' && Array.isArray(payload)) {
+    const prev =
+      page.data.type === 'success' ? page.data.data : { repo: null, tree: [], readme: '' }
     return [
-      { ...state, page: { ...r, data: { type: 'success', data: { ...prev, tree: payload } } } },
+      { ...state, page: { ...page, data: { type: 'success', data: { ...prev, tree: payload } } } },
       [],
     ]
   }
-  if (r.page === 'tree') {
+  if (page.page === 'tree') {
     const prevRepo: Repo | null =
-      r.data.type === 'success' && 'repo' in r.data.data ? r.data.data.repo : null
+      page.data.type === 'success' && 'repo' in page.data.data ? page.data.data.repo : null
     if (Array.isArray(payload)) {
       return [
         {
           ...state,
-          page: { ...r, data: { type: 'success', data: { repo: prevRepo, tree: payload } } },
+          page: { ...page, data: { type: 'success', data: { repo: prevRepo, tree: payload } } },
         },
         [],
       ]
@@ -341,7 +343,7 @@ function withContentsLoaded(state: State, payload: TreeEntry[] | FileContent): [
     return [
       {
         ...state,
-        page: { ...r, data: { type: 'success', data: { repo: prevRepo, file: payload } } },
+        page: { ...page, data: { type: 'success', data: { repo: prevRepo, file: payload } } },
       },
       [],
     ]
@@ -350,30 +352,37 @@ function withContentsLoaded(state: State, payload: TreeEntry[] | FileContent): [
 }
 
 function withReadmeLoaded(state: State, readme: string): [State, Effect[]] {
-  const r = state.page
-  if (r.page === 'repo' && r.tab === 'code') {
-    const prev = r.data.type === 'success' ? r.data.data : { repo: null, tree: [], readme: '' }
-    return [{ ...state, page: { ...r, data: { type: 'success', data: { ...prev, readme } } } }, []]
+  const page = state.page
+  if (page.page === 'repo' && page.tab === 'code') {
+    const prev =
+      page.data.type === 'success' ? page.data.data : { repo: null, tree: [], readme: '' }
+    return [
+      { ...state, page: { ...page, data: { type: 'success', data: { ...prev, readme } } } },
+      [],
+    ]
   }
   return [state, []]
 }
 
 function withIssuesLoaded(state: State, issues: Issue[]): [State, Effect[]] {
-  const r = state.page
-  if (r.page === 'repo' && r.tab === 'issues') {
-    const prev = r.data.type === 'success' ? r.data.data : { repo: null, issues: [] }
-    return [{ ...state, page: { ...r, data: { type: 'success', data: { ...prev, issues } } } }, []]
+  const page = state.page
+  if (page.page === 'repo' && page.tab === 'issues') {
+    const prev = page.data.type === 'success' ? page.data.data : { repo: null, issues: [] }
+    return [
+      { ...state, page: { ...page, data: { type: 'success', data: { ...prev, issues } } } },
+      [],
+    ]
   }
   return [state, []]
 }
 
 function changePage(state: State, delta: number): [State, Effect[]] {
-  const r = state.page
-  if (r.page !== 'search' || r.data.type !== 'success') return [state, []]
-  const p = Math.max(1, r.p + delta)
-  const newRoute: Page = { ...r, p, data: { type: 'loading', stale: r.data.data } }
+  const page = state.page
+  if (page.page !== 'search' || page.data.type !== 'success') return [state, []]
+  const p = Math.max(1, page.p + delta)
+  const nextPage: Page = { ...page, p, data: { type: 'loading', stale: page.data.data } }
   return [
-    { ...state, page: newRoute },
-    [routing.replace('search', { q: r.q, p }), searchHttp(searchUrl(r.q, p - 1))],
+    { ...state, page: nextPage },
+    [routing.replace('search', { q: page.q, p }), searchHttp(searchUrl(page.q, p - 1))],
   ]
 }

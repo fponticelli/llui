@@ -15,7 +15,6 @@ function fixtureSchema<Input, Output>(
       version: 1,
       vendor: 'fixture',
       validate,
-      types: undefined as unknown as { input: Input; output: Output },
     },
   }
 }
@@ -28,7 +27,6 @@ class ClassFixtureSchema<Input, Output> implements StandardSchemaV1<Input, Outpu
       version: 1,
       vendor: 'class-fixture',
       validate,
-      types: undefined as unknown as { input: Input; output: Output },
     }
   }
 }
@@ -316,6 +314,65 @@ describe('named route locations', () => {
     })
     expect(custom.match('/docs')).toEqual({ name: 'docs', params: { path: ['index'] } })
     expect(custom.href('docs', {})).toBe('#/docs')
+  })
+
+  it('treats explicit undefined as omission for every defaulted parameter kind', () => {
+    const defaults = createRouter({
+      docs: route('/docs/:language?', {
+        defaults: { language: 'en' },
+      }),
+      files: route('/files/*path', {
+        defaults: { path: ['index'] },
+      }),
+      search: route('/search', {
+        query: { tags },
+        defaults: { tags: ['all'] },
+      }),
+    })
+    expect(defaults.href('docs', { language: undefined })).toBe('#/docs')
+    expect(defaults.href('files', { path: undefined })).toBe('#/files')
+    expect(defaults.href('search', { tags: undefined })).toBe('#/search')
+  })
+
+  it('rejects non-serializable route values from codecs, defaults, and refinements', () => {
+    const cyclic: Record<string, unknown> = {}
+    cyclic.self = cyclic
+    for (const invalid of [
+      new Date(),
+      new Map(),
+      new Set(),
+      Object.create({ inherited: true }),
+      cyclic,
+    ]) {
+      const codec = routeCodec(
+        fixtureSchema<string, unknown>(() => ({ value: invalid })),
+        String,
+      )
+      expect(() =>
+        createRouter({ value: route('/value/:value', { params: { value: codec } }) }).match(
+          '/value/x',
+        ),
+      ).toThrow(/serializable.*value/i)
+    }
+
+    const functionCodec = routeCodec(
+      fixtureSchema<string, () => void>(() => ({ value: () => undefined })),
+      () => 'fn',
+    )
+    expect(() =>
+      createRouter({
+        value: route('/value', {
+          query: { fn: functionCodec },
+          defaults: { fn: (): void => undefined },
+        }),
+      }),
+    ).toThrow(/serializable.*default/i)
+
+    const deriving = fixtureSchema<{ value: string }, { value: string; bad: Map<string, string> }>(
+      (input) => ({ value: { ...(input as { value: string }), bad: new Map() } }),
+    )
+    const refined = createRouter({ value: route('/value/:value', { refine: deriving as never }) })
+    expect(() => refined.match('/value/x')).toThrow(/serializable.*whole-route/i)
   })
 })
 

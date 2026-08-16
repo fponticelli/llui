@@ -66,9 +66,11 @@ const tagged = route('/tagged', {
 })
 ```
 
-Scalar query codecs reject duplicate values. Unknown query keys do not prevent matching and are omitted by generation. Defaults are always present after matching, optional while generating, and omitted from the canonical URL; that rule also applies to rest defaults. Object and array defaults are cloned into each returned location, so mutating one result cannot affect another.
+Scalar query codecs reject duplicate values. Unknown query keys do not prevent matching and are omitted by generation. Defaults are always present after matching, optional while generating, and omitted from the canonical URL; explicitly passing `undefined` for a defaulted parameter is equivalent to omitting it, and the rule also applies to rest defaults. Object and array defaults are cloned into each returned location, so mutating one result cannot affect another.
 Each default must itself round-trip through its codec; invalid or noncanonical defaults are rejected when the router is created.
 Generated URLs are accepted only when matching them produces the same complete normalized parameters, so a lossy formatter fails instead of silently addressing a different location.
+
+Route locations remain serializable URL identity. Codec, default, refinement, and generation values may contain `undefined`, `null`, strings, booleans, finite numbers, dense arrays, and plain data objects. Functions, symbols, bigints, non-finite numbers, sparse or cyclic values, and class or built-in collection instances are rejected with a contextual error.
 
 A route may declare `refine`, a synchronous Standard Schema over the complete normalized parameter object. It may reject the object, but it may not transform it or add page data. Any schema returning a Promise produces a descriptive configuration error because routing remains synchronous.
 

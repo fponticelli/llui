@@ -4,7 +4,7 @@ export type { StandardSchemaV1 } from '@standard-schema/spec'
 
 type AnySchema = StandardSchemaV1<unknown, unknown>
 
-/** A synchronous parser/validator paired with its canonical URL formatter. */
+/** A synchronous Standard Schema validator paired with its canonical URL formatter. */
 export interface RouteCodec<Output, Multiple extends boolean = false> {
   readonly schema: StandardSchemaV1<unknown, Output>
   readonly format: (value: Output) => Multiple extends true ? readonly string[] : string
@@ -596,25 +596,6 @@ function decode(value: string): string | null {
 
 function valuesEqual(a: unknown, b: unknown): boolean {
   if (Object.is(a, b)) return true
-  if (a instanceof Date && b instanceof Date) return a.getTime() === b.getTime()
-  if (a instanceof Map && b instanceof Map) {
-    const left = [...a.entries()]
-    const right = [...b.entries()]
-    return (
-      left.length === right.length &&
-      left.every(
-        ([key, value], index) =>
-          valuesEqual(key, right[index]?.[0]) && valuesEqual(value, right[index]?.[1]),
-      )
-    )
-  }
-  if (a instanceof Set && b instanceof Set) {
-    const left = [...a.values()]
-    const right = [...b.values()]
-    return (
-      left.length === right.length && left.every((value, index) => valuesEqual(value, right[index]))
-    )
-  }
   if (Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((value, index) => valuesEqual(value, b[index]))
   }
@@ -630,41 +611,73 @@ function valuesEqual(a: unknown, b: unknown): boolean {
   )
 }
 
-function cloneRouteValue(value: unknown, seen = new WeakMap<object, unknown>()): unknown {
-  if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return value
-  if (typeof value === 'function') return value
-  const existing = seen.get(value)
-  if (existing !== undefined) return existing
-  if (value instanceof Date) return new Date(value.getTime())
-  if (value instanceof Map) {
-    const clone = new Map<unknown, unknown>()
-    seen.set(value, clone)
-    for (const [key, entry] of value) {
-      clone.set(cloneRouteValue(key, seen), cloneRouteValue(entry, seen))
-    }
-    return clone
+function assertSerializableRouteValue(
+  value: unknown,
+  context: string,
+  active = new WeakSet<object>(),
+): void {
+  if (
+    value === undefined ||
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'boolean'
+  )
+    return
+  if (typeof value === 'number') {
+    if (Number.isFinite(value)) return
+    throw new TypeError(
+      `[@llui/router] Non-serializable route value from ${context}: numbers must be finite.`,
+    )
   }
-  if (value instanceof Set) {
-    const clone = new Set<unknown>()
-    seen.set(value, clone)
-    for (const entry of value) clone.add(cloneRouteValue(entry, seen))
-    return clone
+  if (typeof value !== 'object') {
+    throw new TypeError(
+      `[@llui/router] Non-serializable route value from ${context}: ${typeof value} values are unsupported.`,
+    )
   }
+  if (active.has(value)) {
+    throw new TypeError(
+      `[@llui/router] Non-serializable route value from ${context}: cyclic values are unsupported.`,
+    )
+  }
+  active.add(value)
   if (Array.isArray(value)) {
-    const clone: unknown[] = []
-    seen.set(value, clone)
-    for (const item of value) clone.push(cloneRouteValue(item, seen))
-    return clone
+    for (let index = 0; index < value.length; index++) {
+      if (!Object.hasOwn(value, index)) {
+        throw new TypeError(
+          `[@llui/router] Non-serializable route value from ${context}: sparse arrays are unsupported.`,
+        )
+      }
+      assertSerializableRouteValue(value[index], context, active)
+    }
+    active.delete(value)
+    return
   }
+  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+    throw new TypeError(
+      `[@llui/router] Non-serializable route value from ${context}: only plain objects and arrays are supported.`,
+    )
+  }
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    throw new TypeError(
+      `[@llui/router] Non-serializable route value from ${context}: symbol keys are unsupported.`,
+    )
+  }
+  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+    if (!descriptor.enumerable || !('value' in descriptor)) {
+      throw new TypeError(
+        `[@llui/router] Non-serializable route value from ${context}: property "${key}" must be enumerable data.`,
+      )
+    }
+    assertSerializableRouteValue(descriptor.value, context, active)
+  }
+  active.delete(value)
+}
 
-  const clone = Object.create(Object.getPrototypeOf(value)) as Record<PropertyKey, unknown>
-  seen.set(value, clone)
-  for (const key of Reflect.ownKeys(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key)
-    if (!descriptor) continue
-    if ('value' in descriptor) descriptor.value = cloneRouteValue(descriptor.value, seen)
-    Object.defineProperty(clone, key, descriptor)
-  }
+function cloneRouteValue(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.map(cloneRouteValue)
+  const clone = Object.create(Object.getPrototypeOf(value)) as Record<string, unknown>
+  for (const [key, entry] of Object.entries(value)) clone[key] = cloneRouteValue(entry)
   return clone
 }
 
@@ -747,6 +760,7 @@ function assertCanonicalDefaults(
   segments: readonly Segment[],
 ): void {
   for (const [key, value] of Object.entries(definition.defaults)) {
+    assertSerializableRouteValue(value, `default "${key}" for route "${routeName}"`)
     const segment = segments.find(
       (candidate): candidate is ParameterSegment | RestSegment =>
         candidate.kind !== 'static' && candidate.name === key,
@@ -775,6 +789,12 @@ function assertCanonicalDefaults(
       )
     }
     const result = validate(codec.schema as AnySchema, formatted)
+    if (result.ok) {
+      assertSerializableRouteValue(
+        result.value,
+        `codec output for default "${key}" in route "${routeName}"`,
+      )
+    }
     if (!result.ok || !valuesEqual(result.value, value)) {
       throw new TypeError(
         `[@llui/router] Default "${key}" for route "${routeName}" is not accepted by its route codec or does not round-trip canonically.`,
@@ -853,6 +873,10 @@ export function createRouter<const Registry extends RouteRegistry>(
           valid = false
           break
         }
+        assertSerializableRouteValue(
+          result.value,
+          `codec "${segment.name}" in route "${candidate.compiled.name}"`,
+        )
         normalized[segment.name] = result.value
       }
       if (!valid) continue
@@ -874,6 +898,10 @@ export function createRouter<const Registry extends RouteRegistry>(
           valid = false
           break
         }
+        assertSerializableRouteValue(
+          result.value,
+          `codec "${key}" in route "${candidate.compiled.name}"`,
+        )
         normalized[key] = result.value
       }
       if (!valid) continue
@@ -881,6 +909,10 @@ export function createRouter<const Registry extends RouteRegistry>(
       if (definition.refine) {
         const refined = validate(definition.refine as AnySchema, cloneRouteValue(normalized))
         if (!refined.ok) continue
+        assertSerializableRouteValue(
+          refined.value,
+          `whole-route schema for "${candidate.compiled.name}"`,
+        )
         if (!valuesEqual(refined.value, normalized)) {
           throw new TypeError(
             `[@llui/router] Whole-route schema for "${candidate.compiled.name}" transformed its parameters; it may only refine the normalized shape.`,
@@ -901,7 +933,10 @@ export function createRouter<const Registry extends RouteRegistry>(
   function format(name: string, input: Record<string, unknown> | undefined): string {
     const compiledDefinition = definitionFor(name)
     const definition = compiledDefinition.definition
-    const params: Record<string, unknown> = { ...definition.defaults, ...(input ?? {}) }
+    const params: Record<string, unknown> = { ...definition.defaults }
+    for (const [key, value] of Object.entries(input ?? {})) {
+      if (value !== undefined || !Object.hasOwn(definition.defaults, key)) params[key] = value
+    }
     const parts: string[] = []
     for (const segment of compiledDefinition.segments) {
       if (segment.kind === 'static') {
@@ -909,6 +944,7 @@ export function createRouter<const Registry extends RouteRegistry>(
         continue
       }
       const value = params[segment.name]
+      assertSerializableRouteValue(value, `parameter "${segment.name}" for route "${name}"`)
       if (
         segment.kind === 'rest' &&
         Object.hasOwn(definition.defaults, segment.name) &&
@@ -948,6 +984,7 @@ export function createRouter<const Registry extends RouteRegistry>(
     const search = new URLSearchParams()
     for (const [key, codec] of Object.entries(definition.query)) {
       const value = params[key]
+      assertSerializableRouteValue(value, `parameter "${key}" for route "${name}"`)
       if (value === undefined || valuesEqual(value, definition.defaults[key])) continue
       const formatted = (codec.format as (input: unknown) => string | readonly string[])(value)
       if (codec.multiple) {
@@ -976,18 +1013,20 @@ export function createRouter<const Registry extends RouteRegistry>(
     const expected: Record<string, unknown> = {}
     for (const segment of compiledDefinition.segments) {
       if (segment.kind === 'static') continue
-      expected[segment.name] = Object.hasOwn(params ?? {}, segment.name)
-        ? cloneRouteValue(params?.[segment.name])
-        : Object.hasOwn(compiledDefinition.definition.defaults, segment.name)
-          ? cloneRouteValue(compiledDefinition.definition.defaults[segment.name])
-          : undefined
+      expected[segment.name] =
+        Object.hasOwn(params ?? {}, segment.name) && params?.[segment.name] !== undefined
+          ? cloneRouteValue(params?.[segment.name])
+          : Object.hasOwn(compiledDefinition.definition.defaults, segment.name)
+            ? cloneRouteValue(compiledDefinition.definition.defaults[segment.name])
+            : undefined
     }
     for (const key of Object.keys(compiledDefinition.definition.query)) {
-      expected[key] = Object.hasOwn(params ?? {}, key)
-        ? cloneRouteValue(params?.[key])
-        : Object.hasOwn(compiledDefinition.definition.defaults, key)
-          ? cloneRouteValue(compiledDefinition.definition.defaults[key])
-          : undefined
+      expected[key] =
+        Object.hasOwn(params ?? {}, key) && params?.[key] !== undefined
+          ? cloneRouteValue(params?.[key])
+          : Object.hasOwn(compiledDefinition.definition.defaults, key)
+            ? cloneRouteValue(compiledDefinition.definition.defaults[key])
+            : undefined
     }
     if (matched === null || matched.name !== name || !valuesEqual(matched.params, expected)) {
       throw new TypeError(
