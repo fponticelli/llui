@@ -1,5 +1,5 @@
 import { div, h3, p, span, ul, li, text, button, each, branch, show } from '@llui/dom'
-import type { Msg, Repo, Route } from '../types'
+import type { Msg, Repo, Page } from '../types'
 import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { routing } from '../router'
 
@@ -25,37 +25,39 @@ const LANG_COLORS: Record<string, string> = {
   Zig: '#ec915c',
 }
 
-function searchRepos(r: Route): Repo[] {
-  if (r.page !== 'search') return []
-  if (r.data.type === 'success') return r.data.data.repos
-  if (r.data.type === 'loading' && r.data.stale) return r.data.stale.repos
+function searchRepos(page: Page): Repo[] {
+  if (page.page !== 'search') return []
+  if (page.data.type === 'success') return page.data.data.repos
+  if (page.data.type === 'loading' && page.data.stale) return page.data.stale.repos
   return []
 }
 
-function searchTotal(r: Route): number {
-  if (r.page !== 'search') return 0
-  if (r.data.type === 'success') return r.data.data.total
-  if (r.data.type === 'loading' && r.data.stale) return r.data.stale.total
+function searchTotal(page: Page): number {
+  if (page.page !== 'search') return 0
+  if (page.data.type === 'success') return page.data.data.total
+  if (page.data.type === 'loading' && page.data.stale) return page.data.stale.total
   return 0
 }
 
-function currentPage(r: Route): number {
-  return r.page === 'search' ? r.p : 1
+function currentPage(page: Page): number {
+  return page.page === 'search' ? page.p : 1
 }
 
-export function searchView(route: Signal<Route>, send: Send<Msg>): Renderable {
+export function searchView(pageSignal: Signal<Page>, send: Send<Msg>): Renderable {
   return [
     div({ class: 'container' }, [
       // Error
       branch(
-        route.map((r) => (r.page === 'search' && r.data.type === 'failure' ? 'error' : 'ok')),
+        pageSignal.map((page) =>
+          page.page === 'search' && page.data.type === 'failure' ? 'error' : 'ok',
+        ),
         {
           error: () => [
             div({ class: 'error' }, [
               text(
-                route.map((r) => {
-                  if (r.page !== 'search' || r.data.type !== 'failure') return ''
-                  const err = r.data.error
+                pageSignal.map((page) => {
+                  if (page.page !== 'search' || page.data.type !== 'failure') return ''
+                  const err = page.data.error
                   if (err.kind === 'ratelimit')
                     return `GitHub API rate limit exceeded. ${err.retryAfter ? `Try again in ${err.retryAfter}s.` : 'Try again later.'}`
                   if (err.kind === 'network') return `Network error: ${err.message}`
@@ -69,12 +71,12 @@ export function searchView(route: Signal<Route>, send: Send<Msg>): Renderable {
       ),
       // Content
       branch(
-        route.map((r) => {
-          if (r.page !== 'search') return 'welcome'
-          if (r.data.type === 'idle') return 'welcome'
-          if (r.data.type === 'loading' && !r.data.stale) return 'loading'
-          const repos = searchRepos(r)
-          if (repos.length === 0) return r.q ? 'empty' : 'welcome'
+        pageSignal.map((page) => {
+          if (page.page !== 'search') return 'welcome'
+          if (page.data.type === 'idle') return 'welcome'
+          if (page.data.type === 'loading' && !page.data.stale) return 'loading'
+          const repos = searchRepos(page)
+          if (repos.length === 0) return page.q ? 'empty' : 'welcome'
           return 'results'
         }),
         {
@@ -86,7 +88,7 @@ export function searchView(route: Signal<Route>, send: Send<Msg>): Renderable {
           results: () => [
             ul({ class: 'repo-list' }, [
               each(
-                route.map((r) => searchRepos(r)),
+                pageSignal.map((page) => searchRepos(page)),
                 {
                   key: (r) => r.id,
                   render: (item) => [repoItem(item, send)],
@@ -96,21 +98,21 @@ export function searchView(route: Signal<Route>, send: Send<Msg>): Renderable {
             div({ class: 'pagination' }, [
               button(
                 {
-                  disabled: route.map((r) => currentPage(r) <= 1),
+                  disabled: pageSignal.map((page) => currentPage(page) <= 1),
                   onClick: () => send({ type: 'prevPage' }),
                 },
                 [text('← Previous')],
               ),
               text(
-                route.map((r) => {
-                  const total = searchTotal(r)
+                pageSignal.map((page) => {
+                  const total = searchTotal(page)
                   if (total <= 10) return ''
-                  return ` Page ${currentPage(r)} of ${Math.ceil(total / 10)} `
+                  return ` Page ${currentPage(page)} of ${Math.ceil(total / 10)} `
                 }),
               ),
               button(
                 {
-                  disabled: route.map((r) => currentPage(r) * 10 >= searchTotal(r)),
+                  disabled: pageSignal.map((page) => currentPage(page) * 10 >= searchTotal(page)),
                   onClick: () => send({ type: 'nextPage' }),
                 },
                 [text('Next →')],
@@ -127,14 +129,7 @@ function repoItem(item: Signal<Repo>, send: Send<Msg>): Mountable {
   const owner = item.peek().owner.login
   const name = item.peek().name
   return li({ class: 'repo-item' }, [
-    h3([
-      routing.link(
-        send,
-        { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
-        {},
-        [text(item.at('full_name'))],
-      ),
-    ]),
+    h3([routing.link(send, 'repoCode', { owner, repo: name }, {}, [text(item.at('full_name'))])]),
     p([text(item.map((r) => r.description ?? ''))]),
     div({ class: 'repo-meta' }, [
       show(

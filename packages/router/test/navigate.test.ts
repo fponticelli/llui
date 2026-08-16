@@ -1,18 +1,27 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createRouter, route, param } from '../src/index'
-import { connectRouter } from '../src/connect'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { connectRouter, type ConnectedRouter, type RouterEffect } from '../src/connect'
+import { createRouter, route, type RouteLocation } from '../src/index'
 
-type Route = { page: 'home' } | { page: 'article'; slug: string } | { page: 'admin' }
+const registry = {
+  home: route('/'),
+  article: route('/article/:slug'),
+  admin: route('/admin'),
+}
 
-function makeRouter() {
-  return createRouter<Route>(
-    [
-      route([], () => ({ page: 'home' })),
-      route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-      route(['admin'], () => ({ page: 'admin' })),
-    ],
-    { mode: 'history' },
-  )
+type Registry = typeof registry
+type Location = RouteLocation<Registry>
+
+function makeRouter(mode: 'hash' | 'history' = 'history') {
+  return createRouter(registry, { mode })
+}
+
+function run<NavigateMessage, UnmatchedMessage>(
+  routing: ConnectedRouter<Registry, NavigateMessage, UnmatchedMessage>,
+  effect: RouterEffect,
+  send = vi.fn(),
+) {
+  routing.handleEffect({ effect, send, signal: new AbortController().signal })
+  return send
 }
 
 describe('connectedRouter.navigate', () => {
@@ -21,129 +30,91 @@ describe('connectedRouter.navigate', () => {
   })
 
   describe('effect descriptor', () => {
-    it('returns a __router effect tagged with action: navigate', () => {
+    it('returns a normalized named location and a generated path', () => {
       const routing = connectRouter(makeRouter())
-      expect(routing.navigate({ page: 'article', slug: 'hello' })).toEqual({
+
+      expect(routing.navigate('article', { slug: 'hello' })).toEqual({
         type: '__router',
         action: 'navigate',
         path: '/article/hello',
-        route: { page: 'article', slug: 'hello' },
+        location: { name: 'article', params: { slug: 'hello' } },
       })
     })
 
-    it('formats the path through router.href, like push', () => {
+    it('formats through the same registry route as push', () => {
       const routing = connectRouter(makeRouter())
-      expect(routing.navigate({ page: 'home' }).path).toBe('/')
-      expect(routing.push({ page: 'home' }).path).toBe('/')
+
+      expect(routing.navigate('home').path).toBe('/')
+      expect(routing.push('home').path).toBe('/')
     })
   })
 
-  // navigate() dispatches through the `send` the effect runner hands every
-  // effect — NOT through a listener-captured closure. So it works from any
-  // effect, with or without listener() mounted (the regression this replaced).
   describe('dispatch via the effect runner send', () => {
-    it('updates URL via pushState AND dispatches the navigate message', () => {
+    it('updates the URL via pushState and dispatches the named location', () => {
       const routing = connectRouter(makeRouter())
-      const send = vi.fn()
       const pushSpy = vi.spyOn(history, 'pushState')
-
-      routing.handleEffect({
-        effect: routing.navigate({ page: 'article', slug: 'x' }),
-        send,
-        signal: new AbortController().signal,
-      })
+      const send = run(routing, routing.navigate('article', { slug: 'x' }))
 
       expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/article/x')
-      expect(send).toHaveBeenCalledTimes(1)
+      expect(send).toHaveBeenCalledOnce()
       expect(send).toHaveBeenCalledWith({
         type: 'navigate',
-        route: { page: 'article', slug: 'x' },
+        location: { name: 'article', params: { slug: 'x' } },
       })
 
       pushSpy.mockRestore()
     })
 
-    it('dispatches even when no listener() is mounted (regression)', () => {
-      // Previously navigate() before listener() mount silently dropped the
-      // message (URL changed, state.route never updated) and only warned.
+    it('does not depend on listener() being mounted', () => {
       const routing = connectRouter(makeRouter())
-      const send = vi.fn()
       const pushSpy = vi.spyOn(history, 'pushState')
-      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-
-      routing.handleEffect({
-        effect: routing.navigate({ page: 'article', slug: 'x' }),
-        send,
-        signal: new AbortController().signal,
-      })
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+      const send = run(routing, routing.navigate('article', { slug: 'x' }))
 
       expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/article/x')
       expect(send).toHaveBeenCalledWith({
         type: 'navigate',
-        route: { page: 'article', slug: 'x' },
+        location: { name: 'article', params: { slug: 'x' } },
       })
-      // No warning — there is no listener dependency anymore.
       expect(warnSpy).not.toHaveBeenCalled()
 
       pushSpy.mockRestore()
       warnSpy.mockRestore()
     })
 
-    it('uses a custom message factory from connectRouter navigateMsg', () => {
+    it('uses a custom message factory', () => {
       const routing = connectRouter(makeRouter(), {
-        navigateMsg: (route) => ({ type: 'Router/RouteChanged', route }),
+        navigateMsg: (location) => ({ type: 'Router/LocationChanged', location }),
       })
-      const send = vi.fn()
-
-      routing.handleEffect({
-        effect: routing.navigate({ page: 'admin' }),
-        send,
-        signal: new AbortController().signal,
-      })
+      const send = run(routing, routing.navigate('admin'))
 
       expect(send).toHaveBeenCalledWith({
-        type: 'Router/RouteChanged',
-        route: { page: 'admin' },
+        type: 'Router/LocationChanged',
+        location: { name: 'admin', params: {} },
       })
     })
 
-    it('dispatches the redirect target when a beforeEnter guard rewrites it', () => {
-      const routing = connectRouter(makeRouter(), {
-        beforeEnter: (to) => {
-          if (to.page === 'admin') return { page: 'home' } as const
-          return undefined
-        },
+    it('dispatches the redirect target when beforeEnter rewrites it', () => {
+      const router = makeRouter()
+      const routing = connectRouter(router, {
+        beforeEnter: (to) => (to.name === 'admin' ? router.location('home') : undefined),
       })
-      const send = vi.fn()
       const pushSpy = vi.spyOn(history, 'pushState')
+      const send = run(routing, routing.navigate('admin'))
 
-      routing.handleEffect({
-        effect: routing.navigate({ page: 'admin' }),
-        send,
-        signal: new AbortController().signal,
-      })
-
-      // URL goes to /, the redirect target — not /admin
       expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/')
-      // Message reflects the redirect target, not the requested route
       expect(send).toHaveBeenCalledWith({
         type: 'navigate',
-        route: { page: 'home' },
+        location: { name: 'home', params: {} },
       })
 
       pushSpy.mockRestore()
     })
 
-    it('does not push or dispatch when a guard blocks the navigation', () => {
+    it('does not push or dispatch when a guard blocks', () => {
       const routing = connectRouter(makeRouter(), { beforeEnter: () => false })
-      const send = vi.fn()
       const pushSpy = vi.spyOn(history, 'pushState')
-
-      routing.handleEffect({
-        effect: routing.navigate({ page: 'admin' }),
-        send,
-        signal: new AbortController().signal,
-      })
+      const send = run(routing, routing.navigate('admin'))
 
       expect(pushSpy).not.toHaveBeenCalled()
       expect(send).not.toHaveBeenCalled()
@@ -151,66 +122,49 @@ describe('connectedRouter.navigate', () => {
       pushSpy.mockRestore()
     })
 
-    // The effect carries the ORIGINAL route object, so route fields not
-    // representable in the URL (a `draft` flag, a data payload, …) survive to the
-    // guards and the dispatched message — instead of being lost to `match(path)`.
-    it('preserves non-URL route fields for guards and dispatch', () => {
-      type RichRoute = { page: 'article'; slug: string; draft?: boolean } | { page: 'home' }
-      const richRouter = createRouter<RichRoute>(
-        [
-          route([], () => ({ page: 'home' })),
-          route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-        ],
-        { mode: 'history' },
-      )
-
-      const seenByGuard: RichRoute[] = []
-      const routing = connectRouter(richRouter, {
+    it('passes the exact normalized location to guards and dispatch', () => {
+      const seen: Location[] = []
+      const routing = connectRouter(makeRouter(), {
         beforeEnter: (to) => {
-          seenByGuard.push(to)
+          seen.push(to)
         },
       })
-      const send = vi.fn()
+      const send = run(routing, routing.navigate('article', { slug: 'x' }))
 
-      routing.handleEffect({
-        effect: routing.navigate({ page: 'article', slug: 'x', draft: true }),
-        send,
-        signal: new AbortController().signal,
-      })
-
-      // The guard saw the FULL route, including the non-URL `draft` field.
-      expect(seenByGuard[0]).toMatchObject({ page: 'article', slug: 'x', draft: true })
-      // The dispatched navigate message carried the full route, not a URL re-match.
+      expect(seen).toEqual([{ name: 'article', params: { slug: 'x' } }])
       expect(send).toHaveBeenCalledWith({
         type: 'navigate',
-        route: { page: 'article', slug: 'x', draft: true },
+        location: { name: 'article', params: { slug: 'x' } },
       })
+    })
+
+    it('makes navigation to the current canonical location a full no-op', () => {
+      history.replaceState(null, '', '/admin')
+      const beforeEnter = vi.fn()
+      const routing = connectRouter(makeRouter(), { beforeEnter })
+      const pushSpy = vi.spyOn(history, 'pushState')
+      const send = run(routing, routing.navigate('admin'))
+
+      expect(beforeEnter).not.toHaveBeenCalled()
+      expect(pushSpy).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
+
+      pushSpy.mockRestore()
     })
   })
 
   describe('hash mode', () => {
-    it('updates location.hash and dispatches the navigate message', () => {
-      const hashRouter = createRouter<Route>([
-        route([], () => ({ page: 'home' })),
-        route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-        route(['admin'], () => ({ page: 'admin' })),
-      ])
-      const routing = connectRouter(hashRouter)
-      const send = vi.fn()
+    it('updates location.hash and dispatches the named location', () => {
+      const routing = connectRouter(makeRouter('hash'))
+      const effect = routing.navigate('article', { slug: 'x' })
 
-      // Hash mode emits #/article/x
-      const effect = routing.navigate({ page: 'article', slug: 'x' })
       expect(effect.path).toBe('#/article/x')
+      const send = run(routing, effect)
 
-      routing.handleEffect({
-        effect,
-        send,
-        signal: new AbortController().signal,
-      })
-
+      expect(location.hash).toBe('#/article/x')
       expect(send).toHaveBeenCalledWith({
         type: 'navigate',
-        route: { page: 'article', slug: 'x' },
+        location: { name: 'article', params: { slug: 'x' } },
       })
     })
   })

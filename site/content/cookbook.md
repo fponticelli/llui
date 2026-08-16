@@ -757,29 +757,23 @@ pointer events and computes the live DOM index on each drag start.
 
 ## Routing
 
-### Structured Route Definitions
+### Named Route Definitions
 
 ```typescript
-import { createRouter, route, param, rest } from '@llui/router'
+import { createRouter, route, routeCodec } from '@llui/router'
+import { z } from 'zod'
 
-const router = createRouter<Route>([
-  route([], () => ({ page: 'home' })),
-  route(['search'], { query: ['q', 'p'] }, ({ q, p }) => ({
-    page: 'search',
-    q: q ?? '',
-    p: p ? parseInt(p) : 1,
-  })),
-  route([param('owner'), param('name')], ({ owner, name }) => ({ page: 'repo', owner, name })),
-  route([param('owner'), param('name'), 'tree', rest('path')], ({ owner, name, path }) => ({
-    page: 'tree',
-    owner,
-    name,
-    path,
-  })),
-])
+const page = routeCodec(z.coerce.number().int().positive(), String)
+
+const router = createRouter({
+  home: route('/'),
+  search: route('/search', { query: { page }, defaults: { page: 1 } }),
+  repo: route('/:owner/:repo'),
+  tree: route('/:owner/:repo/tree/*path'),
+})
 ```
 
-Routes are bidirectional -- `router.match('/search?q=foo')` parses, `router.href({ page: 'search', q: 'foo', p: 1 })` formats.
+Routes are bidirectional: `router.match('/search?page=2')` returns a normalized `{ name, params }` location, while `router.href('search', { page: 2 })` generates its canonical URL. Route locations contain URL identity only; fetched and loading data belongs in page state.
 
 ### Navigation Links
 
@@ -788,7 +782,7 @@ import { connectRouter } from '@llui/router/connect'
 const routing = connectRouter(router)
 
 // In views:
-routing.link(send, { page: 'home' }, { class: 'nav-link' }, [text('Home')])
+routing.link(send, 'home', { class: 'nav-link' }, [text('Home')])
 ```
 
 `routing.link` renders `<a>` with correct href and handles click (`preventDefault` + send navigate message + pushState).
@@ -798,7 +792,7 @@ routing.link(send, { page: 'home' }, { class: 'nav-link' }, [text('Home')])
 ```typescript
 view: ({ state, send }) => [
   ...routing.listener(send), // listens for popstate/hashchange
-  branch(state.at('route').at('page'), {
+  branch(state.at('location').at('name'), {
     home: () => homePage(state, send),
     search: () => searchPage(state, send),
     repo: () => repoPage(state, send),

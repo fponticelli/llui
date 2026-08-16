@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createRouter, route, param } from '../src/index'
+import { createRouter, route } from '../src/index'
 import { connectRouter } from '../src/connect'
 import type { ConnectOptions } from '../src/connect'
 import { mountApp, component, text } from '@llui/dom'
@@ -11,21 +11,16 @@ import { mountApp, component, text } from '@llui/dom'
 // back/forward trail, because the corruption is only visible in the entries the
 // user can still reach — not in the URL right after the block.
 
-type Route =
-  | { page: 'home' }
-  | { page: 'admin' }
-  | { page: 'other' }
-  | { page: 'article'; slug: string }
+const registry = {
+  home: route('/'),
+  admin: route('/admin'),
+  other: route('/other'),
+  article: route('/article/:slug'),
+}
+type Registry = typeof registry
 
-const defs = () => [
-  route<Route>([], () => ({ page: 'home' })),
-  route<Route>(['admin'], () => ({ page: 'admin' })),
-  route<Route>(['other'], () => ({ page: 'other' })),
-  route<Route>(['article', param('slug')], ({ slug }) => ({ page: 'article', slug: slug! })),
-]
-
-const hashRouter = () => createRouter<Route>(defs())
-const historyRouter = () => createRouter<Route>(defs(), { mode: 'history' })
+const hashRouter = () => createRouter(registry)
+const historyRouter = () => createRouter(registry, { mode: 'history' })
 
 /** Let jsdom deliver the events queued by a synchronous URL write. */
 const settle = () => new Promise((r) => setTimeout(r, 10))
@@ -104,7 +99,7 @@ afterEach(() => {
   while (mountedListeners.length > 0) mountedListeners.pop()!()
 })
 
-function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
+function mountListener(routing: ReturnType<typeof connectRouter<Registry>>) {
   const send = vi.fn()
   const container = document.createElement('div')
   const App = component({
@@ -126,9 +121,23 @@ function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
   return { send, dispose }
 }
 
-function navigate(routing: ReturnType<typeof connectRouter<Route>>, to: Route) {
+function navigate(
+  routing: ReturnType<typeof connectRouter<Registry>>,
+  name: 'home' | 'admin' | 'other',
+): void
+function navigate(
+  routing: ReturnType<typeof connectRouter<Registry>>,
+  name: 'article',
+  params: { slug: string },
+): void
+function navigate(
+  routing: ReturnType<typeof connectRouter<Registry>>,
+  name: keyof Registry,
+  params?: { slug: string },
+): void {
+  const effect = name === 'article' ? routing.navigate('article', params!) : routing.navigate(name)
   routing.handleEffect({
-    effect: routing.navigate(to),
+    effect,
     send: vi.fn(),
     signal: new AbortController().signal,
   })
@@ -152,17 +161,17 @@ describe('#103 blocked back — history mode', () => {
     // The issue's exact repro: load on a state-less entry, push, pop back onto
     // it (allowed — must resync the index), push again, then block the back.
     const routing = connectRouter(historyRouter(), {
-      beforeLeave: (from) => from.page !== 'article',
+      beforeLeave: (from) => from.name !== 'article',
     })
     const { dispose } = mountListener(routing)
 
-    navigate(routing, { page: 'admin' })
+    navigate(routing, 'admin')
     expect(location.pathname).toBe('/admin')
 
     history.back()
     expect(await waitForUrl(path, '/')).toBe('/') // allowed — leaving admin is fine
 
-    navigate(routing, { page: 'article', slug: 'x' })
+    navigate(routing, 'article', { slug: 'x' })
     expect(location.pathname).toBe('/article/x')
 
     history.back()
@@ -179,7 +188,7 @@ describe('#103 blocked back — history mode', () => {
     // delta, and left the flag armed — swallowing the user's NEXT genuine pop.
     history.replaceState(stamp(5), '', '/')
     const routing = connectRouter(historyRouter(), {
-      beforeEnter: (to) => (to.page === 'article' ? false : undefined),
+      beforeEnter: (to) => (to.name === 'article' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
 
@@ -195,7 +204,7 @@ describe('#103 blocked back — history mode', () => {
     history.replaceState(stamp(5), '', '/other')
     window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(5) }))
     expect(send).toHaveBeenCalledTimes(1)
-    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'other' } })
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', location: { name: 'other', params: {} } })
 
     goSpy.mockRestore()
     dispose()
@@ -209,7 +218,7 @@ describe('#103 blocked back — history mode', () => {
     // the same stuck-flag failure the boolean had (#103).
     history.replaceState(stamp(2), '', '/other')
     const routing = connectRouter(historyRouter(), {
-      beforeEnter: (to) => (to.page === 'article' ? false : undefined),
+      beforeEnter: (to) => (to.name === 'article' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
     const goSpy = vi.spyOn(history, 'go').mockImplementation(() => {})
@@ -225,14 +234,20 @@ describe('#103 blocked back — history mode', () => {
     history.replaceState(stamp(0), '', '/other')
     window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(0) }))
     expect(send).toHaveBeenCalledTimes(1)
-    expect(send).toHaveBeenLastCalledWith({ type: 'navigate', route: { page: 'other' } })
+    expect(send).toHaveBeenLastCalledWith({
+      type: 'navigate',
+      location: { name: 'other', params: {} },
+    })
 
     // ...and the arm must be gone, or this one — which DOES carry the index the
     // restore was waiting for — is swallowed instead of dispatching.
     history.replaceState(stamp(2), '', '/admin')
     window.dispatchEvent(new PopStateEvent('popstate', { state: stamp(2) }))
     expect(send).toHaveBeenCalledTimes(2)
-    expect(send).toHaveBeenLastCalledWith({ type: 'navigate', route: { page: 'admin' } })
+    expect(send).toHaveBeenLastCalledWith({
+      type: 'navigate',
+      location: { name: 'admin', params: {} },
+    })
 
     goSpy.mockRestore()
     dispose()
@@ -247,7 +262,7 @@ describe('#103 blocked back — history mode', () => {
     // just blocked: #103's original symptom, re-reachable.
     history.replaceState(stamp(2), '', '/other')
     const routing = connectRouter(historyRouter(), {
-      beforeEnter: (to) => (to.page === 'article' ? false : undefined),
+      beforeEnter: (to) => (to.name === 'article' ? false : undefined),
     })
     const { dispose } = mountListener(routing)
     const goSpy = vi.spyOn(history, 'go').mockImplementation(() => {})
@@ -259,7 +274,7 @@ describe('#103 blocked back — history mode', () => {
 
     // The app navigates before the restore lands: the new entry sits directly
     // above the one we are STANDING on, so it is 2 — never 3.
-    navigate(routing, { page: 'admin' })
+    navigate(routing, 'admin')
     expect(history.state).toMatchObject({ __llui_idx: 2 })
 
     // …and a later blocked back is reachable: delta 1, not an overshoot of 2.
@@ -274,15 +289,15 @@ describe('#103 blocked back — history mode', () => {
 
   it('keeps history.length and the forward entries across a blocked back', async () => {
     let blockAdmin = false
-    const options: ConnectOptions<Route> = {
-      beforeEnter: (to) => (blockAdmin && to.page === 'admin' ? false : undefined),
+    const options: ConnectOptions<Registry> = {
+      beforeEnter: (to) => (blockAdmin && to.name === 'admin' ? false : undefined),
     }
     const routing = connectRouter(historyRouter(), options)
     const { dispose } = mountListener(routing)
 
-    navigate(routing, { page: 'admin' })
-    navigate(routing, { page: 'other' })
-    navigate(routing, { page: 'article', slug: 'x' })
+    navigate(routing, 'admin')
+    navigate(routing, 'other')
+    navigate(routing, 'article', { slug: 'x' })
     const lengthBefore = history.length
 
     blockAdmin = true
@@ -316,15 +331,15 @@ describe('#103 blocked back — hash mode', () => {
     // `location.hash = restore` PUSHES by construction: it grew the stack on
     // every block and truncated every forward entry above the blocked one.
     let blockAdmin = false
-    const options: ConnectOptions<Route> = {
-      beforeEnter: (to) => (blockAdmin && to.page === 'admin' ? false : undefined),
+    const options: ConnectOptions<Registry> = {
+      beforeEnter: (to) => (blockAdmin && to.name === 'admin' ? false : undefined),
     }
     const routing = connectRouter(hashRouter(), options)
     const { dispose } = mountListener(routing)
 
-    navigate(routing, { page: 'admin' })
-    navigate(routing, { page: 'other' })
-    navigate(routing, { page: 'article', slug: 'x' })
+    navigate(routing, 'admin')
+    navigate(routing, 'other')
+    navigate(routing, 'article', { slug: 'x' })
     expect(location.hash).toBe('#/article/x')
     const lengthBefore = history.length
 
@@ -361,7 +376,7 @@ describe('#103 blocked back — hash mode', () => {
 
     let blockHome = false
     const routing = connectRouter(hashRouter(), {
-      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+      beforeEnter: (to) => (blockHome && to.name === 'home' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
 
@@ -407,7 +422,7 @@ describe('#103 blocked back — hash mode', () => {
     // "treat everything as unknown, always" would pass this file.
     let blockHome = false
     const routing = connectRouter(hashRouter(), {
-      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+      beforeEnter: (to) => (blockHome && to.name === 'home' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
 
@@ -435,8 +450,8 @@ describe('#103 blocked back — hash mode', () => {
     // carry their positions, so a block between them is still undone by a
     // traversal. Push a pair of them and block the back onto the seeded root.
     blockHome = false
-    navigate(routing, { page: 'other' })
-    navigate(routing, { page: 'admin' })
+    navigate(routing, 'other')
+    navigate(routing, 'admin')
     await settle()
 
     blockHome = true
@@ -466,7 +481,7 @@ describe('#103 blocked back — hash mode', () => {
 
     const routing = connectRouter(hashRouter())
     routing.handleEffect({
-      effect: routing.replace({ page: 'admin' }),
+      effect: routing.replace('admin'),
       send: vi.fn(),
       signal: new AbortController().signal,
     })
@@ -478,12 +493,12 @@ describe('#103 blocked back — hash mode', () => {
   it('does not dispatch for the blocked pop or for its restore', async () => {
     let blockAdmin = false
     const routing = connectRouter(hashRouter(), {
-      beforeEnter: (to) => (blockAdmin && to.page === 'admin' ? false : undefined),
+      beforeEnter: (to) => (blockAdmin && to.name === 'admin' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
 
-    navigate(routing, { page: 'admin' })
-    navigate(routing, { page: 'other' })
+    navigate(routing, 'admin')
+    navigate(routing, 'other')
     await settle()
     send.mockClear()
 
@@ -526,7 +541,7 @@ describe('#150 history that grew behind the router — hash mode', () => {
    * `connectRouter` seeding the one it loads on (`#/admin`, index 0), then one
    * entry of foreign growth above it and a traversal back down onto it.
    */
-  async function grownBehindTheRouter(options?: ConnectOptions<Route>) {
+  async function grownBehindTheRouter(options?: ConnectOptions<Registry>) {
     location.hash = '#/'
     await settle()
     location.hash = '#/other'
@@ -558,7 +573,7 @@ describe('#150 history that grew behind the router — hash mode', () => {
     // and unknowable, so nothing at all is written.
     expect(stampedIndex(history.state)).toBeUndefined()
     // The navigation itself is unaffected — only the bookkeeping is refused.
-    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'other' } })
+    expect(send).toHaveBeenCalledWith({ type: 'navigate', location: { name: 'other', params: {} } })
 
     dispose()
   })
@@ -566,7 +581,7 @@ describe('#150 history that grew behind the router — hash mode', () => {
   it('a later blocked back stays put instead of traversing past the blocked entry', async () => {
     let blockOther = false
     const { send, dispose } = await grownBehindTheRouter({
-      beforeEnter: (to) => (blockOther && to.page === 'other' ? false : undefined),
+      beforeEnter: (to) => (blockOther && to.name === 'other' ? false : undefined),
     })
 
     history.back() // → `#/other` (unstamped → UNKNOWN)
@@ -613,17 +628,17 @@ describe('#150 history that grew behind the router — HISTORY mode', () => {
   it('opens a new run above a foreign pushState instead of numbering through it', async () => {
     let blockOther = false
     const routing = connectRouter(historyRouter(), {
-      beforeEnter: (to) => (blockOther && to.page === 'other' ? false : undefined),
+      beforeEnter: (to) => (blockOther && to.name === 'other' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
 
-    navigate(routing, { page: 'other' })
+    navigate(routing, 'other')
     expect(path()).toBe('/other')
 
     // …and the stack grows behind the router's back.
     history.pushState({ foreign: 'analytics' }, '', '/foreign')
 
-    navigate(routing, { page: 'admin' })
+    navigate(routing, 'admin')
     expect(path()).toBe('/admin')
     send.mockClear()
 
@@ -670,7 +685,7 @@ describe('#150 a MULTI-ENTRY blocked traversal — hash mode', () => {
   it('refuses a blocked go(-2) that spans a hand-edited entry, rather than landing on it', async () => {
     let blockHome = false
     const routing = connectRouter(hashRouter(), {
-      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+      beforeEnter: (to) => (blockHome && to.name === 'home' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
 
@@ -680,7 +695,7 @@ describe('#150 a MULTI-ENTRY blocked traversal — hash mode', () => {
     await settle()
     expect(stampedIndex(history.state)).toBeUndefined()
 
-    navigate(routing, { page: 'admin' })
+    navigate(routing, 'admin')
     await settle()
     expect(hash()).toBe('#/admin')
     send.mockClear()
@@ -723,22 +738,22 @@ describe('#150 a MULTI-ENTRY blocked traversal — hash mode', () => {
     // `#/other`(0,C) | `#/`(1,C)
     let blockAdmin = false
     const routing = connectRouter(hashRouter(), {
-      beforeEnter: (to) => (blockAdmin && to.page === 'admin' ? false : undefined),
+      beforeEnter: (to) => (blockAdmin && to.name === 'admin' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
 
     location.hash = '#/other'
     expect(await waitForUrl(hash, '#/other')).toBe('#/other')
     await settle()
-    navigate(routing, { page: 'admin' })
-    navigate(routing, { page: 'article', slug: 'x' })
+    navigate(routing, 'admin')
+    navigate(routing, 'article', { slug: 'x' })
     await settle()
 
     location.hash = '#/article/y'
     expect(await waitForUrl(hash, '#/article/y')).toBe('#/article/y')
     await settle()
-    navigate(routing, { page: 'other' })
-    navigate(routing, { page: 'home' })
+    navigate(routing, 'other')
+    navigate(routing, 'home')
     await settle()
     expect(hash()).toBe('#/')
     send.mockClear()
@@ -762,12 +777,12 @@ describe('#150 a MULTI-ENTRY blocked traversal — hash mode', () => {
     // a single-entry one, and is undone the same way.
     let blockHome = false
     const routing = connectRouter(hashRouter(), {
-      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+      beforeEnter: (to) => (blockHome && to.name === 'home' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
 
-    navigate(routing, { page: 'other' })
-    navigate(routing, { page: 'admin' })
+    navigate(routing, 'other')
+    navigate(routing, 'admin')
     await settle()
     expect(hash()).toBe('#/admin')
     send.mockClear()

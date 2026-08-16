@@ -24,13 +24,16 @@
   "peerDependencies": {
     "@llui/dom": "workspace:^"
   },
+  "dependencies": {
+    "@standard-schema/spec": "^1.1.0"
+  },
   "devDependencies": {
     "@llui/dom": "workspace:*",
     "typescript": "^6.0.0",
     "vitest": "^4.1.2"
   },
   "sideEffects": false,
-  "description": "LLui router — structured path matching, history/hash mode, link helper",
+  "description": "LLui router — named type-safe routes, Standard Schema codecs, history/hash mode",
   "keywords": [
     "llui",
     "router",

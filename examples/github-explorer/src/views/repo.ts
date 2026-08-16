@@ -1,64 +1,65 @@
 import { div, h1, h3, a, p, span, text, show, branch, each } from '@llui/dom'
-import type { State, Msg, Route, Repo, TreeEntry, Issue } from '../types'
+import type { State, Msg, Page, Repo, TreeEntry, Issue } from '../types'
 import type { Send, Signal, Renderable, Mountable } from '@llui/dom'
 import { routing } from '../router'
 import { readmeView } from './foreign-readme'
 import { codeView } from './foreign-code'
 
-function repoFromRoute(r: Route): Repo | null {
-  if (r.page === 'repo' && r.data.type === 'success') return r.data.data.repo
-  if (r.page === 'tree' && r.data.type === 'success') return r.data.data.repo
+function repoFromPage(page: Page): Repo | null {
+  if (page.page === 'repo' && page.data.type === 'success') return page.data.data.repo
+  if (page.page === 'tree' && page.data.type === 'success') return page.data.data.repo
   return null
 }
 
-/** Extract owner/name from route — always available (from URL, not API) */
-function routeOwnerName(r: Route): { owner: string; name: string } | null {
-  if (r.page === 'repo') return { owner: r.owner, name: r.name }
-  if (r.page === 'tree') return { owner: r.owner, name: r.name }
+/** Extract owner/name from the page — always available (from URL, not API). */
+function pageOwnerName(page: Page): { owner: string; name: string } | null {
+  if (page.page === 'repo') return { owner: page.owner, name: page.name }
+  if (page.page === 'tree') return { owner: page.owner, name: page.name }
   return null
 }
 
-// routing.link needs literal owner/name for href. The Route is read from
+// routing.link needs literal owner/name for href. The Page is read from
 // location.pathname at branch-render time — the URL is current because
 // routing.handleEffect pushes state before the navigate message resolves.
-export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>): Renderable {
-  // owner/name from the current route (literal values for routing.link hrefs)
-  const owner = 'owner' in route ? route.owner : ''
-  const name = 'name' in route ? route.name : ''
+export function repoPage(pageSignal: Signal<Page>, page: Page, send: Send<Msg>): Renderable {
+  // owner/name from the current page (literal values for routing.link hrefs)
+  const owner = 'owner' in page ? page.owner : ''
+  const name = 'name' in page ? page.name : ''
 
   return [
     div({ class: 'repo-header' }, [
       div({ class: 'container' }, [
         h1([
-          text(routeSig.map((r) => routeOwnerName(r)?.owner ?? '')),
+          text(pageSignal.map((page) => pageOwnerName(page)?.owner ?? '')),
           text(' / '),
-          routing.link(
-            send,
-            { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
-            {},
-            [text(routeSig.map((r) => routeOwnerName(r)?.name ?? ''))],
-          ),
+          routing.link(send, 'repoCode', { owner, repo: name }, {}, [
+            text(pageSignal.map((page) => pageOwnerName(page)?.name ?? '')),
+          ]),
         ]),
         div({ class: 'stats' }, [
           span([
             text(
-              routeSig.map(
-                (r) => `★ ${repoFromRoute(r)?.stargazers_count?.toLocaleString() ?? '—'}`,
+              pageSignal.map(
+                (page) => `★ ${repoFromPage(page)?.stargazers_count?.toLocaleString() ?? '—'}`,
               ),
             ),
           ]),
           span([
             text(
-              routeSig.map((r) => `🍴 ${repoFromRoute(r)?.forks_count?.toLocaleString() ?? '—'}`),
+              pageSignal.map(
+                (page) => `🍴 ${repoFromPage(page)?.forks_count?.toLocaleString() ?? '—'}`,
+              ),
             ),
           ]),
           span([
-            text(routeSig.map((r) => `Issues: ${repoFromRoute(r)?.open_issues_count ?? '—'}`)),
+            text(
+              pageSignal.map((page) => `Issues: ${repoFromPage(page)?.open_issues_count ?? '—'}`),
+            ),
           ]),
         ]),
         show(
-          routeSig.map((r) => !!repoFromRoute(r)?.description),
-          () => [p([text(routeSig.map((r) => repoFromRoute(r)?.description ?? ''))])],
+          pageSignal.map((page) => !!repoFromPage(page)?.description),
+          () => [p([text(pageSignal.map((page) => repoFromPage(page)?.description ?? ''))])],
         ),
       ]),
     ]),
@@ -67,17 +68,23 @@ export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>)
       div({ class: 'container' }, [
         routing.link(
           send,
-          { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
+          'repoCode',
+          { owner, repo: name },
           {
-            class: routeSig.map((r) => (r.page !== 'repo' || r.tab === 'code' ? 'active' : '')),
+            class: pageSignal.map((page) =>
+              page.page !== 'repo' || page.tab === 'code' ? 'active' : '',
+            ),
           },
           [text('Code')],
         ),
         routing.link(
           send,
-          { page: 'repo', owner, name, tab: 'issues', data: { type: 'loading' } },
+          'repoIssues',
+          { owner, repo: name },
           {
-            class: routeSig.map((r) => (r.page === 'repo' && r.tab === 'issues' ? 'active' : '')),
+            class: pageSignal.map((page) =>
+              page.page === 'repo' && page.tab === 'issues' ? 'active' : '',
+            ),
           },
           [text('Issues')],
         ),
@@ -86,11 +93,12 @@ export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>)
     // Content
     div({ class: 'container' }, [
       branch(
-        routeSig.map((r) => {
-          if (r.data.type === 'loading') return 'loading'
-          if (r.data.type === 'failure') return 'error'
-          if (r.page === 'repo' && r.tab === 'issues') return 'issues'
-          if (r.page === 'tree' && r.data.type === 'success' && 'file' in r.data.data) return 'file'
+        pageSignal.map((page) => {
+          if (page.data.type === 'loading') return 'loading'
+          if (page.data.type === 'failure') return 'error'
+          if (page.page === 'repo' && page.tab === 'issues') return 'issues'
+          if (page.page === 'tree' && page.data.type === 'success' && 'file' in page.data.data)
+            return 'file'
           return 'code'
         }),
         {
@@ -98,9 +106,9 @@ export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>)
           error: () => [
             div({ class: 'error' }, [
               text(
-                routeSig.map((r) => {
-                  if (r.data.type !== 'failure') return ''
-                  const err = r.data.error
+                pageSignal.map((page) => {
+                  if (page.data.type !== 'failure') return ''
+                  const err = page.data.error
                   switch (err.kind) {
                     case 'notfound':
                       return 'Repository not found.'
@@ -122,29 +130,26 @@ export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>)
             ]),
           ],
           code: () => [
-            ...breadcrumb(route, send),
-            ...fileTree(routeSig, send),
-            ...readmeView(routeSig),
+            ...breadcrumb(page, send),
+            ...fileTree(pageSignal, send),
+            ...readmeView(pageSignal),
           ],
-          file: () => [...breadcrumb(route, send), ...codeView(routeSig)],
-          issues: () => issuesList(routeSig),
+          file: () => [...breadcrumb(page, send), ...codeView(pageSignal)],
+          issues: () => issuesList(pageSignal),
         },
       ),
     ]),
   ]
 }
 
-function breadcrumb(currentRoute: Route, send: Send<Msg>): Renderable {
-  const route = currentRoute
-  if (route.page !== 'tree') return []
-  const { owner, name, path } = route
+function breadcrumb(page: Page, send: Send<Msg>): Renderable {
+  if (page.page !== 'tree') return []
+  const { owner, name, path } = page
   if (!path) return []
 
   const parts = path.split('/')
   const crumbs: Mountable[] = [
-    routing.link(send, { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } }, {}, [
-      text(name),
-    ]),
+    routing.link(send, 'repoCode', { owner, repo: name }, {}, [text(name)]),
   ]
 
   for (let i = 0; i < parts.length; i++) {
@@ -155,12 +160,9 @@ function breadcrumb(currentRoute: Route, send: Send<Msg>): Renderable {
       crumbs.push(span([text(parts[i]!)]))
     } else {
       crumbs.push(
-        routing.link(
-          send,
-          { page: 'tree', owner, name, path: partial, data: { type: 'loading' } },
-          {},
-          [text(parts[i]!)],
-        ),
+        routing.link(send, 'tree', { owner, repo: name, path: partial.split('/') }, {}, [
+          text(parts[i]!),
+        ]),
       )
     }
   }
@@ -168,16 +170,16 @@ function breadcrumb(currentRoute: Route, send: Send<Msg>): Renderable {
   return [div({ class: 'breadcrumb' }, crumbs)]
 }
 
-function fileTree(routeSig: Signal<Route>, send: Send<Msg>): Renderable {
+function fileTree(pageSignal: Signal<Page>, send: Send<Msg>): Renderable {
   return [
     div({ class: 'file-tree' }, [
       each(
-        routeSig.map((r) => {
+        pageSignal.map((page) => {
           let tree: TreeEntry[] = []
-          if (r.page === 'repo' && r.tab === 'code' && r.data.type === 'success')
-            tree = r.data.data.tree
-          else if (r.page === 'tree' && r.data.type === 'success' && 'tree' in r.data.data)
-            tree = r.data.data.tree
+          if (page.page === 'repo' && page.tab === 'code' && page.data.type === 'success')
+            tree = page.data.data.tree
+          else if (page.page === 'tree' && page.data.type === 'success' && 'tree' in page.data.data)
+            tree = page.data.data.tree
           // Sort: directories first, then alphabetical
           return [...tree].sort((a, b) => {
             if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
@@ -213,22 +215,22 @@ function fileTree(routeSig: Signal<Route>, send: Send<Msg>): Renderable {
   ]
 }
 
-function issuesList(routeSig: Signal<Route>): Renderable {
+function issuesList(pageSignal: Signal<Page>): Renderable {
   return [
     show(
-      routeSig.map(
-        (r) =>
-          r.page === 'repo' &&
-          r.tab === 'issues' &&
-          r.data.type === 'success' &&
-          r.data.data.issues.length === 0,
+      pageSignal.map(
+        (page) =>
+          page.page === 'repo' &&
+          page.tab === 'issues' &&
+          page.data.type === 'success' &&
+          page.data.data.issues.length === 0,
       ),
       () => [div({ class: 'loading' }, [text('No open issues.')])],
     ),
     each(
-      routeSig.map((r) => {
-        if (r.page === 'repo' && r.tab === 'issues' && r.data.type === 'success')
-          return r.data.data.issues
+      pageSignal.map((page) => {
+        if (page.page === 'repo' && page.tab === 'issues' && page.data.type === 'success')
+          return page.data.data.issues
         return [] as Issue[]
       }),
       {

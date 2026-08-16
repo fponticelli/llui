@@ -43,7 +43,7 @@ export interface Issue {
   labels: Array<{ name: string; color: string }>
 }
 
-// ── Route ────────────────────────────────────────────────────────
+// ── Page ────────────────────────────────────────────────────────
 
 export type SearchData = { repos: Repo[]; total: number }
 // `repo` is `Repo | null` because the sub-resource responses (contents / readme /
@@ -55,7 +55,8 @@ export type RepoIssuesData = { repo: Repo | null; issues: Issue[] }
 export type TreeDirData = { repo: Repo | null; tree: TreeEntry[] }
 export type TreeFileData = { repo: Repo | null; file: FileContent }
 
-export type Route =
+export type Page =
+  | { page: 'notFound'; url: string; data: { type: 'idle' } }
   | { page: 'search'; q: string; p: number; data: Async<SearchData, ApiError> }
   | { page: 'repo'; owner: string; name: string; tab: 'code'; data: Async<RepoCodeData, ApiError> }
   | {
@@ -77,11 +78,12 @@ export type Route =
 
 import type { Async, ApiError, Effect as BuiltinEffect } from '@llui/effects'
 import type { RouterEffect } from '@llui/router/connect'
+import type { Location } from './router'
 
 export type { Async, ApiError }
 
 export interface State {
-  route: Route
+  page: Page
   query: string
 }
 
@@ -89,7 +91,9 @@ export interface State {
 
 export type Msg =
   /** @intent("Navigate to a route") @alwaysAffordable */
-  | { type: 'navigate'; route: Route }
+  | { type: 'navigate'; location: Location }
+  /** @intent("Show an unmatched browser URL") @alwaysAffordable */
+  | { type: 'unmatched'; url: string }
   /** @intent("Update the search query") */
   | { type: 'setQuery'; value: string }
   /** @intent("Submit the current search query") */

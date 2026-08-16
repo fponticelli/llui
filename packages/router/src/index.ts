@@ -1,784 +1,1103 @@
-// ── Path Segment Types ───────────────────────────────────────────
+import type { StandardSchemaV1 } from '@standard-schema/spec'
 
-interface ParamSegment {
-  __kind: 'param'
-  name: string
+export type { StandardSchemaV1 } from '@standard-schema/spec'
+
+type AnySchema = StandardSchemaV1<unknown, unknown>
+
+/** A synchronous Standard Schema validator paired with its canonical URL formatter. */
+export interface RouteCodec<Output, Multiple extends boolean = false> {
+  readonly schema: StandardSchemaV1<unknown, Output>
+  readonly format: (value: Output) => Multiple extends true ? readonly string[] : string
+  readonly multiple: Multiple
+}
+
+/** Define a scalar path or query route codec. */
+export function routeCodec<Schema extends StandardSchemaV1>(
+  schema: Schema,
+  format: (value: StandardSchemaV1.InferOutput<Schema>) => string,
+): RouteCodec<StandardSchemaV1.InferOutput<Schema>> {
+  return { schema, format, multiple: false }
+}
+
+/** Define a route codec whose URL representation is an ordered repeated value. */
+export function repeatedRouteCodec<Schema extends StandardSchemaV1>(
+  schema: Schema,
+  format: (value: StandardSchemaV1.InferOutput<Schema>) => readonly string[],
+): RouteCodec<StandardSchemaV1.InferOutput<Schema>, true> {
+  return { schema, format, multiple: true }
+}
+
+interface AnyCodec {
+  readonly schema: StandardSchemaV1<unknown, unknown>
+  readonly format: (value: never) => string | readonly string[]
+  readonly multiple: boolean
+}
+type CodecMap = Readonly<Record<string, AnyCodec | undefined>>
+type Simplify<T> = { [K in keyof T]: T[K] } & {}
+type EmptyRecord = Readonly<Record<never, never>>
+
+type SegmentName<Segment extends string> = Segment extends `:${infer Name}?`
+  ? Name
+  : Segment extends `:${infer Name}`
+    ? Name
+    : Segment extends `*${infer Name}`
+      ? Name
+      : never
+
+type PathNames<Path extends string> = Path extends `${infer Head}/${infer Tail}`
+  ? SegmentName<Head> | PathNames<Tail>
+  : SegmentName<Path>
+
+type OptionalPathNames<Path extends string> = Path extends `${infer Head}/${infer Tail}`
+  ? (Head extends `:${infer Name}?` ? Name : never) | OptionalPathNames<Tail>
+  : Path extends `:${infer Name}?`
+    ? Name
+    : never
+
+type RestPathNames<Path extends string> = Path extends `${infer Head}/${infer Tail}`
+  ? (Head extends `*${infer Name}` ? Name : never) | RestPathNames<Tail>
+  : Path extends `*${infer Name}`
+    ? Name
+    : never
+
+type CodecOutput<Codec> = Codec extends RouteCodec<infer Output, boolean> ? Output : never
+
+type PathValue<
+  Path extends string,
+  Params extends CodecMap,
+  Name extends PathNames<Path>,
+> = Name extends keyof Params
+  ? CodecOutput<Params[Name]>
+  : Name extends RestPathNames<Path>
+    ? string[]
+    : string
+
+type ParameterValues<Path extends string, Params extends CodecMap, Query extends CodecMap> = {
+  [Name in PathNames<Path> | keyof Query]: Name extends PathNames<Path>
+    ? PathValue<Path, Params, Name>
+    : Name extends keyof Query
+      ? CodecOutput<Query[Name]>
+      : never
+}
+
+type NormalizedParams<
+  Path extends string,
+  Params extends CodecMap,
+  Query extends CodecMap,
+  Defaults extends Partial<ParameterValues<Path, Params, Query>>,
+> = Simplify<
+  {
+    [Name in Exclude<
+      keyof ParameterValues<Path, Params, Query>,
+      Exclude<OptionalPathNames<Path> | keyof Query, keyof Defaults>
+    >]: ParameterValues<Path, Params, Query>[Name]
+  } & {
+    [Name in Extract<
+      keyof ParameterValues<Path, Params, Query>,
+      Exclude<OptionalPathNames<Path> | keyof Query, keyof Defaults>
+    >]?: ParameterValues<Path, Params, Query>[Name]
+  }
+>
+
+type OptionalGenerationNames<
+  Path extends string,
+  Params extends CodecMap,
+  Query extends CodecMap,
+  Defaults extends Partial<ParameterValues<Path, Params, Query>>,
+> = OptionalPathNames<Path> | keyof Query | keyof Defaults
+
+type GenerationParams<
+  Path extends string,
+  Params extends CodecMap,
+  Query extends CodecMap,
+  Defaults extends Partial<ParameterValues<Path, Params, Query>>,
+> = Simplify<
+  {
+    [Name in Exclude<
+      keyof ParameterValues<Path, Params, Query>,
+      OptionalGenerationNames<Path, Params, Query, Defaults>
+    >]: ParameterValues<Path, Params, Query>[Name]
+  } & {
+    [Name in Extract<
+      keyof ParameterValues<Path, Params, Query>,
+      OptionalGenerationNames<Path, Params, Query, Defaults>
+    >]?: ParameterValues<Path, Params, Query>[Name]
+  }
+>
+
+interface StaticSegment {
+  readonly kind: 'static'
+  readonly value: string
+}
+
+interface ParameterSegment {
+  readonly kind: 'parameter'
+  readonly name: string
+  readonly optional: boolean
 }
 
 interface RestSegment {
-  __kind: 'rest'
-  name: string
+  readonly kind: 'rest'
+  readonly name: string
 }
 
-export type Segment = string | ParamSegment | RestSegment
+type Segment = StaticSegment | ParameterSegment | RestSegment
 
-/** Named path parameter: matches one segment */
-export function param(name: string): ParamSegment {
-  return { __kind: 'param', name }
+/** One named route's typed URL contract. Names are supplied by the registry. */
+export interface RouteDefinition<
+  Path extends string = string,
+  Params extends CodecMap = CodecMap,
+  Query extends Readonly<Record<string, AnyCodec>> = Readonly<Record<string, AnyCodec>>,
+  Defaults extends Partial<ParameterValues<Path, Params, Query>> = Partial<
+    ParameterValues<Path, Params, Query>
+  >,
+> {
+  readonly path: Path
+  readonly params: Params
+  readonly query: Query
+  readonly defaults: Defaults
+  readonly refine?: StandardSchemaV1
 }
 
-/** Rest parameter: matches remaining segments */
-export function rest(name: string): RestSegment {
-  return { __kind: 'rest', name }
+type RouteOptionShape<Path extends string> = {
+  readonly params?: Partial<Record<PathNames<Path>, AnyCodec>>
+  readonly query?: Readonly<Record<string, AnyCodec>>
+  readonly defaults?: Readonly<Record<string, unknown>>
+  readonly refine?: StandardSchemaV1
 }
 
-// ── Route Definition ─────────────────────────────────────────────
-
-interface RouteDefOptions {
-  query?: string[]
+type OptionParams<Options> = Options extends { readonly params: infer Params extends CodecMap }
+  ? Params
+  : EmptyRecord
+type OptionQuery<Options> = Options extends {
+  readonly query: infer Query extends Readonly<Record<string, AnyCodec>>
 }
-
-export interface RouteDef<R> {
-  segments: Segment[]
-  build: (params: Record<string, string>) => R
-  queryKeys: string[]
-  /** Optional manual toPath override */
-  toPath?: (route: R) => string
+  ? Query
+  : EmptyRecord
+type OptionDefaults<Options> = Options extends {
+  readonly defaults: infer Defaults extends Readonly<Record<string, unknown>>
 }
+  ? Defaults
+  : EmptyRecord
 
-/**
- * Define a route with structured path segments.
- *
- * @example
- * route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug }))
- * route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' }))
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function route<R = any>(
-  segments: Segment[],
-  buildOrOpts: ((params: Record<string, string>) => R) | RouteDefOptions,
-  buildOrToPath?: ((params: Record<string, string>) => R) | { toPath: (route: R) => string },
-): RouteDef<R> {
-  if (typeof buildOrOpts === 'function') {
-    const tp = buildOrToPath && typeof buildOrToPath === 'object' ? buildOrToPath.toPath : undefined
-    return { segments, build: buildOrOpts, queryKeys: [], toPath: tp }
+type CheckedDefaults<Path extends string, Options> = Extract<
+  OptionDefaults<Options>,
+  Partial<ParameterValues<Path, OptionParams<Options>, OptionQuery<Options>>>
+>
+
+type OptionRefinement<Options> = Options extends {
+  readonly refine: infer Refinement extends StandardSchemaV1
+}
+  ? Refinement
+  : never
+
+type ExactKeys<Expected, Actual> =
+  Exclude<keyof Expected, keyof Actual> extends never
+    ? Exclude<keyof Actual, keyof Expected> extends never
+      ? unknown
+      : never
+    : never
+
+export function route<const Path extends string>(
+  path: Path,
+): RouteDefinition<Path, EmptyRecord, EmptyRecord, EmptyRecord>
+export function route<const Path extends string, const Options extends RouteOptionShape<Path>>(
+  path: Path,
+  options: Options & {
+    readonly params?: OptionParams<Options> &
+      Record<Exclude<keyof OptionParams<Options>, PathNames<Path>>, never>
+    readonly query?: OptionQuery<Options> &
+      Record<Extract<keyof OptionQuery<Options>, PathNames<Path>>, never>
+    readonly defaults?: Partial<
+      ParameterValues<Path, OptionParams<Options>, OptionQuery<Options>>
+    > &
+      Record<
+        Exclude<
+          keyof OptionDefaults<Options>,
+          keyof ParameterValues<Path, OptionParams<Options>, OptionQuery<Options>>
+        >,
+        never
+      >
+    readonly refine?: OptionRefinement<Options> &
+      StandardSchemaV1<
+        NormalizedParams<
+          Path,
+          OptionParams<Options>,
+          OptionQuery<Options>,
+          CheckedDefaults<Path, Options>
+        >,
+        NormalizedParams<
+          Path,
+          OptionParams<Options>,
+          OptionQuery<Options>,
+          CheckedDefaults<Path, Options>
+        >
+      > &
+      ExactKeys<
+        NormalizedParams<
+          Path,
+          OptionParams<Options>,
+          OptionQuery<Options>,
+          CheckedDefaults<Path, Options>
+        >,
+        StandardSchemaV1.InferOutput<OptionRefinement<Options>>
+      >
+  },
+): RouteDefinition<
+  Path,
+  OptionParams<Options>,
+  OptionQuery<Options>,
+  CheckedDefaults<Path, Options>
+>
+export function route(path: string, rawOptions?: unknown): unknown {
+  const options = (rawOptions ?? {}) as Record<string, unknown>
+  return {
+    path,
+    params: (options.params ?? {}) as CodecMap,
+    query: (options.query ?? {}) as CodecMap,
+    defaults: (options.defaults ?? {}) as Record<string, unknown>,
+    refine: options.refine as StandardSchemaV1 | undefined,
   }
-  const opts = buildOrOpts
-  const build = buildOrToPath as (params: Record<string, string>) => R
-  return { segments, build, queryKeys: opts.query ?? [] }
 }
 
-// ── Router ───────────────────────────────────────────────────────
-
-export interface RouterConfig<R> {
-  mode?: 'hash' | 'history'
-  fallback?: R
-  /**
-   * Base path (history mode only). All matched pathnames must start with it —
-   * a non-matching prefix resolves to `fallback`. `toPath`/`href` prepend it.
-   * Trailing slashes are normalized away, e.g. `'/app/'` → `'/app'`.
-   */
-  base?: string
+interface RouteDefinitionShape {
+  readonly path: string
+  readonly params: Readonly<Record<string, AnyCodec | undefined>>
+  readonly query: Readonly<Record<string, AnyCodec>>
+  readonly defaults: Readonly<Record<string, unknown>>
+  readonly refine?: StandardSchemaV1
 }
 
-export interface Router<R> {
-  /** Match a pathname to a Route. Returns fallback if no match. */
-  match(pathname: string): R
-  /** Format a Route back to a pathname (base prefixed in history mode, no hash prefix). */
-  toPath(route: R): string
-  /** Format a Route to a full href (# prefix in hash mode, base prefix in history mode). */
-  href(route: R): string
-  /** The configured mode */
-  mode: 'hash' | 'history'
-  /** The normalized base path (empty string when none) */
-  base: string
-  /** All route definitions (for iteration) */
-  routes: ReadonlyArray<RouteDef<R>>
-  /** The fallback route */
-  fallback: R
+export type RouteRegistry = Readonly<Record<string, RouteDefinitionShape>>
+
+type DefinitionNormalized<Definition> =
+  Definition extends RouteDefinition<infer Path, infer Params, infer Query, infer Defaults>
+    ? NormalizedParams<Path, Params, Query, Defaults>
+    : never
+
+type DefinitionGeneration<Definition> =
+  Definition extends RouteDefinition<infer Path, infer Params, infer Query, infer Defaults>
+    ? GenerationParams<Path, Params, Query, Defaults>
+    : never
+
+export type RouteLocation<Registry extends RouteRegistry> = {
+  [Name in keyof Registry & string]: {
+    name: Name
+    params: Simplify<DefinitionNormalized<Registry[Name]>>
+  }
+}[keyof Registry & string]
+
+export type RouteDestination<Registry extends RouteRegistry> = {
+  [Name in keyof Registry & string]: keyof DefinitionGeneration<Registry[Name]> extends never
+    ? [name: Name]
+    : [name: Name, params: Simplify<DefinitionGeneration<Registry[Name]>>]
+}[keyof Registry & string]
+
+export type RouteGenerationParams<
+  Registry extends RouteRegistry,
+  Name extends keyof Registry & string,
+> = Simplify<DefinitionGeneration<Registry[Name]>>
+
+type ExactParameters<Expected, Actual extends Expected> = Actual &
+  Record<Exclude<keyof Actual, keyof Expected>, never>
+
+/** The parameter tail for one exact, route-name-specific destination call. */
+export type RouteDestinationArguments<
+  Registry extends RouteRegistry,
+  Name extends keyof Registry & string,
+  Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<Registry, Name>,
+> = keyof RouteGenerationParams<Registry, Name> extends never
+  ? []
+  : [params: ExactParameters<RouteGenerationParams<Registry, Name>, Params>]
+
+export interface RouterConfig {
+  readonly mode?: 'hash' | 'history'
+  /** History-mode base path. */
+  readonly base?: string
 }
 
-/** Per-def selection metadata, computed ONCE at createRouter. */
-interface DefMeta<R> {
-  def: RouteDef<R>
-  /** param + rest segment names — all must be present on a route to select this def */
-  paramKeys: string[]
-  /**
-   * The builder's CONSTANT output fields (e.g. `page`, `tab`): primitive,
-   * non-param, non-query fields whose value did not move when the sample params
-   * did. SAMPLED, therefore only a HEURISTIC — a field that happens to take the
-   * same value for both samples reads as constant even when it is derived. It
-   * orders candidates and breaks ties; the winner is settled by round-tripping
-   * the formatted path (`verifySelection`), never by this map alone.
-   * `null` when the builder threw on sample params.
-   */
-  constants: Record<string, string | number | boolean> | null
-  /**
-   * The def's COMPLETE primitive output, known EXACTLY rather than sampled.
-   * Only defs that read no params at all (no path parameters, no query keys)
-   * qualify: their builder is a pure function of `{}`, so this is the one and
-   * only route they can ever produce. A route that disagrees with it on a field
-   * they both carry provably did not come from this def, which is what lets the
-   * common single-template case skip verification entirely (and keeps `href()`
-   * at zero builder calls). `null` for every param-reading def.
-   */
-  exact: Record<string, string | number | boolean> | null
+export interface Router<Registry extends RouteRegistry> {
+  match(input: string): RouteLocation<Registry> | null
+  location<
+    const Name extends keyof Registry & string,
+    const Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<
+      Registry,
+      Name
+    >,
+  >(
+    name: Name,
+    ...args: RouteDestinationArguments<Registry, Name, Params>
+  ): RouteLocation<Registry>
+  toPath<
+    const Name extends keyof Registry & string,
+    const Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<
+      Registry,
+      Name
+    >,
+  >(
+    name: Name,
+    ...args: RouteDestinationArguments<Registry, Name, Params>
+  ): string
+  href<
+    const Name extends keyof Registry & string,
+    const Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<
+      Registry,
+      Name
+    >,
+  >(
+    name: Name,
+    ...args: RouteDestinationArguments<Registry, Name, Params>
+  ): string
+  readonly mode: 'hash' | 'history'
+  readonly base: string
+  readonly routes: Registry
 }
 
-type Primitive = string | number | boolean
-
-function isPrimitive(v: unknown): v is Primitive {
-  return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'
+interface CompiledVariant {
+  readonly segments: readonly Segment[]
+  readonly specificity: readonly number[]
 }
 
-/** Lexicographic compare of two selection scores; > 0 when `a` is the better fit. */
-function compareScore(a: readonly number[], b: readonly number[]): number {
-  for (let i = 0; i < a.length; i++) {
-    if (a[i]! !== b[i]!) return a[i]! - b[i]!
+interface CompiledDefinition {
+  readonly name: string
+  readonly definition: RouteDefinitionShape
+  readonly segments: readonly Segment[]
+  readonly variants: readonly CompiledVariant[]
+}
+
+const stringSchema: StandardSchemaV1<string> = {
+  '~standard': {
+    version: 1,
+    vendor: '@llui/router',
+    validate: (value) =>
+      typeof value === 'string' ? { value } : { issues: [{ message: 'Expected a string' }] },
+  },
+}
+
+const stringCodec = routeCodec(stringSchema, (value) => value)
+
+function parseTemplate(name: string, definition: RouteDefinitionShape): readonly Segment[] {
+  const path = definition.path
+  if (!path.startsWith('/')) {
+    throw new TypeError(`[@llui/router] Route "${name}" path must start with "/".`)
+  }
+  const rawSegments = path.split('/').filter(Boolean)
+  const seen = new Set<string>()
+  const segments: Segment[] = rawSegments.map((raw, index) => {
+    if (raw.startsWith(':')) {
+      if ((raw.match(/\?/g)?.length ?? 0) > 1 || (raw.includes('?') && !raw.endsWith('?'))) {
+        throw new TypeError(
+          `[@llui/router] Route "${name}" has an invalid optional parameter segment "${raw}".`,
+        )
+      }
+      const optional = raw.endsWith('?')
+      const parameterName = raw.slice(1, optional ? -1 : undefined)
+      assertParameterName(name, parameterName, seen)
+      return { kind: 'parameter', name: parameterName, optional }
+    }
+    if (raw.startsWith('*')) {
+      const parameterName = raw.slice(1)
+      assertParameterName(name, parameterName, seen)
+      if (index !== rawSegments.length - 1) {
+        throw new TypeError(
+          `[@llui/router] Rest parameter "${parameterName}" in route "${name}" must be last.`,
+        )
+      }
+      return { kind: 'rest', name: parameterName }
+    }
+    if (raw.includes('?')) {
+      throw new TypeError(
+        `[@llui/router] Route "${name}" declares query text in its path; use query codecs.`,
+      )
+    }
+    return { kind: 'static', value: decodeLiteral(name, raw) }
+  })
+
+  if (
+    segments.some((segment) => segment.kind === 'parameter' && segment.optional) &&
+    segments.some((segment) => segment.kind === 'rest')
+  ) {
+    throw new TypeError(
+      `[@llui/router] Route "${name}" cannot combine optional and rest parameters because matching would not be bidirectional.`,
+    )
+  }
+
+  const pathNames = new Set(
+    segments.filter((segment) => segment.kind !== 'static').map((segment) => segment.name),
+  )
+  for (const key of Object.keys(definition.params)) {
+    if (!pathNames.has(key)) {
+      throw new TypeError(
+        `[@llui/router] Route "${name}" has a codec for unknown path parameter "${key}".`,
+      )
+    }
+  }
+  for (const key of Object.keys(definition.query)) {
+    if (pathNames.has(key)) {
+      throw new TypeError(
+        `[@llui/router] Route "${name}" declares "${key}" as both a path and query parameter.`,
+      )
+    }
+  }
+  for (const segment of segments) {
+    if (segment.kind === 'static') continue
+    const codec = definition.params[segment.name]
+    if (!codec) continue
+    if (segment.kind === 'rest' && !codec.multiple) {
+      throw new TypeError(
+        `[@llui/router] Rest parameter "${segment.name}" in route "${name}" needs a repeated route codec.`,
+      )
+    }
+    if (segment.kind === 'parameter' && codec.multiple) {
+      throw new TypeError(
+        `[@llui/router] Path parameter "${segment.name}" in route "${name}" needs a scalar route codec.`,
+      )
+    }
+  }
+  for (const [key, value] of Object.entries(definition.defaults)) {
+    const segment = segments.find(
+      (candidate): candidate is ParameterSegment | RestSegment =>
+        candidate.kind !== 'static' && candidate.name === key,
+    )
+    if (segment?.kind === 'parameter' && !segment.optional) {
+      throw new TypeError(
+        `[@llui/router] Default for required path parameter "${key}" in route "${name}" cannot be omitted from its URL.`,
+      )
+    }
+    if (!segment && !(key in definition.query)) {
+      throw new TypeError(
+        `[@llui/router] Route "${name}" has a default for unknown parameter "${key}".`,
+      )
+    }
+    void value
+  }
+  return segments
+}
+
+function assertParameterName(routeName: string, name: string, seen: Set<string>): void {
+  if (!/^[A-Za-z_$][\w$]*$/.test(name)) {
+    throw new TypeError(`[@llui/router] Route "${routeName}" has invalid parameter name "${name}".`)
+  }
+  if (seen.has(name)) {
+    throw new TypeError(`[@llui/router] Route "${routeName}" repeats parameter "${name}".`)
+  }
+  seen.add(name)
+}
+
+function decodeLiteral(routeName: string, literal: string): string {
+  try {
+    return decodeURIComponent(literal)
+  } catch {
+    throw new TypeError(`[@llui/router] Route "${routeName}" contains malformed percent encoding.`)
+  }
+}
+
+function expandVariants(segments: readonly Segment[]): readonly CompiledVariant[] {
+  let variants: Segment[][] = [[]]
+  for (const segment of segments) {
+    if (segment.kind === 'parameter' && segment.optional) {
+      variants = variants.flatMap((variant) => [variant, [...variant, segment]])
+    } else {
+      for (const variant of variants) variant.push(segment)
+    }
+  }
+  return variants.map((variant) => ({
+    segments: variant,
+    specificity: specificityOf(variant),
+  }))
+}
+
+function specificityOf(segments: readonly Segment[]): readonly number[] {
+  return segments.map((segment) => {
+    if (segment.kind === 'static') return 2
+    if (segment.kind === 'parameter') return 1
+    return -1
+  })
+}
+
+function compareSpecificity(a: readonly number[], b: readonly number[]): number {
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0)
+    if (difference !== 0) return difference
   }
   return 0
 }
 
-/** How well the route a URL actually denotes reproduces the route we formatted. */
-interface Fidelity {
-  /**
-   * Fields BOTH routes carry as primitives with DIFFERENT values. This is the
-   * only observation that PROVES the URL denotes a different route, which is
-   * why it is tracked apart from the merely unexplained and dominates the
-   * comparison. The legitimate `/p/:id` vs `/p/:id/edit` contest never produces
-   * one — it is decided entirely by what each def leaves unexplained.
-   */
-  disagreements: number
-  /** +1 per agreeing primitive field, −1 per disagreement and per unexplained one. */
-  score: number
-  /** No disagreement and nothing unexplained — this URL denotes exactly this route. */
-  perfect: boolean
+function variantsOverlap(a: CompiledVariant, b: CompiledVariant): boolean {
+  const aRest = a.segments.at(-1)?.kind === 'rest'
+  const bRest = b.segments.at(-1)?.kind === 'rest'
+  const minimum = Math.min(a.segments.length - (aRest ? 1 : 0), b.segments.length - (bRest ? 1 : 0))
+  for (let index = 0; index < minimum; index++) {
+    const left = a.segments[index]!
+    const right = b.segments[index]!
+    if (left.kind === 'static' && right.kind === 'static' && left.value !== right.value)
+      return false
+  }
+  if (!aRest && !bRest) return a.segments.length === b.segments.length
+  if (aRest && !bRest) return b.segments.length >= a.segments.length - 1
+  if (!aRest && bRest) return a.segments.length >= b.segments.length - 1
+  return true
 }
 
-/** Is `a` a better reproduction than `b`? Proven-wrong loses to merely-imperfect. */
-function isBetterFit(a: Fidelity, b: Fidelity): boolean {
-  if (a.disagreements !== b.disagreements) return a.disagreements < b.disagreements
-  return a.score > b.score
-}
-
-/**
- * Compare a route against the route its formatted URL round-trips back to,
- * over PRIMITIVE fields only (an object field — a runtime `data` payload — is
- * never part of a URL and must not influence selection).
- *
- * A field only the ROUND-TRIP carries is a default this def would supply, and
- * #104 established that it must not DISQUALIFY the def. It is still weaker
- * evidence than an exact reproduction, so it costs a point: between two defs
- * that agree on everything the route carries, the one that invents nothing is
- * the better fit. That is the whole of the `/p/:id` vs `/p/:id/edit` decision.
- *
- * A field the URL fails to reproduce at all is the same kind of gap in the
- * other direction — the URL cannot carry it — and is likewise only UNEXPLAINED.
- * A DISAGREEMENT is stronger: both routes name the field, both give it a
- * primitive value, and the values differ. Only that proves the URL means a
- * different route, so it is counted separately (see `isBetterFit`).
- *
- * That boundary is load-bearing because counting an unreproduced field as a
- * disagreement INVERTS the ranking whenever one def reproduces a field the
- * correct def cannot — `/x/:id` owns the route but cannot put its three flags
- * in a URL (0 disagreements → 3), so it loses to `/y/:id`, which reproduces
- * all three and denotes a different `page` (1). Note it does not DISQUALIFY
- * anything: `isBetterFit` compares disagreements relatively, so a field every
- * candidate equally fails to reproduce cancels out.
- */
-function fidelityOf(route: Record<string, unknown>, produced: Record<string, unknown>): Fidelity {
-  let score = 0
-  let disagreements = 0
-  let perfect = true
-  for (const key of Object.keys(route)) {
-    const a = route[key]
-    if (!isPrimitive(a)) continue
-    const b = produced[key]
-    if (!isPrimitive(b)) {
-      score -= 1
-      perfect = false
-      continue
-    }
-    if (Object.is(a, b)) {
-      score += 1
-    } else {
-      score -= 1
-      disagreements += 1
-      perfect = false
+function rejectAmbiguity(definitions: readonly CompiledDefinition[]): void {
+  for (let leftIndex = 0; leftIndex < definitions.length; leftIndex++) {
+    const left = definitions[leftIndex]!
+    for (let rightIndex = leftIndex; rightIndex < definitions.length; rightIndex++) {
+      const right = definitions[rightIndex]!
+      for (let aIndex = 0; aIndex < left.variants.length; aIndex++) {
+        const a = left.variants[aIndex]!
+        for (let bIndex = 0; bIndex < right.variants.length; bIndex++) {
+          if (leftIndex === rightIndex && aIndex >= bIndex) continue
+          const b = right.variants[bIndex]!
+          if (compareSpecificity(a.specificity, b.specificity) !== 0 || !variantsOverlap(a, b))
+            continue
+          throw new TypeError(
+            `[@llui/router] Ambiguous routes "${left.name}" and "${right.name}" can match the same URL at equal specificity.`,
+          )
+        }
+      }
     }
   }
-  for (const key of Object.keys(produced)) {
-    if (!isPrimitive(produced[key])) continue
-    if (isPrimitive(route[key])) continue
-    score -= 1
-    perfect = false
-  }
-  return { disagreements, score, perfect }
 }
 
-/** Does a route contradict a def's EXACTLY known output on a field they share? */
-function contradictsExact(
-  exact: Record<string, Primitive>,
-  route: Record<string, unknown>,
-): boolean {
-  for (const key in exact) {
-    const v = route[key]
-    // An OMITTED field is a default this def supplies, not a contradiction (#104).
-    if (v === undefined) continue
-    if (!Object.is(v, exact[key])) return true
-  }
-  return false
+interface ValidationSuccess {
+  readonly ok: true
+  readonly value: unknown
 }
 
-export function createRouter<R>(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  defs: RouteDef<any>[],
-  config?: RouterConfig<R>,
-): Router<R> {
-  const mode = config?.mode ?? 'hash'
-  const base = normalizeBase(config?.base)
+interface ValidationFailure {
+  readonly ok: false
+}
 
-  /** Placeholder params covering every path/query key a builder may read. */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function sampleParamsFor(def: RouteDef<any>, value: string): Record<string, string> {
-    const params: Record<string, string> = {}
-    for (const seg of def.segments) {
-      if (typeof seg !== 'string') params[seg.name] = value
-    }
-    for (const key of def.queryKeys) params[key] = value
-    return params
-  }
-
-  // With no routes there is nothing to derive a fallback from — require an
-  // explicit one rather than crashing on `defs[0]!` (a TypeError).
-  if (defs.length === 0 && config?.fallback === undefined) {
-    throw new Error(
-      '[llui/router] createRouter requires at least one route definition, or a ' +
-        '`fallback` in config when the route list is empty.',
+function validate(schema: AnySchema, value: unknown): ValidationSuccess | ValidationFailure {
+  const result = schema['~standard'].validate(value)
+  if (isPromiseLike(result)) {
+    throw new TypeError(
+      `[@llui/router] Route schemas must be synchronous; vendor "${schema['~standard'].vendor}" returned a Promise.`,
     )
   }
+  return result.issues ? { ok: false } : { ok: true, value: result.value }
+}
 
-  // The synthesized fallback is `defs[0]` built from PLACEHOLDER params. When the
-  // first route reads path parameters, those placeholders are fabricated ('1'), so
-  // an unmatched URL would resolve to a bogus route (e.g. `{ page: 'user', id: '1'
-  // }`). Require an explicit `fallback` rather than silently inventing one.
-  if (config?.fallback === undefined && defs.length > 0) {
-    const firstHasParams = defs[0]!.segments.some((seg) => typeof seg !== 'string')
-    if (firstHasParams) {
-      throw new Error(
-        '[llui/router] createRouter needs an explicit `fallback` when the first route ' +
-          'has path parameters — otherwise an unmatched URL would fabricate placeholder ' +
-          'params for it (e.g. `{ id: "1" }`). Pass `config.fallback`.',
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  return (
+    (typeof value === 'object' || typeof value === 'function') &&
+    value !== null &&
+    typeof (value as { then?: unknown }).then === 'function'
+  )
+}
+
+function malformedEncoding(value: string): boolean {
+  return /%(?![\da-fA-F]{2})/.test(value)
+}
+
+function decode(value: string): string | null {
+  if (malformedEncoding(value)) return null
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return null
+  }
+}
+
+function valuesEqual(a: unknown, b: unknown): boolean {
+  if (Object.is(a, b)) return true
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((value, index) => valuesEqual(value, b[index]))
+  }
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return false
+  if (Object.getPrototypeOf(a) !== Object.getPrototypeOf(b)) return false
+  const aRecord = a as Record<string, unknown>
+  const bRecord = b as Record<string, unknown>
+  const aKeys = Object.keys(aRecord)
+  const bKeys = Object.keys(bRecord)
+  return (
+    aKeys.length === bKeys.length &&
+    aKeys.every((key) => Object.hasOwn(bRecord, key) && valuesEqual(aRecord[key], bRecord[key]))
+  )
+}
+
+function assertSerializableRouteValue(
+  value: unknown,
+  context: string,
+  active = new WeakSet<object>(),
+): void {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return
+  if (typeof value === 'number') {
+    if (Number.isFinite(value) && !Object.is(value, -0)) return
+    throw new TypeError(
+      `[@llui/router] Non-serializable route value from ${context}: numbers must be finite and not negative zero.`,
+    )
+  }
+  if (typeof value !== 'object') {
+    throw new TypeError(
+      `[@llui/router] Non-serializable route value from ${context}: ${typeof value} values are unsupported.`,
+    )
+  }
+  if (active.has(value)) {
+    throw new TypeError(
+      `[@llui/router] Non-serializable route value from ${context}: cyclic values are unsupported.`,
+    )
+  }
+  active.add(value)
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
+      throw new TypeError(
+        `[@llui/router] Non-serializable route value from ${context}: array subclasses are unsupported.`,
+      )
+    }
+    if (Object.getOwnPropertySymbols(value).length > 0) {
+      throw new TypeError(
+        `[@llui/router] Non-serializable route value from ${context}: symbol keys are unsupported.`,
+      )
+    }
+    const extraKey = Object.getOwnPropertyNames(value).find(
+      (key) =>
+        key !== 'length' &&
+        (!/^(0|[1-9]\d*)$/.test(key) ||
+          !Number.isSafeInteger(Number(key)) ||
+          Number(key) >= value.length),
+    )
+    if (extraKey !== undefined) {
+      throw new TypeError(
+        `[@llui/router] Non-serializable route value from ${context}: array property "${extraKey}" is unsupported.`,
+      )
+    }
+    for (let index = 0; index < value.length; index++) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, index)
+      if (descriptor === undefined) {
+        throw new TypeError(
+          `[@llui/router] Non-serializable route value from ${context}: sparse arrays are unsupported.`,
+        )
+      }
+      if (!descriptor.enumerable || !('value' in descriptor)) {
+        throw new TypeError(
+          `[@llui/router] Non-serializable route value from ${context}: array index "${index}" must be enumerable data.`,
+        )
+      }
+      assertSerializableRouteValue(descriptor.value, context, active)
+    }
+    active.delete(value)
+    return
+  }
+  if (Object.getPrototypeOf(value) !== Object.prototype) {
+    throw new TypeError(
+      `[@llui/router] Non-serializable route value from ${context}: only plain objects and arrays are supported.`,
+    )
+  }
+  if (Object.getOwnPropertySymbols(value).length > 0) {
+    throw new TypeError(
+      `[@llui/router] Non-serializable route value from ${context}: symbol keys are unsupported.`,
+    )
+  }
+  for (const [key, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
+    if (!descriptor.enumerable || !('value' in descriptor)) {
+      throw new TypeError(
+        `[@llui/router] Non-serializable route value from ${context}: property "${key}" must be enumerable data.`,
+      )
+    }
+    assertSerializableRouteValue(descriptor.value, context, active)
+  }
+  active.delete(value)
+}
+
+function canonicalCodecValue(
+  codec: AnyCodec,
+  raw: unknown,
+  context: string,
+): ValidationSuccess | ValidationFailure {
+  const result = validate(codec.schema as AnySchema, raw)
+  if (!result.ok) return result
+  assertSerializableRouteValue(result.value, context)
+  const formatted = (codec.format as (input: unknown) => string | readonly string[])(result.value)
+  const roundTrip = validate(codec.schema as AnySchema, formatted)
+  if (!roundTrip.ok) return roundTrip
+  assertSerializableRouteValue(roundTrip.value, context)
+  return valuesEqual(roundTrip.value, result.value) ? result : { ok: false }
+}
+
+function cloneRouteValue(value: unknown): unknown {
+  if (value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) return value.map(cloneRouteValue)
+  const clone = Object.create(Object.getPrototypeOf(value)) as Record<string, unknown>
+  for (const [key, entry] of Object.entries(value)) clone[key] = cloneRouteValue(entry)
+  return clone
+}
+
+function normalizeBase(base?: string): string {
+  if (!base) return ''
+  let normalized = base.trim()
+  if (normalized === '' || normalized === '/') return ''
+  if (!normalized.startsWith('/')) normalized = '/' + normalized
+  return normalized.replace(/\/+$/, '')
+}
+
+function stripBase(input: string, base: string): string | null {
+  if (!base) return input
+  if (input === base || input === base + '/') return '/'
+  if (input.startsWith(base + '/')) return input.slice(base.length)
+  if (input.startsWith(base + '?') || input.startsWith(base + '#'))
+    return '/' + input.slice(base.length)
+  return null
+}
+
+function withBase(path: string, base: string): string {
+  if (!base) return path
+  return path === '/' ? base + '/' : base + path
+}
+
+function matchSegments(
+  variant: CompiledVariant,
+  encodedSegments: readonly string[],
+): Record<string, unknown> | null {
+  const values: Record<string, unknown> = {}
+  let inputIndex = 0
+  for (const segment of variant.segments) {
+    if (segment.kind === 'rest') {
+      const restValues: string[] = []
+      for (const encoded of encodedSegments.slice(inputIndex)) {
+        const decoded = decode(encoded)
+        if (decoded === null) return null
+        restValues.push(decoded)
+      }
+      values[segment.name] = restValues
+      inputIndex = encodedSegments.length
+      continue
+    }
+    if (inputIndex >= encodedSegments.length) return null
+    const decoded = decode(encodedSegments[inputIndex]!)
+    if (decoded === null) return null
+    if (segment.kind === 'static') {
+      if (decoded !== segment.value) return null
+    } else {
+      values[segment.name] = decoded
+    }
+    inputIndex++
+  }
+  return inputIndex === encodedSegments.length ? values : null
+}
+
+function queryValues(queryString: string): Map<string, string[]> | null {
+  if (malformedEncoding(queryString)) return null
+  for (const pair of queryString.split('&')) {
+    for (const component of pair.split('=', 2)) {
+      try {
+        decodeURIComponent(component.replace(/\+/g, ' '))
+      } catch {
+        return null
+      }
+    }
+  }
+  const values = new Map<string, string[]>()
+  for (const [key, value] of new URLSearchParams(queryString)) {
+    const existing = values.get(key)
+    if (existing) existing.push(value)
+    else values.set(key, [value])
+  }
+  return values
+}
+
+function assertCanonicalDefaults(
+  routeName: string,
+  definition: RouteDefinitionShape,
+  segments: readonly Segment[],
+): void {
+  for (const [key, value] of Object.entries(definition.defaults)) {
+    assertSerializableRouteValue(value, `default "${key}" for route "${routeName}"`)
+    const segment = segments.find(
+      (candidate): candidate is ParameterSegment | RestSegment =>
+        candidate.kind !== 'static' && candidate.name === key,
+    )
+    const codec = segment
+      ? (definition.params[key] ?? (segment.kind === 'parameter' ? stringCodec : undefined))
+      : definition.query[key]
+
+    if (!codec) {
+      if (
+        segment?.kind === 'rest' &&
+        Array.isArray(value) &&
+        value.every((part) => typeof part === 'string')
+      ) {
+        continue
+      }
+      throw new TypeError(
+        `[@llui/router] Default "${key}" for route "${routeName}" is not accepted by its route codec.`,
+      )
+    }
+
+    const formatted = (codec.format as (input: unknown) => string | readonly string[])(value)
+    if (codec.multiple ? !Array.isArray(formatted) : typeof formatted !== 'string') {
+      throw new TypeError(
+        `[@llui/router] Default "${key}" for route "${routeName}" is not accepted by its route codec.`,
+      )
+    }
+    const result = validate(codec.schema as AnySchema, formatted)
+    if (result.ok) {
+      assertSerializableRouteValue(
+        result.value,
+        `codec output for default "${key}" in route "${routeName}"`,
+      )
+    }
+    if (!result.ok || !valuesEqual(result.value, value)) {
+      throw new TypeError(
+        `[@llui/router] Default "${key}" for route "${routeName}" is not accepted by its route codec or does not round-trip canonically.`,
       )
     }
   }
+}
 
-  // Fallback: an explicit config value, else the first route built with sample
-  // params so a param-reading builder does not crash createRouter.
-  const fallback: R = config?.fallback ?? (defs[0]!.build(sampleParamsFor(defs[0]!, '1')) as R)
-
-  /**
-   * Precompute per-def selection metadata ONCE — `href()` is on the hot path of
-   * every link and must never call a builder.
-   *
-   * Classify the builder's emitted fields by building it TWICE with clearly
-   * different sample params and keeping only what did not move. A field that
-   * moves is param-DERIVED (`title: \`User ${id}\``, `upper: id.toUpperCase()`)
-   * and carries no information a route can be matched on; freezing one sample's
-   * value and demanding equality against it is what sent every real route to
-   * the fallback URL (#104). The two samples differ in length, characters AND
-   * numeric value, so the usual derivations — interpolation, case mapping,
-   * `.length`, `parseInt` — all move.
-   */
-  function computeConstants(
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    def: RouteDef<any>,
-    paramKeys: string[],
-  ): Record<string, string | number | boolean> | null {
-    try {
-      const a = def.build(sampleParamsFor(def, '1')) as Record<string, unknown>
-      const b = def.build(sampleParamsFor(def, '2zz')) as Record<string, unknown>
-      const constants: Record<string, string | number | boolean> = {}
-      const querySet = new Set(def.queryKeys)
-      for (const key of Object.keys(a)) {
-        if (paramKeys.includes(key)) continue
-        if (querySet.has(key)) continue
-        const v = a[key]
-        // Only primitive fields discriminate a route. Object/array fields (e.g.
-        // a runtime `data` payload) are not part of the URL and would break
-        // selection, so they are excluded.
-        if (typeof v !== 'string' && typeof v !== 'number' && typeof v !== 'boolean') continue
-        if (!Object.is(v, b[key])) continue
-        constants[key] = v
-      }
-      return constants
-    } catch {
-      // Builder threw on sample params — selection falls back to params only.
-      return null
-    }
-  }
-
-  const defMetas: DefMeta<R>[] = defs.map((def) => {
-    const paramKeys: string[] = []
-    for (const seg of def.segments) {
-      if (typeof seg !== 'string') paramKeys.push(seg.name)
-    }
-    const constants = computeConstants(def, paramKeys)
-    // A def that reads NO params has one possible output, so the sampled map IS
-    // its exact output. Any param or query key makes the output param-dependent
-    // and the map a heuristic again.
-    const readsNoParams = paramKeys.length === 0 && def.queryKeys.length === 0
-    return {
-      def: def as RouteDef<R>,
-      paramKeys,
-      constants,
-      exact: readsNoParams ? constants : null,
-    }
+export function createRouter<const Registry extends RouteRegistry>(
+  routes: Registry,
+  config?: RouterConfig,
+): Router<Registry> {
+  const mode = config?.mode ?? 'hash'
+  const base = normalizeBase(config?.base)
+  const compiled: CompiledDefinition[] = Object.entries(routes).map(([name, definition]) => {
+    const segments = parseTemplate(name, definition)
+    assertCanonicalDefaults(name, definition, segments)
+    return { name, definition, segments, variants: expandVariants(segments) }
   })
+  rejectAmbiguity(compiled)
 
-  /** Every name any def consumes from a route to build its URL. */
-  const urlParamNames = new Set<string>()
-  for (const meta of defMetas) {
-    for (const p of meta.paramKeys) urlParamNames.add(p)
-    for (const q of meta.def.queryKeys) urlParamNames.add(q)
-  }
+  function matchPath(input: string): RouteLocation<Registry> | null {
+    const fragmentIndex = input.indexOf('#')
+    const withoutFragment = fragmentIndex === -1 ? input : input.slice(0, fragmentIndex)
+    const queryIndex = withoutFragment.indexOf('?')
+    const rawPath = queryIndex === -1 ? withoutFragment : withoutFragment.slice(0, queryIndex)
+    const rawQuery = queryIndex === -1 ? '' : withoutFragment.slice(queryIndex + 1)
+    if (malformedEncoding(rawPath)) return null
+    const encodedSegments = rawPath.split('/').filter(Boolean)
+    const parsedQuery = queryValues(rawQuery)
+    if (parsedQuery === null) return null
 
-  function matchPathname(pathname: string): R {
-    // Drop the URL fragment first — it is client-only and never part of route
-    // matching. A `#` sits after the query (`path?query#frag`), so stripping it
-    // up front also keeps it out of the parsed query values.
-    const hashIdx = pathname.indexOf('#')
-    const noFrag = hashIdx !== -1 ? pathname.slice(0, hashIdx) : pathname
-    // Separate path from query string
-    let queryParams: Record<string, string> = {}
-    const qIdx = noFrag.indexOf('?')
-    const rawPath = qIdx !== -1 ? noFrag.slice(0, qIdx) : noFrag
-    if (qIdx !== -1) {
-      queryParams = parseQuery(noFrag.slice(qIdx + 1))
-    }
-
-    // Drop EVERY empty part, not just the leading/trailing runs a
-    // `/^\/+|\/+$/g` strip removed: an INTERNAL run (`/article//x`, from a
-    // hand-typed or concatenated URL) otherwise survives as an empty segment
-    // that matches no def, and the route silently resolves to the fallback.
-    const pathSegments = rawPath.split('/').filter((seg) => seg !== '')
-
-    // Try each route definition
-    for (const def of defs) {
-      const params = matchDef(def, pathSegments)
-      if (params !== null) {
-        // Merge query params
-        for (const key of def.queryKeys) {
-          if (queryParams[key] !== undefined) params[key] = queryParams[key]!
-        }
-        return def.build(params) as R
+    const candidates: Array<{
+      compiled: CompiledDefinition
+      variant: CompiledVariant
+      raw: Record<string, unknown>
+    }> = []
+    for (const definition of compiled) {
+      for (const variant of definition.variants) {
+        const raw = matchSegments(variant, encodedSegments)
+        if (raw !== null) candidates.push({ compiled: definition, variant, raw })
       }
     }
+    candidates.sort((a, b) => compareSpecificity(b.variant.specificity, a.variant.specificity))
 
-    return fallback
-  }
-
-  /**
-   * The defs that could format this route at all: it carries every path
-   * parameter they need (without one there is no URL to format), and it does
-   * not contradict an EXACTLY known output. That second filter is the only
-   * sound elimination available without calling a builder, and it is what
-   * leaves the ordinary single-template route with one candidate — hence no
-   * verification and no builder call on the `href()` hot path.
-   */
-  function candidateMetas(ro: Record<string, unknown>): DefMeta<R>[] {
-    const out: DefMeta<R>[] = []
-    for (const meta of defMetas) {
-      let allParams = true
-      for (const p of meta.paramKeys) {
-        const v = ro[p]
-        if (v === undefined || v === null) {
-          allParams = false
+    for (const candidate of candidates) {
+      const definition = candidate.compiled.definition
+      const normalized: Record<string, unknown> = {}
+      let valid = true
+      for (const segment of candidate.compiled.segments) {
+        if (segment.kind === 'static') continue
+        const raw = candidate.raw[segment.name]
+        if (
+          segment.kind === 'rest' &&
+          Array.isArray(raw) &&
+          raw.length === 0 &&
+          Object.hasOwn(definition.defaults, segment.name)
+        ) {
+          normalized[segment.name] = cloneRouteValue(definition.defaults[segment.name])
+          continue
+        }
+        if (raw === undefined) {
+          if (Object.hasOwn(definition.defaults, segment.name))
+            normalized[segment.name] = cloneRouteValue(definition.defaults[segment.name])
+          continue
+        }
+        const codec =
+          definition.params[segment.name] ?? (segment.kind === 'rest' ? undefined : stringCodec)
+        if (!codec) {
+          normalized[segment.name] = raw
+          continue
+        }
+        const result = canonicalCodecValue(
+          codec,
+          raw,
+          `codec "${segment.name}" in route "${candidate.compiled.name}"`,
+        )
+        if (!result.ok) {
+          valid = false
           break
         }
+        normalized[segment.name] = result.value
       }
-      if (!allParams) continue
-      if (meta.exact !== null && contradictsExact(meta.exact, ro)) continue
-      out.push(meta)
-    }
-    return out
-  }
+      if (!valid) continue
 
-  /**
-   * Order the candidates by SHAPE — a cheap, builder-free heuristic used to
-   * pick which candidate to verify first and to break ties between equally
-   * faithful ones. Two tiers:
-   *
-   * 1. STRICT — every constant the route actually carries agrees. This is the
-   *    discriminating tier: it is what keeps two shared-prefix defs separated
-   *    by a constant (`tab: 'authored'` vs `'favorited'`) apart. A constant the
-   *    route OMITS is a default this def would supply, not a contradiction, so
-   *    it does not disqualify — `href({page:'user', id:'7'})` must resolve
-   *    through a def that also emits `tab: 'profile'` (#104).
-   * 2. RELAXED — only when no def matches strictly. A builder-emitted field the
-   *    caller set to a NON-default value is not representable in the URL and
-   *    must not send the route to the fallback URL, so the def that agrees with
-   *    the most constants wins. Contradicting every constant while agreeing
-   *    with none means a different route entirely, never this URL.
-   */
-  function preferByShape(candidates: DefMeta<R>[], ro: Record<string, unknown>): DefMeta<R> | null {
-    let strict: DefMeta<R> | null = null
-    let strictScore: readonly number[] = []
-    let relaxed: DefMeta<R> | null = null
-    let relaxedScore: readonly number[] = []
+      for (const [key, codec] of Object.entries(definition.query)) {
+        const raw = parsedQuery.get(key)
+        if (raw === undefined) {
+          if (Object.hasOwn(definition.defaults, key))
+            normalized[key] = cloneRouteValue(definition.defaults[key])
+          continue
+        }
+        if (!codec.multiple && raw.length !== 1) {
+          valid = false
+          break
+        }
+        const result = canonicalCodecValue(
+          codec,
+          codec.multiple ? raw : raw[0],
+          `codec "${key}" in route "${candidate.compiled.name}"`,
+        )
+        if (!result.ok) {
+          valid = false
+          break
+        }
+        normalized[key] = result.value
+      }
+      if (!valid) continue
 
-    for (const meta of candidates) {
-      let matched = 0
-      let mismatched = 0
-      let invented = 0
-      if (meta.constants) {
-        for (const key in meta.constants) {
-          // A constant the route does not carry is a default this def would
-          // INVENT. It does not disqualify (#104), but it is exactly what
-          // `fidelityOf` charges a point for, so the ordering agrees with the
-          // verification it feeds and the right def is verified FIRST.
-          if (ro[key] === undefined) {
-            invented++
-            continue
-          }
-          if (ro[key] === meta.constants[key]) matched++
-          else mismatched++
+      if (definition.refine) {
+        const refined = validate(definition.refine as AnySchema, cloneRouteValue(normalized))
+        if (!refined.ok) continue
+        assertSerializableRouteValue(
+          refined.value,
+          `whole-route schema for "${candidate.compiled.name}"`,
+        )
+        if (!valuesEqual(refined.value, normalized)) {
+          throw new TypeError(
+            `[@llui/router] Whole-route schema for "${candidate.compiled.name}" transformed its parameters; it may only refine the normalized shape.`,
+          )
         }
       }
-
-      if (mismatched === 0) {
-        // Prefer the most specific def (most params), then the one that invents
-        // the fewest defaults — "later-registered wins" put `/u/:id/edit` ahead
-        // of `/u/:id` for a plain `{page:'u', id}`, which is the wrong first
-        // guess for by far the more common route and cost a second round-trip
-        // on every one of them. On a full tie the later-registered def still
-        // wins (the longer, more specific pattern).
-        const score = [meta.paramKeys.length, -invented]
-        if (strict === null || compareScore(score, strictScore) >= 0) {
-          strict = meta
-          strictScore = score
-        }
-        continue
-      }
-      if (matched === 0) continue
-      const score = [matched, -mismatched, meta.paramKeys.length, -invented]
-      if (relaxed === null || compareScore(score, relaxedScore) >= 0) {
-        relaxed = meta
-        relaxedScore = score
-      }
+      return { name: candidate.compiled.name, params: normalized } as RouteLocation<Registry>
     }
-    return strict ?? relaxed
-  }
-
-  function formatWithDef(def: RouteDef<R>, r: R): string | null {
-    return def.toPath ? def.toPath(r) : tryFormat(def, r)
-  }
-
-  /**
-   * Verified selections, keyed on the route's primitive key/value signature.
-   * Bounded: a router whose routes carry an unbounded param space (an id per
-   * user) would otherwise grow one entry per distinct route ever formatted.
-   * Dropping the whole table on overflow costs a re-verification, never a wrong
-   * answer — the cache is an optimization, and the verification is the truth.
-   *
-   * DO NOT re-key this on the route's SHAPE (its key-set, or the def "template"
-   * it looks like) to raise the hit rate. The param VALUES are what decide the
-   * answer, and that is #104's own headline: with a def whose builder reads a
-   * param (`kind: id === 'me' ? 'self' : 'other'`) competing against one that
-   * owns that value as a constant, `{page:'a', id:'me', kind:'self'}` formats
-   * to `#/a/me` while `{page:'a', id:'zzz', kind:'self'}` formats to `#/b/zzz`
-   * — same key-set, different def. A shape key would serve one of those
-   * answers for the other route: a plausible URL for the wrong route, silently,
-   * which is the exact defect this verification exists to remove.
-   *
-   * The cost of keying on values is bounded THRASH, not a cliff: past
-   * `VERIFIED_MAX` distinct routes the hit rate falls to zero and every
-   * `href()` pays the uncached price it would have paid anyway. Slower than a
-   * shape key, never wrong.
-   */
-  const verified = new Map<string, DefMeta<R> | null>()
-  const VERIFIED_MAX = 512
-
-  /**
-   * A key that determines the verification outcome, or `null` when it cannot.
-   * Values are length-prefixed so no two different routes can encode alike. A
-   * NON-primitive value is only observable through `String(value)` in a URL
-   * segment, so it disables caching just for the keys a def actually formats.
-   */
-  function signatureOf(ro: Record<string, unknown>): string | null {
-    let sig = ''
-    for (const key of Object.keys(ro).sort()) {
-      const v = ro[key]
-      if (v === undefined) continue
-      if (v === null || !isPrimitive(v)) {
-        if (urlParamNames.has(key)) return null
-        continue
-      }
-      const t = typeof v === 'string' ? 's' : typeof v === 'number' ? 'n' : 'b'
-      const s = String(v)
-      sig += `${key.length}:${key}=${t}${s.length}:${s};`
-    }
-    return sig
-  }
-
-  /** The route the def's URL actually denotes, and how well it reproduces `r`. */
-  function roundTrip(meta: DefMeta<R>, r: R, ro: Record<string, unknown>): Fidelity | null {
-    try {
-      const path = formatWithDef(meta.def, r)
-      if (path === null) return null
-      return fidelityOf(ro, matchPathname(path) as Record<string, unknown>)
-    } catch {
-      // A hand-written `toPath` or a builder that throws on these params: this
-      // def cannot be verified, so it cannot win a contest it might lose.
-      return null
-    }
-  }
-
-  /**
-   * Settle a contested selection by ROUND-TRIP: format with each candidate and
-   * ask `match()` which route that URL actually denotes. Sampling cannot tell a
-   * param-derived field from a constant when the samples coincide, and the
-   * shape tiers then hand the route to a def that genuinely owns that constant
-   * — a plausible URL for the WRONG route, which `link()` both renders and
-   * pushes. The round-trip answers the real question ("does this URL mean this
-   * route?") instead of guessing at it.
-   *
-   * Only runs when more than one def can format the route, and is memoized on
-   * the route's signature, so the ordinary case stays at zero builder calls.
-   */
-  function verifySelection(
-    r: R,
-    ro: Record<string, unknown>,
-    candidates: DefMeta<R>[],
-    preferred: DefMeta<R> | null,
-  ): DefMeta<R> | null {
-    const key = signatureOf(ro)
-    if (key !== null) {
-      const hit = verified.get(key)
-      if (hit !== undefined) return hit
-    }
-
-    let best: DefMeta<R> | null = null
-    let bestFit: Fidelity | null = null
-    let exact: DefMeta<R> | null = null
-    let preferredVerified = false
-
-    // The shape-preferred candidate is verified FIRST — when it round-trips
-    // exactly, no other candidate can beat it and no further builder runs — and
-    // exactly ONCE: reaching it again through `candidates` would round-trip
-    // (and therefore BUILD) it a second time on every contest it does not win.
-    // Index −1 IS that first slot, so the ordering costs no array.
-    for (let i = preferred === null ? 0 : -1; i < candidates.length; i++) {
-      const meta = i < 0 ? preferred! : candidates[i]!
-      if (i >= 0 && meta === preferred) continue
-      const fit = roundTrip(meta, r, ro)
-      // Unverifiable — its builder threw on these params, or it has no
-      // formattable URL. That is an UNKNOWN, not a demerit: nothing has been
-      // learned about this def, so it is neither promoted nor eliminated.
-      if (fit === null) continue
-      if (meta === preferred) preferredVerified = true
-      if (fit.perfect) {
-        exact = meta
-        break
-      }
-      // Strictly better: an equal fit leaves the shape order in charge, so a
-      // genuinely ambiguous route keeps the answer it has always had.
-      if (bestFit === null || isBetterFit(fit, bestFit)) {
-        best = meta
-        bestFit = fit
-      }
-    }
-
-    // A PERFECT round-trip is proof this URL denotes exactly this route, and
-    // proof beats everything. Short of that, an UNVERIFIABLE shape-preferred
-    // candidate keeps the route: an imperfect rival's round-trip is evidence
-    // about the RIVAL, never about the incumbent — and a rival that disagrees
-    // on a field they both carry is in fact proven to denote a different route.
-    // Letting one displace an incumbent nothing has been learned about is how a
-    // builder that throws on a single id emitted a competing def's URL.
-    let winner: DefMeta<R> | null
-    if (exact !== null) winner = exact
-    else if (preferred !== null && !preferredVerified) winner = preferred
-    else winner = best ?? preferred
-    if (key !== null) {
-      if (verified.size >= VERIFIED_MAX) verified.clear()
-      verified.set(key, winner)
-    }
-    return winner
-  }
-
-  /**
-   * Pick the def whose URL template a route belongs to: narrow to the defs that
-   * can format it, order them by shape, and — only when more than one competes
-   * — verify the winner by round-tripping its URL back through `match()`.
-   *
-   * This composes EIGHT ranked inference rules, each justified by a measured
-   * wrong URL a cheaper design shipped. #156 records the whole set, the three
-   * disproved simplifications, the trigger for replacing the lot with a real
-   * ranked-candidate structure (a sixth comparison rule), and the root-cause
-   * fix that would delete all of it (a serializable route tag). Read it before
-   * "simplifying" anything here.
-   */
-  function selectDef(r: R): DefMeta<R> | null {
-    const ro = r as Record<string, unknown>
-    const candidates = candidateMetas(ro)
-    if (candidates.length === 0) return null
-    if (candidates.length === 1) return candidates[0]!
-    const preferred = preferByShape(candidates, ro)
-    return verifySelection(r, ro, candidates, preferred)
-  }
-
-  function formatPath(r: R): string {
-    const meta = selectDef(r)
-    if (meta) {
-      const p = formatWithDef(meta.def, r)
-      if (p !== null) return p
-    }
-    // Last resort — a manual toPath, then any structural format.
-    for (const def of defs as RouteDef<R>[]) {
-      if (def.toPath) return def.toPath(r)
-    }
-    for (const def of defs as RouteDef<R>[]) {
-      const p = tryFormat(def, r)
-      if (p !== null) return p
-    }
-    return '/'
-  }
-
-  function stripBase(pathname: string): string | null {
-    if (!base) return pathname
-    if (pathname === base || pathname === base + '/') return '/'
-    if (pathname.startsWith(base + '/')) return pathname.slice(base.length)
-    // `base` immediately followed by a query/hash delimiter: the path is just
-    // `/`, and the `?`/`#` tail must be PRESERVED (dropping the delimiter would
-    // fold the query into the path, e.g. `/app?q=x` → `/q=x`).
-    if (pathname.startsWith(base + '?') || pathname.startsWith(base + '#'))
-      return '/' + pathname.slice(base.length)
     return null
   }
 
-  function withBase(path: string): string {
-    if (!base) return path
-    if (path === '/') return base + '/'
-    return base + path
+  function definitionFor(name: string): CompiledDefinition {
+    const found = compiled.find((definition) => definition.name === name)
+    if (!found) throw new TypeError(`[@llui/router] Unknown route name "${name}".`)
+    return found
+  }
+
+  function format(name: string, input: Record<string, unknown> | undefined): string {
+    const compiledDefinition = definitionFor(name)
+    const definition = compiledDefinition.definition
+    const params: Record<string, unknown> = { ...definition.defaults }
+    for (const [key, value] of Object.entries(input ?? {})) {
+      if (value !== undefined) params[key] = value
+    }
+    const parts: string[] = []
+    for (const segment of compiledDefinition.segments) {
+      if (segment.kind === 'static') {
+        parts.push(encodeURIComponent(segment.value))
+        continue
+      }
+      const value = params[segment.name]
+      if (value !== undefined)
+        assertSerializableRouteValue(value, `parameter "${segment.name}" for route "${name}"`)
+      if (
+        segment.kind === 'rest' &&
+        Object.hasOwn(definition.defaults, segment.name) &&
+        valuesEqual(value, definition.defaults[segment.name])
+      ) {
+        continue
+      }
+      if (segment.kind === 'parameter' && segment.optional) {
+        if (value === undefined || valuesEqual(value, definition.defaults[segment.name])) continue
+      }
+      if (value === undefined) {
+        throw new TypeError(
+          `[@llui/router] Missing parameter "${segment.name}" for route "${name}".`,
+        )
+      }
+      const codec = definition.params[segment.name]
+      if (segment.kind === 'rest') {
+        const formatted = codec
+          ? ((codec.format as (input: unknown) => readonly string[])(value) as readonly string[])
+          : Array.isArray(value)
+            ? value.map(String)
+            : []
+        if (!Array.isArray(value) && !codec) {
+          throw new TypeError(
+            `[@llui/router] Rest parameter "${segment.name}" for route "${name}" must be an array.`,
+          )
+        }
+        parts.push(...formatted.map((part) => encodeURIComponent(part)))
+      } else {
+        const formatted = codec
+          ? (codec.format as (input: unknown) => string)(value)
+          : String(value)
+        parts.push(encodeURIComponent(formatted))
+      }
+    }
+
+    const search = new URLSearchParams()
+    for (const [key, codec] of Object.entries(definition.query)) {
+      const value = params[key]
+      if (value !== undefined)
+        assertSerializableRouteValue(value, `parameter "${key}" for route "${name}"`)
+      if (value === undefined || valuesEqual(value, definition.defaults[key])) continue
+      const formatted = (codec.format as (input: unknown) => string | readonly string[])(value)
+      if (codec.multiple) {
+        for (const item of formatted as readonly string[]) search.append(key, item)
+      } else {
+        search.set(key, formatted as string)
+      }
+    }
+    const query = search.toString()
+    return '/' + parts.join('/') + (query ? `?${query}` : '')
+  }
+
+  function parseDestination(
+    destination: readonly unknown[],
+  ): [string, Record<string, unknown> | undefined] {
+    return [destination[0] as string, destination[1] as Record<string, unknown> | undefined]
+  }
+
+  function canonicalDestination(
+    name: string,
+    params: Record<string, unknown> | undefined,
+  ): { readonly path: string; readonly location: RouteLocation<Registry> } {
+    const compiledDefinition = definitionFor(name)
+    const path = format(name, params)
+    const matched = matchPath(path)
+    const expected: Record<string, unknown> = {}
+    for (const segment of compiledDefinition.segments) {
+      if (segment.kind === 'static') continue
+      if (Object.hasOwn(params ?? {}, segment.name) && params?.[segment.name] !== undefined)
+        expected[segment.name] = cloneRouteValue(params?.[segment.name])
+      else if (Object.hasOwn(compiledDefinition.definition.defaults, segment.name))
+        expected[segment.name] = cloneRouteValue(
+          compiledDefinition.definition.defaults[segment.name],
+        )
+    }
+    for (const key of Object.keys(compiledDefinition.definition.query)) {
+      if (Object.hasOwn(params ?? {}, key) && params?.[key] !== undefined)
+        expected[key] = cloneRouteValue(params?.[key])
+      else if (Object.hasOwn(compiledDefinition.definition.defaults, key))
+        expected[key] = cloneRouteValue(compiledDefinition.definition.defaults[key])
+    }
+    if (matched === null || matched.name !== name || !valuesEqual(matched.params, expected)) {
+      throw new TypeError(
+        `[@llui/router] Parameters for route "${name}" do not round-trip to the same valid location.`,
+      )
+    }
+    return { path, location: matched }
   }
 
   return {
-    match(input: string) {
-      if (mode === 'hash') {
-        // Strip hash prefix, preserve query string
-        return matchPathname(input.replace(/^#\/?/, '/'))
-      }
-      const stripped = stripBase(input)
-      if (stripped === null) return fallback
-      return matchPathname(stripped)
+    match(input) {
+      const routeInput = mode === 'hash' ? input.replace(/^#\/?/, '/') : stripBase(input, base)
+      return routeInput === null ? null : matchPath(routeInput)
     },
-    toPath(r: R) {
-      return mode === 'hash' ? formatPath(r) : withBase(formatPath(r))
+    location(...destination) {
+      const [name, params] = parseDestination(destination)
+      return canonicalDestination(name, params).location
     },
-    href(r: R) {
-      return mode === 'hash' ? `#${formatPath(r)}` : withBase(formatPath(r))
+    toPath(...destination) {
+      const [name, params] = parseDestination(destination)
+      const path = canonicalDestination(name, params).path
+      return mode === 'hash' ? path : withBase(path, base)
+    },
+    href(...destination) {
+      const [name, params] = parseDestination(destination)
+      const path = canonicalDestination(name, params).path
+      return mode === 'hash' ? `#${path}` : withBase(path, base)
     },
     mode,
     base,
-    routes: defs as ReadonlyArray<RouteDef<R>>,
-    fallback,
-  }
-}
-
-// ── Matching ─────────────────────────────────────────────────────
-
-/** Decode a URI component, falling back to the raw string on malformed input. */
-function safeDecode(s: string): string {
-  try {
-    return decodeURIComponent(s)
-  } catch {
-    // Malformed percent-encoding (e.g. `100%`) — decodeURIComponent throws
-    // URIError. Fall back to the raw segment rather than crashing the nav path.
-    return s
-  }
-}
-
-function matchDef<R>(def: RouteDef<R>, pathSegments: string[]): Record<string, string> | null {
-  const params: Record<string, string> = {}
-  let si = 0
-
-  for (let di = 0; di < def.segments.length; di++) {
-    const seg = def.segments[di]!
-
-    if (typeof seg === 'string') {
-      // Decode the incoming segment before comparing: a non-ASCII literal route
-      // (e.g. `['café']`) arrives percent-encoded from the browser (`caf%C3%A9`),
-      // so an un-decoded comparison would never match. Params/rest are already
-      // decoded below — literals must be too.
-      if (si >= pathSegments.length || safeDecode(pathSegments[si]!) !== seg) return null
-      si++
-    } else if (seg.__kind === 'param') {
-      if (si >= pathSegments.length) return null
-      params[seg.name] = safeDecode(pathSegments[si]!)
-      si++
-    } else if (seg.__kind === 'rest') {
-      params[seg.name] = pathSegments.slice(si).map(safeDecode).join('/')
-      si = pathSegments.length
-    }
-  }
-
-  // All path segments must be consumed
-  if (si !== pathSegments.length) return null
-
-  return params
-}
-
-function tryFormat<R>(def: RouteDef<R>, r: R): string | null {
-  const routeObj = r as Record<string, unknown>
-  const parts: string[] = []
-
-  for (const seg of def.segments) {
-    if (typeof seg === 'string') {
-      parts.push(seg)
-    } else if (seg.__kind === 'param') {
-      const value = routeObj[seg.name]
-      if (value === undefined || value === null) return null
-      parts.push(encodeURIComponent(String(value)))
-    } else if (seg.__kind === 'rest') {
-      const value = routeObj[seg.name]
-      if (value === undefined || value === null) return null
-      // A rest value spans multiple segments — encode each segment
-      // individually so the `/` separators survive but any other reserved
-      // characters inside a segment are escaped.
-      parts.push(String(value).split('/').map(encodeURIComponent).join('/'))
-    }
-  }
-
-  let path = '/' + parts.join('/')
-
-  // Append query params if defined
-  if (def.queryKeys.length > 0) {
-    const search = new URLSearchParams()
-    for (const key of def.queryKeys) {
-      const value = routeObj[key]
-      if (value !== undefined && value !== null && value !== '') {
-        search.set(key, String(value))
-      }
-    }
-    const qs = search.toString()
-    if (qs) path += '?' + qs
-  }
-
-  return path
-}
-
-// ── Utilities ────────────────────────────────────────────────────
-
-/** Normalize a base path: ensure a leading slash, strip trailing slashes. */
-function normalizeBase(b?: string): string {
-  if (!b) return ''
-  let s = b.trim()
-  if (s === '' || s === '/') return ''
-  if (!s.startsWith('/')) s = '/' + s
-  s = s.replace(/\/+$/, '')
-  return s
-}
-
-/** Parse a query string via URLSearchParams (handles `+`, `=` in values, decode). */
-function parseQuery(qs: string): Record<string, string> {
-  const params: Record<string, string> = {}
-  // URLSearchParams handles `+` → space, percent-decoding (leniently, never
-  // throwing on malformed input), and values containing `=`. Last value wins
-  // on duplicate keys, matching the previous hand-rolled behavior.
-  const search = new URLSearchParams(qs)
-  for (const [key, val] of search) {
-    params[key] = val
-  }
-  return params
+    routes,
+  } as Router<Registry>
 }

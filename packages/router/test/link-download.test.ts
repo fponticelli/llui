@@ -1,80 +1,66 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createRouter, route } from '../src/index'
+import { component, mountApp, text } from '@llui/dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { connectRouter } from '../src/connect'
-import { mountApp, component, text } from '@llui/dom'
+import { createRouter, route } from '../src/index'
 
-// Issue #109 — `download` means the href is a FILE the browser must save, not
-// a route. Intercepting the click cancelled the download and navigated
-// instead; the file never arrived.
-
-type Route = { page: 'home' } | { page: 'admin' }
-
-const makeRouter = () =>
-  createRouter<Route>(
-    [route([], () => ({ page: 'home' })), route(['admin'], () => ({ page: 'admin' }))],
-    { mode: 'history' },
+function mountLink(attrs: Record<string, unknown>) {
+  const routing = connectRouter(
+    createRouter({ home: route('/'), download: route('/download') }, { mode: 'history' }),
   )
-
-function mountLink(send: (msg: unknown) => void, attrs: Record<string, unknown>) {
-  const routing = connectRouter(makeRouter())
+  const send = vi.fn()
   const container = document.createElement('div')
   const App = component({
-    name: 'T',
-    init: (): [null, never[]] => [null, []],
-    update: (s: null): [null, never[]] => [s, []],
-    view: () => [routing.link(send, { page: 'admin' }, attrs, [text('go')])],
+    name: 'NamedDownloadLink',
+    init: () => [null, []] as const,
+    update: (state: null) => [state, []] as const,
+    view: () => [routing.link(send, 'download', attrs, [text('download')])],
   })
-  const handle = mountApp(container, App)
-  return { anchor: container.querySelector('a')!, dispose: () => handle.dispose() }
+  const mounted = mountApp(container, App)
+  return { anchor: container.querySelector('a')!, mounted, send }
 }
 
-function click(anchor: HTMLAnchorElement): MouseEvent {
-  const ev = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
-  anchor.dispatchEvent(ev)
-  return ev
+function observedClick(anchor: HTMLAnchorElement): { routerPrevented: boolean } {
+  let routerPrevented = true
+  anchor.addEventListener('click', (event) => {
+    routerPrevented = event.defaultPrevented
+    event.preventDefault()
+  })
+  anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
+  return { routerPrevented }
 }
 
-describe('#109 link() does not intercept a download anchor', () => {
+describe('named download links remain browser-native', () => {
   beforeEach(() => {
     history.replaceState(null, '', '/')
   })
 
-  it('lets the download proceed — no preventDefault, no navigation', () => {
-    const send = vi.fn()
-    const pushSpy = vi.spyOn(history, 'pushState')
-    const { anchor, dispose } = mountLink(send, { download: 'file.txt' })
+  it.each([{ download: 'file.txt' }, { download: '' }])(
+    'does not intercept the download attribute %#',
+    (attrs) => {
+      const push = vi.spyOn(history, 'pushState')
+      const { anchor, mounted, send } = mountLink(attrs)
 
-    // The attribute must actually reach the DOM, or the check is untested.
-    expect(anchor.hasAttribute('download')).toBe(true)
+      expect(anchor.hasAttribute('download')).toBe(true)
+      expect(observedClick(anchor).routerPrevented).toBe(false)
+      expect(push).not.toHaveBeenCalled()
+      expect(send).not.toHaveBeenCalled()
 
-    const ev = click(anchor)
+      push.mockRestore()
+      mounted.dispose()
+    },
+  )
 
-    expect(ev.defaultPrevented).toBe(false)
-    expect(pushSpy).not.toHaveBeenCalled()
-    expect(send).not.toHaveBeenCalled()
+  it('still intercepts an ordinary route link', () => {
+    const { anchor, mounted, send } = mountLink({})
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
 
-    pushSpy.mockRestore()
-    dispose()
-  })
+    anchor.dispatchEvent(event)
 
-  it('honours a valueless download attribute', () => {
-    const send = vi.fn()
-    const { anchor, dispose } = mountLink(send, { download: '' })
-
-    expect(anchor.hasAttribute('download')).toBe(true)
-    expect(click(anchor).defaultPrevented).toBe(false)
-    expect(send).not.toHaveBeenCalled()
-
-    dispose()
-  })
-
-  it('still intercepts an ordinary link (positive control)', () => {
-    const send = vi.fn()
-    const { anchor, dispose } = mountLink(send, {})
-
-    expect(click(anchor).defaultPrevented).toBe(true)
-    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'admin' } })
-
-    dispose()
+    expect(event.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({
+      type: 'navigate',
+      location: { name: 'download', params: {} },
+    })
+    mounted.dispose()
   })
 })
