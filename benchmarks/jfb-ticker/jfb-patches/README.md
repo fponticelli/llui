@@ -3,7 +3,7 @@
 These files are injected into the local `js-framework-benchmark-repo`
 clone by `scripts/setup-ticker.ts`. They:
 
-1. Register the 8 ticker operations as new CPU benchmarks in jfb's
+1. Register the 9 ticker operations as new CPU benchmarks in jfb's
    measurement runner.
 2. Surface the new benchmarks via the existing webdriver-ts CDP path so
    they're measured with the same paint-event accuracy as the standard
@@ -11,9 +11,9 @@ clone by `scripts/setup-ticker.ts`. They:
 
 The patches are idempotent — the setup script wraps each insertion in
 matched `// === ticker-bench:begin === / // === ticker-bench:end ===`
-markers and replaces between them on subsequent runs. Patches survive
-`pnpm bench:setup` because the setup script re-applies them after the
-upstream clone is refreshed.
+markers and replaces between them on subsequent runs. A forced
+`pnpm bench:setup` restores the pinned upstream revision; follow it with
+`pnpm bench:ticker:setup` to reapply these managed patches.
 
 ## Files
 

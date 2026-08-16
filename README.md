@@ -112,36 +112,12 @@ pnpm turbo test           # Run 1200+ tests across all packages
 pnpm turbo check          # Type-check
 pnpm turbo lint           # ESLint
 pnpm bench:setup          # One-time: clone + install + compile js-framework-benchmark (and build the ticker apps)
-pnpm bench                # Run LLui benchmark (add --save to update baseline)
+pnpm bench                # Run LLui-only diagnostics against the canonical baseline
+pnpm bench:all --runs 5 --save # Replace the canonical standard+ticker baseline transactionally
 ```
 
 ## Performance
 
-Top-tier on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) (krausest), and **leading the framework field on fine-grained streaming updates** (a custom "ticker" suite). All frameworks measured in one pass on the same machine (Chrome 149, headless).
+LLui is measured with [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) and a custom ticker suite for fine-grained streaming updates. Results, methodology, and capture provenance are generated from the single canonical [`benchmarks/baseline.json`](benchmarks/baseline.json) document; see the [benchmark report](https://llui.dev/benchmarks) for the tables.
 
-**Standard suite** — within a few percent of Solid/Svelte:
-
-| Operation     |    LLui |   Solid |  Svelte | vanilla |
-| ------------- | ------: | ------: | ------: | ------: |
-| Create 1k     |  21.0ms |  20.4ms |  20.5ms |  20.0ms |
-| Replace 1k    |  23.9ms |  22.5ms |  23.2ms |  21.3ms |
-| Update 10th   |  12.7ms |  10.8ms |  11.1ms |  11.4ms |
-| Select        |   3.3ms |   3.1ms |   4.7ms |   3.3ms |
-| Swap          |  16.0ms |  12.9ms |  13.2ms |  13.7ms |
-| Remove        |  12.2ms |   9.7ms |   9.8ms |  10.5ms |
-| Create 10k    | 229.5ms | 209.6ms | 211.4ms | 203.8ms |
-| Append 1k     |  26.1ms |  22.6ms |  22.6ms |  22.6ms |
-| Clear         |  11.3ms |  10.9ms |  10.0ms |   8.8ms |
-| Bundle (gzip) |  8.2 KB |  4.5 KB | 12.2 KB |  2.5 KB |
-
-**Ticker suite** (streaming partial-list updates) — LLui leads the framework field on the streaming ops (mount, ticks, bursts), and **batched bursts match hand-written vanilla**:
-
-| Operation             |       LLui |  Solid | Svelte |  React | vanilla |
-| --------------------- | ---------: | -----: | -----: | -----: | ------: |
-| Mount 200             |  **5.4ms** |  5.8ms |  6.3ms |  5.5ms |   5.6ms |
-| 100 ticks             |  **4.5ms** |  5.0ms |  5.6ms |  9.0ms |   3.9ms |
-| Burst 1k              | **14.1ms** | 20.7ms | 23.8ms | 52.6ms |   9.6ms |
-| Burst 1k (batched)    |  **5.9ms** | 11.4ms | 11.5ms |  6.1ms |   5.8ms |
-| Toggle mode (fan-out) |      3.0ms |  3.0ms |  3.3ms |  3.5ms |   3.1ms |
-| Churn 50              |      4.3ms |  4.1ms |  4.7ms |  4.4ms |   3.9ms |
-| Clear                 |      1.1ms |  1.1ms |  1.2ms |  1.3ms |   1.1ms |
+The currently tracked capture is explicitly marked `legacy`: its standard and ticker suites were recorded independently and do not have complete shared provenance. It is retained as historical data, not as a machine-comparable regression baseline. The next complete homelab capture will replace both suites atomically.

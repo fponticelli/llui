@@ -1,50 +1,116 @@
 /**
- * Run both bench suites end-to-end.
+ * Run the complete standard + ticker benchmark capture.
  *
- * Sequence:
- *   1. Standard jfb (`benchmarks/run-jfb.ts --all`): the 9 CPU + 3 memory +
- *      2 size benchmarks from krausest/js-framework-benchmark against
- *      `keyed/llui` + competitors.
- *   2. Ticker (`scripts/run-ticker.ts`): the 8 ticker benchmarks against
- *      `keyed/llui-ticker` + competitors.
- *
- * All CLI args after the script name are passed through verbatim to both
- * runners. Each runner ignores flags it doesn't recognise.
- *
- * Usage:
- *   pnpm bench:all                 # full suite, both bench types
- *   pnpm bench:all --runs 3        # 3 passes (median-of-medians)
- *   pnpm bench:all --runs 3 --save # persist results to both baselines
- *   pnpm bench:all --framework llui --runs 1   # llui only, 1 pass
- *
- * The ticker suite is wired to the same jfb harness via patches managed
- * by `scripts/setup-ticker.ts`; `pnpm bench:ticker:setup` must have been
- * run at least once.
+ * Arguments are forwarded as argv elements to both runners. A canonical save
+ * is a transaction: each runner writes a complete candidate into an isolated
+ * staging directory, and the single baseline document is replaced only after
+ * both candidates validate.
  */
 
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 
+import { type BenchmarkMatrix, promoteBenchmarkBaseline } from './lib/benchmark-baseline'
+import {
+  benchmarkRunCount,
+  buildSuiteInvocations,
+  captureBenchmarkProvenance,
+} from './lib/benchmark-orchestrator'
+import { assertJfbRevision, readPinnedJfbRevision } from './lib/jfb-revision'
+
 const ROOT = dirname(import.meta.dirname)
-const argsRaw = process.argv.slice(2)
-const args = argsRaw.join(' ')
+const BENCH_DIR = resolve(ROOT, 'benchmarks')
+const BASELINE = resolve(BENCH_DIR, 'baseline.json')
+const JFB_REPO = process.env.JFB_REPO
+  ? resolve(process.env.JFB_REPO)
+  : resolve(BENCH_DIR, 'js-framework-benchmark-repo')
+const args = process.argv.slice(2)
+const saveBaseline = args.includes('--save')
 
-// Default the standard runner to `--all` (include competitors) unless the
-// caller already restricted via --framework. This matches the ticker
-// runner's default behaviour of running every registered framework.
-const standardArgs =
-  argsRaw.includes('--framework') || argsRaw.includes('--all') ? args : `--all ${args}`
+if (saveBaseline && (args.includes('--framework') || args.includes('--only'))) {
+  console.error('Refusing to replace the canonical baseline from a subset run.')
+  console.error('Remove --framework/--only, or omit --save for a diagnostic subset.')
+  process.exit(2)
+}
 
-function run(label: string, cmd: string) {
+const invocations = buildSuiteInvocations(args)
+if (!existsSync(JFB_REPO)) {
+  throw new Error(`JFB checkout not found at ${JFB_REPO}; run pnpm bench:setup first`)
+}
+assertJfbRevision(JFB_REPO, readPinnedJfbRevision(ROOT))
+const provenance = saveBaseline
+  ? captureBenchmarkProvenance({
+      root: ROOT,
+      jfbRepo: JFB_REPO,
+      headless: !args.includes('--headful'),
+      runs: benchmarkRunCount(args),
+    })
+  : undefined
+if (provenance?.gitDirty) {
+  throw new Error('Refusing to save a canonical baseline from a dirty source tree')
+}
+const candidateDir = saveBaseline
+  ? mkdtempSync(resolve(tmpdir(), 'llui-baseline-candidate-'))
+  : undefined
+const childEnv = {
+  ...process.env,
+  ...(candidateDir === undefined ? {} : { LLUI_BENCH_CANDIDATE_DIR: candidateDir }),
+  LLUI_BENCH_WORKSPACE_BUILT: '1',
+}
+
+function run(label: string, command: string, commandArgs: readonly string[]): void {
   console.log(`\n${'═'.repeat(70)}`)
   console.log(`  ${label}`)
   console.log(`${'═'.repeat(70)}\n`)
-  console.log(`$ ${cmd}\n`)
-  execSync(cmd, { cwd: ROOT, stdio: 'inherit' })
+  console.log(`$ ${[command, ...commandArgs].join(' ')}\n`)
+  execFileSync(command, [...commandArgs], { cwd: ROOT, env: childEnv, stdio: 'inherit' })
 }
 
-run('STANDARD JFB BENCH', `tsx ${resolve(ROOT, 'benchmarks/run-jfb.ts')} ${standardArgs}`)
-run('TICKER BENCH', `tsx ${resolve(ROOT, 'scripts/run-ticker.ts')} ${args}`)
+function readCandidate(name: string): BenchmarkMatrix {
+  return JSON.parse(readFileSync(resolve(candidateDir!, `${name}.json`), 'utf8')) as BenchmarkMatrix
+}
+
+try {
+  run('BUILD BENCHMARK DEPENDENCIES', 'pnpm', [
+    'turbo',
+    'run',
+    'build',
+    '--filter=@llui/dom...',
+    '--filter=@llui/vite-plugin...',
+  ])
+  run('STANDARD JFB BENCH', 'pnpm', [
+    'exec',
+    'tsx',
+    resolve(ROOT, 'benchmarks/run-jfb.ts'),
+    ...invocations.standardArgs,
+  ])
+  run('TICKER BENCH', 'pnpm', [
+    'exec',
+    'tsx',
+    resolve(ROOT, 'scripts/run-ticker.ts'),
+    ...invocations.tickerArgs,
+  ])
+
+  if (saveBaseline) {
+    promoteBenchmarkBaseline(BASELINE, {
+      provenance: provenance!,
+      standard: readCandidate('standard'),
+      ticker: readCandidate('ticker'),
+    })
+    run('REGENERATE PUBLISHED BENCHMARK DATA', 'pnpm', [
+      '--filter',
+      '@llui/site',
+      'exec',
+      'tsx',
+      'src/generate-benchmarks.ts',
+    ])
+    console.log(`\n✅ Canonical baseline replaced atomically: ${BASELINE}`)
+  }
+} finally {
+  if (candidateDir !== undefined) rmSync(candidateDir, { recursive: true, force: true })
+}
 
 console.log(`\n${'═'.repeat(70)}`)
 console.log('  ALL BENCHMARKS COMPLETE')

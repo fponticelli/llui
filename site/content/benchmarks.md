@@ -68,10 +68,13 @@ Positive = peer is slower than LLui. **Bold** = LLui wins by >3%.
 ## Methodology
 
 - **Tool:** [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) by Stefan Krause
-- **Browser:** Chrome (headful), CPU throttling 4x
-- **Iterations:** 15 per benchmark, median reported
+- **Browser:** Chrome 149 (headful), CPU throttling 4×
+- **Sampling:** 5 passes; CPU 15, memory 1, size 1 iterations per pass; median-of-medians reported
 - **Machine:** MacBook Pro M5 Max, 128 GB RAM
-- **LLui version:** Latest from `opt` branch with all compiler optimizations enabled
-- **Data source:** [`benchmarks/jfb-baseline.json`](/benchmark-data.json) — raw JSON
+- **LLui commit:** not recorded
+- **JFB commit:** not recorded
+- **Captured:** 2026-06-11T09:55:51.000Z
+- **Legacy capture:** Migrated from independently captured historical files; exact shared provenance was not recorded.
+- **Data source:** [`benchmarks/baseline.json`](/benchmark-data.json) — standard-suite measurements from the canonical capture
 
 Numbers fluctuate ±5% between runs. Differences <5% should be considered noise.

@@ -52,7 +52,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import {
   directDependencies,
@@ -60,11 +60,13 @@ import {
   installState,
   missingPackages,
 } from './lib/verify-install'
+import { assertJfbRevision, currentJfbRevision, readPinnedJfbRevision } from './lib/jfb-revision'
 
 const ROOT = dirname(import.meta.dirname)
 const BENCH_DIR = resolve(ROOT, 'benchmarks')
 const TICKER_DIR = resolve(BENCH_DIR, 'jfb-ticker')
 const REPO_URL = 'https://github.com/krausest/js-framework-benchmark.git'
+const JFB_REVISION = readPinnedJfbRevision(ROOT)
 const JFB_REPO = process.env.JFB_REPO
   ? resolve(process.env.JFB_REPO)
   : resolve(BENCH_DIR, 'js-framework-benchmark-repo')
@@ -251,11 +253,40 @@ if (existsSync(JFB_REPO)) {
     ])
   }
   console.log(`reusing existing clone at ${short(JFB_REPO)}`)
+  const actualRevision = currentJfbRevision(JFB_REPO)
+  if (actualRevision !== JFB_REVISION) {
+    if (!force) {
+      fail(`jfb checkout is at ${actualRevision}, expected pinned ${JFB_REVISION}`, [
+        `Run \`${SETUP_CMD} --force\` to fetch and check out the repository pin.`,
+      ])
+    }
+    if (!exec('git', ['fetch', '--depth=1', 'origin', JFB_REVISION], JFB_REPO).ok) {
+      fail(`could not fetch pinned jfb revision ${JFB_REVISION}`, [
+        `Reproduce with: git -C ${short(JFB_REPO)} fetch --depth=1 origin ${JFB_REVISION}`,
+      ])
+    }
+    if (!exec('git', ['checkout', '--detach', '--force', JFB_REVISION], JFB_REPO).ok) {
+      fail(`could not check out pinned jfb revision ${JFB_REVISION}`, [
+        `Reproduce with: git -C ${short(JFB_REPO)} checkout --detach --force ${JFB_REVISION}`,
+      ])
+    }
+  }
 } else {
-  if (!exec('git', ['clone', '--depth=1', '--single-branch', REPO_URL, JFB_REPO], ROOT).ok) {
-    fail(`git clone of ${REPO_URL} failed`, [
-      'Reproduce with:',
-      `  git clone --depth=1 --single-branch ${REPO_URL} ${short(JFB_REPO)}`,
+  mkdirSync(JFB_REPO, { recursive: true })
+  if (!exec('git', ['init', '--quiet'], JFB_REPO).ok) {
+    fail(`git init failed in ${short(JFB_REPO)}`, [`Remove ${short(JFB_REPO)} and re-run.`])
+  }
+  if (!exec('git', ['remote', 'add', 'origin', REPO_URL], JFB_REPO).ok) {
+    fail(`could not add jfb origin ${REPO_URL}`, [`Remove ${short(JFB_REPO)} and re-run.`])
+  }
+  if (!exec('git', ['fetch', '--depth=1', 'origin', JFB_REVISION], JFB_REPO).ok) {
+    fail(`could not fetch pinned jfb revision ${JFB_REVISION}`, [
+      `Remove ${short(JFB_REPO)} and re-run.`,
+    ])
+  }
+  if (!exec('git', ['checkout', '--detach', JFB_REVISION], JFB_REPO).ok) {
+    fail(`could not check out pinned jfb revision ${JFB_REVISION}`, [
+      `Remove ${short(JFB_REPO)} and re-run.`,
     ])
   }
   if (!existsSync(repoMarker)) {
@@ -265,6 +296,8 @@ if (existsSync(JFB_REPO)) {
   }
   console.log(`✓ cloned into ${short(JFB_REPO)}`)
 }
+assertJfbRevision(JFB_REPO, JFB_REVISION)
+console.log(`✓ pinned jfb revision: ${JFB_REVISION}`)
 
 // ── Steps 2-4: the three installs ────────────────────────────────
 

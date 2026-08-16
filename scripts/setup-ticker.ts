@@ -22,7 +22,7 @@
  *   pnpm bench:ticker:setup --skip-build  # don't rebuild webdriver-ts
  */
 
-import { execSync } from 'node:child_process'
+import { execFileSync } from 'node:child_process'
 import {
   existsSync,
   readFileSync,
@@ -32,6 +32,7 @@ import {
   unlinkSync,
 } from 'node:fs'
 import { resolve, dirname, relative } from 'node:path'
+import { assertJfbRevision, readPinnedJfbRevision } from './lib/jfb-revision'
 
 const ROOT = dirname(import.meta.dirname)
 const BENCH_DIR = resolve(ROOT, 'benchmarks')
@@ -63,6 +64,7 @@ if (!existsSync(resolve(JFB_REPO, 'webdriver-ts/src/benchmarksCommon.ts'))) {
   console.error('Run `pnpm bench:setup` first, or set JFB_REPO env var.')
   process.exit(1)
 }
+assertJfbRevision(JFB_REPO, readPinnedJfbRevision(ROOT))
 console.log(`Using jfb-repo at ${JFB_REPO}`)
 
 // ── Step 1+2: verify built bundles, then symlink ─────────────────
@@ -256,7 +258,7 @@ if (skipBuild) {
   const wdDir = resolve(JFB_REPO, 'webdriver-ts')
   console.log(`Compiling webdriver-ts (${wdDir})...`)
   try {
-    execSync('npm run compile', { cwd: wdDir, stdio: 'inherit' })
+    execFileSync('npm', ['run', 'compile'], { cwd: wdDir, stdio: 'inherit' })
   } catch {
     console.error('webdriver-ts compile failed.')
     console.error(`If the errors are missing modules or types, ${wdDir}/node_modules is`)

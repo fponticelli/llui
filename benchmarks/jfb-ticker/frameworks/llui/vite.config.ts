@@ -8,13 +8,13 @@ export default defineConfig({
     minify: true,
     modulePreload: { polyfill: false },
     outDir: 'dist',
-    rollupOptions: {
+    rolldownOptions: {
       input: 'src/main.ts',
       output: {
         format: 'es',
         entryFileNames: 'main.js',
         chunkFileNames: '[name].js',
-        inlineDynamicImports: true,
+        codeSplitting: false,
       },
       // Do NOT externalize devtools — `installSignalDebug` is DEV-gated, so with
       // @llui/dom's `sideEffects: false` it tree-shakes out of this prod build.

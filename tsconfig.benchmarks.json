@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "files": [
+    "benchmarks/run-jfb.ts",
+    "scripts/keep-awake.ts",
+    "scripts/run-bench-all.ts",
+    "scripts/run-ticker.ts",
+    "scripts/setup-bench.ts",
+    "scripts/setup-ticker.ts",
+    "scripts/lib/benchmark-baseline.ts",
+    "scripts/lib/benchmark-orchestrator.ts",
+    "scripts/lib/benchmark-report.ts",
+    "scripts/lib/benchmark-results.ts",
+    "scripts/lib/jfb-revision.ts",
+    "scripts/lib/managed-process.ts",
+    "scripts/lib/verify-install.ts",
+    "scripts/test/benchmark-baseline.test.ts",
+    "scripts/test/benchmark-generated.test.ts",
+    "scripts/test/benchmark-orchestrator.test.ts",
+    "scripts/test/benchmark-report.test.ts",
+    "scripts/test/benchmark-results.test.ts",
+    "scripts/test/jfb-revision.test.ts",
+    "scripts/test/managed-process.test.ts",
+    "scripts/test/verify-install.test.ts",
+    "site/src/generate-benchmarks.ts"
+  ]
+}

@@ -110,9 +110,10 @@ Each operation above fits that model because it's synchronous-commit.
 to invoke a separate `--suite ticker` mode that runs only these benchmarks
 against the registered framework set.
 
-The existing `jfb-baseline.json` stays untouched; ticker baselines live in
-`benchmarks/ticker-baseline.json` so the two suites are independently
-versioned.
+Standard and ticker results live in one `benchmarks/baseline.json` capture.
+Only `pnpm bench:all --save` replaces it, after both complete framework ×
+operation matrices validate, so the suites can never describe different
+machines or capture epochs.
 
 ## Open questions (resolved)
 
@@ -128,12 +129,12 @@ versioned.
 pnpm bench:ticker:setup    # one-time: symlink apps into jfb-repo + apply patches
 pnpm bench:ticker          # all 5 frameworks × 9 ops
 pnpm bench:ticker --framework llui
-pnpm bench:ticker --runs 3 --save
+pnpm bench:all --runs 5 --save # canonical baseline; complete suites only
 ```
 
 Patches under `jfb-patches/` are reapplied by `setup-ticker.ts` on every run
-(idempotent), so re-running `pnpm bench:setup` (which refreshes the upstream
-clone) doesn't lose the ticker wiring.
+(idempotent). `pnpm bench:setup` enforces `benchmarks/jfb-revision.txt`; after
+a forced checkout, re-run `pnpm bench:ticker:setup` to restore the wiring.
 
 ## Synchronization
 

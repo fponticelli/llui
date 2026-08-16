@@ -13,6 +13,7 @@
     "test:coverage": "turbo run test:coverage",
     "test:e2e": "pnpm --filter @llui/mcp test",
     "test:scripts": "vitest run --config vitest.scripts.config.ts",
+    "check:benchmarks": "tsc --noEmit -p tsconfig.benchmarks.json",
     "smoke:examples": "tsx scripts/smoke-examples.ts",
     "check:docs": "node scripts/check-readme-examples.mjs",
     "check:generated": "node scripts/check-generated.mjs",
@@ -34,8 +35,15 @@
   "lint-staged": {
     "*.{ts,tsx,js,mjs,cjs,jsx,json,md,css,html,yml,yaml}": "prettier --write"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "simple-git-hooks"
+    ]
+  },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^22.19.15",
     "@vitest/coverage-v8": "^4.1.2",
     "@vitest/runner": "^4.1.2",
     "axe-core": "^4.10.2",

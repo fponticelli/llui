@@ -14,6 +14,7 @@ The Vite plugin runs a **single signal transform** (`@llui/compiler`) via the Ty
 pnpm turbo build          # Build all packages (tsc)
 pnpm turbo check          # Type-check all packages (tsc --noEmit)
 pnpm turbo lint           # ESLint all packages
+pnpm check:benchmarks     # Type-check benchmark/setup/orchestration tooling
 pnpm turbo test           # Run tests (vitest) across all packages
 pnpm format               # Prettier format everything
 pnpm format:check         # Check formatting without writing
@@ -36,8 +37,8 @@ pnpm bench:setup              # One-time: clone + install + compile the js-frame
                               # and a && chain silently skips the installs the harness needs (#81).
 pnpm bench                    # Build + run jfb + compare against saved baseline
 pnpm bench --runs 3           # N runs, median-of-medians (reduces single-run noise)
-pnpm bench --save             # Overwrite baseline with current results
 pnpm bench --all              # Also re-run all competitor frameworks (~15 min)
+pnpm bench:all --runs 5 --save # Only supported baseline save: complete, atomic standard+ticker capture
 pnpm bench:build              # Build jfb app only (no benchmark run)
 ```
 

@@ -55,7 +55,16 @@ const TEXT_EXTENSIONS = [
 
 function trackedFiles(): string[] {
   const out = execFileSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' })
-  return out.split('\0').filter((path) => path !== '')
+  const deleted = new Set(
+    execFileSync('git', ['ls-files', '--deleted', '-z'], { cwd: repoRoot, encoding: 'utf8' })
+      .split('\0')
+      .filter((path) => path !== ''),
+  )
+  // A file intentionally deleted in the working tree has no bytes left to
+  // classify. Excluding git's explicit deletion set keeps the scan meaningful
+  // during a legitimate refactor without hiding an unreadable file that should
+  // still exist.
+  return out.split('\0').filter((path) => path !== '' && !deleted.has(path))
 }
 
 /** True iff git would sniff this file as binary — a NUL in its first 8000 bytes. */
@@ -64,9 +73,8 @@ function looksBinaryToGit(path: string): boolean {
   try {
     fd = openSync(resolve(repoRoot, path), 'r')
   } catch (cause) {
-    // Tracked but not on disk: the index and the working tree disagree, which a
-    // half-finished rebase, a conflicted merge or an interrupted checkout all
-    // produce. Say so, rather than surfacing a bare ENOENT from a scan.
+    // A file that was present when trackedFiles ran but disappeared before this
+    // read indicates a concurrent or interrupted working-tree operation.
     throw new Error(
       `cannot read tracked file ${path} — index and working tree disagree ` +
         `(interrupted rebase/checkout?). Settle the working tree and re-run.`,

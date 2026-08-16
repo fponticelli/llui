@@ -8,13 +8,13 @@ export default defineConfig({
     minify: true,
     modulePreload: { polyfill: false },
     outDir: 'dist',
-    rollupOptions: {
+    rolldownOptions: {
       input: 'src/main.tsx',
       output: {
         format: 'es',
         entryFileNames: 'main.js',
         chunkFileNames: '[name].js',
-        inlineDynamicImports: true,
+        codeSplitting: false,
       },
     },
   },

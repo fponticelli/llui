@@ -252,7 +252,7 @@ without a `package-lock.json` — every benchmark then "succeeds" in 0.00 ms wit
 results and the comparison echoes the baseline back as Current (all +0%); `run-jfb.ts`
 now writes the lockfile. Baselines now hold the 2026-06-10 environment (Chrome 149,
 headless, jfb HEAD); the competitor entries are still June-7 — refresh with
-`pnpm bench --all --save` (~15 min) before making cross-framework claims.
+`pnpm bench:all --runs 5 --save` before making cross-framework claims.
 
 ## RowFactory codegen: hoist row-invariant deps + produce — ✅ SHIPPED (2026-06-10)
 
@@ -266,12 +266,13 @@ per-row block-body local stays inline (pinned to the row); only the node-capturi
 71.6 → 67.9 ms (~−5% JS).** Retained heap unchanged — the old allocations died young; the
 win is allocation/GC churn. The ARM-tier sibling was tried next and measured a NON-WIN — see the dead-ends list.
 
-**Baseline provenance (2026-06-10, current files):** both baselines were re-saved from a
+**Historical baseline provenance (2026-06-10; superseded):** both baseline files were re-saved from a
 SINGLE-pass all-frameworks run (Chrome 149, headless, jfb HEAD) so every column is
 same-environment-comparable. Single-pass medians carry ±10-15% drift on the volatile ops —
 LLui's more reliable 3-run same-env values from the same day: Create1k 21.1, Replace 23.2,
 Update 11.7, Select 3.0, Swap 14.2, Remove 11.0, Create10k 219.6, Append 24.6, Clear 10.1.
-Judge LLui-change deltas against a fresh anchor leg, not these point estimates.
+Judge LLui-change deltas against a fresh anchor leg, not these point estimates. Current
+captures use the single transactional `benchmarks/baseline.json` document.
 
 ## Suggested order (remaining)
 

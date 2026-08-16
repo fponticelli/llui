@@ -99,6 +99,9 @@ jobs:
       - name: Type check
         run: pnpm turbo check
 
+      - name: Benchmark tooling type check
+        run: pnpm check:benchmarks
+
       - name: Lint
         run: pnpm turbo lint
 

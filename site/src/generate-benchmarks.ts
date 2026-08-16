@@ -1,21 +1,29 @@
 /**
- * Generate benchmark content page from jfb-baseline.json.
+ * Generate benchmark content page from the canonical benchmark baseline.
  * Run as part of the build: `tsx src/generate-benchmarks.ts`
  */
-import { readFileSync, writeFileSync } from 'fs'
-import { resolve, dirname } from 'path'
-import { fileURLToPath } from 'url'
+import { writeFileSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import { format } from 'prettier'
+
+import { readBenchmarkBaseline } from '../../scripts/lib/benchmark-baseline'
+import { formatBenchmarkMethodology } from '../../scripts/lib/benchmark-report'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const root = resolve(__dirname, '..')
 const projectRoot = resolve(root, '..')
 
-const data = JSON.parse(
-  readFileSync(resolve(projectRoot, 'benchmarks/jfb-baseline.json'), 'utf-8'),
-) as Record<string, Record<string, number>>
+const baseline = readBenchmarkBaseline(resolve(projectRoot, 'benchmarks/baseline.json'))
+const data = baseline.standard
 
 // Copy to public for client-side access
-writeFileSync(resolve(root, 'public/benchmark-data.json'), JSON.stringify(data, null, 2))
+const publicDataPath = resolve(root, 'public/benchmark-data.json')
+writeFileSync(
+  publicDataPath,
+  await format(JSON.stringify(data, null, 2), { filepath: publicDataPath }),
+)
 
 const TIMING_BENCHMARKS = [
   { id: '01_run1k', label: 'Create 1k' },
@@ -40,7 +48,7 @@ const SIZE_BENCHMARKS = [
   { id: '42_size-compressed', label: 'Gzipped' },
 ]
 
-// Keys MUST match the framework keys in benchmarks/jfb-baseline.json. The React
+// Keys MUST match the framework keys in benchmarks/baseline.json. The React
 // entry is keyed `react-hooks` in the harness data — using `react` here silently
 // dropped React from every published table.
 const FRAMEWORKS = ['llui', 'solid', 'svelte', 'vanillajs', 'react-hooks', 'elm']
@@ -59,7 +67,7 @@ const DISPLAY_NAMES: Record<string, string> = {
 for (const fw of FRAMEWORKS) {
   if (!data[fw]) {
     throw new Error(
-      `generate-benchmarks: framework "${fw}" has no data in benchmarks/jfb-baseline.json (keys: ${Object.keys(
+      `generate-benchmarks: framework "${fw}" has no standard data in benchmarks/baseline.json (keys: ${Object.keys(
         data,
       ).join(', ')}). Fix FRAMEWORKS or the baseline.`,
     )
@@ -172,14 +180,12 @@ ${generateTable(SIZE_BENCHMARKS, 'KB')}
 ## Methodology
 
 - **Tool:** [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) by Stefan Krause
-- **Browser:** Chrome (headful), CPU throttling 4x
-- **Iterations:** 15 per benchmark, median reported
-- **Machine:** MacBook Pro M5 Max, 128 GB RAM
-- **LLui version:** Latest from \`opt\` branch with all compiler optimizations enabled
-- **Data source:** [\`benchmarks/jfb-baseline.json\`](/benchmark-data.json) — raw JSON
+${formatBenchmarkMethodology(baseline.provenance)}
+- **Data source:** [\`benchmarks/baseline.json\`](/benchmark-data.json) — standard-suite measurements from the canonical capture
 
 Numbers fluctuate ±5% between runs. Differences <5% should be considered noise.
 `
 
-writeFileSync(resolve(root, 'content/benchmarks.md'), content)
+const contentPath = resolve(root, 'content/benchmarks.md')
+writeFileSync(contentPath, await format(content, { filepath: contentPath }))
 console.log('Generated benchmarks.md')
