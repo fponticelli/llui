@@ -36,10 +36,10 @@ export function hasMcpPackage(root: string): boolean {
   }
 }
 
-export function resolveDevmodeAnnotateEntry(root: string): string | null {
+function resolvePackageImportEntry(root: string, packageName: string): string | null {
   let dir = resolve(root)
   for (;;) {
-    const pkgDir = resolve(dir, 'node_modules', '@llui', 'devmode-annotate')
+    const pkgDir = resolve(dir, 'node_modules', ...packageName.split('/'))
     const pkgJsonPath = resolve(pkgDir, 'package.json')
     if (existsSync(pkgJsonPath)) {
       try {
@@ -56,6 +56,14 @@ export function resolveDevmodeAnnotateEntry(root: string): string | null {
     if (parent === dir) return null
     dir = parent
   }
+}
+
+export function resolveDevmodeAnnotateEntry(root: string): string | null {
+  return resolvePackageImportEntry(root, '@llui/devmode-annotate')
+}
+
+export function resolveDevmodeAnnotateEditorEntry(root: string): string | null {
+  return resolvePackageImportEntry(root, '@llui/devmode-annotate-editor')
 }
 
 /**

@@ -28,6 +28,7 @@ export interface LluiPluginState {
   agentServer: AgentServerInstance | null
   hudInjectEnabled: boolean
   hudEntryPath: string | null
+  hudEditorEntryPath: string | null
   hudOptionsJson: string
   hudHtmlInject: boolean
   resolvedRouter: LlmRouterConfig | null
@@ -62,6 +63,7 @@ export function createPluginState(
     agentServer: null,
     hudInjectEnabled: false,
     hudEntryPath: null,
+    hudEditorEntryPath: null,
     hudOptionsJson: '{}',
     hudHtmlInject: false,
     resolvedRouter: null,

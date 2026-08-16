@@ -546,7 +546,44 @@ importers:
 
   packages/devmode-annotate:
     dependencies:
+      '@llui/components':
+        specifier: workspace:^
+        version: link:../components
+      '@llui/notes-format':
+        specifier: workspace:^
+        version: link:../notes-format
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+      html-to-image:
+        specifier: ^1.11.13
+        version: 1.11.13
+    devDependencies:
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../dom
+      '@llui/test':
+        specifier: workspace:*
+        version: link:../test
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
+      jsdom:
+        specifier: ^29.0.1
+        version: 29.0.1
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
+
+  packages/devmode-annotate-editor:
+    dependencies:
       '@lexical/code-core':
+        specifier: ^0.49.0
+        version: 0.49.0(typescript@6.0.2)
+      '@lexical/history':
         specifier: ^0.49.0
         version: 0.49.0(typescript@6.0.2)
       '@lexical/link':
@@ -570,34 +607,28 @@ importers:
       '@llui/components':
         specifier: workspace:^
         version: link:../components
+      '@llui/interactions':
+        specifier: workspace:^
+        version: link:../interactions
       '@llui/lexical':
         specifier: workspace:^
         version: link:../lexical
+      '@llui/markdown':
+        specifier: workspace:^
+        version: link:../markdown
       '@llui/markdown-editor':
         specifier: workspace:^
         version: link:../markdown-editor
-      '@llui/notes-format':
-        specifier: workspace:^
-        version: link:../notes-format
-      fflate:
-        specifier: ^0.8.3
-        version: 0.8.3
-      html-to-image:
-        specifier: ^1.11.13
-        version: 1.11.13
       lexical:
         specifier: ^0.49.0
         version: 0.49.0(typescript@6.0.2)
     devDependencies:
+      '@llui/devmode-annotate':
+        specifier: workspace:*
+        version: link:../devmode-annotate
       '@llui/dom':
         specifier: workspace:*
         version: link:../dom
-      '@llui/test':
-        specifier: workspace:*
-        version: link:../test
-      fake-indexeddb:
-        specifier: ^6.2.5
-        version: 6.2.5
       jsdom:
         specifier: ^29.0.1
         version: 29.0.1

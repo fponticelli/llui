@@ -137,3 +137,21 @@ describe('the ./stores entry never drags in the HUD', () => {
     expect(modules.size).toBeGreaterThan(4)
   })
 })
+
+describe('the emitted core HUD graph stays editor-free', () => {
+  const { modules, bare } = eagerGraph('../src/index.ts')
+
+  it('reaches the registration contract but no editor implementation', () => {
+    expect(modules.has('../src/editor.ts')).toBe(true)
+    expect([...bare].filter((name) => name.includes('markdown-editor'))).toEqual([])
+    expect([...bare].filter((name) => name === 'lexical' || name.startsWith('@lexical/'))).toEqual(
+      [],
+    )
+  })
+
+  it('actually walked the core runtime graph', () => {
+    expect(modules.has('../src/hud-core.ts')).toBe(true)
+    expect(bare.has('@llui/dom')).toBe(true)
+    expect(bare.has('html-to-image')).toBe(true)
+  })
+})

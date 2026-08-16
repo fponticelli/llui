@@ -6,13 +6,15 @@ The other documents in this directory describe the original proposal (`01` … `
 
 ## Wiring
 
-`@llui/devmode-annotate` is an OPTIONAL, consumer-provided package: `@llui/vite-plugin` no longer depends on it (that would drag the HUD's editor stack into every app installing the plugin), and `resolveDevmodeAnnotateEntry` walks the consumer's `node_modules` for it, skipping injection when it isn't there. Consumers add it to their own devDependencies but do **not** call `mountAnnotateHud()` in their app entry. The plugin auto-injects a virtual ES module via `transformIndexHtml` in dev mode:
+`@llui/devmode-annotate` is an OPTIONAL, consumer-provided package: `@llui/vite-plugin` no longer depends on it, and `resolveDevmodeAnnotateEntry` walks the consumer's `node_modules` for it, skipping injection when it isn't there. Consumers add it to their own devDependencies but do **not** call `mountAnnotateHud()` in their app entry. The plugin auto-injects a virtual ES module via `transformIndexHtml` in dev mode:
 
 ```html
 <script type="module" src="/@id/__x00__virtual:llui-devmode-annotate-init"></script>
 ```
 
-Production builds never run `transformIndexHtml(serve)`, so nothing in the build graph references the HUD — there is no import to tree-shake. That holds for the INJECTED path only: an app that imports `mountAnnotateHud` in its own entry ships the whole HUD (Lexical included) because the `import.meta.env.DEV` gate is a runtime call inside a module that statically imports the editor. Deliberate live-app usage goes through `@llui/devmode-annotate/install`, whose dynamic import splits the HUD into a chunk fetched on activation (#116).
+Core mounts a plain Markdown `<textarea>` and contains no Lexical or `@llui/markdown-editor` edge. `@llui/devmode-annotate-editor` is the optional rich surface: importing its side-effectful entry registers the existing Lexical editor through `@llui/devmode-annotate/editor`. When both packages are installed, the Vite plugin resolves the editor from the same consumer root and imports it in the virtual bootstrap before mounting core; without it, the textarea remains fully usable.
+
+Production builds never run `transformIndexHtml(serve)`, so nothing in the build graph references the HUD — there is no import to tree-shake. That holds for the INJECTED path only: an app that imports `mountAnnotateHud` in its own entry ships the core HUD because the `import.meta.env.DEV` gate is a runtime call. Deliberate live-app usage goes through `@llui/devmode-annotate/install`, whose dynamic import splits core into a chunk fetched on activation (#116). A live app wanting rich editing dynamically imports `@llui/devmode-annotate-editor` immediately before `activate()` so Lexical stays deferred too (#63).
 
 The notebook wire-protocol types now live in `@llui/devmode-annotate/note-types` (moved here to break a package cycle). `@llui/vite-plugin` re-exports them from its own entry for back-compat; `@llui/mcp` consumes them through that re-export.
 
@@ -147,7 +149,7 @@ Roles: `hud` (full feed), `viewer` (subset — no capture-requests).
 Floating button (44×44, two-line "LLui / HUD" wordmark, draggable + edge-anchored persistence) toggles the modal. Hotkey `⌘⇧A`. Modal contents:
 
 - Heading row: view-toggle link ("Browse notes" / "← New note") + status badges (working / ready counters).
-- **Compose view:** context subhead · `⌖ Add region` pill · markdown toolbar (B/I/`</>`/•/1.) · textarea · markdown hint · More-options expander (verbose-capture checkbox) · status line · actions row.
+- **Compose view:** context subhead · `⌖ Add region` pill · plain Markdown textarea (core), upgraded to the rich Lexical surface with floating selection toolbar + slash commands when `@llui/devmode-annotate-editor` is registered · markdown hint · More-options expander (verbose-capture checkbox) · status line · actions row.
 - **Browse view:** session dropdown · notes list with expandable rows showing prose + status timeline + Edit/Delete.
 - Footer: keyboard hints (`⌘↩ solve · ⇧⌘↩ save · esc cancel`), only on compose.
 
@@ -173,6 +175,7 @@ Capture failures are reported with `describeCaptureError(err)` which extracts `t
 ## Tests
 
 - `packages/devmode-annotate/test/` — HUD UI, drag/persist, screenshot bake, debug-collector, live feedback, browse view (planned).
+- `packages/devmode-annotate-editor/test/` — registration upgrade and peer/dependency-boundary guards.
 - `packages/vite-plugin/test/notes-*` — notes store, middleware, router (mockable spawner), session, slug.
 
 ## Resolved (was previously listed as a limitation)

@@ -18,6 +18,9 @@ export function createHudPlugin(state: LluiPluginState) {
       if (id !== HUD_VMOD_RESOLVED_ID) return undefined
       if (!state.hudInjectEnabled || !state.hudEntryPath) return 'export {}'
       return [
+        ...(state.hudEditorEntryPath === null
+          ? []
+          : [`import ${JSON.stringify(state.hudEditorEntryPath)}`]),
         `import { mountAnnotateHud } from ${JSON.stringify(state.hudEntryPath)}`,
         `mountAnnotateHud(${state.hudOptionsJson})`,
       ].join('\n')

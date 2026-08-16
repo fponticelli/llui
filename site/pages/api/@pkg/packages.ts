@@ -73,6 +73,11 @@ export const PACKAGES: PackageMeta[] = [
     blurb: 'Dev HUD — annotate into a shared notebook',
   },
   {
+    slug: 'devmode-annotate-editor',
+    category: 'ai',
+    blurb: 'Rich Markdown editor upgrade for the annotation HUD',
+  },
+  {
     slug: 'notes-format',
     category: 'ai',
     blurb: 'Devmode notebook on-disk format — note types + YAML serialization',

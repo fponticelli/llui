@@ -17,5 +17,7 @@ The LLui Vite plugin performs this registration automatically in development
 when both packages are installed. The package also exports
 `registerMarkdownAnnotateEditor()` for scoped or custom bootstraps.
 
-For production activation and bundle-splitting guidance, see
+For production, do not eagerly import this entry unless the editor should be in
+the initial bundle. Dynamically import it immediately before activating the
+core HUD. See the concrete activation pattern in
 [`@llui/devmode-annotate`](../devmode-annotate/README.md#shipping-it-in-a-live-app).

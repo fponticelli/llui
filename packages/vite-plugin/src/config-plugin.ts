@@ -4,6 +4,7 @@ import type { HudInjectionConfig } from './plugin-options.js'
 import type { LluiPluginState } from './shared-state.js'
 import {
   hasMcpPackage,
+  resolveDevmodeAnnotateEditorEntry,
   loadAgentServer,
   resolveDevmodeAnnotateEntry,
   resolveMcpCliPath,
@@ -57,6 +58,7 @@ export function createConfigPlugin(state: LluiPluginState) {
         if (hudConfig !== false) {
           state.hudEntryPath = resolveDevmodeAnnotateEntry(config.root)
           if (state.hudEntryPath) {
+            state.hudEditorEntryPath = resolveDevmodeAnnotateEditorEntry(config.root)
             state.hudInjectEnabled = true
             const vikePresent = (config.plugins ?? []).some(
               (plugin) => typeof plugin?.name === 'string' && plugin.name.startsWith('vike'),

@@ -160,6 +160,15 @@ function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & Exportab
 function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHandle
 ```
 
+### `registerAnnotateEditor()`
+
+Register an optional editor implementation. The returned disposer restores
+the previous registration, which makes temporary host overrides safe.
+
+```typescript
+function registerAnnotateEditor(editor: AnnotateEditorRegistration): () => void
+```
+
 ## Types
 
 ### `BakeFn`
@@ -184,6 +193,46 @@ export type HeadersInput =
 ```
 
 ## Interfaces
+
+### `AnnotateEditorInstance`
+
+```typescript
+export interface AnnotateEditorInstance {
+  getValue(): string
+  setValue(value: string): void
+  focus(): void
+  dispose(): void
+}
+```
+
+### `AnnotateEditorMountOptions`
+
+Optional note-editor seam for the HUD.
+
+Core owns the note value and keyboard behavior. An editor package owns only
+the live editing surface, so the core package never needs to import its
+implementation (or any of that implementation's dependencies).
+
+```typescript
+export interface AnnotateEditorMountOptions {
+  host: HTMLElement
+  initialValue: string
+  placeholder: string
+  onChange(value: string): void
+}
+```
+
+### `AnnotateEditorRegistration`
+
+```typescript
+export interface AnnotateEditorRegistration {
+  /** Human-readable help rendered below the editor surface. */
+  hint: string
+  /** Styles adopted into the HUD shadow root when isolation is enabled. */
+  shadowCss?: string
+  mount(options: AnnotateEditorMountOptions): AnnotateEditorInstance
+}
+```
 
 ### `AnnotateHudHandle`
 
@@ -423,10 +472,9 @@ export interface MountAnnotateOptions {
    *  `style-src 'unsafe-inline'` CSP rule. Default false (light DOM, the dev
    *  default); `installAnnotateHud` turns it on for production. */
   isolate?: boolean
-  /** Markdown-editor stylesheet text adopted into the shadow root in isolate
-   *  mode (the light-DOM `import '…/editor.css'` can't cross the shadow
-   *  boundary). Defaults to the bundled stylesheet (`editor.css?raw`). Override
-   *  to supply the CSS in environments where the `?raw` import can't resolve. */
+  /** Registered editor stylesheet text adopted into the shadow root in isolate
+   *  mode. Defaults to the active editor registration's `shadowCss`. Override
+   *  to supply the CSS in environments where raw CSS imports can't resolve. */
   editorCss?: string
 }
 ```
