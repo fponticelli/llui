@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { createRouter, route, param } from '../src/index'
+import { createRouter, route, type RouteLocation } from '../src/index'
 import { connectRouter, browserRouterEnv } from '../src/connect'
 import type { RouterEnv } from '../src/connect'
 import { mountApp, component, text } from '@llui/dom'
@@ -13,16 +13,15 @@ import routerDocs from '../../../site/content/api/router.md?raw'
 // — but the fix is the same one `@llui/dom`'s `dom-env.ts` already models:
 // inject the surface instead of reaching for the globals.
 
-type Route = { page: 'home' } | { page: 'article'; slug: string }
+const registry = {
+  home: route('/'),
+  article: route('/article/:slug'),
+}
+type Registry = typeof registry
+type Location = RouteLocation<Registry>
 
 function makeRouter(mode: 'hash' | 'history') {
-  return createRouter<Route>(
-    [
-      route([], () => ({ page: 'home' })),
-      route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-    ],
-    { mode, fallback: { page: 'home' } },
-  )
+  return createRouter(registry, { mode })
 }
 
 interface Recorded {
@@ -149,7 +148,7 @@ function connected(mode: 'hash' | 'history', rec: Recorded) {
   return routing
 }
 
-function mountRecordingListener(routing: ReturnType<typeof connectRouter<Route>>) {
+function mountRecordingListener(routing: ReturnType<typeof connectRouter<Registry>>) {
   const send = vi.fn()
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -277,7 +276,7 @@ describe('connectRouter routes history/location through an injectable env', () =
     const rec = recordingEnv()
     const routing = connected('history', rec)
     routing.handleEffect({
-      effect: routing.push({ page: 'article', slug: 'x' }),
+      effect: routing.push('article', { slug: 'x' }),
       send: vi.fn(),
       signal,
     })
@@ -287,26 +286,33 @@ describe('connectRouter routes history/location through an injectable env', () =
   it('replace goes through env.replaceState in history mode', () => {
     const rec = recordingEnv()
     const routing = connected('history', rec)
-    routing.handleEffect({ effect: routing.replace({ page: 'home' }), send: vi.fn(), signal })
+    routing.handleEffect({
+      effect: routing.replace('article', { slug: 'replacement' }),
+      send: vi.fn(),
+      signal,
+    })
     // WITH a url: a replace changes the URL as well as the entry's state. This is
     // the one `replaceState` here that legitimately carries a path.
-    expect(rec.calls).toEqual(['replaceState:/'])
+    expect(rec.calls).toEqual(['replaceState:/article/replacement'])
   })
 
   it('navigate pushes through the env AND dispatches', () => {
     const rec = recordingEnv()
     const routing = connected('history', rec)
     const send = vi.fn()
-    routing.handleEffect({ effect: routing.navigate({ page: 'article', slug: 'y' }), send, signal })
+    routing.handleEffect({ effect: routing.navigate('article', { slug: 'y' }), send, signal })
     expect(rec.calls).toEqual(['pushState:/article/y'])
-    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'article', slug: 'y' } })
+    expect(send).toHaveBeenCalledWith({
+      type: 'navigate',
+      location: { name: 'article', params: { slug: 'y' } },
+    })
   })
 
   it('hash mode writes the hash through the env', () => {
     const rec = recordingEnv({ hash: '#/' })
     const routing = connected('hash', rec)
     routing.handleEffect({
-      effect: routing.push({ page: 'article', slug: 'z' }),
+      effect: routing.push('article', { slug: 'z' }),
       send: vi.fn(),
       signal,
     })
@@ -328,7 +334,7 @@ describe('connectRouter routes history/location through an injectable env', () =
     const rec = recordingEnv({ hash: '#/' })
     const routing = connected('hash', rec)
     routing.handleEffect({
-      effect: routing.replace({ page: 'article', slug: 'z' }),
+      effect: routing.replace('article', { slug: 'z' }),
       send: vi.fn(),
       signal,
     })
@@ -349,7 +355,7 @@ describe('connectRouter routes history/location through an injectable env', () =
     rec.env.replaceState({ host: 'keep' })
     const routing = connected('hash', rec)
     routing.handleEffect({
-      effect: routing.replace({ page: 'article', slug: 'z' }),
+      effect: routing.replace('article', { slug: 'z' }),
       send: vi.fn(),
       signal,
     })
@@ -383,7 +389,7 @@ describe('connectRouter routes history/location through an injectable env', () =
     )
 
     routing.handleEffect({
-      effect: routing.replace({ page: 'article', slug: 'z' }),
+      effect: routing.replace('article', { slug: 'z' }),
       send: vi.fn(),
       signal,
     })
@@ -394,7 +400,7 @@ describe('connectRouter routes history/location through an injectable env', () =
     expect(send).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'z' },
+      location: { name: 'article', params: { slug: 'z' } },
     })
 
     app.dispose()
@@ -414,15 +420,15 @@ describe('connectRouter routes history/location through an injectable env', () =
     // The real jsdom location is `/`; the env says `/article/seeded`, and the
     // guard must see THAT as `from`.
     const rec = recordingEnv({ pathname: '/article/seeded' })
-    const seen: Array<Route | null> = []
+    const seen: Array<Location | null> = []
     const routing = connectRouter(makeRouter('history'), {
       env: rec.env,
       beforeEnter: (_to, from) => {
         seen.push(from)
       },
     })
-    routing.handleEffect({ effect: routing.push({ page: 'home' }), send: vi.fn(), signal })
-    expect(seen).toEqual([{ page: 'article', slug: 'seeded' }])
+    routing.handleEffect({ effect: routing.push('home'), send: vi.fn(), signal })
+    expect(seen).toEqual([{ name: 'article', params: { slug: 'seeded' } }])
   })
 
   it('listener() subscribes and unsubscribes through the env', () => {
@@ -450,7 +456,7 @@ describe('connectRouter routes history/location through an injectable env', () =
     rec.handlers[0]!.handler()
     expect(send).toHaveBeenCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'popped' },
+      location: { name: 'article', params: { slug: 'popped' } },
     })
 
     app.dispose()
@@ -476,7 +482,7 @@ describe('connectRouter routes history/location through an injectable env', () =
     expect(mounted.send).toHaveBeenCalledTimes(1)
     expect(mounted.send).toHaveBeenLastCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'first' },
+      location: { name: 'article', params: { slug: 'first' } },
     })
 
     // The pair was consumed by that traversal. A later standalone hashchange
@@ -489,7 +495,7 @@ describe('connectRouter routes history/location through an injectable env', () =
     expect(mounted.send).toHaveBeenCalledTimes(2)
     expect(mounted.send).toHaveBeenLastCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'second' },
+      location: { name: 'article', params: { slug: 'second' } },
     })
 
     mounted.dispose()
@@ -520,7 +526,7 @@ describe('connectRouter routes history/location through an injectable env', () =
     expect(mounted.send).toHaveBeenCalledTimes(2)
     expect(mounted.send).toHaveBeenLastCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'later' },
+      location: { name: 'article', params: { slug: 'later' } },
     })
 
     mounted.dispose()
@@ -535,7 +541,7 @@ describe('connectRouter routes history/location through an injectable env', () =
     const hashchange = rec.handlers.find((entry) => entry.event === 'hashchange')!
 
     routing.handleEffect({
-      effect: routing.navigate({ page: 'article', slug: 'programmatic' }),
+      effect: routing.navigate('article', { slug: 'programmatic' }),
       send: mounted.send,
       signal,
     })
@@ -546,7 +552,7 @@ describe('connectRouter routes history/location through an injectable env', () =
     expect(mounted.send).toHaveBeenCalledTimes(1)
     expect(mounted.send).toHaveBeenCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'programmatic' },
+      location: { name: 'article', params: { slug: 'programmatic' } },
     })
 
     mounted.dispose()
@@ -558,7 +564,8 @@ describe('connectRouter routes history/location through an injectable env', () =
       env: rec.env,
       // Blocks only the popped-to route, so the setup push still lands and
       // advances the index the rewind is measured against.
-      beforeEnter: (to) => (to.page === 'article' ? false : undefined),
+      beforeEnter: (to) =>
+        to.name === 'article' && to.params.slug === 'blocked' ? false : undefined,
     })
     const container = document.createElement('div')
     document.body.appendChild(container)
@@ -573,7 +580,11 @@ describe('connectRouter routes history/location through an injectable env', () =
     )
 
     // Two of our own pushes, then a pop back to the first.
-    routing.handleEffect({ effect: routing.push({ page: 'home' }), send: vi.fn(), signal })
+    routing.handleEffect({
+      effect: routing.push('article', { slug: 'allowed' }),
+      send: vi.fn(),
+      signal,
+    })
     rec.env.pushState(ownStamp(rec.env.historyState, 0), '/article/blocked')
     rec.calls.length = 0
     rec.handlers[0]!.handler()
@@ -728,14 +739,14 @@ describe('browserRouterEnv()', () => {
   it('is the default and reads the real location', () => {
     history.replaceState(null, '', '/article/real')
     const routing = connectRouter(makeRouter('history'))
-    const seen: Array<Route | null> = []
+    const seen: Array<Location | null> = []
     const guarded = connectRouter(makeRouter('history'), {
       beforeEnter: (_to, from) => {
         seen.push(from)
       },
     })
-    guarded.handleEffect({ effect: guarded.push({ page: 'home' }), send: vi.fn(), signal })
-    expect(seen).toEqual([{ page: 'article', slug: 'real' }])
+    guarded.handleEffect({ effect: guarded.push('home'), send: vi.fn(), signal })
+    expect(seen).toEqual([{ name: 'article', params: { slug: 'real' } }])
     expect(typeof routing.push).toBe('function')
     history.replaceState(null, '', '/')
   })

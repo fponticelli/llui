@@ -1,31 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createRouter, route, param } from '../src/index'
+import { createRouter, route } from '../src/index'
 import { connectRouter } from '../src/connect'
 import { mountApp, component, text } from '@llui/dom'
 
-type Route = { page: 'home' } | { page: 'admin' } | { page: 'article'; slug: string }
+const registry = {
+  home: route('/'),
+  admin: route('/admin'),
+  article: route('/article/:slug'),
+}
+type Registry = typeof registry
 
 function hashRouter() {
-  return createRouter<Route>([
-    route([], () => ({ page: 'home' })),
-    route(['admin'], () => ({ page: 'admin' })),
-    route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-  ])
+  return createRouter(registry)
 }
 
 function historyRouter() {
-  return createRouter<Route>(
-    [
-      route([], () => ({ page: 'home' })),
-      route(['admin'], () => ({ page: 'admin' })),
-      route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-    ],
-    { mode: 'history' },
-  )
+  return createRouter(registry, { mode: 'history' })
 }
 
 /** Mount a listener and return { send, dispose }. */
-function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
+function mountListener(routing: ReturnType<typeof connectRouter<Registry>>) {
   const send = vi.fn()
   const container = document.createElement('div')
   const App = component({
@@ -61,7 +55,7 @@ describe('hash mode single dispatch (finding 2)', () => {
     const { send, dispose } = mountListener(routing)
 
     routing.handleEffect({
-      effect: routing.navigate({ page: 'article', slug: 'x' }),
+      effect: routing.navigate('article', { slug: 'x' }),
       send: send as unknown as (m: unknown) => void,
       signal: new AbortController().signal,
     })
@@ -80,7 +74,7 @@ describe('hash mode single dispatch (finding 2)', () => {
     const { send, dispose } = mountListener(routing)
 
     routing.handleEffect({
-      effect: routing.push({ page: 'admin' }),
+      effect: routing.push('admin'),
       send: send as unknown as (m: unknown) => void,
       signal: new AbortController().signal,
     })
@@ -110,7 +104,7 @@ describe('hash mode single dispatch (finding 2)', () => {
     const { send, dispose } = mountListener(routing)
 
     routing.handleEffect({
-      effect: routing.replace({ page: 'admin' }),
+      effect: routing.replace('admin'),
       send: send as unknown as (m: unknown) => void,
       signal: new AbortController().signal,
     })
@@ -133,7 +127,7 @@ describe('hash mode single dispatch (finding 2)', () => {
 
     expect(send).toHaveBeenCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'y' },
+      location: { name: 'article', params: { slug: 'y' } },
     })
 
     dispose()

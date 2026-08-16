@@ -1,8 +1,6 @@
 import { component, mountApp, text } from '@llui/dom'
 import { connectRouter } from '../../src/connect.js'
-import { createRouter, route } from '../../src/index.js'
-
-type Route = { page: 'home' } | { page: 'login' } | { page: 'other' }
+import { createRouter, route, type RouteLocation } from '../../src/index.js'
 
 interface TraversalResult {
   sameFragment: {
@@ -25,19 +23,21 @@ declare global {
   }
 }
 
-const router = createRouter<Route>([
-  route([], () => ({ page: 'home' })),
-  route(['login'], () => ({ page: 'login' })),
-  route(['other'], () => ({ page: 'other' })),
-])
+const registry = {
+  home: route('/'),
+  login: route('/login'),
+  other: route('/other'),
+}
+type Location = RouteLocation<typeof registry>
+const router = createRouter(registry)
 
 let blockHome = false
 const routing = connectRouter(router, {
-  beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+  beforeEnter: (to) => (blockHome && to.name === 'home' ? false : undefined),
 })
 const dispatches: string[] = []
 const record = (message: unknown): void => {
-  dispatches.push((message as { route: Route }).route.page)
+  dispatches.push((message as { location: Location }).location.name)
 }
 const signal = new AbortController().signal
 
@@ -51,12 +51,12 @@ mountApp(
   }),
 )
 
-function navigate(route: Route): void {
-  routing.handleEffect({ effect: routing.navigate(route), send: record, signal })
+function navigate(name: 'home' | 'login' | 'other'): void {
+  routing.handleEffect({ effect: routing.navigate(name), send: record, signal })
 }
 
-function replace(route: Route): void {
-  routing.handleEffect({ effect: routing.replace(route), send: record, signal })
+function replace(name: 'home' | 'login' | 'other'): void {
+  routing.handleEffect({ effect: routing.replace(name), send: record, signal })
 }
 
 function marker(): unknown {
@@ -92,15 +92,15 @@ window.__runSameFragmentTraversal = async () => {
   addEventListener('popstate', () => events.push('popstate'))
   addEventListener('hashchange', () => events.push('hashchange'))
 
-  navigate({ page: 'login' })
+  navigate('login')
   await waitFor('first hash navigation', () => events.includes('hashchange'))
   mark('entry-1')
 
   events.length = 0
-  navigate({ page: 'other' })
+  navigate('other')
   await waitFor('second hash navigation', () => events.includes('hashchange'))
   mark('entry-2')
-  replace({ page: 'login' })
+  replace('login')
 
   events.length = 0
   dispatches.length = 0

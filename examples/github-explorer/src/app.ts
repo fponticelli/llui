@@ -4,7 +4,7 @@
 import { component, branch } from '@llui/dom'
 import { handleEffects } from '@llui/effects'
 import type { State, Msg, Effect } from './types'
-import { update } from './update'
+import { pageForLocation, update } from './update'
 import { router, routing } from './router'
 import { header } from './views/header'
 import { searchView } from './views/search'
@@ -13,8 +13,10 @@ import { repoPage } from './views/repo'
 export const appDef = component<State, Msg, Effect>({
   name: 'GitHubExplorer',
   init: () => {
-    const initial = initialState()
-    const [s, effects] = update(initial, { type: 'navigate', route: initial.route })
+    const input = currentUrl()
+    const location = router.match(input) ?? router.location('home')
+    const initial = initialState(input)
+    const [s, effects] = update(initial, { type: 'navigate', location })
     return [s, effects]
   },
   update,
@@ -23,13 +25,23 @@ export const appDef = component<State, Msg, Effect>({
 
     ...routing.listener(send),
 
-    branch(state.at('route').at('page'), {
-      search: () => searchView(state.at('route'), send),
+    branch(state.at('page').at('page'), {
+      search: () => searchView(state.at('page'), send),
       // routing.link needs literal owner/name for href. Read from
       // location.pathname which is current when the branch re-enters
       // (routing.handleEffect pushes state before navigate resolves).
-      repo: () => repoPage(state.at('route'), router.match(location.pathname), send),
-      tree: () => repoPage(state.at('route'), router.match(location.pathname), send),
+      repo: () =>
+        repoPage(
+          state.at('page'),
+          pageForLocation(router.match(location.pathname) ?? router.location('home')),
+          send,
+        ),
+      tree: () =>
+        repoPage(
+          state.at('page'),
+          pageForLocation(router.match(location.pathname) ?? router.location('home')),
+          send,
+        ),
     }),
   ],
   onEffect: (() => {
@@ -48,11 +60,15 @@ export const appDef = component<State, Msg, Effect>({
   })(),
 })
 
-export function initialState(url?: string): State {
-  const input = url ?? (typeof location !== 'undefined' ? location.pathname + location.search : '/')
-  const route = router.match(input)
+function currentUrl(): string {
+  return typeof location !== 'undefined' ? location.pathname + location.search : '/'
+}
+
+export function initialState(url = currentUrl()): State {
+  const location = router.match(url) ?? router.location('home')
+  const route = pageForLocation(location)
   return {
-    route,
+    page: route,
     query: route.page === 'search' ? route.q : '',
   }
 }

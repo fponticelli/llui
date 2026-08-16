@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { createRouter, route, param } from '../src/index'
+import { createRouter, route } from '../src/index'
 import { connectRouter } from '../src/connect'
 import { mountApp, component, text } from '@llui/dom'
 
@@ -20,21 +20,16 @@ import { mountApp, component, text } from '@llui/dom'
 // is the other direction, and fails if refusing across a legacy boundary turns
 // into refusing always.
 
-type Route =
-  | { page: 'home' }
-  | { page: 'admin' }
-  | { page: 'other' }
-  | { page: 'article'; slug: string }
+const registry = {
+  home: route('/'),
+  admin: route('/admin'),
+  other: route('/other'),
+  article: route('/article/:slug'),
+}
+type Registry = typeof registry
 
-const defs = () => [
-  route<Route>([], () => ({ page: 'home' })),
-  route<Route>(['admin'], () => ({ page: 'admin' })),
-  route<Route>(['other'], () => ({ page: 'other' })),
-  route<Route>(['article', param('slug')], ({ slug }) => ({ page: 'article', slug: slug! })),
-]
-
-const hashRouter = () => createRouter<Route>(defs())
-const historyRouter = () => createRouter<Route>(defs(), { mode: 'history' })
+const hashRouter = () => createRouter(registry)
+const historyRouter = () => createRouter(registry, { mode: 'history' })
 
 const settle = () => new Promise((r) => setTimeout(r, 15))
 const hash = () => location.hash
@@ -62,7 +57,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-function mountListener(routing: ReturnType<typeof connectRouter<Route>>) {
+function mountListener(routing: ReturnType<typeof connectRouter<Registry>>) {
   const send = vi.fn()
   const container = document.createElement('div')
   const App = component({
@@ -122,7 +117,7 @@ describe('#150 review B2 — an index with no run is not a position (hash mode)'
 
     let blockHome = false
     const routing = connectRouter(hashRouter(), {
-      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+      beforeEnter: (to) => (blockHome && to.name === 'home' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
     // The seed did not adopt the legacy index: it re-stamped the entry into a
@@ -160,13 +155,13 @@ describe('#150 review B2 — an index with no run is not a position (hash mode)'
 
     let blockOther = false
     const routing = connectRouter(hashRouter(), {
-      beforeEnter: (to) => (blockOther && to.page === 'other' ? false : undefined),
+      beforeEnter: (to) => (blockOther && to.name === 'other' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
 
     // Two entries of our own, numbered consecutively from the re-seeded root.
     routing.handleEffect({
-      effect: routing.push({ page: 'admin' }),
+      effect: routing.push('admin'),
       send: vi.fn(),
       signal: new AbortController().signal,
     })
@@ -203,7 +198,7 @@ describe('#150 review B2 — an index with no run is not a position (history mod
 
     let blockHome = false
     const routing = connectRouter(historyRouter(), {
-      beforeEnter: (to) => (blockHome && to.page === 'home' ? false : undefined),
+      beforeEnter: (to) => (blockHome && to.name === 'home' ? false : undefined),
     })
     const { send, dispose } = mountListener(routing)
     expect(history.state).toEqual({ __llui_idx: 0, __llui_run: expect.any(String) })

@@ -5,9 +5,7 @@ import { routing } from '../router'
 
 export function header(query: Signal<string>, send: Send<Msg>): Mountable {
   return div({ class: 'header' }, [
-    routing.link(send, { page: 'search', q: '', p: 1, data: { type: 'idle' } }, {}, [
-      text('GitHub Explorer'),
-    ]),
+    routing.link(send, 'home', {}, [text('GitHub Explorer')]),
     div({ class: 'search' }, [
       form(
         {

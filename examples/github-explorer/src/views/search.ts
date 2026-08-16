@@ -1,5 +1,5 @@
 import { div, h3, p, span, ul, li, text, button, each, branch, show } from '@llui/dom'
-import type { Msg, Repo, Route } from '../types'
+import type { Msg, Repo, Page } from '../types'
 import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { routing } from '../router'
 
@@ -25,25 +25,25 @@ const LANG_COLORS: Record<string, string> = {
   Zig: '#ec915c',
 }
 
-function searchRepos(r: Route): Repo[] {
+function searchRepos(r: Page): Repo[] {
   if (r.page !== 'search') return []
   if (r.data.type === 'success') return r.data.data.repos
   if (r.data.type === 'loading' && r.data.stale) return r.data.stale.repos
   return []
 }
 
-function searchTotal(r: Route): number {
+function searchTotal(r: Page): number {
   if (r.page !== 'search') return 0
   if (r.data.type === 'success') return r.data.data.total
   if (r.data.type === 'loading' && r.data.stale) return r.data.stale.total
   return 0
 }
 
-function currentPage(r: Route): number {
+function currentPage(r: Page): number {
   return r.page === 'search' ? r.p : 1
 }
 
-export function searchView(route: Signal<Route>, send: Send<Msg>): Renderable {
+export function searchView(route: Signal<Page>, send: Send<Msg>): Renderable {
   return [
     div({ class: 'container' }, [
       // Error
@@ -127,14 +127,7 @@ function repoItem(item: Signal<Repo>, send: Send<Msg>): Mountable {
   const owner = item.peek().owner.login
   const name = item.peek().name
   return li({ class: 'repo-item' }, [
-    h3([
-      routing.link(
-        send,
-        { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
-        {},
-        [text(item.at('full_name'))],
-      ),
-    ]),
+    h3([routing.link(send, 'repoCode', { owner, repo: name }, {}, [text(item.at('full_name'))])]),
     p([text(item.map((r) => r.description ?? ''))]),
     div({ class: 'repo-meta' }, [
       show(

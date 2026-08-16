@@ -1,222 +1,198 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createRouter, route, param } from '../src/index'
-import { connectRouter } from '../src/connect'
-import type { ConnectOptions } from '../src/connect'
-import { mountApp, component, text } from '@llui/dom'
+import { component, mountApp, text } from '@llui/dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { connectRouter, type ConnectOptions, type RouterEffect } from '../src/connect'
+import { createRouter, route } from '../src/index'
 
-// Issue #110 — three gaps sharing the hash-mode/guard seam:
-//   1. a hash-mode click on the CURRENT route preventDefault'd and then did
-//      nothing at all — a dead click;
-//   2. a hash-mode link was inert without a mounted listener(), so it also
-//      never ran guards at click time;
-//   3. push()/replace() honoured a guard REDIRECT but dispatched nothing, so
-//      `state.route` (set by the reducer that emitted the URL-only effect) and
-//      the URL disagreed permanently.
+const registry = {
+  home: route('/'),
+  admin: route('/admin'),
+  article: route('/article/:slug'),
+}
+type Registry = typeof registry
 
-type Route = { page: 'home' } | { page: 'admin' } | { page: 'article'; slug: string }
+const makeRouter = (mode: 'hash' | 'history' = 'hash') => createRouter(registry, { mode })
+const settle = () => new Promise((resolve) => setTimeout(resolve, 10))
 
-const defs = () => [
-  route<Route>([], () => ({ page: 'home' })),
-  route<Route>(['admin'], () => ({ page: 'admin' })),
-  route<Route>(['article', param('slug')], ({ slug }) => ({ page: 'article', slug: slug! })),
-]
-
-const hashRouter = () => createRouter<Route>(defs())
-const historyRouter = () => createRouter<Route>(defs(), { mode: 'history' })
-
-const settle = () => new Promise((r) => setTimeout(r, 10))
-
-/** Mount a link with NO listener() — the point of half these tests. */
 function mountLink(
-  routing: ReturnType<typeof connectRouter<Route>>,
-  send: (msg: unknown) => void,
-  to: Route,
+  routing: ReturnType<typeof connectRouter<Registry>>,
+  send: (message: unknown) => void,
+  destination: ['home' | 'admin'] | ['article', { slug: string }],
 ) {
   const container = document.createElement('div')
   const App = component({
-    name: 'T',
+    name: 'HashLinkSemanticsHost',
     init: (): [null, never[]] => [null, []],
-    update: (s: null): [null, never[]] => [s, []],
-    view: () => [routing.link(send, to, {}, [text('go')])],
+    update: (state: null): [null, never[]] => [state, []],
+    view: () => [
+      destination[0] === 'article'
+        ? routing.link(send, 'article', destination[1], {}, [text('go')])
+        : routing.link(send, destination[0], {}, [text('go')]),
+    ],
   })
   const handle = mountApp(container, App)
   return { anchor: container.querySelector('a')!, dispose: () => handle.dispose() }
 }
 
 function click(anchor: HTMLAnchorElement): MouseEvent {
-  const ev = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
-  anchor.dispatchEvent(ev)
-  return ev
+  const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+  anchor.dispatchEvent(event)
+  return event
 }
 
 function run(
-  routing: ReturnType<typeof connectRouter<Route>>,
-  effect: ReturnType<ReturnType<typeof connectRouter<Route>>['push']>,
-  send: (msg: unknown) => void,
+  routing: ReturnType<typeof connectRouter<Registry>>,
+  effect: RouterEffect,
+  send = vi.fn(),
 ) {
   routing.handleEffect({ effect, send, signal: new AbortController().signal })
+  return send
 }
 
-describe('#110.1 a same-route hash click dispatches', () => {
+describe('#110 hash link semantics', () => {
   beforeEach(async () => {
+    history.replaceState(null, '', '/')
     location.hash = ''
     await settle()
   })
 
-  it('dispatches even though the URL does not change', async () => {
+  it('makes a click on the current canonical location a full no-op', async () => {
     location.hash = '#/admin'
     await settle()
-    const routing = connectRouter(hashRouter())
+    const beforeEnter = vi.fn()
+    const routing = connectRouter(makeRouter(), { beforeEnter })
     const send = vi.fn()
-    const { anchor, dispose } = mountLink(routing, send, { page: 'admin' })
+    const { anchor, dispose } = mountLink(routing, send, ['admin'])
 
-    const ev = click(anchor)
+    const event = click(anchor)
 
-    // The contract: link() intercepts and dispatches in BOTH modes. A click on
-    // the current route is a request to re-enter it, not a no-op.
-    expect(ev.defaultPrevented).toBe(true)
-    expect(send).toHaveBeenCalledTimes(1)
-    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'admin' } })
-
+    expect(event.defaultPrevented).toBe(true)
+    expect(beforeEnter).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    expect(location.hash).toBe('#/admin')
     dispose()
   })
-})
 
-describe('#110.2 a hash link works without a mounted listener()', () => {
-  beforeEach(async () => {
-    location.hash = ''
-    await settle()
-  })
-
-  it('writes the URL and dispatches with no listener in the tree', async () => {
-    const routing = connectRouter(hashRouter())
+  it('writes and dispatches without a listener mounted', () => {
+    const routing = connectRouter(makeRouter())
     const send = vi.fn()
-    const { anchor, dispose } = mountLink(routing, send, { page: 'article', slug: 'x' })
+    const { anchor, dispose } = mountLink(routing, send, ['article', { slug: 'x' }])
 
     click(anchor)
 
     expect(location.hash).toBe('#/article/x')
-    expect(send).toHaveBeenCalledTimes(1)
+    expect(send).toHaveBeenCalledOnce()
     expect(send).toHaveBeenCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'x' },
+      location: { name: 'article', params: { slug: 'x' } },
     })
-
     dispose()
-    await settle()
   })
 
-  it('runs guards at click time and leaves no junk entry when blocked', async () => {
-    const options: ConnectOptions<Route> = { beforeEnter: (to) => to.page !== 'admin' && undefined }
-    const routing = connectRouter(hashRouter(), options)
+  it('runs guards at click time and leaves no junk entry when blocked', () => {
+    const options: ConnectOptions<Registry> = {
+      beforeEnter: (to) => to.name !== 'admin' && undefined,
+    }
+    const routing = connectRouter(makeRouter(), options)
     const send = vi.fn()
-    const { anchor, dispose } = mountLink(routing, send, { page: 'admin' })
-
+    const { anchor, dispose } = mountLink(routing, send, ['admin'])
     const hashBefore = location.hash
     const lengthBefore = history.length
+
     click(anchor)
 
     expect(send).not.toHaveBeenCalled()
     expect(location.hash).toBe(hashBefore)
     expect(history.length).toBe(lengthBefore)
-
     dispose()
   })
 
-  it('dispatches the redirect target when a guard rewrites the click', async () => {
-    const routing = connectRouter(hashRouter(), {
-      beforeEnter: (to) => (to.page === 'admin' ? ({ page: 'home' } as const) : undefined),
+  it('dispatches the normalized redirect target at click time', () => {
+    const router = makeRouter()
+    const routing = connectRouter(router, {
+      beforeEnter: (to) => (to.name === 'admin' ? router.location('home') : undefined),
     })
     const send = vi.fn()
-    const { anchor, dispose } = mountLink(routing, send, { page: 'admin' })
+    const { anchor, dispose } = mountLink(routing, send, ['admin'])
 
     click(anchor)
 
-    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'home' } })
+    expect(send).toHaveBeenCalledWith({
+      type: 'navigate',
+      location: { name: 'home', params: {} },
+    })
     expect(location.hash === '' || location.hash === '#/').toBe(true)
-
     dispose()
-    await settle()
   })
 })
 
-describe('#110.3 a guard redirect on push()/replace() dispatches', () => {
-  beforeEach(() => {
+describe('#110 guard redirects on push and replace', () => {
+  beforeEach(async () => {
     history.replaceState(null, '', '/')
+    location.hash = ''
+    await settle()
   })
 
-  it('push(): the URL and the dispatched route agree after a redirect', () => {
-    const router = historyRouter()
+  it('push keeps the URL and dispatched redirect location in agreement', () => {
+    const router = makeRouter('history')
     const routing = connectRouter(router, {
       beforeEnter: (to) =>
-        to.page === 'admin' ? ({ page: 'article', slug: 'x' } as const) : undefined,
+        to.name === 'admin' ? router.location('article', { slug: 'x' }) : undefined,
     })
-    const send = vi.fn()
-
-    run(routing, routing.push({ page: 'admin' }), send)
+    const send = run(routing, routing.push('admin'))
 
     expect(location.pathname).toBe('/article/x')
-    expect(send).toHaveBeenCalledTimes(1)
-    const msg = send.mock.calls[0]![0] as { type: string; route: Route }
-    expect(msg).toEqual({ type: 'navigate', route: { page: 'article', slug: 'x' } })
-    // The whole point: state.route (driven by this message) and the URL agree.
-    expect(router.href(msg.route)).toBe(location.pathname)
+    expect(send).toHaveBeenCalledOnce()
+    expect(send).toHaveBeenCalledWith({
+      type: 'navigate',
+      location: { name: 'article', params: { slug: 'x' } },
+    })
   })
 
-  it('replace(): the URL and the dispatched route agree after a redirect', () => {
-    const router = historyRouter()
+  it('replace keeps the URL and dispatched redirect location in agreement', () => {
+    const router = makeRouter('history')
     const routing = connectRouter(router, {
       beforeEnter: (to) =>
-        to.page === 'admin' ? ({ page: 'article', slug: 'y' } as const) : undefined,
+        to.name === 'admin' ? router.location('article', { slug: 'y' }) : undefined,
     })
-    const send = vi.fn()
-
-    run(routing, routing.replace({ page: 'admin' }), send)
+    const send = run(routing, routing.replace('admin'))
 
     expect(location.pathname).toBe('/article/y')
     expect(send).toHaveBeenCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'y' },
+      location: { name: 'article', params: { slug: 'y' } },
     })
   })
 
-  it('keeps push()/replace() URL-only when no guard redirects', () => {
-    const routing = connectRouter(historyRouter())
+  it('keeps push and replace URL-only when no guard redirects', () => {
+    const routing = connectRouter(makeRouter('history'))
     const send = vi.fn()
 
-    run(routing, routing.push({ page: 'admin' }), send)
-    run(routing, routing.replace({ page: 'article', slug: 'z' }), send)
+    run(routing, routing.push('admin'), send)
+    run(routing, routing.replace('article', { slug: 'z' }), send)
 
-    // The documented contract: the caller's reducer already set state.route.
     expect(send).not.toHaveBeenCalled()
   })
 
-  it('stays silent when a guard BLOCKS a push', () => {
-    const routing = connectRouter(historyRouter(), { beforeEnter: () => false })
-    const send = vi.fn()
-
-    run(routing, routing.push({ page: 'admin' }), send)
+  it('stays silent and leaves the URL unchanged when a guard blocks', () => {
+    const routing = connectRouter(makeRouter('history'), { beforeEnter: () => false })
+    const send = run(routing, routing.push('admin'))
 
     expect(send).not.toHaveBeenCalled()
     expect(location.pathname).toBe('/')
   })
 
-  it('redirects and dispatches in hash mode too', async () => {
-    location.hash = ''
-    await settle()
-    const routing = connectRouter(hashRouter(), {
+  it('redirects and dispatches in hash mode', () => {
+    const router = makeRouter()
+    const routing = connectRouter(router, {
       beforeEnter: (to) =>
-        to.page === 'admin' ? ({ page: 'article', slug: 'q' } as const) : undefined,
+        to.name === 'admin' ? router.location('article', { slug: 'q' }) : undefined,
     })
-    const send = vi.fn()
-
-    run(routing, routing.push({ page: 'admin' }), send)
+    const send = run(routing, routing.push('admin'))
 
     expect(location.hash).toBe('#/article/q')
     expect(send).toHaveBeenCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'q' },
+      location: { name: 'article', params: { slug: 'q' } },
     })
-    await settle()
   })
 })

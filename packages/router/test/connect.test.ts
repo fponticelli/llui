@@ -1,272 +1,105 @@
-import { describe, it, expect, vi } from 'vitest'
-import { createRouter, route, param } from '../src/index'
+import { component, mountApp, text } from '@llui/dom'
+import { describe, expect, it, vi } from 'vitest'
 import { connectRouter } from '../src/connect'
-import { mountApp, component, text } from '@llui/dom'
+import { createRouter, route, type RouteLocation } from '../src/index'
 
-type Route = { page: 'home' } | { page: 'article'; slug: string } | { page: 'search'; q: string }
+const registry = {
+  home: route('/'),
+  article: route('/articles/:slug'),
+}
+type Location = RouteLocation<typeof registry>
 
-const router = createRouter<Route>([
-  route([], () => ({ page: 'home' })),
-  route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-  route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' })),
-])
-
-describe('connectRouter', () => {
+describe('connected router surface', () => {
+  const router = createRouter(registry)
   const routing = connectRouter(router)
 
-  describe('push / replace / back / forward', () => {
-    it('push returns a router effect with the formatted path and original route', () => {
-      const effect = routing.push({ page: 'article', slug: 'hello' })
-      expect(effect).toEqual({
-        type: '__router',
-        action: 'push',
-        path: '#/article/hello',
-        route: { page: 'article', slug: 'hello' },
-      })
+  it('creates normalized destination and history utility effects', () => {
+    expect(routing.push('article', { slug: 'hello' })).toEqual({
+      type: '__router',
+      action: 'push',
+      path: '#/articles/hello',
+      location: { name: 'article', params: { slug: 'hello' } },
     })
-
-    it('replace returns a router effect', () => {
-      const effect = routing.replace({ page: 'home' })
-      expect(effect).toEqual({
-        type: '__router',
-        action: 'replace',
-        path: '#/',
-        route: { page: 'home' },
-      })
+    expect(routing.replace('home')).toEqual({
+      type: '__router',
+      action: 'replace',
+      path: '#/',
+      location: { name: 'home', params: {} },
     })
-
-    it('back returns a back effect', () => {
-      expect(routing.back()).toEqual({ type: '__router', action: 'back' })
-    })
-
-    it('forward returns a forward effect', () => {
-      expect(routing.forward()).toEqual({ type: '__router', action: 'forward' })
-    })
-
-    it('scroll returns a scroll effect', () => {
-      expect(routing.scroll(0, 100)).toEqual({ type: '__router', action: 'scroll', x: 0, y: 100 })
-    })
+    expect(routing.back()).toEqual({ type: '__router', action: 'back' })
+    expect(routing.forward()).toEqual({ type: '__router', action: 'forward' })
+    expect(routing.scroll(2, 3)).toEqual({ type: '__router', action: 'scroll', x: 2, y: 3 })
   })
 
-  describe('handleEffect', () => {
-    it('returns true for router effects', () => {
-      const effect = { type: '__router', action: 'scroll', x: 0, y: 0 } as { type: string }
-      const result = routing.handleEffect({
-        effect,
+  it('claims only router effects', () => {
+    expect(
+      routing.handleEffect({
+        effect: routing.back(),
         send: vi.fn(),
         signal: new AbortController().signal,
-      })
-      expect(result).toBe(true)
-    })
-
-    it('returns false for non-router effects', () => {
-      const effect = { type: 'http' } as { type: string }
-      const result = routing.handleEffect({
-        effect,
+      }),
+    ).toBe(true)
+    expect(
+      routing.handleEffect({
+        effect: { type: 'http' },
         send: vi.fn(),
         signal: new AbortController().signal,
-      })
-      expect(result).toBe(false)
-    })
+      }),
+    ).toBe(false)
   })
 
-  describe('createHandler', () => {
-    it('handles navigate messages and returns new state + effects', () => {
-      type State = { route: Route; count: number }
-      type Msg = { type: 'navigate'; route: Route } | { type: 'inc' }
-      type Effect = { type: '__router'; action: string; path?: string }
-
-      const handler = routing.createHandler<State, Msg, Effect>({
-        getRoute: (msg) => (msg as { route: Route }).route,
-        onNavigate: (state, route) => [{ ...state, route }, [routing.push(route)]],
-      })
-
-      const state: State = { route: { page: 'home' }, count: 0 }
-
-      // Handles navigate
-      const result = handler(state, { type: 'navigate', route: { page: 'article', slug: 'x' } })
-      expect(result).not.toBeNull()
-      expect(result![0].route).toEqual({ page: 'article', slug: 'x' })
-      expect(result![1]).toHaveLength(1)
-
-      // Ignores non-navigate
-      expect(handler(state, { type: 'inc' })).toBeNull()
+  it('creates an update handler over route locations and supports application redirects', () => {
+    type State = { location: Location; visits: number }
+    type Msg = { type: 'navigate'; location: Location } | { type: 'increment' }
+    const handler = routing.createHandler<State, Msg, never>({
+      getLocation: (message) => (message as { location: Location }).location,
+      guard: (location) =>
+        location.name === 'article' && location.params.slug === 'private'
+          ? router.location('home')
+          : location,
+      onNavigate: (state, location) => [{ ...state, location }, []],
     })
+    const state: State = { location: router.location('home'), visits: 0 }
 
-    it('applies guard to redirect', () => {
-      type State = { route: Route; loggedIn: boolean }
-      type Msg = { type: 'navigate'; route: Route }
-
-      const handler = routing.createHandler<State, Msg, never>({
-        getRoute: (msg) => msg.route,
-        guard: (route, state) => {
-          if (route.page === 'article' && !state.loggedIn) return { page: 'home' }
-          return route
-        },
-        onNavigate: (state, route) => [{ ...state, route }, []],
-      })
-
-      const state: State = { route: { page: 'home' }, loggedIn: false }
-      const result = handler(state, { type: 'navigate', route: { page: 'article', slug: 'x' } })
-      expect(result![0].route).toEqual({ page: 'home' }) // redirected
-    })
+    expect(
+      handler(state, {
+        type: 'navigate',
+        location: router.location('article', { slug: 'private' }),
+      })?.[0].location,
+    ).toEqual({ name: 'home', params: {} })
+    expect(handler(state, { type: 'increment' })).toBeNull()
   })
 
-  describe('link', () => {
-    /** Run callback inside a mounted component's view to get a render context */
-    function withView(fn: () => void) {
-      const container = document.createElement('div')
-      const App = component({
-        name: 'T',
-        init: () => [null, []],
-        update: (s) => [s, []],
-        view: () => {
-          fn()
-          return [text('')]
-        },
-      })
-      const handle = mountApp(container, App)
-      handle.dispose()
-    }
-
-    it('renders an anchor with the correct href', () => {
-      withView(() => {
-        const el = routing
-          .link(vi.fn(), { page: 'article', slug: 'hello' }, { class: 'my-link' }, [])
-          .mount() as HTMLAnchorElement
-        expect(el.tagName).toBe('A')
-        expect(el.getAttribute('href')).toBe('#/article/hello')
-        expect(el.className).toBe('my-link')
-      })
+  it('renders name-specific hrefs and custom messages in history mode', () => {
+    history.replaceState(null, '', '/')
+    const historyRouting = connectRouter(createRouter(registry, { mode: 'history' }))
+    const send = vi.fn()
+    const container = document.createElement('div')
+    const App = component({
+      name: 'ConnectedRouterSurface',
+      init: () => [null, []] as const,
+      update: (state: null) => [state, []] as const,
+      view: () => [
+        historyRouting.link(
+          send,
+          'article',
+          { slug: 'custom' },
+          { class: 'route-link' },
+          [text('open')],
+          (location) => ({ type: 'goto', location }),
+        ),
+      ],
     })
+    const mounted = mountApp(container, App)
+    const anchor = container.querySelector('a')!
 
-    it('prevents default on click', () => {
-      withView(() => {
-        const send = vi.fn()
-        const el = routing.link(send, { page: 'article', slug: 'test' }, {}, []).mount()
-        const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
-        el.dispatchEvent(event)
-        expect(event.defaultPrevented).toBe(true)
-        // Since #110, hash mode runs the same pipeline as history mode: the
-        // click sets the hash AND dispatches directly, so a link no longer
-        // depends on a mounted listener(). Dispatch counts are asserted in
-        // test/hash-link-semantics.test.ts.
-      })
+    expect(anchor.getAttribute('href')).toBe('/articles/custom')
+    expect(anchor.className).toBe('route-link')
+    anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
+    expect(send).toHaveBeenCalledWith({
+      type: 'goto',
+      location: { name: 'article', params: { slug: 'custom' } },
     })
-
-    it('sends navigate message on click in history mode', () => {
-      withView(() => {
-        const historyRouter = createRouter<Route>(
-          [
-            route([], () => ({ page: 'home' })),
-            route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-          ],
-          { mode: 'history' },
-        )
-        const historyRouting = connectRouter(historyRouter)
-        const send = vi.fn()
-        const el = historyRouting.link(send, { page: 'article', slug: 'test' }, {}, []).mount()
-        const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
-        el.dispatchEvent(event)
-        expect(event.defaultPrevented).toBe(true)
-        expect(send).toHaveBeenCalledWith({
-          type: 'navigate',
-          route: { page: 'article', slug: 'test' },
-        })
-      })
-    })
-
-    it('does not intercept ctrl+click', () => {
-      withView(() => {
-        const send = vi.fn()
-        const el = routing.link(send, { page: 'home' }, {}, []).mount()
-        const event = new MouseEvent('click', {
-          bubbles: true,
-          cancelable: true,
-          button: 0,
-          ctrlKey: true,
-        })
-        el.dispatchEvent(event)
-        expect(event.defaultPrevented).toBe(false)
-        expect(send).not.toHaveBeenCalled()
-      })
-    })
-
-    it('does not intercept meta+click', () => {
-      withView(() => {
-        const send = vi.fn()
-        const el = routing.link(send, { page: 'home' }, {}, []).mount()
-        const event = new MouseEvent('click', {
-          bubbles: true,
-          cancelable: true,
-          button: 0,
-          metaKey: true,
-        })
-        el.dispatchEvent(event)
-        expect(event.defaultPrevented).toBe(false)
-        expect(send).not.toHaveBeenCalled()
-      })
-    })
-
-    it('uses custom message factory in history mode', () => {
-      withView(() => {
-        const historyRouter = createRouter<Route>(
-          [
-            route([], () => ({ page: 'home' })),
-            route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-          ],
-          { mode: 'history' },
-        )
-        const historyRouting = connectRouter(historyRouter)
-        const send = vi.fn()
-        const el = historyRouting
-          .link(send, { page: 'article', slug: 'x' }, {}, [], (r) => ({
-            type: 'goto',
-            route: r,
-          }))
-          .mount()
-        el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 }))
-        expect(send).toHaveBeenCalledWith({ type: 'goto', route: { page: 'article', slug: 'x' } })
-      })
-    })
-  })
-
-  describe('history mode', () => {
-    it('generates clean paths without hash prefix', () => {
-      const historyRouter = createRouter<Route>(
-        [
-          route([], () => ({ page: 'home' })),
-          route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-          route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' })),
-        ],
-        { mode: 'history' },
-      )
-      const historyRouting = connectRouter(historyRouter)
-
-      expect(historyRouting.push({ page: 'article', slug: 'x' }).path).toBe('/article/x')
-    })
-
-    it('link href uses clean paths', () => {
-      const historyRouter = createRouter<Route>(
-        [
-          route([], () => ({ page: 'home' })),
-          route(['search'], { query: ['q'] }, ({ q }) => ({ page: 'search', q: q ?? '' })),
-        ],
-        { mode: 'history' },
-      )
-      const historyRouting = connectRouter(historyRouter)
-
-      const container = document.createElement('div')
-      const App = component({
-        name: 'T',
-        init: () => [null, []],
-        update: (s) => [s, []],
-        view: () => [historyRouting.link(vi.fn(), { page: 'search', q: 'test' }, {}, [])],
-      })
-      const handle = mountApp(container, App)
-      const href = container.querySelector('a')!.getAttribute('href') ?? ''
-      expect(href).toBe('/search?q=test')
-      handle.dispose()
-    })
+    mounted.dispose()
   })
 })

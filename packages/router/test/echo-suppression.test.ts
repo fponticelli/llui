@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createRouter, route, param } from '../src/index'
+import { createRouter, route } from '../src/index'
 import { connectRouter } from '../src/connect'
 import { mountApp, component, text } from '@llui/dom'
 
@@ -9,20 +9,20 @@ import { mountApp, component, text } from '@llui/dom'
 // send: the reducer runs twice and its effects fire twice, which for a
 // non-idempotent reducer is a real bug, not a wasted render.
 
-type Route = { page: 'home' } | { page: 'admin' } | { page: 'article'; slug: string }
+const registry = {
+  home: route('/'),
+  admin: route('/admin'),
+  article: route('/article/:slug'),
+}
+type Registry = typeof registry
 
-const hashRouter = () =>
-  createRouter<Route>([
-    route([], () => ({ page: 'home' })),
-    route(['admin'], () => ({ page: 'admin' })),
-    route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug: slug! })),
-  ])
+const hashRouter = () => createRouter(registry)
 
 const settle = () => new Promise((r) => setTimeout(r, 10))
 
 /** Mount a listener that dispatches through the SAME send the effects use. */
 function mountListener(
-  routing: ReturnType<typeof connectRouter<Route>>,
+  routing: ReturnType<typeof connectRouter<Registry>>,
   send: (msg: unknown) => void,
 ) {
   const container = document.createElement('div')
@@ -37,8 +37,8 @@ function mountListener(
 }
 
 function run(
-  routing: ReturnType<typeof connectRouter<Route>>,
-  effect: ReturnType<ReturnType<typeof connectRouter<Route>>['push']>,
+  routing: ReturnType<typeof connectRouter<Registry>>,
+  effect: ReturnType<ReturnType<typeof connectRouter<Registry>>['push']>,
   send: (msg: unknown) => void,
 ) {
   routing.handleEffect({ effect, send, signal: new AbortController().signal })
@@ -55,13 +55,13 @@ describe('#108 batched hash navigations dispatch exactly once each', () => {
     const send = vi.fn()
     const dispose = mountListener(routing, send)
 
-    run(routing, routing.navigate({ page: 'article', slug: 'one' }), send)
-    run(routing, routing.navigate({ page: 'article', slug: 'two' }), send)
+    run(routing, routing.navigate('article', { slug: 'one' }), send)
+    run(routing, routing.navigate('article', { slug: 'two' }), send)
     await settle()
 
     expect(send.mock.calls.map((c) => c[0])).toEqual([
-      { type: 'navigate', route: { page: 'article', slug: 'one' } },
-      { type: 'navigate', route: { page: 'article', slug: 'two' } },
+      { type: 'navigate', location: { name: 'article', params: { slug: 'one' } } },
+      { type: 'navigate', location: { name: 'article', params: { slug: 'two' } } },
     ])
 
     dispose()
@@ -72,15 +72,15 @@ describe('#108 batched hash navigations dispatch exactly once each', () => {
     const send = vi.fn()
     const dispose = mountListener(routing, send)
 
-    run(routing, routing.push({ page: 'admin' }), send)
-    run(routing, routing.navigate({ page: 'article', slug: 'x' }), send)
+    run(routing, routing.push('admin'), send)
+    run(routing, routing.navigate('article', { slug: 'x' }), send)
     await settle()
 
     // push() is URL-only; navigate() dispatches once. Neither echo may add one.
     expect(send).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'x' },
+      location: { name: 'article', params: { slug: 'x' } },
     })
 
     dispose()
@@ -91,14 +91,14 @@ describe('#108 batched hash navigations dispatch exactly once each', () => {
     const send = vi.fn()
     const dispose = mountListener(routing, send)
 
-    run(routing, routing.navigate({ page: 'admin' }), send)
-    run(routing, routing.push({ page: 'home' }), send)
-    run(routing, routing.navigate({ page: 'article', slug: 'z' }), send)
+    run(routing, routing.navigate('admin'), send)
+    run(routing, routing.push('home'), send)
+    run(routing, routing.navigate('article', { slug: 'z' }), send)
     await settle()
 
     expect(send.mock.calls.map((c) => c[0])).toEqual([
-      { type: 'navigate', route: { page: 'admin' } },
-      { type: 'navigate', route: { page: 'article', slug: 'z' } },
+      { type: 'navigate', location: { name: 'admin', params: {} } },
+      { type: 'navigate', location: { name: 'article', params: { slug: 'z' } } },
     ])
 
     dispose()
@@ -114,7 +114,7 @@ describe('#108 batched hash navigations dispatch exactly once each', () => {
     const send = vi.fn()
 
     for (let i = 0; i < 200; i++) {
-      run(routing, routing.navigate({ page: 'article', slug: String(i) }), send)
+      run(routing, routing.navigate('article', { slug: String(i) }), send)
     }
     await settle()
     expect(send).toHaveBeenCalledTimes(200) // one per navigation, none from an echo
@@ -125,7 +125,10 @@ describe('#108 batched hash navigations dispatch exactly once each', () => {
     window.dispatchEvent(new HashChangeEvent('hashchange'))
 
     expect(send).toHaveBeenCalledTimes(1)
-    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'admin' } })
+    expect(send).toHaveBeenCalledWith({
+      type: 'navigate',
+      location: { name: 'admin', params: {} },
+    })
 
     dispose()
   })
@@ -138,7 +141,7 @@ describe('#108 batched hash navigations dispatch exactly once each', () => {
     // Arm a suppression, then let a change we did NOT make land first. The URL
     // is no longer where our write left it, so the armed echo is stale and must
     // not swallow a real user navigation.
-    run(routing, routing.navigate({ page: 'admin' }), send)
+    run(routing, routing.navigate('admin'), send)
     send.mockClear()
     location.hash = '#/article/y'
     window.dispatchEvent(new HashChangeEvent('hashchange'))
@@ -146,7 +149,7 @@ describe('#108 batched hash navigations dispatch exactly once each', () => {
     expect(send).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'y' },
+      location: { name: 'article', params: { slug: 'y' } },
     })
 
     dispose()

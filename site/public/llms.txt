@@ -11,7 +11,7 @@
 - @llui/effects — LLui effect builders — http, cancel, debounce, sequence, race, storage, broadcast
 - @llui/components — 66 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more
 - @llui/interactions — Standalone DOM interaction primitives for focus, dismissal, positioning, modal isolation, and roving navigation
-- @llui/router — LLui router — structured path matching, history/hash mode, link helper
+- @llui/router — LLui router — named type-safe routes, Standard Schema codecs, history/hash mode
 - @llui/transitions — LLui animation helpers — transition(), fade, slide, scale, collapse for branch/show/each
 - @llui/test — LLui test harness — testComponent, testView, propertyTest, replayTrace, assertEffects
 - @llui/vike — LLui Vike SSR adapter — onRenderHtml, onRenderClient hooks

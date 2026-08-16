@@ -1,27 +1,27 @@
 import { div, h1, h3, a, p, span, text, show, branch, each } from '@llui/dom'
-import type { State, Msg, Route, Repo, TreeEntry, Issue } from '../types'
+import type { State, Msg, Page, Repo, TreeEntry, Issue } from '../types'
 import type { Send, Signal, Renderable, Mountable } from '@llui/dom'
 import { routing } from '../router'
 import { readmeView } from './foreign-readme'
 import { codeView } from './foreign-code'
 
-function repoFromRoute(r: Route): Repo | null {
+function repoFromRoute(r: Page): Repo | null {
   if (r.page === 'repo' && r.data.type === 'success') return r.data.data.repo
   if (r.page === 'tree' && r.data.type === 'success') return r.data.data.repo
   return null
 }
 
 /** Extract owner/name from route — always available (from URL, not API) */
-function routeOwnerName(r: Route): { owner: string; name: string } | null {
+function routeOwnerName(r: Page): { owner: string; name: string } | null {
   if (r.page === 'repo') return { owner: r.owner, name: r.name }
   if (r.page === 'tree') return { owner: r.owner, name: r.name }
   return null
 }
 
-// routing.link needs literal owner/name for href. The Route is read from
+// routing.link needs literal owner/name for href. The Page is read from
 // location.pathname at branch-render time — the URL is current because
 // routing.handleEffect pushes state before the navigate message resolves.
-export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>): Renderable {
+export function repoPage(routeSig: Signal<Page>, route: Page, send: Send<Msg>): Renderable {
   // owner/name from the current route (literal values for routing.link hrefs)
   const owner = 'owner' in route ? route.owner : ''
   const name = 'name' in route ? route.name : ''
@@ -32,12 +32,9 @@ export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>)
         h1([
           text(routeSig.map((r) => routeOwnerName(r)?.owner ?? '')),
           text(' / '),
-          routing.link(
-            send,
-            { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
-            {},
-            [text(routeSig.map((r) => routeOwnerName(r)?.name ?? ''))],
-          ),
+          routing.link(send, 'repoCode', { owner, repo: name }, {}, [
+            text(routeSig.map((r) => routeOwnerName(r)?.name ?? '')),
+          ]),
         ]),
         div({ class: 'stats' }, [
           span([
@@ -67,7 +64,8 @@ export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>)
       div({ class: 'container' }, [
         routing.link(
           send,
-          { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } },
+          'repoCode',
+          { owner, repo: name },
           {
             class: routeSig.map((r) => (r.page !== 'repo' || r.tab === 'code' ? 'active' : '')),
           },
@@ -75,7 +73,8 @@ export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>)
         ),
         routing.link(
           send,
-          { page: 'repo', owner, name, tab: 'issues', data: { type: 'loading' } },
+          'repoIssues',
+          { owner, repo: name },
           {
             class: routeSig.map((r) => (r.page === 'repo' && r.tab === 'issues' ? 'active' : '')),
           },
@@ -134,7 +133,7 @@ export function repoPage(routeSig: Signal<Route>, route: Route, send: Send<Msg>)
   ]
 }
 
-function breadcrumb(currentRoute: Route, send: Send<Msg>): Renderable {
+function breadcrumb(currentRoute: Page, send: Send<Msg>): Renderable {
   const route = currentRoute
   if (route.page !== 'tree') return []
   const { owner, name, path } = route
@@ -142,9 +141,7 @@ function breadcrumb(currentRoute: Route, send: Send<Msg>): Renderable {
 
   const parts = path.split('/')
   const crumbs: Mountable[] = [
-    routing.link(send, { page: 'repo', owner, name, tab: 'code', data: { type: 'loading' } }, {}, [
-      text(name),
-    ]),
+    routing.link(send, 'repoCode', { owner, repo: name }, {}, [text(name)]),
   ]
 
   for (let i = 0; i < parts.length; i++) {
@@ -155,12 +152,9 @@ function breadcrumb(currentRoute: Route, send: Send<Msg>): Renderable {
       crumbs.push(span([text(parts[i]!)]))
     } else {
       crumbs.push(
-        routing.link(
-          send,
-          { page: 'tree', owner, name, path: partial, data: { type: 'loading' } },
-          {},
-          [text(parts[i]!)],
-        ),
+        routing.link(send, 'tree', { owner, repo: name, path: partial.split('/') }, {}, [
+          text(parts[i]!),
+        ]),
       )
     }
   }
@@ -168,7 +162,7 @@ function breadcrumb(currentRoute: Route, send: Send<Msg>): Renderable {
   return [div({ class: 'breadcrumb' }, crumbs)]
 }
 
-function fileTree(routeSig: Signal<Route>, send: Send<Msg>): Renderable {
+function fileTree(routeSig: Signal<Page>, send: Send<Msg>): Renderable {
   return [
     div({ class: 'file-tree' }, [
       each(
@@ -213,7 +207,7 @@ function fileTree(routeSig: Signal<Route>, send: Send<Msg>): Renderable {
   ]
 }
 
-function issuesList(routeSig: Signal<Route>): Renderable {
+function issuesList(routeSig: Signal<Page>): Renderable {
   return [
     show(
       routeSig.map(

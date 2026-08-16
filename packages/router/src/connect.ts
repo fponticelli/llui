@@ -1,4 +1,11 @@
-import type { Router } from './index.js'
+import type {
+  RouteDestination,
+  RouteDestinationArguments,
+  RouteGenerationParams,
+  RouteLocation,
+  RouteRegistry,
+  Router,
+} from './index.js'
 import { a, onMount } from '@llui/dom'
 import type { Mountable, Renderable, ChildNode } from '@llui/dom'
 
@@ -8,14 +15,8 @@ export interface RouterEffect {
   type: '__router'
   action: 'push' | 'replace' | 'navigate' | 'back' | 'forward' | 'scroll'
   path?: string
-  /**
-   * The ORIGINAL route object the caller passed to `push`/`replace`/`navigate`.
-   * `path` is a lossy URL projection (only fields representable in the URL survive
-   * `href`), so guards (`beforeEnter`/`beforeLeave`) and the dispatched navigate
-   * message must run against this full object — not against `match(path)`, which
-   * would silently drop non-URL fields (e.g. a `draft` flag or a data payload).
-   */
-  route?: unknown
+  /** The normalized route location targeted by this effect. */
+  location?: unknown
   x?: number
   y?: number
 }
@@ -152,7 +153,7 @@ export function browserRouterEnv(): RouterEnv {
   }
 }
 
-export interface ConnectOptions<R> {
+export interface ConnectOptions<Registry extends RouteRegistry> {
   /**
    * The History/Location surface to drive (default: {@link browserRouterEnv}).
    * Inject one to route a test, an SSR host, or an embedded frame through its
@@ -164,7 +165,7 @@ export interface ConnectOptions<R> {
    * Called before entering a new route. Return:
    * - `void` / `undefined` → allow navigation
    * - `false` → block navigation (stay on current route)
-   * - a different `Route` → redirect to that route
+   * - a different route location → redirect to that location
    *
    * A redirect CHAINS: the target is offered back to this same function until it
    * is accepted, blocked, or stops moving the URL (capped at 10 hops — see
@@ -172,7 +173,10 @@ export interface ConnectOptions<R> {
    * only the settled route is dispatched. `from` is the route being LEFT on
    * every hop — no hop is entered.
    */
-  beforeEnter?: (to: R, from: R | null) => R | false | void
+  beforeEnter?: (
+    to: RouteLocation<Registry>,
+    from: RouteLocation<Registry> | null,
+  ) => RouteLocation<Registry> | false | void
   /**
    * Called before leaving the current route. Return:
    * - `true` → allow navigation
@@ -181,31 +185,66 @@ export interface ConnectOptions<R> {
    * Called ONCE per navigation, before any `beforeEnter`, with the route
    * originally REQUESTED as `to` — a redirect chain must not prompt N times.
    */
-  beforeLeave?: (from: R, to: R) => boolean
+  beforeLeave?: (from: RouteLocation<Registry>, to: RouteLocation<Registry>) => boolean
 
   /**
    * Build the message dispatched by the `navigate()` effect (and the
    * popstate/hashchange listener and `link()`) when the route changes.
-   * Defaults to `{ type: 'navigate', route }`. Override only if your app
+   * Defaults to `{ type: 'navigate', location }`. Override only if your app
    * uses a different message shape for route changes; the same factory then
    * applies to every route-change dispatch so they stay consistent.
    */
-  navigateMsg?: (route: R) => unknown
+  navigateMsg?: (location: RouteLocation<Registry>) => unknown
+  /** Build the message dispatched for a browser-driven unmatched URL. */
+  unmatchedMsg?: (url: string) => unknown
 }
 
-export interface ConnectedRouter<R> {
+type LinkArguments<Registry extends RouteRegistry, M> =
+  RouteDestination<Registry> extends infer D
+    ? D extends readonly unknown[]
+      ? [
+          ...destination: D,
+          attrs: Record<string, unknown>,
+          children: readonly ChildNode[],
+          msgFactory?: (route: RouteLocation<Registry>) => M,
+        ]
+      : never
+    : never
+
+type ExactLinkArguments<
+  Registry extends RouteRegistry,
+  Name extends keyof Registry & string,
+  Params extends RouteGenerationParams<Registry, Name>,
+  M,
+> = [
+  ...destination: RouteDestinationArguments<Registry, Name, Params>,
+  attrs: Record<string, unknown>,
+  children: readonly ChildNode[],
+  msgFactory?: (location: RouteLocation<Registry>) => M,
+]
+
+export interface ConnectedRouter<Registry extends RouteRegistry> {
   /**
    * Effect: push a new history entry — URL only.
    *
-   * Use when the reducer that emitted the effect has already updated
-   * `state.route` itself (e.g. a `Router/Navigate` handler that bundles
+   * Use when the reducer that emitted the effect has already updated its
+   * current location (e.g. a navigate handler that bundles
    * state changes inline before delegating URL work). For
    * navigate-and-let-the-app-react flows from anywhere else, prefer
    * `navigate()` — it dispatches the listener-captured navigate
-   * message after pushState so `state.route` and route-side-effects
+   * message after pushState so application location and route-side-effects
    * stay in sync without each reducer re-implementing the delegation.
    */
-  push(route: R): RouterEffect
+  push<
+    const Name extends keyof Registry & string,
+    const Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<
+      Registry,
+      Name
+    >,
+  >(
+    name: Name,
+    ...args: RouteDestinationArguments<Registry, Name, Params>
+  ): RouterEffect
   /**
    * Effect: replace the current history entry — URL only. Same
    * URL-only contract as `push()`. For replace-and-react flows, see
@@ -213,25 +252,43 @@ export interface ConnectedRouter<R> {
    * variant yet because the use case hasn't surfaced; if it does,
    * model it the same way.
    */
-  replace(route: R): RouterEffect
+  replace<
+    const Name extends keyof Registry & string,
+    const Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<
+      Registry,
+      Name
+    >,
+  >(
+    name: Name,
+    ...args: RouteDestinationArguments<Registry, Name, Params>
+  ): RouterEffect
   /**
    * Effect: push history AND dispatch the listener-captured navigate
-   * message so the reducer can update `state.route` and run any
+   * message so the reducer can update its current location and run any
    * route-side-effects (data fetches, page-meta resets, analytics).
    *
    * Resolves the asymmetry where `link()` did pushState + send while
    * `push()` did pushState only — apps that wanted programmatic
    * navigation from arbitrary reducers had to either re-implement the
-   * delegation or live with desynced `state.route`.
+   * delegation or live with desynchronized application location.
    *
    * Dispatches through the `send` the effect runner hands every effect,
    * so it works from ANY effect — including an `init()` effect that runs
    * before any view mounts. It does NOT depend on `listener()` being
    * mounted (that only handles browser-driven popstate/hashchange).
-   * The message shape is `{ type: 'navigate', route }` unless overridden
+   * The message shape is `{ type: 'navigate', location }` unless overridden
    * via `connectRouter`'s `navigateMsg` option.
    */
-  navigate(route: R): RouterEffect
+  navigate<
+    const Name extends keyof Registry & string,
+    const Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<
+      Registry,
+      Name
+    >,
+  >(
+    name: Name,
+    ...args: RouteDestinationArguments<Registry, Name, Params>
+  ): RouterEffect
   /** Effect: go back */
   back(): RouterEffect
   /** Effect: go forward */
@@ -244,20 +301,30 @@ export interface ConnectedRouter<R> {
 
   /**
    * View helper: attach URL change listener via onMount.
-   * Returns the onMount marker to place in the view. Sends { type: 'navigate', route } on URL change.
+   * Returns the onMount marker to place in the view. Sends
+   * `{ type: 'navigate', location }` or `{ type: 'unmatched', url }`.
    */
-  listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Renderable
+  listener<M>(
+    send: (msg: M) => void,
+    msgFactory?: (route: RouteLocation<Registry>) => M,
+    unmatchedFactory?: (url: string) => M,
+  ): Renderable
 
   /**
    * View helper: render a navigation link.
    * Generates <a> with proper href and click handler that sends navigate message.
    */
-  link<M>(
+  link<
+    M,
+    const Name extends keyof Registry & string,
+    const Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<
+      Registry,
+      Name
+    >,
+  >(
     send: (msg: M) => void,
-    route: R,
-    attrs: Record<string, unknown>,
-    children: readonly ChildNode[],
-    msgFactory?: (route: R) => M,
+    name: Name,
+    ...args: ExactLinkArguments<Registry, Name, Params, M>
   ): Mountable
 
   /**
@@ -269,11 +336,11 @@ export interface ConnectedRouter<R> {
     /** Message type to handle (default: 'navigate') */
     message?: string
     /** Extract route from message */
-    getRoute: (msg: M) => R
+    getLocation: (msg: M) => RouteLocation<Registry>
     /** Optional guard — can redirect */
-    guard?: (route: R, state: S) => R
+    guard?: (route: RouteLocation<Registry>, state: S) => RouteLocation<Registry>
     /** Build new state + effects for the route */
-    onNavigate: (state: S, route: R) => [S, E[]]
+    onNavigate: (state: S, location: RouteLocation<Registry>) => [S, E[]]
   }): (state: S, msg: M) => [S, E[]] | null
 }
 
@@ -314,7 +381,9 @@ function mintRun(): string {
 }
 
 /** The outcome of the guard pipeline for one navigation. */
-type GuardOutcome<R> = { blocked: true } | { blocked: false; route: R; redirected: boolean }
+type GuardOutcome<Location> =
+  | { blocked: true }
+  | { blocked: false; route: Location; redirected: boolean }
 
 /**
  * How many times `beforeEnter` may redirect within ONE navigation before the
@@ -357,7 +426,7 @@ type Position = { index: number; run: string }
  *   ITSELF produces around a foreign `pushState` (`/`{0} | `/tracker` foreign |
  *   `/admin`{1}, one index across two physical entries): a blocked
  *   `history.go(-2)` answered with `go(1)`, depositing the user on the analytics
- *   entry with nothing dispatched, so `state.route` desynced too.
+ *   entry with nothing dispatched, so application location desynchronized too.
  *
  * The cost of refusing is a lost undo for a stack an older build numbered, for
  * the length of a deploy window — the same known, documented outcome as an entry
@@ -402,7 +471,7 @@ function sameHash(a: string, b: string): boolean {
  * for one — in either mode (#150; the reasoning, the alternatives that were
  * measured and rejected, and the behaviour this costs are all recorded on
  * `adoptLandedEntry`). Blocking a navigation onto such an entry is
- * guard-honouring but NOT undoable: nothing is dispatched and `state.route`
+ * guard-honouring but NOT undoable: nothing is dispatched and application location
  * keeps the route you never left, but the URL is left showing the blocked one
  * until the next navigation. That visible disagreement is deliberately preferred
  * over a guessed `history.go(delta)`, which traverses to the wrong entry and
@@ -422,15 +491,18 @@ function sameHash(a: string, b: string): boolean {
  * {@link browserRouterEnv}); nothing in this file reaches for `location`,
  * `history` or `window` directly (#111).
  */
-export function connectRouter<R>(
-  router: Router<R>,
-  options?: ConnectOptions<R>,
-): ConnectedRouter<R> {
+export function connectRouter<const Registry extends RouteRegistry>(
+  router: Router<Registry>,
+  options?: ConnectOptions<Registry>,
+): ConnectedRouter<Registry> {
+  type Location = RouteLocation<Registry>
   // The canonical route-change message factory. Used by the navigate()
   // effect, the popstate/hashchange listener, and link() so every
   // route-change dispatch produces the same message shape.
-  const navigateMsg: (route: R) => unknown =
-    options?.navigateMsg ?? ((r: R) => ({ type: 'navigate', route: r }))
+  const navigateMsg: (location: Location) => unknown =
+    options?.navigateMsg ?? ((location: Location) => ({ type: 'navigate', location }))
+  const unmatchedMsg: (url: string) => unknown =
+    options?.unmatchedMsg ?? ((url: string) => ({ type: 'unmatched', url }))
 
   // Every history/location touch below goes through this. Never reach for
   // `location`/`history`/`window` directly here (#111).
@@ -439,8 +511,7 @@ export function connectRouter<R>(
   // Seed currentRoute from the current location so the first navigation's
   // guards see the actual starting route as `from` (not null) and a
   // blocked navigation can restore the real starting URL. With no location the
-  // env reads as `''`, which matches to the root route (or the fallback under a
-  // base) — exactly what the `'#/'`/`'/'` defaults this replaced resolved to.
+  // env reads as `''`, which either matches the root route or remains unmatched.
   function currentInput(): string {
     return router.mode === 'hash' ? env.hash : env.pathname + env.search
   }
@@ -470,7 +541,7 @@ export function connectRouter<R>(
     return router.mode === 'hash' ? sameHash(env.hash, path) : currentInput() === path
   }
 
-  let currentRoute: R | null = (() => {
+  let currentRoute: Location | null = (() => {
     try {
       return router.match(currentInput())
     } catch {
@@ -725,30 +796,9 @@ export function connectRouter<R>(
    *
    * FOUR things make that terminate and stay honest, and each is a decision:
    *
-   * 1. THE SETTLE TEST IS `router.href`. A fixed point needs an equality on `R`,
-   *    and the only one this file can compute is the projection it already
-   *    treats as route identity everywhere else — the string it writes to the
-   *    URL, matches routes back out of, and compares in {@link sameUrl}. It is
-   *    LOSSY (two routes differing only in a field no URL expresses project to
-   *    one string), and for a TERMINATION test lossiness fails in the safe
-   *    direction: it settles EARLY, degrading to exactly the single-hop
-   *    behaviour that shipped before, never to a refusal or a hang.
-   *
-   *    NAME THE COST IN FULL: the skipped hop is a whole guard verdict, and a
-   *    verdict is not only a redirect. A guard that normalises `{admin}` to
-   *    `{admin, draft:true}` (same href, so it settles) and would answer
-   *    `false` for `{admin, draft:true}` never gets ASKED — the route is
-   *    dispatched and its URL written. Not a regression (identical on `main`
-   *    and on the single-hop commit, and the counterfactual is what the
-   *    paragraph above describes), but the missed hop can carry a BLOCK, not
-   *    just a missed redirect, which is the security-adjacent half. A guard
-   *    whose decision depends on a field the URL cannot express must not rely
-   *    on being re-asked about it.
-   *
-   *    A STRUCTURAL settle test chains further and passes this same suite — it
-   *    was demonstrated in review — but a guard that ADDS a field per call then
-   *    runs to the cap where `href` settles on hop one, so the cost moves
-   *    rather than disappearing. Left open as #212 rather than guessed at.
+   * 1. THE SETTLE TEST IS THE CANONICAL URL. Named route locations contain URL
+   *    identity only, so this is an exact route-identity comparison rather than
+   *    the lossy projection used by the former arbitrary route-object model.
    * 2. THE HOP IS ADOPTED BEFORE THE SETTLE TEST. A guard that normalises `to`
    *    and hands back an equivalent route — #162's shape — settles immediately,
    *    but the route DISPATCHED is the one it returned, not the one it was
@@ -783,7 +833,31 @@ export function connectRouter<R>(
    * Documented under "Guards" in `site/content/api/router.md` and pinned in
    * `test/guards.test.ts`.
    */
-  function runGuards(newRoute: R): GuardOutcome<R> {
+  function routeArgs(route: Location): [string, Record<string, unknown>] {
+    return [route.name, route.params]
+  }
+
+  function routeHref(route: Location): string {
+    return (router.href as (...args: readonly unknown[]) => string)(...routeArgs(route))
+  }
+
+  function destinationLocation(destination: readonly unknown[]): Location {
+    return (router.location as (...args: readonly unknown[]) => Location)(...destination)
+  }
+
+  function normalizeLocation(route: Location): Location {
+    return (router.location as (...args: readonly unknown[]) => Location)(...routeArgs(route))
+  }
+
+  function isCurrentCanonical(route: Location): boolean {
+    return (
+      currentRoute !== null &&
+      routeHref(currentRoute) === routeHref(route) &&
+      sameUrl(routeHref(route))
+    )
+  }
+
+  function runGuards(newRoute: Location): GuardOutcome<Location> {
     if (options?.beforeLeave && currentRoute !== null) {
       if (!options.beforeLeave(currentRoute, newRoute)) return { blocked: true }
     }
@@ -795,16 +869,12 @@ export function connectRouter<R>(
     for (let hops = 0; ; ) {
       const result = beforeEnter(route, currentRoute)
       if (result === false) return { blocked: true }
-      // Any non-`false`, non-nullish return is a redirect Route. Routes are
-      // generic `R` and may be primitives (e.g. a string-union route), so
-      // gate on nullishness, NOT `typeof === 'object'` — the latter silently
-      // dropped string/number redirects and let navigation proceed to the
-      // original target (an auth-guard bypass).
+      // Any non-`false`, non-nullish return is a redirect location.
       if (result === undefined || result === null) break
-      const next = result as R
+      const next = normalizeLocation(result as Location)
       // Whether the URL MOVED decides only whether to ask again; the hop is
       // taken either way (see 2 above).
-      const moved = router.href(next) !== router.href(route)
+      const moved = routeHref(next) !== routeHref(route)
       route = next
       redirected = true
       if (!moved) break
@@ -817,7 +887,7 @@ export function connectRouter<R>(
         // guard (see above).
         console.warn(
           `[@llui/router] beforeEnter redirected ${MAX_REDIRECT_HOPS} times without settling ` +
-            `(resting on: ${router.href(route)}, never offered to the guard). ` +
+            `(resting on: ${routeHref(route)}, never offered to the guard). ` +
             `Fold the chain, or check it for a cycle.`,
         )
         break
@@ -919,7 +989,7 @@ export function connectRouter<R>(
    * THE COST, stated plainly: a hand-edited hash entry ENDS the run its
    * neighbours were numbered in (see `standing`), so a guard-blocked
    * traversal ONTO it, or ACROSS it, is not undone — the URL is left showing the
-   * route the guard refused, nothing is dispatched, and `state.route` keeps the
+   * route the guard refused, nothing is dispatched, and application location keeps the
    * route you never left. Two shapes, both leaving the stack untouched:
    *
    * - a block onto the hand-edited entry itself — its position is unknown;
@@ -958,7 +1028,7 @@ export function connectRouter<R>(
 
   /**
    * Rewrite the URL of the entry a browser-driven navigation just LANDED on,
-   * so a guard REDIRECT reaches the address bar as well as `state.route`
+   * so a guard REDIRECT reaches the address bar as well as application location
    * (#143). Called only from the listener, only for a redirect, and only after
    * `adoptLandedEntry` has resynced the position.
    *
@@ -1041,13 +1111,12 @@ export function connectRouter<R>(
     env.go(delta)
   }
 
-  // The route to run guards/dispatch against: the caller's ORIGINAL object (all
-  // fields intact) when the effect carries one, else the URL re-matched (for a
-  // hand-constructed effect with only `path`). Using `match(path)` unconditionally
-  // would drop any route field not representable in the URL before the guards ever
-  // saw it (finding: non-URL field drop).
-  function targetRoute(effect: RouterEffect): R {
-    return effect.route !== undefined ? (effect.route as R) : router.match(effect.path!)
+  // Effects created by this connector carry a normalized location. A manually
+  // constructed path-only effect is matched through the same public router seam.
+  function targetRoute(effect: RouterEffect): Location | null {
+    return effect.location !== undefined
+      ? (effect.location as Location)
+      : router.match(effect.path!)
   }
 
   function applyEffect(effect: RouterEffect, send: (msg: unknown) => void): void {
@@ -1056,9 +1125,11 @@ export function connectRouter<R>(
       case 'replace': {
         // URL only. In hash mode, suppress the echo hashchange so the listener
         // does not ALSO dispatch a navigate (finding 2b).
-        const outcome = runGuards(targetRoute(effect))
+        const target = targetRoute(effect)
+        if (target === null || isCurrentCanonical(target)) return
+        const outcome = runGuards(target)
         if (outcome.blocked) return
-        const finalPath = router.href(outcome.route)
+        const finalPath = routeHref(outcome.route)
         if (router.mode === 'hash') {
           if (effect.action === 'push') {
             setHash(finalPath)
@@ -1100,8 +1171,8 @@ export function connectRouter<R>(
         currentRoute = outcome.route
         // A guard REDIRECT wrote a URL the caller never asked for. push/replace
         // are URL-only by contract — the caller's reducer already set
-        // `state.route` — but it set it to the REQUESTED route, so staying
-        // silent leaves `state.route` and the URL disagreeing permanently
+        // application location — but it set it to the REQUESTED route, so staying
+        // silent leaves application location and the URL disagreeing permanently
         // (#110). Only a redirect dispatches; the plain case keeps the
         // documented URL-only contract.
         if (outcome.redirected) send(navigateMsg(outcome.route))
@@ -1119,9 +1190,11 @@ export function connectRouter<R>(
         //
         // In hash mode we dispatch here AND suppress the echo hashchange, so
         // the listener does not double-dispatch the same message (finding 2a).
-        const outcome = runGuards(targetRoute(effect))
+        const target = targetRoute(effect)
+        if (target === null || isCurrentCanonical(target)) return
+        const outcome = runGuards(target)
         if (outcome.blocked) return
-        const finalPath = router.href(outcome.route)
+        const finalPath = routeHref(outcome.route)
         if (router.mode === 'hash') {
           setHash(finalPath)
         } else {
@@ -1144,14 +1217,17 @@ export function connectRouter<R>(
   }
 
   return {
-    push(route) {
-      return { type: '__router', action: 'push', path: router.href(route), route }
+    push(...destination) {
+      const route = destinationLocation(destination)
+      return { type: '__router', action: 'push', path: routeHref(route), location: route }
     },
-    replace(route) {
-      return { type: '__router', action: 'replace', path: router.href(route), route }
+    replace(...destination) {
+      const route = destinationLocation(destination)
+      return { type: '__router', action: 'replace', path: routeHref(route), location: route }
     },
-    navigate(route) {
-      return { type: '__router', action: 'navigate', path: router.href(route), route }
+    navigate(...destination) {
+      const route = destinationLocation(destination)
+      return { type: '__router', action: 'navigate', path: routeHref(route), location: route }
     },
     back() {
       return { type: '__router', action: 'back' }
@@ -1169,8 +1245,13 @@ export function connectRouter<R>(
       return true
     },
 
-    listener<M>(send: (msg: M) => void, msgFactory?: (route: R) => M): Renderable {
-      const factory = msgFactory ?? (navigateMsg as (route: R) => M)
+    listener<M>(
+      send: (msg: M) => void,
+      msgFactory?: (route: Location) => M,
+      unmatchedFactory?: (url: string) => M,
+    ): Renderable {
+      const factory = msgFactory ?? (navigateMsg as (route: Location) => M)
+      const makeUnmatched = unmatchedFactory ?? (unmatchedMsg as (url: string) => M)
       // Place the onMount marker in the view; its callback registers the URL
       // listener on mount. (onMount is a lazy Mountable — calling it for side
       // effect and discarding the return would never register.) The listener
@@ -1217,7 +1298,15 @@ export function connectRouter<R>(
               return
             }
 
-            const outcome = runGuards(router.match(currentInput()))
+            const originalUrl = currentInput()
+            const matched = router.match(originalUrl)
+            if (matched === null) {
+              adoptLandedEntry()
+              currentRoute = null
+              send(makeUnmatched(originalUrl))
+              return
+            }
+            const outcome = runGuards(matched)
             if (outcome.blocked) {
               restoreBlocked()
               return
@@ -1225,11 +1314,12 @@ export function connectRouter<R>(
             adoptLandedEntry()
             // A guard REDIRECT means the route we are about to dispatch is NOT
             // the one the browser navigated to, so the URL has to follow it —
-            // otherwise `state.route` says `/login` while the address bar (and
+            // otherwise application location says `/login` while the address bar (and
             // therefore a reload, a share or a bookmark) still says `/admin`
             // (#143). The URL is written BEFORE the dispatch so the reducer and
             // any effect it emits already read the final URL.
-            if (outcome.redirected) rewriteLandedUrl(router.href(outcome.route))
+            const canonicalUrl = routeHref(outcome.route)
+            if (!sameUrl(canonicalUrl)) rewriteLandedUrl(canonicalUrl)
             currentRoute = outcome.route
             send(factory(outcome.route))
           }
@@ -1251,18 +1341,20 @@ export function connectRouter<R>(
       ]
     },
 
-    link<M>(
-      send: (msg: M) => void,
-      route: R,
-      attrs: Record<string, unknown>,
-      children: readonly ChildNode[],
-      msgFactory?: (route: R) => M,
-    ): Mountable {
-      const factory = msgFactory ?? (navigateMsg as (route: R) => M)
+    link<M>(send: (msg: M) => void, ...args: LinkArguments<Registry, M>): Mountable {
+      const argumentList = args as unknown[]
+      const destinationLength =
+        argumentList.length - (typeof argumentList.at(-1) === 'function' ? 3 : 2)
+      const destination = argumentList.slice(0, destinationLength) as RouteDestination<Registry>
+      const attrs = argumentList[destinationLength] as Record<string, unknown>
+      const children = argumentList[destinationLength + 1] as readonly ChildNode[]
+      const msgFactory = argumentList[destinationLength + 2] as ((route: Location) => M) | undefined
+      const route = destinationLocation(destination)
+      const factory = msgFactory ?? (navigateMsg as (route: Location) => M)
       return a(
         {
           ...attrs,
-          href: router.href(route),
+          href: routeHref(route),
           onClick: (e: Event) => {
             const me = e as MouseEvent
             // Respect a handler that already handled the event.
@@ -1289,10 +1381,11 @@ export function connectRouter<R>(
             // and made a click on the CURRENT route a dead one: preventDefault
             // ran, `setHash` bailed on the identical hash, and nothing followed
             // (#110). A click on the current route is a request to re-enter it,
-            // so it dispatches; only the redundant URL write is skipped.
+            // so the router now performs a full no-op.
+            if (isCurrentCanonical(route)) return
             const outcome = runGuards(route)
             if (outcome.blocked) return
-            const finalPath = router.href(outcome.route)
+            const finalPath = routeHref(outcome.route)
             if (router.mode === 'hash') setHash(finalPath)
             else pushUrl(finalPath)
             currentRoute = outcome.route
@@ -1305,14 +1398,14 @@ export function connectRouter<R>(
 
     createHandler<S, M, E>(config: {
       message?: string
-      getRoute: (msg: M) => R
-      guard?: (route: R, state: S) => R
-      onNavigate: (state: S, route: R) => [S, E[]]
+      getLocation: (msg: M) => Location
+      guard?: (route: Location, state: S) => Location
+      onNavigate: (state: S, route: Location) => [S, E[]]
     }): (state: S, msg: M) => [S, E[]] | null {
       const msgType = config.message ?? 'navigate'
       return (state: S, msg: M) => {
         if ((msg as Record<string, unknown>).type !== msgType) return null
-        let route = config.getRoute(msg)
+        let route = config.getLocation(msg)
         if (config.guard) route = config.guard(route, state)
         return config.onNavigate(state, route)
       }

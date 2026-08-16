@@ -1,211 +1,153 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { createRouter, route, param } from '../src/index'
-import { connectRouter } from '../src/connect'
-import type { ConnectOptions } from '../src/connect'
-import { mountApp, component, text } from '@llui/dom'
+import { component, mountApp, text } from '@llui/dom'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { connectRouter, type ConnectOptions } from '../src/connect'
+import { createRouter, route, type RouteLocation } from '../src/index'
 
-type Route =
-  | { page: 'home' }
-  | { page: 'admin' }
-  | { page: 'login' }
-  | { page: 'article'; slug: string }
+const registry = {
+  home: route('/'),
+  admin: route('/admin'),
+  login: route('/login'),
+  article: route('/article/:slug'),
+}
+type Registry = typeof registry
+type Location = RouteLocation<Registry>
 
 function makeRouter() {
-  return createRouter<Route>(
-    [
-      route([], () => ({ page: 'home' })),
-      route(['admin'], () => ({ page: 'admin' })),
-      route(['login'], () => ({ page: 'login' })),
-      route(['article', param('slug')], ({ slug }) => ({ page: 'article', slug })),
-    ],
-    { mode: 'history' },
-  )
+  return createRouter(registry, { mode: 'history' })
 }
 
-/** Mount a component that renders one link; return the anchor + dispose. */
-function mountLink(
-  options: ConnectOptions<Route> | undefined,
-  send: (msg: unknown) => void,
-  route: Route,
-  attrs: Record<string, unknown> = {},
-) {
+function mountAdminLink(options?: ConnectOptions<Registry>, attrs: Record<string, unknown> = {}) {
   const routing = connectRouter(makeRouter(), options)
+  const send = vi.fn()
   const container = document.createElement('div')
   const App = component({
-    name: 'T',
-    init: (): [null, never[]] => [null, []],
-    update: (s: null): [null, never[]] => [s, []],
-    view: () => [routing.link(send, route, attrs, [text('go')])],
+    name: 'NamedGuardedLink',
+    init: () => [null, []] as const,
+    update: (state: null) => [state, []] as const,
+    view: () => [routing.link(send, 'admin', attrs, [text('admin')])],
   })
-  const handle = mountApp(container, App)
-  const anchor = container.querySelector('a')!
-  return { anchor, handle, routing }
+  const mounted = mountApp(container, App)
+  return { anchor: container.querySelector('a')!, mounted, routing, send }
 }
 
 function click(anchor: HTMLAnchorElement): MouseEvent {
-  const ev = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
-  anchor.dispatchEvent(ev)
-  return ev
+  const event = new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })
+  anchor.dispatchEvent(event)
+  return event
 }
 
-describe('link() runs the guard pipeline in history mode (finding 1)', () => {
+describe('named links use the guard pipeline', () => {
   beforeEach(() => {
     history.replaceState(null, '', '/')
   })
 
-  it('a beforeEnter guard that blocks stops the link navigation (no pushState, no send)', () => {
-    const send = vi.fn()
-    const pushSpy = vi.spyOn(history, 'pushState')
-    const { anchor, handle } = mountLink({ beforeEnter: () => false }, send, { page: 'admin' })
+  it('intercepts but neither writes nor dispatches when blocked', () => {
+    const push = vi.spyOn(history, 'pushState')
+    const { anchor, mounted, send } = mountAdminLink({ beforeEnter: () => false })
 
-    const ev = click(anchor)
-
-    expect(ev.defaultPrevented).toBe(true) // still intercepts
-    expect(pushSpy).not.toHaveBeenCalled()
+    expect(click(anchor).defaultPrevented).toBe(true)
+    expect(push).not.toHaveBeenCalled()
     expect(send).not.toHaveBeenCalled()
 
-    pushSpy.mockRestore()
-    handle.dispose()
+    push.mockRestore()
+    mounted.dispose()
   })
 
-  it('a beforeEnter redirect rewrites the link navigation URL + message', () => {
-    const send = vi.fn()
-    const pushSpy = vi.spyOn(history, 'pushState')
-    const { anchor, handle } = mountLink(
-      { beforeEnter: (to) => (to.page === 'admin' ? { page: 'login' } : undefined) },
-      send,
-      { page: 'admin' },
-    )
-
-    click(anchor)
-
-    expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/login')
-    expect(send).toHaveBeenCalledWith({ type: 'navigate', route: { page: 'login' } })
-
-    pushSpy.mockRestore()
-    handle.dispose()
-  })
-
-  it('#161 a redirect CHAIN settles before the link writes anything', () => {
-    // `link()` is the fourth call site of `runGuards`, and the loop is inside
-    // it — so the chain resolves before `pushUrl`/`send` are reached, and the
-    // intermediate hop never appears in the history stack.
-    const send = vi.fn()
-    const seen: Route[] = []
-    const pushSpy = vi.spyOn(history, 'pushState')
-    const { anchor, handle } = mountLink(
-      {
-        beforeEnter: (to) => {
-          seen.push(to)
-          if (to.page === 'admin') return { page: 'login' }
-          if (to.page === 'login') return { page: 'article', slug: 'x' }
-          return undefined
-        },
+  it('settles a redirect chain before its one write and dispatch', () => {
+    const router = makeRouter()
+    const seen: Location[] = []
+    const push = vi.spyOn(history, 'pushState')
+    const { anchor, mounted, send } = mountAdminLink({
+      beforeEnter: (to) => {
+        seen.push(to)
+        if (to.name === 'admin') return router.location('login')
+        if (to.name === 'login') return router.location('article', { slug: 'settled' })
+        return undefined
       },
-      send,
-      { page: 'admin' },
-    )
+    })
 
     click(anchor)
 
-    expect(seen).toEqual([{ page: 'admin' }, { page: 'login' }, { page: 'article', slug: 'x' }])
-    expect(pushSpy).toHaveBeenCalledTimes(1)
-    expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/article/x')
+    expect(seen).toEqual([
+      { name: 'admin', params: {} },
+      { name: 'login', params: {} },
+      { name: 'article', params: { slug: 'settled' } },
+    ])
+    expect(push).toHaveBeenCalledOnce()
+    expect(push).toHaveBeenCalledWith(expect.any(Object), '', '/article/settled')
     expect(send).toHaveBeenCalledWith({
       type: 'navigate',
-      route: { page: 'article', slug: 'x' },
+      location: { name: 'article', params: { slug: 'settled' } },
     })
 
-    pushSpy.mockRestore()
-    handle.dispose()
+    push.mockRestore()
+    mounted.dispose()
   })
 
-  it('an allowed link navigation pushes + dispatches the target', () => {
-    const send = vi.fn()
-    const pushSpy = vi.spyOn(history, 'pushState')
-    const { anchor, handle } = mountLink(undefined, send, { page: 'article', slug: 'x' })
-
-    click(anchor)
-
-    expect(pushSpy).toHaveBeenCalledWith(expect.any(Object), '', '/article/x')
-    expect(send).toHaveBeenCalledWith({
-      type: 'navigate',
-      route: { page: 'article', slug: 'x' },
+  it('updates the current location used by the next beforeLeave', () => {
+    const seen: Array<[Location, Location]> = []
+    const routing = connectRouter(makeRouter(), {
+      beforeLeave: (from, to) => {
+        seen.push([from, to])
+        return true
+      },
     })
-
-    pushSpy.mockRestore()
-    handle.dispose()
-  })
-
-  it('link() updates currentRoute so a later beforeLeave sees the correct `from`', () => {
-    const seen: Array<[Route, Route]> = []
-    const beforeLeave = vi.fn((from: Route, to: Route) => {
-      seen.push([from, to])
-      return true
-    })
-    const routing = connectRouter(makeRouter(), { beforeLeave })
     const container = document.createElement('div')
-    const send = vi.fn()
     const App = component({
-      name: 'T',
-      init: (): [null, never[]] => [null, []],
-      update: (s: null): [null, never[]] => [s, []],
+      name: 'NamedLocationTrackingLinks',
+      init: () => [null, []] as const,
+      update: (state: null) => [state, []] as const,
       view: () => [
-        routing.link(send, { page: 'admin' }, { id: 'a' }, [text('a')]),
-        routing.link(send, { page: 'article', slug: 'z' }, { id: 'b' }, [text('b')]),
+        routing.link(vi.fn(), 'admin', { id: 'admin' }, [text('admin')]),
+        routing.link(vi.fn(), 'article', { slug: 'next' }, { id: 'article' }, [text('article')]),
       ],
     })
-    const handle = mountApp(container, App)
+    const mounted = mountApp(container, App)
 
-    click(container.querySelector('#a') as HTMLAnchorElement) // home -> admin
-    click(container.querySelector('#b') as HTMLAnchorElement) // admin -> article
+    click(container.querySelector('#admin')!)
+    click(container.querySelector('#article')!)
 
-    // Second beforeLeave must see `from` = admin (link updated currentRoute),
-    // NOT the stale seeded home.
-    expect(seen[1]![0]).toEqual({ page: 'admin' })
-    expect(seen[1]![1]).toEqual({ page: 'article', slug: 'z' })
-
-    handle.dispose()
+    expect(seen.at(-1)).toEqual([
+      { name: 'admin', params: {} },
+      { name: 'article', params: { slug: 'next' } },
+    ])
+    mounted.dispose()
   })
 
-  it('bails when the anchor target is not self', () => {
-    const send = vi.fn()
-    const pushSpy = vi.spyOn(history, 'pushState')
-    const { anchor, handle } = mountLink(undefined, send, { page: 'admin' }, { target: '_blank' })
+  it.each([
+    ['a non-self target', { target: '_blank' }],
+    ['a download', { download: '' }],
+  ])('leaves %s to the browser', (_label, attrs) => {
+    const push = vi.spyOn(history, 'pushState')
+    const { anchor, mounted, send } = mountAdminLink(undefined, attrs)
+    let routerPrevented = true
+    // Cancel only after the router's listener has had its turn so jsdom does
+    // not attempt a real document navigation during the test.
+    anchor.addEventListener('click', (event) => {
+      routerPrevented = event.defaultPrevented
+      event.preventDefault()
+    })
 
-    const ev = click(anchor)
-
-    // Non-self target → let the browser handle it: no preventDefault, no nav.
-    expect(ev.defaultPrevented).toBe(false)
-    expect(pushSpy).not.toHaveBeenCalled()
+    click(anchor)
+    expect(routerPrevented).toBe(false)
+    expect(push).not.toHaveBeenCalled()
     expect(send).not.toHaveBeenCalled()
 
-    pushSpy.mockRestore()
-    handle.dispose()
+    push.mockRestore()
+    mounted.dispose()
   })
 
-  it('bails when a prior handler already called preventDefault', () => {
-    const send = vi.fn()
-    const routing = connectRouter(makeRouter())
-    const container = document.createElement('div')
-    const App = component({
-      name: 'T',
-      init: (): [null, never[]] => [null, []],
-      update: (s: null): [null, never[]] => [s, []],
-      view: () => [routing.link(send, { page: 'admin' }, {}, [text('go')])],
-    })
-    const handle = mountApp(container, App)
-    const anchor = container.querySelector('a')!
-    // Register a capture-phase listener that preempts the link.
-    anchor.addEventListener('click', (e) => e.preventDefault(), { capture: true })
-    const pushSpy = vi.spyOn(history, 'pushState')
+  it('honors an earlier handler that already prevented the click', () => {
+    const push = vi.spyOn(history, 'pushState')
+    const { anchor, mounted, send } = mountAdminLink()
+    anchor.addEventListener('click', (event) => event.preventDefault(), { capture: true })
 
     click(anchor)
 
-    expect(pushSpy).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
     expect(send).not.toHaveBeenCalled()
 
-    pushSpy.mockRestore()
-    handle.dispose()
+    push.mockRestore()
+    mounted.dispose()
   })
 })

@@ -1,7 +1,7 @@
 import { foreign } from '@llui/dom'
 import type { Renderable } from '@llui/dom'
 import type { Signal } from '@llui/dom'
-import type { Route } from '../types'
+import type { Page } from '../types'
 
 interface FileProps {
   content: string
@@ -17,7 +17,7 @@ function decodeBase64Utf8(b64: string): string {
   return new TextDecoder().decode(bytes)
 }
 
-function fileProps(r: Route): FileProps {
+function fileProps(r: Page): FileProps {
   if (r.page === 'tree' && r.data.type === 'success' && 'file' in r.data.data) {
     const file = r.data.data.file
     let content: string
@@ -76,7 +76,7 @@ function renderCode(el: Element, { content, filename }: FileProps): void {
  * be awkward with declarative bindings (building a table of numbered
  * lines from a string that changes when navigating between files).
  */
-export function codeView(routeSig: Signal<Route>): Renderable {
+export function codeView(routeSig: Signal<Page>): Renderable {
   return [
     foreign<Element, { props: Signal<FileProps> }>({
       tag: 'div',
