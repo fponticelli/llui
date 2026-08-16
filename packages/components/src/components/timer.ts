@@ -11,10 +11,14 @@ import { finiteBound } from '../utils/number.js'
  * `start` / `pause` / `reset` in response to user input.
  *
  * ```ts
- * // `div`, `button`, `text` are imports from '@llui/dom'.
+ * // `div`, `button`, `text`, `mapSend` are imports from '@llui/dom'.
  * view: ({ state, send }) => {
  *   const timerState = state.at('timer')
- *   const t = timer.connect(timerState, (msg) => send({ type: 'timer', msg }))
+ *   const timerSend = mapSend<Msg, timer.TimerMsg>(send, (msg) => ({
+ *     type: 'timer',
+ *     msg,
+ *   }))
+ *   const t = timer.connect(timerState, timerSend)
  *   return [
  *     div({ ...t.root }, [
  *       div({ ...t.display }, [

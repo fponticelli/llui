@@ -1,5 +1,5 @@
 import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
-import { tagSend } from '@llui/dom'
+import { mapSend, tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay } from '../utils/overlay-engine.js'
@@ -36,6 +36,18 @@ import {
  *
  * State is JSON-serializable: top-level coordination plus a `Record` of the
  * embedded per-menu `MenuState`s keyed by menu id.
+ *
+ * ```ts
+ * view: ({ state, send }) => {
+ *   const menubarState = state.at('menubar')
+ *   const menubarSend = mapSend<Msg, menubar.MenubarMsg>(send, (msg) => ({
+ *     type: 'menubar',
+ *     msg,
+ *   }))
+ *   const parts = menubar.connect(menubarState, menubarSend, { id: 'main-menu' })
+ *   // spread `parts.root`, `parts.menuTrigger(id)`, and `parts.menu(id)` onto the view
+ * }
+ * ```
  */
 
 /** Declarative description of one top-level menu in the bar. */
@@ -256,10 +268,8 @@ export function connect(
 
   // A per-menu Send that wraps each MenuMsg in a `menuMsg` envelope so the
   // delegated menu.connect drives the embedded machine.
-  const menuSend = (id: string): Send<MenuMsg> => {
-    const wrapped = ((m: MenuMsg) => send({ type: 'menuMsg', id, msg: m })) as Send<MenuMsg>
-    return wrapped
-  }
+  const menuSend = (id: string): Send<MenuMsg> =>
+    mapSend<MenubarMsg, MenuMsg>(send, (msg) => ({ type: 'menuMsg', id, msg }))
 
   // A per-menu Signal narrowed to the embedded MenuState.
   const menuSignal = (id: string): Signal<MenuState> =>

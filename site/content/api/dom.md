@@ -526,6 +526,15 @@ Add a `<link>` tag (canonical, preload, stylesheet, …). Dedups by `rel`+`href`
 function link(attrs: LinkAttrs): Mountable
 ```
 
+### `mapSend()`
+
+Adapt a parent dispatcher to a child message type by wrapping each child
+message in the parent's corresponding message variant.
+
+```typescript
+function mapSend<Outer, Inner>(send: Send<Outer>, wrap: (inner: Inner) => Outer): Send<Inner>
+```
+
 ### `mergeStaticHead()`
 
 Merge a static `+Head.ts` head string with collected component head, letting

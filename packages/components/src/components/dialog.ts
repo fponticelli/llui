@@ -20,12 +20,17 @@ import { presenceClose, presenceEnd, presenceOpen } from './presence.js'
  *
  * ```ts
  * view: ({ state, send }) => {
- *   const parts = dialog.connect(state.at('confirm'), send, { id: 'confirm' })
+ *   const dialogState = state.at('dialog')
+ *   const dialogSend = mapSend<Msg, dialog.DialogMsg>(send, (msg) => ({
+ *     type: 'dialog',
+ *     msg,
+ *   }))
+ *   const parts = dialog.connect(dialogState, dialogSend, { id: 'dialog' })
  *   return [
  *     button({ ...parts.trigger, class: 'btn' }, [text('Delete')]),
  *     dialog.overlay({
- *       state: state.at('confirm'),
- *       send,
+ *       state: dialogState,
+ *       send: dialogSend,
  *       parts,
  *       content: () => [
  *         div({ ...parts.content, class: 'dialog' }, [

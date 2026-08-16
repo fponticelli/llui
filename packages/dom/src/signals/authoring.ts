@@ -37,6 +37,15 @@ import {
 
 export type Send<M> = (msg: M) => void
 
+/** Adapt a parent dispatcher to a child message type by wrapping each child
+ * message in the parent's corresponding message variant. */
+export function mapSend<Outer, Inner>(
+  send: Send<Outer>,
+  wrap: (inner: Inner) => Outer,
+): Send<Inner> {
+  return (msg) => send(wrap(msg))
+}
+
 /** A reactive value in a slot: a signal of T, or a plain T. */
 export type Reactive<T> = Signal<T> | T
 

@@ -11,18 +11,21 @@ import type { Send, Signal } from '@llui/dom'
  * scroll-triggered animations.
  *
  * ```ts
- * const parts = inView.connect(state.map((s) => s.iv), sendIv, { id: 'hero' })
- *
- * view: () => [
- *   div({ ...parts.root, class: state.map((s) => (s.iv.visible ? 'fade-in' : '')) }, [
- *     // content that animates on scroll
- *   ]),
- * ]
- * ```
- *
- * Wire up the observer in `onMount`:
- * ```ts
- * onMount((el) => inView.createObserver(el, sendIv, { threshold: 0.5, once: true }))
+ * view: ({ state, send }) => {
+ *   const inViewState = state.at('inView')
+ *   const inViewSend = mapSend<Msg, inView.InViewMsg>(send, (msg) => ({
+ *     type: 'inView',
+ *     msg,
+ *   }))
+ *   const parts = inView.connect(inViewState, inViewSend, { id: 'hero' })
+ *   return [
+ *     div({ ...parts.root, class: inViewState.at('visible').map((v) => (v ? 'fade-in' : '')) }, [
+ *       onMount((el) =>
+ *         inView.createObserver(el, inViewSend, { threshold: 0.5, once: true }),
+ *       ),
+ *     ]),
+ *   ]
+ * }
  * ```
  */
 

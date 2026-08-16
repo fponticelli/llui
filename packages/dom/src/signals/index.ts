@@ -282,6 +282,7 @@ export {
   foreign,
   lazy,
   virtualEach,
+  mapSend,
   type Send,
   type Reactive,
   type AttrValue,

@@ -226,7 +226,7 @@ its own `Msg` union.
 
 ```ts
 import * as toggle from '@llui/components/toggle'
-import { button, text } from '@llui/dom'
+import { button, mapSend, text } from '@llui/dom'
 
 type State = { bold: toggle.ToggleState; /* … */ }
 type Msg = { type: 'bold'; msg: toggle.ToggleMsg } | /* … */
@@ -242,15 +242,23 @@ update: (state, msg) => {
 
 // View — connect() returns spreadable, signal-based props:
 view: ({ state, send }) => {
-  const parts = toggle.connect(state.at('bold'), (m) => send({ type: 'bold', msg: m }))
+  const toggleState = state.at('bold')
+  const toggleSend = mapSend<Msg, toggle.ToggleMsg>(send, (msg) => ({
+    type: 'bold',
+    msg,
+  }))
+  const parts = toggle.connect(toggleState, toggleSend)
   return [button({ ...parts.root, class: 'btn' }, [text('Bold')])]
 }
 ```
 
-The parent stays type-safe: each component gets a branded message variant
-(`{ type: 'bold'; msg: toggle.ToggleMsg }`) so the parent's `Msg` union is exhaustive and
-routing is explicit. A reviewer sees every state transition in one flat switch; an LLM
-generates it mechanically from the types.
+`mapSend<Outer, Inner>(send, wrap)` adapts the parent's `Send<Outer>` into the
+`Send<Inner>` expected by the child. The parent stays type-safe: each component gets a
+tagged message variant (`{ type: 'bold'; msg: toggle.ToggleMsg }`) so the parent's `Msg`
+union is exhaustive and routing is explicit. Even when two child message unions use the
+same discriminants (for example, both contain `{ type: 'reset' }`), their distinct parent
+variants route them without a cast or ambiguity. A reviewer sees every state transition in
+one flat switch; an LLM generates it mechanically from the types.
 
 Components that render an overlay (dialog, popover, tooltip) also export an `overlay()`
 view helper that builds the portal tree and wires accessibility utilities — see the

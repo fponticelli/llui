@@ -24,10 +24,15 @@ import { LocaleContext } from '../locale.js'
  *   }
  * }
  *
- * // `each`, `ul`, `li`, `div`, `text` are imports from '@llui/dom';
+ * // `each`, `ul`, `li`, `div`, `text`, `mapSend` are imports from '@llui/dom';
  * // the view bag provides only `state` (a Signal) and `send`.
  * view: ({ state, send }) => {
- *   const s = sortable.connect(state.at('sort'), (m) => send({ type: 'sort', msg: m }), { id: 'list' })
+ *   const sortableState = state.at('sort')
+ *   const sortableSend = mapSend<Msg, sortable.SortableMsg>(send, (msg) => ({
+ *     type: 'sort',
+ *     msg,
+ *   }))
+ *   const s = sortable.connect(sortableState, sortableSend, { id: 'list' })
  *   return [
  *     ul({ ...s.root, class: 'list' }, [
  *       ...each({
