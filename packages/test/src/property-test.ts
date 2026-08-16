@@ -1,4 +1,5 @@
 import {
+  createTeaDriver,
   mountApp,
   normalizeUpdateResult,
   type MountSignalOptions,
@@ -143,17 +144,20 @@ function runReducer<S, M, E>(
 ): RunResult<M> {
   const msgs: Array<StepMsg<M>> = []
   const [initState, initEffects] = normalizeUpdateResult(def.init())
-  let state = initState
-  const first = checkInvariants(config.invariants, state, initEffects)
+  let effects = initEffects
+  const driver = createTeaDriver(
+    { init: () => [initState, initEffects], update: def.update },
+    { onTransition: (transition) => (effects = transition.effects) },
+  )
+  const first = checkInvariants(config.invariants, driver.getState(), initEffects)
   if (first) return { failure: first, msgs }
 
   for (let i = 0; ; i++) {
-    const step = next(state, i)
+    const step = next(driver.getState(), i)
     if (!step) break
     msgs.push(step)
-    const [nextState, effects] = normalizeUpdateResult(def.update(state, step.msg))
-    state = nextState
-    const f = checkInvariants(config.invariants, state, effects)
+    driver.send(step.msg)
+    const f = checkInvariants(config.invariants, driver.getState(), effects)
     if (f) return { failure: f, msgs }
   }
   return { failure: null, msgs }

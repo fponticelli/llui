@@ -255,6 +255,8 @@ function replayTrace<S, M, E>(
 
 ### `testComponent()`
 
+Drive a component definition without mounting its view.
+
 ```typescript
 function testComponent<S, M, E>(
   def: SignalComponentDef<S, M, E>,
@@ -462,19 +464,11 @@ export interface ReplayResult {
 ```typescript
 export interface TestComponentOptions {
   /**
-   * Opt in to faithfully replicating the runtime's effect drain. In the default
-   * (pure-reducer) mode `testComponent` runs `update()` once per `send` and
-   * stops — effects are recorded but never dispatched. The real runtime instead
-   * dispatches every returned effect to `onEffect`, which commonly calls `send`
-   * synchronously; the terminal state after such a cascade differs from the
-   * pure-reducer state ("green tests lie").
-   *
-   * With `withEffects: true` the harness replicates the runtime loop exactly:
-   * a queue-based `send`, reducers run to quiescence, then the collected
-   * effects dispatch in order through the def's `onEffect` with a real
-   * {@link EffectApi} (including this mount's lifecycle `signal`); effect-driven
-   * `send`s re-enter the same queue, so a cascade settles to the same terminal
-   * state a real `mountApp` reaches.
+   * Opt in to the shared runtime's effect drain. In the default pure-reducer
+   * mode `testComponent` runs `update()` once per `send` and stops — effects are
+   * recorded but not interpreted. With `withEffects: true`, returned effects
+   * run through `onEffect`; synchronous effect-driven sends re-enter the shared
+   * queue and settle before the top-level send returns.
    */
   withEffects?: boolean
 }
@@ -505,16 +499,14 @@ export interface TestHarness<S, M, E> {
   /**
    * Coalesce a burst of `send`s (see the runtime handle's `batch`). Reducers
    * and — in `withEffects` mode — effects still run per message in order; the
-   * harness has no DOM to commit, so `batch` here is a faithful structural
-   * mirror (it establishes one top-level `effects` window across the burst).
+   * harness has no DOM to commit, so `batch` establishes one top-level
+   * `effects` window across the burst.
    */
   batch: (fn: () => void) => void
   /**
-   * Tear down the harness: aborts the per-mount lifecycle `AbortSignal` handed
-   * to `onEffect` (so effect handlers keyed off `api.signal` clean up) and runs
-   * any cleanups returned by `onEffect`. After dispose, `send`/`batch` are
-   * inert (matching the runtime's after-dispose drop). No-op in the default
-   * pure-reducer mode beyond aborting the signal.
+   * Tear down the harness: aborts the per-driver lifecycle `AbortSignal` handed
+   * to `onEffect` and runs cleanups returned by `onEffect`. After dispose,
+   * `send`/`batch` are inert.
    */
   dispose: () => void
 }

@@ -48,6 +48,27 @@ module imports from `@llui/dom`, not bag fields. There is a single import surfac
 
 ## The Update Cycle
 
+The state/effect half of this cycle is also available without a DOM through
+`createTeaDriver({ init, update, onEffect })`. The public driver is not a test-only
+facsimile: mounted components and view-less drivers use the same reducer,
+effect-frame, queue, reentrancy, and batching core. `send()` remains synchronous,
+effect-driven sends re-enter the active queue, and `batch()` exposes only the final
+settled state to `onStateChange`.
+
+`onTransition` is the per-reducer observer seam. It fires inside batches and for
+effect-driven messages, after the returned state and effects have been accepted but
+before the settled-state notification and effect dispatch. An observer exception
+aborts that settle round just like a mounted commit exception: the reducer's state
+remains current and that round's effects are dropped. The hook is optional; when it
+is absent, mounted components allocate no transition record on the per-message hot
+path. The DOM runtime adds its reconcile callback to this shared core; it does not
+own a parallel reduction loop.
+
+The queue and its drain remain private to `commit-scope.ts`. Every mounted commit —
+including frame flushes, devtools state pokes, and post-mount replay — enters through
+`withCommitScope`; neither `createTeaDriver` nor `component.ts` can call the drain
+directly.
+
 When state changes, the runtime drives a single mask-gated sweep over the flat binding array. There is no virtual DOM and no tree traversal.
 
 1. **Compute the dirty set.** From old→new state, reference-equality at each tracked path yields a dirty chunk-set. Because TEA reducers return immutable, structurally-shared state, an unchanged field is reference-identical and dirties nothing; an unchanged subtree short-circuits all its leaves with one `Object.is`. If nothing a scope reads changed, its whole sweep is skipped.

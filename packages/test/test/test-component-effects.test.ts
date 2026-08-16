@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { component, mountApp, div, text, type EffectApi } from '@llui/dom'
+import { component, type EffectApi } from '@llui/dom'
 import { testComponent } from '../src/test-component'
 
 // A component whose onEffect synchronously `send`s — the exact shape the audit
@@ -20,7 +20,7 @@ const Cascade = component<State, Msg, Effect>({
         return [{ ...state, doubled: msg.value }, []]
     }
   },
-  view: ({ state }) => [div([text(state.map((s) => `count ${s.count}`))])],
+  view: () => [],
   onEffect: (effect: Effect, api: EffectApi<State, Msg>) => {
     if (effect.type === 'double') {
       // Synchronous send back into the loop — this is the cascade.
@@ -47,33 +47,29 @@ describe('testComponent withEffects', () => {
     expect(t.state.doubled).toBe(2)
   })
 
-  it('reaches the SAME terminal state as a real mountApp', () => {
-    const container = document.createElement('div')
-    const handle = mountApp(container, Cascade)
-    try {
-      const msgs: Msg[] = [{ type: 'inc' }, { type: 'inc' }, { type: 'inc' }]
-      for (const m of msgs) {
-        handle.send(m)
-        handle.flush()
-      }
-      const realState = handle.getState()
-
-      const t = testComponent(Cascade, { withEffects: true })
-      t.sendAll(msgs)
-
-      expect(t.state).toEqual(realState)
-      expect(t.state.doubled).toBe(6) // last inc: count 3 -> double 3 -> *2 = 6
-    } finally {
-      handle.dispose()
-    }
-  })
-
   it('dispatches init effects (and their cascades) in withEffects mode', () => {
     const t = testComponent(Cascade, { withEffects: true })
     // init emits a `note` effect; onEffect ignores notes, so state is unchanged
     // but the effect is recorded in allEffects.
     expect(t.allEffects).toContainEqual({ type: 'note', text: 'init' })
     expect(t.state).toEqual({ count: 0, doubled: 0, log: [] })
+  })
+
+  it('settles a synchronous send from an init effect before construction returns', () => {
+    const InitCascade = component<State, Msg, Effect>({
+      name: 'InitCascade',
+      init: () => [{ count: 0, doubled: 0, log: [] }, [{ type: 'double', of: 2 }]],
+      update: Cascade.update,
+      view: () => [],
+      onEffect: Cascade.onEffect,
+    })
+
+    const t = testComponent(InitCascade, { withEffects: true })
+
+    expect(t.state.doubled).toBe(4)
+    expect(t.history.map((entry) => entry.msg.type)).toEqual(['recordDouble'])
+    expect(t.effects).toEqual([])
+    expect(t.allEffects).toEqual([{ type: 'double', of: 2 }])
   })
 
   it('history records every reducer run in the cascade under one send', () => {
@@ -109,28 +105,6 @@ describe('testComponent withEffects', () => {
     const before = t.state.n
     t.send({ type: 'go' })
     expect(t.state.n).toBe(before)
-  })
-
-  it('batch coalesces a burst into one effects window, matching mountApp state', () => {
-    const container = document.createElement('div')
-    const handle = mountApp(container, Cascade)
-    try {
-      handle.batch(() => {
-        handle.send({ type: 'inc' })
-        handle.send({ type: 'inc' })
-      })
-      handle.flush()
-      const realState = handle.getState()
-
-      const t = testComponent(Cascade, { withEffects: true })
-      t.batch(() => {
-        t.send({ type: 'inc' })
-        t.send({ type: 'inc' })
-      })
-      expect(t.state).toEqual(realState)
-    } finally {
-      handle.dispose()
-    }
   })
 
   // A component whose every send emits one (inert) effect — no cascade — so pure

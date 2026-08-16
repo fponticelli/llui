@@ -269,6 +269,23 @@ function component<S, M extends { type: string }, E extends { type: string } = n
 function createContext<T>(defaultValue: T, name = 'context'): Context<T>
 ```
 
+### `createTeaDriver()`
+
+Create a supported, view-less LLui TEA driver.
+
+This is the same reduction and effect-scheduling path used by
+`mountSignalComponent`, with the DOM commit replaced by the optional
+{@link TeaDriverOptions.onStateChange} observer. Initial effects run after the
+driver and its live state handle are ready. The driver is synchronous: a call
+to `send` returns only after reentrant effect-driven messages have settled.
+
+```typescript
+function createTeaDriver<S, M, E = never>(
+  program: TeaProgram<S, M, E>,
+  options: TeaDriverOptions<S, M, E> = {},
+): TeaDriver<S, M>
+```
+
 ### `currentDoc()`
 
 The document of the ACTIVE build — a live client `Document` on the client, a
@@ -597,22 +614,16 @@ function mountSignalComponent<S, M, E = never>(
 ### `normalizeUpdateResult()`
 
 Normalize an `init()` / `update()` result — a `[state, effects]` tuple or a
-bare `state` (the convenience return) — to a `[state, effects]` pair. This is
-the ONE place the `[S, E[]] | S` heuristic lives; component, SSR, and (later)
-`@llui/test` / `@llui/vike` all route through it so the shape decision never
-diverges.
+bare `state` — to a pair. This is the one place the shape heuristic lives;
+mounted components, SSR, the view-less driver, and `@llui/test` all use it.
 
-The heuristic: a 2-element array whose SECOND element is itself an array is
-read as `[state, effects]`; anything else is a bare state with no effects.
-
-KNOWN AMBIGUITY (deliberately unchanged — dropping the bare-`S` convenience is
-a repo-wide breaking ripple, out of scope here): a state that is ITSELF a
-2-tuple whose second element is an array (e.g. the whole state is
-`[number, string[]]`) is mis-read as `[state, effects]`. Such a state must be
-returned explicitly as `[state, []]`.
+A two-element array whose second element is itself an array is read as the
+tuple; every other value is a bare state with no effects. Consequently, a
+state that is itself a two-tuple with an array in its second slot is ambiguous
+and must be returned explicitly as `[state, []]`.
 
 ```typescript
-function normalizeUpdateResult<S, E>(r: [S, E[]] | S): [S, E[]]
+function normalizeUpdateResult<S, E>(result: S | [S, E[]]): [S, E[]]
 ```
 
 ### `noscript()`
@@ -1114,6 +1125,32 @@ function virtualEach<T>(opts: {
 export type AttrValue = Reactive<string | number | boolean | null | undefined>
 ```
 
+### `BindingSpec`
+
+A reactive binding: the dependency paths it reads + an accessor (`produce`)
+and a `commit` that applies the value. This is the compiler transform's output
+target, and the contract a {@link DirectRow} (compiled `each` row) supplies.
+
+A spec IS a {@link SignalBinding} plus its build-time metadata — the scope
+stores specs as-is (see `scopeFromSpecs`), so its intersection ADDS metadata to
+the runtime contract rather than restating it; `produce`/`commit`/`structural`
+have exactly one declaration, in `runtime.ts`.
+
+```typescript
+export type BindingSpec = SignalBinding & {
+  deps: readonly string[]
+  // Root discriminant for row rebasing — set from the ORIGIN handle, so row
+  // locality never depends on string-inferring `item`/`index`/`state` prefixes
+  // (which collide with a component-state field literally named that). `true` ⇒
+  // the produce reads the COMPONENT state (rebase to `ctx.state` inside a row);
+  // `false` ⇒ it already reads the row ctx (an item/index handle, or an
+  // already-rebased spec — leave it). `undefined` ⇒ a compiler-emitted spec with
+  // no handle origin: fall back to the legacy `isRowLocalDep` string inference
+  // (compiled rows use the `item.*`/`state.*` ctx convention, so this is sound).
+  componentRooted?: boolean
+}
+```
+
 ### `ChildNode`
 
 A child slot: a lazy `Mountable` (everything LLui builds — elements, text, and
@@ -1384,32 +1421,6 @@ export interface BindingLocation {
   lastValue: unknown
   /** How the binding's node relates to the matched element. */
   relation: 'self' | 'text-child' | 'comment-child'
-}
-```
-
-### `BindingSpec`
-
-A reactive binding: the dependency paths it reads + an accessor (`produce`)
-and a `commit` that applies the value. This is the compiler transform's output
-target, and the contract a {@link DirectRow} (compiled `each` row) supplies.
-
-A spec IS a {@link SignalBinding} plus its build-time metadata — the scope
-stores specs as-is (see `scopeFromSpecs`), so it EXTENDS the runtime contract
-rather than restating it; `produce`/`commit`/`structural` have exactly one
-declaration, in `runtime.ts`.
-
-```typescript
-export interface BindingSpec extends SignalBinding {
-  deps: readonly string[]
-  // Root discriminant for row rebasing — set from the ORIGIN handle, so row
-  // locality never depends on string-inferring `item`/`index`/`state` prefixes
-  // (which collide with a component-state field literally named that). `true` ⇒
-  // the produce reads the COMPONENT state (rebase to `ctx.state` inside a row);
-  // `false` ⇒ it already reads the row ctx (an item/index handle, or an
-  // already-rebased spec — leave it). `undefined` ⇒ a compiler-emitted spec with
-  // no handle origin: fall back to the legacy `isRowLocalDep` string inference
-  // (compiled rows use the `item.*`/`state.*` ctx convention, so this is sound).
-  componentRooted?: boolean
 }
 ```
 
@@ -2542,6 +2553,117 @@ export interface StyleAttrs {
   id?: string
   media?: HeadValue<string>
   [attr: string]: HeadValue<string> | undefined
+}
+```
+
+### `TeaDriver`
+
+A view-less LLui TEA runtime. It uses the same queue, reentrancy guard,
+effect-frame ordering, and batching machinery as a mounted component.
+
+```typescript
+export interface TeaDriver<S, M> {
+  /**
+   * Dispatch a message synchronously. Before this returns, the reducer queue,
+   * settled-state notification, and any synchronous effect-driven sends have
+   * all reached quiescence.
+   */
+  send(msg: M): void
+  /**
+   * Run a burst of sends and notify {@link TeaDriverOptions.onStateChange} once
+   * with the outermost batch's settled state. Reducers and effects still run in
+   * message order, and nested batches join the outer batch.
+   */
+  batch(fn: () => void): void
+  /** Read the current state, including updates made earlier in an open batch. */
+  getState(): S
+  /**
+   * Flush an owed commit. The public view-less driver is synchronous, so this is
+   * normally a no-op; it exists for handle parity with mounted drivers.
+   */
+  flush(): void
+  /**
+   * Abort the lifecycle signal, stop accepting messages, and run effect
+   * cleanups once in registration order. Later sends and batches are ignored.
+   */
+  dispose(): void
+}
+```
+
+### `TeaDriverOptions`
+
+Optional observers for a {@link TeaDriver}. With `onTransition` absent, the
+hot reducer path does not allocate a transition record.
+
+```typescript
+export interface TeaDriverOptions<S, M, E> {
+  /**
+   * Called synchronously after every reducer call, including calls made inside
+   * a batch and calls caused by an effect. It runs after state advances and
+   * effects are collected, but before the settled-state notification and effect
+   * dispatch. Throwing aborts that settle round: the state already returned by
+   * the reducer remains current, while that round's effects are dropped.
+   */
+  onTransition?: (transition: TeaTransition<S, M, E>) => void
+  /**
+   * Called synchronously when a changed state settles: once for a plain send,
+   * once at the outermost batch exit, and again for each effect-driven settle.
+   * It runs before that settle's effects. Throwing aborts the round and drops
+   * those effects, matching a mounted commit that throws.
+   */
+  onStateChange?: (state: S) => void
+}
+```
+
+### `TeaEffectApi`
+
+The capabilities available while a {@link TeaProgram} interprets an effect.
+
+```typescript
+export interface TeaEffectApi<S, M> {
+  /** Queue a message in the current drain; effect-driven sends are reentrancy-safe. */
+  send: (msg: M) => void
+  /** Read the driver's live state with the same signal handle used by mounted effects. */
+  state: Signal<S>
+  /** Group sends into one settled state notification. */
+  batch: (fn: () => void) => void
+  /** Aborted exactly once when this driver is disposed. */
+  signal: AbortSignal
+}
+```
+
+### `TeaProgram`
+
+The view-less part of an LLui component: initial state, a pure reducer, and
+an optional effect interpreter. Pass this to {@link createTeaDriver} when a
+state machine needs the framework's real dispatch semantics without a DOM.
+
+```typescript
+export interface TeaProgram<S, M, E = never> {
+  /** Produce the initial state and, optionally, effects to run after creation. */
+  init: () => S | [S, E[]]
+  /** Fold one message over the current state and optionally emit effects. */
+  update: (state: S, msg: M) => S | [S, E[]]
+  /** Interpret an emitted effect. A returned cleanup runs on driver disposal. */
+  onEffect?: (effect: E, api: TeaEffectApi<S, M>) => void | (() => void)
+}
+```
+
+### `TeaTransition`
+
+One completed reducer call, observed after its state and effects have been
+accepted but before the settled state is committed or its effects run.
+
+```typescript
+export interface TeaTransition<S, M, E> {
+  /** State supplied to the reducer. */
+  readonly previousState: S
+  /** Message supplied to the reducer. */
+  readonly msg: M
+  /** State returned by the reducer. */
+  readonly state: S
+  /** Effects returned by the reducer, in their original order. */
+  readonly effects: E[]
 }
 ```
 

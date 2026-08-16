@@ -10,7 +10,8 @@
 import { renderSignalTree } from './mount.js'
 import type { SignalDoc } from './build-context.js'
 import { pathHandle } from './handle.js'
-import { normalizeUpdateResult, type SignalComponentDef } from './component.js'
+import type { SignalComponentDef } from './component.js'
+import { normalizeUpdateResult } from './tea-driver.js'
 
 /** A server DOM document: the node-factory subset the build needs. A `DomEnv`
  * from `@llui/dom/ssr/jsdom` or `@llui/dom/ssr/linkedom` satisfies it. */

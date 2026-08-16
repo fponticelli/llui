@@ -15,9 +15,18 @@ import type { Renderable } from './element.js'
 import { withBindingErrors, withCommitRound, toBindingError, type BindingError } from './runtime.js'
 import { pathHandle } from './handle.js'
 import { installSignalDebug, type SignalMessageRecord } from './devtools.js'
-import { createCommitScheduler, type CommitHost } from './commit-scope.js'
+import {
+  createTeaDriverCore,
+  normalizeUpdateResult,
+  type TeaDriver,
+  type TeaDriverController,
+} from './tea-driver.js'
 import { COMPILER_META_KEYS, type CompilerMetadata } from './compiler-keys.js'
 import type { Signal } from './types.js'
+
+// Kept as a direct export for source-level consumers while the package barrel
+// exports it from its new canonical home in tea-driver.ts.
+export { normalizeUpdateResult } from './tea-driver.js'
 
 // Vite/Rollup substitute `import.meta.env.DEV` at build time; bundlers
 // without the substitution (raw tsc / vitest) see it as undefined, so
@@ -132,29 +141,6 @@ export interface SignalComponentHandle<S, M> {
   setOnBindingError(hook: ((e: BindingError) => void) | null): void
 }
 
-/**
- * Normalize an `init()` / `update()` result — a `[state, effects]` tuple or a
- * bare `state` (the convenience return) — to a `[state, effects]` pair. This is
- * the ONE place the `[S, E[]] | S` heuristic lives; component, SSR, and (later)
- * `@llui/test` / `@llui/vike` all route through it so the shape decision never
- * diverges.
- *
- * The heuristic: a 2-element array whose SECOND element is itself an array is
- * read as `[state, effects]`; anything else is a bare state with no effects.
- *
- * KNOWN AMBIGUITY (deliberately unchanged — dropping the bare-`S` convenience is
- * a repo-wide breaking ripple, out of scope here): a state that is ITSELF a
- * 2-tuple whose second element is an array (e.g. the whole state is
- * `[number, string[]]`) is mis-read as `[state, effects]`. Such a state must be
- * returned explicitly as `[state, []]`.
- */
-export function normalizeUpdateResult<S, E>(r: [S, E[]] | S): [S, E[]] {
-  if (Array.isArray(r) && r.length === 2 && Array.isArray((r as [S, E[]])[1])) {
-    return r as [S, E[]]
-  }
-  return [r as S, []]
-}
-
 /** Options for `mountSignalComponent`. */
 export interface MountSignalOptions<S> {
   /** Hydrate over server-rendered DOM instead of a fresh mount: seed the loop
@@ -210,7 +196,7 @@ export function mountSignalComponent<S, M, E = never>(
   // falsy/null seed (`null`, `0`, `''`) that a nullish-coalesce would silently
   // discard in favour of `init()`'s state. Only an explicitly-provided key
   // overrides the seed.
-  let state = hy
+  const initialState = hy
     ? hy.serverState
     : opts && 'initialState' in opts
       ? (opts.initialState as S)
@@ -229,7 +215,6 @@ export function mountSignalComponent<S, M, E = never>(
   const cleanups: Array<() => void> = []
   const subscribers = new Set<(state: S) => void>()
 
-  const handle = makeHandle<S>(() => state)
   // Dev: capture a message log and register a debug API for the MCP/agent relay.
   const dev = import.meta.env?.DEV === true
   const history: SignalMessageRecord[] = []
@@ -268,12 +253,11 @@ export function mountSignalComponent<S, M, E = never>(
     }
   }
 
-  // The update loop's SCHEDULING half lives in `commit-scope.ts`: the queue, the
-  // reentrancy guard, the batch depth and the frame scheduling are private to that
-  // module, reachable only through a commit token it hands out inside a scope whose
-  // `finally` releases the guard. This file supplies the other half — the reducer,
-  // the reconcile, the effect dispatch — as a `CommitHost`, and can reach a commit
-  // ONLY through the scheduler's surface (see that file's header for why).
+  // The shared view-less driver supplies state reduction and effect frames. Its
+  // scheduling half still lives in `commit-scope.ts`: the queue, reentrancy guard,
+  // batch depth and frame scheduling remain private there, reachable only through
+  // a commit token handed out inside a scope whose `finally` releases the guard.
+  // Neither this component nor the public driver can reach `drain` directly.
   //
   // `send` is reentrancy-safe AND reconcile-coalescing: a message dispatched WHILE
   // another is being processed (the classic case: removing a focused node during
@@ -290,64 +274,6 @@ export function mountSignalComponent<S, M, E = never>(
   // `send` stays synchronous: the queue is fully drained and committed before it
   // returns, so the "send applies immediately" contract holds at the call boundary.
 
-  // The OPEN effect frame: effects collected by the reducers of the settle round
-  // currently in progress, dispatched once that round has committed. Lazily
-  // allocated — most messages emit none, and a 1k-send burst opens 1k frames, so
-  // don't allocate an empty array per round.
-  //
-  // Frames NEST, and the displaced one travels on the scheduler's call stack
-  // rather than in a second field here (see `CommitHost.beginEffects`): a settle
-  // provoked from inside this round's commit — a devtools poke from a subscriber —
-  // must not release, or lose, what this round has collected and not yet
-  // dispatched.
-  let pendingEffects: E[] | null = null
-
-  const commitHost: CommitHost<M, E[] | null> = {
-    reduce: (m: M): boolean => {
-      const before = state
-      const [next, effects] = normalizeUpdateResult<S, E>(updateFn(state, m))
-      const moved = !Object.is(next, state)
-      if (moved) state = next
-      if (dev) {
-        history.push({
-          index: msgIndex++,
-          timestamp: Date.now(),
-          msg: m,
-          stateBefore: before,
-          stateAfter: state,
-          effects,
-        })
-        if (history.length > 1000) history.shift()
-      }
-      if (effects.length > 0) {
-        if (pendingEffects === null) pendingEffects = []
-        for (const e of effects) pendingEffects.push(e)
-      }
-      return moved
-    },
-    beginEffects: (): E[] | null => {
-      const prev = pendingEffects
-      pendingEffects = null
-      return prev
-    },
-    dispatchEffects: (): void => {
-      const es = pendingEffects
-      // Take the frame BEFORE dispatching: an effect that provokes a further round
-      // must collect into a fresh frame rather than append to the one being walked.
-      pendingEffects = null
-      if (es !== null) for (const e of es) runEffect(e)
-    },
-    endEffects: (prev: E[] | null): void => {
-      // Unconditional: whatever is still open is this round's, and the round is
-      // over. On the normal path `dispatchEffects` already emptied it; on the
-      // throw and disposed-bail paths it holds effects the round never reached,
-      // and dropping them is the pre-refactor behaviour (see `drain`).
-      pendingEffects = prev
-    },
-    isDisposed: (): boolean => disposed,
-    commit: commitToDom,
-  }
-
   // Reconcile + notify against the current state. Called at most once per settle,
   // and only from inside a commit scope — `commit-scope.ts` owns the pending flag,
   // so this reports liveness and cannot forget to leave an undelivered commit owed.
@@ -360,7 +286,7 @@ export function mountSignalComponent<S, M, E = never>(
     // would stay frozen until a later, unrelated dispatch. Report NOT-LIVE; the
     // scheduler keeps the commit pending and the post-mount replay lands it.
     if (mount === null) return false
-    const next = state
+    const next = teaDriver.getState()
     // `withCommitRound` marks this as round DOM work, which is what tells
     // `SignalScopeImpl.mount` it may NOT contain a throw (see #165 / #216): a
     // subtree mounted from inside this reconcile must abort the round exactly as it
@@ -411,7 +337,30 @@ export function mountSignalComponent<S, M, E = never>(
     return true
   }
 
-  const commits = createCommitScheduler(commitHost, opts?.scheduler ?? 'sync')
+  const tea = createTeaDriverCore<S, M, E>({
+    initialState,
+    update: updateFn,
+    runEffect,
+    commit: commitToDom,
+    isDisposed: () => disposed,
+    scheduler: opts?.scheduler ?? 'sync',
+    onTransition: dev
+      ? ({ previousState, msg, state: nextState, effects }): void => {
+          history.push({
+            index: msgIndex++,
+            timestamp: Date.now(),
+            msg,
+            stateBefore: previousState,
+            stateAfter: nextState,
+            effects,
+          })
+          if (history.length > 1000) history.shift()
+        }
+      : undefined,
+  })
+  const teaDriver: Omit<TeaDriver<S, M>, 'dispose'> = tea.driver
+  const teaController: TeaDriverController<S, M, E> = tea.controller
+  const handle = makeHandle<S>(() => teaDriver.getState())
 
   // Surface an isolated subscriber throw instead of swallowing it: the console
   // for a human, and the binding-error hook — the agent's `drain.errors` channel
@@ -459,7 +408,7 @@ export function mountSignalComponent<S, M, E = never>(
       }
       return
     }
-    commits.dispatch(msg)
+    teaDriver.send(msg)
   }
 
   // Coalesce a burst of `send`s into one reconcile (see the handle's `batch` doc).
@@ -475,7 +424,7 @@ export function mountSignalComponent<S, M, E = never>(
       }
       return
     }
-    commits.batch(fn)
+    teaDriver.batch(fn)
   }
 
   withBindingErrors(onBindingError, () => {
@@ -488,11 +437,11 @@ export function mountSignalComponent<S, M, E = never>(
         : { container: target as Element, mode: hy ? 'replace' : 'append' }
     mount = mountSignal(
       mt,
-      state,
+      teaDriver.getState(),
       () => def.view({ state: handle, send, batch }),
       opts?.contexts,
       undefined,
-      () => state,
+      () => teaDriver.getState(),
     )
   })
   // onMount callbacks ran synchronously inside mountSignal above, before `mount`
@@ -509,7 +458,7 @@ export function mountSignalComponent<S, M, E = never>(
   // unguarded commit here would let that reentrant send start a NESTED drain
   // mid-reconcile — the scope-tree/`removeBetween` corruption the guard exists to
   // prevent. The scheduler queues it instead, then settles synchronously.
-  commits.replayPostMountCommit()
+  teaController.replayPostMountCommit()
   // Fresh mount always dispatches init effects; hydration skips them unless asked.
   if (hy ? (hy.runInitEffects ?? false) : true) {
     for (const e of initialEffects) runEffect(e)
@@ -518,19 +467,19 @@ export function mountSignalComponent<S, M, E = never>(
   if (dev && opts?.devtools !== false) {
     uninstallDebug = installSignalDebug({
       name: def.name ?? 'SignalComponent',
-      getState: () => state,
+      getState: () => teaDriver.getState(),
       setState: (s) => {
         // Route devtools state pokes (setState / restoreState / time-travel)
         // through the NORMAL commit path so the reconcile AND subscriber
         // notification fire exactly as a real `send` would. Poking `mount.update`
         // directly skipped subscribers, so the agent protocol's state-update frames
         // missed devtools-driven changes.
-        state = s as S
+        teaController.replaceState(s as S)
         // Same commit scope every other path uses — the save/restore of the guard
         // (so a poke from inside an active drain doesn't strand the outer loop) and
         // the settle of commit-induced messages are the scope's job, not this
         // call site's.
-        commits.pokeCommit()
+        teaController.pokeCommit()
       },
       send: (m) => send(m as M),
       pureUpdate: (s, m) => normalizeUpdateResult<S, E>(updateFn(s as S, m as M)),
@@ -550,9 +499,9 @@ export function mountSignalComponent<S, M, E = never>(
   return {
     send,
     batch,
-    getState: () => state,
+    getState: () => teaDriver.getState(),
     // sync mode: send already committed — `flushNow` is a no-op there.
-    flush: () => commits.flushNow(),
+    flush: () => teaDriver.flush(),
     dispose: () => {
       if (disposed) return
       disposed = true
@@ -563,7 +512,7 @@ export function mountSignalComponent<S, M, E = never>(
       subscribers.clear()
       // Cancels any scheduled frame and abandons the queue (a running drain also
       // checks `isDisposed` and bails).
-      commits.shutdown()
+      teaController.shutdown()
       const m = mount
       // Null `mount` FIRST so any commit re-entered during teardown (a `blur` from
       // a removed focused node) can't write to the torn-down tree.
@@ -578,7 +527,7 @@ export function mountSignalComponent<S, M, E = never>(
       return () => subscribers.delete(listener)
     },
     runReducer: (msg: M): { state: S; effects: unknown[] } | null => {
-      const [next, effects] = normalizeUpdateResult<S, E>(updateFn(state, msg))
+      const [next, effects] = normalizeUpdateResult<S, E>(updateFn(teaDriver.getState(), msg))
       return { state: next, effects }
     },
     getBindingDescriptors: (): Array<{ variant: string }> => mount?.getDescriptors() ?? [],
@@ -587,6 +536,7 @@ export function mountSignalComponent<S, M, E = never>(
       newOnEffect?: unknown,
     ): void => {
       updateFn = newUpdate as typeof updateFn
+      teaController.replaceUpdate(updateFn)
       if (newOnEffect !== undefined) onEffectFn = newOnEffect as typeof onEffectFn
     },
     setOnBindingError: (hook: ((e: BindingError) => void) | null): void => {

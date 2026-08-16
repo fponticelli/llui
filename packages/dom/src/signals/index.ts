@@ -86,7 +86,6 @@ export {
 export {
   mountSignalComponent,
   hydrateSignalApp,
-  normalizeUpdateResult,
   type SignalComponentDef,
   type SignalComponentHandle,
   type MountSignalOptions,
@@ -94,6 +93,15 @@ export {
   type EffectApi,
   type StateHandle,
 } from './component.js'
+export {
+  createTeaDriver,
+  normalizeUpdateResult,
+  type TeaDriver,
+  type TeaDriverOptions,
+  type TeaEffectApi,
+  type TeaProgram,
+  type TeaTransition,
+} from './tea-driver.js'
 export type { BindingError } from './runtime.js'
 // Exported so packages that BUILD VIEWS on top of this runtime — @llui/components,
 // @llui/markdown, @llui/a2ui, @llui/lexical — can brand their own authoring

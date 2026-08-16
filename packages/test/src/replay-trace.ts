@@ -1,4 +1,4 @@
-import { normalizeUpdateResult, type SignalComponentDef } from '@llui/dom'
+import { createTeaDriver, normalizeUpdateResult, type SignalComponentDef } from '@llui/dom'
 import { jsonEqual } from './internal/json.js'
 
 /** The only trace-format version this replayer understands. Recorded by
@@ -52,11 +52,16 @@ export function replayTrace<S, M, E>(
   assertTraceMatches(def, trace)
 
   const [initState] = normalizeUpdateResult(def.init())
-  let state = initState
+  let effects: E[] = []
+  const driver = createTeaDriver(
+    { init: () => initState, update: def.update },
+    { onTransition: (transition) => (effects = transition.effects) },
+  )
 
   for (let i = 0; i < trace.entries.length; i++) {
     const entry = trace.entries[i]!
-    const [newState, effects] = normalizeUpdateResult(def.update(state, entry.msg))
+    driver.send(entry.msg)
+    const newState = driver.getState()
 
     // Compare state
     if (!jsonEqual(newState, entry.expectedState)) {
@@ -77,8 +82,6 @@ export function replayTrace<S, M, E>(
           `Actual effects: ${JSON.stringify(effects)}`,
       )
     }
-
-    state = newState
   }
 }
 

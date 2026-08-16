@@ -1,8 +1,10 @@
 import {
+  createTeaDriver,
   normalizeUpdateResult,
-  pathHandle,
   type SignalComponentDef,
-  type EffectApi,
+  type TeaDriver,
+  type TeaEffectApi,
+  type TeaTransition,
 } from '@llui/dom'
 
 export interface TestHarness<S, M, E> {
@@ -27,247 +29,149 @@ export interface TestHarness<S, M, E> {
   /**
    * Coalesce a burst of `send`s (see the runtime handle's `batch`). Reducers
    * and — in `withEffects` mode — effects still run per message in order; the
-   * harness has no DOM to commit, so `batch` here is a faithful structural
-   * mirror (it establishes one top-level `effects` window across the burst).
+   * harness has no DOM to commit, so `batch` establishes one top-level
+   * `effects` window across the burst.
    */
   batch: (fn: () => void) => void
   /**
-   * Tear down the harness: aborts the per-mount lifecycle `AbortSignal` handed
-   * to `onEffect` (so effect handlers keyed off `api.signal` clean up) and runs
-   * any cleanups returned by `onEffect`. After dispose, `send`/`batch` are
-   * inert (matching the runtime's after-dispose drop). No-op in the default
-   * pure-reducer mode beyond aborting the signal.
+   * Tear down the harness: aborts the per-driver lifecycle `AbortSignal` handed
+   * to `onEffect` and runs cleanups returned by `onEffect`. After dispose,
+   * `send`/`batch` are inert.
    */
   dispose: () => void
 }
 
 export interface TestComponentOptions {
   /**
-   * Opt in to faithfully replicating the runtime's effect drain. In the default
-   * (pure-reducer) mode `testComponent` runs `update()` once per `send` and
-   * stops — effects are recorded but never dispatched. The real runtime instead
-   * dispatches every returned effect to `onEffect`, which commonly calls `send`
-   * synchronously; the terminal state after such a cascade differs from the
-   * pure-reducer state ("green tests lie").
-   *
-   * With `withEffects: true` the harness replicates the runtime loop exactly:
-   * a queue-based `send`, reducers run to quiescence, then the collected
-   * effects dispatch in order through the def's `onEffect` with a real
-   * {@link EffectApi} (including this mount's lifecycle `signal`); effect-driven
-   * `send`s re-enter the same queue, so a cascade settles to the same terminal
-   * state a real `mountApp` reaches.
+   * Opt in to the shared runtime's effect drain. In the default pure-reducer
+   * mode `testComponent` runs `update()` once per `send` and stops — effects are
+   * recorded but not interpreted. With `withEffects: true`, returned effects
+   * run through `onEffect`; synchronous effect-driven sends re-enter the shared
+   * queue and settle before the top-level send returns.
    */
   withEffects?: boolean
 }
 
+/** Drive a component definition without mounting its view. */
 export function testComponent<S, M, E>(
   def: SignalComponentDef<S, M, E>,
   options: TestComponentOptions = {},
 ): TestHarness<S, M, E> {
-  return options.withEffects ? effectDrivenHarness(def) : pureReducerHarness(def)
-}
-
-/** Default: pure reducer, one `update()` per `send`, effects recorded only. */
-function pureReducerHarness<S, M, E>(def: SignalComponentDef<S, M, E>): TestHarness<S, M, E> {
-  const lifecycle = new AbortController()
+  // Cache init once: createTeaDriver receives the already-observed result so the
+  // component's init function is never evaluated twice.
   const [initState, initEffects] = normalizeUpdateResult(def.init())
-
-  // While a `batch` is open, `windowEffects` points at `harness.effects` so every
-  // send in the burst APPENDS there — matching the top-level effects-window
-  // contract (and the withEffects harness). Between batches it is null and each
-  // send REPLACES `harness.effects` with just its own effects.
+  let currentState = initState
+  let currentEffects = initEffects
+  const allEffects = [...initEffects]
+  const history: Array<{ prevState: S; msg: M; nextState: S; effects: E[] }> = []
+  const refs: { driver?: TeaDriver<S, M>; harness?: TestHarness<S, M, E> } = {}
+  let disposed = false
+  let callDepth = 0
   let batchDepth = 0
+  let implicitEffectDepth = 0
   let windowEffects: E[] | null = null
 
-  const harness: TestHarness<S, M, E> = {
-    state: initState,
-    effects: initEffects,
-    allEffects: [...initEffects],
-    history: [],
-
-    send(msg: M) {
-      if (lifecycle.signal.aborted) return
-      const prevState = harness.state
-      const [nextState, effects] = normalizeUpdateResult(def.update(prevState, msg))
-      harness.history.push({ prevState, msg, nextState, effects })
-      harness.state = nextState
-      if (windowEffects) {
-        for (const e of effects) windowEffects.push(e)
-      } else {
-        harness.effects = effects
-      }
-      harness.allEffects.push(...effects)
-    },
-
-    sendAll(msgs: M[]) {
-      for (const msg of msgs) harness.send(msg)
-      return harness.state
-    },
-
-    // No commit and no effect dispatch in pure mode, but `batch` still opens ONE
-    // top-level effects window spanning the burst (resetting `harness.effects` at
-    // the outermost entry, appending each send's effects) so `harness.effects`
-    // after a batch means the same thing it does in withEffects mode — the whole
-    // burst's effects, not just the last send's.
-    batch(fn: () => void) {
-      if (lifecycle.signal.aborted) return
-      const outermost = batchDepth === 0
-      if (outermost) {
-        harness.effects = []
-        windowEffects = harness.effects
-      }
-      batchDepth++
-      try {
-        fn()
-      } finally {
-        batchDepth--
-        if (batchDepth === 0) windowEffects = null
-      }
-    },
-
-    dispose() {
-      if (!lifecycle.signal.aborted) lifecycle.abort()
-    },
+  function replaceEffects(effects: E[]): void {
+    currentEffects = effects
+    if (refs.harness !== undefined) refs.harness.effects = effects
   }
 
-  return harness
-}
-
-/**
- * `withEffects` mode: a headless mirror of the signal runtime's TEA loop
- * (`packages/dom/src/signals/component.ts`) with the DOM commit removed. The
- * queue / `draining` / `batchDepth` structure, drain-to-quiescence ordering,
- * and per-effect dispatch are replicated 1:1 so terminal state matches a real
- * `mountApp` for effect-driven cascades. A parity test pins this against
- * `@llui/dom`'s observable behavior.
- */
-function effectDrivenHarness<S, M, E>(def: SignalComponentDef<S, M, E>): TestHarness<S, M, E> {
-  const lifecycle = new AbortController()
-  const cleanups: Array<() => void> = []
-  // A read handle over the live `state` closure — the same shape `EffectApi.state`
-  // carries in the runtime (`.at(path).peek()` / `.peek()` read current state).
-  const stateHandle = pathHandle<S>(() => harness.state, '')
-
-  const queue: M[] = []
-  let draining = false
-  let batchDepth = 0
-  // Collector for the CURRENT top-level window (a `send` not nested in a drain,
-  // or a `batch`). Points at `harness.effects` while open so a whole cascade's
-  // effects land there; null between windows.
-  let windowEffects: E[] | null = null
-
-  const runEffect = (effect: E): void => {
-    const onEffect = def.onEffect
-    if (onEffect === undefined) return // no handler: dropped, same as the runtime
-    const cleanup = onEffect(effect, {
-      send,
-      batch,
-      state: stateHandle,
-      signal: lifecycle.signal,
-    } satisfies EffectApi<S, M>)
-    if (typeof cleanup === 'function') {
-      // Torn down while the (possibly async) handler ran: run the cleanup now so
-      // nothing it opened is stranded — mirrors the runtime.
-      if (lifecycle.signal.aborted) cleanup()
-      else cleanups.push(cleanup)
+  function recordTransition({ previousState, msg, state, effects }: TeaTransition<S, M, E>): void {
+    currentState = state
+    if (refs.harness !== undefined) refs.harness.state = state
+    history.push({ prevState: previousState, msg, nextState: state, effects })
+    // Initial effects run during driver construction. If one sends, it owns the
+    // same effects window that the old harness opened around that send; an inert
+    // init effect leaves `effects` equal to the init effect list.
+    if (windowEffects === null && implicitEffectDepth > 0) {
+      replaceEffects([])
+      windowEffects = currentEffects
     }
-  }
-
-  // Drain the queue to quiescence: run every queued reducer (collecting effects
-  // + history), then dispatch the collected effects in order. A dispatched
-  // effect may `send` (re-enters the queue), so loop until the queue empties.
-  const drain = (): void => {
-    do {
-      let pendingEffects: E[] | null = null
-      while (queue.length > 0) {
-        const msg = queue.shift() as M
-        const prevState = harness.state
-        const [nextState, effects] = normalizeUpdateResult(def.update(prevState, msg))
-        harness.state = nextState
-        harness.history.push({ prevState, msg, nextState, effects })
-        if (effects.length > 0) {
-          if (windowEffects) for (const e of effects) windowEffects.push(e)
-          harness.allEffects.push(...effects)
-          if (pendingEffects === null) pendingEffects = []
-          for (const e of effects) pendingEffects.push(e)
-        }
-      }
-      if (pendingEffects !== null) for (const e of pendingEffects) runEffect(e)
-    } while (queue.length > 0)
+    if (windowEffects === null) replaceEffects(effects)
+    else for (const effect of effects) windowEffects.push(effect)
+    allEffects.push(...effects)
   }
 
   function send(msg: M): void {
-    if (lifecycle.signal.aborted) return
-    queue.push(msg)
-    if (draining) return
-    // Open a fresh top-level effects window unless we're inside a `batch` (which
-    // owns the window spanning the whole burst).
-    const ownsWindow = batchDepth === 0
+    if (disposed) return
+    const ownsWindow = callDepth === 0 && batchDepth === 0
     if (ownsWindow) {
-      harness.effects = []
-      windowEffects = harness.effects
+      replaceEffects([])
+      windowEffects = currentEffects
     }
-    draining = true
+    callDepth++
     try {
-      drain()
+      refs.driver?.send(msg)
     } finally {
-      draining = false
+      callDepth--
       if (ownsWindow) windowEffects = null
     }
   }
 
   function batch(fn: () => void): void {
-    if (lifecycle.signal.aborted) return
-    const outermost = batchDepth === 0 && !draining
-    if (outermost) {
-      harness.effects = []
-      windowEffects = harness.effects
+    if (disposed) return
+    const ownsWindow = callDepth === 0 && batchDepth === 0
+    if (ownsWindow) {
+      replaceEffects([])
+      windowEffects = currentEffects
     }
     batchDepth++
     try {
-      fn()
+      refs.driver?.batch(fn)
     } finally {
       batchDepth--
-      if (batchDepth === 0 && !draining) {
-        draining = true
-        try {
-          drain()
-        } finally {
-          draining = false
-          if (outermost) windowEffects = null
-        }
-      }
+      if (ownsWindow) windowEffects = null
     }
   }
 
-  const [initState, initEffects] = normalizeUpdateResult(def.init())
+  const onEffect = options.withEffects
+    ? (effect: E, api: TeaEffectApi<S, M>): void | (() => void) => {
+        const implicit = callDepth === 0 && batchDepth === 0
+        if (implicit) implicitEffectDepth++
+        callDepth++
+        try {
+          return def.onEffect?.(effect, {
+            ...api,
+            // During construction `driver` is not assigned yet; the API handed
+            // in by createTeaDriver is already the same live queue.
+            send: (msg) => (refs.driver === undefined ? api.send(msg) : send(msg)),
+            batch: (fn) => (refs.driver === undefined ? api.batch(fn) : batch(fn)),
+          })
+        } finally {
+          callDepth--
+          if (implicit) {
+            implicitEffectDepth--
+            windowEffects = null
+          }
+        }
+      }
+    : undefined
 
-  const harness: TestHarness<S, M, E> = {
-    state: initState,
-    effects: initEffects,
-    allEffects: [...initEffects],
-    history: [],
+  refs.driver = createTeaDriver(
+    {
+      init: () => [initState, initEffects],
+      update: def.update,
+      ...(onEffect === undefined ? {} : { onEffect }),
+    },
+    { onTransition: recordTransition },
+  )
+
+  refs.harness = {
+    state: currentState,
+    effects: currentEffects,
+    allEffects,
+    history,
     send,
     sendAll(msgs: M[]) {
       for (const msg of msgs) send(msg)
-      return harness.state
+      return refs.driver!.getState()
     },
     batch,
     dispose() {
-      if (lifecycle.signal.aborted) return
-      lifecycle.abort()
-      // Run in REGISTRATION order (FIFO) — the exact teardown order the runtime
-      // uses (`for (const c of cleanups.splice(0)) c()` in @llui/dom
-      // component.ts). A LIFO order here would silently diverge from a real mount.
-      for (const c of cleanups.splice(0)) c()
+      if (disposed) return
+      disposed = true
+      refs.driver!.dispose()
     },
   }
-
-  // Mount-time init effects dispatch after state is seeded (the runtime runs
-  // them directly, after the view is built — component.ts). Each is dispatched
-  // one-by-one; an init effect that `send`s opens its own drain, exactly as the
-  // runtime does, so no window is held open across them.
-  for (const e of initEffects) runEffect(e)
-
-  return harness
+  return refs.harness
 }
