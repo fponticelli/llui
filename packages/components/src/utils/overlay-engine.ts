@@ -35,8 +35,9 @@ import type { TextDirection } from './direction.js'
  * dialog family) and assembles the feature set behind flags:
  * `attachFloating` → `lockBodyScroll` → `setAriaHiddenOutside` → `pushFocusTrap`
  * → `pushDismissable`, plus focus-on-open and focus-restore-on-teardown. Cleanups
- * always run in reverse (LIFO), and focus is restored to the anchor only when it
- * was still inside the overlay at teardown.
+ * run LIFO except that modal isolation releases before the focus trap restores,
+ * and focus is restored to the anchor only when it was still inside the overlay
+ * at teardown.
  *
  * Each component's `overlay()` is a thin declaration of its defaults over this.
  */
@@ -274,7 +275,13 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
         cleanups.push(attachFloatingFor(els))
       }
       if (opts.lockScroll) cleanups.push(lockBodyScroll())
-      if (opts.hideSiblings) cleanups.push(setAriaHiddenOutside(els.content))
+      // Apply modal isolation before activating the trap, but register its
+      // cleanup after the trap's cleanup. The cleanup list runs LIFO, so this
+      // releases an outer dialog from `inert` before the inner trap tries to
+      // restore focus into it (#209).
+      const releaseModalIsolation = opts.hideSiblings
+        ? setAriaHiddenOutside(els.content)
+        : undefined
       if (opts.focusTrap) {
         cleanups.push(
           pushFocusTrap({
@@ -284,6 +291,7 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
           }),
         )
       }
+      if (releaseModalIsolation) cleanups.push(releaseModalIsolation)
       if (opts.dismiss) {
         const d = opts.dismiss
         const boundaryEl = d.boundary === 'floating' ? els.floating : els.content
