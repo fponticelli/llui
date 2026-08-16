@@ -68,6 +68,24 @@ export interface ImageCropperInit {
 }
 
 /**
+ * Largest on-ratio rectangle that fits the image.
+ *
+ * Choosing the driving image axis before multiplying/dividing is essential:
+ * `height * ratio` may overflow for a very wide ratio, while `width / ratio`
+ * may overflow for a very narrow one. The comparison itself is safe at those
+ * extremes, and the selected operation can only move toward zero.
+ */
+function largestLockedSize(
+  image: { width: number; height: number },
+  ratio: number,
+): { width: number; height: number } {
+  if (ratio > image.width / image.height) {
+    return { width: image.width, height: image.width / ratio }
+  }
+  return { width: image.height * ratio, height: image.height }
+}
+
+/**
  * Fit a crop inside the image while HONOURING the aspect-ratio lock.
  *
  * With a ratio set the rectangle may only be scaled UNIFORMLY: clamping each
@@ -97,23 +115,23 @@ function fitCrop(
       height,
     }
   }
-  // Re-derive the height so the rectangle is exactly on ratio before scaling.
-  let width = Math.max(0, crop.width)
-  let height = width / ratio
-  if (width <= 0 || height <= 0) {
-    // Collapsed: no scale factor lifts a zero, so seed the smallest on-ratio
-    // rectangle whose SHORTER side is `minSize`.
-    width = ratio >= 1 ? minSize * ratio : minSize
-    height = width / ratio
+  const maximum = largestLockedSize(image, ratio)
+
+  // Algebraically this is the former grow-then-shrink sequence, but it chooses
+  // the final width directly. That avoids both an overflowing grow factor and
+  // the `Infinity * 0 => NaN` shrink that followed it for valid extreme ratios.
+  // If the shorter side cannot reach minSize inside the image, the maximum
+  // fitting rectangle wins as before.
+  let minimumWidth = 0
+  if (minSize > 0) {
+    if (ratio >= 1) {
+      minimumWidth = minSize >= maximum.height ? maximum.width : minSize * ratio
+    } else {
+      minimumWidth = Math.min(minSize, maximum.width)
+    }
   }
-  // Grow to the minimum first, then shrink to fit — shrinking last is what
-  // guarantees the result is inside the image.
-  const grow = Math.max(1, minSize / width, minSize / height)
-  width *= grow
-  height *= grow
-  const shrink = Math.min(1, image.width / width, image.height / height)
-  width *= shrink
-  height *= shrink
+  const width = Math.min(maximum.width, Math.max(0, crop.width, minimumWidth))
+  const height = width / ratio
   return {
     x: clamp(crop.x, 0, image.width - width),
     y: clamp(crop.y, 0, image.height - height),
@@ -133,15 +151,7 @@ export function centerFill(
   if (aspectRatio === null) {
     return { x: 0, y: 0, width: image.width, height: image.height }
   }
-  const imgRatio = image.width / image.height
-  let width: number, height: number
-  if (aspectRatio > imgRatio) {
-    width = image.width
-    height = width / aspectRatio
-  } else {
-    height = image.height
-    width = height * aspectRatio
-  }
+  const { width, height } = largestLockedSize(image, aspectRatio)
   return {
     x: (image.width - width) / 2,
     y: (image.height - height) / 2,

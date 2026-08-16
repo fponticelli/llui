@@ -811,4 +811,28 @@ describe('zero-divisor numeric state requires a positive finite number (#214)', 
       pageSize: 20,
     })
   })
+
+  for (const ratio of [Number.MIN_VALUE, Number.MAX_VALUE]) {
+    it(`fits the full positive finite aspect-ratio domain without corrupting state (${ratio})`, () => {
+      const image = { width: 100, height: 100 }
+      const expectedSize =
+        ratio < 1
+          ? { width: image.height * ratio, height: image.height }
+          : { width: image.width, height: image.width / ratio }
+      const expectedInitialCrop = {
+        x: ratio < 1 ? 50 : 0,
+        y: ratio < 1 ? 0 : 50,
+        ...expectedSize,
+      }
+
+      const initialized = imageCropper.init({ image, aspectRatio: ratio })
+      expect(initialized).toMatchObject({ aspectRatio: ratio, crop: expectedInitialCrop })
+      expectSerializableState(initialized, `cropper init extreme ratio ${ratio}`)
+
+      const unconstrained = imageCropper.init({ image })
+      const [updated] = imageCropper.update(unconstrained, { type: 'setAspectRatio', ratio })
+      expect(updated).toMatchObject({ aspectRatio: ratio, crop: { x: 0, y: 0, ...expectedSize } })
+      expectSerializableState(updated, `cropper update extreme ratio ${ratio}`)
+    })
+  }
 })
