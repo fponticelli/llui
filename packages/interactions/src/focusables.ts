@@ -2,9 +2,9 @@
  * Find focusable descendants within a container.
  */
 
-// Matches elements that can receive keyboard focus. Excludes elements with
-// `tabindex=-1` (programmatically focusable but not tab-reachable) and
-// elements inside `inert` subtrees.
+// Finds candidates that are focusable by native semantics or an explicit
+// tabindex. Global exclusions such as a negative tabindex are applied by
+// isFocusable rather than repeated across every selector alternative.
 const FOCUSABLE_SELECTOR = [
   'a[href]',
   'area[href]',
@@ -36,7 +36,7 @@ export function getFocusables(container: Element): HTMLElement[] {
   const nodes = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
   const out: HTMLElement[] = []
   for (const n of nodes) {
-    if (isVisible(n) && !isInsideInert(n, container)) out.push(n)
+    if (isFocusable(n) && isVisible(n) && !isInsideInert(n, container)) out.push(n)
   }
   return out
 }
