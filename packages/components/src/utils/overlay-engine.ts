@@ -147,6 +147,8 @@ export interface OverlayEngineOptions<S> {
   visibleWhen?: (s: S) => boolean
   /** Fired when the overlay is dismissed (Escape / outside click). */
   onDismiss: () => void
+  /** Fired after the interaction phase has fully unwound, including on dispose. */
+  onInteractionEnd?: () => void
   floating?: OverlayFloatingConfig
   dismiss?: OverlayDismissConfig
   focusTrap?: OverlayFocusTrapConfig
@@ -235,6 +237,23 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
   const resolveReference = (root: Node, ref: OverlayElementReference): Element | null =>
     'id' in ref ? resolveId(root, ref.id) : ref.resolve()
 
+  const warnOwnerBeforePlacementBailout = (root: Node): void => {
+    if (!registersNestedLayer || import.meta.env?.DEV !== true) return
+    const ownerRef = opts.relationships.nestedLayerOwner
+    const owner = ownerRef ? resolveReference(root, ownerRef) : null
+    if (owner) return
+    const ownerDescription = ownerRef
+      ? 'id' in ownerRef
+        ? `id "${ownerRef.id}"`
+        : 'resolver'
+      : 'missing declaration'
+    console.warn(
+      `[llui/components] Overlay "${opts.contentId}" could not resolve its nested-layer owner (${ownerDescription}). ` +
+        'Its placement anchor is also unresolved, so interaction setup is stopping before nested-layer registration. ' +
+        'Render the owner for the full overlay interaction lifetime or supply a live owner resolver.',
+    )
+  }
+
   const resolveEls = (root: Node): OverlayElements | null => {
     const content = resolveId(root, opts.contentId)
     if (!content) return null
@@ -244,7 +263,10 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
     const placementAnchor = placement instanceof HTMLElement ? placement : null
     // A declared placement relationship is required. Silently positioning
     // against the content hides a broken trigger/anchor contract.
-    if (opts.relationships.placementAnchor && !placementAnchor) return null
+    if (opts.relationships.placementAnchor && !placementAnchor) {
+      warnOwnerBeforePlacementBailout(root)
+      return null
+    }
     const dismissIgnore = (opts.relationships.dismissIgnore ?? []).flatMap((ref) => {
       const element = resolveReference(root, ref)
       return element ? [element] : []
@@ -369,27 +391,31 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
       }
 
       return () => {
-        // Capture whether focus is still inside the overlay BEFORE teardown
-        // (focus-trap etc. may move it). Only pull focus back to the declared
-        // target when it lingered inside — if the user clicked elsewhere,
-        // respect that.
-        let doRestore = false
-        if (
-          opts.relationships.focusReturn &&
-          opts.relationships.focusReturn.restoreOnTeardown !== false
-        ) {
-          doRestore = focusLingeredInside({
-            boundary:
-              opts.relationships.focusReturn.boundary === 'floating' ? els.floating : els.content,
-            anchor: els.focusReturnTarget,
-            allowAnchorActive: opts.relationships.focusReturn.allowTargetActive,
-          })
+        try {
+          // Capture whether focus is still inside the overlay BEFORE teardown
+          // (focus-trap etc. may move it). Only pull focus back to the declared
+          // target when it lingered inside — if the user clicked elsewhere,
+          // respect that.
+          let doRestore = false
+          if (
+            opts.relationships.focusReturn &&
+            opts.relationships.focusReturn.restoreOnTeardown !== false
+          ) {
+            doRestore = focusLingeredInside({
+              boundary:
+                opts.relationships.focusReturn.boundary === 'floating' ? els.floating : els.content,
+              anchor: els.focusReturnTarget,
+              allowAnchorActive: opts.relationships.focusReturn.allowTargetActive,
+            })
+          }
+          for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
+          // `engineFocus`, not a bare `.focus()`: this move is the engine's own
+          // bookkeeping and must not read as an outside interaction to a SIBLING
+          // layer still open (#155) — the return target is outside every one of them.
+          if (doRestore && els.focusReturnTarget) engineFocus(els.focusReturnTarget)
+        } finally {
+          opts.onInteractionEnd?.()
         }
-        for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
-        // `engineFocus`, not a bare `.focus()`: this move is the engine's own
-        // bookkeeping and must not read as an outside interaction to a SIBLING
-        // layer still open (#155) — the return target is outside every one of them.
-        if (doRestore && els.focusReturnTarget) engineFocus(els.focusReturnTarget)
       }
     })
 

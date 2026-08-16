@@ -23,9 +23,12 @@ release entry and deletes it — do not leave it here across a release.
   no longer exempts a portal (or descendants owned inside it) from every modal;
   scoped lookups exclude it and development builds warn once. Context menus
   capture the actual right-clicked region as runtime-only ownership, including
-  when one parts instance is spread across multiple regions. The shared overlay
-  engine now declares placement, ownership, dismissal-ignore, and focus-return
-  relationships independently. ([#215])
+  when one parts instance is spread across multiple regions, and clear that
+  ownership when the interaction ends so a later message/replay open fails
+  closed. The shared overlay engine now declares placement, ownership,
+  dismissal-ignore, and focus-return relationships independently; an unresolved
+  placement relationship no longer suppresses the actionable ownership warning.
+  ([#215])
 
 - **`@llui/router`** — **guard redirects now chain to a fixed point.**
   `beforeEnter` is re-asked about each target it returns until it accepts one,

@@ -123,6 +123,25 @@ describe('#215 — context-menu ownership in Chromium', () => {
     ).toBe('true')
   })
 
+  it('does not reuse a closed menu owner for a later programmatic/replayed openAt', async () => {
+    await page.evaluate(() => window.__openDialog())
+    await page.locator('#inside-region').click({ button: 'right' })
+    await page.locator('#cm\\:content').waitFor({ state: 'visible' })
+
+    await page.evaluate(() => {
+      window.__closeContextMenu()
+      window.__openContextMenuAt(45, 55)
+    })
+    await page.locator('#cm\\:content').waitFor({ state: 'visible' })
+    expect(await page.evaluate(() => (document.activeElement as HTMLElement).id)).toBe('cm:content')
+
+    // A replay/message-only open has no current DOM owner. The modal trap must
+    // fail closed and redirect Tab to the dialog instead of admitting cm-extra
+    // through the ownership captured by the previous, now-ended interaction.
+    await page.keyboard.press('Tab')
+    expect(await page.evaluate(() => (document.activeElement as HTMLElement).id)).toBe('dlg-action')
+  })
+
   it('preserves pointer placement, dismiss-then-reopen, focus behavior, and serializable state', async () => {
     const region = page.locator('#outside-region')
     const box = await region.boundingBox()

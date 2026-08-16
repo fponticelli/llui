@@ -18,6 +18,7 @@ declare global {
     __openDialog: () => void
     __closeDialog: () => void
     __closeContextMenu: () => void
+    __openContextMenuAt: (x: number, y: number) => void
     __serializedState: () => string
     __contextMenuWasOpenAtEvent: boolean[]
   }
@@ -106,5 +107,6 @@ const handle = mountApp(document.getElementById('app')!, app)
 window.__openDialog = () => sendRef({ type: 'dialog', msg: { type: 'open' } })
 window.__closeDialog = () => sendRef({ type: 'dialog', msg: { type: 'close' } })
 window.__closeContextMenu = () => sendRef({ type: 'menu', msg: { type: 'close' } })
+window.__openContextMenuAt = (x, y) => sendRef({ type: 'menu', msg: { type: 'openAt', x, y } })
 window.__serializedState = () => JSON.stringify(handle.getState())
 window.__contextMenuReady = true

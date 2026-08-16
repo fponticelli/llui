@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { component, mountApp, button, div, text } from '@llui/dom'
 import { init, update, connect, overlay } from '../../src/components/menubar'
 import type { MenubarState, MenubarMsg } from '../../src/components/menubar'
@@ -29,7 +29,7 @@ describe('menubar.overlay integration', () => {
     triggerId: string
   }
 
-  function makeApp(): Harness {
+  function makeApp(renderTriggers = true): Harness {
     let sendRef!: (m: MenubarMsg) => void
     let stateRef!: () => MenubarState
     let triggerIdRef!: string
@@ -64,10 +64,14 @@ describe('menubar.overlay integration', () => {
         triggerIdRef = parts.menuTrigger('file').id
         const fileMenu = parts.menu('file')
         return [
-          div({ ...parts.root }, [
-            button({ ...parts.menuTrigger('file') }, [text('File')]),
-            button({ ...parts.menuTrigger('edit') }, [text('Edit')]),
-          ]),
+          ...(renderTriggers
+            ? [
+                div({ ...parts.root }, [
+                  button({ ...parts.menuTrigger('file') }, [text('File')]),
+                  button({ ...parts.menuTrigger('edit') }, [text('Edit')]),
+                ]),
+              ]
+            : []),
           overlay({
             state: mb,
             send,
@@ -123,5 +127,20 @@ describe('menubar.overlay integration', () => {
     await tick()
     expect(h.peek().open).toBeNull()
     expect(document.querySelector('[data-scope="menu"][data-part="content"]')).toBeNull()
+  })
+
+  it('warns about unresolved ownership before a missing placement trigger bails out', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const h = makeApp(false)
+    h.send({ type: 'openMenu', id: 'file' })
+    await tick()
+
+    // The content mounted, so the interaction phase reached relationship
+    // resolution. The shared trigger id resolves for neither placement nor
+    // ownership; placement may bail, but must not swallow the ownership warning.
+    expect(document.getElementById('mb:file:content')).not.toBeNull()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('nested-layer owner'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining(h.triggerId))
+    warn.mockRestore()
   })
 })
