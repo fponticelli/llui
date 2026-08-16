@@ -17,8 +17,11 @@ import { router } from './router'
 export async function render(url: string): Promise<{ html: string; state: string }> {
   // 1. Parse URL → initial state + effects
   const state = initialState(url)
-  const location = router.match(url) ?? router.location('home')
-  const [routeState, effects] = update(state, { type: 'navigate', location })
+  const location = router.match(url)
+  const [routeState, effects] = update(
+    state,
+    location === null ? { type: 'unmatched', url } : { type: 'navigate', location },
+  )
 
   // 2. Execute HTTP effects server-side (fetch data before serializing)
   const loadedState = await resolveEffects<State, Msg, Effect>(routeState, effects, update)

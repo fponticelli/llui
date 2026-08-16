@@ -792,7 +792,7 @@ routing.link(send, 'home', { class: 'nav-link' }, [text('Home')])
 ```typescript
 view: ({ state, send }) => [
   ...routing.listener(send), // listens for popstate/hashchange
-  branch(state.at('route').at('page'), {
+  branch(state.at('location').at('name'), {
     home: () => homePage(state, send),
     search: () => searchPage(state, send),
     repo: () => repoPage(state, send),

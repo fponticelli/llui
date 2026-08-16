@@ -85,6 +85,20 @@ describe('named route locations', () => {
     )
   })
 
+  it('clones configured defaults for every returned location', () => {
+    const first = router.match('/users/42')
+    const second = router.match('/users/42')
+    if (first?.name !== 'user' || second?.name !== 'user') throw new Error('Expected user')
+
+    first.params.tags.push('mutated')
+
+    expect(second.params.tags).toEqual([])
+    expect(router.match('/users/42')).toEqual({
+      name: 'user',
+      params: { id: 42, section: 'profile', tags: [] },
+    })
+  })
+
   it('normalizes root and duplicate-slash browser inputs without changing query values', () => {
     expect(router.match('#')).toEqual({ name: 'home', params: {} })
     expect(router.match('')).toEqual({ name: 'home', params: {} })
@@ -272,6 +286,37 @@ describe('named route locations', () => {
     expect(() => validated.toPath('page', { number: -1 })).toThrow(/valid location/i)
     expect(() => validated.href('page', { number: -1 })).toThrow(/valid location/i)
   })
+
+  it('rejects a formatter that loses semantic parameter information', () => {
+    const decimal = routeCodec(
+      fixtureSchema<string, number>((input) => {
+        const value = Number(input)
+        return Number.isFinite(value) ? { value } : { issues: [{ message: 'number required' }] }
+      }),
+      (value) => String(Math.trunc(value)),
+    )
+    const lossy = createRouter({ value: route('/value/:value', { params: { value: decimal } }) })
+
+    expect(() => lossy.href('value', { value: 1.5 })).toThrow(/round-trip|valid location/i)
+  })
+
+  it('normalizes and omits built-in and custom rest defaults', () => {
+    const builtIn = createRouter({
+      docs: route('/docs/*path', { defaults: { path: ['index'] } }),
+    })
+    expect(builtIn.match('/docs')).toEqual({ name: 'docs', params: { path: ['index'] } })
+    expect(builtIn.href('docs', {})).toBe('#/docs')
+    expect(builtIn.href('docs', { path: ['index'] })).toBe('#/docs')
+
+    const custom = createRouter({
+      docs: route('/docs/*path', {
+        params: { path: tags },
+        defaults: { path: ['index'] },
+      }),
+    })
+    expect(custom.match('/docs')).toEqual({ name: 'docs', params: { path: ['index'] } })
+    expect(custom.href('docs', {})).toBe('#/docs')
+  })
 })
 
 describe('route construction', () => {
@@ -349,6 +394,9 @@ describe('route construction', () => {
         bad: route('/users/:id', { query: { id: integer } } as never),
       }),
     ).toThrow(/both.*path.*query/i)
+    expect(() => createRouter({ bad: route('/x/:language?/*path') })).toThrow(
+      /optional.*rest|rest.*optional/i,
+    )
   })
 
   it('rejects defaults that do not round-trip through their declared codec', () => {

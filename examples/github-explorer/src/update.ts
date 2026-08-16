@@ -82,6 +82,9 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
       // router.link already calls pushState, so no push needed here
       return loadRoute(state, pageForLocation(msg.location))
 
+    case 'unmatched':
+      return loadRoute(state, pageForUnmatched(msg.url))
+
     case 'setQuery': {
       const q = msg.value
       if (!q.trim()) {
@@ -207,6 +210,12 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
  * decides whether to push (user action) or not (popstate).
  */
 function loadRoute(state: State, route: Page): [State, Effect[]] {
+  if (route.page === 'notFound') {
+    return [
+      { ...state, page: route, query: '' },
+      [cancel('search'), cancel('repo'), cancel('contents'), cancel('readme'), cancel('issues')],
+    ]
+  }
   const effects: Effect[] = []
   const r = { ...route, data: { type: 'loading' as const } }
 
@@ -241,6 +250,10 @@ function loadRoute(state: State, route: Page): [State, Effect[]] {
       effects.push(cancel('issues'))
       return [{ ...state, page: r }, effects]
   }
+}
+
+export function pageForUnmatched(url: string): Page {
+  return { page: 'notFound', url, data: { type: 'idle' } }
 }
 
 export function pageForLocation(location: Location): Page {

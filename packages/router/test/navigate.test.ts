@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { connectRouter } from '../src/connect'
+import { connectRouter, type ConnectedRouter, type RouterEffect } from '../src/connect'
 import { createRouter, route, type RouteLocation } from '../src/index'
 
 const registry = {
@@ -15,9 +15,9 @@ function makeRouter(mode: 'hash' | 'history' = 'history') {
   return createRouter(registry, { mode })
 }
 
-function run(
-  routing: ReturnType<typeof connectRouter<Registry>>,
-  effect: ReturnType<ReturnType<typeof connectRouter<Registry>>['navigate']>,
+function run<NavigateMessage, UnmatchedMessage>(
+  routing: ConnectedRouter<Registry, NavigateMessage, UnmatchedMessage>,
+  effect: RouterEffect,
   send = vi.fn(),
 ) {
   routing.handleEffect({ effect, send, signal: new AbortController().signal })

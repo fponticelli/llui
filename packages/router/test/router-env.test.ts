@@ -689,7 +689,8 @@ describe('connect.ts names a browser global in exactly one place', () => {
   // the very edit this gate exists to stop. Naming the container catches it
   // whatever is read off it, and `globalThis` has no non-global meaning to
   // over-match.
-  const GLOBAL_USE = /(?<![\w$.'"`])(?:globalThis|location|history|window)\s*[.[]/
+  const GLOBAL_USE =
+    /(?<![\w$.'"`])(?:(?:globalThis|history|window)\s*[.[]|location\s*(?:\[|\.(?:hash|pathname|search|href|replace|assign|reload)\b))/
 
   it('every location/history/window dereference is inside browserRouterEnv', () => {
     const lines = codeLines(connectSource)

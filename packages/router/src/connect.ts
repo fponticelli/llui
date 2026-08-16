@@ -153,7 +153,25 @@ export function browserRouterEnv(): RouterEnv {
   }
 }
 
-export interface ConnectOptions<Registry extends RouteRegistry> {
+export interface RouterNavigateMessage<Registry extends RouteRegistry> {
+  readonly type: 'navigate'
+  readonly location: RouteLocation<Registry>
+}
+
+export interface RouterUnmatchedMessage {
+  readonly type: 'unmatched'
+  readonly url: string
+}
+
+export type RouterMessage<Registry extends RouteRegistry> =
+  | RouterNavigateMessage<Registry>
+  | RouterUnmatchedMessage
+
+export interface ConnectOptions<
+  Registry extends RouteRegistry,
+  NavigateMessage = RouterNavigateMessage<Registry>,
+  UnmatchedMessage = RouterUnmatchedMessage,
+> {
   /**
    * The History/Location surface to drive (default: {@link browserRouterEnv}).
    * Inject one to route a test, an SSR host, or an embedded frame through its
@@ -194,9 +212,9 @@ export interface ConnectOptions<Registry extends RouteRegistry> {
    * uses a different message shape for route changes; the same factory then
    * applies to every route-change dispatch so they stay consistent.
    */
-  navigateMsg?: (location: RouteLocation<Registry>) => unknown
+  navigateMsg?: (location: RouteLocation<Registry>) => NavigateMessage
   /** Build the message dispatched for a browser-driven unmatched URL. */
-  unmatchedMsg?: (url: string) => unknown
+  unmatchedMsg?: (url: string) => UnmatchedMessage
 }
 
 type LinkArguments<Registry extends RouteRegistry, M> =
@@ -206,7 +224,7 @@ type LinkArguments<Registry extends RouteRegistry, M> =
           ...destination: D,
           attrs: Record<string, unknown>,
           children: readonly ChildNode[],
-          msgFactory?: (route: RouteLocation<Registry>) => M,
+          msgFactory?: (location: RouteLocation<Registry>) => M,
         ]
       : never
     : never
@@ -223,7 +241,11 @@ type ExactLinkArguments<
   msgFactory?: (location: RouteLocation<Registry>) => M,
 ]
 
-export interface ConnectedRouter<Registry extends RouteRegistry> {
+export interface ConnectedRouter<
+  Registry extends RouteRegistry,
+  NavigateMessage = RouterNavigateMessage<Registry>,
+  UnmatchedMessage = RouterUnmatchedMessage,
+> {
   /**
    * Effect: push a new history entry — URL only.
    *
@@ -304,10 +326,15 @@ export interface ConnectedRouter<Registry extends RouteRegistry> {
    * Returns the onMount marker to place in the view. Sends
    * `{ type: 'navigate', location }` or `{ type: 'unmatched', url }`.
    */
+  listener(send: (msg: NavigateMessage | UnmatchedMessage) => void): Renderable
   listener<M>(
-    send: (msg: M) => void,
-    msgFactory?: (route: RouteLocation<Registry>) => M,
-    unmatchedFactory?: (url: string) => M,
+    send: (msg: M | UnmatchedMessage) => void,
+    msgFactory: (location: RouteLocation<Registry>) => M,
+  ): Renderable
+  listener<M, U>(
+    send: (msg: M | U) => void,
+    msgFactory: (location: RouteLocation<Registry>) => M,
+    unmatchedFactory: (url: string) => U,
   ): Renderable
 
   /**
@@ -338,7 +365,7 @@ export interface ConnectedRouter<Registry extends RouteRegistry> {
     /** Extract route from message */
     getLocation: (msg: M) => RouteLocation<Registry>
     /** Optional guard — can redirect */
-    guard?: (route: RouteLocation<Registry>, state: S) => RouteLocation<Registry>
+    guard?: (location: RouteLocation<Registry>, state: S) => RouteLocation<Registry>
     /** Build new state + effects for the route */
     onNavigate: (state: S, location: RouteLocation<Registry>) => [S, E[]]
   }): (state: S, msg: M) => [S, E[]] | null
@@ -383,7 +410,7 @@ function mintRun(): string {
 /** The outcome of the guard pipeline for one navigation. */
 type GuardOutcome<Location> =
   | { blocked: true }
-  | { blocked: false; route: Location; redirected: boolean }
+  | { blocked: false; location: Location; redirected: boolean }
 
 /**
  * How many times `beforeEnter` may redirect within ONE navigation before the
@@ -491,24 +518,29 @@ function sameHash(a: string, b: string): boolean {
  * {@link browserRouterEnv}); nothing in this file reaches for `location`,
  * `history` or `window` directly (#111).
  */
-export function connectRouter<const Registry extends RouteRegistry>(
+export function connectRouter<
+  const Registry extends RouteRegistry,
+  NavigateMessage = RouterNavigateMessage<Registry>,
+  UnmatchedMessage = RouterUnmatchedMessage,
+>(
   router: Router<Registry>,
-  options?: ConnectOptions<Registry>,
-): ConnectedRouter<Registry> {
+  options?: ConnectOptions<Registry, NavigateMessage, UnmatchedMessage>,
+): ConnectedRouter<Registry, NavigateMessage, UnmatchedMessage> {
   type Location = RouteLocation<Registry>
   // The canonical route-change message factory. Used by the navigate()
   // effect, the popstate/hashchange listener, and link() so every
   // route-change dispatch produces the same message shape.
-  const navigateMsg: (location: Location) => unknown =
-    options?.navigateMsg ?? ((location: Location) => ({ type: 'navigate', location }))
-  const unmatchedMsg: (url: string) => unknown =
-    options?.unmatchedMsg ?? ((url: string) => ({ type: 'unmatched', url }))
+  const navigateMsg =
+    options?.navigateMsg ??
+    ((location: Location): RouterNavigateMessage<Registry> => ({ type: 'navigate', location }))
+  const unmatchedMsg =
+    options?.unmatchedMsg ?? ((url: string): RouterUnmatchedMessage => ({ type: 'unmatched', url }))
 
   // Every history/location touch below goes through this. Never reach for
   // `location`/`history`/`window` directly here (#111).
   const env = options?.env ?? browserRouterEnv()
 
-  // Seed currentRoute from the current location so the first navigation's
+  // Seed currentLocation from the browser location so the first navigation's
   // guards see the actual starting route as `from` (not null) and a
   // blocked navigation can restore the real starting URL. With no location the
   // env reads as `''`, which either matches the root route or remains unmatched.
@@ -541,7 +573,7 @@ export function connectRouter<const Registry extends RouteRegistry>(
     return router.mode === 'hash' ? sameHash(env.hash, path) : currentInput() === path
   }
 
-  let currentRoute: Location | null = (() => {
+  let currentLocation: Location | null = (() => {
     try {
       return router.match(currentInput())
     } catch {
@@ -783,7 +815,7 @@ export function connectRouter<const Registry extends RouteRegistry>(
     return true
   }
   /**
-   * Run guards for a navigation to `newRoute`. `redirected` is reported
+   * Run guards for a navigation to `newLocation`. `redirected` is reported
    * explicitly rather than inferred by comparing routes: a guard may return a
    * structurally equal object, and `push`/`replace` need to know whether the
    * URL they are about to write is the one their caller actually asked for.
@@ -809,7 +841,7 @@ export function connectRouter<const Registry extends RouteRegistry>(
    *    REQUESTED route. It is the unsaved-changes PROMPT; asking it per hop
    *    would prompt N times for one navigation. Running it first also keeps the
    *    order right — a refused leave must run no `beforeEnter` at all.
-   * 4. `from` IS `currentRoute` ON EVERY HOP. No hop is ENTERED — they are
+   * 4. `from` IS `currentLocation` ON EVERY HOP. No hop is ENTERED — they are
    *    proposals — so where the navigation is coming from does not change as
    *    the chain resolves.
    *
@@ -833,49 +865,49 @@ export function connectRouter<const Registry extends RouteRegistry>(
    * Documented under "Guards" in `site/content/api/router.md` and pinned in
    * `test/guards.test.ts`.
    */
-  function routeArgs(route: Location): [string, Record<string, unknown>] {
-    return [route.name, route.params]
+  function locationArgs(location: Location): [string, Record<string, unknown>] {
+    return [location.name, location.params]
   }
 
-  function routeHref(route: Location): string {
-    return (router.href as (...args: readonly unknown[]) => string)(...routeArgs(route))
+  function locationHref(location: Location): string {
+    return (router.href as (...args: readonly unknown[]) => string)(...locationArgs(location))
   }
 
   function destinationLocation(destination: readonly unknown[]): Location {
     return (router.location as (...args: readonly unknown[]) => Location)(...destination)
   }
 
-  function normalizeLocation(route: Location): Location {
-    return (router.location as (...args: readonly unknown[]) => Location)(...routeArgs(route))
+  function normalizeLocation(location: Location): Location {
+    return (router.location as (...args: readonly unknown[]) => Location)(...locationArgs(location))
   }
 
-  function isCurrentCanonical(route: Location): boolean {
+  function isCurrentCanonical(location: Location): boolean {
     return (
-      currentRoute !== null &&
-      routeHref(currentRoute) === routeHref(route) &&
-      sameUrl(routeHref(route))
+      currentLocation !== null &&
+      locationHref(currentLocation) === locationHref(location) &&
+      sameUrl(locationHref(location))
     )
   }
 
-  function runGuards(newRoute: Location): GuardOutcome<Location> {
-    if (options?.beforeLeave && currentRoute !== null) {
-      if (!options.beforeLeave(currentRoute, newRoute)) return { blocked: true }
+  function runGuards(newLocation: Location): GuardOutcome<Location> {
+    if (options?.beforeLeave && currentLocation !== null) {
+      if (!options.beforeLeave(currentLocation, newLocation)) return { blocked: true }
     }
     const beforeEnter = options?.beforeEnter
-    if (!beforeEnter) return { blocked: false, route: newRoute, redirected: false }
+    if (!beforeEnter) return { blocked: false, location: newLocation, redirected: false }
 
-    let route = newRoute
+    let location = newLocation
     let redirected = false
     for (let hops = 0; ; ) {
-      const result = beforeEnter(route, currentRoute)
+      const result = beforeEnter(location, currentLocation)
       if (result === false) return { blocked: true }
       // Any non-`false`, non-nullish return is a redirect location.
       if (result === undefined || result === null) break
       const next = normalizeLocation(result as Location)
       // Whether the URL MOVED decides only whether to ask again; the hop is
       // taken either way (see 2 above).
-      const moved = routeHref(next) !== routeHref(route)
-      route = next
+      const moved = locationHref(next) !== locationHref(location)
+      location = next
       redirected = true
       if (!moved) break
       if (++hops >= MAX_REDIRECT_HOPS) {
@@ -887,13 +919,13 @@ export function connectRouter<const Registry extends RouteRegistry>(
         // guard (see above).
         console.warn(
           `[@llui/router] beforeEnter redirected ${MAX_REDIRECT_HOPS} times without settling ` +
-            `(resting on: ${routeHref(route)}, never offered to the guard). ` +
+            `(resting on: ${locationHref(location)}, never offered to the guard). ` +
             `Fold the chain, or check it for a cycle.`,
         )
         break
       }
     }
-    return { blocked: false, route, redirected }
+    return { blocked: false, location, redirected }
   }
 
   /**
@@ -1085,7 +1117,7 @@ export function connectRouter<const Registry extends RouteRegistry>(
    * as it was: a TRAVERSAL back to the entry we were on, never a fresh push.
    */
   function restoreBlocked(): void {
-    if (currentRoute === null) return
+    if (currentLocation === null) return
     const landed = readPosition(env.historyState)
     // Both positions must be known for a delta to mean anything. When either is
     // not — no stamp at all, or an index with no run to measure it in — do
@@ -1113,7 +1145,7 @@ export function connectRouter<const Registry extends RouteRegistry>(
 
   // Effects created by this connector carry a normalized location. A manually
   // constructed path-only effect is matched through the same public router seam.
-  function targetRoute(effect: RouterEffect): Location | null {
+  function targetLocation(effect: RouterEffect): Location | null {
     return effect.location !== undefined
       ? (effect.location as Location)
       : router.match(effect.path!)
@@ -1125,11 +1157,11 @@ export function connectRouter<const Registry extends RouteRegistry>(
       case 'replace': {
         // URL only. In hash mode, suppress the echo hashchange so the listener
         // does not ALSO dispatch a navigate (finding 2b).
-        const target = targetRoute(effect)
+        const target = targetLocation(effect)
         if (target === null || isCurrentCanonical(target)) return
         const outcome = runGuards(target)
         if (outcome.blocked) return
-        const finalPath = routeHref(outcome.route)
+        const finalPath = locationHref(outcome.location)
         if (router.mode === 'hash') {
           if (effect.action === 'push') {
             setHash(finalPath)
@@ -1168,14 +1200,14 @@ export function connectRouter<const Registry extends RouteRegistry>(
         } else {
           replaceUrl(finalPath)
         }
-        currentRoute = outcome.route
+        currentLocation = outcome.location
         // A guard REDIRECT wrote a URL the caller never asked for. push/replace
         // are URL-only by contract — the caller's reducer already set
         // application location — but it set it to the REQUESTED route, so staying
         // silent leaves application location and the URL disagreeing permanently
         // (#110). Only a redirect dispatches; the plain case keeps the
         // documented URL-only contract.
-        if (outcome.redirected) send(navigateMsg(outcome.route))
+        if (outcome.redirected) send(navigateMsg(outcome.location))
         break
       }
       case 'navigate': {
@@ -1190,18 +1222,18 @@ export function connectRouter<const Registry extends RouteRegistry>(
         //
         // In hash mode we dispatch here AND suppress the echo hashchange, so
         // the listener does not double-dispatch the same message (finding 2a).
-        const target = targetRoute(effect)
+        const target = targetLocation(effect)
         if (target === null || isCurrentCanonical(target)) return
         const outcome = runGuards(target)
         if (outcome.blocked) return
-        const finalPath = routeHref(outcome.route)
+        const finalPath = locationHref(outcome.location)
         if (router.mode === 'hash') {
           setHash(finalPath)
         } else {
           pushUrl(finalPath)
         }
-        currentRoute = outcome.route
-        send(navigateMsg(outcome.route))
+        currentLocation = outcome.location
+        send(navigateMsg(outcome.location))
         break
       }
       case 'back':
@@ -1216,18 +1248,113 @@ export function connectRouter<const Registry extends RouteRegistry>(
     }
   }
 
+  function listener(send: (msg: NavigateMessage | UnmatchedMessage) => void): Renderable
+  function listener<M>(
+    send: (msg: M | UnmatchedMessage) => void,
+    msgFactory: (location: Location) => M,
+  ): Renderable
+  function listener<M, U>(
+    send: (msg: M | U) => void,
+    msgFactory: (location: Location) => M,
+    unmatchedFactory: (url: string) => U,
+  ): Renderable
+  function listener<M, U>(
+    send: (msg: M | U) => void,
+    msgFactory?: (location: Location) => M,
+    unmatchedFactory?: (url: string) => U,
+  ): Renderable {
+    const factory: (location: Location) => unknown = msgFactory ?? navigateMsg
+    const makeUnmatched: (url: string) => unknown = unmatchedFactory ?? unmatchedMsg
+    return [
+      onMount(() => {
+        let pendingHashchangePair: { hash: string; consumeEcho: boolean } | null = null
+
+        const handler = (event: 'popstate' | 'hashchange', eventHash?: string) => {
+          if (router.mode === 'hash') {
+            if (event === 'hashchange') {
+              if (pendingHashchangePair !== null) {
+                const pair = pendingHashchangePair
+                pendingHashchangePair = null
+                if (sameHash(eventHash ?? env.hash, pair.hash)) {
+                  if (pair.consumeEcho) consumeHashEcho()
+                  return
+                }
+              }
+              if (consumeHashEcho()) return
+            } else {
+              const consumeEchoWithPair = validatePendingHashEcho()
+              pendingHashchangePair = {
+                hash: normHash(env.hash),
+                consumeEcho: consumeEchoWithPair,
+              }
+              if (consumePopstateRestore()) return
+              if (consumeEchoWithPair) return
+            }
+          } else if (consumePopstateRestore()) {
+            return
+          }
+
+          const originalUrl = currentInput()
+          const matched = router.match(originalUrl)
+          if (matched === null) {
+            adoptLandedEntry()
+            currentLocation = null
+            send(makeUnmatched(originalUrl) as M | U)
+            return
+          }
+          const outcome = runGuards(matched)
+          if (outcome.blocked) {
+            restoreBlocked()
+            return
+          }
+          adoptLandedEntry()
+          const canonicalUrl = locationHref(outcome.location)
+          if (!sameUrl(canonicalUrl)) rewriteLandedUrl(canonicalUrl)
+          currentLocation = outcome.location
+          send(factory(outcome.location) as M | U)
+        }
+        if (router.mode === 'history') {
+          return env.onUrlChange('popstate', () => handler('popstate'))
+        }
+        const unsubscribePopstate = env.onUrlChange('popstate', () => handler('popstate'))
+        const unsubscribeHashchange = env.onUrlChange('hashchange', (newHash) =>
+          handler('hashchange', newHash),
+        )
+        return () => {
+          unsubscribePopstate()
+          unsubscribeHashchange()
+        }
+      }),
+    ]
+  }
+
   return {
     push(...destination) {
-      const route = destinationLocation(destination)
-      return { type: '__router', action: 'push', path: routeHref(route), location: route }
+      const location = destinationLocation(destination)
+      return {
+        type: '__router',
+        action: 'push',
+        path: locationHref(location),
+        location,
+      }
     },
     replace(...destination) {
-      const route = destinationLocation(destination)
-      return { type: '__router', action: 'replace', path: routeHref(route), location: route }
+      const location = destinationLocation(destination)
+      return {
+        type: '__router',
+        action: 'replace',
+        path: locationHref(location),
+        location,
+      }
     },
     navigate(...destination) {
-      const route = destinationLocation(destination)
-      return { type: '__router', action: 'navigate', path: routeHref(route), location: route }
+      const location = destinationLocation(destination)
+      return {
+        type: '__router',
+        action: 'navigate',
+        path: locationHref(location),
+        location,
+      }
     },
     back() {
       return { type: '__router', action: 'back' }
@@ -1245,101 +1372,7 @@ export function connectRouter<const Registry extends RouteRegistry>(
       return true
     },
 
-    listener<M>(
-      send: (msg: M) => void,
-      msgFactory?: (route: Location) => M,
-      unmatchedFactory?: (url: string) => M,
-    ): Renderable {
-      const factory = msgFactory ?? (navigateMsg as (route: Location) => M)
-      const makeUnmatched = unmatchedFactory ?? (unmatchedMsg as (url: string) => M)
-      // Place the onMount marker in the view; its callback registers the URL
-      // listener on mount. (onMount is a lazy Mountable — calling it for side
-      // effect and discarding the return would never register.) The listener
-      // dispatches via its own captured `send` for browser-driven URL changes
-      // (popstate/hashchange); the navigate() effect no longer depends on it.
-      return [
-        onMount(() => {
-          // Chromium delivers an ordinary fragment traversal as popstate then
-          // hashchange, but a same-fragment traversal has only the popstate.
-          // Remember the popstate's LANDED fragment: its hashchange pair still
-          // shows that same fragment, while any later genuine hashchange must
-          // have moved away from it. That value scopes the suppression to one
-          // physical traversal without a timer or a broad "ignore next" flag.
-          let pendingHashchangePair: { hash: string; consumeEcho: boolean } | null = null
-
-          const handler = (event: 'popstate' | 'hashchange', eventHash?: string) => {
-            if (router.mode === 'hash') {
-              if (event === 'hashchange') {
-                if (pendingHashchangePair !== null) {
-                  const pair = pendingHashchangePair
-                  pendingHashchangePair = null
-                  if (sameHash(eventHash ?? env.hash, pair.hash)) {
-                    // A programmatic hash write is already handled by its
-                    // effect. Its popstate arrives first, but the hashchange is
-                    // the echo the write armed and therefore the event that
-                    // consumes it.
-                    if (pair.consumeEcho) consumeHashEcho()
-                    return
-                  }
-                }
-                if (consumeHashEcho()) return
-              } else {
-                const consumeEchoWithPair = validatePendingHashEcho()
-                pendingHashchangePair = {
-                  hash: normHash(env.hash),
-                  consumeEcho: consumeEchoWithPair,
-                }
-                if (consumePopstateRestore()) return
-                // Do not consume here: when this is a fragment-changing write,
-                // its hashchange follows and is the queued echo setHash armed.
-                if (consumeEchoWithPair) return
-              }
-            } else if (consumePopstateRestore()) {
-              return
-            }
-
-            const originalUrl = currentInput()
-            const matched = router.match(originalUrl)
-            if (matched === null) {
-              adoptLandedEntry()
-              currentRoute = null
-              send(makeUnmatched(originalUrl))
-              return
-            }
-            const outcome = runGuards(matched)
-            if (outcome.blocked) {
-              restoreBlocked()
-              return
-            }
-            adoptLandedEntry()
-            // A guard REDIRECT means the route we are about to dispatch is NOT
-            // the one the browser navigated to, so the URL has to follow it —
-            // otherwise application location says `/login` while the address bar (and
-            // therefore a reload, a share or a bookmark) still says `/admin`
-            // (#143). The URL is written BEFORE the dispatch so the reducer and
-            // any effect it emits already read the final URL.
-            const canonicalUrl = routeHref(outcome.route)
-            if (!sameUrl(canonicalUrl)) rewriteLandedUrl(canonicalUrl)
-            currentRoute = outcome.route
-            send(factory(outcome.route))
-          }
-          // History mode retains its one popstate subscription. Hash mode needs
-          // both: popstate is the only event for a same-fragment traversal, and
-          // the pair above collapses an ordinary traversal back to one action.
-          if (router.mode === 'history') {
-            return env.onUrlChange('popstate', () => handler('popstate'))
-          }
-          const unsubscribePopstate = env.onUrlChange('popstate', () => handler('popstate'))
-          const unsubscribeHashchange = env.onUrlChange('hashchange', (newHash) =>
-            handler('hashchange', newHash),
-          )
-          return () => {
-            unsubscribePopstate()
-            unsubscribeHashchange()
-          }
-        }),
-      ]
-    },
+    listener,
 
     link<M>(send: (msg: M) => void, ...args: LinkArguments<Registry, M>): Mountable {
       const argumentList = args as unknown[]
@@ -1348,13 +1381,15 @@ export function connectRouter<const Registry extends RouteRegistry>(
       const destination = argumentList.slice(0, destinationLength) as RouteDestination<Registry>
       const attrs = argumentList[destinationLength] as Record<string, unknown>
       const children = argumentList[destinationLength + 1] as readonly ChildNode[]
-      const msgFactory = argumentList[destinationLength + 2] as ((route: Location) => M) | undefined
-      const route = destinationLocation(destination)
-      const factory = msgFactory ?? (navigateMsg as (route: Location) => M)
+      const msgFactory = argumentList[destinationLength + 2] as
+        | ((location: Location) => M)
+        | undefined
+      const location = destinationLocation(destination)
+      const factory = msgFactory ?? (navigateMsg as (location: Location) => M)
       return a(
         {
           ...attrs,
-          href: routeHref(route),
+          href: locationHref(location),
           onClick: (e: Event) => {
             const me = e as MouseEvent
             // Respect a handler that already handled the event.
@@ -1373,7 +1408,7 @@ export function connectRouter<const Registry extends RouteRegistry>(
             if (anchor?.hasAttribute('download')) return
             e.preventDefault()
             // BOTH modes run the same pipeline as the navigate() effect —
-            // guards → block/redirect/allow → URL write + send + currentRoute —
+            // guards → block/redirect/allow → URL write + send + currentLocation —
             // so auth / unsaved-changes guards are never silently skipped
             // (finding 1). Hash mode used to write the hash and leave the rest
             // to the listener, which made a link INERT without a mounted
@@ -1382,14 +1417,14 @@ export function connectRouter<const Registry extends RouteRegistry>(
             // ran, `setHash` bailed on the identical hash, and nothing followed
             // (#110). A click on the current route is a request to re-enter it,
             // so the router now performs a full no-op.
-            if (isCurrentCanonical(route)) return
-            const outcome = runGuards(route)
+            if (isCurrentCanonical(location)) return
+            const outcome = runGuards(location)
             if (outcome.blocked) return
-            const finalPath = routeHref(outcome.route)
+            const finalPath = locationHref(outcome.location)
             if (router.mode === 'hash') setHash(finalPath)
             else pushUrl(finalPath)
-            currentRoute = outcome.route
-            send(factory(outcome.route))
+            currentLocation = outcome.location
+            send(factory(outcome.location))
           },
         },
         children,
@@ -1399,15 +1434,15 @@ export function connectRouter<const Registry extends RouteRegistry>(
     createHandler<S, M, E>(config: {
       message?: string
       getLocation: (msg: M) => Location
-      guard?: (route: Location, state: S) => Location
-      onNavigate: (state: S, route: Location) => [S, E[]]
+      guard?: (location: Location, state: S) => Location
+      onNavigate: (state: S, location: Location) => [S, E[]]
     }): (state: S, msg: M) => [S, E[]] | null {
       const msgType = config.message ?? 'navigate'
       return (state: S, msg: M) => {
         if ((msg as Record<string, unknown>).type !== msgType) return null
-        let route = config.getLocation(msg)
-        if (config.guard) route = config.guard(route, state)
-        return config.onNavigate(state, route)
+        let location = config.getLocation(msg)
+        if (config.guard) location = config.guard(location, state)
+        return config.onNavigate(state, location)
       }
     },
   }

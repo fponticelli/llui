@@ -1223,7 +1223,7 @@ routing.link(send, 'home', { class: 'nav-link' }, [text('Home')])
 ```typescript
 view: ({ state, send }) => [
   ...routing.listener(send), // listens for popstate/hashchange
-  branch(state.at('route').at('page'), {
+  branch(state.at('location').at('name'), {
     home: () => homePage(state, send),
     search: () => searchPage(state, send),
     repo: () => repoPage(state, send),
@@ -11181,7 +11181,7 @@ router.match('/archive/2025')
 router.match('/not-a-route') // null
 ```
 
-Templates support static segments, required `:parameter` segments, optional `:parameter?` segments at any position, and final `*rest` segments. Plain path parameters are strings. Rest parameters are decoded segment arrays, so an encoded slash remains inside its original segment.
+Templates support static segments, required `:parameter` segments, optional `:parameter?` segments at any position, and final `*rest` segments. Plain path parameters are strings. Rest parameters are decoded segment arrays, so an encoded slash remains inside its original segment. A template cannot combine optional and rest segments because their boundary is not bidirectionally representable.
 
 Matching precedence is static, then parameter, then rest, independent of registry order. Equal-specificity templates that can overlap are rejected at construction with both route names. Because arbitrary validators cannot prove that two parameter domains are disjoint, otherwise identical typed-parameter templates are treated as overlapping; give them distinct static structure.
 
@@ -11191,8 +11191,9 @@ Matching precedence is static, then parameter, then rest, independent of registr
 
 `routeCodec(schema, format)` pairs any synchronous [Standard Schema v1](https://standardschema.dev/schema) validator with canonical formatting. The schema's output type becomes the parameter type; the router has no runtime dependency on a validation library.
 
-Query parameters are explicit. `repeatedRouteCodec()` represents ordered repeated query values and custom rest parameters. Scalar query codecs reject duplicate values. Unknown query keys are ignored when matching and omitted by generation. Defaults are present after matching, optional while generating, and omitted from the canonical URL.
+Query parameters are explicit. `repeatedRouteCodec()` represents ordered repeated query values and custom rest parameters. Scalar query codecs reject duplicate values. Unknown query keys are ignored when matching and omitted by generation. Defaults are present after matching, optional while generating, and omitted from the canonical URL; that rule also applies to rest defaults. Object and array defaults are cloned into each returned location, so mutating one result cannot affect another.
 Each default must itself round-trip through its codec; invalid or noncanonical defaults are rejected when the router is created.
+Generated URLs are accepted only when matching them produces the same complete normalized parameters, so a lossy formatter fails instead of silently addressing a different location.
 
 A route may declare `refine`, a synchronous Standard Schema over the complete normalized parameter object. It may reject the object, but it may not transform it or add page data. A Promise produces a descriptive configuration error because routing remains synchronous.
 
@@ -11506,11 +11507,12 @@ export interface RouterConfig {
 
 ### `StandardSchemaV1`
 
-The vendor-neutral Standard Schema v1 contract.
+The Standard Schema interface.
 
 ```typescript
-export interface StandardSchemaV1<Input = unknown, Output = Input> {
-  readonly '~standard': StandardSchemaV1.Props<Input, Output>
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    /** The Standard Schema properties. */
+    readonly "~standard": StandardSchemaV1.Props<Input, Output>;
 }
 ```
 

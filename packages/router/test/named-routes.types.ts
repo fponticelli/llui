@@ -41,6 +41,9 @@ routing.push('user', { id: 1 })
 routing.replace('home')
 routing.navigate('search', { page: 2 })
 routing.link(() => undefined, 'user', { id: 1 }, {}, [])
+type NavigateOnly = { type: 'navigate'; location: ReturnType<typeof router.location> }
+// @ts-expect-error the default listener can also emit an explicit unmatched message
+routing.listener((_message: NavigateOnly) => undefined)
 
 // @ts-expect-error unknown route name
 router.href('missing')

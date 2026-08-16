@@ -908,6 +908,10 @@ importers:
         version: 2.9.0
 
   packages/router:
+    dependencies:
+      '@standard-schema/spec':
+        specifier: ^1.1.0
+        version: 1.1.0
     devDependencies:
       '@llui/dom':
         specifier: workspace:*

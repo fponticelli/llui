@@ -56,6 +56,7 @@ export type TreeDirData = { repo: Repo | null; tree: TreeEntry[] }
 export type TreeFileData = { repo: Repo | null; file: FileContent }
 
 export type Page =
+  | { page: 'notFound'; url: string; data: { type: 'idle' } }
   | { page: 'search'; q: string; p: number; data: Async<SearchData, ApiError> }
   | { page: 'repo'; owner: string; name: string; tab: 'code'; data: Async<RepoCodeData, ApiError> }
   | {
@@ -91,6 +92,8 @@ export interface State {
 export type Msg =
   /** @intent("Navigate to a route") @alwaysAffordable */
   | { type: 'navigate'; location: Location }
+  /** @intent("Show an unmatched browser URL") @alwaysAffordable */
+  | { type: 'unmatched'; url: string }
   /** @intent("Update the search query") */
   | { type: 'setQuery'; value: string }
   /** @intent("Submit the current search query") */

@@ -1,58 +1,6 @@
-/** The vendor-neutral Standard Schema v1 contract. */
-export interface StandardSchemaV1<Input = unknown, Output = Input> {
-  readonly '~standard': StandardSchemaV1.Props<Input, Output>
-}
+import type { StandardSchemaV1 } from '@standard-schema/spec'
 
-// The namespace is part of the published Standard Schema v1 interface.
-// eslint-disable-next-line @typescript-eslint/no-namespace
-export declare namespace StandardSchemaV1 {
-  interface Props<Input = unknown, Output = Input> {
-    readonly version: 1
-    readonly vendor: string
-    readonly validate: (
-      value: unknown,
-      options?: Options | undefined,
-    ) => Result<Output> | Promise<Result<Output>>
-    readonly types?: Types<Input, Output> | undefined
-  }
-
-  interface Options {
-    readonly libraryOptions?: Record<string, unknown> | undefined
-  }
-
-  interface Types<Input = unknown, Output = Input> {
-    readonly input: Input
-    readonly output: Output
-  }
-
-  type Result<Output> = SuccessResult<Output> | FailureResult
-
-  interface SuccessResult<Output> {
-    readonly value: Output
-    readonly issues?: undefined
-  }
-
-  interface FailureResult {
-    readonly issues: ReadonlyArray<Issue>
-  }
-
-  interface Issue {
-    readonly message: string
-    readonly path?: ReadonlyArray<PropertyKey | PathSegment> | undefined
-  }
-
-  interface PathSegment {
-    readonly key: PropertyKey
-  }
-
-  type InferInput<Schema extends StandardSchemaV1> = NonNullable<
-    Schema['~standard']['types']
-  >['input']
-
-  type InferOutput<Schema extends StandardSchemaV1> = NonNullable<
-    Schema['~standard']['types']
-  >['output']
-}
+export type { StandardSchemaV1 } from '@standard-schema/spec'
 
 type AnySchema = StandardSchemaV1<unknown, unknown>
 
@@ -458,6 +406,15 @@ function parseTemplate(name: string, definition: RouteDefinitionShape): readonly
     }
     return { kind: 'static', value: decodeLiteral(name, raw) }
   })
+
+  if (
+    segments.some((segment) => segment.kind === 'parameter' && segment.optional) &&
+    segments.some((segment) => segment.kind === 'rest')
+  ) {
+    throw new TypeError(
+      `[@llui/router] Route "${name}" cannot combine optional and rest parameters because matching would not be bidirectional.`,
+    )
+  }
 
   const pathNames = new Set(
     segments.filter((segment) => segment.kind !== 'static').map((segment) => segment.name),
@@ -870,9 +827,18 @@ export function createRouter<const Registry extends RouteRegistry>(
       for (const segment of candidate.compiled.segments) {
         if (segment.kind === 'static') continue
         const raw = candidate.raw[segment.name]
+        if (
+          segment.kind === 'rest' &&
+          Array.isArray(raw) &&
+          raw.length === 0 &&
+          Object.hasOwn(definition.defaults, segment.name)
+        ) {
+          normalized[segment.name] = cloneRouteValue(definition.defaults[segment.name])
+          continue
+        }
         if (raw === undefined) {
           normalized[segment.name] = Object.hasOwn(definition.defaults, segment.name)
-            ? definition.defaults[segment.name]
+            ? cloneRouteValue(definition.defaults[segment.name])
             : undefined
           continue
         }
@@ -895,7 +861,7 @@ export function createRouter<const Registry extends RouteRegistry>(
         const raw = parsedQuery.get(key)
         if (raw === undefined) {
           normalized[key] = Object.hasOwn(definition.defaults, key)
-            ? definition.defaults[key]
+            ? cloneRouteValue(definition.defaults[key])
             : undefined
           continue
         }
@@ -943,6 +909,13 @@ export function createRouter<const Registry extends RouteRegistry>(
         continue
       }
       const value = params[segment.name]
+      if (
+        segment.kind === 'rest' &&
+        Object.hasOwn(definition.defaults, segment.name) &&
+        valuesEqual(value, definition.defaults[segment.name])
+      ) {
+        continue
+      }
       if (segment.kind === 'parameter' && segment.optional) {
         if (value === undefined || valuesEqual(value, definition.defaults[segment.name])) continue
       }
@@ -997,11 +970,28 @@ export function createRouter<const Registry extends RouteRegistry>(
     name: string,
     params: Record<string, unknown> | undefined,
   ): { readonly path: string; readonly location: RouteLocation<Registry> } {
+    const compiledDefinition = definitionFor(name)
     const path = format(name, params)
     const matched = matchPath(path)
-    if (matched === null || matched.name !== name) {
+    const expected: Record<string, unknown> = {}
+    for (const segment of compiledDefinition.segments) {
+      if (segment.kind === 'static') continue
+      expected[segment.name] = Object.hasOwn(params ?? {}, segment.name)
+        ? cloneRouteValue(params?.[segment.name])
+        : Object.hasOwn(compiledDefinition.definition.defaults, segment.name)
+          ? cloneRouteValue(compiledDefinition.definition.defaults[segment.name])
+          : undefined
+    }
+    for (const key of Object.keys(compiledDefinition.definition.query)) {
+      expected[key] = Object.hasOwn(params ?? {}, key)
+        ? cloneRouteValue(params?.[key])
+        : Object.hasOwn(compiledDefinition.definition.defaults, key)
+          ? cloneRouteValue(compiledDefinition.definition.defaults[key])
+          : undefined
+    }
+    if (matched === null || matched.name !== name || !valuesEqual(matched.params, expected)) {
       throw new TypeError(
-        `[@llui/router] Parameters for route "${name}" do not produce a valid location.`,
+        `[@llui/router] Parameters for route "${name}" do not round-trip to the same valid location.`,
       )
     }
     return { path, location: matched }

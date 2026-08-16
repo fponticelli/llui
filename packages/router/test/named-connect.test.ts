@@ -1,6 +1,11 @@
 import { component, mountApp, text } from '@llui/dom'
 import { describe, expect, it, vi } from 'vitest'
-import { connectRouter, type RouterEffect, type RouterEnv } from '../src/connect'
+import {
+  connectRouter,
+  type ConnectedRouter,
+  type RouterEffect,
+  type RouterEnv,
+} from '../src/connect'
 import {
   createRouter,
   route,
@@ -112,8 +117,8 @@ function mountListener(
   return mountApp(container, App)
 }
 
-function runEffect(
-  routing: ReturnType<typeof connectRouter<Registry>>,
+function runEffect<NavigateMessage, UnmatchedMessage>(
+  routing: ConnectedRouter<Registry, NavigateMessage, UnmatchedMessage>,
   effect: RouterEffect,
   send = vi.fn(),
 ) {
