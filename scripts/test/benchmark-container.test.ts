@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
@@ -104,5 +105,17 @@ describe('benchmark Docker invocation', () => {
         smoke: true,
       }),
     ).toContain('LLUI_BENCH_SMOKE=1')
+  })
+})
+
+describe('homelab benchmark workflow', () => {
+  it('keeps the PID column required by docker top while checking runner arguments', () => {
+    const workflow = readFileSync(
+      resolve(import.meta.dirname, '../../.github/workflows/benchmarks-homelab.yml'),
+      'utf8',
+    )
+
+    expect(workflow).toContain('docker top "$runner" -eo pid,args')
+    expect(workflow).not.toContain('docker top "$runner" -eo args')
   })
 })

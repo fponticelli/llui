@@ -117,7 +117,8 @@ jobs:
                 continue
               fi
               docker pause "$runner" >/dev/null
-              workers=$(docker top "$runner" -eo args | grep -c '[R]unner.Worker' || true)
+              # Docker requires its PID column even when only argv is inspected.
+              workers=$(docker top "$runner" -eo pid,args | grep -c '[R]unner.Worker' || true)
               if [[ "$workers" -eq 0 ]]; then
                 echo "$runner" >> "$state_file"
                 echo "Paused idle runner: $runner"
