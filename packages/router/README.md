@@ -70,7 +70,7 @@ Scalar query codecs reject duplicate values. Unknown query keys do not prevent m
 Each default must itself round-trip through its codec; invalid or noncanonical defaults are rejected when the router is created.
 Generated URLs are accepted only when matching them produces the same complete normalized parameters, so a lossy formatter fails instead of silently addressing a different location.
 
-Route locations remain JSON-roundtrip-safe URL identity. Absent nondefaulted optional parameters are omitted, while defaulted parameters remain present. Values may contain `null`, strings, booleans, finite numbers, dense arrays, and plain data objects. `undefined`, functions, symbols, bigints, non-finite numbers, sparse or cyclic values, and class or built-in collection instances are rejected with a contextual error.
+Route locations remain JSON-roundtrip-safe URL identity. Absent nondefaulted optional parameters are omitted, while defaulted parameters remain present. Values may contain `null`, strings, booleans, finite numbers other than negative zero, ordinary dense arrays without owned state, and ordinary plain data objects. `undefined`, functions, symbols, bigints, non-finite or negative-zero numbers, sparse/stateful/subclassed arrays, cyclic values, null/custom-prototype objects, and class or built-in collection instances are rejected with a contextual error.
 
 A route may declare `refine`, a synchronous Standard Schema over the complete normalized parameter object. It may reject the object, but it may not transform it or add page data. Any schema returning a Promise produces a descriptive configuration error because routing remains synchronous.
 

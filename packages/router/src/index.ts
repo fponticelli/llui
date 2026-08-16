@@ -624,9 +624,9 @@ function assertSerializableRouteValue(
 ): void {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return
   if (typeof value === 'number') {
-    if (Number.isFinite(value)) return
+    if (Number.isFinite(value) && !Object.is(value, -0)) return
     throw new TypeError(
-      `[@llui/router] Non-serializable route value from ${context}: numbers must be finite.`,
+      `[@llui/router] Non-serializable route value from ${context}: numbers must be finite and not negative zero.`,
     )
   }
   if (typeof value !== 'object') {
@@ -641,18 +641,46 @@ function assertSerializableRouteValue(
   }
   active.add(value)
   if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype) {
+      throw new TypeError(
+        `[@llui/router] Non-serializable route value from ${context}: array subclasses are unsupported.`,
+      )
+    }
+    if (Object.getOwnPropertySymbols(value).length > 0) {
+      throw new TypeError(
+        `[@llui/router] Non-serializable route value from ${context}: symbol keys are unsupported.`,
+      )
+    }
+    const extraKey = Object.getOwnPropertyNames(value).find(
+      (key) =>
+        key !== 'length' &&
+        (!/^(0|[1-9]\d*)$/.test(key) ||
+          !Number.isSafeInteger(Number(key)) ||
+          Number(key) >= value.length),
+    )
+    if (extraKey !== undefined) {
+      throw new TypeError(
+        `[@llui/router] Non-serializable route value from ${context}: array property "${extraKey}" is unsupported.`,
+      )
+    }
     for (let index = 0; index < value.length; index++) {
-      if (!Object.hasOwn(value, index)) {
+      const descriptor = Object.getOwnPropertyDescriptor(value, index)
+      if (descriptor === undefined) {
         throw new TypeError(
           `[@llui/router] Non-serializable route value from ${context}: sparse arrays are unsupported.`,
         )
       }
-      assertSerializableRouteValue(value[index], context, active)
+      if (!descriptor.enumerable || !('value' in descriptor)) {
+        throw new TypeError(
+          `[@llui/router] Non-serializable route value from ${context}: array index "${index}" must be enumerable data.`,
+        )
+      }
+      assertSerializableRouteValue(descriptor.value, context, active)
     }
     active.delete(value)
     return
   }
-  if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) {
+  if (Object.getPrototypeOf(value) !== Object.prototype) {
     throw new TypeError(
       `[@llui/router] Non-serializable route value from ${context}: only plain objects and arrays are supported.`,
     )
@@ -671,6 +699,19 @@ function assertSerializableRouteValue(
     assertSerializableRouteValue(descriptor.value, context, active)
   }
   active.delete(value)
+}
+
+function canonicalCodecValue(
+  codec: AnyCodec,
+  raw: unknown,
+  context: string,
+): ValidationSuccess | ValidationFailure {
+  const result = validate(codec.schema as AnySchema, raw)
+  if (!result.ok) return result
+  assertSerializableRouteValue(result.value, context)
+  const formatted = (codec.format as (input: unknown) => string | readonly string[])(result.value)
+  const roundTrip = validate(codec.schema as AnySchema, formatted)
+  return roundTrip.ok && valuesEqual(roundTrip.value, result.value) ? result : { ok: false }
 }
 
 function cloneRouteValue(value: unknown): unknown {
@@ -867,20 +908,12 @@ export function createRouter<const Registry extends RouteRegistry>(
           normalized[segment.name] = raw
           continue
         }
-        const result = validate(codec.schema as AnySchema, raw)
-        if (!result.ok) {
-          valid = false
-          break
-        }
-        assertSerializableRouteValue(
-          result.value,
+        const result = canonicalCodecValue(
+          codec,
+          raw,
           `codec "${segment.name}" in route "${candidate.compiled.name}"`,
         )
-        const formatted = (codec.format as (input: unknown) => string | readonly string[])(
-          result.value,
-        )
-        const roundTrip = validate(codec.schema as AnySchema, formatted)
-        if (!roundTrip.ok || !valuesEqual(roundTrip.value, result.value)) {
+        if (!result.ok) {
           valid = false
           break
         }
@@ -899,20 +932,12 @@ export function createRouter<const Registry extends RouteRegistry>(
           valid = false
           break
         }
-        const result = validate(codec.schema as AnySchema, codec.multiple ? raw : raw[0])
-        if (!result.ok) {
-          valid = false
-          break
-        }
-        assertSerializableRouteValue(
-          result.value,
+        const result = canonicalCodecValue(
+          codec,
+          codec.multiple ? raw : raw[0],
           `codec "${key}" in route "${candidate.compiled.name}"`,
         )
-        const formatted = (codec.format as (input: unknown) => string | readonly string[])(
-          result.value,
-        )
-        const roundTrip = validate(codec.schema as AnySchema, formatted)
-        if (!roundTrip.ok || !valuesEqual(roundTrip.value, result.value)) {
+        if (!result.ok) {
           valid = false
           break
         }

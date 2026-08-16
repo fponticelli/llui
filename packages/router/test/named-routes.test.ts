@@ -347,13 +347,36 @@ describe('named route locations', () => {
   it('rejects non-serializable route values from codecs, defaults, and refinements', () => {
     const cyclic: Record<string, unknown> = {}
     cyclic.self = cyclic
-    for (const invalid of [
+    class ArraySubclass extends Array<string> {}
+    const arrayWithState = ['value'] as string[] & { extra?: boolean }
+    arrayWithState.extra = true
+    const arrayWithSymbol = ['value']
+    Object.defineProperty(arrayWithSymbol, Symbol('state'), { value: true })
+    const arrayWithHiddenState = ['value']
+    Object.defineProperty(arrayWithHiddenState, 'hidden', { value: true })
+    const arrayWithOutOfRangeState = ['value']
+    Object.defineProperty(arrayWithOutOfRangeState, '4294967295', { value: true })
+    const arrayWithHiddenIndex = ['value']
+    Object.defineProperty(arrayWithHiddenIndex, '0', { enumerable: false })
+    const nullPrototype = Object.create(null) as Record<string, unknown>
+    nullPrototype.value = 'x'
+    const invalidValues = [
+      -0,
       new Date(),
       new Map(),
       new Set(),
       Object.create({ inherited: true }),
+      nullPrototype,
+      new ArraySubclass('value'),
+      arrayWithState,
+      arrayWithSymbol,
+      arrayWithHiddenState,
+      arrayWithOutOfRangeState,
+      arrayWithHiddenIndex,
+      { nested: arrayWithState },
       cyclic,
-    ]) {
+    ]
+    for (const invalid of invalidValues) {
       const codec = routeCodec(
         fixtureSchema<string, unknown>(() => ({ value: invalid })),
         String,
@@ -364,6 +387,23 @@ describe('named route locations', () => {
         ),
       ).toThrow(/serializable.*value/i)
     }
+
+    const identityCodec = routeCodec(
+      fixtureSchema<unknown, unknown>((input) => ({ value: input })),
+      String,
+    )
+    const generated = createRouter({
+      value: route('/value/:value', { params: { value: identityCodec } }),
+    })
+    for (const invalid of invalidValues) {
+      expect(() => generated.href('value', { value: invalid })).toThrow(/serializable.*value/i)
+    }
+
+    expect(() =>
+      createRouter({
+        value: route('/value', { query: { value: identityCodec }, defaults: { value: -0 } }),
+      }),
+    ).toThrow(/serializable.*default/i)
 
     const functionCodec = routeCodec(
       fixtureSchema<string, () => void>(() => ({ value: () => undefined })),
