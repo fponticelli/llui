@@ -1,7 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { clamp, finiteBound } from '../utils/number.js'
+import { clamp, finiteBound, finiteOrDefault } from '../utils/number.js'
 
 /**
  * Splitter — resizable panes with a draggable handle. The handle's position
@@ -53,7 +53,7 @@ export interface SplitterInit {
 
 export function init(opts: SplitterInit = {}): SplitterState {
   return {
-    position: opts.position ?? 50,
+    position: finiteOrDefault(opts.position, 50),
     // A percentage range is intrinsically bounded, so a non-finite bound takes
     // the default: it is unserializable in state, and `toMin`/`toMax` assign a
     // bound straight to `position`, so it would leak out of the range too

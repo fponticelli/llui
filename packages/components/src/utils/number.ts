@@ -68,6 +68,34 @@ export function finiteBound(raw: number | null | undefined): number | undefined 
 }
 
 /**
+ * A component-owned number that has no range to clamp into. Initialization
+ * replaces an unusable input with the field's ordinary default; runtime
+ * reducers use {@link allFiniteNumbers} to refuse the whole message instead.
+ * Keeping those two policies here prevents a free position or timestamp from
+ * accidentally inheriting either the grid-value policy (`clamp`) or the
+ * optional-bound policy (`finiteBound`).
+ */
+export function finiteOrDefault(raw: number | null | undefined, fallback: number): number {
+  return finiteBound(raw) ?? fallback
+}
+
+/** A finite number strictly greater than zero, or `undefined` when unusable. */
+export function positiveFinite(raw: number | null | undefined): number | undefined {
+  const value = finiteBound(raw)
+  return value !== undefined && value > 0 ? value : undefined
+}
+
+/** A positive finite number, or the field's ordinary initialization default. */
+export function positiveFiniteOrDefault(raw: number | null | undefined, fallback: number): number {
+  return positiveFinite(raw) ?? fallback
+}
+
+/** Whether every number required by one atomic runtime message is usable. */
+export function allFiniteNumbers(...values: readonly number[]): boolean {
+  return values.every(Number.isFinite)
+}
+
+/**
  * Slack for the float division `(value - origin) / step`: 10/0.1 is not exactly
  * 100 in IEEE-754, and without it the last grid value below `max` is dropped.
  */

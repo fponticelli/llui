@@ -13,6 +13,12 @@ What lives in the **machine**:
 - Direction-aware keyboard semantics: direction-sensitive components take an optional `dir` (`'ltr' | 'rtl'`) and flip horizontal-arrow keys + logical floating placement accordingly.
 - Side effects as **data** — anything async (HTTP, lazy loading, debounce) is returned as an effect for your `onEffect` handler; the machine never performs I/O.
 
+Numeric inputs preserve that JSON-state contract. Grid values use each component's documented
+clamping behavior, invalid initialization options fall back to the field's ordinary default, and
+runtime position/measurement messages containing `NaN` or infinity are ignored atomically.
+Divisors such as pagination `pageSize` and a numeric image-cropper `aspectRatio` must be finite and
+greater than zero; `aspectRatio: null` remains the explicit unconstrained crop.
+
 What stays the **consumer's** responsibility (deliberately not shipped):
 
 - Markup and CSS. Components emit `data-scope` / `data-part` / `data-state` hooks; visual styling — including CSS logical-property mirroring for RTL — is yours (an opt-in theme + Tailwind class helpers are available under `@llui/components/styles/*`).

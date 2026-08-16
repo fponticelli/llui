@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { imageCropperLocale } from '../locale/image-cropper.js'
-import { clamp, finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, clamp, finiteBound, positiveFinite } from '../utils/number.js'
 
 /**
  * Image cropper — select a rectangular crop region over an image,
@@ -166,7 +166,7 @@ export function init(opts: ImageCropperInit = {}): ImageCropperState {
   // merely unserializable — it divides straight into `fitCrop` and hands the
   // whole `crop` rectangle to `NaN`.
   const image = finiteImage(opts.image)
-  const aspectRatio = finiteBound(opts.aspectRatio) ?? null
+  const aspectRatio = positiveFinite(opts.aspectRatio) ?? null
   const crop = opts.crop ?? centerFill(image, aspectRatio)
   const minSize = finiteBound(opts.minSize) ?? 20
   return {
@@ -263,18 +263,13 @@ export function update(
         [],
       ]
     case 'setAspectRatio': {
-      // `null` is this bound's own spelling of "no constraint", so a
-      // non-finite ratio takes it rather than dividing into every later fit.
-      //
-      // Stated because it is the ONE place in this change where an absent bound
-      // REMOVES a constraint instead of declining to add one: on a cropper
-      // already locked to 16:9, `setAspectRatio(NaN)` unlocks it, and later
-      // `setCrop`/`dragMove` are free-form. That is the nullable idiom being
-      // consistent (the same as `setAspectRatio(null)`), and it is strictly
-      // better than the `NaN`-poisoned rectangle it replaces — but it is not
-      // the "drop the write" answer the REQUIRED bounds take, so it is a
-      // deliberate difference rather than an oversight.
-      const ratio = finiteBound(msg.ratio) ?? null
+      // A ratio is a divisor, so numeric values must be positive as well as
+      // finite. Invalid numeric updates are refused atomically; only the
+      // explicit `null` spelling removes an existing constraint (#214).
+      if (msg.ratio !== null && positiveFinite(msg.ratio) === undefined) {
+        return [state, []]
+      }
+      const ratio = msg.ratio
       return [
         {
           ...state,
@@ -288,6 +283,7 @@ export function update(
       return [{ ...state, dragging: true }, []]
     case 'dragMove': {
       if (!state.dragging) return [state, []]
+      if (!allFiniteNumbers(msg.dx, msg.dy)) return [state, []]
       const crop = {
         ...state.crop,
         x: state.crop.x + msg.dx,
@@ -301,6 +297,7 @@ export function update(
       return [{ ...state, resizing: msg.handle }, []]
     case 'resizeMove':
       if (state.resizing === null) return [state, []]
+      if (!allFiniteNumbers(msg.dx, msg.dy)) return [state, []]
       return [applyResize(state, msg.dx, msg.dy, state.resizing), []]
     case 'resizeEnd':
       return [{ ...state, resizing: null }, []]

@@ -1,5 +1,6 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
+import { allFiniteNumbers } from '../utils/number.js'
 
 /**
  * Scroll area — custom-styled scroll container with scrollbars that
@@ -83,6 +84,18 @@ export function init(opts: ScrollAreaInit = {}): ScrollAreaState {
 export function update(state: ScrollAreaState, msg: ScrollAreaMsg): [ScrollAreaState, never[]] {
   switch (msg.type) {
     case 'setScroll':
+      if (
+        !allFiniteNumbers(
+          msg.scrollTop,
+          msg.scrollLeft,
+          msg.scrollWidth,
+          msg.scrollHeight,
+          msg.clientWidth,
+          msg.clientHeight,
+        )
+      ) {
+        return [state, []]
+      }
       return [
         {
           ...state,

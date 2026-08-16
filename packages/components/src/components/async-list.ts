@@ -1,5 +1,6 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
+import { finiteOrDefault } from '../utils/number.js'
 
 /**
  * Async list — paginated/infinite-scroll list that accumulates pages.
@@ -53,7 +54,7 @@ export interface AsyncListInit<T = unknown> {
 export function init<T = unknown>(opts: AsyncListInit<T> = {}): AsyncListState<T> {
   return {
     items: opts.items ?? [],
-    page: opts.page ?? 0,
+    page: finiteOrDefault(opts.page, 0),
     hasMore: opts.hasMore ?? true,
     status: 'idle',
     error: null,

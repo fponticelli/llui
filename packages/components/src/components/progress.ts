@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
 import { enProgress } from '../locale/progress.js'
-import { finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
 
 /**
  * Progress — linear or circular progress indicator. Determinate (0..max) or
@@ -31,7 +31,7 @@ export interface ProgressInit {
 
 export function init(opts: ProgressInit = {}): ProgressState {
   return {
-    value: 'value' in opts ? (opts.value as number | null) : 0,
+    value: opts.value === null ? null : finiteOrDefault(opts.value, 0),
     // The range `percent` and `valueState` are computed against; a
     // determinate progress bar has no unbounded spelling, so a non-finite
     // bound takes the default (#177).
@@ -44,6 +44,7 @@ export function init(opts: ProgressInit = {}): ProgressState {
 export function update(state: ProgressState, msg: ProgressMsg): [ProgressState, never[]] {
   switch (msg.type) {
     case 'setValue':
+      if (msg.value !== null && !allFiniteNumbers(msg.value)) return [state, []]
       return [{ ...state, value: msg.value }, []]
     case 'setMax': {
       // Dropped, not stored: keeping the range the bar already had is the only

@@ -3,7 +3,7 @@ import { tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { datePickerLocale } from '../locale/date-picker.js'
 import { formatDate } from '../format/format-date.js'
-import { finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
 import { defaultLocale } from '../format/defaults.js'
 
 /**
@@ -188,8 +188,8 @@ export function init(opts: DatePickerInit = {}): DatePickerState {
   const mode = opts.mode ?? 'single'
   const anchorIso = opts.value ?? opts.start ?? null
   const parsed = anchorIso ? parseIso(anchorIso) : null
-  const visibleMonth = opts.visibleMonth ?? parsed?.m ?? new Date().getMonth() + 1
-  const visibleYear = opts.visibleYear ?? parsed?.y ?? new Date().getFullYear()
+  const visibleMonth = finiteOrDefault(opts.visibleMonth, parsed?.m ?? new Date().getMonth() + 1)
+  const visibleYear = finiteOrDefault(opts.visibleYear, parsed?.y ?? new Date().getFullYear())
   const weekStartsOn = opts.weekStartsOn ?? localeWeekStart(defaultLocale())
   return {
     mode,
@@ -289,6 +289,7 @@ export function update(state: DatePickerState, msg: DatePickerMsg): [DatePickerS
       return [{ ...state, value: state.focused }, []]
     }
     case 'moveFocus': {
+      if (!allFiniteNumbers(msg.days)) return [state, []]
       const next = addDays(state.focused, msg.days)
       return [syncVisibleMonth({ ...state, focused: next }, next), []]
     }

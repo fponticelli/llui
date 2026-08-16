@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { tourLocale } from '../locale/tour.js'
+import { allFiniteNumbers, finiteOrDefault } from '../utils/number.js'
 
 /**
  * Tour — guided walkthrough over a sequence of steps, each targeting
@@ -71,7 +72,7 @@ export interface TourInit {
 
 export function init(opts: TourInit = {}): TourState {
   const steps = opts.steps ?? []
-  const index = Math.max(0, Math.min(opts.index ?? 0, Math.max(0, steps.length - 1)))
+  const index = Math.max(0, Math.min(finiteOrDefault(opts.index, 0), Math.max(0, steps.length - 1)))
   return {
     steps,
     open: opts.open ?? false,
@@ -104,6 +105,7 @@ export function update(state: TourState, msg: TourMsg): [TourState, never[]] {
       return [{ ...state, index: state.index - 1 }, []]
     }
     case 'goto': {
+      if (!allFiniteNumbers(msg.index)) return [state, []]
       if (msg.index < 0 || msg.index >= state.steps.length) return [state, []]
       const step = state.steps[msg.index]!
       const visited = state.visited.includes(step.id) ? state.visited : [...state.visited, step.id]

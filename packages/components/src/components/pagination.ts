@@ -2,7 +2,12 @@ import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { paginationLocale } from '../locale/pagination.js'
 import { flipArrow, type TextDirection } from '../utils/direction.js'
-import { finiteBound } from '../utils/number.js'
+import {
+  allFiniteNumbers,
+  finiteBound,
+  finiteOrDefault,
+  positiveFiniteOrDefault,
+} from '../utils/number.js'
 
 /**
  * Pagination — page navigation with ellipses for large ranges.
@@ -50,12 +55,12 @@ export interface PaginationInit {
 
 export function init(opts: PaginationInit = {}): PaginationState {
   return {
-    page: opts.page ?? 1,
+    page: finiteOrDefault(opts.page, 1),
     // `pageSize`/`total` are the bounds every page number is computed against
     // — `Math.ceil(total / pageSize)` — so a non-finite one is not merely
     // unserializable, it propagates straight into `page` (#177). `siblings`/
     // `boundaries` bound the rendered window the same way.
-    pageSize: finiteBound(opts.pageSize) ?? 10,
+    pageSize: positiveFiniteOrDefault(opts.pageSize, 10),
     total: finiteBound(opts.total) ?? 0,
     siblings: finiteBound(opts.siblings) ?? 1,
     boundaries: finiteBound(opts.boundaries) ?? 1,
@@ -81,6 +86,7 @@ export function update(state: PaginationState, msg: PaginationMsg): [PaginationS
   const pages = totalPages(state)
   switch (msg.type) {
     case 'goTo':
+      if (!allFiniteNumbers(msg.page)) return [state, []]
       return [{ ...state, page: clampPage(msg.page, pages) }, []]
     case 'next':
       return [{ ...state, page: clampPage(state.page + 1, pages) }, []]
@@ -95,7 +101,7 @@ export function update(state: PaginationState, msg: PaginationMsg): [PaginationS
     // put `NaN` in two fields at once (#177).
     case 'setPageSize': {
       const pageSize = finiteBound(msg.pageSize)
-      if (pageSize === undefined) return [state, []]
+      if (pageSize === undefined || pageSize <= 0) return [state, []]
       // Preserve first visible item when pageSize changes
       const firstItem = (state.page - 1) * state.pageSize
       const nextPage = Math.floor(firstItem / pageSize) + 1

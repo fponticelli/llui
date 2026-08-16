@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { colorPickerLocale } from '../locale/color-picker.js'
-import { clamp } from '../utils/number.js'
+import { clamp, finiteOrDefault } from '../utils/number.js'
 
 /**
  * Color picker — HSL/HSV color selection. Tracks hue (0-360), saturation
@@ -63,10 +63,15 @@ export interface ColorPickerInit {
 }
 
 export function init(opts: ColorPickerInit = {}): ColorPickerState {
-  const hsv = opts.hsv ?? (opts.hsl ? hslToHsv(opts.hsl) : { h: 0, s: 100, v: 100 })
+  const initialHsv = opts.hsv ?? (opts.hsl ? hslToHsv(opts.hsl) : { h: 0, s: 100, v: 100 })
+  const hsv = {
+    h: finiteOrDefault(initialHsv.h, 0),
+    s: finiteOrDefault(initialHsv.s, 100),
+    v: finiteOrDefault(initialHsv.v, 100),
+  }
   return {
     hsv,
-    alpha: opts.alpha ?? 1,
+    alpha: finiteOrDefault(opts.alpha, 1),
     disabled: opts.disabled ?? false,
   }
 }
