@@ -56,6 +56,8 @@
 // pure waste (see the `pendingCommit` guard in `drain`). Only a test spying
 // `requestAnimationFrame` can tell.
 
+import { LluiFrameworkError } from './framework-error.js'
+
 /**
  * The half of the update loop that belongs to the component: the reducer, the
  * reconcile, the effect dispatch, and the liveness answer. The scheduler owns
@@ -300,7 +302,7 @@ export function createCommitScheduler<M, F>(
         // capture worthless, and turns the one remaining way to commit without a
         // guard into a loud, deterministic throw instead of a scope-tree
         // corruption that surfaces as a `NotFoundError` three frames later.
-        throw new Error(
+        throw new LluiFrameworkError(
           '[llui] CommitToken.settle() was called outside its commit scope. A token ' +
             'is valid only for the body it was handed to; commit through the ' +
             'CommitScheduler surface instead.',

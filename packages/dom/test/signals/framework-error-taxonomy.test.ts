@@ -68,18 +68,6 @@ const ALLOWED_BARE_THROWS: Record<string, Array<{ fragment: string; why: string 
         'framework-fatal into a relay response.',
     },
   ],
-  'signals/commit-scope.ts': [
-    {
-      fragment: 'CommitToken.settle() was called outside its commit scope',
-      why:
-        'Genuinely SHOULD be branded — containing it would hide a scope-tree ' +
-        'corruption. Left bare only because commit-scope.ts is owner-gated for this ' +
-        'change (its schedule contract is documented at length) and the site is not ' +
-        'reachable from inside a binding commit: `settle` is called by the scheduler ' +
-        'through a token, never by binding produce/commit code. Tracked as a ' +
-        'follow-up; if this file is opened for any other reason, brand it.',
-    },
-  ],
 }
 
 /** Every `throw new <Ctor>(` in a file, with the literal text that follows it. */

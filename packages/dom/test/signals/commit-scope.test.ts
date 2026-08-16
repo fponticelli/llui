@@ -6,6 +6,7 @@ import {
 } from '../../src/signals/commit-scope'
 import { mountSignalComponent } from '../../src/signals/component'
 import { component, div, text } from '../../src/signals/authoring'
+import { LluiFrameworkError, isFrameworkError } from '../../src/signals/framework-error'
 
 // The commit scope is the scoped-resource form of the runtime's reentrancy guard
 // (issue #59). These tests pin the properties that make the shape worth having;
@@ -92,7 +93,7 @@ function makeHost(): Trace {
 }
 
 describe('commit token', () => {
-  it('refuses to commit once its scope has closed', () => {
+  it('brands an escaped token as a framework error without committing', () => {
     const t = makeHost()
     const s = createCommitScheduler(t.host, 'sync')
     // Stash the token's USE rather than the token, so nothing here has to defeat
@@ -105,7 +106,19 @@ describe('commit token', () => {
     // this refusal, a stashed token would be a commit with no reentrancy guard —
     // the one hole a lexical enclosure cannot close on its own.
     expect(stashedSettle).toBeDefined()
-    expect(stashedSettle).toThrow(/outside its commit scope/)
+    let thrown: unknown
+    try {
+      stashedSettle!()
+    } catch (err) {
+      thrown = err
+    }
+    expect(thrown).toBeInstanceOf(LluiFrameworkError)
+    expect(isFrameworkError(thrown)).toBe(true)
+    expect((thrown as Error).message).toBe(
+      '[llui] CommitToken.settle() was called outside its commit scope. A token ' +
+        'is valid only for the body it was handed to; commit through the ' +
+        'CommitScheduler surface instead.',
+    )
     // …and the refusal is a throw, not a silent no-op that quietly commits.
     expect(t.events).toEqual([])
   })
