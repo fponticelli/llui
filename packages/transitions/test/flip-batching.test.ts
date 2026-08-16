@@ -15,7 +15,7 @@ import { fakeLayout } from './fake-layout'
  * one after the first), while `style` is a `getComputedStyle`, which #137 took
  * off every settled row and must stay off it.
  */
-type Op = 'rect' | 'offset' | 'style' | 'write'
+type Op = 'rect' | 'offset' | 'offset-parent' | 'style' | 'write'
 
 const isRead = (op: Op): boolean => op !== 'write'
 
@@ -330,6 +330,7 @@ describe('flip() read/write batching', () => {
     expect(log.filter((op) => op === 'style')).toHaveLength(1)
     expect(log.filter((op) => op === 'rect')).toHaveLength(2)
     expect(log.filter((op) => op === 'offset')).toHaveLength(4)
+    expect(log.filter((op) => op === 'offset-parent')).toHaveLength(2)
     expect(forcedLayouts(log)).toBe(1)
   })
 

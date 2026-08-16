@@ -40,6 +40,41 @@ interface TrackedPosition {
 }
 
 /**
+ * The offset parent's padding-box origin in document layout coordinates.
+ *
+ * Unlike a rect, this chain excludes transforms and scroll. Adding it to a
+ * row's local offsets therefore gives the same coordinate system before and
+ * after an ancestor becomes positioned (#217). Origins are cached by offset
+ * parent, so the usual homogeneous list pays for one chain walk while a list
+ * containing a hidden/fixed row remains correct too.
+ */
+function offsetParentOrigin(offsetParent: Element | null): Point {
+  let current = offsetParent instanceof HTMLElement ? offsetParent : null
+  let left = 0
+  let top = 0
+
+  // BODY/HTML are the stable root of the offset coordinate system. Stopping
+  // here also avoids four reads whose values cannot rebase a descendant.
+  while (current && current !== document.body && current !== document.documentElement) {
+    left += current.offsetLeft + current.clientLeft
+    top += current.offsetTop + current.clientTop
+    const next = current.offsetParent
+    current = next instanceof HTMLElement ? next : null
+  }
+  return { left, top }
+}
+
+function layoutPosition(el: HTMLElement, origins: Map<Element | null, Point>): Point {
+  const offsetParent = el.offsetParent
+  let origin = origins.get(offsetParent)
+  if (!origin) {
+    origin = offsetParentOrigin(offsetParent)
+    origins.set(offsetParent, origin)
+  }
+  return { left: el.offsetLeft + origin.left, top: el.offsetTop + origin.top }
+}
+
+/**
  * The widest a delta of two whole-pixel layout positions can differ from the
  * true one.
  *
@@ -254,23 +289,23 @@ function endRunOnFinish(
  * transform per row instead is not free, and the size of the one case it gets
  * wrong.
  *
- * That choice has an exposure of its OWN, and it is a trade rather than a free
- * win (#217). `offsetLeft`/`offsetTop` are relative to the row's
- * `offsetParent`, so an ancestor whose `position` CHANGES between two passes
- * moves every stored layout at once. Rows of one list always share an
- * `offsetParent`, so a reorder alone can never trip it — but a structural change
- * and an ancestor `position` change in ONE update can (a panel becoming
- * `relative` to host a dropdown; a container going `sticky` on scroll), and
- * there this is a REGRESSION on what the rect did: measured in Chromium, a
- * wrapper going `static → relative` in the same update as a reorder glides the
- * moved row 310px instead of 60 and two untouched rows 250px each (`static →
- * sticky`: 240/120/180), where the rect-based code was correct. It is taken
- * anyway because the exposure it REPLACES is commoner and worse — any scroll
- * between two passes moved every stored rect, so a 200px page scroll plus a
- * reorder glided the moved row 260px instead of 60 AND glided rows that had not
- * moved at all by 200px, and an inner `overflow: auto` scroller did the same.
- * No guard is in place: none has been costed against #107/#137, which is what
- * #217 tracks.
+ * The offsets are normalized through their shared offset-parent chain (#217).
+ * Without that rebase, an ancestor going `static → relative` or `static →
+ * sticky` in the same update changed the origin under every stored pair. In the
+ * four-row Chromium fixture that emitted 310px/190px for the reordered rows and
+ * 250px for each untouched row; normalization emits the actual +60px/−60px and
+ * nothing for the other two. The chain contains layout coordinates only, so a
+ * 200px page scroll or a 150px inner-scroller move remains absent from the
+ * result, preserving #185's scroll fix.
+ *
+ * Origins are cached per distinct offset parent, so normalization adds one
+ * `offsetParent` read per row but not a tree walk per row. Measured in Chromium
+ * 147 on that four-row, one-ancestor pass: each row reads one rect, two offsets,
+ * and its offset parent; the shared chain adds the ancestor's two offsets, two
+ * client-border reads, and its offset parent. Total: 4 rects, 10 row/ancestor
+ * offsets, 2 client-border reads, 5 offset-parent reads, one forced layout, and
+ * computed style only for the two rows that actually glide (zero style reads
+ * for every settled row).
  *
  * Interruption: the live `Animation` is retained per element and cancelled
  * before the next one starts, and the translation the running glide had already
@@ -366,12 +401,14 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
    */
   const captureAfterFrame = (els: HTMLElement[]): void => {
     const run = (): void => {
+      // run-scope-exempt: per-capture coordinate origins, dead when this callback returns
+      const origins = new Map<Element | null, Point>()
       for (const el of els) {
         if (!el.isConnected) continue
         const rect = el.getBoundingClientRect()
         positions.set(el, {
           visual: { left: rect.left, top: rect.top },
-          layout: { left: el.offsetLeft, top: el.offsetTop },
+          layout: layoutPosition(el, origins),
         })
       }
     }
@@ -409,6 +446,8 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
         position: TrackedPosition
         glide: Point
       }> = []
+      // run-scope-exempt: per-pass coordinate origins, dead when this pass returns
+      const origins = new Map<Element | null, Point>()
       for (const child of Array.from(parent.children)) {
         if (!(child instanceof HTMLElement)) continue
         if (leaving.has(child)) continue
@@ -431,7 +470,7 @@ export function flip(opts: FlipOptions = {}): TransitionOptions {
           child,
           position: {
             visual: { left: rect.left - glide.left, top: rect.top - glide.top },
-            layout: { left: child.offsetLeft, top: child.offsetTop },
+            layout: layoutPosition(child, origins),
           },
           glide,
         })
