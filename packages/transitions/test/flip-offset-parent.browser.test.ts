@@ -3,11 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
 import { createServer, type ViteDevServer } from 'vite'
-
-interface RecordedGlide {
-  id: string
-  from: string
-}
+import type { RecordedGlide } from './flip-offset-parent.browser-fixture.js'
 
 interface Scenario {
   fractionalDepth?: number
@@ -26,87 +22,12 @@ interface ReadCost {
   style: number
 }
 
-interface BrowserHarnessOptions {
-  fractionalDepth?: number
-  hiddenFirst?: boolean
-  marginTop?: number
-}
-
-interface BrowserFlipHarness {
-  fractionalAncestors: HTMLElement[]
-  glides: RecordedGlide[]
-  list: HTMLElement
-  rows: HTMLElement[]
-  scroller: HTMLElement
-  transition: ReturnType<typeof import('../src/flip').flip>
-  wrapper: HTMLElement
-}
-
-type HarnessWindow = typeof window & {
-  __createFlipHarness: (options?: BrowserHarnessOptions) => Promise<BrowserFlipHarness>
-}
-
 async function newFlipPage(browser: Browser, origin: string): Promise<Page> {
   const page = await browser.newPage()
   await page.goto(`${origin}packages/transitions/src/flip.ts`)
   await page.addScriptTag({
     type: 'module',
-    content: `
-      import { flip } from '/packages/transitions/src/flip.ts'
-
-      window.__createFlipHarness = async (options = {}) => {
-        document.body.innerHTML = \`
-          <style>
-            body { margin: 0; min-height: 1400px; }
-            #wrapper { top: 0; }
-            #scroller { overflow: visible; }
-            #list { width: 200px; }
-            .row { box-sizing: border-box; height: 60px; }
-            .fractional { margin-left: 0.49px; }
-          </style>
-          <div id="wrapper"><div id="scroller"><div id="list"></div></div></div>
-        \`
-
-        const wrapper = document.querySelector('#wrapper')
-        const scroller = document.querySelector('#scroller')
-        const list = document.querySelector('#list')
-        wrapper.style.marginTop = \`\${options.marginTop ?? 250}px\`
-
-        const ids = options.hiddenFirst ? ['hidden', 'a', 'b'] : ['a', 'b', 'c', 'd']
-        for (const id of ids) {
-          const row = document.createElement('div')
-          row.className = 'row'
-          row.id = id
-          row.textContent = id
-          if (id === 'hidden') row.style.display = 'none'
-          list.append(row)
-        }
-        const rows = Array.from(list.children)
-
-        const fractionalAncestors = []
-        for (let i = 0; i < (options.fractionalDepth ?? 0); i++) {
-          const ancestor = document.createElement('div')
-          ancestor.className = 'fractional'
-          scroller.parentNode.insertBefore(ancestor, scroller)
-          ancestor.append(scroller)
-          fractionalAncestors.push(ancestor)
-        }
-
-        const glides = []
-        const nativeAnimate = Element.prototype.animate
-        Element.prototype.animate = function (keyframes, animationOptions) {
-          const animation = nativeAnimate.call(this, keyframes, animationOptions)
-          const transform = animation.effect.getKeyframes()[0]?.transform ?? ''
-          glides.push({ id: this.id, from: String(transform) })
-          return animation
-        }
-
-        const transition = flip({ duration: 500, easing: 'linear' })
-        transition.enter(rows)
-        await new Promise((resolve) => requestAnimationFrame(resolve))
-        return { fractionalAncestors, glides, list, rows, scroller, transition, wrapper }
-      }
-    `,
+    url: `${origin}packages/transitions/test/flip-offset-parent.browser-fixture.ts`,
   })
   await page.waitForFunction(() => '__createFlipHarness' in window)
   return page
@@ -116,9 +37,8 @@ async function runScenario(browser: Browser, origin: string, scenario: Scenario)
   const page = await newFlipPage(browser, origin)
 
   const glides = await page.evaluate(async (change): Promise<RecordedGlide[]> => {
-    const { fractionalAncestors, glides, list, rows, scroller, transition, wrapper } = await (
-      window as HarnessWindow
-    ).__createFlipHarness({ fractionalDepth: change.fractionalDepth })
+    const { fractionalAncestors, glides, list, rows, scroller, transition, wrapper } =
+      await window.__createFlipHarness({ fractionalDepth: change.fractionalDepth })
 
     if (change.position) wrapper.style.position = change.position
     for (const ancestor of fractionalAncestors) ancestor.style.position = 'relative'
@@ -197,9 +117,10 @@ describe('flip() offset-parent changes in Chromium (#217)', () => {
   it('rebases visible rows independently when a hidden sibling has no offset parent', async () => {
     const page = await newFlipPage(browser, origin)
     const glides = await page.evaluate(async (): Promise<RecordedGlide[]> => {
-      const { glides, list, transition, wrapper } = await (
-        window as HarnessWindow
-      ).__createFlipHarness({ hiddenFirst: true, marginTop: 100 })
+      const { glides, list, transition, wrapper } = await window.__createFlipHarness({
+        hiddenFirst: true,
+        marginTop: 100,
+      })
       wrapper.style.position = 'relative'
       transition.onTransition!({ entering: [], leaving: [], parent: list })
       return glides
@@ -213,9 +134,7 @@ describe('flip() offset-parent changes in Chromium (#217)', () => {
     const page = await newFlipPage(browser, origin)
 
     await page.evaluate(async () => {
-      const { list, rows, transition, wrapper } = await (
-        window as HarnessWindow
-      ).__createFlipHarness()
+      const { list, rows, transition, wrapper } = await window.__createFlipHarness()
 
       const counts: ReadCost = {
         rect: 0,
