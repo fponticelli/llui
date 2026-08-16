@@ -244,9 +244,8 @@ Prefer the resolver form for a portaled overlay: register once on mount and
 return the live root only while open (`[]` when closed), so a single
 registration tracks the overlay's open/closed lifecycle without churn.
 
-Pass `opts.owner` — see {@link NestedLayerOptions.owner}. Without it the
-registration is exempt from every layer on the page, not just the one it is
-nested in.
+Pass `opts.owner` when scoped consumers must exempt the layer. Missing or
+unresolved ownership fails closed and warns once per registration in development.
 
 ```typescript
 function registerNestedLayer(source: ElementSource, opts?: NestedLayerOptions): () => void
@@ -577,10 +576,10 @@ export interface NestedLayerOptions {
    * Resolver form is supported and re-read on every lookup, so an owner that
    * mounts and unmounts with its component can be named once.
    *
-   * OMITTING IT IS A FALLBACK, NOT A DEFAULT: an unowned registration is
-   * attributed to no layer and therefore exempt from EVERY asking layer, which
-   * is the flat behaviour #171 is about. Only omit it when there is genuinely
-   * no element to name.
+   * A missing or unresolved owner grants no scoped exemption and emits a
+   * development warning. Even a registration used only through the unscoped
+   * registry-wide view should name its logical owner to keep the contract
+   * explicit.
    */
   owner?: ElementSource
 }

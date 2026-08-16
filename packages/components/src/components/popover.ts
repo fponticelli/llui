@@ -260,8 +260,18 @@ export function overlay(opts: OverlayOptions): Mountable {
     positioner: opts.parts.positioner,
     content: opts.content,
     contentId: opts.parts.content.id,
-    anchorId: opts.parts.trigger.id,
-    requireAnchor: true,
+    relationships: {
+      placementAnchor: { id: opts.parts.trigger.id },
+      nestedLayerOwner: { id: opts.parts.trigger.id },
+      dismissIgnore: [{ id: opts.parts.trigger.id }],
+      focusReturn: restoreFocus
+        ? {
+            target: { id: opts.parts.trigger.id },
+            boundary: 'content',
+            restoreOnTeardown: false,
+          }
+        : undefined,
+    },
     mountWhen: isMounted,
     visibleWhen: (st) => st.open,
     onDismiss: () => opts.send({ type: 'close' }),
@@ -286,12 +296,12 @@ export function overlay(opts: OverlayOptions): Mountable {
         // somewhere the user chose must respect that move — restoring
         // unconditionally yanked focus off the control they had just reached and
         // could leave a sibling popover open with focus outside it.
-        if (!restoreFocus || !els.anchor) return
-        if (!focusLingeredInside({ boundary: els.content, anchor: els.anchor })) return
+        if (!restoreFocus || !els.focusReturnTarget) return
+        if (!focusLingeredInside({ boundary: els.content, anchor: els.focusReturnTarget })) return
         // `engineFocus`, not a bare `.focus()`: restoring the trigger is the
         // engine's own bookkeeping, and a SIBLING layer must not read it as an
         // outside interaction and dismiss itself (#155).
-        engineFocus(els.anchor)
+        engineFocus(els.focusReturnTarget)
       },
     },
   })

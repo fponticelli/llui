@@ -207,6 +207,16 @@ export interface ContextMenuParts {
   subContent: (value: string) => ContextMenuSubContentParts
 }
 
+interface ContextMenuRuntime {
+  /** The actual region whose contextmenu event most recently opened this instance. */
+  owner: Element | null
+}
+
+// DOM ownership is interaction-lifetime data, not replayable component state.
+// The parts object is already the shared identity between connect() and overlay();
+// a WeakMap keeps that relationship private and naturally collectible.
+const runtimeByParts = new WeakMap<ContextMenuParts, ContextMenuRuntime>()
+
 export interface ConnectOptions {
   id: string
   onSelect?: (value: string) => void
@@ -241,12 +251,14 @@ export function connect(
     hoverCloseDelay: opts.hoverCloseDelay,
   })
 
-  return {
+  const runtime: ContextMenuRuntime = { owner: null }
+  const connected: ContextMenuParts = {
     trigger: {
       'data-scope': 'context-menu',
       'data-part': 'trigger',
       onContextMenu: tagSend(send, ['openAt'], (e) => {
         e.preventDefault()
+        runtime.owner = e.currentTarget instanceof Element ? e.currentTarget : null
         send({ type: 'openAt', x: e.clientX, y: e.clientY })
       }),
     },
@@ -278,6 +290,8 @@ export function connect(
     subPositioner: parts.subPositioner,
     subContent: parts.subContent,
   }
+  runtimeByParts.set(connected, runtime)
+  return connected
 }
 
 export interface OverlayOptions {
@@ -298,6 +312,7 @@ export interface OverlayOptions {
 }
 
 export function overlay(opts: OverlayOptions): Mountable {
+  const runtime = runtimeByParts.get(opts.parts)
   // Two-phase: mounted through the exit animation (isPresent); the content focus
   // + dismissable unwind at the close REQUEST (isVisible). No floating — the
   // positioner is placed at the virtual (x, y) anchor set by `openAt`.
@@ -308,9 +323,18 @@ export function overlay(opts: OverlayOptions): Mountable {
     positioner: opts.parts.positioner,
     content: opts.content,
     contentId: opts.parts.content.id,
+    relationships: {
+      // Context menus are pointer-positioned and deliberately have no placement
+      // anchor, dismissal-ignore region, or focus-return target. Ownership is
+      // the real region that delivered the most recent contextmenu event.
+      nestedLayerOwner: { resolve: () => runtime?.owner ?? null },
+    },
     mountWhen: isPresent,
     visibleWhen: isVisible,
     onDismiss: () => opts.send({ type: 'close' }),
+    onInteractionEnd: () => {
+      if (runtime) runtime.owner = null
+    },
     dismiss: {
       // Escape unwinds ONE submenu level while a submenu is open; only when no
       // submenu is open does it close the whole context menu.

@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { component, mountApp, div, text } from '@llui/dom'
 import { init, update, connect, overlay } from '../../src/components/context-menu'
 import type { ContextMenuState, ContextMenuMsg } from '../../src/components/context-menu'
+import { getNestedLayers } from '../../src/utils/nested-layer'
 
 type Ctx = { m: ContextMenuState }
 
@@ -45,7 +46,7 @@ describe('context-menu.overlay integration', () => {
         const m = state.map((s) => s.m)
         const parts = connect(m, send, { id: 'cm' })
         return [
-          div({ ...parts.trigger }, [text('Right-click me')]),
+          div({ ...parts.trigger, id: 'cm-region' }, [text('Right-click me')]),
           overlay({
             state: m,
             send,
@@ -91,5 +92,29 @@ describe('context-menu.overlay integration', () => {
     outside.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     await new Promise((r) => setTimeout(r, 0))
     expect(document.querySelector('[data-part="content"]')).toBeNull()
+  })
+
+  it('clears runtime ownership before a later programmatic/replayed openAt', async () => {
+    const { send } = makeApp()
+    const region = document.getElementById('cm-region')!
+    region.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 8, clientY: 9 }),
+    )
+    await new Promise((r) => setTimeout(r, 0))
+
+    const firstContent = document.getElementById('cm:content')!
+    expect(getNestedLayers('focus', region)).toEqual([firstContent])
+
+    send({ type: 'close' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.getElementById('cm:content')).toBeNull()
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    send({ type: 'openAt', x: 30, y: 40 })
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(getNestedLayers('focus', region)).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('did not resolve'))
+    warn.mockRestore()
   })
 })

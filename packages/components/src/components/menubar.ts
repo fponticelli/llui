@@ -412,7 +412,12 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
     positioner: opts.parts.positioner,
     content: opts.content,
     contentId: opts.parts.content.id,
-    anchorId: opts.parts.trigger.id,
+    relationships: {
+      placementAnchor: { id: opts.parts.trigger.id },
+      nestedLayerOwner: { id: opts.parts.trigger.id },
+      dismissIgnore: [{ id: opts.parts.trigger.id }],
+      focusReturn: { target: { id: opts.parts.trigger.id }, boundary: 'content' },
+    },
     mountWhen: (s) => s.open === opts.menuId,
     onDismiss: () => opts.send({ type: 'closeMenu' }),
     floating: {
@@ -436,7 +441,6 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
       },
     },
     focusOnOpenId: opts.parts.content.id,
-    restoreFocus: { boundary: 'content' },
   })
 }
 
