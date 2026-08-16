@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
 import {
+  createCommitScheduler,
+  type CommitHost,
+  type CommitToken,
+} from '../../src/signals/commit-scope'
+import {
   el,
   onMount,
   signalBranch,
@@ -9,6 +14,7 @@ import {
   type RowCtx,
 } from '../../src/signals/dom'
 import { bindingMask, buildPathTable } from '../../src/signals/mask'
+import { LluiFrameworkError, isFrameworkError } from '../../src/signals/framework-error'
 import { createSignalScope, type SignalScope } from '../../src/signals/runtime'
 
 interface State {
@@ -239,6 +245,39 @@ describe('child scopes mounted during an active update', () => {
     expect(updates).toEqual(['first', 'older-sibling', 'fresh'])
   })
 
+  it('treats remove-and-readd of the same scope identity as fresh membership', () => {
+    const parent = createSignalScope(buildPathTable([]), [], [])
+    let targetUpdates = 0
+    let replaced = false
+    const target: SignalScope = {
+      mount: () => {},
+      update: () => {
+        targetUpdates++
+      },
+      addChild: () => {},
+      removeChild: () => {},
+    }
+    const replacingSibling: SignalScope = {
+      mount: () => {},
+      update: () => {
+        if (replaced) return
+        replaced = true
+        parent.removeChild(target)
+        parent.addChild(target)
+      },
+      addChild: () => {},
+      removeChild: () => {},
+    }
+    parent.addChild(replacingSibling)
+    parent.addChild(target)
+
+    parent.update({}, {})
+    expect(targetUpdates).toBe(0)
+
+    parent.update({}, {})
+    expect(targetUpdates).toBe(1)
+  })
+
   it('keeps a mounted child for the next update when the creating round throws', () => {
     interface Versioned {
       version: number
@@ -269,6 +308,84 @@ describe('child scopes mounted during an active update', () => {
     parent.mount(initial)
 
     expect(() => parent.update(initial, failed)).toThrow('creating round failed')
+    expect(childUpdates).toBe(0)
+
+    parent.update(failed, { version: 2 })
+    expect(childUpdates).toBe(1)
+  })
+
+  it('preserves an escaped CommitToken error while publishing the pending child', () => {
+    const host: CommitHost<never, null> = {
+      reduce: () => false,
+      commit: () => true,
+      beginEffects: () => null,
+      dispatchEffects: () => {},
+      endEffects: () => {},
+      isDisposed: () => false,
+    }
+    const scheduler = createCommitScheduler(host, 'sync')
+    let escapedSettle: (() => void) | undefined
+    scheduler.withCommitScope('scheduled', (token: CommitToken) => {
+      escapedSettle = () => token.settle()
+    })
+    let escapedError: unknown
+    try {
+      escapedSettle!()
+    } catch (error) {
+      escapedError = error
+    }
+    expect(escapedError).toBeInstanceOf(LluiFrameworkError)
+    expect(isFrameworkError(escapedError)).toBe(true)
+
+    interface Versioned {
+      version: number
+    }
+    const table = buildPathTable(['version'])
+    let childUpdates = 0
+    const fresh: SignalScope = {
+      mount: () => {},
+      update: () => {
+        childUpdates++
+      },
+      addChild: () => {},
+      removeChild: () => {},
+    }
+    const existing: SignalScope = {
+      mount: () => {},
+      update: () => {},
+      addChild: () => {},
+      removeChild: () => {},
+    }
+    let parent: SignalScope
+    const binding = {
+      structural: true as const,
+      produce: (state: unknown) => state,
+      commit: (state: unknown) => {
+        if ((state as Versioned).version !== 1) return
+        parent.addChild(fresh)
+        throw escapedError
+      },
+    }
+    parent = createSignalScope(table, [binding], [bindingMask(['version'], table)])
+    parent.addChild(existing)
+    const initial: Versioned = { version: 0 }
+    const failed: Versioned = { version: 1 }
+    parent.mount(initial)
+
+    let thrown: unknown
+    try {
+      parent.update(initial, failed)
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBe(escapedError)
+    expect(thrown).toBeInstanceOf(LluiFrameworkError)
+    expect(isFrameworkError(thrown)).toBe(true)
+    expect((thrown as Error).message).toBe(
+      '[llui] CommitToken.settle() was called outside its commit scope. A token ' +
+        'is valid only for the body it was handed to; commit through the ' +
+        'CommitScheduler surface instead.',
+    )
     expect(childUpdates).toBe(0)
 
     parent.update(failed, { version: 2 })
