@@ -23,8 +23,8 @@ const FOCUSABLE_SELECTOR = [
 
 export function isFocusable(el: Element): boolean {
   if (!(el instanceof HTMLElement)) return false
-  if (el.hasAttribute('disabled')) return false
-  if (el.getAttribute('aria-hidden') === 'true') return false
+  if (el.hasAttribute('disabled') || el.matches(':disabled')) return false
+  if (isInsideExcludedTree(el)) return false
   if (el.hidden) return false
   // Check tabindex
   const tabindex = el.getAttribute('tabindex')
@@ -32,11 +32,20 @@ export function isFocusable(el: Element): boolean {
   return el.matches(FOCUSABLE_SELECTOR)
 }
 
+function isInsideExcludedTree(el: Element): boolean {
+  let current: Element | null = el
+  while (current) {
+    if (current.getAttribute('aria-hidden') === 'true' || current.hasAttribute('inert')) return true
+    current = current.parentElement
+  }
+  return false
+}
+
 export function getFocusables(container: Element): HTMLElement[] {
   const nodes = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
   const out: HTMLElement[] = []
   for (const n of nodes) {
-    if (isFocusable(n) && isVisible(n) && !isInsideInert(n, container)) out.push(n)
+    if (isFocusable(n) && isVisible(n)) out.push(n)
   }
   return out
 }
@@ -70,13 +79,4 @@ function isLayoutlessEnv(el: HTMLElement): boolean {
   // the viewport). jsdom never does, so an empty rect list means "no layout".
   // (`body.offsetParent` is unreliable here — it is `null` in browsers too.)
   return body.getClientRects().length === 0
-}
-
-function isInsideInert(el: Element, container: Element): boolean {
-  let current: Element | null = el
-  while (current && current !== container) {
-    if (current.hasAttribute('inert')) return true
-    current = current.parentElement
-  }
-  return false
 }

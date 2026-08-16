@@ -32,6 +32,62 @@ describe('focusability', () => {
     expect(getFocusables(container)).toEqual([])
   })
 
+  it('excludes descendants whose ancestor or container is aria-hidden', () => {
+    const container = elementFrom(`
+      <div>
+        <div aria-hidden="true"><button id="nested">Nested</button></div>
+        <button id="direct">Direct</button>
+      </div>
+    `)
+    const nested = container.querySelector<HTMLElement>('#nested')!
+    const direct = container.querySelector<HTMLElement>('#direct')!
+
+    expect(isFocusable(nested)).toBe(false)
+    expect(getFocusables(container).map((element) => element.id)).toEqual(['direct'])
+
+    container.setAttribute('aria-hidden', 'true')
+    expect(isFocusable(direct)).toBe(false)
+    expect(getFocusables(container)).toEqual([])
+  })
+
+  it('excludes descendants whose ancestor or container is inert', () => {
+    const container = elementFrom(`
+      <div>
+        <div inert><button id="nested">Nested</button></div>
+        <button id="direct">Direct</button>
+      </div>
+    `)
+    const nested = container.querySelector<HTMLElement>('#nested')!
+    const direct = container.querySelector<HTMLElement>('#direct')!
+
+    expect(isFocusable(nested)).toBe(false)
+    expect(getFocusables(container).map((element) => element.id)).toEqual(['direct'])
+
+    container.setAttribute('inert', '')
+    expect(isFocusable(direct)).toBe(false)
+    expect(getFocusables(container)).toEqual([])
+  })
+
+  it('honors disabled fieldset inheritance and its first-legend exception', () => {
+    const container = elementFrom(`
+      <div>
+        <fieldset disabled>
+          <legend><button id="first-legend">First legend</button></legend>
+          <legend><button id="second-legend">Second legend</button></legend>
+          <button id="fieldset-control">Fieldset control</button>
+        </fieldset>
+      </div>
+    `)
+    const firstLegend = container.querySelector<HTMLElement>('#first-legend')!
+    const secondLegend = container.querySelector<HTMLElement>('#second-legend')!
+    const fieldsetControl = container.querySelector<HTMLElement>('#fieldset-control')!
+
+    expect(isFocusable(firstLegend)).toBe(true)
+    expect(isFocusable(secondLegend)).toBe(false)
+    expect(isFocusable(fieldsetControl)).toBe(false)
+    expect(getFocusables(container).map((element) => element.id)).toEqual(['first-legend'])
+  })
+
   it('enumerates only tab-reachable, visible, non-inert descendants', () => {
     const container = elementFrom(`
       <div>
