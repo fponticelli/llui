@@ -32,6 +32,7 @@ import * as timer from '../../src/components/timer'
 import * as toast from '../../src/components/toast'
 import * as tour from '../../src/components/tour'
 import * as treeView from '../../src/components/tree-view'
+import * as commandMenu from '../../src/patterns/command-menu'
 import * as dataTable from '../../src/patterns/data-table'
 import * as formField from '../../src/patterns/form-field'
 import * as wizard from '../../src/patterns/wizard'
@@ -124,6 +125,20 @@ describe('non-bound numeric initialization uses documented defaults (#214)', () 
         ],
         ['signature-pad.strokes', signaturePad.init({ strokes: [[{ x: bad, y: 1 }]] })],
         ['table.focusedCell', table.init({ focusedCell: { rowIndex: bad, colIndex: bad } })],
+        [
+          'file-upload.files size',
+          fileUpload.init({
+            files: [{ id: 'bad', name: 'bad', size: bad, type: '', lastModified: 0 }],
+          }),
+        ],
+        [
+          'file-upload.files lastModified',
+          fileUpload.init({
+            files: [{ id: 'bad', name: 'bad', size: 1, type: '', lastModified: bad }],
+          }),
+        ],
+        ['date-picker.weekStartsOn', datePicker.init({ weekStartsOn: bad as 0 | 1 })],
+        ['command-menu.maxRecents', commandMenu.init({ maxRecents: bad })],
       ]
       for (const [label, state] of states) expectSerializableState(state, label)
 
@@ -144,6 +159,19 @@ describe('non-bound numeric initialization uses documented defaults (#214)', () 
       ).toStrictEqual({ hours: 0, minutes: 0, seconds: 0 })
       expect(signaturePad.init({ strokes: [[{ x: bad, y: 1 }]] }).strokes).toStrictEqual([])
       expect(table.init({ focusedCell: { rowIndex: bad, colIndex: bad } }).focusedCell).toBeNull()
+      expect(
+        fileUpload.init({
+          files: [{ id: 'bad', name: 'bad', size: bad, type: '', lastModified: 0 }],
+        }).files,
+      ).toStrictEqual([])
+      expect(
+        fileUpload.init({
+          files: [{ id: 'bad', name: 'bad', size: 1, type: '', lastModified: bad }],
+        }).files,
+      ).toStrictEqual([])
+      const calendarDefault = datePicker.init().weekStartsOn
+      expect(datePicker.init({ weekStartsOn: bad as 0 | 1 }).weekStartsOn).toBe(calendarDefault)
+      expect(commandMenu.init({ maxRecents: bad }).maxRecents).toBe(50)
       expect(
         tour.init({
           index: bad,
@@ -489,6 +517,37 @@ describe('package-wide component-owned numeric message inventory (#214)', () => 
           requestId: bad,
         }),
         'form-field validateAsync',
+      )
+
+      const invalidIssue = { message: 'bad path', path: [bad] }
+      const syncSchema = {
+        '~standard': {
+          version: 1 as const,
+          vendor: 'test',
+          validate: () => ({ issues: [invalidIssue] }),
+        },
+      }
+      expectIgnored(
+        fields,
+        formField.update(fields, { type: 'validate', schema: syncSchema, values: { n: bad } }),
+        'form-field validate issues',
+      )
+      const pending = formField.update(fields, {
+        type: 'validateAsync',
+        schema: syncSchema,
+        values: { n: bad },
+        requestId: 1,
+      })[0]
+      expect(pending).not.toBe(fields)
+      expect(pending).toMatchObject({ validationId: 1, fields: { name: { pending: true } } })
+      expectIgnored(
+        pending,
+        formField.update(pending, {
+          type: 'validateResult',
+          requestId: 1,
+          issues: [invalidIssue],
+        }),
+        'form-field validateResult issues',
       )
     })
 

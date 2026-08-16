@@ -191,7 +191,9 @@ export function init(opts: DatePickerInit = {}): DatePickerState {
   const parsed = anchorIso ? parseIso(anchorIso) : null
   const visibleMonth = finiteOrDefault(opts.visibleMonth, parsed?.m ?? new Date().getMonth() + 1)
   const visibleYear = finiteOrDefault(opts.visibleYear, parsed?.y ?? new Date().getFullYear())
-  const weekStartsOn = opts.weekStartsOn ?? localeWeekStart(defaultLocale())
+  const defaultWeekStartsOn = localeWeekStart(defaultLocale())
+  const weekStartsOn =
+    opts.weekStartsOn === 0 || opts.weekStartsOn === 1 ? opts.weekStartsOn : defaultWeekStartsOn
   return {
     mode,
     value: opts.value ?? null,

@@ -122,7 +122,7 @@ export interface FileUploadInit {
 
 export function init(opts: FileUploadInit = {}): FileUploadState {
   return {
-    files: opts.files ?? [],
+    files: opts.files !== undefined && allFiniteNumbers(opts.files) ? opts.files : [],
     rejectedFiles: [],
     disabled: opts.disabled ?? false,
     multiple: opts.multiple ?? false,

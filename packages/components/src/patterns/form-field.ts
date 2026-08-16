@@ -172,6 +172,7 @@ export function update(state: FormFieldState, msg: FormFieldMsg): [FormFieldStat
     case 'validate': {
       const result = validateSchema(msg.schema, msg.values)
       const issues = [...result.issues]
+      if (!allFiniteNumbers(issues)) return [state, []]
       return [{ ...state, issues, fields: applyIssues(state.fields, issues) }, []]
     }
     case 'validateAsync': {
@@ -187,6 +188,7 @@ export function update(state: FormFieldState, msg: FormFieldMsg): [FormFieldStat
       return [{ ...state, validationId: msg.requestId, fields }, []]
     }
     case 'validateResult': {
+      if (!allFiniteNumbers(msg.issues)) return [state, []]
       // Drop responses from superseded validations (stale-response protection):
       // an earlier, slower validation must never overwrite a newer result.
       if (msg.requestId !== state.validationId) return [state, []]
