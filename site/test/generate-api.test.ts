@@ -370,6 +370,18 @@ describe('unresolvable member kind (issue #174)', () => {
 // ── issue #174: barrel aliases are documented ────────────────────
 
 describe('collectBarrelExports (issue #174)', () => {
+  it('does not repeat named component objects in the direct-member table', () => {
+    const rows = collectBarrelExports(`
+export { menu } from './menu.js'
+export { radioGroup } from './radio-group.js'
+export { switchMachine } from './switch.js'
+export { HEADER_ROW_INDEX as TABLE_HEADER_ROW_INDEX } from './table.js'
+`)
+    expect(rows).toEqual([
+      { exported: 'TABLE_HEADER_ROW_INDEX', module: 'table', local: 'HEADER_ROW_INDEX' },
+    ])
+  })
+
   it('records the alias and the name the source module declares', () => {
     const rows = collectBarrelExports(`
 export * as table from './table.js'

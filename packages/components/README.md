@@ -149,6 +149,14 @@ import { attachFloating, pushDismissable, pushFocusTrap } from '@llui/interactio
 The existing `@llui/components/utils` subpath remains supported for compatibility and is
 tree-shakeable: importing it does not pull component modules into the bundle.
 
+Granular utility and formatter subpaths are also available when a library wants to expose the
+smallest possible dependency edge:
+
+```ts
+import { TreeCollection } from '@llui/components/utils/tree-collection'
+import { formatNumber } from '@llui/components/format/format-number'
+```
+
 | Utility          | Purpose                                                                  |
 | ---------------- | ------------------------------------------------------------------------ |
 | `typeahead`      | First-letter search across menu, select, listbox, tree-view              |
@@ -277,9 +285,9 @@ Three forms, in order of preference:
 //          components).
 import { dialog } from '@llui/components/dialog'
 
-// ✓ ok — named import from the barrel. Tree-shakeable, but the
-//          bundler still has to parse every transitively-exported
-//          module before it can prove the unused ones are dead.
+// ✓ ok — named component-object import from the root. The root uses
+//          named leaf re-exports, so unrelated components tree-shake.
+//          A subpath still avoids parsing the aggregate export surface.
 import { dialog } from '@llui/components'
 
 // ✗ bad — namespace import. Defeats tree-shaking: drags every

@@ -706,7 +706,7 @@ function findReturn(block: ts.Block): ts.Expression | null {
  * advertised on the API page as though they were importable (#175).
  *
  * Two independent doors, unioned:
- *  - a VALUE re-export from the components barrel (`export * as menu from './menu.js'`,
+ *  - a VALUE re-export from the components barrel (`export { menu } from './menu.js'`,
  *    `export { reorder } from './sortable.js'`); a `export type { … }`-only line does
  *    NOT count — it publishes the module's types, not its state machine.
  *  - a `package.json#exports` subpath resolving to `dist/components/<name>.js`
@@ -772,7 +772,14 @@ export interface BarrelExport {
   local: string
 }
 
-/** Named VALUE re-exports of the components barrel, in source order. */
+function componentObjectName(moduleName: string): string {
+  const camel = moduleName.replace(/-([a-z])/g, (_match, letter: string) => letter.toUpperCase())
+  return camel === 'switch' ? 'switchMachine' : camel
+}
+
+/** Named VALUE re-exports of the components barrel, in source order.
+ * Per-component objects have their own sections and are deliberately omitted
+ * from this direct-member table. */
 export function collectBarrelExports(barrelText: string, barrelId = 'index.ts'): BarrelExport[] {
   const sf = ts.createSourceFile(barrelId, barrelText, ts.ScriptTarget.Latest, true)
   const out: BarrelExport[] = []
@@ -784,10 +791,12 @@ export function collectBarrelExports(barrelText: string, barrelId = 'index.ts'):
     const moduleName = basename(spec).replace(/\.js$/, '')
     for (const el of stmt.exportClause.elements) {
       if (el.isTypeOnly) continue
+      const local = (el.propertyName ?? el.name).text
+      if (local === componentObjectName(moduleName) && el.name.text === local) continue
       out.push({
         exported: el.name.text,
         module: moduleName,
-        local: (el.propertyName ?? el.name).text,
+        local,
       })
     }
   }
@@ -895,11 +904,11 @@ function renderBarrelExports(barrelPath: string, barrelText: string): string {
 
   let md = `## Top-Level Exports\n\n`
   md +=
-    `Besides the per-component namespaces (\`import { menu } from '@llui/components'\`), ` +
+    `Besides the per-component objects (\`import { menu } from '@llui/components'\`), ` +
     `the components barrel re-exports these members directly, and \`@llui/components\` ` +
     `passes them through. Where the barrel name differs from the component's own, the ` +
     `barrel name is the only one that resolves on \`@llui/components\` — the component's ` +
-    `own spelling is reachable through its namespace or its subpath entry ` +
+    `own spelling is reachable through its component object or its subpath entry ` +
     `(\`@llui/components/table\`).\n\n` +
     `This table covers the **component** modules only. The package root additionally ` +
     `re-exports the locale surface (\`en\`, \`LocaleContext\`), the \`format/\` helpers and ` +

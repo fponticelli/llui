@@ -13,6 +13,14 @@
       "types": "./dist/utils/index.d.ts",
       "import": "./dist/utils/index.js"
     },
+    "./utils/*": {
+      "types": "./dist/utils/*.d.ts",
+      "import": "./dist/utils/*.js"
+    },
+    "./format/*": {
+      "types": "./dist/format/*.d.ts",
+      "import": "./dist/format/*.js"
+    },
     "./toggle": {
       "types": "./dist/components/toggle.d.ts",
       "import": "./dist/components/toggle.js"

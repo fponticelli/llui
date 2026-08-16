@@ -17,14 +17,19 @@ import { attachFloating, pushDismissable, pushFocusTrap } from '@llui/interactio
 
 ## Why this is a separate package
 
-The demand check for [#49](https://github.com/fponticelli/llui/issues/49) found two in-repo
-consumers of the former `@llui/components/utils` entry point:
+The Step-1 demand check for [#49](https://github.com/fponticelli/llui/issues/49) found two
+in-repo consumers of the former `@llui/components/utils` entry point:
 
 - `@llui/a2ui` also imports the checkbox, combobox, date-picker, dialog, slider, and tabs
   component subpaths.
 - `@llui/markdown-editor` also imports the dialog component subpath.
 
-Neither needs interactions independently of components. An owner-accessible downstream source
-census did find custom modal and popover implementations that use these interaction primitives
-without LLui component machines, which establishes the separate install-graph demand. The
-existing `@llui/components/utils` entry point remains as a compatibility re-export.
+Neither is a standalone interactions consumer. The checked external consumers were:
+
+- `buildlab-com/dungeonlogs/packages/ui/src/atoms/modal.ts` and `popover.ts` qualify: both
+  implement custom overlays with the interaction primitives and no LLui component machine.
+- `buildlab-com/stillkeel/packages/web/src/components/spark-tooltip.ts` does not qualify: it
+  contains tooltip presentation behavior but does not consume these interaction primitives.
+
+The two dungeonlogs modules establish separate install-graph demand. The existing
+`@llui/components/utils` entry point remains as a compatibility re-export.
