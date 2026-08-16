@@ -1,5 +1,5 @@
 import type { Send, Signal } from '@llui/dom'
-import { finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
 
 /**
  * Meter — role="meter" gauge for a scalar measurement within a known range
@@ -39,7 +39,7 @@ export function init(opts: MeterInit = {}): MeterState {
   // absence is already their "no threshold" spelling, and `thresholdState`
   // reads them with `undefined` checks — so an unusable one is simply left out.
   const state: MeterState = {
-    value: opts.value ?? 0,
+    value: finiteOrDefault(opts.value, 0),
     min: finiteBound(opts.min) ?? 0,
     max: finiteBound(opts.max) ?? 100,
   }
@@ -55,6 +55,7 @@ export function init(opts: MeterInit = {}): MeterState {
 export function update(state: MeterState, msg: MeterMsg): [MeterState, never[]] {
   switch (msg.type) {
     case 'setValue':
+      if (!allFiniteNumbers(msg.value)) return [state, []]
       return [{ ...state, value: msg.value }, []]
     case 'setMax': {
       const max = finiteBound(msg.max)

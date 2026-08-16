@@ -3,7 +3,7 @@ import { tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { datePickerLocale } from '../locale/date-picker.js'
 import { formatDate } from '../format/format-date.js'
-import { finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
 import { defaultLocale } from '../format/defaults.js'
 
 /**
@@ -120,11 +120,12 @@ function todayIso(): string {
   return toIso(now.getFullYear(), now.getMonth() + 1, now.getDate())
 }
 
-function addDays(iso: string, days: number): string {
+function addDays(iso: string, days: number): string | null {
   const p = parseIso(iso)
-  if (!p) return iso
+  if (!p) return null
   const d = new Date(p.y, p.m - 1, p.d)
   d.setDate(d.getDate() + days)
+  if (!Number.isFinite(d.getTime())) return null
   return toIso(d.getFullYear(), d.getMonth() + 1, d.getDate())
 }
 
@@ -188,9 +189,11 @@ export function init(opts: DatePickerInit = {}): DatePickerState {
   const mode = opts.mode ?? 'single'
   const anchorIso = opts.value ?? opts.start ?? null
   const parsed = anchorIso ? parseIso(anchorIso) : null
-  const visibleMonth = opts.visibleMonth ?? parsed?.m ?? new Date().getMonth() + 1
-  const visibleYear = opts.visibleYear ?? parsed?.y ?? new Date().getFullYear()
-  const weekStartsOn = opts.weekStartsOn ?? localeWeekStart(defaultLocale())
+  const visibleMonth = finiteOrDefault(opts.visibleMonth, parsed?.m ?? new Date().getMonth() + 1)
+  const visibleYear = finiteOrDefault(opts.visibleYear, parsed?.y ?? new Date().getFullYear())
+  const defaultWeekStartsOn = localeWeekStart(defaultLocale())
+  const weekStartsOn =
+    opts.weekStartsOn === 0 || opts.weekStartsOn === 1 ? opts.weekStartsOn : defaultWeekStartsOn
   return {
     mode,
     value: opts.value ?? null,
@@ -289,7 +292,9 @@ export function update(state: DatePickerState, msg: DatePickerMsg): [DatePickerS
       return [{ ...state, value: state.focused }, []]
     }
     case 'moveFocus': {
+      if (!allFiniteNumbers(msg.days)) return [state, []]
       const next = addDays(state.focused, msg.days)
+      if (next === null) return [state, []]
       return [syncVisibleMonth({ ...state, focused: next }, next), []]
     }
     case 'focusStartOfWeek': {

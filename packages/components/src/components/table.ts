@@ -1,6 +1,6 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
-import { finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, finiteBound } from '../utils/number.js'
 
 /**
  * Table / data grid — a headless machine for sortable columns, row
@@ -125,7 +125,10 @@ export function init(opts: TableInit = {}): TableState {
     sort: opts.sort ?? null,
     selection: opts.selection ?? [],
     selectionMode: opts.selectionMode ?? 'none',
-    focusedCell: opts.focusedCell ?? null,
+    focusedCell:
+      opts.focusedCell !== undefined && allFiniteNumbers(opts.focusedCell)
+        ? opts.focusedCell
+        : null,
     rangeAnchor: null,
     // The page bound row indices are computed against (#177).
     pageSize: finiteBound(opts.pageSize) ?? 10,
@@ -191,6 +194,7 @@ function moveSelection(state: TableState, id: string): string[] {
 }
 
 export function update(state: TableState, msg: TableMsg): [TableState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   // setRows / setColumns are structural updates the consumer must always be
   // able to apply (e.g. after a server fetch), even while disabled.
   if (state.disabled && msg.type !== 'setRows' && msg.type !== 'setColumns') {

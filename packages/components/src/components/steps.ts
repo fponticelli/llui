@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { stepsLocale } from '../locale/steps.js'
+import { allFiniteNumbers, finiteOrDefault } from '../utils/number.js'
 
 /**
  * Steps — progress indicator for multi-step flows (wizards, checkouts).
@@ -46,8 +47,9 @@ export interface StepsInit {
 
 export function init(opts: StepsInit = {}): StepsState {
   return {
-    current: opts.current ?? 0,
-    completed: opts.completed ?? [],
+    current: finiteOrDefault(opts.current, 0),
+    completed:
+      opts.completed !== undefined && allFiniteNumbers(...opts.completed) ? opts.completed : [],
     errors: [],
     steps: opts.steps ?? [],
     linear: opts.linear ?? true,
@@ -66,6 +68,7 @@ function canGoTo(state: StepsState, step: number): boolean {
 
 export function update(state: StepsState, msg: StepsMsg): [StepsState, never[]] {
   if (state.disabled) return [state, []]
+  if ('step' in msg && !allFiniteNumbers(msg.step)) return [state, []]
   switch (msg.type) {
     case 'goTo':
       if (!canGoTo(state, msg.step)) return [state, []]

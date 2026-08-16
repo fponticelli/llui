@@ -1,5 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
+import { allFiniteNumbers } from '../utils/number.js'
 import { signaturePadLocale } from '../locale/signature-pad.js'
 
 /**
@@ -65,7 +66,7 @@ export interface SignaturePadInit {
 
 export function init(opts: SignaturePadInit = {}): SignaturePadState {
   return {
-    strokes: opts.strokes ?? [],
+    strokes: opts.strokes !== undefined && allFiniteNumbers(opts.strokes) ? opts.strokes : [],
     current: null,
     drawing: false,
     disabled: opts.disabled ?? false,
@@ -81,6 +82,7 @@ export function update(
   state: SignaturePadState,
   msg: SignaturePadMsg,
 ): [SignaturePadState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   if (state.disabled || state.readonly) {
     // Allow reads (undo/clear are still useful for clearing a disabled pad).
     if (msg.type === 'strokeStart' || msg.type === 'strokePoint' || msg.type === 'strokeEnd') {

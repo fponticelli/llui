@@ -12,6 +12,7 @@ import {
   type ComboboxState,
   type ComboboxGroup,
 } from '../components/combobox.js'
+import { finiteOrDefault } from '../utils/number.js'
 
 /**
  * CommandMenu — a ⌘K command palette.
@@ -169,7 +170,7 @@ export function init(opts: CommandMenuInit = {}): CommandMenuState {
     filtered: [],
     filteredGroups: [],
     recents,
-    maxRecents: opts.maxRecents ?? 50,
+    maxRecents: finiteOrDefault(opts.maxRecents, 50),
   })
 }
 

@@ -3,7 +3,7 @@ import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { pinInputLocale } from '../locale/pin-input.js'
-import { finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, finiteBound } from '../utils/number.js'
 
 /**
  * Pin input — a sequence of single-character fields for OTP codes, etc.
@@ -127,6 +127,7 @@ const PROGRAMMATIC: ReadonlySet<PinInputMsg['type']> = new Set([
 ])
 
 export function update(state: PinInputState, msg: PinInputMsg): [PinInputState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   if (state.disabled && !PROGRAMMATIC.has(msg.type)) return [state, []]
   switch (msg.type) {
     case 'setValue': {

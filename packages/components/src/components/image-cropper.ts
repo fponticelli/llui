@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { imageCropperLocale } from '../locale/image-cropper.js'
-import { clamp, finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, clamp, finiteBound, positiveFinite } from '../utils/number.js'
 
 /**
  * Image cropper — select a rectangular crop region over an image,
@@ -68,6 +68,24 @@ export interface ImageCropperInit {
 }
 
 /**
+ * Largest on-ratio rectangle that fits the image.
+ *
+ * Choosing the driving image axis before multiplying/dividing is essential:
+ * `height * ratio` may overflow for a very wide ratio, while `width / ratio`
+ * may overflow for a very narrow one. The comparison itself is safe at those
+ * extremes, and the selected operation can only move toward zero.
+ */
+function largestLockedSize(
+  image: { width: number; height: number },
+  ratio: number,
+): { width: number; height: number } {
+  if (ratio > image.width / image.height) {
+    return { width: image.width, height: image.width / ratio }
+  }
+  return { width: image.height * ratio, height: image.height }
+}
+
+/**
  * Fit a crop inside the image while HONOURING the aspect-ratio lock.
  *
  * With a ratio set the rectangle may only be scaled UNIFORMLY: clamping each
@@ -97,23 +115,27 @@ function fitCrop(
       height,
     }
   }
-  // Re-derive the height so the rectangle is exactly on ratio before scaling.
-  let width = Math.max(0, crop.width)
-  let height = width / ratio
-  if (width <= 0 || height <= 0) {
-    // Collapsed: no scale factor lifts a zero, so seed the smallest on-ratio
-    // rectangle whose SHORTER side is `minSize`.
-    width = ratio >= 1 ? minSize * ratio : minSize
-    height = width / ratio
+  const maximum = largestLockedSize(image, ratio)
+
+  // Algebraically this is the former grow-then-shrink sequence, but it chooses
+  // the final width directly. That avoids both an overflowing grow factor and
+  // the `Infinity * 0 => NaN` shrink that followed it for valid extreme ratios.
+  // If the shorter side cannot reach minSize inside the image, the maximum
+  // fitting rectangle wins as before.
+  let minimumWidth = 0
+  if (minSize > 0) {
+    if (ratio >= 1) {
+      minimumWidth = minSize >= maximum.height ? maximum.width : minSize * ratio
+    } else {
+      minimumWidth = Math.min(minSize, maximum.width)
+    }
   }
-  // Grow to the minimum first, then shrink to fit — shrinking last is what
-  // guarantees the result is inside the image.
-  const grow = Math.max(1, minSize / width, minSize / height)
-  width *= grow
-  height *= grow
-  const shrink = Math.min(1, image.width / width, image.height / height)
-  width *= shrink
-  height *= shrink
+  // Route the requested width through the same crop-value clamp as the free
+  // branch: NaN takes zero, infinities take the bound they point at. Apply the
+  // locked minimum afterwards, so a normalized zero still becomes the
+  // smallest usable on-ratio crop rather than poisoning both dimensions.
+  const width = Math.max(clamp(crop.width, 0, maximum.width), minimumWidth)
+  const height = width / ratio
   return {
     x: clamp(crop.x, 0, image.width - width),
     y: clamp(crop.y, 0, image.height - height),
@@ -133,15 +155,7 @@ export function centerFill(
   if (aspectRatio === null) {
     return { x: 0, y: 0, width: image.width, height: image.height }
   }
-  const imgRatio = image.width / image.height
-  let width: number, height: number
-  if (aspectRatio > imgRatio) {
-    width = image.width
-    height = width / aspectRatio
-  } else {
-    height = image.height
-    width = height * aspectRatio
-  }
+  const { width, height } = largestLockedSize(image, aspectRatio)
   return {
     x: (image.width - width) / 2,
     y: (image.height - height) / 2,
@@ -166,7 +180,7 @@ export function init(opts: ImageCropperInit = {}): ImageCropperState {
   // merely unserializable — it divides straight into `fitCrop` and hands the
   // whole `crop` rectangle to `NaN`.
   const image = finiteImage(opts.image)
-  const aspectRatio = finiteBound(opts.aspectRatio) ?? null
+  const aspectRatio = positiveFinite(opts.aspectRatio) ?? null
   const crop = opts.crop ?? centerFill(image, aspectRatio)
   const minSize = finiteBound(opts.minSize) ?? 20
   return {
@@ -197,6 +211,7 @@ function applyResize(
     height -= dy
     y += dy
   }
+  if (!allFiniteNumbers(x, y, width, height)) return state
   // Aspect ratio: if set, let the axis with the bigger delta drive the
   // other, keeping the handle's corner anchored.
   if (state.aspectRatio !== null) {
@@ -230,6 +245,7 @@ function applyResize(
       }
     }
   }
+  if (!allFiniteNumbers(x, y, width, height)) return state
   // Min size + fit to image, both ratio-aware: two independent minSize clamps
   // squashed a locked crop back to 1:1 the moment either axis hit the floor.
   return {
@@ -263,18 +279,13 @@ export function update(
         [],
       ]
     case 'setAspectRatio': {
-      // `null` is this bound's own spelling of "no constraint", so a
-      // non-finite ratio takes it rather than dividing into every later fit.
-      //
-      // Stated because it is the ONE place in this change where an absent bound
-      // REMOVES a constraint instead of declining to add one: on a cropper
-      // already locked to 16:9, `setAspectRatio(NaN)` unlocks it, and later
-      // `setCrop`/`dragMove` are free-form. That is the nullable idiom being
-      // consistent (the same as `setAspectRatio(null)`), and it is strictly
-      // better than the `NaN`-poisoned rectangle it replaces — but it is not
-      // the "drop the write" answer the REQUIRED bounds take, so it is a
-      // deliberate difference rather than an oversight.
-      const ratio = finiteBound(msg.ratio) ?? null
+      // A ratio is a divisor, so numeric values must be positive as well as
+      // finite. Invalid numeric updates are refused atomically; only the
+      // explicit `null` spelling removes an existing constraint (#214).
+      if (msg.ratio !== null && positiveFinite(msg.ratio) === undefined) {
+        return [state, []]
+      }
+      const ratio = msg.ratio
       return [
         {
           ...state,
@@ -288,11 +299,13 @@ export function update(
       return [{ ...state, dragging: true }, []]
     case 'dragMove': {
       if (!state.dragging) return [state, []]
+      if (!allFiniteNumbers(msg.dx, msg.dy)) return [state, []]
       const crop = {
         ...state.crop,
         x: state.crop.x + msg.dx,
         y: state.crop.y + msg.dy,
       }
+      if (!allFiniteNumbers(crop)) return [state, []]
       return [{ ...state, crop: fitCrop(crop, state.image, state.aspectRatio, state.minSize) }, []]
     }
     case 'dragEnd':
@@ -301,6 +314,7 @@ export function update(
       return [{ ...state, resizing: msg.handle }, []]
     case 'resizeMove':
       if (state.resizing === null) return [state, []]
+      if (!allFiniteNumbers(msg.dx, msg.dy)) return [state, []]
       return [applyResize(state, msg.dx, msg.dy, state.resizing), []]
     case 'resizeEnd':
       return [{ ...state, resizing: null }, []]

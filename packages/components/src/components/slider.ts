@@ -1,6 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
-import { clamp, clampToStep, finiteBound, stepBy } from '../utils/number.js'
+import { allFiniteNumbers, clamp, clampToStep, finiteBound, stepBy } from '../utils/number.js'
 
 /**
  * Slider — numeric input controlled by drag or keyboard. Supports multiple
@@ -150,6 +150,14 @@ function normalizeValues(state: SliderState, values: readonly number[]): number[
 const PROGRAMMATIC: ReadonlySet<SliderMsg['type']> = new Set(['setValue', 'setDisabled', 'setDir'])
 
 export function update(state: SliderState, msg: SliderMsg): [SliderState, never[]] {
+  if ('index' in msg && !allFiniteNumbers(msg.index)) return [state, []]
+  if (
+    (msg.type === 'increment' || msg.type === 'decrement') &&
+    msg.multiplier !== undefined &&
+    !allFiniteNumbers(msg.multiplier)
+  ) {
+    return [state, []]
+  }
   if (state.disabled && !PROGRAMMATIC.has(msg.type)) return [state, []]
   switch (msg.type) {
     case 'setValue': {

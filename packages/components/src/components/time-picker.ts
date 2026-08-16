@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { timePickerLocale } from '../locale/time-picker.js'
-import { finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
 
 /**
  * Time picker — hours and minutes input with increment/decrement buttons.
@@ -57,8 +57,13 @@ export interface TimePickerInit {
 }
 
 export function init(opts: TimePickerInit = {}): TimePickerState {
+  const value = opts.value ?? { hours: 0, minutes: 0, seconds: 0 }
   return {
-    value: opts.value ?? { hours: 0, minutes: 0, seconds: 0 },
+    value: {
+      hours: finiteOrDefault(value.hours, 0),
+      minutes: finiteOrDefault(value.minutes, 0),
+      seconds: finiteOrDefault(value.seconds, 0),
+    },
     format: opts.format ?? '24',
     // The increments every arrow/wheel adjustment is quantised by (#177).
     minuteStep: finiteBound(opts.minuteStep) ?? 1,
@@ -94,6 +99,7 @@ const PROGRAMMATIC: ReadonlySet<TimePickerMsg['type']> = new Set([
 ])
 
 export function update(state: TimePickerState, msg: TimePickerMsg): [TimePickerState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   if (state.disabled && !PROGRAMMATIC.has(msg.type)) return [state, []]
   switch (msg.type) {
     case 'setValue':

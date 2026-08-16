@@ -1,6 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
+import { allFiniteNumbers } from '../utils/number.js'
 import {
   init as fieldInit,
   type FieldState,
@@ -166,10 +167,12 @@ function applyIssues(
 }
 
 export function update(state: FormFieldState, msg: FormFieldMsg): [FormFieldState, never[]] {
+  if ('requestId' in msg && !allFiniteNumbers(msg.requestId)) return [state, []]
   switch (msg.type) {
     case 'validate': {
       const result = validateSchema(msg.schema, msg.values)
       const issues = [...result.issues]
+      if (!allFiniteNumbers(issues)) return [state, []]
       return [{ ...state, issues, fields: applyIssues(state.fields, issues) }, []]
     }
     case 'validateAsync': {
@@ -185,6 +188,7 @@ export function update(state: FormFieldState, msg: FormFieldMsg): [FormFieldStat
       return [{ ...state, validationId: msg.requestId, fields }, []]
     }
     case 'validateResult': {
+      if (!allFiniteNumbers(msg.issues)) return [state, []]
       // Drop responses from superseded validations (stale-response protection):
       // an earlier, slower validation must never overwrite a newer result.
       if (msg.requestId !== state.validationId) return [state, []]

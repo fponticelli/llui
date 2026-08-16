@@ -2,7 +2,12 @@ import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { paginationLocale } from '../locale/pagination.js'
 import { flipArrow, type TextDirection } from '../utils/direction.js'
-import { finiteBound } from '../utils/number.js'
+import {
+  allFiniteNumbers,
+  finiteBound,
+  finiteOrDefault,
+  positiveFiniteOrDefault,
+} from '../utils/number.js'
 
 /**
  * Pagination — page navigation with ellipses for large ranges.
@@ -50,12 +55,12 @@ export interface PaginationInit {
 
 export function init(opts: PaginationInit = {}): PaginationState {
   return {
-    page: opts.page ?? 1,
+    page: finiteOrDefault(opts.page, 1),
     // `pageSize`/`total` are the bounds every page number is computed against
     // — `Math.ceil(total / pageSize)` — so a non-finite one is not merely
     // unserializable, it propagates straight into `page` (#177). `siblings`/
     // `boundaries` bound the rendered window the same way.
-    pageSize: finiteBound(opts.pageSize) ?? 10,
+    pageSize: positiveFiniteOrDefault(opts.pageSize, 10),
     total: finiteBound(opts.total) ?? 0,
     siblings: finiteBound(opts.siblings) ?? 1,
     boundaries: finiteBound(opts.boundaries) ?? 1,
@@ -66,7 +71,13 @@ export function init(opts: PaginationInit = {}): PaginationState {
 
 export function totalPages(state: PaginationState): number {
   if (state.pageSize <= 0 || state.total <= 0) return 0
-  return Math.max(1, Math.ceil(state.total / state.pageSize))
+  const quotient = state.total / state.pageSize
+  return Number.isFinite(quotient) ? Math.max(1, Math.ceil(quotient)) : Number.MAX_VALUE
+}
+
+function finiteArithmeticResult(value: number): number {
+  if (Number.isFinite(value)) return value
+  return value < 0 ? -Number.MAX_VALUE : Number.MAX_VALUE
 }
 
 function clampPage(page: number, total: number): number {
@@ -81,6 +92,7 @@ export function update(state: PaginationState, msg: PaginationMsg): [PaginationS
   const pages = totalPages(state)
   switch (msg.type) {
     case 'goTo':
+      if (!allFiniteNumbers(msg.page)) return [state, []]
       return [{ ...state, page: clampPage(msg.page, pages) }, []]
     case 'next':
       return [{ ...state, page: clampPage(state.page + 1, pages) }, []]
@@ -95,17 +107,17 @@ export function update(state: PaginationState, msg: PaginationMsg): [PaginationS
     // put `NaN` in two fields at once (#177).
     case 'setPageSize': {
       const pageSize = finiteBound(msg.pageSize)
-      if (pageSize === undefined) return [state, []]
+      if (pageSize === undefined || pageSize <= 0) return [state, []]
       // Preserve first visible item when pageSize changes
-      const firstItem = (state.page - 1) * state.pageSize
-      const nextPage = Math.floor(firstItem / pageSize) + 1
-      const nextPages = Math.max(1, Math.ceil(state.total / pageSize))
+      const firstItem = finiteArithmeticResult((state.page - 1) * state.pageSize)
+      const nextPage = finiteArithmeticResult(Math.floor(firstItem / pageSize) + 1)
+      const nextPages = totalPages({ ...state, pageSize })
       return [{ ...state, pageSize, page: Math.min(nextPage, nextPages) }, []]
     }
     case 'setTotal': {
       const total = finiteBound(msg.total)
       if (total === undefined) return [state, []]
-      const nextPages = Math.max(1, Math.ceil(total / state.pageSize))
+      const nextPages = totalPages({ ...state, total })
       return [{ ...state, total, page: Math.min(state.page, nextPages) }, []]
     }
   }

@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { timerLocale } from '../locale/timer.js'
-import { finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
 
 /**
  * Timer — counts elapsed time up from zero, or down from a configured
@@ -72,7 +72,7 @@ export function init(opts: TimerInit = {}): TimerState {
     // is written straight into `elapsedMs` when it is reached — so a
     // non-finite one is unserializable in two fields (#177).
     targetMs: finiteBound(opts.targetMs) ?? 0,
-    elapsedMs: opts.elapsedMs ?? 0,
+    elapsedMs: finiteOrDefault(opts.elapsedMs, 0),
     startedAt: null,
   }
 }
@@ -81,17 +81,22 @@ export function update(state: TimerState, msg: TimerMsg): [TimerState, never[]] 
   switch (msg.type) {
     case 'start':
       if (state.running) return [state, []]
+      if (!allFiniteNumbers(msg.now)) return [state, []]
       return [{ ...state, running: true, startedAt: msg.now }, []]
     case 'pause': {
       if (!state.running || state.startedAt === null) return [state, []]
+      if (!allFiniteNumbers(msg.now)) return [state, []]
       const elapsed = state.elapsedMs + (msg.now - state.startedAt)
+      if (!Number.isFinite(elapsed)) return [state, []]
       return [{ ...state, running: false, elapsedMs: elapsed, startedAt: null }, []]
     }
     case 'reset':
       return [{ ...state, running: false, elapsedMs: 0, startedAt: null }, []]
     case 'tick': {
       if (!state.running || state.startedAt === null) return [state, []]
+      if (!allFiniteNumbers(msg.now)) return [state, []]
       const elapsed = state.elapsedMs + (msg.now - state.startedAt)
+      if (!Number.isFinite(elapsed)) return [state, []]
       // Countdown: auto-stop at target.
       if (state.direction === 'down' && state.targetMs > 0 && elapsed >= state.targetMs) {
         return [{ ...state, running: false, elapsedMs: state.targetMs, startedAt: null }, []]

@@ -68,6 +68,48 @@ export function finiteBound(raw: number | null | undefined): number | undefined 
 }
 
 /**
+ * A component-owned number that has no range to clamp into. Initialization
+ * replaces an unusable input with the field's ordinary default; runtime
+ * reducers use {@link allFiniteNumbers} to refuse the whole message instead.
+ * Keeping those two policies here prevents a free position or timestamp from
+ * accidentally inheriting either the grid-value policy (`clamp`) or the
+ * optional-bound policy (`finiteBound`).
+ */
+export function finiteOrDefault(raw: number | null | undefined, fallback: number): number {
+  return finiteBound(raw) ?? fallback
+}
+
+/** A finite number strictly greater than zero, or `undefined` when unusable. */
+export function positiveFinite(raw: number | null | undefined): number | undefined {
+  const value = finiteBound(raw)
+  return value !== undefined && value > 0 ? value : undefined
+}
+
+/** A positive finite number, or the field's ordinary initialization default. */
+export function positiveFiniteOrDefault(raw: number | null | undefined, fallback: number): number {
+  return positiveFinite(raw) ?? fallback
+}
+
+/**
+ * Whether every number nested in one atomic runtime payload is usable.
+ * Non-numeric leaves are ignored; arrays and plain payload objects are walked
+ * so callers cannot accidentally validate one coordinate while committing a
+ * bad sibling. Cycles are harmless because an already-seen object contains no
+ * new numeric leaves.
+ */
+export function allFiniteNumbers(...values: readonly unknown[]): boolean {
+  const seen = new WeakSet<object>()
+  const visit = (value: unknown): boolean => {
+    if (typeof value === 'number') return Number.isFinite(value)
+    if (value === null || typeof value !== 'object') return true
+    if (seen.has(value)) return true
+    seen.add(value)
+    return Object.values(value).every(visit)
+  }
+  return values.every(visit)
+}
+
+/**
  * Slack for the float division `(value - origin) / step`: 10/0.1 is not exactly
  * 100 in IEEE-754, and without it the last grid value below `max` is dropped.
  */

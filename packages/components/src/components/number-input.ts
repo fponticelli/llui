@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { numberInputLocale } from '../locale/number-input.js'
-import { clampToStep, finiteBound, stepBy } from '../utils/number.js'
+import { allFiniteNumbers, clampToStep, finiteBound, stepBy } from '../utils/number.js'
 
 /**
  * Number input — numeric field with increment/decrement buttons. Clamps
@@ -127,6 +127,13 @@ function atMin(state: NumberInputState): boolean {
 const PROGRAMMATIC: ReadonlySet<NumberInputMsg['type']> = new Set(['setValue', 'setDisabled'])
 
 export function update(state: NumberInputState, msg: NumberInputMsg): [NumberInputState, never[]] {
+  if (
+    (msg.type === 'increment' || msg.type === 'decrement') &&
+    msg.multiplier !== undefined &&
+    !allFiniteNumbers(msg.multiplier)
+  ) {
+    return [state, []]
+  }
   if ((state.disabled || state.readonly) && !PROGRAMMATIC.has(msg.type)) {
     return [state, []]
   }

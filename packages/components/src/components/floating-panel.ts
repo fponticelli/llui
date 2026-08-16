@@ -1,7 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { floatingPanelLocale } from '../locale/floating-panel.js'
-import { clamp, finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, clamp, finiteBound, finiteOrDefault } from '../utils/number.js'
 
 /**
  * Floating panel — a draggable + resizable window-like surface, useful
@@ -103,8 +103,14 @@ function finiteSize(
 
 export function init(opts: FloatingPanelInit = {}): FloatingPanelState {
   return {
-    position: opts.position ?? { x: 100, y: 100 },
-    size: opts.size ?? { width: 400, height: 300 },
+    position: {
+      x: finiteOrDefault(opts.position?.x, 100),
+      y: finiteOrDefault(opts.position?.y, 100),
+    },
+    size: {
+      width: finiteOrDefault(opts.size?.width, 400),
+      height: finiteOrDefault(opts.size?.height, 300),
+    },
     // Both size bounds are normalised per AXIS (#177): `minSize` is required,
     // so an unusable dimension takes the default, while `maxSize` is
     // unbounded-capable, so an unusable dimension is simply omitted — the same
@@ -157,10 +163,12 @@ function applyResize(
     height -= dy
     y += dy
   }
+  if (!allFiniteNumbers(x, y, width, height)) return state
   const size = clampSize(width, height, state.minSize, state.maxSize)
   // If clamping changed width/height, undo the x/y shift by that delta.
   if (handle.includes('w')) x += width - size.width
   if (handle.includes('n')) y += height - size.height
+  if (!allFiniteNumbers(x, y, size)) return state
   return { ...state, position: { x, y }, size }
 }
 
@@ -221,6 +229,10 @@ export function update(
       return [{ ...state, dragging: true }, []]
     case 'dragMove':
       if (!state.dragging) return [state, []]
+      if (!allFiniteNumbers(msg.dx, msg.dy)) return [state, []]
+      if (!allFiniteNumbers(state.position.x + msg.dx, state.position.y + msg.dy)) {
+        return [state, []]
+      }
       return [
         {
           ...state,
@@ -238,12 +250,15 @@ export function update(
       return [{ ...state, resizing: msg.handle }, []]
     case 'resizeMove':
       if (state.resizing === null) return [state, []]
+      if (!allFiniteNumbers(msg.dx, msg.dy)) return [state, []]
       return [applyResize(state, msg.dx, msg.dy, state.resizing), []]
     case 'resizeEnd':
       return [{ ...state, resizing: null }, []]
     case 'setPosition':
+      if (!allFiniteNumbers(msg.x, msg.y)) return [state, []]
       return [{ ...state, position: { x: msg.x, y: msg.y } }, []]
     case 'setSize': {
+      if (!allFiniteNumbers(msg.width, msg.height)) return [state, []]
       const size = clampSize(msg.width, msg.height, state.minSize, state.maxSize)
       return [{ ...state, size }, []]
     }

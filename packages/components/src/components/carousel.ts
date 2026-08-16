@@ -2,7 +2,7 @@ import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { carouselLocale } from '../locale/carousel.js'
 import { flipArrow } from '../utils/direction.js'
-import { finiteBound } from '../utils/number.js'
+import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
 
 /**
  * Carousel — sliding content viewer with pagination. Tracks active slide
@@ -133,7 +133,7 @@ export interface CarouselInit {
 
 export function init(opts: CarouselInit = {}): CarouselState {
   return {
-    current: opts.current ?? 0,
+    current: finiteOrDefault(opts.current, 0),
     // `count` is the bound every index is clamped into, `interval` and
     // `swipeThreshold` the thresholds autoplay and a swipe are measured
     // against: a non-finite one is unserializable and `clampIndex` would carry
@@ -177,6 +177,7 @@ export function swipeDecision(state: CarouselState): 'prev' | 'next' | 'snap' {
 function reduce(state: CarouselState, msg: CarouselMsg): CarouselState {
   switch (msg.type) {
     case 'goTo': {
+      if (!allFiniteNumbers(msg.index)) return state
       const next = clampIndex(state, msg.index)
       return { ...state, current: next, direction: next >= state.current ? 'forward' : 'backward' }
     }
@@ -204,10 +205,13 @@ function reduce(state: CarouselState, msg: CarouselMsg): CarouselState {
     case 'setAutoplay':
       return { ...state, autoplay: msg.autoplay }
     case 'dragStart':
+      if (!allFiniteNumbers(msg.x)) return state
       return { ...state, dragging: { startX: msg.x, deltaX: 0 } }
     case 'dragMove': {
       if (!state.dragging) return state
+      if (!allFiniteNumbers(msg.x)) return state
       const deltaX = msg.x - state.dragging.startX
+      if (!Number.isFinite(deltaX)) return state
       if (deltaX === state.dragging.deltaX) return state
       return { ...state, dragging: { ...state.dragging, deltaX } }
     }

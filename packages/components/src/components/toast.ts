@@ -1,5 +1,6 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
+import { allFiniteNumbers } from '../utils/number.js'
 import { toastLocale } from '../locale/toast.js'
 import { presenceEndProps } from '../utils/presence-end.js'
 import { finiteBound } from '../utils/number.js'
@@ -153,6 +154,7 @@ function closeToasts(state: ToasterState, match: (t: Toast) => boolean): Toaster
 }
 
 export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, never[]] {
+  if (!allFiniteNumbers(msg)) return [state, []]
   switch (msg.type) {
     case 'create': {
       const { remainingMs, paused, status, ...rest } = msg.toast
@@ -196,6 +198,7 @@ export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, nev
         return [state, []]
       }
       const remainingMs = target.remainingMs - msg.elapsedMs
+      if (!Number.isFinite(remainingMs)) return [state, []]
       // Reducer owns expiry: dismiss self once the countdown is spent (moves to
       // `'closing'` when animated, removes synchronously otherwise).
       if (remainingMs <= 0) {
