@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { getFocusables, isFocusable } from '../src/index'
 
-/** A non-empty DOMRect list, as a laid-out browser box reports. */
-function rectList(): DOMRectList {
-  const rect = { x: 0, y: 0, width: 10, height: 10, top: 0, left: 0, right: 10, bottom: 10 }
-  return [rect] as unknown as DOMRectList
+/** Stub the only getClientRects signal that focusability observes. */
+function stubClientRectCount(element: HTMLElement, length: number): void {
+  Object.defineProperty(element, 'getClientRects', {
+    configurable: true,
+    value: () => ({ length }),
+  })
 }
-
-const emptyRectList = [] as unknown as DOMRectList
 
 function elementFrom(html: string): HTMLElement {
   const wrapper = document.createElement('div')
@@ -18,7 +18,7 @@ function elementFrom(html: string): HTMLElement {
 describe('focusability', () => {
   afterEach(() => {
     document.body.innerHTML = ''
-    delete (document.body as unknown as Record<string, unknown>).getClientRects
+    Reflect.deleteProperty(document.body, 'getClientRects')
   })
 
   it('excludes natively focusable elements with a negative tabindex', () => {
@@ -50,19 +50,13 @@ describe('focusability', () => {
       </div>
     `)
     document.body.append(container)
-    Object.defineProperty(document.body, 'getClientRects', {
-      configurable: true,
-      value: () => rectList(),
-    })
+    stubClientRectCount(document.body, 1)
     for (const candidate of container.querySelectorAll<HTMLElement>('*')) {
       Object.defineProperty(candidate, 'offsetParent', {
         configurable: true,
         get: () => (candidate.id === 'invisible' ? null : document.body),
       })
-      Object.defineProperty(candidate, 'getClientRects', {
-        configurable: true,
-        value: () => (candidate.id === 'invisible' ? emptyRectList : rectList()),
-      })
+      stubClientRectCount(candidate, candidate.id === 'invisible' ? 0 : 1)
     }
 
     const focusables = getFocusables(container)
