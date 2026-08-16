@@ -193,6 +193,32 @@ describe('connected named routes', () => {
     mounted.dispose()
   })
 
+  it('emits unmatched when a codec formatter cannot reproduce the matched value', () => {
+    const decimalSchema: StandardSchemaV1<string, number> = {
+      '~standard': {
+        version: 1,
+        vendor: 'lossy-fixture',
+        validate: (value) =>
+          typeof value === 'string' && Number.isFinite(Number(value))
+            ? { value: Number(value) }
+            : { issues: [{ message: 'number required' }] },
+      },
+    }
+    const lossy = routeCodec(decimalSchema, (value) => String(Math.trunc(value)))
+    const env = new TestEnv('#/values/1.5')
+    const routing = connectRouter(
+      createRouter({ value: route('/values/:value', { params: { value: lossy } }) }),
+      { env },
+    )
+    env.writes.length = 0
+    const send = vi.fn()
+    const mounted = mountListener(routing.listener(send))
+    env.emit('popstate')
+    expect(send).toHaveBeenCalledWith({ type: 'unmatched', url: '#/values/1.5' })
+    expect(env.writes).toEqual([])
+    mounted.dispose()
+  })
+
   it('uses configurable navigation and unmatched messages at every connector boundary', () => {
     const env = new TestEnv('#/users/%ZZ')
     const routing = connectRouter(createRouter(registry), {

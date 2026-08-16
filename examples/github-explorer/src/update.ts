@@ -1,4 +1,14 @@
-import type { State, Msg, Effect, Page, Repo, TreeEntry, FileContent, Issue } from './types'
+import type {
+  State,
+  Msg,
+  Effect,
+  Page,
+  Repo,
+  TreeEntry,
+  FileContent,
+  Issue,
+  ApiError,
+} from './types'
 import type { Location } from './router'
 import { http, cancel, debounce } from '@llui/effects'
 import {
@@ -165,7 +175,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     case 'apiError':
       // Only set failure if data hasn't already loaded successfully
       if (state.page.data.type !== 'success') {
-        return [setPageData(state, { type: 'failure', error: msg.error }), []]
+        return [setPageFailure(state, msg.error), []]
       }
       return [state, []]
 
@@ -176,7 +186,7 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
     case 'contentsError':
       // Contents error on an otherwise loaded page — don't destroy repo data
       if (state.page.data.type === 'success') return [state, []]
-      return [setPageData(state, { type: 'failure', error: msg.error }), []]
+      return [setPageFailure(state, msg.error), []]
 
     case 'nextPage':
       return changePage(state, 1)
@@ -297,8 +307,16 @@ export function pageForLocation(location: Location): Page {
 
 // ── State update helpers ─────────────────────────────────────────
 
-function setPageData(state: State, data: { type: string; [k: string]: unknown }): State {
-  return { ...state, page: { ...state.page, data } as Page }
+function setPageFailure(state: State, error: ApiError): State {
+  const data = { type: 'failure' as const, error }
+  switch (state.page.page) {
+    case 'notFound':
+      return state
+    case 'search':
+    case 'repo':
+    case 'tree':
+      return { ...state, page: { ...state.page, data } }
+  }
 }
 
 function withRepoLoaded(state: State, repo: Repo): [State, Effect[]] {

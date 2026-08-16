@@ -76,11 +76,11 @@ function renderCode(el: Element, { content, filename }: FileProps): void {
  * be awkward with declarative bindings (building a table of numbered
  * lines from a string that changes when navigating between files).
  */
-export function codeView(routeSig: Signal<Page>): Renderable {
+export function codeView(pageSignal: Signal<Page>): Renderable {
   return [
     foreign<Element, { props: Signal<FileProps> }>({
       tag: 'div',
-      state: { props: routeSig.map(fileProps) },
+      state: { props: pageSignal.map(fileProps) },
       mount: ({ el, state: sig }) => {
         el.className = 'code-viewer'
         // bind fires immediately with the current value, then on every change

@@ -43,17 +43,19 @@ function currentPage(r: Page): number {
   return r.page === 'search' ? r.p : 1
 }
 
-export function searchView(route: Signal<Page>, send: Send<Msg>): Renderable {
+export function searchView(pageSignal: Signal<Page>, send: Send<Msg>): Renderable {
   return [
     div({ class: 'container' }, [
       // Error
       branch(
-        route.map((r) => (r.page === 'search' && r.data.type === 'failure' ? 'error' : 'ok')),
+        pageSignal.map((page) =>
+          page.page === 'search' && page.data.type === 'failure' ? 'error' : 'ok',
+        ),
         {
           error: () => [
             div({ class: 'error' }, [
               text(
-                route.map((r) => {
+                pageSignal.map((r) => {
                   if (r.page !== 'search' || r.data.type !== 'failure') return ''
                   const err = r.data.error
                   if (err.kind === 'ratelimit')
@@ -69,7 +71,7 @@ export function searchView(route: Signal<Page>, send: Send<Msg>): Renderable {
       ),
       // Content
       branch(
-        route.map((r) => {
+        pageSignal.map((r) => {
           if (r.page !== 'search') return 'welcome'
           if (r.data.type === 'idle') return 'welcome'
           if (r.data.type === 'loading' && !r.data.stale) return 'loading'
@@ -86,7 +88,7 @@ export function searchView(route: Signal<Page>, send: Send<Msg>): Renderable {
           results: () => [
             ul({ class: 'repo-list' }, [
               each(
-                route.map((r) => searchRepos(r)),
+                pageSignal.map((r) => searchRepos(r)),
                 {
                   key: (r) => r.id,
                   render: (item) => [repoItem(item, send)],
@@ -96,13 +98,13 @@ export function searchView(route: Signal<Page>, send: Send<Msg>): Renderable {
             div({ class: 'pagination' }, [
               button(
                 {
-                  disabled: route.map((r) => currentPage(r) <= 1),
+                  disabled: pageSignal.map((r) => currentPage(r) <= 1),
                   onClick: () => send({ type: 'prevPage' }),
                 },
                 [text('← Previous')],
               ),
               text(
-                route.map((r) => {
+                pageSignal.map((r) => {
                   const total = searchTotal(r)
                   if (total <= 10) return ''
                   return ` Page ${currentPage(r)} of ${Math.ceil(total / 10)} `
@@ -110,7 +112,7 @@ export function searchView(route: Signal<Page>, send: Send<Msg>): Renderable {
               ),
               button(
                 {
-                  disabled: route.map((r) => currentPage(r) * 10 >= searchTotal(r)),
+                  disabled: pageSignal.map((r) => currentPage(r) * 10 >= searchTotal(r)),
                   onClick: () => send({ type: 'nextPage' }),
                 },
                 [text('Next →')],

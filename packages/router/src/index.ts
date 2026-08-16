@@ -85,13 +85,19 @@ type NormalizedParams<
   Params extends CodecMap,
   Query extends CodecMap,
   Defaults extends Partial<ParameterValues<Path, Params, Query>>,
-> = {
-  [Name in keyof ParameterValues<Path, Params, Query>]: Name extends keyof Defaults
-    ? ParameterValues<Path, Params, Query>[Name]
-    : Name extends OptionalPathNames<Path> | keyof Query
-      ? ParameterValues<Path, Params, Query>[Name] | undefined
-      : ParameterValues<Path, Params, Query>[Name]
-}
+> = Simplify<
+  {
+    [Name in Exclude<
+      keyof ParameterValues<Path, Params, Query>,
+      Exclude<OptionalPathNames<Path> | keyof Query, keyof Defaults>
+    >]: ParameterValues<Path, Params, Query>[Name]
+  } & {
+    [Name in Extract<
+      keyof ParameterValues<Path, Params, Query>,
+      Exclude<OptionalPathNames<Path> | keyof Query, keyof Defaults>
+    >]?: ParameterValues<Path, Params, Query>[Name]
+  }
+>
 
 type OptionalGenerationNames<
   Path extends string,
@@ -616,13 +622,7 @@ function assertSerializableRouteValue(
   context: string,
   active = new WeakSet<object>(),
 ): void {
-  if (
-    value === undefined ||
-    value === null ||
-    typeof value === 'string' ||
-    typeof value === 'boolean'
-  )
-    return
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return
   if (typeof value === 'number') {
     if (Number.isFinite(value)) return
     throw new TypeError(
@@ -857,9 +857,8 @@ export function createRouter<const Registry extends RouteRegistry>(
           continue
         }
         if (raw === undefined) {
-          normalized[segment.name] = Object.hasOwn(definition.defaults, segment.name)
-            ? cloneRouteValue(definition.defaults[segment.name])
-            : undefined
+          if (Object.hasOwn(definition.defaults, segment.name))
+            normalized[segment.name] = cloneRouteValue(definition.defaults[segment.name])
           continue
         }
         const codec =
@@ -877,6 +876,14 @@ export function createRouter<const Registry extends RouteRegistry>(
           result.value,
           `codec "${segment.name}" in route "${candidate.compiled.name}"`,
         )
+        const formatted = (codec.format as (input: unknown) => string | readonly string[])(
+          result.value,
+        )
+        const roundTrip = validate(codec.schema as AnySchema, formatted)
+        if (!roundTrip.ok || !valuesEqual(roundTrip.value, result.value)) {
+          valid = false
+          break
+        }
         normalized[segment.name] = result.value
       }
       if (!valid) continue
@@ -884,9 +891,8 @@ export function createRouter<const Registry extends RouteRegistry>(
       for (const [key, codec] of Object.entries(definition.query)) {
         const raw = parsedQuery.get(key)
         if (raw === undefined) {
-          normalized[key] = Object.hasOwn(definition.defaults, key)
-            ? cloneRouteValue(definition.defaults[key])
-            : undefined
+          if (Object.hasOwn(definition.defaults, key))
+            normalized[key] = cloneRouteValue(definition.defaults[key])
           continue
         }
         if (!codec.multiple && raw.length !== 1) {
@@ -902,6 +908,14 @@ export function createRouter<const Registry extends RouteRegistry>(
           result.value,
           `codec "${key}" in route "${candidate.compiled.name}"`,
         )
+        const formatted = (codec.format as (input: unknown) => string | readonly string[])(
+          result.value,
+        )
+        const roundTrip = validate(codec.schema as AnySchema, formatted)
+        if (!roundTrip.ok || !valuesEqual(roundTrip.value, result.value)) {
+          valid = false
+          break
+        }
         normalized[key] = result.value
       }
       if (!valid) continue
@@ -935,7 +949,7 @@ export function createRouter<const Registry extends RouteRegistry>(
     const definition = compiledDefinition.definition
     const params: Record<string, unknown> = { ...definition.defaults }
     for (const [key, value] of Object.entries(input ?? {})) {
-      if (value !== undefined || !Object.hasOwn(definition.defaults, key)) params[key] = value
+      if (value !== undefined) params[key] = value
     }
     const parts: string[] = []
     for (const segment of compiledDefinition.segments) {
@@ -944,7 +958,8 @@ export function createRouter<const Registry extends RouteRegistry>(
         continue
       }
       const value = params[segment.name]
-      assertSerializableRouteValue(value, `parameter "${segment.name}" for route "${name}"`)
+      if (value !== undefined)
+        assertSerializableRouteValue(value, `parameter "${segment.name}" for route "${name}"`)
       if (
         segment.kind === 'rest' &&
         Object.hasOwn(definition.defaults, segment.name) &&
@@ -984,7 +999,8 @@ export function createRouter<const Registry extends RouteRegistry>(
     const search = new URLSearchParams()
     for (const [key, codec] of Object.entries(definition.query)) {
       const value = params[key]
-      assertSerializableRouteValue(value, `parameter "${key}" for route "${name}"`)
+      if (value !== undefined)
+        assertSerializableRouteValue(value, `parameter "${key}" for route "${name}"`)
       if (value === undefined || valuesEqual(value, definition.defaults[key])) continue
       const formatted = (codec.format as (input: unknown) => string | readonly string[])(value)
       if (codec.multiple) {
@@ -1013,20 +1029,18 @@ export function createRouter<const Registry extends RouteRegistry>(
     const expected: Record<string, unknown> = {}
     for (const segment of compiledDefinition.segments) {
       if (segment.kind === 'static') continue
-      expected[segment.name] =
-        Object.hasOwn(params ?? {}, segment.name) && params?.[segment.name] !== undefined
-          ? cloneRouteValue(params?.[segment.name])
-          : Object.hasOwn(compiledDefinition.definition.defaults, segment.name)
-            ? cloneRouteValue(compiledDefinition.definition.defaults[segment.name])
-            : undefined
+      if (Object.hasOwn(params ?? {}, segment.name) && params?.[segment.name] !== undefined)
+        expected[segment.name] = cloneRouteValue(params?.[segment.name])
+      else if (Object.hasOwn(compiledDefinition.definition.defaults, segment.name))
+        expected[segment.name] = cloneRouteValue(
+          compiledDefinition.definition.defaults[segment.name],
+        )
     }
     for (const key of Object.keys(compiledDefinition.definition.query)) {
-      expected[key] =
-        Object.hasOwn(params ?? {}, key) && params?.[key] !== undefined
-          ? cloneRouteValue(params?.[key])
-          : Object.hasOwn(compiledDefinition.definition.defaults, key)
-            ? cloneRouteValue(compiledDefinition.definition.defaults[key])
-            : undefined
+      if (Object.hasOwn(params ?? {}, key) && params?.[key] !== undefined)
+        expected[key] = cloneRouteValue(params?.[key])
+      else if (Object.hasOwn(compiledDefinition.definition.defaults, key))
+        expected[key] = cloneRouteValue(compiledDefinition.definition.defaults[key])
     }
     if (matched === null || matched.name !== name || !valuesEqual(matched.params, expected)) {
       throw new TypeError(

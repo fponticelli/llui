@@ -296,6 +296,16 @@ describe('named route locations', () => {
     const lossy = createRouter({ value: route('/value/:value', { params: { value: decimal } }) })
 
     expect(() => lossy.href('value', { value: 1.5 })).toThrow(/round-trip|valid location/i)
+    expect(lossy.match('/value/1.5')).toBeNull()
+  })
+
+  it('returns route locations that survive an exact JSON round-trip', () => {
+    const optional = createRouter({
+      docs: route('/docs/:language?', { query: { tags } }),
+    })
+    const location = optional.match('/docs')
+    expect(location).toEqual({ name: 'docs', params: {} })
+    expect(JSON.parse(JSON.stringify(location))).toEqual(location)
   })
 
   it('normalizes and omits built-in and custom rest defaults', () => {
