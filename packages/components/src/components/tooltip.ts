@@ -308,8 +308,11 @@ export function overlay(opts: OverlayOptions): Mountable {
     positioner: opts.parts.positioner,
     content: opts.content,
     contentId: opts.parts.content.id,
-    anchorId: opts.parts.trigger.id,
-    requireAnchor: true,
+    relationships: {
+      placementAnchor: { id: opts.parts.trigger.id },
+      nestedLayerOwner: { id: opts.parts.trigger.id },
+      dismissIgnore: [{ id: opts.parts.trigger.id }],
+    },
     mountWhen: isMounted,
     onDismiss: () => opts.send({ type: 'hide' }),
     floating: {

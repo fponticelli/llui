@@ -20,7 +20,7 @@ describe('nested-layer registry', () => {
   it('registers and resolves an element, cleanup removes it', () => {
     const el = document.createElement('div')
     document.body.append(el)
-    const cleanup = registerNestedLayer(el)
+    const cleanup = registerNestedLayer(el, { owner: el })
     expect(getNestedLayers()).toEqual([el])
     expect(isInNestedLayer(el)).toBe(true)
     cleanup()
@@ -32,7 +32,7 @@ describe('nested-layer registry', () => {
     let open = false
     const el = document.createElement('div')
     document.body.append(el)
-    const cleanup = registerNestedLayer(() => (open ? [el] : []))
+    const cleanup = registerNestedLayer(() => (open ? [el] : []), { owner: el })
     expect(getNestedLayers()).toEqual([]) // closed
     open = true
     expect(getNestedLayers()).toEqual([el]) // opened, no re-registration
@@ -42,7 +42,7 @@ describe('nested-layer registry', () => {
   it('a registration with no aspects participates in all three', () => {
     const el = document.createElement('div')
     document.body.append(el)
-    const cleanup = registerNestedLayer(el)
+    const cleanup = registerNestedLayer(el, { owner: el })
     for (const aspect of ALL_NESTED_LAYER_ASPECTS) {
       expect(getNestedLayers(aspect)).toEqual([el])
       expect(isInNestedLayer(el, aspect)).toBe(true)
@@ -53,7 +53,7 @@ describe('nested-layer registry', () => {
   it('a narrowed registration is invisible to the aspects it did not name', () => {
     const el = document.createElement('div')
     document.body.append(el)
-    const cleanup = registerNestedLayer(el, { aspects: ['focus', 'hide'] })
+    const cleanup = registerNestedLayer(el, { owner: el, aspects: ['focus', 'hide'] })
     expect(getNestedLayers('focus')).toEqual([el])
     expect(getNestedLayers('hide')).toEqual([el])
     expect(getNestedLayers('outside')).toEqual([])
@@ -68,7 +68,7 @@ describe('nested-layer registry', () => {
     const child = document.createElement('button')
     root.append(child)
     document.body.append(root)
-    const cleanup = registerNestedLayer(root)
+    const cleanup = registerNestedLayer(root, { owner: root })
     expect(isInNestedLayer(child)).toBe(true)
     cleanup()
   })
@@ -173,15 +173,21 @@ describe('nested layer scoping (per-layer registry, #171)', () => {
     deepReg()
   })
 
-  it('an UNOWNED registration keeps the flat answer (documented fallback)', () => {
+  it('an UNOWNED registration fails closed and warns instead of becoming globally nested', () => {
     const { dialogContent, portal } = scene()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const cleanup = registerNestedLayer(portal)
-    // No owner → not attributable to any layer → exempt from whoever asks.
-    expect(getNestedLayers('focus', dialogContent)).toEqual([portal])
+    expect(getNestedLayers('focus', dialogContent)).toEqual([])
+    expect(warn).toHaveBeenCalledOnce()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('owner'))
+    // The warning is one-per-registration, rather than once per key/focus event.
+    getNestedLayers('focus', dialogContent)
+    expect(warn).toHaveBeenCalledOnce()
     cleanup()
+    warn.mockRestore()
   })
 
-  it('an owner that no longer resolves is not nested anywhere', () => {
+  it('an owner that no longer resolves warns and is not nested anywhere', () => {
     const { dialogContent, portal } = scene()
     let live = true
     const owner = document.createElement('button')
@@ -189,8 +195,31 @@ describe('nested layer scoping (per-layer registry, #171)', () => {
     const cleanup = registerNestedLayer(portal, { owner: () => (live ? owner : null) })
     expect(getNestedLayers('focus', dialogContent)).toEqual([portal])
     live = false
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     expect(getNestedLayers('focus', dialogContent)).toEqual([])
+    expect(warn).toHaveBeenCalledOnce()
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('did not resolve'))
     cleanup()
+    warn.mockRestore()
+  })
+
+  it('descendants of an unowned layer do not become globally nested', () => {
+    const { dialogContent, portal } = scene()
+    const childOwner = document.createElement('button')
+    const childPortal = document.createElement('div')
+    portal.append(childOwner)
+    document.body.append(childPortal)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const outerReg = registerNestedLayer(portal)
+    const childReg = registerNestedLayer(childPortal, { owner: childOwner })
+
+    expect(getNestedLayers('focus', dialogContent)).toEqual([])
+    expect(warn).toHaveBeenCalledOnce()
+
+    childReg()
+    outerReg()
+    warn.mockRestore()
   })
 
   it('scoping composes with the aspect filter rather than replacing it', () => {
@@ -217,7 +246,7 @@ describe('nested layer ↔ interact-outside / dismissable', () => {
 
     const onInteractOutside = vi.fn()
     const stopWatch = watchInteractOutside({ element: content, onInteractOutside })
-    const unregister = registerNestedLayer(toolbar)
+    const unregister = registerNestedLayer(toolbar, { owner: content })
 
     boldBtn.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     expect(onInteractOutside).not.toHaveBeenCalled()
@@ -283,7 +312,7 @@ describe('nested layer ↔ interact-outside / dismissable', () => {
       ignore: () => [trigger],
       onDismiss,
     })
-    const unregister = registerNestedLayer(toolbar)
+    const unregister = registerNestedLayer(toolbar, { owner: content })
 
     boldBtn.dispatchEvent(new Event('pointerdown', { bubbles: true }))
     expect(onDismiss).not.toHaveBeenCalled()
@@ -307,7 +336,7 @@ describe('nested layer ↔ aria-hidden', () => {
     const plain = document.createElement('div')
     document.body.append(positioner, toolbar, plain)
 
-    const unregister = registerNestedLayer(toolbar)
+    const unregister = registerNestedLayer(toolbar, { owner: content })
     const cleanup = setAriaHiddenOutside(content)
 
     expect(toolbar.hasAttribute('inert')).toBe(false)
@@ -354,7 +383,7 @@ describe('nested layer ↔ focus-trap', () => {
     toolbar.append(toolbarBtn)
     document.body.append(content, toolbar)
 
-    const unregister = registerNestedLayer(toolbar)
+    const unregister = registerNestedLayer(toolbar, { owner: content })
     const release = pushFocusTrap({ container: content, restoreFocus: false })
 
     // Focus the last focusable of the base container; Tab should wrap to the

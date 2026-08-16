@@ -67,32 +67,17 @@ import { resolveElements, isInAnyElement, type ElementSource } from './dom.js'
  * floating toolbar, the registry's original caller — wants all three, which is
  * why omitting `aspects` means all three.
  *
- * ## Two limits, both deliberate
+ * ## Ownership fails closed
  *
- * **An UNOWNED registration is still flat, and that is #171 UNFIXED for it.**
- * `owner` is optional, and a registration without one cannot be attributed to
- * any layer — so it falls back to the legacy answer and counts as nested inside
- * whoever asks. State the cost concretely rather than as "the flat answer": the
- * layer is exempt from EVERY modal on the page, so a modal opened over it leaves
- * it un-`aria-hidden`, un-`inert` and Tab-reachable from inside the modal —
- * #171's headline symptom, verbatim. It also AMPLIFIES: an unowned provider's
- * elements join the frontier in {@link Lookup.nestedIn}, so anything owned
- * INSIDE it is dragged into every asking layer too. The fallback exists only so
- * the documented registration recipe keeps working for a consumer that has not
- * been updated. Pass an `owner`.
- *
- * The one in-repo registration that cannot is `context-menu`: it is anchorless
- * by design (it positions at the pointer, it has no trigger button) and its
- * `trigger` part is a bare event-handler bag with no id, so `createOverlay` has
- * nothing to name. Measured as still failing in real Chromium and tracked as
- * **#215**, which also records why the obvious fix is not owner-only —
- * `anchorId` additionally feeds `dismiss.ignore` and the focus-restore target,
- * so routing an owner through it changes dismissal and focus behaviour too.
- *
- * The fallback can also be reached BY ACCIDENT: `resolveEls` only bails on an
- * unresolvable anchor when `requireAnchor` is set, so an overlay that sets
- * `anchorId` without it (`menubar`) degrades to unowned, silently, if its
- * trigger id ever fails to resolve.
+ * An unowned registration cannot be attributed to any asking layer, so a scoped
+ * lookup excludes it. The same is true while a supplied owner resolver returns
+ * no element. Development builds warn once per registration with the corrective
+ * action. This is deliberately fail-closed: treating an unattributable portal
+ * as nested in every modal leaves it visible to assistive technology, interactive
+ * through `inert`, and reachable by the modal focus trap. It also puts the
+ * provider's elements on the transitive frontier, globally exempting descendants
+ * owned inside it. Unscoped lookups still expose every registration for registry
+ * inspection; ownership governs only the claim that a layer belongs to an asker.
  *
  * **`hide` is weaker than `focus`.** {@link setAriaHiddenOutside} snapshots the
  * exempt set ONCE, when the sweep runs, and there is no `MutationObserver`
@@ -154,10 +139,10 @@ export interface NestedLayerOptions {
    * Resolver form is supported and re-read on every lookup, so an owner that
    * mounts and unmounts with its component can be named once.
    *
-   * OMITTING IT IS A FALLBACK, NOT A DEFAULT: an unowned registration is
-   * attributed to no layer and therefore exempt from EVERY asking layer, which
-   * is the flat behaviour #171 is about. Only omit it when there is genuinely
-   * no element to name.
+   * A missing or unresolved owner grants no scoped exemption and emits a
+   * development warning. Even a registration used only through the unscoped
+   * registry-wide view should name its logical owner to keep the contract
+   * explicit.
    */
   owner?: ElementSource
 }
@@ -166,6 +151,7 @@ interface Provider {
   resolve: () => Element[]
   aspects: readonly NestedLayerAspect[]
   owner: ElementSource | undefined
+  warnedUnresolvedOwner: boolean
 }
 
 /**
@@ -176,17 +162,18 @@ interface Provider {
  * return the live root only while open (`[]` when closed), so a single
  * registration tracks the overlay's open/closed lifecycle without churn.
  *
- * Pass `opts.owner` — see {@link NestedLayerOptions.owner}. Without it the
- * registration is exempt from every layer on the page, not just the one it is
- * nested in.
+ * Pass `opts.owner` when scoped consumers must exempt the layer. Missing or
+ * unresolved ownership fails closed and warns in development.
  */
 export function registerNestedLayer(source: ElementSource, opts?: NestedLayerOptions): () => void {
   const provider: Provider = {
     resolve: () => resolveElements(source),
     aspects: opts?.aspects ?? ALL_NESTED_LAYER_ASPECTS,
     owner: opts?.owner,
+    warnedUnresolvedOwner: false,
   }
   providers.add(provider)
+  if (provider.owner === undefined) warnUnresolvedOwner(provider, true)
   return () => {
     providers.delete(provider)
   }
@@ -236,12 +223,12 @@ class Lookup {
       grew = false
       for (const provider of providers) {
         if (included.has(provider)) continue
-        // An UNOWNED registration cannot be attributed to any layer, so it keeps
-        // the legacy flat answer: nested inside whoever asks (see the module
-        // comment — this is a fallback, not a default).
-        const nested =
-          provider.owner === undefined ||
-          resolveElements(provider.owner).some((owner) => isInAnyElement(owner, frontier))
+        const owners = provider.owner === undefined ? [] : resolveElements(provider.owner)
+        if (owners.length === 0) {
+          warnUnresolvedOwner(provider, provider.owner === undefined)
+          continue
+        }
+        const nested = owners.some((owner) => isInAnyElement(owner, frontier))
         if (!nested) continue
         included.add(provider)
         frontier.push(...this.elementsOf(provider))
@@ -250,6 +237,16 @@ class Lookup {
     }
     return included
   }
+}
+
+function warnUnresolvedOwner(provider: Provider, missing: boolean): void {
+  if (provider.warnedUnresolvedOwner || import.meta.env?.DEV !== true) return
+  provider.warnedUnresolvedOwner = true
+  console.warn(
+    missing
+      ? '[llui/interactions] A nested layer was registered without an owner. It receives no focus, modal-isolation, or outside-interaction exemption. Pass `owner` to registerNestedLayer().'
+      : '[llui/interactions] A nested layer owner did not resolve. It receives no focus, modal-isolation, or outside-interaction exemption. Keep the owner mounted for the layer interaction lifetime.',
+  )
 }
 
 /**

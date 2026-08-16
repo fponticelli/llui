@@ -101,7 +101,7 @@ describe('menubar.overlay integration', () => {
     expect(inBar).toBe(trigger)
 
     // Escape closes and restores focus to that very element — only reachable
-    // when the overlay's anchorId resolved to it.
+    // when the overlay's placement relationship resolved to it.
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
     await tick()
     expect(h.peek().open).toBeNull()

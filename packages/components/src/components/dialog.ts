@@ -327,7 +327,9 @@ export function overlay(opts: OverlayOptions): Mountable {
     positioner: opts.parts.positioner,
     content: opts.content,
     contentId: opts.parts.content.id,
-    anchorId: opts.parts.trigger.id,
+    relationships: {
+      dismissIgnore: [{ id: opts.parts.trigger.id }],
+    },
     idScope: 'document',
     mountWhen: isMounted,
     visibleWhen: isVisible,

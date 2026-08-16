@@ -111,7 +111,7 @@ describe('non-modal overlays register as nested layers of an open dialog', () =>
             ],
           }),
           // The select trigger lives inside the dialog content in a real app; it
-          // is rendered here so `requireAnchor` resolves.
+          // is rendered here so the declared placement relationship resolves.
           button({ ...selParts.trigger }, [text('Select')]),
         ]
       },

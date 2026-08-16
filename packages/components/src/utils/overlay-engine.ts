@@ -30,13 +30,15 @@ import type { TextDirection } from './direction.js'
  *         exit animation
  *       → `div(positioner, content())`
  *
- * The interaction phase resolves the content / anchor / focus elements by id
+ * The interaction phase resolves content and each declared relationship
+ * independently
  * (scoped so it still works inside a shadow root; `document`-scoped for the
  * dialog family) and assembles the feature set behind flags:
  * `attachFloating` → `lockBodyScroll` → `setAriaHiddenOutside` → `pushFocusTrap`
  * → `pushDismissable`, plus focus-on-open and focus-restore-on-teardown. Cleanups
  * run LIFO except that modal isolation releases before the focus trap restores,
- * and focus is restored to the anchor only when it was still inside the overlay
+ * and focus is restored to the declared return target only when it was still
+ * inside the overlay
  * at teardown.
  *
  * Each component's `overlay()` is a thin declaration of its defaults over this.
@@ -46,8 +48,12 @@ import type { TextDirection } from './direction.js'
 export interface OverlayElements {
   /** The overlay content element (resolved by `contentId`). */
   content: HTMLElement
-  /** The trigger/anchor element (resolved by `anchorId`), or `null` when absent. */
-  anchor: HTMLElement | null
+  /** Element used only for floating placement. */
+  placementAnchor: HTMLElement | null
+  /** Elements ignored only by outside-dismissal detection. */
+  dismissIgnore: Element[]
+  /** Element used only as the explicit focus-return target. */
+  focusReturnTarget: HTMLElement | null
   /** The floating element — the nearest `[data-part="positioner"]` ancestor of
    * `content`, or `content` itself when there is no positioner. */
   floating: HTMLElement
@@ -94,12 +100,31 @@ export interface OverlayFocusTrapConfig {
   restoreFocus?: boolean
 }
 
-export interface OverlayRestoreFocusConfig {
+export interface OverlayFocusReturnConfig {
+  target: OverlayElementReference
   /** Boundary used to decide whether focus is still "inside" the overlay at
    * teardown (default: `'content'`). */
   boundary?: 'content' | 'floating'
-  /** Also treat the anchor itself being focused as "inside" (select). */
-  allowAnchorActive?: boolean
+  /** Also treat the return target itself being focused as "inside" (select). */
+  allowTargetActive?: boolean
+  /** Restore during interaction teardown (default true). Popover opts out and
+   * performs its conditional dismissal-time return in `dismiss.extra`. */
+  restoreOnTeardown?: boolean
+}
+
+/** A live DOM relationship resolved when an overlay's interaction phase mounts. */
+export type OverlayElementReference = { id: string } | { resolve: () => Element | null }
+
+/**
+ * Independent DOM relationships for an overlay. A declaration must opt into
+ * each behavior separately: naming a placement anchor never also changes layer
+ * ownership, dismissal, or focus return.
+ */
+export interface OverlayRelationships {
+  placementAnchor?: OverlayElementReference
+  nestedLayerOwner?: OverlayElementReference
+  dismissIgnore?: readonly OverlayElementReference[]
+  focusReturn?: OverlayFocusReturnConfig
 }
 
 export interface OverlayEngineOptions<S> {
@@ -110,10 +135,8 @@ export interface OverlayEngineOptions<S> {
   positioner: ElProps
   content: () => Renderable
   contentId: string
-  /** Trigger/anchor element id (floating anchor, dismiss `ignore`, focus restore). */
-  anchorId?: string
-  /** Bail out of the interaction phase when the anchor can't be resolved. */
-  requireAnchor?: boolean
+  /** Explicit, independent DOM relationships used by this overlay. */
+  relationships: OverlayRelationships
   /** Id resolution strategy. `'scope'` (default) resolves within the node's root
    * (shadow-DOM safe); `'document'` uses the global `document` (dialog family). */
   idScope?: 'scope' | 'document'
@@ -154,7 +177,6 @@ export interface OverlayEngineOptions<S> {
   focusOnOpenId?: string
   /** Select the focused input's existing value (searchable-select prefill). */
   focusOnOpenSelect?: boolean
-  restoreFocus?: OverlayRestoreFocusConfig
   /**
    * Optional element-level enter/leave transition (from `@llui/transitions` —
    * e.g. `fade({ duration: 150 })`). Threaded onto the OUTER `show(mountWhen)`
@@ -210,27 +232,43 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
     return getElementByIdInScope(root, id)
   }
 
+  const resolveReference = (root: Node, ref: OverlayElementReference): Element | null =>
+    'id' in ref ? resolveId(root, ref.id) : ref.resolve()
+
   const resolveEls = (root: Node): OverlayElements | null => {
     const content = resolveId(root, opts.contentId)
     if (!content) return null
-    const anchor = opts.anchorId ? resolveId(root, opts.anchorId) : null
-    if (opts.requireAnchor && !anchor) return null
+    const placement = opts.relationships.placementAnchor
+      ? resolveReference(root, opts.relationships.placementAnchor)
+      : null
+    const placementAnchor = placement instanceof HTMLElement ? placement : null
+    // A declared placement relationship is required. Silently positioning
+    // against the content hides a broken trigger/anchor contract.
+    if (opts.relationships.placementAnchor && !placementAnchor) return null
+    const dismissIgnore = (opts.relationships.dismissIgnore ?? []).flatMap((ref) => {
+      const element = resolveReference(root, ref)
+      return element ? [element] : []
+    })
+    const focusReturn = opts.relationships.focusReturn
+      ? resolveReference(root, opts.relationships.focusReturn.target)
+      : null
+    const focusReturnTarget = focusReturn instanceof HTMLElement ? focusReturn : null
     const positioner = content.closest('[data-part="positioner"]') as HTMLElement | null
     const floating = positioner ?? content
-    return { content, anchor, floating }
+    return { content, placementAnchor, dismissIgnore, focusReturnTarget, floating }
   }
 
   const attachFloatingFor = (els: OverlayElements): (() => void) => {
     const f = opts.floating!
-    if (f.sameWidth && els.anchor) {
-      els.floating.style.minWidth = `${els.anchor.offsetWidth}px`
+    if (f.sameWidth && els.placementAnchor) {
+      els.floating.style.minWidth = `${els.placementAnchor.offsetWidth}px`
     }
     const arrow = f.arrowSelector
       ? (els.content.querySelector(f.arrowSelector) as HTMLElement | null)
       : null
     const dir = typeof f.dir === 'function' ? f.dir() : f.dir
     return attachFloating({
-      anchor: els.anchor ?? els.content,
+      anchor: els.placementAnchor ?? els.content,
       floating: els.floating,
       placement: f.placement,
       offset: f.offset,
@@ -251,23 +289,11 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
       // Registered FIRST so it unwinds LAST (cleanups run LIFO): the trap and
       // sweep teardowns below may consult the registry on their way out.
       if (registersNestedLayer) {
-        // The ANCHOR is the owner: a nested overlay's trigger really is rendered
-        // inside the layer it belongs to, even though its content is portaled to
-        // a body-level sibling. That is what lets an asking layer tell "opened
-        // from inside me" from "merely open at the same time" (#171).
-        //
-        // An anchorless overlay (`context-menu`) has no element to name, so it
-        // registers UNOWNED and keeps the flat, exempt-from-everything answer.
-        // That is #171 UNFIXED for it — measured still failing in real Chromium,
-        // tracked as #215. Note `anchorId` is NOT a free owner: it also feeds
-        // `dismiss.ignore` below and the focus-restore target in the teardown,
-        // so an overlay cannot opt into ownership through it without changing
-        // its dismissal and focus behaviour. See the fallback note in
-        // `nested-layer.ts`.
+        const owner = opts.relationships.nestedLayerOwner
         cleanups.push(
           registerNestedLayer(els.content, {
             aspects: nestedLayerAspects,
-            owner: els.anchor ?? undefined,
+            owner: owner ? () => resolveReference(root, owner) : undefined,
           }),
         )
       }
@@ -298,7 +324,7 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
         cleanups.push(
           pushDismissable({
             element: boundaryEl,
-            ignore: () => (els.anchor ? [els.anchor] : []),
+            ignore: () => els.dismissIgnore,
             disableEscape: d.disableEscape,
             disableOutside: d.disableOutside,
             onEscape: d.onEscape ? (event) => d.onEscape!(els, event) : undefined,
@@ -344,21 +370,26 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
 
       return () => {
         // Capture whether focus is still inside the overlay BEFORE teardown
-        // (focus-trap etc. may move it). Only pull focus back to the anchor when
-        // it lingered inside — if the user clicked elsewhere, respect that.
+        // (focus-trap etc. may move it). Only pull focus back to the declared
+        // target when it lingered inside — if the user clicked elsewhere,
+        // respect that.
         let doRestore = false
-        if (opts.restoreFocus) {
+        if (
+          opts.relationships.focusReturn &&
+          opts.relationships.focusReturn.restoreOnTeardown !== false
+        ) {
           doRestore = focusLingeredInside({
-            boundary: opts.restoreFocus.boundary === 'floating' ? els.floating : els.content,
-            anchor: els.anchor,
-            allowAnchorActive: opts.restoreFocus.allowAnchorActive,
+            boundary:
+              opts.relationships.focusReturn.boundary === 'floating' ? els.floating : els.content,
+            anchor: els.focusReturnTarget,
+            allowAnchorActive: opts.relationships.focusReturn.allowTargetActive,
           })
         }
         for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i]!()
         // `engineFocus`, not a bare `.focus()`: this move is the engine's own
         // bookkeeping and must not read as an outside interaction to a SIBLING
-        // layer still open (#155) — the anchor is outside every one of them.
-        if (doRestore && els.anchor) engineFocus(els.anchor)
+        // layer still open (#155) — the return target is outside every one of them.
+        if (doRestore && els.focusReturnTarget) engineFocus(els.focusReturnTarget)
       }
     })
 

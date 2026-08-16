@@ -641,8 +641,12 @@ export function overlay(opts: OverlayOptions): Mountable {
     positioner: opts.parts.positioner,
     content: opts.content,
     contentId: opts.parts.content.id,
-    anchorId: opts.parts.trigger.id,
-    requireAnchor: true,
+    relationships: {
+      placementAnchor: { id: opts.parts.trigger.id },
+      nestedLayerOwner: { id: opts.parts.trigger.id },
+      dismissIgnore: [{ id: opts.parts.trigger.id }],
+      focusReturn: { target: { id: opts.parts.trigger.id }, boundary: 'floating' },
+    },
     mountWhen: (s) => s.open,
     onDismiss: () => opts.send({ type: 'close' }),
     floating: {
@@ -655,7 +659,6 @@ export function overlay(opts: OverlayOptions): Mountable {
     dismiss: { boundary: 'floating' },
     focusOnOpenId: opts.parts.input.id,
     focusOnOpenSelect: true,
-    restoreFocus: { boundary: 'floating' },
   })
 }
 
