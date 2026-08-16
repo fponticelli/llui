@@ -24,7 +24,7 @@ const FOCUSABLE_SELECTOR = [
 export function isFocusable(el: Element): boolean {
   if (!(el instanceof HTMLElement)) return false
   if (el.hasAttribute('disabled') || el.matches(':disabled')) return false
-  if (isInsideExcludedTree(el)) return false
+  if (selfOrAncestorMatches(el, hasFocusExclusion)) return false
   if (el.hidden) return false
   // Check tabindex
   const tabindex = el.getAttribute('tabindex')
@@ -32,13 +32,21 @@ export function isFocusable(el: Element): boolean {
   return el.matches(FOCUSABLE_SELECTOR)
 }
 
-function isInsideExcludedTree(el: Element): boolean {
+function selfOrAncestorMatches(el: Element, predicate: (candidate: Element) => boolean): boolean {
   let current: Element | null = el
   while (current) {
-    if (current.getAttribute('aria-hidden') === 'true' || current.hasAttribute('inert')) return true
+    if (predicate(current)) return true
     current = current.parentElement
   }
   return false
+}
+
+function hasFocusExclusion(el: Element): boolean {
+  return el.getAttribute('aria-hidden') === 'true' || el.hasAttribute('inert')
+}
+
+function hasHiddenAttribute(el: Element): boolean {
+  return el.hasAttribute('hidden')
 }
 
 export function getFocusables(container: Element): HTMLElement[] {
@@ -51,7 +59,7 @@ export function getFocusables(container: Element): HTMLElement[] {
 }
 
 function isVisible(el: HTMLElement): boolean {
-  if (isInsideHiddenTree(el)) return false
+  if (selfOrAncestorMatches(el, hasHiddenAttribute)) return false
   const view = el.ownerDocument?.defaultView
   if (view) {
     const visibility = view.getComputedStyle(el).visibility
@@ -69,15 +77,6 @@ function isVisible(el: HTMLElement): boolean {
   // `getClientRects()`, which is non-empty for any laid-out box.
   if (el.offsetParent !== null) return true
   return el.getClientRects().length > 0
-}
-
-function isInsideHiddenTree(el: Element): boolean {
-  let current: Element | null = el
-  while (current) {
-    if (current.hasAttribute('hidden')) return true
-    current = current.parentElement
-  }
-  return false
 }
 
 /**
