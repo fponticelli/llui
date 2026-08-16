@@ -257,4 +257,23 @@ describe('createSignalScope — structural bindings are exempt from output-equal
     scope.update(s0, { item: { mode: 'a', label: 'cd' } })
     expect(seen).toEqual([])
   })
+
+  it('leaves value bindings under output-equality on the binding-error-hook path', () => {
+    const { scope, log, bName, bNameLen } = setup()
+    const s0: State = { count: 1, user: { name: 'ab' }, items: [1] }
+    scope.mount(s0)
+    log.length = 0
+    bName.committed = bNameLen.committed = 0
+
+    withBindingErrors(
+      () => {
+        throw new Error('no binding should throw here')
+      },
+      () => scope.update(s0, { ...s0, user: { name: 'cd' } }),
+    )
+
+    expect(bName.committed).toBe(1)
+    expect(bNameLen.committed).toBe(0)
+    expect(log).toEqual(['name=cd'])
+  })
 })

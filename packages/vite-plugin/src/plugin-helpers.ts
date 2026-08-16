@@ -36,25 +36,28 @@ export function hasMcpPackage(root: string): boolean {
   }
 }
 
-function resolvePackageImportEntry(root: string, packageName: string): string | null {
-  let dir = resolve(root)
+function findPackageDir(start: string, packageName: string): string | null {
+  let dir = resolve(start)
   for (;;) {
-    const pkgDir = resolve(dir, 'node_modules', ...packageName.split('/'))
-    const pkgJsonPath = resolve(pkgDir, 'package.json')
-    if (existsSync(pkgJsonPath)) {
-      try {
-        const pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf8')) as {
-          exports?: { '.'?: { import?: string } }
-        }
-        const entry = pkg.exports?.['.']?.import
-        return entry ? resolve(pkgDir, entry) : null
-      } catch {
-        return null
-      }
-    }
+    const candidate = resolve(dir, 'node_modules', ...packageName.split('/'))
+    if (existsSync(resolve(candidate, 'package.json'))) return candidate
     const parent = dirname(dir)
     if (parent === dir) return null
     dir = parent
+  }
+}
+
+function resolvePackageImportEntry(root: string, packageName: string): string | null {
+  const pkgDir = findPackageDir(root, packageName)
+  if (!pkgDir) return null
+  try {
+    const pkg = JSON.parse(readFileSync(resolve(pkgDir, 'package.json'), 'utf8')) as {
+      exports?: { '.'?: { import?: string } }
+    }
+    const entry = pkg.exports?.['.']?.import
+    return entry ? resolve(pkgDir, entry) : null
+  } catch {
+    return null
   }
 }
 
@@ -105,17 +108,6 @@ export function resolveMcpCliPath(root: string): string | null {
     return resolve(dirname(pkgJsonPath), binEntry)
   } catch {
     return null
-  }
-}
-
-function findPackageDir(start: string, pkgName: string): string | null {
-  let dir = resolve(start)
-  while (true) {
-    const candidate = resolve(dir, 'node_modules', pkgName)
-    if (existsSync(resolve(candidate, 'package.json'))) return candidate
-    const parent = dirname(dir)
-    if (parent === dir) return null
-    dir = parent
   }
 }
 
