@@ -39,6 +39,8 @@ pnpm bench                    # Build + run jfb + compare against saved baseline
 pnpm bench --runs 3           # N runs, median-of-medians (reduces single-run noise)
 pnpm bench --all              # Also re-run all competitor frameworks (~15 min)
 pnpm bench:all --runs 5 --save # Only supported baseline save: complete, atomic standard+ticker capture
+pnpm bench:container:smoke     # Build the pinned image and verify Node/pnpm/Chrome
+pnpm bench:container -- --framework llui --runs 1 # One-shot Docker diagnostic with exact argv forwarding
 pnpm bench:build              # Build jfb app only (no benchmark run)
 ```
 

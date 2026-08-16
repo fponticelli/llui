@@ -1,6 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
     "noEmit": true,
     "types": ["node", "vitest/globals"]
   },
@@ -12,13 +14,16 @@
     "scripts/setup-bench.ts",
     "scripts/setup-ticker.ts",
     "scripts/lib/benchmark-baseline.ts",
+    "scripts/lib/benchmark-container.mjs",
     "scripts/lib/benchmark-orchestrator.ts",
     "scripts/lib/benchmark-report.ts",
     "scripts/lib/benchmark-results.ts",
     "scripts/lib/jfb-revision.ts",
     "scripts/lib/managed-process.ts",
     "scripts/lib/verify-install.ts",
+    "scripts/run-bench-container.mjs",
     "scripts/test/benchmark-baseline.test.ts",
+    "scripts/test/benchmark-container.test.ts",
     "scripts/test/benchmark-generated.test.ts",
     "scripts/test/benchmark-orchestrator.test.ts",
     "scripts/test/benchmark-report.test.ts",

@@ -114,6 +114,7 @@ pnpm turbo lint           # ESLint
 pnpm bench:setup          # One-time: clone + install + compile js-framework-benchmark (and build the ticker apps)
 pnpm bench                # Run LLui-only diagnostics against the canonical baseline
 pnpm bench:all --runs 5 --save # Replace the canonical standard+ticker baseline transactionally
+pnpm bench:container -- --framework llui --runs 1 # Same runner in the pinned one-shot Docker environment
 ```
 
 ## Performance
@@ -121,3 +122,5 @@ pnpm bench:all --runs 5 --save # Replace the canonical standard+ticker baseline 
 LLui is measured with [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) and a custom ticker suite for fine-grained streaming updates. Results, methodology, and capture provenance are generated from the single canonical [`benchmarks/baseline.json`](benchmarks/baseline.json) document; see the [benchmark report](https://llui.dev/benchmarks) for the tables.
 
 The currently tracked capture is explicitly marked `legacy`: its standard and ticker suites were recorded independently and do not have complete shared provenance. It is retained as historical data, not as a machine-comparable regression baseline. The next complete homelab capture will replace both suites atomically.
+
+Authoritative captures run on demand in the [pinned benchmark container](benchmarks/container/README.md). The GitHub **Homelab benchmarks** workflow accepts exact argv as JSON, quiesces the shared runner VM for the measurement, and publishes saved results to a review branch.

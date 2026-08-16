@@ -27,6 +27,8 @@
     "bench:ticker:setup": "tsx scripts/setup-ticker.ts",
     "bench:ticker": "tsx scripts/run-ticker.ts",
     "bench:all": "tsx scripts/run-bench-all.ts",
+    "bench:container": "node scripts/run-bench-container.mjs",
+    "bench:container:smoke": "node scripts/run-bench-container.mjs --smoke-image",
     "prepare": "simple-git-hooks"
   },
   "simple-git-hooks": {

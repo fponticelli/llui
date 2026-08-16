@@ -1,0 +1,225 @@
+name: Homelab benchmarks
+
+on:
+  workflow_dispatch:
+    inputs:
+      arguments_json:
+        description: Exact bench:all argv as a JSON array of strings
+        required: true
+        default: '["--runs","5","--save"]'
+        type: string
+      publish_baseline:
+        description: Commit a complete saved baseline to a review branch
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+# Never overlap two benchmark captures. cancel-in-progress is deliberately false:
+# killing a measurement halfway through provides no useful result and complicates
+# restoration of the temporarily quiesced runner fleet.
+concurrency:
+  group: llui-homelab-benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: [self-hosted, linux, x64, homelab]
+    timeout-minutes: 360
+    env:
+      BENCHMARK_ARGS_JSON: ${{ inputs.arguments_json }}
+      BENCH_CONTAINER_NAME: llui-benchmark-${{ github.run_id }}-${{ github.run_attempt }}
+      BENCH_WATCHDOG_NAME: llui-benchmark-watchdog-${{ github.run_id }}-${{ github.run_attempt }}
+      PUBLISH_BASELINE: ${{ inputs.publish_baseline }}
+      WATCHDOG_IMAGE: docker.io/library/docker:29.1.3-cli@sha256:e0b6ff45302985d99b9685b2a2fec50c3379bd47067493968f51da901dc53ad5
+
+    steps:
+      # v4.2.0, pinned so an authoritative capture cannot change its checkout
+      # implementation without a repository change.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Preflight runner and publication mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
+            echo '::error title=Wrong runner::benchmark requires the Linux/x64 homelab VM.'
+            exit 1
+          fi
+          docker version
+          if [[ "$PUBLISH_BASELINE" == true && "$GITHUB_REF" != refs/heads/main ]]; then
+            echo '::error title=Non-main capture::canonical baselines must be measured from main.'
+            exit 1
+          fi
+
+      # The live runner containers do not yet expose their workdir to sibling
+      # containers. /ci-cache is a host bind mount, so stage a clean real clone
+      # there and give Docker the corresponding host path.
+      - name: Stage a host-visible clean checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          self_container=$(cat /etc/hostname)
+          cache_host=$(docker inspect "$self_container" --format '{{range .Mounts}}{{if eq .Destination "/ci-cache"}}{{.Source}}{{end}}{{end}}')
+          if [[ -z "$cache_host" ]]; then
+            echo '::error title=Missing host cache mount::runner must expose /ci-cache to the Docker host.'
+            exit 1
+          fi
+
+          stage_name="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          stage_inside="/ci-cache/llui-benchmark/$stage_name"
+          stage_host="$cache_host/llui-benchmark/$stage_name"
+          mkdir -p "$(dirname "$stage_inside")"
+          git clone --no-local --no-hardlinks "$GITHUB_WORKSPACE" "$stage_inside"
+          git -C "$stage_inside" checkout --detach "$GITHUB_SHA"
+          git -C "$stage_inside" remote remove origin
+
+          {
+            echo "LLUI_BENCH_STAGE_INSIDE=$stage_inside"
+            echo "LLUI_BENCH_WORKSPACE_HOST=$stage_host"
+          } >> "$GITHUB_ENV"
+
+      # Four org runners share this 8-vCPU VM. Pause only IDLE sibling runner
+      # containers, re-checking after the pause to close the job-assignment race.
+      # A watchdog restores them if this job is killed before the always() cleanup.
+      - name: Quiesce sibling Actions runners
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull "$WATCHDOG_IMAGE"
+
+          self_container=$(cat /etc/hostname)
+          self_id=$(docker inspect "$self_container" --format '{{.Id}}')
+          state_file="$RUNNER_TEMP/llui-paused-runners"
+          : > "$state_file"
+
+          mapfile -t siblings < <(
+            docker ps \
+              --filter label=com.docker.compose.project=ci-runner \
+              --format '{{.ID}} {{.Names}}' |
+              awk -v self="$self_id" '$1 != substr(self, 1, 12) { print $2 }'
+          )
+          if [[ "${#siblings[@]}" -ne 3 ]]; then
+            echo "::error title=Unexpected runner topology::expected 3 sibling runners, found ${#siblings[@]}."
+            exit 1
+          fi
+
+          deadline=$((SECONDS + 3600))
+          while [[ "$(wc -l < "$state_file")" -lt "${#siblings[@]}" ]]; do
+            if (( SECONDS >= deadline )); then
+              echo '::error title=Runner fleet busy::could not obtain a quiet VM within 60 minutes.'
+              exit 1
+            fi
+            for runner in "${siblings[@]}"; do
+              if grep --fixed-strings --line-regexp --quiet "$runner" "$state_file"; then
+                continue
+              fi
+              docker pause "$runner" >/dev/null
+              workers=$(docker top "$runner" -eo args | grep -c '[R]unner.Worker' || true)
+              if [[ "$workers" -eq 0 ]]; then
+                echo "$runner" >> "$state_file"
+                echo "Paused idle runner: $runner"
+              else
+                docker unpause "$runner" >/dev/null
+              fi
+            done
+            sleep 10
+          done
+
+          mapfile -t paused < "$state_file"
+          docker run --detach --rm \
+            --name "$BENCH_WATCHDOG_NAME" \
+            --volume /var/run/docker.sock:/var/run/docker.sock \
+            --entrypoint sh \
+            "$WATCHDOG_IMAGE" \
+            -c '
+              benchmark=$1
+              shift
+              seen=0
+              elapsed=0
+              while [ "$elapsed" -lt 21600 ]; do
+                if docker inspect "$benchmark" >/dev/null 2>&1; then
+                  seen=1
+                elif [ "$seen" -eq 1 ] || [ "$elapsed" -ge 300 ]; then
+                  break
+                fi
+                sleep 1
+                elapsed=$((elapsed + 1))
+              done
+              docker rm --force "$benchmark" >/dev/null 2>&1 || true
+              for runner do docker unpause "$runner" >/dev/null 2>&1 || true; done
+            ' sh "$BENCH_CONTAINER_NAME" "${paused[@]}" >/dev/null
+
+      - name: Run benchmarks in the pinned container
+        shell: bash
+        env:
+          LLUI_BENCH_CONTAINER_NAME: ${{ env.BENCH_CONTAINER_NAME }}
+          LLUI_BENCH_MACHINE: ci-runner-01 — 8 vCPU on Xeon Gold 6226R, 32 GiB RAM; sibling runners quiesced
+          LLUI_BENCH_PUBLISH_BASELINE: ${{ env.PUBLISH_BASELINE }}
+        run: node scripts/run-bench-container.mjs --args-json-env BENCHMARK_ARGS_JSON
+
+      - name: Validate benchmark workspace mutations
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git -C "$LLUI_BENCH_STAGE_INSIDE" status --porcelain --untracked-files=all | sed 's/^...//' | sort)
+          if [[ "$PUBLISH_BASELINE" == true ]]; then
+            expected=(
+              benchmarks/baseline.json
+              site/content/benchmarks.md
+              site/public/benchmark-data.json
+            )
+            if [[ "${changed[*]}" != "${expected[*]}" ]]; then
+              printf '::error title=Unexpected capture outputs::expected:\n%s\nfound:\n%s\n' \
+                "$(printf '%s\n' "${expected[@]}")" "$(printf '%s\n' "${changed[@]}")"
+              exit 1
+            fi
+          elif [[ "${#changed[@]}" -ne 0 ]]; then
+            printf '::error title=Diagnostic run mutated tracked state::%s\n' "${changed[*]}"
+            exit 1
+          fi
+
+      - name: Publish baseline candidate branch
+        if: inputs.publish_baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "$LLUI_BENCH_STAGE_INSIDE/benchmarks/baseline.json" benchmarks/baseline.json
+          cp "$LLUI_BENCH_STAGE_INSIDE/site/content/benchmarks.md" site/content/benchmarks.md
+          cp "$LLUI_BENCH_STAGE_INSIDE/site/public/benchmark-data.json" site/public/benchmark-data.json
+
+          branch="benchmark-baseline/${GITHUB_RUN_ID}"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git switch --create "$branch"
+          git add benchmarks/baseline.json site/content/benchmarks.md site/public/benchmark-data.json
+          git commit -m 'perf(bench): record homelab baseline'
+          git push origin "HEAD:refs/heads/$branch"
+
+          compare="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/main...${branch}?expand=1"
+          {
+            echo '## Baseline candidate published'
+            echo
+            echo "Review and merge: $compare"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore runner fleet and remove staging
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          docker rm --force "$BENCH_CONTAINER_NAME" >/dev/null 2>&1
+          docker rm --force "$BENCH_WATCHDOG_NAME" >/dev/null 2>&1
+
+          state_file="$RUNNER_TEMP/llui-paused-runners"
+          if [[ -f "$state_file" ]]; then
+            while IFS= read -r runner; do
+              [[ -n "$runner" ]] && docker unpause "$runner" >/dev/null 2>&1
+            done < "$state_file"
+          fi
+
+          case "${LLUI_BENCH_STAGE_INSIDE:-}" in
+            /ci-cache/llui-benchmark/*) rm -rf -- "$LLUI_BENCH_STAGE_INSIDE" ;;
+          esac
