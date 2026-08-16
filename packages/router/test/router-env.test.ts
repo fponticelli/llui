@@ -27,13 +27,13 @@ function makeRouter(mode: 'hash' | 'history') {
 interface Recorded {
   env: RouterEnv
   calls: string[]
-  handlers: Array<{ event: string; handler: () => void }>
+  handlers: Array<{ event: string; handler: (newHash?: string) => void }>
 }
 
 /** A fully synthetic env — nothing here touches a browser global. */
 function recordingEnv(initial?: { hash?: string; pathname?: string; search?: string }): Recorded {
   const calls: string[] = []
-  const handlers: Array<{ event: string; handler: () => void }> = []
+  const handlers: Array<{ event: string; handler: (newHash?: string) => void }> = []
   let hash = initial?.hash ?? ''
   let pathname = initial?.pathname ?? '/'
   const search = initial?.search ?? ''
@@ -146,6 +146,28 @@ function connected(mode: 'hash' | 'history', rec: Recorded) {
   const routing = connectRouter(makeRouter(mode), { env: rec.env })
   rec.calls.length = 0
   return routing
+}
+
+function mountRecordingListener(routing: ReturnType<typeof connectRouter<Route>>) {
+  const send = vi.fn()
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const app = mountApp(
+    container,
+    component<{ n: number }, { type: 'noop' }, never>({
+      name: 'RecordingRouterListener',
+      init: () => ({ n: 0 }),
+      update: (state) => [state, []],
+      view: () => [text('x'), ...routing.listener(send)],
+    }),
+  )
+  return {
+    send,
+    dispose: () => {
+      app.dispose()
+      document.body.removeChild(container)
+    },
+  }
 }
 
 describe('connectRouter seeds the loaded entry through the env', () => {
@@ -433,6 +455,100 @@ describe('connectRouter routes history/location through an injectable env', () =
     app.dispose()
     expect(rec.calls).toContain('unsubscribe:popstate')
     document.body.removeChild(container)
+  })
+
+  it('hash mode handles one fragment-changing traversal once and leaves the next event genuine', () => {
+    const rec = recordingEnv({ hash: '#/' })
+    const beforeEnter = vi.fn()
+    const routing = connectRouter(makeRouter('hash'), { env: rec.env, beforeEnter })
+    const mounted = mountRecordingListener(routing)
+    const popstate = rec.handlers.find((entry) => entry.event === 'popstate')!
+    const hashchange = rec.handlers.find((entry) => entry.event === 'hashchange')!
+
+    expect(rec.handlers.map((entry) => entry.event)).toEqual(['popstate', 'hashchange'])
+
+    rec.env.pushState(ownStamp(rec.env.historyState, 1), '#/article/first')
+    popstate.handler()
+    hashchange.handler()
+
+    expect(beforeEnter).toHaveBeenCalledTimes(1)
+    expect(mounted.send).toHaveBeenCalledTimes(1)
+    expect(mounted.send).toHaveBeenLastCalledWith({
+      type: 'navigate',
+      route: { page: 'article', slug: 'first' },
+    })
+
+    // The pair was consumed by that traversal. A later standalone hashchange
+    // is independent even though it arrives synchronously in this synthetic
+    // surface, so no timer or broad "ignore next event" window can swallow it.
+    rec.env.pushState(ownStamp(rec.env.historyState, 2), '#/article/second')
+    hashchange.handler()
+
+    expect(beforeEnter).toHaveBeenCalledTimes(2)
+    expect(mounted.send).toHaveBeenCalledTimes(2)
+    expect(mounted.send).toHaveBeenLastCalledWith({
+      type: 'navigate',
+      route: { page: 'article', slug: 'second' },
+    })
+
+    mounted.dispose()
+    expect(rec.calls).toContain('unsubscribe:popstate')
+    expect(rec.calls).toContain('unsubscribe:hashchange')
+  })
+
+  it('does not let an unpaired same-fragment popstate swallow a later genuine hashchange', () => {
+    const rec = recordingEnv({ hash: '#/article/same' })
+    const beforeEnter = vi.fn()
+    const routing = connectRouter(makeRouter('hash'), { env: rec.env, beforeEnter })
+    const mounted = mountRecordingListener(routing)
+    const popstate = rec.handlers.find((entry) => entry.event === 'popstate')!
+    const hashchange = rec.handlers.find((entry) => entry.event === 'hashchange')!
+
+    rec.env.pushState(ownStamp(rec.env.historyState, 1), '#/article/same')
+    popstate.handler()
+
+    expect(beforeEnter).toHaveBeenCalledTimes(1)
+    expect(mounted.send).toHaveBeenCalledTimes(1)
+
+    // No hashchange belongs to the same-fragment traversal. This later one has
+    // a different landed fragment, so it cannot be mistaken for a missing pair.
+    rec.env.pushState(ownStamp(rec.env.historyState, 2), '#/article/later')
+    hashchange.handler()
+
+    expect(beforeEnter).toHaveBeenCalledTimes(2)
+    expect(mounted.send).toHaveBeenCalledTimes(2)
+    expect(mounted.send).toHaveBeenLastCalledWith({
+      type: 'navigate',
+      route: { page: 'article', slug: 'later' },
+    })
+
+    mounted.dispose()
+  })
+
+  it('programmatic hash navigation consumes its popstate and hashchange without redispatching', () => {
+    const rec = recordingEnv({ hash: '#/' })
+    const beforeEnter = vi.fn()
+    const routing = connectRouter(makeRouter('hash'), { env: rec.env, beforeEnter })
+    const mounted = mountRecordingListener(routing)
+    const popstate = rec.handlers.find((entry) => entry.event === 'popstate')!
+    const hashchange = rec.handlers.find((entry) => entry.event === 'hashchange')!
+
+    routing.handleEffect({
+      effect: routing.navigate({ page: 'article', slug: 'programmatic' }),
+      send: mounted.send,
+      signal,
+    })
+    popstate.handler()
+    hashchange.handler()
+
+    expect(beforeEnter).toHaveBeenCalledTimes(1)
+    expect(mounted.send).toHaveBeenCalledTimes(1)
+    expect(mounted.send).toHaveBeenCalledWith({
+      type: 'navigate',
+      route: { page: 'article', slug: 'programmatic' },
+    })
+
+    mounted.dispose()
   })
 
   it('a blocked browser-driven navigation rewinds through env.go', () => {
