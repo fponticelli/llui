@@ -15,40 +15,12 @@ import {
   $getRoot,
   $isTextNode,
   type ElementNode,
-  type LexicalEditor,
 } from 'lexical'
-import { $createHeadingNode, HeadingNode, QuoteNode } from '@lexical/rich-text'
-import { LLuiDecoratorNode, $createLLuiDecoratorNode } from '@llui/lexical'
+import { $createHeadingNode } from '@lexical/rich-text'
+import { $createLLuiDecoratorNode } from '@llui/lexical'
 
-import { loroCollab } from '../src/index.js'
-import { expectConverged, Network, type Peer } from './network.js'
-
-/** A network whose peers are wired with the real binding. */
-function collabNetwork(names?: readonly string[]): Network {
-  return new Network({
-    ...(names ? { names } : {}),
-    nodes: [HeadingNode, QuoteNode, LLuiDecoratorNode],
-    bind: (editor, doc) => {
-      const collab = loroCollab({ doc, shouldBootstrap: false })
-      const dispose = collab.register(editor)
-      return { dispose }
-    },
-  })
-}
-
-/** Run a discrete update on a peer's editor. */
-function edit(peer: Peer, fn: (editor: LexicalEditor) => void): void {
-  peer.editor.update(() => fn(peer.editor), { discrete: true })
-}
-
-/** Replace the whole document on a peer (used to establish a shared baseline). */
-function setParagraphs(peer: Peer, texts: readonly string[]): void {
-  edit(peer, () => {
-    const root = $getRoot()
-    root.clear()
-    for (const text of texts) root.append($createParagraphNode().append($createTextNode(text)))
-  })
-}
+import { collabNetwork, edit, setParagraphs } from './collaboration.js'
+import { expectConverged, type Peer } from './network.js'
 
 /** Append text to the Nth paragraph. */
 function appendText(peer: Peer, index: number, suffix: string): void {
