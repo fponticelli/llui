@@ -763,34 +763,63 @@ describe('hardening — cost of the ordering model', () => {
     expect(updateBytesSince(doc, from)).toBeLessThan(1024)
   })
 
-  it('keeps ordering correct and import affordable at 5000 carriers', () => {
+  it('keeps ordering correct and import/projection cost sub-quadratic at 5000 carriers', () => {
     // The spike measured the SORT in isolation. This measures what a peer
     // actually pays: importing a snapshot of a large `LoroMap` of carriers and
     // projecting it into rendered order.
-    const source = new LoroDoc()
-    source.setPeerId(1n)
-    const sourceRoot = initDoc(source, LORO_TEXT_FORMATS)
-    const builder = new ChildBuilder(sourceRoot)
-    for (let i = 0; i < 5000; i++) builder.insert()
-    source.commit()
+    const snapshotWith = (count: number): Uint8Array => {
+      const source = new LoroDoc()
+      source.setPeerId(1n)
+      const sourceRoot = initDoc(source, LORO_TEXT_FORMATS)
+      const builder = new ChildBuilder(sourceRoot)
+      for (let i = 0; i < count; i++) builder.insert()
+      source.commit()
+      return source.export({ mode: 'snapshot' })
+    }
 
-    const snapshot = source.export({ mode: 'snapshot' })
-    const target = new LoroDoc()
-    target.setPeerId(2n)
-    const targetRoot = initDoc(target, LORO_TEXT_FORMATS)
+    const measureBatch = (
+      snapshot: Uint8Array,
+      repetitions: number,
+    ): { elapsed: number; ordered: ReturnType<typeof orderedChildren> } => {
+      let elapsed = 0
+      let ordered: ReturnType<typeof orderedChildren> = []
+      for (let repetition = 0; repetition < repetitions; repetition++) {
+        const target = new LoroDoc()
+        target.setPeerId(2n)
+        const targetRoot = initDoc(target, LORO_TEXT_FORMATS)
+        const started = performance.now()
+        target.import(snapshot)
+        ordered = orderedChildren(targetRoot)
+        elapsed += performance.now() - started
+      }
+      return { elapsed, ordered }
+    }
 
-    const started = performance.now()
-    target.import(snapshot)
-    const ordered = orderedChildren(targetRoot)
-    const elapsed = performance.now() - started
+    const smallCount = 500
+    const largeCount = 5000
+    const smallSnapshot = snapshotWith(smallCount)
+    const largeSnapshot = snapshotWith(largeCount)
 
-    expect(ordered.length).toBe(5000)
+    // Each small batch and the large sample project the same TOTAL number of
+    // carriers. Bracketing the large sample makes a transient change in machine
+    // load affect at least one of its baselines instead of whichever sample ran
+    // second. Linearithmic work stays near parity after normalization; an O(n²)
+    // projection makes the large sample approach 10x either small batch.
+    const smallBefore = measureBatch(smallSnapshot, largeCount / smallCount)
+    const large = measureBatch(largeSnapshot, 1)
+    const smallAfter = measureBatch(smallSnapshot, largeCount / smallCount)
+    const smallBaseline = (smallBefore.elapsed + smallAfter.elapsed) / 2
+    const growthRatio = large.elapsed / smallBaseline
+
+    expect(large.ordered.length).toBe(5000)
     // Order is preserved exactly — the whole point of sorting by (pos, uuid).
-    expect(ordered.map((entry) => entry.pos)).toEqual([...ordered.map((e) => e.pos)].sort())
-    // A generous ceiling: this is a REGRESSION guard against an accidental
-    // O(n^2) in the projection, not a performance benchmark. It runs in tens of
-    // milliseconds; a quadratic projection would blow through seconds.
-    expect(elapsed).toBeLessThan(5000)
+    expect(large.ordered.map((entry) => entry.pos)).toEqual(
+      [...large.ordered.map((entry) => entry.pos)].sort(),
+    )
+    // This is a complexity guard, not a wall-clock budget. The 4x ceiling leaves
+    // broad headroom over the expected O(n log n) ratio while rejecting the ~10x
+    // work-normalized ratio of a quadratic projection.
+    expect(growthRatio).toBeLessThan(4)
   })
 
   it('pays a bounded SNAPSHOT cost for `pos` growth under 2000 appends', () => {
