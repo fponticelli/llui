@@ -8,7 +8,7 @@
  * containers were touched, and they pin ContainerIDs across structural edits.
  */
 
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createHeadlessEditor } from '@lexical/headless'
 import { HeadingNode, QuoteNode, $createHeadingNode, $isHeadingNode } from '@lexical/rich-text'
 import {
@@ -32,7 +32,6 @@ import { $createLLuiDecoratorNode, $isLLuiDecoratorNode, LLuiDecoratorNode } fro
 
 import {
   containerId,
-  elementChildren,
   elementProps,
   elementType,
   formatBit,
@@ -56,6 +55,8 @@ import { childAt, childContainers } from './children.js'
 
 const BOLD = formatBit('bold')
 
+const activeOutboundHarnesses = new Set<Outbound>()
+
 // ---------------------------------------------------------------------------
 // Harness
 // ---------------------------------------------------------------------------
@@ -71,6 +72,8 @@ class Outbound {
   #batches: LoroEventBatch[] = []
   /** Ops reported by the last `syncLexicalToLoro` call. */
   lastOps = 0
+  readonly #unsubscribeDoc: () => void
+  readonly #unregisterEditor: () => void
 
   constructor() {
     this.doc.setPeerId(1n)
@@ -84,10 +87,11 @@ class Outbound {
       },
     })
     this.target = { doc: this.doc, root: this.root, mapping: this.mapping }
-    this.doc.subscribe((batch) => this.#batches.push(batch))
-    this.editor.registerUpdateListener((payload) => {
+    this.#unsubscribeDoc = this.doc.subscribe((batch) => this.#batches.push(batch))
+    this.#unregisterEditor = this.editor.registerUpdateListener((payload) => {
       this.lastOps = syncLexicalToLoro(this.target, payload)
     })
+    activeOutboundHarnesses.add(this)
   }
 
   /** Run a discrete Lexical update, then hand back the Loro events it caused. */
@@ -142,6 +146,12 @@ class Outbound {
    */
   document(): DocumentShape {
     return describeElement(this.root)
+  }
+
+  dispose(): void {
+    this.#unsubscribeDoc()
+    this.#unregisterEditor()
+    activeOutboundHarnesses.delete(this)
   }
 }
 
@@ -253,6 +263,10 @@ let harness: Outbound
 
 beforeEach(() => {
   harness = new Outbound()
+})
+
+afterEach(() => {
+  for (const outbound of [...activeOutboundHarnesses]) outbound.dispose()
 })
 
 // ---------------------------------------------------------------------------
@@ -603,55 +617,77 @@ describe('reorder', () => {
     harness.mapping.assertBijective()
   })
 
-  it('reproduces an ARBITRARY permutation, preserving every container', () => {
+  const PERMUTATION_TRIALS = [
+    { seed: 0x1f123bb5, rounds: 50 },
+    { seed: 0x51a7e11a, rounds: 50 },
+    { seed: 0xc0decafe, rounds: 50 },
+    { seed: 0x7e57b10c, rounds: 50 },
+    { seed: 0x0ddba11a, rounds: 50 },
+    { seed: 0xdecafbad, rounds: 50 },
+  ] as const
+
+  function runPermutationTrial(seedValue: number, rounds: number): void {
     // The reorder planner keeps a longest already-ordered run of survivors in
     // place and threads the rest around it, which is what makes a drag-reorder
     // one `move` instead of one per displaced block. That is a subtle enough
-    // argument to be worth checking against random permutations rather than
-    // hand-picked ones.
-    let state = 0x1f123bb5
+    // argument to be worth checking against seeded random permutations rather
+    // than hand-picked ones. Each seed is an independent test so contention
+    // cannot make 300 otherwise-independent rounds share one timeout budget.
+    let state = seedValue
     const random = (n: number): number => {
       state = (state * 1664525 + 1013904223) >>> 0
       return state % n
     }
 
-    for (let round = 0; round < 300; round++) {
+    for (let round = 0; round < rounds; round++) {
       const size = 2 + random(11)
       const local = new Outbound()
-      seedParagraphs(
-        local,
-        Array.from({ length: size }, (_, i) => `p${i}`),
-      )
-      const before = local.childIds()
+      try {
+        seedParagraphs(
+          local,
+          Array.from({ length: size }, (_, i) => `p${i}`),
+        )
+        const before = local.childIds()
 
-      const order = Array.from({ length: size }, (_, i) => i)
-      for (let i = size - 1; i > 0; i--) {
-        const j = random(i + 1)
-        ;[order[i], order[j]] = [order[j]!, order[i]!]
+        const order = Array.from({ length: size }, (_, i) => i)
+        for (let i = size - 1; i > 0; i--) {
+          const j = random(i + 1)
+          ;[order[i], order[j]] = [order[j]!, order[i]!]
+        }
+
+        local.update(() => {
+          const root = $getRoot()
+          const children = order.map((index) => root.getChildAtIndex(index)!)
+          // Appending an already-attached node MOVES it, so appending in target
+          // order rewrites the child list as one permutation.
+          for (const child of children) root.append(child)
+        })
+
+        const context = `seed=0x${seedValue.toString(16)} round=${round} order=${order.join(',')}`
+        expect(local.childIds(), context).toEqual(order.map((i) => before[i]!))
+        expect(
+          childContainers(local.root).map((c) =>
+            (childAt(c as ElementContainer, 0) as LoroText).toString(),
+          ),
+          context,
+        ).toEqual(order.map((i) => `p${i}`))
+        local.mapping.assertBijective()
+
+        // Minimality: exactly the blocks outside a longest increasing run move.
+        const kept = longestIncreasingSubsequence(order).length
+        expect(local.lastOps, context).toBe(size - kept)
+      } finally {
+        local.dispose()
       }
-
-      local.update(() => {
-        const root = $getRoot()
-        const children = order.map((index) => root.getChildAtIndex(index)!)
-        // Appending an already-attached node MOVES it, so appending in target
-        // order rewrites the child list as one permutation.
-        for (const child of children) root.append(child)
-      })
-
-      expect(local.childIds(), `order=${order.join(',')}`).toEqual(order.map((i) => before[i]!))
-      expect(
-        childContainers(local.root).map((c) =>
-          (childAt(c as ElementContainer, 0) as LoroText).toString(),
-        ),
-        `order=${order.join(',')}`,
-      ).toEqual(order.map((i) => `p${i}`))
-      local.mapping.assertBijective()
-
-      // Minimality: exactly the blocks outside a longest increasing run move.
-      const kept = longestIncreasingSubsequence(order).length
-      expect(local.lastOps, `order=${order.join(',')}`).toBe(size - kept)
     }
-  })
+  }
+
+  for (const { seed, rounds } of PERMUTATION_TRIALS) {
+    const hex = `0x${seed.toString(16)}`
+    it(`reproduces ${rounds} arbitrary permutations, preserving identity/order/minimality/bijection (seed ${hex})`, () => {
+      runPermutationTrial(seed, rounds)
+    })
+  }
 })
 
 // ---------------------------------------------------------------------------
