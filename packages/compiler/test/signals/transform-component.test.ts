@@ -207,22 +207,24 @@ interface StubNode {
   tag?: unknown
 }
 
-/** Execute a transformed module against a STUB `@llui/dom` and return what its
- * component's `view` builds. This is the behavioural half of the #90 gate: it
- * proves WHICH binding the lowered call reached, where a text assertion could
- * not — a skipped injection (or an alias not threaded into the call sites) makes
- * the view call the fixture's own `el`, which throws.
- *
- * The transform's output is ESM; rewrite its `@llui/dom` imports to a destructure
- * of the stub (and drop `export`) so it runs as a plain function body. Fixtures
- * used here are written without type annotations so the result is valid JS. */
-function runLoweredView(out: string): StubNode[] {
+/** Execute transformed ESM against a stub `@llui/dom`. Fixtures used by these
+ * harnesses omit type annotations so the rewritten module is valid plain JS. */
+function executeLoweredModule(out: string, stub: object, tail: string): unknown {
   const js = out
     .replace(
       /import \{([^}]*)\} from '@llui\/dom'/g,
       (_m, names: string) => `const { ${names.replace(/(\w+) as (\w+)/g, '$1: $2')} } = __dom`,
     )
     .replace(/^export /gm, '')
+  return new Function('__dom', `${js}\n${tail}`)(stub)
+}
+
+/** Execute a transformed module against a STUB `@llui/dom` and return what its
+ * component's `view` builds. This is the behavioural half of the #90 gate: it
+ * proves WHICH binding the lowered call reached, where a text assertion could
+ * not — a skipped injection (or an alias not threaded into the call sites) makes
+ * the view call the fixture's own `el`, which throws. */
+function runLoweredView(out: string): StubNode[] {
   const node = (helper: string) => (tag?: unknown) => ({ helper, tag })
   const stub = {
     component: (config: unknown) => config,
@@ -236,8 +238,7 @@ function runLoweredView(out: string): StubNode[] {
       throw new Error('authoring `text` must not run in lowered output')
     },
   }
-  const build = new Function('__dom', `${js}\nreturn C.view({ state: {}, send: () => {} })`)
-  const built: unknown = build(stub)
+  const built = executeLoweredModule(out, stub, 'return C.view({ state: {}, send: () => {} })')
   if (!Array.isArray(built)) throw new Error('view did not return an array')
   return built.map((n: unknown) => {
     if (typeof n !== 'object' || n === null || !('helper' in n) || typeof n.helper !== 'string') {
@@ -245,6 +246,61 @@ function runLoweredView(out: string): StubNode[] {
     }
     return { helper: n.helper, tag: 'tag' in n ? n.tag : undefined }
   })
+}
+
+/** Execute the first emitted `signalEachDirect` row factory and return the
+ * attributes applied while that row is built. This exercises helper inlining
+ * through the public source transform and the emitted factory's runtime
+ * behaviour, without mirroring the compiler's scope analysis in the oracle. */
+function runLoweredDirectRow(out: string): Record<string, unknown> {
+  class StubText {
+    data = ''
+
+    cloneNode(): StubText {
+      const clone = new StubText()
+      clone.data = this.data
+      return clone
+    }
+  }
+  class StubElement {
+    readonly attributes: Record<string, unknown> = {}
+    readonly childNodes: Array<StubElement | StubText> = []
+
+    appendChild(child: StubElement | StubText): void {
+      this.childNodes.push(child)
+    }
+
+    cloneNode(deep: boolean): StubElement {
+      const clone = new StubElement()
+      Object.assign(clone.attributes, this.attributes)
+      if (deep) clone.childNodes.push(...this.childNodes.map((child) => child.cloneNode(true)))
+      return clone
+    }
+  }
+
+  type RowFactory = (doc: unknown, getCtx: () => unknown) => { nodes: StubElement[] }
+  const captured: { rowFactory?: RowFactory } = {}
+  const stub = {
+    component: (config: unknown) => config,
+    el: () => ({}),
+    signalEachDirect: (_source: unknown, _key: unknown, factory: RowFactory) => {
+      captured.rowFactory = factory
+      return {}
+    },
+    applyAttr: (element: StubElement, name: string, value: unknown) => {
+      element.attributes[name] = value
+    },
+  }
+  const doc = {
+    createElement: () => new StubElement(),
+    createTextNode: () => new StubText(),
+  }
+  executeLoweredModule(out, stub, 'C.view({ state: {}, send: () => {} })')
+  const rowFactory = captured.rowFactory
+  if (!rowFactory) throw new Error('transform did not emit a direct-row factory')
+  const row = rowFactory(doc, () => ({ item: { id: 1 } }))
+  if (row.nodes.length === 0) throw new Error('direct-row factory emitted no nodes')
+  return row.nodes[0]!.attributes
 }
 
 describe('transformSignalComponentSource', () => {
@@ -877,6 +933,62 @@ describe('transformSignalComponentSource', () => {
   })
 
   describe('helper-row inlining (cross-function lowering — phase 2)', () => {
+    it('preserves a named function expression self-binding during param substitution', () => {
+      const src = [
+        "import { component, ul, each, li, text } from '@llui/dom'",
+        'function row(item, identity) {',
+        '  const fn = function identity() { return identity.name }',
+        '  return li({ title: fn() }, [text(item.at("id"))])',
+        '}',
+        'const replacement = function replacement() {}',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item, replacement)] })])] })',
+      ].join('\n')
+
+      const out = transformSignalComponentSource(src)
+
+      expect(out).toContain('signalEachDirect(')
+      expect(out).toContain('function identity() { return identity.name }')
+      expect(runLoweredDirectRow(out)).toMatchObject({ title: 'identity' })
+    })
+
+    it('preserves a named class expression binding in static initialization and methods', () => {
+      const src = [
+        "import { component, ul, each, li, text } from '@llui/dom'",
+        'function row(item, identity) {',
+        '  const Klass = class identity {',
+        '    static authoredName = identity.name',
+        '    authoredName() { return identity.name }',
+        '  }',
+        '  return li({ title: `${Klass.authoredName}:${new Klass().authoredName()}` }, [text(item.at("id"))])',
+        '}',
+        'const replacement = function replacement() {}',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item, replacement)] })])] })',
+      ].join('\n')
+
+      const out = transformSignalComponentSource(src)
+
+      expect(out).toContain('signalEachDirect(')
+      expect(runLoweredDirectRow(out)).toMatchObject({ title: 'identity:identity' })
+    })
+
+    it('still substitutes unshadowed reads inside an anonymous function expression', () => {
+      const src = [
+        "import { component, ul, each, li, text } from '@llui/dom'",
+        'function row(item, identity) {',
+        '  const direct = identity.name',
+        '  const read = function () { return identity.name }',
+        '  return li({ title: `${direct}:${read()}` }, [text(item.at("id"))])',
+        '}',
+        'const replacement = function replacement() {}',
+        'const C = component({ init: () => ({ rows: [] }), update: (s) => s, view: ({ state }) => [ul([each(state.at("rows"), { key: (r) => r.id, render: (item) => [row(item, replacement)] })])] })',
+      ].join('\n')
+
+      const out = transformSignalComponentSource(src)
+
+      expect(out).toContain('signalEachDirect(')
+      expect(runLoweredDirectRow(out)).toMatchObject({ title: 'replacement:replacement' })
+    })
+
     it('inlines a same-file row helper so the row lowers (params → call args)', () => {
       const src = [
         "import { component, div, span, text, each } from '@llui/dom'",

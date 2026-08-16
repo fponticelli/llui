@@ -18,7 +18,7 @@ import ts from 'typescript'
 import { signalToProduce } from './lower.js'
 import { isSignalExpr, signalPathOf, STATE_ROOTS, type Roots } from './extract-deps.js'
 import { ELEMENT_HELPERS } from './element-helpers.js'
-import { HelperBindings } from './helper-bindings.js'
+import { HelperBindings, scopeIntroduces } from './helper-bindings.js'
 import { CANONICAL_HELPER_NAMES, type HelperEmitNames } from './runtime-helpers.js'
 import { parseModule } from '../parse.js'
 
@@ -146,9 +146,10 @@ export function setHelperDecls(m: ReadonlyMap<string, HelperDecl> | null): void 
 }
 
 /** Substitute `subst` param names with their arg source inside `node`, returning the
- * rewritten source — or null when hygiene can't be guaranteed (a param is shadowed
- * by a local/param, or used as an object shorthand `{ locale }` that can't be
- * spliced). Skips property names (`obj.locale`) and object keys. */
+ * rewritten source — or null when hygiene can't be guaranteed (for example, an
+ * object shorthand `{ locale }` that can't be spliced). Lexically shadowed names
+ * are preserved via the compiler's canonical scope predicate. Skips property names
+ * (`obj.locale`) and object keys. */
 function substituteParams(
   node: ts.Node,
   sf: ts.SourceFile,
@@ -158,9 +159,16 @@ function substituteParams(
   let full = node.getText(sf)
   const edits: Array<{ start: number; end: number; text: string }> = []
   let ok = true
-  const visit = (n: ts.Node): void => {
+  const visit = (n: ts.Node, active: ReadonlyMap<string, string>): void => {
     if (!ok) return
-    if (ts.isIdentifier(n) && subst.has(n.text)) {
+    let narrowed: Map<string, string> | undefined
+    for (const name of active.keys()) {
+      if (!scopeIntroduces(n, name)) continue
+      narrowed ??= new Map(active)
+      narrowed.delete(name)
+    }
+    const inScope = narrowed ?? active
+    if (ts.isIdentifier(n) && inScope.has(n.text)) {
       const p = n.parent
       if (ts.isPropertyAccessExpression(p) && p.name === n) return // obj.NAME — property
       if (ts.isPropertyAssignment(p) && p.name === n) return // { NAME: ... } — key
@@ -175,12 +183,16 @@ function substituteParams(
         ok = false // param shadowed by a local/param binding
         return
       }
-      edits.push({ start: n.getStart(sf) - base, end: n.getEnd() - base, text: subst.get(n.text)! })
+      edits.push({
+        start: n.getStart(sf) - base,
+        end: n.getEnd() - base,
+        text: inScope.get(n.text)!,
+      })
       return
     }
-    n.forEachChild(visit)
+    n.forEachChild((child) => visit(child, inScope))
   }
-  visit(node)
+  visit(node, subst)
   if (!ok) return null
   edits.sort((a, b) => b.start - a.start)
   for (const e of edits) full = full.slice(0, e.start) + e.text + full.slice(e.end)
