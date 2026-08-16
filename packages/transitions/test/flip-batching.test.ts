@@ -15,7 +15,7 @@ import { fakeLayout } from './fake-layout'
  * one after the first), while `style` is a `getComputedStyle`, which #137 took
  * off every settled row and must stay off it.
  */
-type Op = 'rect' | 'offset' | 'style' | 'write'
+type Op = 'rect' | 'offset' | 'offset-parent' | 'style' | 'write'
 
 const isRead = (op: Op): boolean => op !== 'write'
 
@@ -330,6 +330,7 @@ describe('flip() read/write batching', () => {
     expect(log.filter((op) => op === 'style')).toHaveLength(1)
     expect(log.filter((op) => op === 'rect')).toHaveLength(2)
     expect(log.filter((op) => op === 'offset')).toHaveLength(4)
+    expect(log.filter((op) => op === 'offset-parent')).toHaveLength(2)
     expect(forcedLayouts(log)).toBe(1)
   })
 
@@ -652,10 +653,11 @@ describe('flip() read/write batching', () => {
 
     it('absorbs a non-layout change of nearly TWO pixels, not one', () => {
       // The size of the accepted cost, pinned at the bound rather than at a
-      // comfortable value — `QUANTIZATION` is 1, so the window LOOKS like 1px
-      // and is not: agreement is `|A - e| <= 1` for a non-layout change `A`
-      // against a residue `e` that is itself under 1, so any `|A| < 2` is taken
-      // for a move. Sweep over a 1/64 grid: worst absorbed 1.984375px.
+      // comfortable value — the two root-relative measurements' combined bound
+      // is 1, so the window LOOKS like 1px and is not: agreement is
+      // `|A - e| <= 1` for a non-layout change `A` against a residue `e` that is
+      // itself under 1, so any `|A| < 2` is taken for a move. Sweep over a 1/64
+      // grid: worst absorbed 1.984375px.
       //
       // These numbers are a Chromium reproduction, not arithmetic: a 0.4375px
       // padded offset, a 10.125px layout move, and an author transform changing
