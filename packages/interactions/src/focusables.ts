@@ -2,9 +2,9 @@
  * Find focusable descendants within a container.
  */
 
-// Matches elements that can receive keyboard focus. Excludes elements with
-// `tabindex=-1` (programmatically focusable but not tab-reachable) and
-// elements inside `inert` subtrees.
+// Finds candidates that are focusable by native semantics or an explicit
+// tabindex. Global exclusions such as a negative tabindex are applied by
+// isFocusable rather than repeated across every selector alternative.
 const FOCUSABLE_SELECTOR = [
   'a[href]',
   'area[href]',
@@ -23,8 +23,8 @@ const FOCUSABLE_SELECTOR = [
 
 export function isFocusable(el: Element): boolean {
   if (!(el instanceof HTMLElement)) return false
-  if (el.hasAttribute('disabled')) return false
-  if (el.getAttribute('aria-hidden') === 'true') return false
+  if (el.hasAttribute('disabled') || el.matches(':disabled')) return false
+  if (selfOrAncestorMatches(el, hasFocusExclusion)) return false
   if (el.hidden) return false
   // Check tabindex
   const tabindex = el.getAttribute('tabindex')
@@ -32,17 +32,39 @@ export function isFocusable(el: Element): boolean {
   return el.matches(FOCUSABLE_SELECTOR)
 }
 
+function selfOrAncestorMatches(el: Element, predicate: (candidate: Element) => boolean): boolean {
+  let current: Element | null = el
+  while (current) {
+    if (predicate(current)) return true
+    current = current.parentElement
+  }
+  return false
+}
+
+function hasFocusExclusion(el: Element): boolean {
+  return el.getAttribute('aria-hidden') === 'true' || el.hasAttribute('inert')
+}
+
+function hasHiddenAttribute(el: Element): boolean {
+  return el.hasAttribute('hidden')
+}
+
 export function getFocusables(container: Element): HTMLElement[] {
   const nodes = Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
   const out: HTMLElement[] = []
   for (const n of nodes) {
-    if (isVisible(n) && !isInsideInert(n, container)) out.push(n)
+    if (isFocusable(n) && isVisible(n)) out.push(n)
   }
   return out
 }
 
 function isVisible(el: HTMLElement): boolean {
-  if (el.hidden) return false
+  if (selfOrAncestorMatches(el, hasHiddenAttribute)) return false
+  const view = el.ownerDocument?.defaultView
+  if (view) {
+    const visibility = view.getComputedStyle(el).visibility
+    if (visibility === 'hidden' || visibility === 'collapse') return false
+  }
   // In jsdom there is no layout engine: `offsetParent` is always `null` and
   // `getClientRects()` is always empty, so a real geometry test would wrongly
   // reject EVERY element. Detect that environment and skip the geometry check.
@@ -70,13 +92,4 @@ function isLayoutlessEnv(el: HTMLElement): boolean {
   // the viewport). jsdom never does, so an empty rect list means "no layout".
   // (`body.offsetParent` is unreliable here — it is `null` in browsers too.)
   return body.getClientRects().length === 0
-}
-
-function isInsideInert(el: Element, container: Element): boolean {
-  let current: Element | null = el
-  while (current && current !== container) {
-    if (current.hasAttribute('inert')) return true
-    current = current.parentElement
-  }
-  return false
 }
