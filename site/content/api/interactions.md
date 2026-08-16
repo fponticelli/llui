@@ -245,7 +245,7 @@ return the live root only while open (`[]` when closed), so a single
 registration tracks the overlay's open/closed lifecycle without churn.
 
 Pass `opts.owner` when scoped consumers must exempt the layer. Missing or
-unresolved ownership fails closed and warns once per registration in development.
+unresolved ownership fails closed and warns in development.
 
 ```typescript
 function registerNestedLayer(source: ElementSource, opts?: NestedLayerOptions): () => void
