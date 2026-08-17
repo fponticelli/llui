@@ -31,7 +31,11 @@ import {
 } from '../scripts/lib/benchmark-results'
 import { startManagedProcess, type ManagedProcess } from '../scripts/lib/managed-process'
 import { assertJfbRevision, readPinnedJfbRevision } from '../scripts/lib/jfb-revision'
-import { benchmarkRunCount, jfbBrowserArguments } from '../scripts/lib/benchmark-orchestrator'
+import {
+  benchmarkRunCount,
+  jfbBenchmarkSelection,
+  jfbBrowserArguments,
+} from '../scripts/lib/benchmark-orchestrator'
 
 const ROOT = dirname(import.meta.dirname)
 const BENCH_DIR = resolve(ROOT, 'benchmarks')
@@ -274,7 +278,8 @@ try {
   // registers ticker IDs in jfb's global benchmarks array. Without a
   // filter the runner attempts them against the standard `keyed/llui`
   // app, which lacks ticker buttons → 8 fast failures per framework.
-  const benchmarkFilter = ALL_BENCHMARKS.map((b) => b.id)
+  const expectedResultIds = ALL_BENCHMARKS.map((benchmark) => benchmark.id)
+  const benchmarkFilter = jfbBenchmarkSelection(expectedResultIds)
 
   for (let pass = 1; pass <= runs; pass++) {
     if (runs > 1) console.log(`\n=== Pass ${pass}/${runs} ===`)
@@ -294,11 +299,7 @@ try {
         webdriverDir,
       )
       const fwName = fw.replace('keyed/', '')
-      const fresh = readCompleteBenchmarkResults(
-        resultsDir,
-        fwName,
-        ALL_BENCHMARKS.map((benchmark) => benchmark.id),
-      )
+      const fresh = readCompleteBenchmarkResults(resultsDir, fwName, expectedResultIds)
       for (const b of ALL_BENCHMARKS) {
         const m = fresh[b.id]!
         const key = `${fwName}/${b.id}`

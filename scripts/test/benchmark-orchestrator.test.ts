@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildSuiteInvocations, jfbBrowserArguments } from '../lib/benchmark-orchestrator'
+import {
+  buildSuiteInvocations,
+  jfbBenchmarkSelection,
+  jfbBrowserArguments,
+} from '../lib/benchmark-orchestrator'
 
 describe('combined benchmark argument forwarding', () => {
   it('preserves every caller argument as an argv element without shell interpretation', () => {
@@ -44,5 +48,18 @@ describe('JFB browser arguments', () => {
 
   it('lets JFB use its native platform default outside the container', () => {
     expect(jfbBrowserArguments(true, undefined)).toEqual([])
+  })
+})
+
+describe('JFB benchmark selection', () => {
+  it('requests the aggregate size benchmark that emits the expected size result files', () => {
+    expect(
+      jfbBenchmarkSelection([
+        '01_run1k',
+        '21_ready-memory',
+        '41_size-uncompressed',
+        '42_size-compressed',
+      ]),
+    ).toEqual(['01_run1k', '21_ready-memory', '40_sizes'])
   })
 })

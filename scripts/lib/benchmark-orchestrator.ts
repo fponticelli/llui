@@ -45,6 +45,29 @@ export function jfbBrowserArguments(
   ]
 }
 
+const JFB_RESULT_TO_RUNNER_BENCHMARK: Readonly<Record<string, string>> = {
+  '41_size-uncompressed': '40_sizes',
+  '42_size-compressed': '40_sizes',
+}
+
+/**
+ * Translate expected result IDs into the upstream runner IDs that produce
+ * them. JFB's size runner is an aggregate: selecting `40_sizes` emits the
+ * `41_size-uncompressed` and `42_size-compressed` result files.
+ */
+export function jfbBenchmarkSelection(expectedResultIds: readonly string[]): string[] {
+  const selected: string[] = []
+  const seen = new Set<string>()
+  for (const resultId of expectedResultIds) {
+    const runnerId = JFB_RESULT_TO_RUNNER_BENCHMARK[resultId] ?? resultId
+    if (!seen.has(runnerId)) {
+      seen.add(runnerId)
+      selected.push(runnerId)
+    }
+  }
+  return selected
+}
+
 function output(command: string, args: readonly string[], cwd?: string): string {
   return execFileSync(command, [...args], { cwd, encoding: 'utf8' }).trim()
 }
