@@ -12,10 +12,14 @@ describe('environmentForNpm', () => {
         npm_config_verify_deps_before_run: 'false',
         npm_config_npm_globalconfig: '/tmp/pnpm-global',
         npm_config__jsr_registry: 'https://npm.jsr.io',
+        npm_config__llui_registry: 'https://registry.npmjs.org',
+        npm_config_frozen_lockfile: 'true',
+        npm_config_link_workspace_packages: 'false',
       }),
     ).toEqual({
       PATH: '/bin',
       npm_config_registry: 'https://registry.example.test',
+      npm_config_userconfig: '/dev/null',
     })
   })
 })

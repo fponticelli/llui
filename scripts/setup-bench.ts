@@ -29,15 +29,18 @@
  *
  * Steps:
  *   1. Clone (or reuse) the upstream repo
- *   2. `npm ci` at the repo root (with the --legacy-peer-deps retry, see above).
+ *   2. `npm ci --legacy-peer-deps` at the repo root (required by the pinned
+ *      revision's known eslint peer conflict, see above).
  *      Upstream's root `postinstall` is `cd server && npm install`, so on a
  *      fresh clone this step also populates `server/`.
  *   3. `server/` — fastify + tsx, the :8080 bench server. Usually already
  *      installed by step 2's postinstall, in which case this only VERIFIES it
  *      against `server/package-lock.json`; `npm ci` runs when it doesn't match.
  *   4. `npm ci` in `webdriver-ts/`  — the benchmark runner
- *   5. `npm run compile` in `webdriver-ts/` → `dist/benchmarkRunner.js`
- *   6. Build the five ticker apps (`benchmarks/jfb-ticker/frameworks/*`) so
+ *   5. Patch Chrome 150 traces to honor `TracingStartedInBrowser`; otherwise
+ *      buffered warm-up clicks can enter the measured event set
+ *   6. `npm run compile` in `webdriver-ts/` and verify the patch with a fixture
+ *   7. Build the five ticker apps (`benchmarks/jfb-ticker/frameworks/*`) so
  *      `pnpm bench:ticker:setup` finds the `dist/main.js` bundles it symlinks
  *
  * Idempotent: an install is skipped when its tree matches the lockfile and is
@@ -52,7 +55,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, relative, resolve } from 'node:path'
 import {
   directDependencies,
@@ -62,6 +65,7 @@ import {
 } from './lib/verify-install'
 import { assertJfbRevision, currentJfbRevision, readPinnedJfbRevision } from './lib/jfb-revision'
 import { environmentForNpm } from './lib/npm-environment'
+import { patchJfbTimelineSource } from './lib/jfb-trace-start'
 
 const ROOT = dirname(import.meta.dirname)
 const BENCH_DIR = resolve(ROOT, 'benchmarks')
@@ -89,7 +93,7 @@ if (unknownArgs.length > 0) {
   process.exit(2)
 }
 
-const TOTAL_STEPS = skipTickerApps ? 5 : 6
+const TOTAL_STEPS = skipTickerApps ? 6 : 7
 let stepIndex = 0
 let currentStep = 'startup'
 
@@ -125,47 +129,23 @@ interface ExecOutcome {
   readonly ok: boolean
   /** Killed by a signal (Ctrl-C, SIGKILL) rather than exiting on its own. */
   readonly signal: NodeJS.Signals | null
-  /** Captured only when `captureStderr` is set; echoed either way. */
-  readonly stderr: string
 }
 
-function exec(
-  cmd: string,
-  cmdArgs: readonly string[],
-  cwd: string,
-  captureStderr = false,
-): ExecOutcome {
+function exec(cmd: string, cmdArgs: readonly string[], cwd: string): ExecOutcome {
   console.log(`$ ${[cmd, ...cmdArgs].join(' ')}   (in ${short(cwd)})`)
   const result = spawnSync(cmd, [...cmdArgs], {
     cwd,
     env: cmd === 'npm' ? environmentForNpm(process.env) : process.env,
-    stdio: captureStderr ? ['inherit', 'inherit', 'pipe'] : 'inherit',
-    encoding: 'utf8',
+    stdio: 'inherit',
   })
   if (result.error !== undefined) {
     console.error(`  could not run ${cmd}: ${result.error.message}`)
-    return { ok: false, signal: null, stderr: '' }
+    return { ok: false, signal: null }
   }
-  // `stderr` is null unless it was piped; a captured stream still belongs on
-  // the terminal, so replay it before deciding anything about it.
-  const stderr = typeof result.stderr === 'string' ? result.stderr : ''
-  if (stderr !== '') process.stderr.write(stderr)
-  return { ok: result.status === 0, signal: result.signal, stderr }
+  return { ok: result.status === 0, signal: result.signal }
 }
 
 // ── Install verification ─────────────────────────────────────────
-
-/**
- * A peer-resolution failure specifically — the only thing `--legacy-peer-deps`
- * can fix. A network error, a full disk or a Ctrl-C must NOT be retried under
- * a message blaming upstream's peer ranges. Match npm's ERROR CODE line, not
- * the word: npm also emits `npm warn ERESOLVE overriding peer dependency`
- * while succeeding, and on a run that then died of ENOTDIR that warning made a
- * bare /ERESOLVE/ fire a bogus retry (observed, hence this comment).
- */
-function isEresolve(outcome: ExecOutcome): boolean {
-  return /npm error code ERESOLVE\b/.test(outcome.stderr)
-}
 
 /** Missing-package lists can be long; name enough to act on. */
 function summarize(paths: readonly string[], limit = 8): string {
@@ -174,11 +154,12 @@ function summarize(paths: readonly string[], limit = 8): string {
 }
 
 /**
- * `npm ci` in `pkgDir`, then verify the tree. `fallbackArgs` is retried once
- * when the plain install fails (upstream's root manifest needs
- * --legacy-peer-deps; see the header).
+ * `npm ci` in `pkgDir`, then verify the tree. `installArgs` records any
+ * revision-specific resolution policy explicitly; the pinned JFB root requires
+ * `--legacy-peer-deps` because its lockfile's eslint peers do not resolve under
+ * npm's strict mode.
  */
-function installStep(label: string, pkgDir: string, fallbackArgs: readonly string[]): void {
+function installStep(label: string, pkgDir: string, installArgs: readonly string[]): void {
   if (!existsSync(resolve(pkgDir, 'package.json'))) {
     fail(`${label}: no package.json in ${short(pkgDir)}`, [
       'The jfb clone looks incomplete. Remove it and re-run:',
@@ -192,6 +173,7 @@ function installStep(label: string, pkgDir: string, fallbackArgs: readonly strin
     ])
   }
 
+  const npmCiArgs = ['ci', '--no-audit', '--no-fund', ...installArgs]
   const state = force ? 'absent' : installState(pkgDir)
   if (state === 'ok') {
     console.log(
@@ -199,16 +181,7 @@ function installStep(label: string, pkgDir: string, fallbackArgs: readonly strin
     )
   } else {
     if (state !== 'absent') console.log(`${label}: node_modules is ${state} — reinstalling`)
-    // Capture stderr only when a fallback exists: the retry must be justified
-    // by what npm actually said, not by "non-zero for some reason".
-    let outcome = exec('npm', ['ci'], pkgDir, fallbackArgs.length > 0)
-    if (!outcome.ok && fallbackArgs.length > 0 && outcome.signal === null && isEresolve(outcome)) {
-      console.log(
-        `\n${label}: \`npm ci\` hit ERESOLVE — upstream's own manifest carries an ` +
-          `unsatisfiable peer range. Retrying with ${fallbackArgs.join(' ')}.`,
-      )
-      outcome = exec('npm', ['ci', ...fallbackArgs], pkgDir)
-    }
+    const outcome = exec('npm', npmCiArgs, pkgDir)
     if (!outcome.ok) {
       const cause =
         outcome.signal === null
@@ -216,7 +189,7 @@ function installStep(label: string, pkgDir: string, fallbackArgs: readonly strin
           : `\`npm ci\` in ${short(pkgDir)} was killed by ${outcome.signal}`
       fail(`${label}: ${cause}`, [
         'Reproduce with:',
-        `  cd ${short(pkgDir)} && npm ci`,
+        `  cd ${short(pkgDir)} && npm ${npmCiArgs.join(' ')}`,
         `Then re-run \`${SETUP_CMD}\` — it re-checks this tree against the lockfile.`,
       ])
     }
@@ -232,7 +205,8 @@ function installStep(label: string, pkgDir: string, fallbackArgs: readonly strin
         summarize(missing),
       [
         'Reproduce with:',
-        `  rm -rf ${short(pkgDir)}/node_modules && cd ${short(pkgDir)} && npm ci`,
+        `  rm -rf ${short(pkgDir)}/node_modules && cd ${short(pkgDir)} && ` +
+          `npm ${npmCiArgs.join(' ')}`,
       ],
     )
   }
@@ -304,9 +278,9 @@ console.log(`✓ pinned jfb revision: ${JFB_REVISION}`)
 // ── Steps 2-4: the three installs ────────────────────────────────
 
 step('install jfb root deps')
-// Upstream's root devDeps do not resolve under npm's strict peer checking
-// (eslint@^10 vs eslint-plugin-react's `<=9` peer). Retry legacy on failure so
-// a fixed upstream still gets a strict install.
+// This revision's root devDeps do not resolve under npm's strict peer checking
+// (eslint@^10 vs eslint-plugin-react's `<=9` peer). The JFB revision is pinned,
+// so attempting a known-to-fail strict install adds noise without information.
 installStep('jfb root', JFB_REPO, ['--legacy-peer-deps'])
 
 step('install jfb server deps')
@@ -315,11 +289,27 @@ installStep('server', resolve(JFB_REPO, 'server'), [])
 step('install webdriver-ts deps')
 installStep('webdriver-ts', resolve(JFB_REPO, 'webdriver-ts'), [])
 
-// ── Step 5: compile the harness ──────────────────────────────────
+// ── Step 5: Chrome trace-boundary compatibility ─────────────────
+
+step('patch Chrome trace boundary')
+
+const webdriverDir = resolve(JFB_REPO, 'webdriver-ts')
+const timelineFile = resolve(webdriverDir, 'src/timeline.ts')
+try {
+  const source = readFileSync(timelineFile, 'utf8')
+  writeFileSync(timelineFile, patchJfbTimelineSource(source))
+} catch (error) {
+  fail(`could not apply the Chrome trace-start patch: ${String(error)}`, [
+    `The pinned JFB timeline shape changed or ${short(timelineFile)} is not writable.`,
+    `Verify ${short(timelineFile)} against revision ${JFB_REVISION}.`,
+  ])
+}
+console.log(`✓ patched ${short(timelineFile)}`)
+
+// ── Step 6: compile and verify the harness ───────────────────────
 
 step('compile webdriver-ts')
 
-const webdriverDir = resolve(JFB_REPO, 'webdriver-ts')
 const runnerJs = resolve(webdriverDir, 'dist/benchmarkRunner.js')
 if (!exec('npm', ['run', 'compile'], webdriverDir).ok) {
   fail('`npm run compile` failed in webdriver-ts', [
@@ -336,7 +326,24 @@ if (!existsSync(runnerJs)) {
 }
 console.log(`✓ harness compiled: ${short(runnerJs)}`)
 
-// ── Step 6: build the ticker apps ────────────────────────────────
+const traceFixture = resolve(BENCH_DIR, 'jfb-patches/chrome-trace-start.fixture.json')
+const verifyTracePatch = `
+  const { computeResultsCPU } = await import('./dist/timeline.js');
+  const result = await computeResultsCPU(process.argv[1]);
+  if (result.duration !== 0.045) {
+    throw new Error('trace-start fixture duration: expected 0.045, found ' + result.duration);
+  }
+`
+if (
+  !exec('node', ['--input-type=module', '--eval', verifyTracePatch, traceFixture], webdriverDir).ok
+) {
+  fail('compiled harness did not exclude buffered events before TracingStartedInBrowser', [
+    `Re-run \`${SETUP_CMD}\`; the Chrome compatibility patch must pass before benchmarking.`,
+  ])
+}
+console.log('✓ Chrome trace boundary verified with a stale-event fixture')
+
+// ── Step 7: build the ticker apps ────────────────────────────────
 // `bench:ticker:setup` symlinks each app into the jfb repo and refuses to run
 // until every one has a `dist/main.js`. Building them here is what makes
 // `bench:setup` → `bench:ticker:setup` work with no manual step in between;

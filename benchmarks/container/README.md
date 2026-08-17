@@ -16,6 +16,11 @@ The image fixes every environment input that materially affects a capture:
 - js-framework-benchmark by [`../jfb-revision.txt`](../jfb-revision.txt)
 - repository dependencies by `pnpm-lock.yaml`
 
+`bench:setup` also applies and fixture-verifies the repository's narrow Chrome
+150 compatibility patch: trace parsing ignores buffered events before
+`TracingStartedInBrowser`. The pinned upstream parser otherwise counts warm-up
+clicks as measured clicks for long-running setup phases.
+
 The entrypoint verifies Node, pnpm, and Chrome before doing any setup. It then
 performs a frozen workspace install, refreshes and verifies the pinned JFB
 checkout, applies the ticker harness patches, and executes `bench:all`. The

@@ -1,0 +1,39 @@
+{
+  "traceEvents": [
+    {
+      "name": "EventDispatch",
+      "ph": "X",
+      "ts": 90,
+      "dur": 1,
+      "pid": 1,
+      "args": { "data": { "type": "mousedown" } }
+    },
+    {
+      "name": "EventDispatch",
+      "ph": "X",
+      "ts": 100,
+      "dur": 10,
+      "pid": 1,
+      "args": { "data": { "type": "click" } }
+    },
+    { "name": "TracingStartedInBrowser", "ph": "I", "ts": 1000, "pid": 2, "args": {} },
+    {
+      "name": "EventDispatch",
+      "ph": "X",
+      "ts": 1090,
+      "dur": 1,
+      "pid": 1,
+      "args": { "data": { "type": "mousedown" } }
+    },
+    {
+      "name": "EventDispatch",
+      "ph": "X",
+      "ts": 1100,
+      "dur": 20,
+      "pid": 1,
+      "args": { "data": { "type": "click" } }
+    },
+    { "name": "Layout", "ph": "X", "ts": 1121, "dur": 10, "pid": 1, "args": {} },
+    { "name": "Commit", "ph": "X", "ts": 1140, "dur": 5, "pid": 1, "args": {} }
+  ]
+}

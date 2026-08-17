@@ -108,6 +108,24 @@ describe('benchmark container entrypoint', () => {
     expect(entrypoint).toContain('pnpm bench:setup\n')
     expect(entrypoint).not.toContain('pnpm bench:setup --force')
   })
+
+  it('installs only the root tooling and benchmark dependency graphs', () => {
+    const dockerfile = readFileSync(
+      resolve(import.meta.dirname, '../../benchmarks/container/Dockerfile'),
+      'utf8',
+    )
+    const entrypoint = readFileSync(
+      resolve(import.meta.dirname, '../../benchmarks/container/benchmark-entrypoint.sh'),
+      'utf8',
+    )
+
+    expect(entrypoint).toContain("--filter 'llui'")
+    expect(entrypoint).toContain("--filter 'js-framework-benchmark-keyed-llui...'")
+    expect(entrypoint).toContain("--filter 'jfb-ticker-*...'")
+    expect(entrypoint).not.toMatch(/^pnpm install --frozen-lockfile --store-dir/m)
+    expect(dockerfile).toContain('NPM_CONFIG_UPDATE_NOTIFIER=false')
+    expect(dockerfile).toContain('npm install --global --no-audit --no-fund')
+  })
 })
 
 describe('standard benchmark app', () => {

@@ -64,7 +64,7 @@ RUN curl --fail --location --retry 3 \
   && rm /tmp/chrome.zip \
   && google-chrome --version | grep --fixed-strings "${CHROME_VERSION}"
 
-RUN npm install --global "pnpm@${PNPM_VERSION}" \
+RUN npm install --global --no-audit --no-fund "pnpm@${PNPM_VERSION}" \
   && test "$(pnpm --version)" = "${PNPM_VERSION}"
 
 COPY benchmark-entrypoint.sh /usr/local/bin/llui-benchmark-entrypoint
@@ -72,6 +72,7 @@ RUN chmod 0755 /usr/local/bin/llui-benchmark-entrypoint
 
 ENV CHROME_BIN=/opt/chrome/chrome \
     HOME=/tmp/llui-benchmark-home \
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
     npm_config_cache=/cache/npm \
     TURBO_TELEMETRY_DISABLED=1
 

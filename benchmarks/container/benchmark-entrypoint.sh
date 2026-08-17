@@ -69,7 +69,12 @@ fi
 cd /workspace
 git config --global --add safe.directory /workspace
 
-pnpm install --frozen-lockfile --store-dir /cache/pnpm
+pnpm install \
+  --frozen-lockfile \
+  --store-dir /cache/pnpm \
+  --filter 'llui' \
+  --filter 'js-framework-benchmark-keyed-llui...' \
+  --filter 'jfb-ticker-*...'
 pnpm bench:setup
 pnpm bench:ticker:setup
 
