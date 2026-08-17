@@ -45,11 +45,13 @@ export function dockerRunArgs(options) {
     '--mount',
     'type=volume,src=llui-benchmark-npm,dst=/cache/npm',
     '--mount',
-    'type=volume,src=llui-benchmark-jfb,dst=/workspace/benchmarks/js-framework-benchmark-repo',
+    'type=volume,src=llui-benchmark-jfb,dst=/cache/jfb',
     '--env',
     'CI=1',
     '--env',
     'CHROME_BIN=/opt/chrome/chrome',
+    '--env',
+    'JFB_REPO=/cache/jfb/repository',
   )
   if (options.machine !== undefined && options.machine !== '') {
     args.push('--env', `LLUI_BENCH_MACHINE=${options.machine}`)
