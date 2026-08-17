@@ -17,9 +17,14 @@ describe('environmentForNpm', () => {
         npm_config_link_workspace_packages: 'false',
       }),
     ).toEqual({
+      BROWSERSLIST_IGNORE_OLD_DATA: '1',
       PATH: '/bin',
       npm_config_registry: 'https://registry.example.test',
       npm_config_userconfig: '/dev/null',
     })
+  })
+
+  it('accepts deliberately stale browser data in pinned benchmark dependencies', () => {
+    expect(environmentForNpm({}).BROWSERSLIST_IGNORE_OLD_DATA).toBe('1')
   })
 })

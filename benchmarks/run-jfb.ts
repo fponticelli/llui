@@ -16,7 +16,7 @@
  */
 
 import { execFileSync } from 'node:child_process'
-import { existsSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { keepAwake } from '../scripts/keep-awake'
 import {
@@ -31,6 +31,13 @@ import {
 } from '../scripts/lib/benchmark-results'
 import { startManagedProcess, type ManagedProcess } from '../scripts/lib/managed-process'
 import { assertJfbRevision, readPinnedJfbRevision } from '../scripts/lib/jfb-revision'
+import {
+  CANONICAL_JFB_COMPETITORS,
+  jfbFrameworkBuildPlan,
+  localScriptSources,
+  patchJfbElmBuildManifest,
+} from '../scripts/lib/jfb-framework-build'
+import { environmentForNpm } from '../scripts/lib/npm-environment'
 import {
   benchmarkRunCount,
   jfbBenchmarkSelection,
@@ -78,10 +85,15 @@ const ALL_BENCHMARKS = [...BENCHMARKS, ...MEMORY_BENCHMARKS, ...SIZE_BENCHMARKS]
 
 // jfb has no plain `keyed/react` framework — the canonical React entry is
 // `react-hooks`. Use the real dir name so `--all` doesn't 404 on a phantom.
-const COMPETITORS = ['vanillajs', 'solid', 'svelte', 'react-hooks', 'elm']
+const COMPETITORS = [...CANONICAL_JFB_COMPETITORS]
 
-function run(command: string, args: readonly string[], cwd?: string): void {
-  execFileSync(command, [...args], { cwd, stdio: 'inherit' })
+function run(
+  command: string,
+  args: readonly string[],
+  cwd?: string,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  execFileSync(command, [...args], { cwd, env, stdio: 'inherit' })
 }
 
 function curlOk(url: string): boolean {
@@ -212,6 +224,49 @@ try {
     )
   }
 
+  // ── Determine and build every selected upstream framework ──
+
+  const frameworksToRun = ['keyed/llui']
+  const seen = new Set(frameworksToRun)
+  const pushUnique = (name: string) => {
+    if (!seen.has(name)) {
+      seen.add(name)
+      frameworksToRun.push(name)
+    }
+  }
+  if (runAll) {
+    for (const fw of COMPETITORS) pushUnique(`keyed/${fw}`)
+  } else {
+    for (const fw of extraFrameworks) pushUnique(`keyed/${fw}`)
+  }
+
+  const npmEnvironment = environmentForNpm(process.env)
+  for (const build of jfbFrameworkBuildPlan(JFB_REPO, frameworksToRun)) {
+    const manifest = resolve(build.directory, 'package.json')
+    const lockfile = resolve(build.directory, 'package-lock.json')
+    const index = resolve(build.directory, 'index.html')
+    if (!existsSync(manifest) || !existsSync(lockfile) || !existsSync(index)) {
+      throw new Error(
+        `${build.framework} is incomplete in the pinned JFB checkout; ` +
+          'expected package.json, package-lock.json, and index.html',
+      )
+    }
+    console.log(`\n🔨 Building upstream benchmark app: ${build.framework}...`)
+    if (build.framework === 'keyed/elm') {
+      writeFileSync(manifest, patchJfbElmBuildManifest(readFileSync(manifest, 'utf8')), 'utf8')
+    }
+    run('npm', build.installArgs, build.directory, npmEnvironment)
+    run('npm', build.buildArgs, build.directory, npmEnvironment)
+    const missingEntrypoints = localScriptSources(readFileSync(index, 'utf8')).filter(
+      (source) => !existsSync(resolve(build.directory, source)),
+    )
+    if (missingEntrypoints.length > 0) {
+      throw new Error(
+        `${build.framework} production build omitted script(s): ${missingEntrypoints.join(', ')}`,
+      )
+    }
+  }
+
   // ── Start an invocation-owned server ──
 
   if (curlOk('http://localhost:8080/ls')) {
@@ -233,22 +288,6 @@ try {
     throw new Error(
       `jfb server failed to start. Verify ${JFB_REPO}/server/node_modules with pnpm bench:setup`,
     )
-  }
-
-  // ── Determine which frameworks to run ──
-
-  const frameworksToRun = ['keyed/llui']
-  const seen = new Set(frameworksToRun)
-  const pushUnique = (name: string) => {
-    if (!seen.has(name)) {
-      seen.add(name)
-      frameworksToRun.push(name)
-    }
-  }
-  if (runAll) {
-    for (const fw of COMPETITORS) pushUnique(`keyed/${fw}`)
-  } else {
-    for (const fw of extraFrameworks) pushUnique(`keyed/${fw}`)
   }
 
   // ── Run benchmarks ──

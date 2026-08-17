@@ -16,5 +16,9 @@ export function environmentForNpm(environment: Readonly<NodeJS.ProcessEnv>): Nod
   // operator's npmrc files prevents machine-specific scopes, credentials, and
   // pnpm-only settings from changing or warning during a reproducible setup.
   sanitized.npm_config_userconfig = '/dev/null'
+  // The benchmark intentionally installs dependency versions from its pinned
+  // lockfiles. Browserslist's age warning asks for a dependency update, which
+  // would make historical benchmark builds non-reproducible.
+  sanitized.BROWSERSLIST_IGNORE_OLD_DATA = '1'
   return sanitized
 }

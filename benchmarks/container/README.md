@@ -26,6 +26,11 @@ performs a frozen workspace install, refreshes and verifies the pinned JFB
 checkout, applies the ticker harness patches, and executes `bench:all`. The
 combined runner rebuilds the complete benchmark dependency graph before either
 suite, so both consume current `dist/` output without building unrelated apps.
+Before standard-suite measurement it also installs every selected upstream
+competitor from that framework's package lock and builds its production entry
+point. A fail-closed compatibility rewrite removes the pinned Elm manifest's
+undeclared `elm-tooling` bootstrap and explicitly permits only its locked Elm
+compiler install script.
 Setup and measurement run as the unprivileged `node` user; Chrome uses its
 user-namespace and renderer sandboxes inside the container.
 
