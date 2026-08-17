@@ -7,7 +7,7 @@ description: 'WYSIWYG Markdown editor for LLui — hides Markdown behind a rich,
 
 <!-- package-version:start -->
 
-**Current package version:** `0.8.0`
+**Current package version:** `0.8.1`
 
 <!-- package-version:end -->
 

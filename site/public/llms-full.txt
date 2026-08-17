@@ -62141,7 +62141,7 @@ const defaultAllowedProtocols: readonly string[]
 
 # @llui/markdown-editor
 
-**Current package version:** `0.8.0`
+**Current package version:** `0.8.1`
 
 A WYSIWYG Markdown editor you drop into an LLui app as a single component. The user edits rich text; the editor's state holds the Markdown. It is built on [`@llui/lexical`](/api/lexical) and ships a transformer registry (GFM, callouts, …), a toolbar surface, and a set of opt-in plugins for the features beyond plain prose — links, images, tables, math, mentions, emoji, slash commands, and more.
 

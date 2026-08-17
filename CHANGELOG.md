@@ -11,9 +11,11 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package that consumes `@llui/dom` declares it as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. Interaction consumers use the same peer pattern for `@llui/interactions`, preserving one document-level registry. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
-## Unreleased
+## 2026-08-17 — @llui/markdown-editor@0.8.1
 
-### `@llui/markdown-editor`
+**Released:** `@llui/markdown-editor@0.8.1`
+
+### `@llui/markdown-editor@0.8.1`
 
 - **Fixed** Markdown import now derives nested-list depth from the parent item's
   actual content column. Bullet, ordered, and task-list parents therefore accept
