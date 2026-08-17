@@ -33,6 +33,7 @@ import {
 } from 'node:fs'
 import { resolve, dirname, relative } from 'node:path'
 import { assertJfbRevision, readPinnedJfbRevision } from './lib/jfb-revision'
+import { environmentForNpm } from './lib/npm-environment'
 
 const ROOT = dirname(import.meta.dirname)
 const BENCH_DIR = resolve(ROOT, 'benchmarks')
@@ -258,7 +259,11 @@ if (skipBuild) {
   const wdDir = resolve(JFB_REPO, 'webdriver-ts')
   console.log(`Compiling webdriver-ts (${wdDir})...`)
   try {
-    execFileSync('npm', ['run', 'compile'], { cwd: wdDir, stdio: 'inherit' })
+    execFileSync('npm', ['run', 'compile'], {
+      cwd: wdDir,
+      env: environmentForNpm(process.env),
+      stdio: 'inherit',
+    })
   } catch {
     console.error('webdriver-ts compile failed.')
     console.error(`If the errors are missing modules or types, ${wdDir}/node_modules is`)

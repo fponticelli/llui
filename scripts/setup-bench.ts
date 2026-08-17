@@ -61,6 +61,7 @@ import {
   missingPackages,
 } from './lib/verify-install'
 import { assertJfbRevision, currentJfbRevision, readPinnedJfbRevision } from './lib/jfb-revision'
+import { environmentForNpm } from './lib/npm-environment'
 
 const ROOT = dirname(import.meta.dirname)
 const BENCH_DIR = resolve(ROOT, 'benchmarks')
@@ -137,6 +138,7 @@ function exec(
   console.log(`$ ${[cmd, ...cmdArgs].join(' ')}   (in ${short(cwd)})`)
   const result = spawnSync(cmd, [...cmdArgs], {
     cwd,
+    env: cmd === 'npm' ? environmentForNpm(process.env) : process.env,
     stdio: captureStderr ? ['inherit', 'inherit', 'pipe'] : 'inherit',
     encoding: 'utf8',
   })

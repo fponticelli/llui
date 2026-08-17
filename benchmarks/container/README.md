@@ -17,9 +17,10 @@ The image fixes every environment input that materially affects a capture:
 - repository dependencies by `pnpm-lock.yaml`
 
 The entrypoint verifies Node, pnpm, and Chrome before doing any setup. It then
-performs a frozen workspace install, builds every workspace package so the
-benchmarks consume current `dist/` output, refreshes and verifies the pinned
-JFB checkout, applies the ticker harness patches, and executes `bench:all`.
+performs a frozen workspace install, refreshes and verifies the pinned JFB
+checkout, applies the ticker harness patches, and executes `bench:all`. The
+combined runner rebuilds the complete benchmark dependency graph before either
+suite, so both consume current `dist/` output without building unrelated apps.
 
 Named Docker volumes cache pnpm/npm downloads and the JFB checkout. They are
 data caches, not running services; setup still verifies the JFB pin and every

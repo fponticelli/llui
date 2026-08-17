@@ -1,0 +1,21 @@
+import { describe, expect, it } from 'vitest'
+
+import { environmentForNpm } from '../lib/npm-environment'
+
+describe('environmentForNpm', () => {
+  it('removes pnpm-only npm_config values that npm warns about', () => {
+    expect(
+      environmentForNpm({
+        PATH: '/bin',
+        npm_config_registry: 'https://registry.example.test',
+        npm_config_save_workspace_protocol: 'rolling',
+        npm_config_verify_deps_before_run: 'false',
+        npm_config_npm_globalconfig: '/tmp/pnpm-global',
+        npm_config__jsr_registry: 'https://npm.jsr.io',
+      }),
+    ).toEqual({
+      PATH: '/bin',
+      npm_config_registry: 'https://registry.example.test',
+    })
+  })
+})

@@ -13,13 +13,13 @@ export default defineConfig({
     // intended for library bundles that will be re-bundled
     // downstream. The bench bundle is served directly to Chrome, so
     // we want a fully minified single-line output.
-    rollupOptions: {
+    rolldownOptions: {
       input: 'src/main.ts',
       output: {
         format: 'es',
         entryFileNames: 'main.js',
         chunkFileNames: '[name].js',
-        inlineDynamicImports: true,
+        codeSplitting: false,
       },
       // Do NOT externalize devtools. `installSignalDebug` is called only behind
       // `import.meta.env.DEV` (false in this prod build), so with @llui/dom's

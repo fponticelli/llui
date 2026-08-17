@@ -73,17 +73,43 @@ describe('benchmark Docker invocation', () => {
 })
 
 describe('benchmark container entrypoint', () => {
-  it('builds workspace dist outputs before executing either benchmark suite', () => {
+  it('delegates to a combined runner that builds current benchmark dependencies first', () => {
     const entrypoint = readFileSync(
       resolve(import.meta.dirname, '../../benchmarks/container/benchmark-entrypoint.sh'),
       'utf8',
     )
-    const build = entrypoint.indexOf('pnpm turbo build')
-    const benchmark = entrypoint.indexOf('exec pnpm bench:all "$@"')
+    const runner = readFileSync(resolve(import.meta.dirname, '../run-bench-all.ts'), 'utf8')
+    const build = runner.indexOf("run('BUILD BENCHMARK DEPENDENCIES'")
+    const benchmark = runner.indexOf("run('STANDARD JFB BENCH'")
 
     expect(build).toBeGreaterThan(-1)
     expect(benchmark).toBeGreaterThan(build)
+    expect(entrypoint).toContain('exec pnpm bench:all "$@"')
+    expect(entrypoint).not.toContain('pnpm turbo build')
     expect(entrypoint).toContain('pnpm bench:setup\n')
     expect(entrypoint).not.toContain('pnpm bench:setup --force')
+  })
+})
+
+describe('standard benchmark app', () => {
+  it('marks the delegated tbody click listener as presentational', () => {
+    const source = readFileSync(
+      resolve(import.meta.dirname, '../../benchmarks/js-framework-benchmark/src/main.ts'),
+      'utf8',
+    )
+
+    expect(source).toMatch(/tbody\(\s*\{[^}]*id: 'tbody',[^}]*role: 'presentation',[^}]*onClick:/)
+  })
+
+  it('uses the native Vite 8 single-bundle options without deprecation warnings', () => {
+    const config = readFileSync(
+      resolve(import.meta.dirname, '../../benchmarks/js-framework-benchmark/vite.config.ts'),
+      'utf8',
+    )
+
+    expect(config).toContain('rolldownOptions:')
+    expect(config).toContain('codeSplitting: false')
+    expect(config).not.toContain('rollupOptions:')
+    expect(config).not.toContain('inlineDynamicImports:')
   })
 })

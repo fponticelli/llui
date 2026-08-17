@@ -174,6 +174,9 @@ const App = component<State, Msg, never>({
         tbody(
           {
             id: 'tbody',
+            // The tbody itself has no interactive semantics; its listener only
+            // delegates activation from the authored row links below.
+            role: 'presentation',
             onClick: (e) => {
               const target = e.target as Element
               const trEl = target.closest('tr') as HTMLElement | null
