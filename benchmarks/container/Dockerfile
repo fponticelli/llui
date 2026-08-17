@@ -9,6 +9,8 @@ ARG CHROME_VERSION=150.0.7871.46
 ARG CHROME_SHA256=ad115a7498a17f53f6ed0914458326c6516addc756224db14c32184a9b1ab078
 ARG PNPM_VERSION=10.33.0
 
+ENV NPM_CONFIG_UPDATE_NOTIFIER=false
+
 # Snapshot URLs make the native browser/toolchain dependencies reproducible;
 # ordinary Debian mirrors would silently change the image between captures.
 RUN rm -f /etc/apt/sources.list.d/debian.sources \
@@ -72,7 +74,6 @@ RUN chmod 0755 /usr/local/bin/llui-benchmark-entrypoint
 
 ENV CHROME_BIN=/opt/chrome/chrome \
     HOME=/tmp/llui-benchmark-home \
-    NPM_CONFIG_UPDATE_NOTIFIER=false \
     npm_config_cache=/cache/npm \
     TURBO_TELEMETRY_DISABLED=1
 
