@@ -35,6 +35,16 @@ export function buildSuiteInvocations(args: readonly string[]): SuiteInvocations
   }
 }
 
+export function jfbBrowserArguments(
+  headful: boolean,
+  chromeBinary: string | undefined = process.env.CHROME_BIN,
+): string[] {
+  return [
+    ...(headful ? [] : ['--headless']),
+    ...(chromeBinary ? ['--chromeBinary', chromeBinary] : []),
+  ]
+}
+
 function output(command: string, args: readonly string[], cwd?: string): string {
   return execFileSync(command, [...args], { cwd, encoding: 'utf8' }).trim()
 }

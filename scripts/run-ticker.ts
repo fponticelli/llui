@@ -27,7 +27,7 @@ import {
 import { prepareFreshResultsDirectory, readCompleteBenchmarkResults } from './lib/benchmark-results'
 import { startManagedProcess, type ManagedProcess } from './lib/managed-process'
 import { assertJfbRevision, readPinnedJfbRevision } from './lib/jfb-revision'
-import { benchmarkRunCount } from './lib/benchmark-orchestrator'
+import { benchmarkRunCount, jfbBrowserArguments } from './lib/benchmark-orchestrator'
 
 const ROOT = dirname(import.meta.dirname)
 const BENCH_DIR = resolve(ROOT, 'benchmarks')
@@ -259,7 +259,7 @@ try {
           target,
           '--benchmark',
           ...benchIdFilter,
-          ...(headful ? [] : ['--headless']),
+          ...jfbBrowserArguments(headful),
         ],
         webdriverDir,
       )

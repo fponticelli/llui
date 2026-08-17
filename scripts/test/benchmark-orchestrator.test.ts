@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildSuiteInvocations } from '../lib/benchmark-orchestrator'
+import { buildSuiteInvocations, jfbBrowserArguments } from '../lib/benchmark-orchestrator'
 
 describe('combined benchmark argument forwarding', () => {
   it('preserves every caller argument as an argv element without shell interpretation', () => {
@@ -30,5 +30,19 @@ describe('combined benchmark argument forwarding', () => {
     expect(() => buildSuiteInvocations(['--runs', 'many'])).toThrow(
       '--runs must be a positive integer',
     )
+  })
+})
+
+describe('JFB browser arguments', () => {
+  it('passes the pinned container Chrome path to the upstream harness', () => {
+    expect(jfbBrowserArguments(false, '/opt/chrome/chrome')).toEqual([
+      '--headless',
+      '--chromeBinary',
+      '/opt/chrome/chrome',
+    ])
+  })
+
+  it('lets JFB use its native platform default outside the container', () => {
+    expect(jfbBrowserArguments(true, undefined)).toEqual([])
   })
 })
