@@ -60,8 +60,6 @@ RUN curl --fail --location --retry 3 \
   && echo "${CHROME_SHA256}  /tmp/chrome.zip" | sha256sum --check --strict \
   && unzip -q /tmp/chrome.zip -d /opt \
   && mv /opt/chrome-linux64 /opt/chrome \
-  && chown root:root /opt/chrome/chrome_sandbox \
-  && chmod 4755 /opt/chrome/chrome_sandbox \
   && ln -s /opt/chrome/chrome /usr/local/bin/google-chrome \
   && rm /tmp/chrome.zip \
   && google-chrome --version | grep --fixed-strings "${CHROME_VERSION}"
@@ -73,7 +71,6 @@ COPY benchmark-entrypoint.sh /usr/local/bin/llui-benchmark-entrypoint
 RUN chmod 0755 /usr/local/bin/llui-benchmark-entrypoint
 
 ENV CHROME_BIN=/opt/chrome/chrome \
-    CHROME_DEVEL_SANDBOX=/opt/chrome/chrome_sandbox \
     HOME=/tmp/llui-benchmark-home \
     npm_config_cache=/cache/npm \
     TURBO_TELEMETRY_DISABLED=1
