@@ -1,6 +1,5 @@
 // The list behaviours nothing else pins: the guards in the export half, the
-// `1)` delimiter with no blank line, and the two places this package's flat
-// nesting model diverges from CommonMark.
+// `1)` delimiter with no blank line, and nested marker normalization.
 //
 // Each of these was a surviving mutation or an undocumented behaviour when the
 // #129 work was reviewed, so they are stated as tests rather than as prose that
@@ -99,19 +98,7 @@ describe('$listExport escapes a leading ordinal in a bullet item', () => {
   })
 })
 
-describe('nesting: what this package’s flat model does and does not preserve', () => {
-  // `getIndent` counts tabs and FLOORS spaces at four, so "indented" starts at
-  // four spaces. These two cases document where that lands.
-  it('treats a 4-space indent as nesting, so the marker change is ignored', () => {
-    expect(blocks('- a\n    * b\n- c')).toHaveLength(1)
-  })
-
-  it('treats a 2-space indent as NOT nesting, so the marker change splits', () => {
-    // A divergence from CommonMark, which would call `  * b` a sublist. Stock
-    // produced one list here because it never split on a marker at all.
-    expect(blocks('- a\n  * b')).toEqual(['bullet(a)', 'bullet(b)'])
-  })
-
+describe('nested marker normalization', () => {
   it('loses a NESTED marker on export — the round-trip guarantee is top-level only', () => {
     // An indented item never records a marker (see the module header), and
     // `$listExport` reads the marker of the list it renders, so the nested `*`

@@ -11,6 +11,15 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package that consumes `@llui/dom` declares it as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. Interaction consumers use the same peer pattern for `@llui/interactions`, preserving one document-level registry. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## Unreleased
+
+### `@llui/markdown-editor`
+
+- **Fixed** Markdown import now derives nested-list depth from the parent item's
+  actual content column. Bullet, ordered, and task-list parents therefore accept
+  CommonMark's valid 1–4-column marker padding, tabs, and multi-digit ordered
+  markers without flattening children or misclassifying indented code. ([#226])
+
 ## 2026-08-17 — 0.13.0
 
 **Released:** `@llui/{agent,compiler,compiler-ssr,dom,markdown,test,vike}@0.13.0`; `@llui/{a2ui,effects}@0.3.0`; `@llui/components@0.14.0`; `@llui/{devmode-annotate,lexical-collab}@0.4.0`; `@llui/lexical@0.5.0`; `@llui/markdown-editor@0.8.0`; `@llui/mcp@0.15.0`; `@llui/{router,transitions}@0.12.0`; `@llui/{devmode-annotate-editor,interactions}@0.1.1`; `@llui/lexical-loro@0.1.2`; `@llui/{notes-format,security}@0.2.1`; `@llui/vite-plugin@0.12.1`; `llui-agent@0.11.1`

@@ -45,6 +45,11 @@ Markdown into it directly bypasses that decision and re-opens the echo loop.
 - **Toolbar surface** — an optional formatting toolbar (`./surfaces/toolbar`).
 - **`collab` seam** — opt-in collaborative editing via [`@llui/lexical-collab`](https://www.npmjs.com/package/@llui/lexical-collab).
 
+The core list importer follows the parent item's Markdown content column rather
+than assuming a fixed four-space indent. Nested bullet, ordered, and task lists
+therefore accept CommonMark's marker-dependent indentation, including tabs and
+multi-digit ordered markers, while indented code remains literal item content.
+
 ## Entry points
 
 | Import                                    | Purpose                        |

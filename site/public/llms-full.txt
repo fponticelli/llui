@@ -62233,6 +62233,11 @@ When the **rendering** itself has to change — not just the URL — a plugin li
 
 The Markdown ⇄ editor mapping is a transformer registry. `GFM_TRANSFORMERS` / `GFM_NODES` add GitHub-Flavored Markdown (tables, task lists, strikethrough); `buildTransformers` / `orderTransformers` let a plugin contribute its own (the callout plugin, for instance, registers a `> [!NOTE]` transformer).
 
+The core list importer follows the parent item's Markdown content column rather
+than assuming a fixed four-space indent. Nested bullet, ordered, and task lists
+therefore accept CommonMark's marker-dependent indentation, including tabs and
+multi-digit ordered markers, while indented code remains literal item content.
+
 Image lines are parsed with the CommonMark parser from `@llui/markdown` rather than a regex, so titles (`![a](x.png "Title")`), angle-bracket destinations (`![a](<my file.png>)`), and filenames carrying parentheses all mean what CommonMark says they mean. A line that is not exactly one image — an inline image, two on a line, a linked image — is declined and left as text rather than mangled into a block image. `parseImageLine` / `formatImageLine` are exported for hosts that need the editor's exact spelling (a paste handler writing an attachment path, say); `formatImageLine` is the true inverse of `parseImageLine`.
 
 ## Toolbar

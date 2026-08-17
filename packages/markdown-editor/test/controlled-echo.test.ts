@@ -26,17 +26,17 @@
 //     genuinely different serialization of `- one`. Pinned as a real change
 //     below, not as an echo; #71's AC naming it as cosmetic is wrong for this
 //     transformer set, as all three #70 spikes measured independently.
-//   • trailing whitespace (and the padding after a list marker) also round-trips
-//     verbatim, though CommonMark strips final whitespace from a paragraph's raw
-//     content — so this one is an IMPORTER conformance gap. The push applies
-//     once and then converges (pinned below), but the caret dies on that first
-//     write, and a consumer that re-authors whitespace onto every emission
-//     authors a new document each time and so never converges at all.
+//   • one-to-four padding columns after a list marker are structural CommonMark
+//     syntax and now collapse on import (#226), so those spellings are echoes.
+//   • trailing whitespace still round-trips verbatim, though CommonMark strips
+//     it from a paragraph's raw content — so that remains an IMPORTER conformance
+//     gap. The push applies once and then converges (pinned below), but the caret
+//     dies on that first write.
 //
-// #71 therefore stays OPEN on the trailing-whitespace/list-padding half, which
-// needs an importer normal-form fix (the mdast-driven importer this package
-// already owes its transformer set), not another echo guard. Do not close it on
-// the strength of this file.
+// #71 therefore stays OPEN on trailing whitespace, which needs an importer
+// normal-form fix (the mdast-driven importer this package already owes its
+// transformer set), not another echo guard. Do not close it on the strength of
+// this file.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { mountApp, type SignalComponentHandle } from '@llui/dom'
@@ -218,16 +218,10 @@ describe('issue #71 (delivered half): a surface form the importer collapses', ()
     expect(app.getState().dirty).toBe(true)
   })
 
-  it('records #71’s residual: trailing whitespace and list padding are REAL changes', async () => {
-    // The other two surface forms #71 calls cosmetic. They are not, here, and
-    // NOT for the reason the bullet marker is not: the importer keeps the extra
-    // spaces in the text node and the exporter emits them, so the value round-
-    // trips verbatim and really does describe a different document. CommonMark
-    // disagrees (final whitespace is stripped from a paragraph's raw content),
-    // which makes this an IMPORTER normal-form gap — out of #70's scope, and the
-    // reason #71 is not closed by this change. Pinned so the residual is
-    // executable: an importer fix flips these assertions instead of landing
-    // silently.
+  it('records #71’s remaining residual: trailing whitespace is a REAL change', async () => {
+    // The importer keeps final spaces in the text node and the exporter emits
+    // them, so this value round-trips verbatim and describes a different editor
+    // document. CommonMark disagrees, making this an importer normal-form gap.
     //
     // What the echo authority DOES buy here is termination: the value applies
     // once and every re-push of it is then an echo. (A consumer that appends
@@ -270,7 +264,28 @@ describe('issue #71 (delivered half): a surface form the importer collapses', ()
     }
 
     await probe('hello', 'hello   ')
-    await probe('- one\n- two', '-   one\n-   two')
+  })
+
+  it('recognises ordinary list-marker padding as an echo', async () => {
+    let editor!: LexicalEditor
+    app = mountApp(
+      container,
+      markdownEditor({
+        defaultValue: '- one\n- two',
+        changeDebounceMs: 5,
+        onReady: (value) => {
+          editor = value
+        },
+      }),
+    )
+    editor.update(() => $getRoot().selectEnd(), { discrete: true })
+    const key = topKey(editor)
+
+    app.send({ type: 'setValue', value: '-   one\n-   two' })
+    await wait(0)
+
+    expect(topKey(editor)).toBe(key)
+    expect(caret(editor)).not.toBeNull()
   })
 
   it('still applies a value that really is a different document', async () => {

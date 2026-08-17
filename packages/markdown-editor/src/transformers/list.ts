@@ -37,26 +37,22 @@
 // the authored marker. mdast also carries no bullet character, so an importer
 // would need `position` and the source text to feed `setMarker`.
 //
-// ## What upstream's flat model can and cannot express
+// ## Content-indentation nesting (issue #226)
 //
-// `$importBlocks` gives an indented item `setIndent(n)` inside the SAME list
-// rather than building a real subtree, so "the marker of a list" can only mean
-// its TOP-LEVEL marker. An indented item therefore neither records a marker nor
-// tests one — otherwise a nested marker change would tear the outer list in two.
+// Lexical hands an element transformer one source line at a time. CommonMark
+// list depth, however, depends on the still-open parent items: a child begins at
+// its parent's content indentation, which varies with the marker width and the
+// following one-to-four padding columns. Tabs use four-column stops. The
+// editor-local open-item stack below carries exactly that context across
+// consecutive list lines, translates the resulting structural depth into the
+// `setIndent(n)` shape Lexical expects, and anchors itself to the preceding list
+// so it cannot leak across editors, imports, or intervening blocks.
 //
-// Two consequences of that flatness, both deliberate and both observable:
-//
-//  - "Indented" means `getIndent`, which counts TABS and floors spaces at four.
-//    So `- a\n    * b` is one list with a nested item (the `*` is ignored), but
-//    `- a\n  * b` — a 1-to-3-space indent — is not indented at all as far as
-//    this importer is concerned, and the marker change splits it into TWO
-//    lists where stock produced one. CommonMark would call the second a
-//    sublist; matching that needs the real subtree the flat model does not
-//    build, so it is left as a known divergence rather than special-cased.
-//  - A nested marker is LOST on export. `$listExport` reads the marker of the
-//    list it is rendering, and an indented item never recorded one, so
-//    `- a\n    * b` comes back as `- a\n    - b`. The round-trip guarantee
-//    "`* a` round-trips as `* a`" is therefore TOP-LEVEL ONLY.
+// "The marker of a list" remains top-level-only during `listReplace`: testing a
+// nested item's marker before `setIndent` materializes its subtree would split
+// the outer list. Consequently the exact character of a nested same-type marker
+// still normalizes on export (`- a\n    * b` → `- a\n    - b`). Structure and
+// list type survive; exact nested marker spelling is a separate concern.
 
 import {
   $createListItemNode,
@@ -69,7 +65,15 @@ import {
 } from '@lexical/list'
 import { $isHeadingNode } from '@lexical/rich-text'
 import type { ElementTransformer } from '@lexical/markdown'
-import type { BaseSelection, ElementNode, LexicalNode } from 'lexical'
+import {
+  $getEditor,
+  $isParagraphNode,
+  $isTextNode,
+  type BaseSelection,
+  type ElementNode,
+  type LexicalEditor,
+  type LexicalNode,
+} from 'lexical'
 import { $isMarkdownListNode, asListMarker, type ListMarker } from '../nodes/list.js'
 
 /**
@@ -81,12 +85,97 @@ export function isCheckedMarker(inner: string | undefined): boolean {
   return inner !== undefined && inner.toLowerCase() === 'x'
 }
 
-/** Spaces per indent level, matching upstream's importer and exporter. */
+/** Spaces used to encode a resolved structural depth for Lexical. */
 const LIST_INDENT_SIZE = 4
 
-/** Indent level of a line's leading whitespace — a tab is one level, four
- * spaces are one level. (Upstream's `getIndent`, which is not exported.) */
-function getIndent(whitespaces: string): number {
+/** One source list item that remains open while consecutive lines import. */
+interface OpenItem {
+  readonly contentColumn: number
+  readonly indent: number
+}
+
+/** Import context is editor-local: transformer objects are shared globally. */
+interface ImportState {
+  readonly listKey: string
+  readonly open: readonly OpenItem[]
+}
+
+const importState = new WeakMap<LexicalEditor, ImportState>()
+
+interface ResolvedItem {
+  readonly contentPrefix: string
+  readonly open: OpenItem[]
+}
+
+/** CommonMark expands tabs at four-column stops for block structure. */
+function columnAfter(text: string, from = 0): number {
+  let column = from
+  for (const character of text) {
+    column = character === '\t' ? column + (4 - (column % 4)) : column + 1
+  }
+  return column
+}
+
+/** The previous non-empty block; blank lines may only make a list loose. */
+function previousBlock(node: LexicalNode): LexicalNode | null {
+  let sibling = node.getPreviousSibling()
+  while ($isParagraphNode(sibling) && sibling.getTextContentSize() === 0) {
+    sibling = sibling.getPreviousSibling()
+  }
+  return sibling
+}
+
+function carriedOpenItems(parentNode: ElementNode): readonly OpenItem[] {
+  const previous = previousBlock(parentNode)
+  if (!$isListNode(previous)) return []
+  const state = importState.get($getEditor())
+  return state?.listKey === previous.getKey() ? state.open : []
+}
+
+/** Extend the open-item stack with the current source line. */
+function resolveOpenItems(
+  parentNode: ElementNode,
+  children: readonly LexicalNode[],
+  match: string[],
+  spec: ListSpec,
+): ResolvedItem | null {
+  const open = [...carriedOpenItems(parentNode)]
+  const column = columnAfter(match[1] ?? '')
+  let parent = open.at(-1)
+  while (parent !== undefined && column < parent.contentColumn) {
+    open.pop()
+    parent = open.at(-1)
+  }
+
+  // A list marker may be indented by at most three columns within its current
+  // container. At four it is block content (usually indented code), not a
+  // deeper list item.
+  const containerColumn = parent?.contentColumn ?? 0
+  if (column > containerColumn + 3) return null
+
+  const markerEnd = column + spec.markerWidth(match)
+  const paddingEnd = columnAfter(spec.padding(match), markerEnd)
+  const paddingColumns = paddingEnd - markerEnd
+  if (paddingColumns > 4 && !spec.acceptsIndentedCode) return null
+
+  const first = children[0]
+  const startsBlank =
+    spec.emptyItemUsesSinglePadding && $isTextNode(first) && first.getTextContentSize() === 0
+
+  // In the ordinary case CommonMark consumes all one-to-four padding columns.
+  // With more than four, the item starts with indented code: only one column
+  // belongs to the list prefix and the remainder stays in the item content.
+  const contentColumn = startsBlank || paddingColumns > 4 ? markerEnd + 1 : paddingEnd
+  const contentPrefix = !startsBlank && paddingColumns > 4 ? ' '.repeat(paddingColumns - 1) : ''
+  open.push({
+    contentColumn,
+    indent: parent === undefined ? 0 : parent.indent + 1,
+  })
+  return { contentPrefix, open }
+}
+
+/** Shortcut-time indent fallback. Imports use the CommonMark stack above. */
+function getShortcutIndent(whitespaces: string): number {
   const tabs = whitespaces.match(/\t/g)
   const spaces = whitespaces.match(/ /g)
   return (tabs === null ? 0 : tabs.length) + (spaces === null ? 0 : Math.floor(spaces.length / 4))
@@ -96,6 +185,14 @@ function getIndent(whitespaces: string): number {
  * module's own, since it owns both the patterns and the reader. */
 interface ListSpec {
   readonly listType: ListType
+  /** Width of the bullet or ordered marker, excluding its following padding. */
+  readonly markerWidth: (match: string[]) => number
+  /** Whitespace between the list marker and the first item-content token. */
+  readonly padding: (match: string[]) => string
+  /** Whether padding beyond four columns denotes an indented-code list item. */
+  readonly acceptsIndentedCode: boolean
+  /** Empty bullet/ordered items use CommonMark's marker-width-plus-one rule. */
+  readonly emptyItemUsesSinglePadding: boolean
   /** The authored marker, or `null` when the syntax carries none (a bare
    * `[ ] task` with no bullet). */
   readonly marker: (match: string[]) => ListMarker | null
@@ -122,7 +219,14 @@ function listReplace(spec: ListSpec): ElementTransformer['replace'] {
     // `# ` already claimed this line as a heading.
     if ($isHeadingNode(parentNode)) return false
 
-    const indent = getIndent(match[1] ?? '')
+    const container = parentNode.getParent()
+    const resolved = isImport ? resolveOpenItems(parentNode, children, match, spec) : null
+    if (isImport && resolved === null) {
+      const first = children[0]
+      if ($isTextNode(first)) first.setTextContent((match[0] ?? '') + first.getTextContent())
+      return false
+    }
+    const indent = resolved?.open.at(-1)?.indent ?? getShortcutIndent(match[1] ?? '')
     // Only a top-level item speaks for its list's marker — see the module
     // header on upstream's flat, indent-based nesting.
     const marker = indent === 0 ? spec.marker(match) : null
@@ -167,9 +271,20 @@ function listReplace(spec: ListSpec): ElementTransformer['replace'] {
       parentNode.replace(list)
     }
 
+    const first = children[0]
+    if (resolved?.contentPrefix && $isTextNode(first)) {
+      first.setTextContent(resolved.contentPrefix + first.getTextContent())
+    }
     listItem.append(...children)
     if (!isImport) listItem.select(0, 0)
     if (indent) listItem.setIndent(indent)
+
+    if (resolved !== null) {
+      const list = container?.getLastChild()
+      if ($isListNode(list)) {
+        importState.set($getEditor(), { listKey: list.getKey(), open: resolved.open })
+      } else importState.delete($getEditor())
+    }
   }
 }
 
@@ -248,9 +363,13 @@ const LIST_DEPENDENCIES = [ListNode, ListItemNode]
 export const UNORDERED_LIST_TRANSFORMER: ElementTransformer = {
   dependencies: LIST_DEPENDENCIES,
   export: exportList,
-  regExp: /^(\s*)([-*+])\s/,
+  regExp: /^([ \t]*)([-*+])([ \t]+)/,
   replace: listReplace({
     listType: 'bullet',
+    markerWidth: () => 1,
+    padding: (match) => match[3] ?? '',
+    acceptsIndentedCode: true,
+    emptyItemUsesSinglePadding: true,
     marker: (match) => asListMarker(match[2]),
   }),
   triggerOnEnter: true,
@@ -270,9 +389,13 @@ export const UNORDERED_LIST_TRANSFORMER: ElementTransformer = {
 export const ORDERED_LIST_TRANSFORMER: ElementTransformer = {
   dependencies: LIST_DEPENDENCIES,
   export: exportList,
-  regExp: /^(\s*)(\d{1,9})([.)])\s/,
+  regExp: /^([ \t]*)(\d{1,9})([.)])([ \t]+)/,
   replace: listReplace({
     listType: 'number',
+    markerWidth: (match) => (match[2]?.length ?? 0) + 1,
+    padding: (match) => match[4] ?? '',
+    acceptsIndentedCode: true,
+    emptyItemUsesSinglePadding: true,
     marker: (match) => asListMarker(match[3]),
     start: (match) => Number(match[2]),
   }),
@@ -284,11 +407,15 @@ export const ORDERED_LIST_TRANSFORMER: ElementTransformer = {
 export const CHECK_LIST_TRANSFORMER: ElementTransformer = {
   dependencies: LIST_DEPENDENCIES,
   export: exportList,
-  regExp: /^(\s*)(?:([-*+])\s)?\s?(\[([\sxX]?)\])\s/,
+  regExp: /^([ \t]*)(?:([-*+])([ \t]+))?(\[([\sxX]?)\])([ \t])/,
   replace: listReplace({
     listType: 'check',
+    markerWidth: () => 1,
+    padding: (match) => (match[2] === undefined ? ' ' : (match[3] ?? '')),
+    acceptsIndentedCode: false,
+    emptyItemUsesSinglePadding: false,
     marker: (match) => asListMarker(match[2]),
-    checked: (match) => isCheckedMarker(match[4]),
+    checked: (match) => isCheckedMarker(match[5]),
   }),
   triggerOnEnter: true,
   type: 'element',
