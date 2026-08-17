@@ -5,6 +5,12 @@ description: 'Named, type-safe routing with Standard Schema, guards, and history
 
 # @llui/router
 
+<!-- package-version:start -->
+
+**Current package version:** `0.12.0`
+
+<!-- package-version:end -->
+
 Named, type-safe URL routing for LLui, with history and hash modes, guards, and link helpers.
 
 ```bash
@@ -391,6 +397,386 @@ The Standard Schema interface.
 interface StandardSchemaV1<Input = unknown, Output = Input> {
   /** The Standard Schema properties. */
   readonly '~standard': StandardSchemaV1.Props<Input, Output>
+}
+```
+
+## Public Entry Points
+
+### `@llui/router/connect`
+
+#### Functions
+
+##### `browserRouterEnv()` from `@llui/router/connect`
+
+Wrap the browser globals as a {@link RouterEnv} — the default for
+`connectRouter`.
+
+Reads delegate through getters, so evaluating this on a server process before
+a DOM exists is safe: the globals are only dereferenced when a member is
+actually used, and the read members fall back rather than throwing (the
+connector seeds its starting route at construction time, which happens at
+module scope in most apps).
+
+```typescript
+function browserRouterEnv(): RouterEnv
+```
+
+##### `connectRouter()` from `@llui/router/connect`
+
+Bind a {@link Router} to a History/Location surface: the effect handler, the
+browser-driven URL listener, and the `link()` helper, all running the same
+guard pipeline.
+
+POSITION MODEL (what a blocked navigation is undone with). The browser
+exposes no counter for "where in the stack am I", so every entry this
+connector creates is stamped with a monotonic index in `history.state` (under
+`__llui_idx`, merged into whatever the host already owns there), starting with
+the entry the app loaded on. A guard-blocked browser navigation is undone by
+`history.go(delta)` computed from two such stamps — a TRAVERSAL, so the stack,
+its length and every forward entry survive exactly as they were (#103).
+
+An entry NOBODY stamped has no knowable position, and no position is invented
+for one — in either mode (#150; the reasoning, the alternatives that were
+measured and rejected, and the behaviour this costs are all recorded on
+`adoptLandedEntry`). Blocking a navigation onto such an entry is
+guard-honouring but NOT undoable: nothing is dispatched and application location
+keeps the route you never left, but the URL is left showing the blocked one
+until the next navigation. That visible disagreement is deliberately preferred
+over a guessed `history.go(delta)`, which traverses to the wrong entry and
+dispatches a route the user never asked for.
+
+An index is therefore only half of a position. `delta = here - there` is the
+PHYSICAL distance between two entries only while every entry between them was
+numbered in the same consecutive pass; an entry the router could not place
+ENDS such a pass, and the next one it numbers starts a new one whose indices
+count physical entries from a different origin. So each stamp also carries the
+RUN it was numbered in (`__llui_run`, see `mintRun`), and a delta is computed
+only between two entries of the same run. Across runs the distance is
+unknowable and the block is left un-undone, exactly as it is for an entry with
+no stamp at all.
+
+Every history/location touch goes through {@link RouterEnv} (default
+{@link browserRouterEnv}); nothing in this file reaches for `location`,
+`history` or `window` directly (#111).
+
+```typescript
+function connectRouter<
+  const Registry extends RouteRegistry,
+  NavigateMessage = RouterNavigateMessage<Registry>,
+  UnmatchedMessage = RouterUnmatchedMessage,
+>(
+  router: Router<Registry>,
+  options?: ConnectOptions<Registry, NavigateMessage, UnmatchedMessage>,
+): ConnectedRouter<Registry, NavigateMessage, UnmatchedMessage>
+```
+
+#### Types
+
+##### `RouterMessage` from `@llui/router/connect`
+
+```typescript
+export type RouterMessage<Registry extends RouteRegistry> =
+  | RouterNavigateMessage<Registry>
+  | RouterUnmatchedMessage
+```
+
+#### Interfaces
+
+##### `ConnectedRouter` from `@llui/router/connect`
+
+```typescript
+export interface ConnectedRouter<
+  Registry extends RouteRegistry,
+  NavigateMessage = RouterNavigateMessage<Registry>,
+  UnmatchedMessage = RouterUnmatchedMessage,
+> {
+  /**
+   * Effect: push a new history entry — URL only.
+   *
+   * Use when the reducer that emitted the effect has already updated its
+   * current location (e.g. a navigate handler that bundles
+   * state changes inline before delegating URL work). For
+   * navigate-and-let-the-app-react flows from anywhere else, prefer
+   * `navigate()` — it dispatches the listener-captured navigate
+   * message after pushState so application location and route-side-effects
+   * stay in sync without each reducer re-implementing the delegation.
+   */
+  push<
+    const Name extends keyof Registry & string,
+    const Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<
+      Registry,
+      Name
+    >,
+  >(
+    name: Name,
+    ...args: RouteDestinationArguments<Registry, Name, Params>
+  ): RouterEffect
+  /**
+   * Effect: replace the current history entry — URL only. Same
+   * URL-only contract as `push()`. For replace-and-react flows, see
+   * `navigate()` (push semantics) — there's no `replaceAndDispatch`
+   * variant yet because the use case hasn't surfaced; if it does,
+   * model it the same way.
+   */
+  replace<
+    const Name extends keyof Registry & string,
+    const Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<
+      Registry,
+      Name
+    >,
+  >(
+    name: Name,
+    ...args: RouteDestinationArguments<Registry, Name, Params>
+  ): RouterEffect
+  /**
+   * Effect: push history AND dispatch the listener-captured navigate
+   * message so the reducer can update its current location and run any
+   * route-side-effects (data fetches, page-meta resets, analytics).
+   *
+   * Resolves the asymmetry where `link()` did pushState + send while
+   * `push()` did pushState only — apps that wanted programmatic
+   * navigation from arbitrary reducers had to either re-implement the
+   * delegation or live with desynchronized application location.
+   *
+   * Dispatches through the `send` the effect runner hands every effect,
+   * so it works from ANY effect — including an `init()` effect that runs
+   * before any view mounts. It does NOT depend on `listener()` being
+   * mounted (that only handles browser-driven popstate/hashchange).
+   * The message shape is `{ type: 'navigate', location }` unless overridden
+   * via `connectRouter`'s `navigateMsg` option.
+   */
+  navigate<
+    const Name extends keyof Registry & string,
+    const Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<
+      Registry,
+      Name
+    >,
+  >(
+    name: Name,
+    ...args: RouteDestinationArguments<Registry, Name, Params>
+  ): RouterEffect
+  /** Effect: go back */
+  back(): RouterEffect
+  /** Effect: go forward */
+  forward(): RouterEffect
+  /** Effect: scroll to position */
+  scroll(x: number, y: number): RouterEffect
+
+  /** Plugin for handleEffects().use() — handles RouterEffect */
+  handleEffect: (ctx: { effect: { type: string }; send: unknown; signal: AbortSignal }) => boolean
+
+  /**
+   * View helper: attach URL change listener via onMount.
+   * Returns the onMount marker to place in the view. Sends
+   * `{ type: 'navigate', location }` or `{ type: 'unmatched', url }`.
+   */
+  listener(send: (msg: NavigateMessage | UnmatchedMessage) => void): Renderable
+  listener<M>(
+    send: (msg: M | UnmatchedMessage) => void,
+    msgFactory: (location: RouteLocation<Registry>) => M,
+  ): Renderable
+  listener<M, U>(
+    send: (msg: M | U) => void,
+    msgFactory: (location: RouteLocation<Registry>) => M,
+    unmatchedFactory: (url: string) => U,
+  ): Renderable
+
+  /**
+   * View helper: render a navigation link.
+   * Generates <a> with proper href and click handler that sends navigate message.
+   */
+  link<
+    M,
+    const Name extends keyof Registry & string,
+    const Params extends RouteGenerationParams<Registry, Name> = RouteGenerationParams<
+      Registry,
+      Name
+    >,
+  >(
+    send: (msg: M) => void,
+    name: Name,
+    ...args: ExactLinkArguments<Registry, Name, Params, M>
+  ): Mountable
+
+  /**
+   * Create an update handler for navigate messages — call it from your
+   * component's `update` (returns early when it handles the message).
+   * Returns [newState, Effect[]] for navigate messages, null for others.
+   */
+  createHandler<S, M, E>(config: {
+    /** Message type to handle (default: 'navigate') */
+    message?: string
+    /** Extract route from message */
+    getLocation: (msg: M) => RouteLocation<Registry>
+    /** Optional guard — can redirect */
+    guard?: (location: RouteLocation<Registry>, state: S) => RouteLocation<Registry>
+    /** Build new state + effects for the route */
+    onNavigate: (state: S, location: RouteLocation<Registry>) => [S, E[]]
+  }): (state: S, msg: M) => [S, E[]] | null
+}
+```
+
+##### `ConnectOptions` from `@llui/router/connect`
+
+```typescript
+export interface ConnectOptions<
+  Registry extends RouteRegistry,
+  NavigateMessage = RouterNavigateMessage<Registry>,
+  UnmatchedMessage = RouterUnmatchedMessage,
+> {
+  /**
+   * The History/Location surface to drive (default: {@link browserRouterEnv}).
+   * Inject one to route a test, an SSR host, or an embedded frame through its
+   * own history without touching the page's.
+   */
+  env?: RouterEnv
+
+  /**
+   * Called before entering a new route. Return:
+   * - `void` / `undefined` → allow navigation
+   * - `false` → block navigation (stay on current route)
+   * - a different route location → redirect to that location
+   *
+   * A redirect CHAINS: the target is offered back to this same function until it
+   * is accepted, blocked, or stops moving the URL (capped at 10 hops — see
+   * `runGuards`). So this may be called several times for one navigation, and
+   * only the settled route is dispatched. `from` is the route being LEFT on
+   * every hop — no hop is entered.
+   */
+  beforeEnter?: (
+    to: RouteLocation<Registry>,
+    from: RouteLocation<Registry> | null,
+  ) => RouteLocation<Registry> | false | void
+  /**
+   * Called before leaving the current route. Return:
+   * - `true` → allow navigation
+   * - `false` → block (e.g. unsaved changes prompt)
+   *
+   * Called ONCE per navigation, before any `beforeEnter`, with the route
+   * originally REQUESTED as `to` — a redirect chain must not prompt N times.
+   */
+  beforeLeave?: (from: RouteLocation<Registry>, to: RouteLocation<Registry>) => boolean
+
+  /**
+   * Build the message dispatched by the `navigate()` effect (and the
+   * popstate/hashchange listener and `link()`) when the route changes.
+   * Defaults to `{ type: 'navigate', location }`. Override only if your app
+   * uses a different message shape for route changes; the same factory then
+   * applies to every route-change dispatch so they stay consistent.
+   */
+  navigateMsg?: (location: RouteLocation<Registry>) => NavigateMessage
+  /** Build the message dispatched for a browser-driven unmatched URL. */
+  unmatchedMsg?: (url: string) => UnmatchedMessage
+}
+```
+
+##### `RouterEffect` from `@llui/router/connect`
+
+```typescript
+export interface RouterEffect {
+  type: '__router'
+  action: 'push' | 'replace' | 'navigate' | 'back' | 'forward' | 'scroll'
+  path?: string
+  /** The normalized route location targeted by this effect. */
+  location?: unknown
+  x?: number
+  y?: number
+}
+```
+
+##### `RouterEnv` from `@llui/router/connect`
+
+The History / Location / scroll surface `connectRouter` depends on, injected
+rather than reached for globally — the same pattern `@llui/dom`'s
+`dom-env.ts` already models, and for the same three reasons: no
+`globalThis` mutation (strict-isolate runtimes forbid it), no process-level
+singleton two routers could collide on, and a test/SSR host can supply its
+own surface instead of shimming the world.
+
+The surface is deliberately narrow — exactly what the connector touches. The
+READ members return an empty/`null` value where the corresponding global is
+absent, matching the guards this replaced; the MUTATORS dereference their
+global at call time, so invoking one on a runtime with no history is the same
+error it always was.
+
+```typescript
+export interface RouterEnv {
+  /** `location.hash` (`''` where there is no location). */
+  readonly hash: string
+  /** `location.pathname` (`''` where there is no location). */
+  readonly pathname: string
+  /** `location.search` (`''` where there is no location). */
+  readonly search: string
+  /** `history.state` (`null` where there is no history). */
+  readonly historyState: unknown
+  /**
+   * `history.length` — the session-history entry count (`0` where there is no
+   * history).
+   *
+   * A CAPABILITY TEST, not a position. `0` means "this surface has no history at
+   * all" — every real session history contains at least the entry you are
+   * standing on — and that is the only question asked of it: the
+   * construction-time seed checks it before writing a stamp, which is what keeps
+   * an SSR import (where `connectRouter` runs at module scope) a no-op instead
+   * of a throw.
+   *
+   * It is NO LONGER the hash-mode push-vs-traversal discriminator. That use was
+   * deleted in #150 — see `adoptLandedEntry` for why — so an implementation is
+   * free to report any positive constant for a surface that has a history, and
+   * reporting an exact count buys nothing.
+   */
+  readonly historyLength: number
+
+  /** Assign `location.hash` — a same-document navigation that fires `hashchange`. */
+  setHash(hash: string): void
+
+  pushState(state: unknown, url: string): void
+  /**
+   * `history.replaceState(state, '', url)` — swap the current entry's state,
+   * and its URL when one is given.
+   *
+   * `url` is OPTIONAL because "re-stamp this entry's state and leave the URL
+   * alone" is a distinct operation (merging a foreign key into `history.state`,
+   * recording a scroll offset), and `''` does not express it: an empty url
+   * resolves against the document base and drops the fragment, which silently
+   * breaks hash mode. An implementation must forward an absent `url` as absent.
+   */
+  replaceState(state: unknown, url?: string): void
+  back(): void
+  forward(): void
+  /** `history.go(delta)` — used to REWIND a blocked pop, never a fresh push. */
+  go(delta: number): void
+
+  scrollTo(x: number, y: number): void
+
+  /**
+   * Subscribe to a browser-driven URL change. Returns the unsubscribe, so the
+   * caller never has to hold the handler identity to detach it. A hashchange
+   * supplies the fragment from the event's `newURL`; this remains the traversal
+   * destination even when a guard synchronously rewrites `location.hash` while
+   * handling the preceding popstate. Call the handler without an argument for
+   * popstate. Custom adapters must derive the hash argument from
+   * `HashChangeEvent.newURL`, not from the live location.
+   */
+  onUrlChange(event: 'popstate' | 'hashchange', handler: (newHash?: string) => void): () => void
+}
+```
+
+##### `RouterNavigateMessage` from `@llui/router/connect`
+
+```typescript
+export interface RouterNavigateMessage<Registry extends RouteRegistry> {
+  readonly type: 'navigate'
+  readonly location: RouteLocation<Registry>
+}
+```
+
+##### `RouterUnmatchedMessage` from `@llui/router/connect`
+
+```typescript
+export interface RouterUnmatchedMessage {
+  readonly type: 'unmatched'
+  readonly url: string
 }
 ```
 

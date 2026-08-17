@@ -5,6 +5,12 @@ description: 'Engine: the signal TypeScript transform (view lowering + introspec
 
 # @llui/compiler
 
+<!-- package-version:start -->
+
+**Current package version:** `0.13.0`
+
+<!-- package-version:end -->
+
 Build-tool-agnostic compiler engine for [LLui](https://github.com/fponticelli/llui). It runs the **signal transform** — lowering signal expressions in a component's direct view to runtime helpers (`signalText`/`el`/`signalEach`/…) and emitting introspection metadata — and enforces the signal lint set as non-bypassable compile-time errors.
 
 This package is the engine. End users normally consume it through an adapter:
@@ -1834,6 +1840,16 @@ rules that inspect a call's arguments; never for lowering (see the note on
 
 ```typescript
 const ALL_ELEMENT_HELPERS: ReadonlySet<string>
+```
+
+### `ANNOTATION_TAGS`
+
+Every tag that takes a parenthesized argument list. Keyed by tag name
+WITHOUT the `@`. Flag-style tags (`@requiresConfirm`, `@humanOnly`, …) take
+no arguments and are not part of this grammar.
+
+```typescript
+const ANNOTATION_TAGS: Readonly<Record<string, AnnotationTagSpec>>
 ```
 
 ### `COMPILER_DOM_INTERNAL_IMPORTS`

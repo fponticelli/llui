@@ -5,6 +5,12 @@ description: 'MCP server CLI (llui-agent) that translates Claude Desktop tool ca
 
 # @llui/agent-bridge
 
+<!-- package-version:start -->
+
+**Current package version:** `0.11.1`
+
+<!-- package-version:end -->
+
 The MCP bridge that lets Claude Desktop (and other MCP clients) drive an LLui app. Companion to [`@llui/agent`](/api/agent) — the bridge speaks MCP on one side and [LAP](/api/agent) on the other.
 
 ```bash
@@ -150,6 +156,99 @@ export type BridgeDeps = {
 ## Classes
 
 ### `BindingMap`
+
+Per-MCP-session map. Keyed by the SDK's session id (one per Claude
+conversation). Spec §11.3.
+
+```typescript
+class BindingMap {
+  map
+  set(sessionId: string, url: string, token: string): void
+  get(sessionId: string): Binding | null
+  setDescribe(sessionId: string, describe: LapDescribeResponse): void
+  clear(sessionId: string): void
+  has(sessionId: string): boolean
+}
+```
+
+## Public Entry Points
+
+### `llui-agent/internal/bridge`
+
+#### Functions
+
+##### `createBridgeServer()` from `llui-agent/internal/bridge`
+
+Builds the bridge's MCP server using the high-level `McpServer`
+registrars. Each tool's Zod schema (declared once in `tools.ts`)
+drives both runtime input validation and the JSON Schema published
+to `tools/list` — eliminating the hand-written-schema-vs-handler
+drift that the low-level `setRequestHandler` pattern is prone to.
+
+Forwarded tools (`kind: 'forward'`) share the `@llui/agent/mcp/executor`
+dispatch — the same code the server-side MCP runs — so describe
+caching, schemaHash invalidation, and error shaping behave identically
+across both surfaces. The two meta tools (`connect_session`,
+`disconnect_session`) carry custom handlers that mutate the BindingMap
+directly, then delegate to the shared connect prefetch.
+
+```typescript
+function createBridgeServer(deps: BridgeDeps): McpServer
+```
+
+##### `detectSchemaChange()` from `llui-agent/internal/bridge`
+
+Compare a freshly-fetched app description against the cached one and
+decide whether the cached schema is now stale. A changed `schemaHash`
+means the app's Msg/State schema was recompiled — cached
+affordances/examples/payload shapes may no longer be valid, so the
+caller is told to re-read before dispatching. Exported so the
+invalidation policy is unit-testable in isolation.
+
+```typescript
+export declare function detectSchemaChange(
+  prev: LapDescribeResponse | null,
+  next: Pick<LapDescribeResponse, 'schemaHash'>,
+): {
+  changed: boolean
+  note: string | null
+}
+```
+
+#### Types
+
+##### `BridgeDeps` from `llui-agent/internal/bridge`
+
+```typescript
+export type BridgeDeps = {
+  /** Injectable for tests. */
+  fetch?: typeof fetch
+  /** MCP session ID for this client. In stdio mode there's one session; derive from the Server instance. */
+  sessionId: string
+  /** Shared binding map (one BindingMap per process). */
+  bindings: BindingMap
+  /** Package version — set from package.json at boot. */
+  version: string
+}
+```
+
+### `llui-agent/internal/binding`
+
+#### Types
+
+##### `Binding` from `llui-agent/internal/binding`
+
+```typescript
+export type Binding = {
+  url: string // LAP base path, e.g. "https://app/agent/lap/v1"
+  token: string
+  describe: LapDescribeResponse | null // cached describe_app response; populated on bind
+}
+```
+
+#### Classes
+
+##### `BindingMap` from `llui-agent/internal/binding`
 
 Per-MCP-session map. Keyed by the SDK's session id (one per Claude
 conversation). Spec §11.3.

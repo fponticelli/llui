@@ -5,6 +5,12 @@ description: 'Opt-in compiler module: use-client directive handling and SSR emis
 
 # @llui/compiler-ssr
 
+<!-- package-version:start -->
+
+**Current package version:** `0.13.0`
+
+<!-- package-version:end -->
+
 Opt-in compiler module for SSR. Handles the `'use client'` directive and the SSR-specific emission paths consumed by [`@llui/vike`](/api/vike).
 
 Apps that don't use server-rendering can leave this off — the engine and Vite plugin work without it.

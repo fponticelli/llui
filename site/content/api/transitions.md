@@ -5,6 +5,12 @@ description: 'Animation: transition(), presets, flip, spring, stagger'
 
 # @llui/transitions
 
+<!-- package-version:start -->
+
+**Current package version:** `0.12.0`
+
+<!-- package-version:end -->
+
 Animation helpers for [LLui](https://github.com/fponticelli/llui) structural primitives. Works with `show`, `branch`, and `each`.
 
 ```bash

@@ -5,7 +5,7 @@ user_invocable: true
 
 # /publish — Prepare a release and print the publish command
 
-Detect which `@llui/*` packages have changed since the last release, decide the cascade with the user, bump their versions, write a new `CHANGELOG.md` entry, run the full verify matrix, commit, push — and **print the final `./scripts/publish.sh` command** for the user to run. The skill **does not publish to npm itself**; that step stays in the user's hands so they can review and run it when ready.
+Detect which `@llui/*` packages have changed since the last release, decide the cascade with the user, bump their versions, regenerate the llui.dev API and LLM references, write a new `CHANGELOG.md` entry, run the full verify matrix, commit, push, verify the docs deployment — and **print the final `./scripts/publish.sh` command** for the user to run. The skill **does not publish to npm itself**; that step stays in the user's hands so they can review and run it when ready.
 
 ## Usage
 
@@ -27,7 +27,7 @@ Detect which `@llui/*` packages have changed since the last release, decide the 
 
 `git log @{u}..HEAD` returning output (local ahead of remote) is fine — we'll push at the end.
 
-Reason the working tree must be clean: the `release:` commit produced by this skill must contain ONLY version bumps and the CHANGELOG entry — nothing else. If uncommitted fixes land in it, rolling back a bad release becomes much harder, and the CHANGELOG entry will drift from the commit it names.
+Reason the working tree must be clean: the `release:` commit produced by this skill must contain ONLY version bumps, the CHANGELOG entry, and the generated llui.dev artifacts derived from those bumps — nothing else. If uncommitted fixes land in it, rolling back a bad release becomes much harder, and the CHANGELOG entry will drift from the commit it names.
 
 ## Steps
 
@@ -192,6 +192,11 @@ peerDependency updates:
 
 CHANGELOG entry: 0.0.15 — <today's date>
 
+llui.dev:
+  regenerate API version badges + public entry-point references
+  regenerate llms.txt + llms-full.txt
+  deploy the release commit after CI succeeds on main
+
 Proceed?
 ```
 
@@ -248,7 +253,35 @@ git --no-pager diff --stat -- 'packages/*/package.json'
 
 The `git diff --stat` is the real check: it must list **exactly** the packages you meant to bump, nothing more.
 
-### 6. Write the CHANGELOG entry
+### 6. Regenerate llui.dev from the bumped packages
+
+Do this immediately after changing package manifests. The site generator reads the package
+versions, `package.json#exports`, and TypeScript declarations directly, so running it before the
+bump would preserve stale version badges and LLM references:
+
+```bash
+pnpm --filter @llui/site generate
+```
+
+This must refresh every generated llui.dev artifact affected by the release, including:
+
+- `site/content/api/*.md` — visible version badges plus root, subpath, and wildcard API surfaces.
+- `site/public/llms.txt` — concise package inventory with exact versions.
+- `site/public/llms-full.txt` — the complete generated framework and API reference.
+- The generated benchmark/example pages when their inputs changed.
+
+Never hand-edit package-version blocks or generated API sections. Inspect the result:
+
+```bash
+git --no-pager diff --stat -- site/content site/public
+git --no-pager diff -- site/public/llms.txt
+```
+
+Every bumped package must show its new version in its API page and both LLM references. If a
+publishable package has no API page, generation must fail; add it to
+`site/pages/api/@pkg/packages.ts` rather than letting the release proceed without docs.
+
+### 7. Write the CHANGELOG entry
 
 Read `CHANGELOG.md` and prepend a new entry at the top, below the intro paragraph and above the most recent previous entry.
 
@@ -337,12 +370,13 @@ ls -la site/content/changelog.md   # should show → ../../CHANGELOG.md
 
 If the symlink is missing or has been replaced with a regular file, stop and tell the user. Something has broken the site/repo sync.
 
-### 7. Force rebuild and full verify
+### 8. Force rebuild and full verify
 
 Packages need to be rebuilt against their new versions before publish, and the verify matrix must stay green with the bumped versions:
 
 ```bash
 pnpm turbo build --force --filter=!@llui/site
+pnpm --filter @llui/site build
 pnpm turbo check
 pnpm turbo lint
 pnpm -r --workspace-concurrency=2 run test
@@ -353,7 +387,7 @@ pnpm check:generated
 pnpm format:check
 ```
 
-Turbo caches aggressively, so `--force` on the build is required to actually rebuild with the new `package.json` metadata. If verify fails, stop — something about the version bump broke something; fix it before continuing.
+Turbo caches aggressively, so `--force` on the package build is required to actually rebuild with the new `package.json` metadata. The explicit site build is required even though the package build excludes `@llui/site`: it regenerates the docs once more, production-builds llui.dev, pre-renders every page, and bundles the example apps. If verify fails, stop — something about the version bump or generated docs broke something; fix it before continuing.
 
 Quick sanity check on the build output:
 
@@ -391,18 +425,20 @@ Check 2 above is the invariant that actually matters — if someone drops `src`
 from `files` or moves `outDir`, every published sourcemap silently resolves to
 nothing.
 
-### 8. Commit the release
+### 9. Commit the release
 
-One commit with all version bumps + the CHANGELOG entry:
+One commit with all version bumps, the CHANGELOG entry, and the generated llui.dev artifacts:
 
 ```bash
-git add packages/*/package.json CHANGELOG.md
+git add packages/*/package.json CHANGELOG.md \
+  site/content/api site/content/benchmarks.md site/content/examples.md site/content/examples \
+  site/public/benchmark-data.json site/public/llms.txt site/public/llms-full.txt
 git commit -m "$(cat <<'EOF'
 release: @llui/{dom,vite-plugin,test,router,transitions,components,vike}@X.Y.Z, @llui/effects@A.B.C, ...
 
 <one-line summary of what this release ships>
 
-<the Co-Authored-By / Codex-Session trailers your harness specifies — don't hard-code a model name here, it goes stale>
+<the co-author and session trailers your harness specifies — don't hard-code an agent or model name here, it goes stale>
 EOF
 )"
 ```
@@ -411,13 +447,30 @@ The commit message subject **MUST start with `release:`** — that's how step 2 
 
 **Do NOT create git tags.** This repo tracks releases via `release:` commits, not tags. Creating tags would be dead state that nobody reads.
 
-### 9. Push
+### 10. Push and verify llui.dev deployment
 
 ```bash
 git push
 ```
 
-### 10. Print the final publish command
+Pushing `main` does not deploy independently of verification. `.github/workflows/deploy-docs.yml`
+runs from the successful `CI` `workflow_run`, checks out that exact release commit, rebuilds the
+site, and deploys it to GitHub Pages. After pushing:
+
+1. Wait for CI on the release SHA to succeed. If it fails or is cancelled, the docs correctly do
+   not deploy; stop and fix the release.
+2. Wait for the `Deploy docs` run triggered by that CI run to succeed. Confirm it deployed the same
+   release SHA, not merely the latest run on the branch.
+3. Verify `https://llui.dev`, the API page for every bumped package, `https://llui.dev/llms.txt`,
+   and `https://llui.dev/llms-full.txt`. Each bumped package and exact new version must be visible.
+   A successful workflow without the new version is a failed release verification, usually a
+   wrong-SHA or stale-generation defect.
+
+Use `gh run list` / `gh run watch` when GitHub CLI authentication is available; otherwise report
+the exact workflow URLs for the user to watch. Do not claim llui.dev is updated until both the
+deployment and live-content checks pass.
+
+### 11. Print the final publish command
 
 Print **exactly one** concrete `./scripts/publish.sh` line — never a placeholder, never an "example (full release)" alternative, never a menu of options. The line must contain exactly the directory names of the packages bumped in step 5, in the topological order emitted by `scripts/publish-order.mjs`.
 
@@ -458,6 +511,11 @@ Then stop. The user runs the command when they're ready.
 **Why detect releases via `release:` commit instead of git tag:** this repo doesn't create tags for releases. Searching for `release:` commits is the single source of truth for "what's been published." Adding tags just to track releases would duplicate that signal and create a second thing to keep in sync.
 
 **Why force a clean working tree:** the release commit must name exactly what ships on npm. If uncommitted fixes end up in the release commit, the CHANGELOG entry we write will describe commits we didn't actually include (and the reverse — commits we did include won't appear in the notes). Easier to refuse and make the user run `/commit` first than to try to reason about mixed state.
+
+**Why regenerate and verify llui.dev in the release flow:** API pages and both LLM references derive
+their version and public surface from package manifests. A release that bumps npm packages without
+regenerating and deploying those artifacts makes the canonical docs describe the previous release.
+The CI-gated `workflow_run` deployment keeps the live site on the exact commit that passed CI.
 
 **Why verify peer ranges:** workspace peer specs are rewritten automatically by `pnpm publish`,
 but concrete ranges stay exactly as committed. Forgetting one can publish a package that declares

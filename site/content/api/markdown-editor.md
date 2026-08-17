@@ -5,6 +5,12 @@ description: 'WYSIWYG Markdown editor for LLui — hides Markdown behind a rich,
 
 # @llui/markdown-editor
 
+<!-- package-version:start -->
+
+**Current package version:** `0.8.0`
+
+<!-- package-version:end -->
+
 A WYSIWYG Markdown editor you drop into an LLui app as a single component. The user edits rich text; the editor's state holds the Markdown. It is built on [`@llui/lexical`](/api/lexical) and ships a transformer registry (GFM, callouts, …), a toolbar surface, and a set of opt-in plugins for the features beyond plain prose — links, images, tables, math, mentions, emoji, slash commands, and more.
 
 ```bash
@@ -1620,6 +1626,24 @@ shared `OVERLAY_Z` scale (60+) so document chrome never covers a menu.
 const BLOCK_DRAG_Z
 ```
 
+### `CHECK_LIST_TRANSFORMER`
+
+`- [ ]` / `- [x]` / `- [X]` (and a bare `[ ]`) ⇄ a check list.
+
+```typescript
+const CHECK_LIST_TRANSFORMER: ElementTransformer
+```
+
+### `CODE_INFO_TRANSFORMER`
+
+A drop-in replacement for `@lexical/markdown`'s `CODE` that treats the whole
+remainder of the opening-fence line as the info string (CommonMark's rule)
+instead of a single `[\w-]+` token.
+
+```typescript
+const CODE_INFO_TRANSFORMER: MultilineElementTransformer
+```
+
 ### `CODE_LANGUAGE_PLUGIN`
 
 This plugin's registry name (the `plugin` message envelope's `name`).
@@ -1628,12 +1652,57 @@ This plugin's registry name (the `plugin` message envelope's `name`).
 const CODE_LANGUAGE_PLUGIN
 ```
 
+### `COLLAB_OFF`
+
+```typescript
+const COLLAB_OFF: CollabStatus
+```
+
+### `DEFAULT_EMOJI`
+
+A small default shortcode → emoji map. Extend via `emojiPlugin({ emoji })`.
+
+```typescript
+const DEFAULT_EMOJI: Readonly<Record<string, string>>
+```
+
+### `DEFAULT_GLYPHS`
+
+Compact glyphs so the default toolbar reads as a real toolbar without icon
+assets. SVG strings render as icons; everything else as text. Override via
+`ToolbarOptions.glyphs`.
+
+```typescript
+const DEFAULT_GLYPHS: Readonly<Record<string, string>>
+```
+
+### `defaultTheme`
+
+The class hooks Lexical needs for text-decoration formats it renders as a
+plain <span>.
+
+```typescript
+const defaultTheme: EditorThemeClasses
+```
+
+### `EMPTY_FORMAT`
+
+```typescript
+const EMPTY_FORMAT: FormatState
+```
+
 ### `FRONTMATTER_BRIDGE_TYPE`
 
 The decorator bridge id for the frontmatter block.
 
 ```typescript
 const FRONTMATTER_BRIDGE_TYPE
+```
+
+### `FRONTMATTER_TRANSFORMER`
+
+```typescript
+const FRONTMATTER_TRANSFORMER: MultilineElementTransformer
 ```
 
 ### `GFM_NODES`
@@ -1681,6 +1750,15 @@ the rendering itself must change — mapping the URL is what
 const IMAGE_BRIDGE_TYPE
 ```
 
+### `IMAGE_TRANSFORMER`
+
+`![alt](src "title")` ⇄ an `image` decorator node. Contributed by
+`imagePlugin()`; exported for consumers assembling a transformer set by hand.
+
+```typescript
+const IMAGE_TRANSFORMER: ElementTransformer
+```
+
 ### `MARKDOWN_LIST_NODES`
 
 The node registrations a marker-aware editor needs: the stock `ListNode`
@@ -1694,10 +1772,627 @@ conversion in `@lexical/list` — produce the subclass.
 const MARKDOWN_LIST_NODES: readonly LexicalNodeConfig[]
 ```
 
+### `ORDERED_LIST_TRANSFORMER`
+
+`1. a` / `1) a` ⇄ an ordered list.
+
+Upstream only reads `.`; CommonMark gives `)` equal standing and §5.3 treats a
+delimiter change exactly like a bullet change, which is the third case in
+#129's acceptance criteria. No blank line is needed between them:
+`$convertFromMarkdownString`'s `shouldMergeAdjacentLines` defaults to `false`
+and no call site in this package overrides it, so `1. a\n1) b` imports as two
+ordered lists. (Stock swallows `1) b` as text, so this is strictly better.)
+
+```typescript
+const ORDERED_LIST_TRANSFORMER: ElementTransformer
+```
+
 ### `STRIKETHROUGH_CLASS`
 
 ```typescript
 const STRIKETHROUGH_CLASS
+```
+
+### `UNORDERED_LIST_TRANSFORMER`
+
+`- a` / `* a` / `+ a` ⇄ a bullet list.
+
+```typescript
+const UNORDERED_LIST_TRANSFORMER: ElementTransformer
+```
+
+## Public Entry Points
+
+### `@llui/markdown-editor/plugins/core`
+
+#### Functions
+
+##### `corePlugin()` from `@llui/markdown-editor/plugins/core`
+
+```typescript
+function corePlugin(_opts: CorePluginOptions = {}): MarkdownPlugin
+```
+
+#### Interfaces
+
+##### `CorePluginOptions` from `@llui/markdown-editor/plugins/core`
+
+```typescript
+export interface CorePluginOptions {
+  /** Reserved for future core options. */
+  readonly _?: never
+}
+```
+
+### `@llui/markdown-editor/plugins/callout`
+
+#### Functions
+
+##### `$insertCallout()` from `@llui/markdown-editor/plugins/callout`
+
+Insert a fresh callout at the current selection; returns the created node.
+
+```typescript
+function $insertCallout(kind: CalloutKind = 'note', textValue = 'New callout'): LLuiDecoratorNode
+```
+
+##### `calloutPlugin()` from `@llui/markdown-editor/plugins/callout`
+
+```typescript
+function calloutPlugin(opts: CalloutPluginOptions = {}): MarkdownPlugin
+```
+
+#### Types
+
+##### `CalloutKind` from `@llui/markdown-editor/plugins/callout`
+
+```typescript
+export type CalloutKind = 'note' | 'tip' | 'warning' | 'danger'
+```
+
+#### Interfaces
+
+##### `CalloutData` from `@llui/markdown-editor/plugins/callout`
+
+```typescript
+export interface CalloutData {
+  kind: CalloutKind
+  text: string
+}
+```
+
+##### `CalloutPluginOptions` from `@llui/markdown-editor/plugins/callout`
+
+```typescript
+export interface CalloutPluginOptions {
+  /** Default kind for the toolbar/slash insert action. */
+  defaultKind?: CalloutKind
+}
+```
+
+### `@llui/markdown-editor/surfaces/toolbar`
+
+#### Functions
+
+##### `connectToolbar()` from `@llui/markdown-editor/surfaces/toolbar`
+
+Build reactive toolbar parts from the format signal. Spread `item(id)` onto a
+`<button>`; `aria-pressed` / `data-active` / `disabled` track the format.
+
+```typescript
+function connectToolbar(
+  format: Signal<FormatState>,
+  send: Send<EditorMsg>,
+  items: readonly CommandItem[],
+): ToolbarParts
+```
+
+##### `toolbar()` from `@llui/markdown-editor/surfaces/toolbar`
+
+A ready-made grouped toolbar. Items not surfaced to `'toolbar'` are dropped.
+
+```typescript
+function toolbar(opts: ToolbarOptions): Mountable
+```
+
+#### Interfaces
+
+##### `ToolbarItemParts` from `@llui/markdown-editor/surfaces/toolbar`
+
+```typescript
+export interface ToolbarItemParts {
+  type: 'button'
+  'data-scope': 'md-toolbar'
+  'data-part': 'item'
+  'data-id': string
+  'aria-label': string
+  title: string
+  'aria-pressed': Signal<'true' | 'false'>
+  'aria-disabled': Signal<'true' | undefined>
+  disabled: Signal<boolean>
+  'data-active': Signal<'' | undefined>
+  onClick: (e: MouseEvent) => void
+}
+```
+
+##### `ToolbarOptions` from `@llui/markdown-editor/surfaces/toolbar`
+
+```typescript
+export interface ToolbarOptions {
+  format: Signal<FormatState>
+  send: Send<EditorMsg>
+  items: readonly CommandItem[]
+  /** Explicit grouped layout of ids; defaults to grouping by `item.group`. */
+  groups?: readonly (readonly string[])[]
+  /** Glyph overrides (id → text/emoji). Merged over {@link DEFAULT_GLYPHS}. */
+  glyphs?: Readonly<Record<string, string>>
+  /** Render the `block` group as a `<select>` dropdown instead of buttons
+   * (default true). */
+  blockSelect?: boolean
+  /** Collaborative-session status. When supplied AND `enabled`, the toolbar
+   * appends a presence indicator (connection dot + live peer count). */
+  collab?: Signal<CollabStatus>
+  'aria-label'?: string
+}
+```
+
+##### `ToolbarParts` from `@llui/markdown-editor/surfaces/toolbar`
+
+```typescript
+export interface ToolbarParts {
+  root: {
+    role: 'toolbar'
+    'aria-label': string
+    'data-scope': 'md-toolbar'
+    'data-part': 'root'
+  }
+  item: (id: string) => ToolbarItemParts
+}
+```
+
+#### Constants
+
+##### `DEFAULT_GLYPHS` from `@llui/markdown-editor/surfaces/toolbar`
+
+Compact glyphs so the default toolbar reads as a real toolbar without icon
+assets. SVG strings render as icons; everything else as text. Override via
+`ToolbarOptions.glyphs`.
+
+```typescript
+const DEFAULT_GLYPHS: Readonly<Record<string, string>>
+```
+
+### `@llui/markdown-editor/plugins/block-drag`
+
+#### Functions
+
+##### `blockAtPoint()` from `@llui/markdown-editor/plugins/block-drag`
+
+The block whose vertical band contains `clientY`, or `null` when the pointer
+is in no block's band.
+
+TWO passes, and the order matters. A block's OWN rect always wins outright;
+only a point in no block at all falls through to the widened search, where
+the NEAREST band within `tolerance` wins (ties biased upward, matching how a
+reader attributes a gap to the block above it).
+
+A single widened pass with first-match-wins — which this was — is wrong
+wherever two rects touch or nearly touch, and touching rects are the common
+case, not the exotic one: list items, table rows, consecutive lines, and any
+margin-collapsed heading. With `tolerance = 6` and adjacent rects [0,20] and
+[20,40], every y in [20,26] resolved to the FIRST block, so the block below
+lost the top 6px of its own body — the grip targeted, grabbed and dragged the
+wrong block. Generally, for an inter-block gap `g < tolerance`, block N stole
+the first `tolerance - g` px of block N+1.
+
+```typescript
+function blockAtPoint(
+  blocks: readonly BlockRect[],
+  clientY: number,
+  tolerance: number = HOVER_TOLERANCE,
+): BlockRect | null
+```
+
+##### `blockDragPlugin()` from `@llui/markdown-editor/plugins/block-drag`
+
+Reorder top-level blocks by dragging a hover gutter grip, or from the keyboard
+(focus the grip, Enter/Space to grab, ↑/↓ to move, Enter/Space to drop, Escape
+to cancel). Every reorder is one Lexical node move, hence one undo step.
+
+```typescript
+function blockDragPlugin(options: BlockDragOptions = {}): MarkdownPlugin
+```
+
+##### `findDropTarget()` from `@llui/markdown-editor/plugins/block-drag`
+
+The slot `clientY` points at, expressed relative to a neighbouring block.
+
+The document has `n + 1` slots for `n` blocks; the slot index is the count of
+blocks whose vertical midpoint is above the pointer. Two of those slots are
+where `sourceKey` already sits — dropping there is a no-op, so both return
+`null` and the caller shows no indicator and commits nothing. That check is
+what stops a 1px twitch from producing a spurious undo entry.
+
+```typescript
+function findDropTarget(
+  blocks: readonly BlockRect[],
+  clientY: number,
+  sourceKey: NodeKey,
+): DropTarget | null
+```
+
+##### `indicatorRect()` from `@llui/markdown-editor/plugins/block-drag`
+
+Where to draw the indicator line for a resolved {@link DropTarget}: on the
+target's top edge for `before`, its bottom edge for `after`.
+
+```typescript
+function indicatorRect(blocks: readonly BlockRect[], target: DropTarget): IndicatorRect | null
+```
+
+#### Types
+
+##### `Place` from `@llui/markdown-editor/plugins/block-drag`
+
+Which side of the target block the source lands on.
+
+```typescript
+export type Place = 'before' | 'after'
+```
+
+#### Interfaces
+
+##### `BlockDragOptions` from `@llui/markdown-editor/plugins/block-drag`
+
+```typescript
+export interface BlockDragOptions {
+  /** Gutter grip inset, in px left of the block's left edge. Default 28. */
+  gutterOffset?: number
+}
+```
+
+##### `BlockRect` from `@llui/markdown-editor/plugins/block-drag`
+
+The measured viewport geometry of one top-level block. Pure data — the unit
+of everything below, so all placement logic is testable without a DOM.
+
+```typescript
+export interface BlockRect {
+  key: NodeKey
+  top: number
+  bottom: number
+  left: number
+  width: number
+}
+```
+
+##### `DropTarget` from `@llui/markdown-editor/plugins/block-drag`
+
+A resolved drop slot: "put the dragged block `place` this `key`".
+
+```typescript
+export interface DropTarget {
+  key: NodeKey
+  place: Place
+}
+```
+
+##### `IndicatorRect` from `@llui/markdown-editor/plugins/block-drag`
+
+Viewport position of the drop-indicator line.
+
+```typescript
+export interface IndicatorRect {
+  x: number
+  y: number
+  width: number
+}
+```
+
+#### Constants
+
+##### `BLOCK_DRAG_Z` from `@llui/markdown-editor/plugins/block-drag`
+
+Stacking levels for this plugin's two surfaces — deliberately below the
+shared `OVERLAY_Z` scale (60+) so document chrome never covers a menu.
+
+```typescript
+const BLOCK_DRAG_Z
+```
+
+### `@llui/markdown-editor/plugins/code-language`
+
+#### Functions
+
+##### `codeLanguagePlugin()` from `@llui/markdown-editor/plugins/code-language`
+
+```typescript
+function codeLanguagePlugin(opts: CodeLanguagePluginOptions = {}): MarkdownPlugin
+```
+
+##### `normalizeCodeInfo()` from `@llui/markdown-editor/plugins/code-language`
+
+Canonicalize a fence info string.
+
+CommonMark's info string is the remainder of the opening-fence line with the
+surrounding whitespace stripped; a blank one means "no language". Two
+characters are removed rather than preserved, because keeping them would emit
+markdown that no longer re-imports to the same block:
+
+- a backtick — illegal in a backtick-fenced info string (it would terminate
+  or corrupt the fence);
+- a newline — it would end the fence line entirely.
+
+Everything else survives verbatim, including spaces (`'lance table'`) and
+punctuation (`'c++'`, `'objective-c'`).
+
+```typescript
+function normalizeCodeInfo(raw: string | null | undefined): string | null
+```
+
+#### Types
+
+##### `CodeLanguageEffect` from `@llui/markdown-editor/plugins/code-language`
+
+Write `language` (null clears it) onto the code block with node key `key`.
+
+```typescript
+export type CodeLanguageEffect = { type: 'apply'; key: string; language: string | null }
+```
+
+##### `CodeLanguageMsg` from `@llui/markdown-editor/plugins/code-language`
+
+```typescript
+export type CodeLanguageMsg =
+  | { type: 'show'; key: string; x: number; y: number; language: string | null }
+  | { type: 'hide' }
+  | { type: 'edit' }
+  | { type: 'input'; language: string }
+  | { type: 'commit' }
+  | { type: 'cancel' }
+```
+
+#### Interfaces
+
+##### `CodeLanguagePluginOptions` from `@llui/markdown-editor/plugins/code-language`
+
+```typescript
+export interface CodeLanguagePluginOptions {
+  /** Suggestions offered in the language input's `<datalist>`. Purely advisory —
+   * ANY info string may be typed, including multi-token ones. */
+  languages?: readonly string[]
+  /** Placeholder shown when a block has no language (default `'plain text'`). */
+  placeholder?: string
+  /** Accessible label for the language input (default `'Code block language'`). */
+  label?: string
+}
+```
+
+##### `CodeLanguageState` from `@llui/markdown-editor/plugins/code-language`
+
+The language badge's state. JSON-serializable, like every LLui state slice.
+
+```typescript
+export interface CodeLanguageState {
+  /** Whether the badge is shown. */
+  open: boolean
+  /** Viewport x of the anchor (the code block's right edge). */
+  x: number
+  /** Viewport y of the anchor (the code block's top edge). */
+  y: number
+  /** Node key of the anchored code block (`''` when none). */
+  key: string
+  /** The input's current value (the block's info string, or the in-flight edit). */
+  language: string
+  /** The info string as last read from the node — the baseline `cancel` restores
+   * and `commit` diffs against, so a no-op commit never touches the document. */
+  committed: string
+  /** Whether the input has focus; a refresh must not overwrite what's being typed. */
+  editing: boolean
+  /** A `hide` that arrived mid-edit, applied when the edit ends. */
+  pendingHide: boolean
+}
+```
+
+#### Constants
+
+##### `CODE_INFO_TRANSFORMER` from `@llui/markdown-editor/plugins/code-language`
+
+A drop-in replacement for `@lexical/markdown`'s `CODE` that treats the whole
+remainder of the opening-fence line as the info string (CommonMark's rule)
+instead of a single `[\w-]+` token.
+
+```typescript
+const CODE_INFO_TRANSFORMER: MultilineElementTransformer
+```
+
+##### `CODE_LANGUAGE_PLUGIN` from `@llui/markdown-editor/plugins/code-language`
+
+This plugin's registry name (the `plugin` message envelope's `name`).
+
+```typescript
+const CODE_LANGUAGE_PLUGIN
+```
+
+### `@llui/markdown-editor/plugins/wikilink`
+
+#### Functions
+
+##### `$createWikiLinkNode()` from `@llui/markdown-editor/plugins/wikilink`
+
+Build a wikilink node. `target`/`alias` are sanitized to values the `[[…]]`
+syntax can express (see {@link sanitizeWikiLinkTarget}); a target with nothing
+usable left falls back to the literal text `Page` rather than yielding an
+invisible token.
+
+```typescript
+function $createWikiLinkNode(target: string, alias: string | null = null): WikiLinkNode
+```
+
+##### `$isWikiLinkNode()` from `@llui/markdown-editor/plugins/wikilink`
+
+```typescript
+function $isWikiLinkNode(node: LexicalNode | null | undefined): node is WikiLinkNode
+```
+
+##### `formatWikiLink()` from `@llui/markdown-editor/plugins/wikilink`
+
+Serialize a wikilink back to markdown. Inverse of {@link parseWikiLinkInner}
+for every link built through this module's constructors — see
+{@link sanitizeWikiLinkTarget} for why that qualifier is load-bearing.
+
+```typescript
+function formatWikiLink(link: WikiLink): string
+```
+
+##### `parseWikiLinkInner()` from `@llui/markdown-editor/plugins/wikilink`
+
+Parse the content BETWEEN the brackets. Returns `null` when the content is not
+a valid wikilink body.
+
+Deliberate choices, each load-bearing for exact round-tripping:
+
+- split on the FIRST `|` only, so `[[a|b|c]]` has alias `b|c` and re-exports
+  byte-identically;
+- an EMPTY alias (`[[a|]]`) normalizes to no alias — the alternative
+  (keeping `alias: ''`) would render a zero-width, unclickable node;
+- NO trimming. `[[ a ]]` keeps its spaces, because trimming would make
+  import→export lossy. Presentation trimming is the host's call in
+  `onNavigate`/`resolve`, not the document's.
+
+```typescript
+function parseWikiLinkInner(inner: string): WikiLink | null
+```
+
+##### `sanitizeWikiLinkAlias()` from `@llui/markdown-editor/plugins/wikilink`
+
+Sanitize an alias. Returns `null` when nothing usable survives.
+
+```typescript
+function sanitizeWikiLinkAlias(raw: string | null): string | null
+```
+
+##### `sanitizeWikiLinkTarget()` from `@llui/markdown-editor/plugins/wikilink`
+
+Sanitize a target. Returns `null` when nothing usable survives.
+
+```typescript
+function sanitizeWikiLinkTarget(raw: string): string | null
+```
+
+##### `wikilinkPlugin()` from `@llui/markdown-editor/plugins/wikilink`
+
+```typescript
+function wikilinkPlugin(opts: WikiLinkPluginOptions = {}): MarkdownPlugin
+```
+
+#### Types
+
+##### `SerializedWikiLinkNode` from `@llui/markdown-editor/plugins/wikilink`
+
+```typescript
+export type SerializedWikiLinkNode = Spread<
+  { target: string; alias: string | null },
+  SerializedTextNode
+>
+```
+
+#### Interfaces
+
+##### `DocCandidate` from `@llui/markdown-editor/plugins/wikilink`
+
+A document the host offers as a link target while the user types `[[…`.
+
+```typescript
+export interface DocCandidate {
+  /** The link target written into the document (`[[target]]`). */
+  readonly target: string
+  /** Human-facing title shown in the results list (defaults to `target`). */
+  readonly title?: string
+  /** A short one-line snippet shown under the title. */
+  readonly snippet?: string
+  /** A longer content excerpt shown in the reference/preview pane. */
+  readonly preview?: string
+}
+```
+
+##### `WikiLink` from `@llui/markdown-editor/plugins/wikilink`
+
+A parsed wikilink. `alias` is `null` when the target is shown verbatim.
+
+```typescript
+export interface WikiLink {
+  target: string
+  alias: string | null
+}
+```
+
+##### `WikiLinkPluginOptions` from `@llui/markdown-editor/plugins/wikilink`
+
+```typescript
+export interface WikiLinkPluginOptions {
+  /**
+   * Called when the user activates a wikilink. This is the host's resolution
+   * seam: `@llui/markdown-editor` knows nothing about what a target names.
+   *
+   * The notification travels the same route as every other plugin event —
+   * `ctx.emit` → the editor's update loop → this plugin's reducer → an effect —
+   * rather than a raw DOM event, so an activation is an ordinary TEA message
+   * that shows up in devtools, replay and agent traces.
+   */
+  onNavigate?: (link: WikiLink) => void
+  /** Text used as the target when the insert command runs with no selection. */
+  placeholderTarget?: string
+  /**
+   * Document-search seam: as the user types `[[query`, resolve matching
+   * documents to offer as link targets, with an optional content preview shown in
+   * the panel's reference pane. Sync or async (async is debounced; a stale
+   * response for a superseded query is dropped). When omitted, the panel never
+   * opens and `[[target]]` still works by typing the closing `]]`.
+   */
+  search?: (query: string) => readonly DocCandidate[] | Promise<readonly DocCandidate[]>
+}
+```
+
+#### Classes
+
+##### `WikiLinkNode` from `@llui/markdown-editor/plugins/wikilink`
+
+An atomic inline wikilink. Extends `TextNode` so the caret, selection and
+text formats behave exactly as they do for prose, while `token` mode keeps it
+indivisible: the user can delete it or move past it, but never edit its
+interior into a state where the visible alias disagrees with `__target`.
+
+```typescript
+class WikiLinkNode extends TextNode {
+  __target: string
+  __alias: string | null
+  getType(): string
+  clone(node: WikiLinkNode): WikiLinkNode
+  constructor(target: string, alias: string | null, text?: string, key?: NodeKey)
+  importJSON(serializedNode: SerializedWikiLinkNode): WikiLinkNode
+  updateFromJSON(serializedNode: LexicalUpdateJSON<SerializedWikiLinkNode>): this
+  exportJSON(): SerializedWikiLinkNode
+  createDOM(config: EditorConfig, editor?: LexicalEditor): HTMLElement
+  updateDOM(prevNode: this, dom: HTMLElement, config: EditorConfig): boolean
+  getTarget(): string
+  setTarget(target: string): this
+  getAlias(): string | null
+  setAlias(alias: string | null): this
+  getLink(): WikiLink
+  canInsertTextBefore(): boolean
+  canInsertTextAfter(): boolean
+}
+```
+
+### `@llui/markdown-editor/plugins/table`
+
+#### Functions
+
+##### `tablePlugin()` from `@llui/markdown-editor/plugins/table`
+
+```typescript
+function tablePlugin(): MarkdownPlugin
 ```
 
 <!-- auto-api:end -->

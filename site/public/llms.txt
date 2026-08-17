@@ -4,30 +4,30 @@
 
 ## Packages
 
-- @llui/dom — LLui runtime — TEA component model, mount, scope tree, bindings, structural primitives, element helpers
-- @llui/compiler — LLui compiler engine — static analysis + emission. Build-tool-agnostic library consumed by @llui/vite-plugin.
-- @llui/vite-plugin — LLui compiler — Vite plugin for compile-time bitmask optimization, template cloning, and source maps
-- @llui/compiler-ssr — LLui compiler — SSR support (opt-in). 'use client' directive handling and SSR-specific emission paths consumed by @llui/vike.
-- @llui/effects — LLui effect builders — http, cancel, debounce, sequence, race, storage, broadcast
-- @llui/components — 66 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more
-- @llui/interactions — Standalone DOM interaction primitives for focus, dismissal, positioning, modal isolation, and roving navigation
-- @llui/router — LLui router — named type-safe routes, Standard Schema codecs, history/hash mode
-- @llui/transitions — LLui animation helpers — transition(), fade, slide, scale, collapse for branch/show/each
-- @llui/test — LLui test harness — testComponent, testView, propertyTest, replayTrace, assertEffects
-- @llui/vike — LLui Vike SSR adapter — onRenderHtml, onRenderClient hooks
-- @llui/security — LLui shared security primitives — one canonical, dependency-free home for URL-scheme sanitization (sanitizeUrl) and loopback/same-origin recognition (CSRF/CSWSH gating), so security-sensitive logic can't drift between packages
-- @llui/mcp — LLui MCP server — LLM debug tools via Model Context Protocol
-- @llui/agent — LLui Agent — LAP server + browser client runtime for driving LLui apps from LLM clients
-- llui-agent — LLui Agent bridge — MCP server that translates Claude Desktop tool calls to LLui apps via LAP
-- @llui/devmode-annotate — LLui dev-mode HUD — drop annotated notes from the running app into the shared notebook for the LLM to consume
-- @llui/devmode-annotate-editor — Rich Markdown editor upgrade for the @llui/devmode-annotate HUD
-- @llui/notes-format — LLui devmode notebook on-disk format — zero-dependency note types, filename/slug/session helpers, and YAML (de)serialization shared by the vite-plugin server store, the HUD, and the MCP server
-- @llui/a2ui — LLui renderer for Google's A2UI protocol — render agent-driven UIs from A2UI envelopes onto the LLui signal runtime, reusing @llui/components headless primitives
-- @llui/markdown — LLui reactive Markdown rendering — parse to mdast, render real reactive DOM with custom per-node renderers and streaming-friendly keyed reuse
-- @llui/markdown-editor — WYSIWYG Markdown editor for LLui — hides Markdown behind a rich, pluggable editing widget built on Lexical
-- @llui/lexical — Low-level binding between Lexical and the LLui signal runtime — mount Lexical via foreign(), plugin contract, and the DecoratorNode ↔ LLui sub-view bridge
-- @llui/lexical-collab — Opt-in collaborative editing for the LLui ↔ Lexical binding — Yjs CRDT sync, scoped undo, and presence cursors over an injected provider
-- @llui/lexical-loro — Loro CRDT binding for the LLui ↔ Lexical editor — container schema, text-mark mapping, and concurrent-edit merging
+- @llui/dom@0.13.0 — LLui runtime — TEA component model, mount, scope tree, bindings, structural primitives, element helpers
+- @llui/compiler@0.13.0 — LLui compiler engine — static analysis + emission. Build-tool-agnostic library consumed by @llui/vite-plugin.
+- @llui/vite-plugin@0.12.1 — LLui compiler — Vite plugin for compile-time bitmask optimization, template cloning, and source maps
+- @llui/compiler-ssr@0.13.0 — LLui compiler — SSR support (opt-in). 'use client' directive handling and SSR-specific emission paths consumed by @llui/vike.
+- @llui/effects@0.3.0 — LLui effect builders — http, cancel, debounce, sequence, race, storage, broadcast
+- @llui/components@0.14.0 — 66 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more
+- @llui/interactions@0.1.1 — Standalone DOM interaction primitives for focus, dismissal, positioning, modal isolation, and roving navigation
+- @llui/router@0.12.0 — LLui router — named type-safe routes, Standard Schema codecs, history/hash mode
+- @llui/transitions@0.12.0 — LLui animation helpers — transition(), fade, slide, scale, collapse for branch/show/each
+- @llui/test@0.13.0 — LLui test harness — testComponent, testView, propertyTest, replayTrace, assertEffects
+- @llui/vike@0.13.0 — LLui Vike SSR adapter — onRenderHtml, onRenderClient hooks
+- @llui/security@0.2.1 — LLui shared security primitives — one canonical, dependency-free home for URL-scheme sanitization (sanitizeUrl) and loopback/same-origin recognition (CSRF/CSWSH gating), so security-sensitive logic can't drift between packages
+- @llui/mcp@0.15.0 — LLui MCP server — LLM debug tools via Model Context Protocol
+- @llui/agent@0.13.0 — LLui Agent — LAP server + browser client runtime for driving LLui apps from LLM clients
+- llui-agent@0.11.1 — LLui Agent bridge — MCP server that translates Claude Desktop tool calls to LLui apps via LAP
+- @llui/devmode-annotate@0.4.0 — LLui dev-mode HUD — drop annotated notes from the running app into the shared notebook for the LLM to consume
+- @llui/devmode-annotate-editor@0.1.1 — Rich Markdown editor upgrade for the @llui/devmode-annotate HUD
+- @llui/notes-format@0.2.1 — LLui devmode notebook on-disk format — zero-dependency note types, filename/slug/session helpers, and YAML (de)serialization shared by the vite-plugin server store, the HUD, and the MCP server
+- @llui/a2ui@0.3.0 — LLui renderer for Google's A2UI protocol — render agent-driven UIs from A2UI envelopes onto the LLui signal runtime, reusing @llui/components headless primitives
+- @llui/markdown@0.13.0 — LLui reactive Markdown rendering — parse to mdast, render real reactive DOM with custom per-node renderers and streaming-friendly keyed reuse
+- @llui/markdown-editor@0.8.0 — WYSIWYG Markdown editor for LLui — hides Markdown behind a rich, pluggable editing widget built on Lexical
+- @llui/lexical@0.5.0 — Low-level binding between Lexical and the LLui signal runtime — mount Lexical via foreign(), plugin contract, and the DecoratorNode ↔ LLui sub-view bridge
+- @llui/lexical-collab@0.4.0 — Opt-in collaborative editing for the LLui ↔ Lexical binding — Yjs CRDT sync, scoped undo, and presence cursors over an injected provider
+- @llui/lexical-loro@0.1.2 — Loro CRDT binding for the LLui ↔ Lexical editor — container schema, text-mark mapping, and concurrent-edit merging
 
 ## Documentation
 

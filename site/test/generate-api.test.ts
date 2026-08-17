@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import * as ts from 'typescript'
-import { mkdtempSync, readFileSync, readdirSync, symlinkSync } from 'fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { basename, dirname, resolve } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
@@ -11,6 +11,7 @@ import {
   collectBarrelExports,
   publicComponentModules,
   invokedAsScript,
+  assertPackageRegistryComplete,
   type ModuleReader,
 } from '../src/generate-api.js'
 
@@ -415,6 +416,11 @@ export { type B, c } from './x.js'
 describe('the generated components page (issues #174, #175)', () => {
   const page = readRepo('site/content/api/components.md')
 
+  it('shows the current sliced-signal connect contract', () => {
+    expect(page).toContain("componentName.connect(state.at('component'), send")
+    expect(page).not.toContain('componentName.connect<State>((s) => s.field')
+  })
+
   it('documents the TABLE_HEADER_ROW_INDEX barrel alias', () => {
     expect(page).toContain('TABLE_HEADER_ROW_INDEX')
   })
@@ -427,6 +433,273 @@ describe('the generated components page (issues #174, #175)', () => {
   it('still documents the components that DO reach a consumer', () => {
     for (const heading of ['### Menu', '### Table', '### Menubar', '### Context Menu'])
       expect(page).toContain(heading)
+  })
+})
+
+describe('object-valued public exports', () => {
+  it('documents object constants instead of silently dropping them', () => {
+    expect(readRepo('site/content/api/effects.md')).toContain('### `httpRunner`')
+    expect(readRepo('site/content/api/devmode-annotate-editor.md')).toContain(
+      '### `markdownAnnotateEditor`',
+    )
+  })
+})
+
+describe('public package subpaths', () => {
+  it('documents the import path and exports of non-root entry points', () => {
+    const vitePlugin = readRepo('site/content/api/vite-plugin.md')
+    expect(vitePlugin).toContain('### `@llui/vite-plugin/notes`')
+    expect(vitePlugin).toContain('`cleanupResolvedTask()` from `@llui/vite-plugin/notes`')
+
+    const annotate = readRepo('site/content/api/devmode-annotate.md')
+    expect(annotate).toContain('### `@llui/devmode-annotate/note-format`')
+    expect(annotate).toContain('`deriveSlug()` from `@llui/devmode-annotate/note-format`')
+  })
+
+  it('gives every concrete TypeScript export path its own reference section', () => {
+    const packageDirs = readdirSync(resolve(repoRoot, 'packages'))
+    const missing: string[] = []
+
+    for (const dir of packageDirs) {
+      const manifestPath = resolve(repoRoot, 'packages', dir, 'package.json')
+      let manifest: {
+        name: string
+        private?: boolean
+        exports?: Record<string, unknown>
+      }
+      try {
+        manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as typeof manifest
+      } catch {
+        continue
+      }
+      if (manifest.private) continue
+      const page = readRepo(`site/content/api/${dir}.md`)
+      for (const [subpath, value] of Object.entries(manifest.exports ?? {})) {
+        if (subpath === '.' || subpath.includes('*')) continue
+        const target =
+          typeof value === 'string'
+            ? value
+            : value && typeof value === 'object'
+              ? ((value as Record<string, unknown>).types ??
+                (value as Record<string, unknown>).import)
+              : undefined
+        if (typeof target !== 'string' || target.endsWith('.css')) continue
+        const specifier = manifest.name + subpath.slice(1)
+        if (!page.includes(`### \`${specifier}\``)) missing.push(specifier)
+      }
+    }
+
+    expect(missing).toEqual([])
+  })
+
+  it('expands wildcard export maps into every importable TypeScript module', () => {
+    const manifest = JSON.parse(readRepo('packages/components/package.json')) as {
+      name: string
+      exports: Record<string, unknown>
+    }
+    const page = readRepo('site/content/api/components.md')
+    const missing: string[] = []
+
+    for (const [subpath, value] of Object.entries(manifest.exports)) {
+      if (!subpath.includes('*')) continue
+      const target =
+        typeof value === 'string'
+          ? value
+          : value && typeof value === 'object'
+            ? ((value as Record<string, unknown>).types ??
+              (value as Record<string, unknown>).import)
+            : undefined
+      if (typeof target !== 'string' || !target.includes('*') || target.endsWith('.css')) continue
+
+      const sourcePattern = target
+        .replace(/^\.\/dist\//, 'src/')
+        .replace(/\.d\.ts$/, '.ts')
+        .replace(/\.js$/, '.ts')
+      const absolutePattern = resolve(repoRoot, 'packages/components', sourcePattern)
+      const filePattern = basename(absolutePattern)
+      const [prefix, suffix] = filePattern.split('*') as [string, string]
+      for (const file of readdirSync(dirname(absolutePattern))) {
+        if (!file.startsWith(prefix) || !file.endsWith(suffix)) continue
+        const match = file.slice(prefix.length, file.length - suffix.length)
+        const specifier = manifest.name + subpath.replace('*', match).slice(1)
+        if (!page.includes(`### \`${specifier}\``)) missing.push(specifier)
+      }
+    }
+
+    expect(missing).toEqual([])
+  })
+
+  it('documents every symbol exported by every public entry point', () => {
+    const entries: Array<{ page: string; source: string; specifier: string }> = []
+
+    for (const dir of readdirSync(resolve(repoRoot, 'packages'))) {
+      const manifestPath = resolve(repoRoot, 'packages', dir, 'package.json')
+      let manifest: {
+        name: string
+        private?: boolean
+        exports?: Record<string, unknown>
+      }
+      try {
+        manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as typeof manifest
+      } catch {
+        continue
+      }
+      if (manifest.private) continue
+      const page = readRepo(`site/content/api/${dir}.md`)
+      for (const [subpath, value] of Object.entries(manifest.exports ?? {})) {
+        const target =
+          typeof value === 'string'
+            ? value
+            : value && typeof value === 'object'
+              ? ((value as Record<string, unknown>).types ??
+                (value as Record<string, unknown>).import)
+              : undefined
+        if (typeof target !== 'string' || target.endsWith('.css')) continue
+        const sourcePattern = target
+          .replace(/^\.\/dist\//, 'src/')
+          .replace(/\.d\.ts$/, '.ts')
+          .replace(/\.js$/, '.ts')
+
+        if (subpath.includes('*') || sourcePattern.includes('*')) {
+          const absolutePattern = resolve(repoRoot, 'packages', dir, sourcePattern)
+          const filePattern = basename(absolutePattern)
+          const [prefix, suffix] = filePattern.split('*') as [string, string]
+          for (const file of readdirSync(dirname(absolutePattern)).sort()) {
+            if (!file.startsWith(prefix) || !file.endsWith(suffix)) continue
+            const match = file.slice(prefix.length, file.length - suffix.length)
+            entries.push({
+              page,
+              source: resolve(dirname(absolutePattern), file),
+              specifier: manifest.name + subpath.replace('*', match).slice(1),
+            })
+          }
+        } else {
+          entries.push({
+            page,
+            source: resolve(repoRoot, 'packages', dir, sourcePattern),
+            specifier: subpath === '.' ? manifest.name : manifest.name + subpath.slice(1),
+          })
+        }
+      }
+    }
+
+    const program = ts.createProgram([...new Set(entries.map((entry) => entry.source))], {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      allowJs: true,
+      skipLibCheck: true,
+      noEmit: true,
+    })
+    const checker = program.getTypeChecker()
+    const missing: string[] = []
+
+    for (const entry of entries) {
+      const source = program.getSourceFile(entry.source)
+      const moduleSymbol = source && checker.getSymbolAtLocation(source)
+      if (!moduleSymbol) continue
+      const entryHeading = `### \`${entry.specifier}\``
+      const start = entry.page.indexOf(entryHeading)
+      let section = entry.page
+      if (start >= 0) {
+        const next = entry.page.indexOf('\n### `', start + entryHeading.length)
+        section = entry.page.slice(start, next < 0 ? undefined : next)
+      }
+      for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+        const name = exported.getName()
+        if (name === 'default') continue
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+        const heading = new RegExp('^#{3,6} `' + escaped + '(?:\\(\\))?`', 'm')
+        if (!heading.test(section)) missing.push(`${entry.specifier}:${name}`)
+      }
+    }
+
+    expect(missing).toEqual([])
+  })
+})
+
+describe('published package versions', () => {
+  it('shows the exact manifest version on every package page', () => {
+    const missing: string[] = []
+    for (const dir of readdirSync(resolve(repoRoot, 'packages'))) {
+      const manifestPath = resolve(repoRoot, 'packages', dir, 'package.json')
+      let manifest: { name: string; version: string; private?: boolean }
+      try {
+        manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as typeof manifest
+      } catch {
+        continue
+      }
+      if (manifest.private) continue
+      const page = readRepo(`site/content/api/${dir}.md`)
+      const versionLine = `**Current package version:** \`${manifest.version}\``
+      if (!page.includes(versionLine)) missing.push(`${manifest.name}@${manifest.version}`)
+    }
+    expect(missing).toEqual([])
+  })
+
+  it('includes package versions in both LLM-facing indexes', () => {
+    const concise = readRepo('site/public/llms.txt')
+    const complete = readRepo('site/public/llms-full.txt')
+    const missing: string[] = []
+
+    for (const dir of readdirSync(resolve(repoRoot, 'packages'))) {
+      const manifestPath = resolve(repoRoot, 'packages', dir, 'package.json')
+      let manifest: { name: string; version: string; private?: boolean }
+      try {
+        manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as typeof manifest
+      } catch {
+        continue
+      }
+      if (manifest.private) continue
+      if (!concise.includes(`- ${manifest.name}@${manifest.version}`)) {
+        missing.push(`llms.txt:${manifest.name}`)
+      }
+      const page = readRepo(`site/content/api/${dir}.md`)
+      const title = /^# .+$/m.exec(page)?.[0]
+      const versionLine = `**Current package version:** \`${manifest.version}\``
+      if (!title || !complete.includes(`${title}\n\n${versionLine}`)) {
+        missing.push(`llms-full.txt:${manifest.name}`)
+      }
+    }
+
+    expect(missing).toEqual([])
+  })
+})
+
+describe('LLM reference metadata', () => {
+  it('does not publish a hand-maintained llms-full.txt byte size', () => {
+    expect(readRepo('site/content/index.md')).not.toMatch(/llms-full\.txt[^\n]*~\d+KB/)
+  })
+
+  it('emits llms-full.txt without trailing whitespace', () => {
+    expect(readRepo('site/public/llms-full.txt')).not.toMatch(/[ \t]+$/m)
+  })
+
+  it('teaches the current signal authoring surface instead of the removed view bag', () => {
+    const reference = readRepo('site/public/llms-full.txt')
+    expect(reference).toContain('view: ({ state, send }) =>')
+    expect(reference).toContain("state.at('count')")
+    expect(reference).toContain('66 headless')
+    expect(reference).not.toContain('view: ({ send, text }) =>')
+    expect(reference).not.toContain('58 headless')
+    expect(reference).not.toContain('sliceHandler')
+    expect(reference).not.toContain('View<S, M> is a bundle of state-bound helpers')
+  })
+})
+
+describe('package registry completeness', () => {
+  it('fails generation when a publishable package has no documentation page', () => {
+    const root = mkdtempSync(resolve(tmpdir(), 'llui-package-registry-'))
+    const packageDir = resolve(root, 'undocumented')
+    mkdirSync(packageDir)
+    writeFileSync(
+      resolve(packageDir, 'package.json'),
+      JSON.stringify({ name: '@llui/undocumented', exports: { '.': './dist/index.js' } }),
+    )
+
+    expect(() => assertPackageRegistryComplete(root, [])).toThrow(
+      /PUBLISHABLE PACKAGES ABSENT FROM THE API REGISTRY[\s\S]*@llui\/undocumented/,
+    )
   })
 })
 

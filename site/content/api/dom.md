@@ -5,6 +5,12 @@ description: 'Runtime API: component, mount, view, primitives, element helpers'
 
 # @llui/dom
 
+<!-- package-version:start -->
+
+**Current package version:** `0.13.0`
+
+<!-- package-version:end -->
+
 Runtime for the [LLui](https://github.com/fponticelli/llui) web framework — The Elm Architecture on a compile-time-optimized **signal** runtime.
 
 No virtual DOM. `view()` runs once at mount, building real DOM nodes with reactive bindings; a **chunked-mask reconciler** updates only the bindings whose dependency paths actually changed.
@@ -3247,6 +3253,847 @@ const tr
 
 ```typescript
 const ul
+```
+
+## Public Entry Points
+
+### `@llui/dom/devtools`
+
+#### Functions
+
+##### `installSignalDebug()` from `@llui/dom/devtools`
+
+Build the signal debug API and register it. Returns an unregister function.
+
+```typescript
+function installSignalDebug(hooks: SignalDebugHooks): () => void
+```
+
+##### `startRelay()` from `@llui/dom/devtools`
+
+Register the MCP relay for this page. Discovery: fetch the Vite
+plugin's `/__llui_mcp_status` marker for the live port and connect; if
+unreachable, fall back to the compile-time `port`. No retry loop —
+`window.__lluiConnect(port?)` is exposed for manual/late connection,
+and the vite-plugin's `llui:mcp-ready` HMR event also forwards here.
+
+```typescript
+function startRelay(port = 5200): void
+```
+
+#### Interfaces
+
+##### `BindingDebugInfo` from `@llui/dom/devtools`
+
+```typescript
+export interface BindingDebugInfo {
+  index: number
+  mask: number
+  lastValue: unknown
+  kind: string
+  key: string | undefined
+  dead: boolean
+  perItem: boolean
+}
+```
+
+##### `BindingLocation` from `@llui/dom/devtools`
+
+```typescript
+export interface BindingLocation {
+  bindingIndex: number
+  kind: string
+  key: string | undefined
+  mask: number
+  lastValue: unknown
+  /** How the binding's node relates to the matched element. */
+  relation: 'self' | 'text-child' | 'comment-child'
+}
+```
+
+##### `ComponentInfo` from `@llui/dom/devtools`
+
+```typescript
+export interface ComponentInfo {
+  name: string
+  file: string | null
+  line: number | null
+  /** Identifies which runtime mounted the component. */
+  runtime?: 'signal' | 'legacy'
+}
+```
+
+##### `ElementReport` from `@llui/dom/devtools`
+
+```typescript
+export interface ElementReport {
+  selector: string
+  tagName: string
+  attributes: Record<string, string>
+  classes: string[]
+  dataset: Record<string, string>
+  text: string
+  computed: {
+    display: string
+    visibility: string
+    position: string
+    width: number
+    height: number
+  }
+  boundingBox: { x: number; y: number; width: number; height: number }
+  bindings: Array<{
+    bindingIndex: number
+    kind: string
+    mask: number
+    lastValue: unknown
+    relation: 'self' | 'text-child' | 'comment-child'
+  }>
+}
+```
+
+##### `HydrationDivergence` from `@llui/dom/devtools`
+
+```typescript
+export interface HydrationDivergence {
+  path: string
+  kind: 'attribute' | 'text' | 'structural'
+  server: unknown
+  client: unknown
+}
+```
+
+##### `LluiDebugAPI` from `@llui/dom/devtools`
+
+The relay-callable debug surface of a mounted LLui component.
+
+Required methods are implemented by every runtime (and by
+`installSignalDebug`). Optional methods are binding/scope/effect
+introspection that only the legacy runtime provides — callers must
+feature-detect and degrade when they are absent.
+
+```typescript
+export interface LluiDebugAPI {
+  // ── Core (always implemented) ──────────────────────────────────
+  getState(): unknown
+  send(msg: unknown): void
+  flush(): void
+  getMessageHistory(opts?: { since?: number; limit?: number }): MessageRecord[]
+  evalUpdate(msg: unknown): { state: unknown; effects: unknown[] }
+  exportTrace(): {
+    lluiTrace: 1
+    component: string
+    generatedBy: string
+    timestamp: string
+    entries: Array<{ msg: unknown; expectedState: unknown; expectedEffects: unknown[] }>
+  }
+  clearLog(): void
+  validateMessage(msg: unknown): ValidationError[] | null
+  searchState(query: string): unknown
+  getMessageSchema(): MessageSchemaInfo | object | null
+  getStateSchema(): object | null
+  getEffectSchema(): object | null
+  getComponentInfo(): ComponentInfo
+  snapshotState(): unknown
+  restoreState(snap: unknown): void
+
+  // ── Binding / scope introspection (legacy-only; optional) ──────
+  getBindings?(): BindingDebugInfo[]
+  whyDidUpdate?(bindingIndex: number): UpdateExplanation
+  getMaskLegend?(): Record<string, number> | null
+  decodeMask?(mask: number): string[]
+  getBindingsFor?(selector: string): BindingLocation[]
+  getBindingGraph?(): Array<{ statePath: string; bindingIndices: number[] }>
+  getBindingSource?(bindingIndex: number): { file: string; line: number; column: number } | null
+  forceRerender?(): { changedBindings: number[] }
+  getEachDiff?(sinceIndex?: number): EachDiff[]
+  getScopeTree?(opts?: { depth?: number; scopeId?: string }): LifetimeNode
+  getDisposerLog?(limit?: number): DisposerEvent[]
+
+  // ── DOM inspection (legacy-only; optional) ─────────────────────
+  inspectElement?(selector: string): ElementReport | null
+  getRenderedHtml?(selector?: string, maxlength?: number): string
+  dispatchDomEvent?(
+    selector: string,
+    type: string,
+    init?: EventInit,
+  ): {
+    dispatched: boolean
+    messagesProducedIndices: number[]
+    resultingState: unknown | null
+  }
+  getFocus?(): {
+    selector: string | null
+    tagName: string | null
+    selectionStart: number | null
+    selectionEnd: number | null
+  }
+  getHydrationReport?(): HydrationDivergence[]
+
+  // ── Effect introspection (legacy-only; optional) ───────────────
+  getPendingEffects?(): PendingEffect[]
+  getEffectTimeline?(limit?: number): EffectTimelineEntry[]
+  mockEffect?(
+    match: EffectMatch,
+    response: unknown,
+    opts?: { persist?: boolean },
+  ): { mockId: string }
+  resolveEffect?(effectId: string, response: unknown): { resolved: boolean }
+
+  // ── Time-travel / coverage / eval (legacy-only; optional) ──────
+  stepBack?(n: number, mode: 'pure' | 'live'): { state: unknown; rewindDepth: number }
+  getCoverage?(): CoverageSnapshot
+  getCompiledSource?(viewFn?: string): { pre: string; post: string } | null
+  getMsgMaskMap?(): Record<string, number> | null
+  evalInPage?(code: string): {
+    result: unknown | { error: string }
+    sideEffects: {
+      stateChanged: StateDiff | null
+      newHistoryEntries: number
+      newPendingEffects: PendingEffect[]
+      dirtyBindingIndices: number[]
+    }
+  }
+}
+```
+
+##### `MessageRecord` from `@llui/dom/devtools`
+
+```typescript
+export interface MessageRecord {
+  index: number
+  timestamp: number
+  msg: unknown
+  stateBefore: unknown
+  stateAfter: unknown
+  effects: unknown[]
+  /** Present only on the legacy runtime, which computes a dirty mask per update. */
+  dirtyMask?: number
+}
+```
+
+##### `MessageSchemaInfo` from `@llui/dom/devtools`
+
+```typescript
+export interface MessageSchemaInfo {
+  discriminant: string
+  variants: Record<string, Record<string, unknown>>
+}
+```
+
+##### `SignalDebugHooks` from `@llui/dom/devtools`
+
+Everything the signal debug API needs from a mounted component. Supplied by
+mountSignalComponent; keeps this module decoupled from the mount internals.
+
+```typescript
+export interface SignalDebugHooks {
+  name: string
+  getState: () => unknown
+  /** replace state and re-render (restore / time-travel) */
+  setState: (s: unknown) => void
+  send: (msg: unknown) => void
+  /** pure reducer, normalized to [state, effects] (for evalUpdate / dry-run) */
+  pureUpdate: (s: unknown, msg: unknown) => [unknown, unknown[]]
+  /** captured message log (newest last); installSignalDebug reads it live */
+  history: readonly SignalMessageRecord[]
+  clearHistory: () => void
+  msgSchema?: object
+  stateSchema?: object
+  effectSchema?: object
+  componentMeta?: { file: string; line: number }
+}
+```
+
+##### `SignalMessageRecord` from `@llui/dom/devtools`
+
+```typescript
+export interface SignalMessageRecord {
+  index: number
+  timestamp: number
+  msg: unknown
+  stateBefore: unknown
+  stateAfter: unknown
+  effects: unknown[]
+}
+```
+
+##### `StateDiff` from `@llui/dom/devtools`
+
+```typescript
+export interface StateDiff {
+  added: Record<string, unknown>
+  removed: Record<string, unknown>
+  changed: Record<string, { from: unknown; to: unknown }>
+}
+```
+
+##### `UpdateExplanation` from `@llui/dom/devtools`
+
+```typescript
+export interface UpdateExplanation {
+  bindingIndex: number
+  bindingMask: number
+  lastDirtyMask: number
+  matched: boolean
+  accessorResult: unknown
+  lastValue: unknown
+  changed: boolean
+}
+```
+
+##### `ValidationError` from `@llui/dom/devtools`
+
+```typescript
+export interface ValidationError {
+  path: string
+  message: string
+  /** Set by the legacy validator; the signal validator omits these. */
+  expected?: string
+  received?: string
+  /**
+   * A complete, valid example message — attached to the FIRST error so an LLM
+   * can construct the corrected message in one shot instead of inferring the
+   * shape from the schema. Built for the targeted variant (or a representative
+   * variant when the variant is unknown/missing), reusing any valid fields the
+   * caller already supplied.
+   */
+  example?: Record<string, unknown>
+}
+```
+
+### `@llui/dom/debug-collect`
+
+#### Functions
+
+##### `callRegistryMethod()` from `@llui/dom/debug-collect`
+
+Dispatch a registry pseudo-method, mirroring the relay call shape.
+
+```typescript
+function callRegistryMethod(
+  access: ComponentRegistryAccess,
+  method: RegistryMethod,
+  args: readonly unknown[],
+): ListComponentsResult | SelectComponentResult
+```
+
+##### `collectComponentInfo()` from `@llui/dom/debug-collect`
+
+Collect identity information for every mounted host component. Returns `null`
+when no debug API is present so callers keep their own fallback values.
+
+```typescript
+function collectComponentInfo(opts: DebugCollectOptions = {}): ComponentInfoSnapshot | null
+```
+
+##### `collectDebugSnapshot()` from `@llui/dom/debug-collect`
+
+Collect runtime telemetry from every mounted host component. Returns an empty
+object when no debug API is present (production builds, or dev with
+devtools-mode off). Never throws: a component method that blows up degrades
+that one field, because the caller is usually mid-screenshot.
+
+```typescript
+function collectDebugSnapshot(opts: DebugCollectOptions = {}): DebugSnapshot
+```
+
+##### `componentInfoExpression()` from `@llui/dom/debug-collect`
+
+As `debugSnapshotExpression`, for `ComponentInfoSnapshot | null`.
+
+```typescript
+function componentInfoExpression(opts: SerializableCollectOptions = {}): string
+```
+
+##### `debugCollectSource()` from `@llui/dom/debug-collect`
+
+The collector graph as standalone JavaScript source: a preamble declaring the
+module constants the functions read, then every function declaration. Dropping
+this into a fresh scope rebinds the free identifiers, so the page copy IS the
+in-process implementation rather than a mirror of it.
+
+```typescript
+function debugCollectSource(): string
+```
+
+##### `debugSnapshotExpression()` from `@llui/dom/debug-collect`
+
+A self-contained expression that evaluates to a `DebugSnapshot` when run in a
+page (Playwright's `page.evaluate(string)` / CDP `Runtime.evaluate`). This is
+how an out-of-process caller gets the collector WITHOUT hand-copying it.
+
+```typescript
+function debugSnapshotExpression(opts: SerializableCollectOptions = {}): string
+```
+
+##### `globalRegistryAccess()` from `@llui/dom/debug-collect`
+
+Registry access backed by the runtime globals.
+
+```typescript
+function globalRegistryAccess(): ComponentRegistryAccess
+```
+
+##### `hostComponentEntries()` from `@llui/dom/debug-collect`
+
+Registry entries belonging to the host app, in registration order.
+
+```typescript
+function hostComponentEntries<T>(components: Record<string, T>): Array<[string, T]>
+```
+
+##### `isRegistryMethod()` from `@llui/dom/debug-collect`
+
+```typescript
+function isRegistryMethod(method: string): method is RegistryMethod
+```
+
+##### `listComponents()` from `@llui/dom/debug-collect`
+
+Every mounted component's key, plus the key of the selected one (matched by
+identity — the pointer is the API object, not a name).
+
+```typescript
+function listComponents(access: ComponentRegistryAccess): ListComponentsResult
+```
+
+##### `selectComponent()` from `@llui/dom/debug-collect`
+
+Move the selection to `key`. Throws when the key is not registered — the
+relays turn that into the error frame their callers already expect.
+
+```typescript
+function selectComponent(access: ComponentRegistryAccess, key: string): SelectComponentResult
+```
+
+#### Types
+
+##### `RegistryMethod` from `@llui/dom/debug-collect`
+
+Registry-level pseudo-methods. They are NOT members of `LluiDebugAPI` — they
+operate on the registry rather than on one component — but they travel the
+same relay channel, so every relay has to recognize them.
+
+```typescript
+export type RegistryMethod = '__listComponents' | '__selectComponent'
+```
+
+##### `SerializableCollectOptions` from `@llui/dom/debug-collect`
+
+The options that survive serialization into a page expression — `components`
+is a live object graph and cannot cross the CDP boundary.
+
+```typescript
+export type SerializableCollectOptions = Omit<DebugCollectOptions, 'components'>
+```
+
+#### Interfaces
+
+##### `ComponentInfoSnapshot` from `@llui/dom/debug-collect`
+
+```typescript
+export interface ComponentInfoSnapshot {
+  /** Names of all currently mounted host components (registry keys). */
+  componentPath: string[]
+  /** Metadata for the first mounted component — the most likely "owning"
+   *  component when a capture doesn't carry a precise scope. */
+  componentMeta: DebugComponentMeta | null
+}
+```
+
+##### `ComponentRegistryAccess` from `@llui/dom/debug-collect`
+
+How a caller reaches the component registry and the "selected component"
+pointer. In the page that pointer is `globalThis.__lluiDebug`
+(`globalRegistryAccess()`); in the MCP server's direct mode it is the relay's
+own attached API. Abstracting it is what lets both sides run ONE resolver.
+
+```typescript
+export interface ComponentRegistryAccess {
+  /** The live registry, or undefined when nothing has mounted. */
+  registry(): Record<string, LluiDebugAPI> | undefined
+  /** The currently selected API, or undefined when nothing is selected. */
+  active(): LluiDebugAPI | undefined
+  /** Point the selection at `api`. */
+  setActive(api: LluiDebugAPI): void
+}
+```
+
+##### `DebugCollectOptions` from `@llui/dom/debug-collect`
+
+```typescript
+export interface DebugCollectOptions {
+  /** Override the registry lookup. Tests inject a stub map; the page path and
+   *  the HUD both leave this unset and read `globalThis.__lluiComponents`. */
+  components?: Record<string, TelemetrySource>
+  /** Cap on `messageLog` entries; default 50. */
+  messageLimit?: number
+  /** Cap on `effects.recent` entries; default 50. */
+  effectLimit?: number
+}
+```
+
+##### `DebugComponentMeta` from `@llui/dom/debug-collect`
+
+```typescript
+export interface DebugComponentMeta {
+  file: string
+  line: number
+  name: string
+}
+```
+
+##### `DebugMessageLogEntry` from `@llui/dom/debug-collect`
+
+```typescript
+export interface DebugMessageLogEntry {
+  ts: string
+  component: string
+  msg: unknown
+}
+```
+
+##### `DebugPendingEffectEntry` from `@llui/dom/debug-collect`
+
+```typescript
+export interface DebugPendingEffectEntry {
+  id: string
+  component: string
+  effect: unknown
+  sinceMs: number
+}
+```
+
+##### `DebugRecentEffectEntry` from `@llui/dom/debug-collect`
+
+```typescript
+export interface DebugRecentEffectEntry {
+  ts: string
+  component: string
+  effect: { type: string | null; id: string }
+  outcome: 'ok' | 'error' | 'cancelled'
+}
+```
+
+##### `DebugSnapshot` from `@llui/dom/debug-collect`
+
+A point-in-time telemetry snapshot of every mounted component. Structurally a
+`NoteBody` subset (`@llui/notes-format`) — the notebook is its main consumer —
+but declared here so the runtime keeps its zero-dependency root position.
+
+```typescript
+export interface DebugSnapshot {
+  stateSnapshot?: Record<string, unknown>
+  messageLog?: DebugMessageLogEntry[]
+  effects?: {
+    pending: DebugPendingEffectEntry[]
+    recent: DebugRecentEffectEntry[]
+  }
+}
+```
+
+##### `ListComponentsResult` from `@llui/dom/debug-collect`
+
+```typescript
+export interface ListComponentsResult {
+  components: string[]
+  active: string | null
+}
+```
+
+##### `SelectComponentResult` from `@llui/dom/debug-collect`
+
+```typescript
+export interface SelectComponentResult {
+  active: string
+}
+```
+
+##### `TelemetryComponentInfo` from `@llui/dom/debug-collect`
+
+The component-identity subset telemetry reads (`ComponentInfo` is wider).
+
+```typescript
+export interface TelemetryComponentInfo {
+  name: string
+  file: string | null
+  line: number | null
+}
+```
+
+##### `TelemetryEffectTimelineEntry` from `@llui/dom/debug-collect`
+
+The timeline subset telemetry reads (`EffectTimelineEntry` is wider).
+
+```typescript
+export interface TelemetryEffectTimelineEntry {
+  effectId: string
+  type?: string
+  phase: string
+  timestamp: number
+}
+```
+
+##### `TelemetryMessageRecord` from `@llui/dom/debug-collect`
+
+The message-history subset telemetry reads (`MessageRecord` is wider).
+
+```typescript
+export interface TelemetryMessageRecord {
+  index: number
+  timestamp: number
+  msg: unknown
+}
+```
+
+##### `TelemetryPendingEffect` from `@llui/dom/debug-collect`
+
+The pending-effect subset telemetry reads (`PendingEffect` is wider).
+
+```typescript
+export interface TelemetryPendingEffect {
+  id: string
+  type?: string
+  dispatchedAt?: number
+  payload?: unknown
+}
+```
+
+##### `TelemetrySource` from `@llui/dom/debug-collect`
+
+What the collectors need from a registry entry. A structural subset of
+`LluiDebugAPI` in which everything but `getState` is optional: the collectors
+probe each method before calling it, so an older runtime — or a test stub —
+is valid input, and a full `LluiDebugAPI` satisfies it by construction.
+
+```typescript
+export interface TelemetrySource {
+  getState(): unknown
+  getMessageHistory?(opts?: { since?: number; limit?: number }): TelemetryMessageRecord[]
+  getPendingEffects?(): TelemetryPendingEffect[]
+  getEffectTimeline?(limit?: number): TelemetryEffectTimelineEntry[]
+  getComponentInfo?(): TelemetryComponentInfo
+}
+```
+
+#### Constants
+
+##### `DEVTOOLS_COMPONENT_PREFIX` from `@llui/dom/debug-collect`
+
+Component-name prefix reserved for dev-tooling UI authored with LLui — today
+the `@llui/devmode-annotate` HUD (browse view, rect overlay, element picker,
+the shell). Those components register into the same `__lluiComponents`
+registry as the host app's, so every collector skips them: the tooling must be
+invisible to the telemetry it captures.
+
+```typescript
+const DEVTOOLS_COMPONENT_PREFIX
+```
+
+### `@llui/dom/ssr`
+
+#### Functions
+
+##### `browserEnv()` from `@llui/dom/ssr`
+
+Wrap the browser globals as a `DomEnv`. Used as the default env for
+`mountApp` / `hydrateSignalApp` on the client.
+
+The returned object delegates to `globalThis.document` / `globalThis.X`
+lazily — evaluating `browserEnv()` on a server process before a DOM
+exists is safe because the delegation only dereferences the globals
+when a method is actually called.
+
+Never mutates `globalThis`. A process with no browser globals that
+invokes one of the factory methods gets a `TypeError` / `ReferenceError`
+at the call site — which is correct: you're trying to build DOM on a
+runtime that has no DOM.
+
+```typescript
+function browserEnv(): DomEnv
+```
+
+#### Interfaces
+
+##### `DomEnv` from `@llui/dom/ssr`
+
+Minimal DOM surface that `@llui/dom`'s internals depend on. Passed to
+`mountApp` / `hydrateSignalApp` / `renderToString` as a context object so
+the runtime never reaches for `globalThis.document` directly.
+
+Why an injected shape instead of a global shim:
+
+1. **Bundler-friendly.** A Cloudflare Worker that imports
+   `@llui/dom/ssr/linkedom` reaches only linkedom via its module
+   graph. No `await import('jsdom')` appears in reachable source,
+   so rollup doesn't inline the 9 MiB jsdom bundle.
+2. **Concurrency-safe.** Two `renderToString` calls can pass
+   different envs; no process-level singleton to collide on.
+3. **Strict-isolate safe.** No `globalThis[key] = ...` mutation —
+   Cloudflare workerd and Deno strict modes forbid it.
+
+The surface is deliberately narrow: exactly the methods and
+constructors the runtime touches. Grep `document\.` /
+`instanceof (HTMLElement|Element|...)` inside `@llui/dom/src` for
+the exhaustive set.
+
+```typescript
+export interface DomEnv {
+  // ── Factories ────────────────────────────────────────────────────
+  createElement(tag: string): Element
+  createElementNS(ns: string, tag: string): Element
+  createTextNode(text: string): Text
+  createComment(text: string): Comment
+  createDocumentFragment(): DocumentFragment
+  /**
+   * Used by `each()`'s fast clear/bulk-remove paths to delete a range
+   * of siblings in one call. SSR adapters that don't need those paths
+   * (jsdom + linkedom both do) can stub — the runtime tolerates a
+   * missing range during SSR render, which never hits the bulk paths.
+   */
+  createRange(): Range
+
+  // ── Node / element constructors ─────────────────────────────────
+  // Exposed for `instanceof` checks in binding targeting + for any
+  // rare site that needs to construct a node type directly.
+  readonly Element: typeof Element
+  readonly Node: typeof Node
+  readonly Text: typeof Text
+  readonly Comment: typeof Comment
+  readonly DocumentFragment: typeof DocumentFragment
+  readonly HTMLElement: typeof HTMLElement
+  readonly HTMLTemplateElement: typeof HTMLTemplateElement
+  readonly ShadowRoot: typeof ShadowRoot
+
+  // ── Event constructor ───────────────────────────────────────────
+  readonly MouseEvent: typeof MouseEvent
+
+  /**
+   * Parse an HTML fragment string into a `DocumentFragment`. Used by
+   * `unsafeHtml()`. Browsers and jsdom parse via template-element
+   * innerHTML; linkedom has its own fragment parser. Adapter chooses
+   * the right mechanism.
+   */
+  parseHtmlFragment(html: string): DocumentFragment
+
+  /**
+   * Resolve a CSS selector against the env's root document. Used by
+   * `portal()` to locate its target when `opts.target` is a string.
+   *
+   * Returns `null` when the selector doesn't match — portal callers
+   * treat a null target as a no-op (render nothing), so adapters on
+   * runtimes where no real document exists (detached linkedom, empty
+   * shadow root, etc.) can safely return `null` here.
+   *
+   * Required — making this mandatory on the interface means a custom
+   * env that forgets to wire up selector resolution fails compile
+   * instead of silently falling back to `globalThis.document` at
+   * render time (which would crash under Cloudflare Workers + other
+   * strict-isolate runtimes). The three first-party envs
+   * (`browserEnv`, `jsdomEnv`, `linkedomEnv`) all implement it.
+   */
+  querySelector(selector: string): Element | null
+
+  /**
+   * @internal Lets hot-path code (e.g. `el-split.ts`'s template-clone)
+   * skip env indirection when the env wraps the browser globals. Only
+   * set by `browserEnv()`.
+   */
+  readonly isBrowser?: boolean
+}
+```
+
+### `@llui/dom/ssr/jsdom`
+
+#### Functions
+
+##### `jsdomEnv()` from `@llui/dom/ssr/jsdom`
+
+Construct a `DomEnv` backed by jsdom. The heavyweight jsdom window is created
+once per process and shared; each call mints a FRESH document from it, so the
+returned env has its own isolated node tree (no cross-request node sharing)
+while reusing the window's constructors — a fraction of the per-call cost of a
+full `new JSDOM(...)`.
+
+Requires `jsdom` as an installed dependency. If you don't want the
+jsdom bundle (e.g. on Cloudflare Workers), use `linkedomEnv()` from
+`@llui/dom/ssr/linkedom` instead.
+
+```typescript
+function jsdomEnv(): Promise<DomEnv>
+```
+
+### `@llui/dom/ssr/linkedom`
+
+#### Functions
+
+##### `linkedomEnv()` from `@llui/dom/ssr/linkedom`
+
+Construct a `DomEnv` backed by a fresh linkedom instance. Each call
+returns a new env — no process-level state, safe under concurrency
+and compatible with Cloudflare Workers.
+
+Requires `linkedom` as an installed dependency.
+
+```typescript
+function linkedomEnv(): Promise<DomEnv>
+```
+
+### `@llui/dom/internal`
+
+#### Functions
+
+##### `__clientOnlyStub()` from `@llui/dom/internal`
+
+Server-side stub for a `'use client'` component. Compiler-ssr emits
+`export const Foo = __clientOnlyStub("Foo")` for each named export of
+a client-only module so SSR never imports the client's browser-only
+dependencies. The stub renders nothing on the server; the real module
+loads and hydrates on the client.
+
+```typescript
+function __clientOnlyStub(name: string): SignalComponentDef<object, never, never>
+```
+
+### `@llui/dom/escape-hatch`
+
+#### Functions
+
+##### `subApp()` from `@llui/dom/escape-hatch`
+
+Mount an isolated sub-application at this point in the view. Returns the anchor
+node(s) to splice into the surrounding view array (`...subApp({ … })`). Drive
+the instance — push props in, bubble messages out — via `onHandle`'s handle;
+the sub-app shares no state with the host. Disposed automatically when the host
+unmounts.
+
+```typescript
+function subApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Renderable
+```
+
+#### Interfaces
+
+##### `SubAppSpec` from `@llui/dom/escape-hatch`
+
+Spec for {@link signalSubApp} — an isolated child component boundary.
+
+```typescript
+export interface SubAppSpec<S, M, E = never> {
+  /** Why a separate update loop / mask scope is warranted (third-party UI, a
+   * long-lived loop with no reactive props, a 60fps layer). Documents intent at
+   * the call site; not consulted at runtime. */
+  reason: string
+  /** The component to mount in isolation. */
+  def: SignalComponentDef<S, M, E>
+  /** Seed state, overriding `def.init()`'s state (init still runs for effects).
+   * The bridge for "props in": the host pushes fresh data via the handle's `send`. */
+  initialState?: S
+  /** Context values to replay into the isolated build (provide/useContext). */
+  contexts?: ReadonlyMap<symbol, unknown>
+  /** Receive the mounted handle (send/subscribe/dispose) — the channel for pushing
+   * props in and bubbling messages out, since the sub-app shares no state with the host. */
+  onHandle?: (handle: SignalComponentHandle<S, M>) => void
+}
 ```
 
 <!-- auto-api:end -->

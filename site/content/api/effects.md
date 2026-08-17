@@ -5,6 +5,12 @@ description: 'Effect builders: http, cancel, debounce, websocket, retry, upload'
 
 # @llui/effects
 
+<!-- package-version:start -->
+
+**Current package version:** `0.3.0`
+
+<!-- package-version:end -->
+
 Effect builders for [LLui](https://github.com/fponticelli/llui). Effects are data -- `update()` returns them, the runtime dispatches.
 
 ```bash
@@ -962,6 +968,42 @@ export interface WebSocketSendEffect {
 
 ## Constants
 
+### `broadcastListenRunner`
+
+```typescript
+const broadcastListenRunner: Runner
+```
+
+### `broadcastRunner`
+
+```typescript
+const broadcastRunner: Runner
+```
+
+### `cancelRunner`
+
+```typescript
+const cancelRunner: Runner
+```
+
+### `clipboardReadRunner`
+
+```typescript
+const clipboardReadRunner: Runner
+```
+
+### `clipboardWriteRunner`
+
+```typescript
+const clipboardWriteRunner: Runner
+```
+
+### `debounceRunner`
+
+```typescript
+const debounceRunner: Runner
+```
+
 ### `defaultRunners`
 
 Every built-in runner, in the original dispatch order.
@@ -978,6 +1020,102 @@ This is the replacement for the old core `delay` effect: `delay(ms, msg)` is
 
 ```typescript
 const delay
+```
+
+### `geolocationRunner`
+
+```typescript
+const geolocationRunner: Runner
+```
+
+### `httpRunner`
+
+```typescript
+const httpRunner: Runner
+```
+
+### `intervalRunner`
+
+```typescript
+const intervalRunner: Runner
+```
+
+### `logRunner`
+
+```typescript
+const logRunner: Runner
+```
+
+### `notificationRunner`
+
+```typescript
+const notificationRunner: Runner
+```
+
+### `raceRunner`
+
+```typescript
+const raceRunner: Runner
+```
+
+### `retryRunner`
+
+```typescript
+const retryRunner: Runner
+```
+
+### `sequenceRunner`
+
+```typescript
+const sequenceRunner: Runner
+```
+
+### `storageGetRunner`
+
+```typescript
+const storageGetRunner: Runner
+```
+
+### `storageRemoveRunner`
+
+```typescript
+const storageRemoveRunner: Runner
+```
+
+### `storageSetRunner`
+
+```typescript
+const storageSetRunner: Runner
+```
+
+### `storageWatchRunner`
+
+```typescript
+const storageWatchRunner: Runner
+```
+
+### `timeoutRunner`
+
+```typescript
+const timeoutRunner: Runner
+```
+
+### `uploadRunner`
+
+```typescript
+const uploadRunner: Runner
+```
+
+### `websocketRunner`
+
+```typescript
+const websocketRunner: Runner
+```
+
+### `wsSendRunner`
+
+```typescript
+const wsSendRunner: Runner
 ```
 
 <!-- auto-api:end -->

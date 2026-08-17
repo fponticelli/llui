@@ -5,6 +5,12 @@ description: "Renderer for Google's A2UI (Agent-to-UI) protocol on the LLui sign
 
 # @llui/a2ui
 
+<!-- package-version:start -->
+
+**Current package version:** `0.3.0`
+
+<!-- package-version:end -->
+
 Renders Google's [**A2UI**](https://a2ui.org) (Agent-to-UI) protocol on the LLui signal runtime. A2UI is a transport-agnostic JSON protocol: a local or remote agent streams declarative UI messages that reference components from a **catalog the client already trusts** — the agent never ships code. `@llui/a2ui` is a renderer for that stream, built on LLui's chunked-mask reconciler, and it reuses [`@llui/components`](/api/components) headless primitives for the interactive parts.
 
 ```bash

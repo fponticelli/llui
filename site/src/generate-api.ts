@@ -86,20 +86,19 @@ interface ExportedItem {
   signature: string
 }
 
-/**
- * Resolve a package's public entrypoint source files from `package.json#exports`.
- * Prefer the curated `.` barrel; if a package has no `.` entry (e.g. `@llui/agent`
- * splits its surface across `./server`, `./client`, …), union every non-CSS
- * subpath entry. Each `dist/*.d.ts` target maps back to its `src/*.ts` source.
- */
-function entrySourceFiles(pkgDir: string): string[] {
+interface PackageEntrySource {
+  subpath: string
+  file: string
+}
+
+/** Resolve every concrete, non-CSS public entry point from `package.json#exports`. */
+function entrySources(pkgDir: string): PackageEntrySource[] {
   const pkg = JSON.parse(readFileSync(resolve(pkgDir, 'package.json'), 'utf-8')) as {
     exports?: Record<string, unknown>
   }
   const exp = pkg.exports ?? {}
-  const keys = exp['.'] !== undefined ? ['.'] : Object.keys(exp)
-  const out: string[] = []
-  for (const key of keys) {
+  const out: PackageEntrySource[] = []
+  for (const key of Object.keys(exp)) {
     const val = exp[key]
     const target =
       typeof val === 'string'
@@ -113,8 +112,24 @@ function entrySourceFiles(pkgDir: string): string[] {
       .replace(/^dist\//, 'src/')
       .replace(/\.d\.ts$/, '.ts')
       .replace(/\.js$/, '.ts')
+    if (key.includes('*') || rel.includes('*')) {
+      if ((key.match(/\*/g) ?? []).length !== 1 || (rel.match(/\*/g) ?? []).length !== 1) {
+        throw new Error(`unsupported wildcard export mapping ${key} -> ${target}`)
+      }
+      const absolutePattern = resolve(pkgDir, rel)
+      const filePattern = basename(absolutePattern)
+      const [prefix, suffix] = filePattern.split('*') as [string, string]
+      const patternDir = dirname(absolutePattern)
+      if (!existsSync(patternDir)) continue
+      for (const file of readdirSync(patternDir).sort()) {
+        if (!file.startsWith(prefix) || !file.endsWith(suffix)) continue
+        const match = file.slice(prefix.length, file.length - suffix.length)
+        out.push({ subpath: key.replace('*', match), file: resolve(patternDir, file) })
+      }
+      continue
+    }
     const abs = resolve(pkgDir, rel)
-    if (existsSync(abs)) out.push(abs)
+    if (existsSync(abs)) out.push({ subpath: key, file: abs })
   }
   return out
 }
@@ -168,6 +183,7 @@ function renderExport(
   sym: ts.Symbol,
   checker: ts.TypeChecker,
 ): ExportedItem | null {
+  const publicDecls = sym.getDeclarations() ?? []
   let s = sym
   if (s.flags & ts.SymbolFlags.Alias) s = checker.getAliasedSymbol(s)
   const decls = s.getDeclarations() ?? []
@@ -225,8 +241,6 @@ function renderExport(
 
   const varDecl = decls.find(ts.isVariableDeclaration)
   if (varDecl) {
-    // Skip namespace objects like `export const tabs = { init, update, connect }`.
-    if (varDecl.initializer && ts.isObjectLiteralExpression(varDecl.initializer)) return null
     const sf = varDecl.getSourceFile()
     const stmt = varDecl.parent.parent // VariableDeclarationList → VariableStatement
     const type = varDecl.type ? `: ${printNode(varDecl.type, sf)}` : ''
@@ -235,6 +249,25 @@ function renderExport(
       name: exportName,
       doc: getJSDoc(stmt, sf),
       signature: `const ${exportName}${type}`,
+    }
+  }
+
+  if (s.flags & (ts.SymbolFlags.ValueModule | ts.SymbolFlags.NamespaceModule)) {
+    let moduleSpecifier: string | undefined
+    for (const declaration of publicDecls) {
+      let current: ts.Node | undefined = declaration
+      while (current && !ts.isExportDeclaration(current)) current = current.parent
+      if (current?.moduleSpecifier && ts.isStringLiteral(current.moduleSpecifier)) {
+        moduleSpecifier = current.moduleSpecifier.text
+        break
+      }
+    }
+    return {
+      kind: 'const',
+      name: exportName,
+      signature: moduleSpecifier
+        ? `const ${exportName}: typeof import('${moduleSpecifier}')`
+        : `const ${exportName}: object`,
     }
   }
 
@@ -270,17 +303,26 @@ function extractPackageExports(
   return items
 }
 
-function formatExports(items: ExportedItem[]): string {
+interface FormatExportsOptions {
+  sectionLevel?: number
+  itemLevel?: number
+  qualifier?: string
+}
+
+function formatExports(items: ExportedItem[], options: FormatExportsOptions = {}): string {
   if (items.length === 0) return ''
 
+  const sectionLevel = options.sectionLevel ?? 2
+  const itemLevel = options.itemLevel ?? 3
+  const qualifier = options.qualifier ? ` from \`${options.qualifier}\`` : ''
   let md = ''
   const section = (title: string, kind: ExportedItem['kind']) => {
     const list = items.filter((i) => i.kind === kind)
     if (list.length === 0) return
-    md += `## ${title}\n\n`
+    md += `${'#'.repeat(sectionLevel)} ${title}\n\n`
     for (const item of list) {
       const backtick = item.kind === 'function' ? `\`${item.name}()\`` : `\`${item.name}\``
-      md += `### ${backtick}\n\n`
+      md += `${'#'.repeat(itemLevel)} ${backtick}${qualifier}\n\n`
       if (item.doc) md += `${item.doc}\n\n`
       md += '```typescript\n' + item.signature + '\n```\n\n'
     }
@@ -810,7 +852,12 @@ function toTitle(kebab: string): string {
     .join(' ')
 }
 
-function generateComponentsDoc(): string {
+function generateComponentsDoc(
+  packageEntries: PackageEntrySource[],
+  program: ts.Program,
+  checker: ts.TypeChecker,
+  packageName: string,
+): string {
   const componentsDir = resolve(packagesDir, 'components/src/components')
   const barrelPath = resolve(componentsDir, 'index.ts')
   const barrelText = readFileSync(barrelPath, 'utf-8')
@@ -848,7 +895,7 @@ function generateComponentsDoc(): string {
   md += `const state = componentName.init({ /* options */ })\n`
   md += `const [newState, effects] = componentName.update(state, msg)\n\n`
   md += `// Connect to DOM\n`
-  md += `const parts = componentName.connect<State>(s => s.field, send, { id: '...' })\n`
+  md += `const parts = componentName.connect(state.at('component'), send, { id: '...' })\n`
   md += `// Use parts: div({ ...parts.root }, [button({ ...parts.trigger }, [...])])\n`
   md += '```\n\n---\n\n'
 
@@ -877,6 +924,24 @@ function generateComponentsDoc(): string {
   }
 
   md += renderBarrelExports(barrelPath, barrelText)
+  md += `## Complete Public API\n\n`
+  md +=
+    `The component summaries above optimize for everyday authoring. This appendix is ` +
+    `generated from every concrete TypeScript entry point declared in ` +
+    `\`package.json#exports\` and includes the complete importable surface.\n\n`
+  for (const entry of packageEntries) {
+    const specifier = entry.subpath === '.' ? packageName : packageName + entry.subpath.slice(1)
+    const items = extractPackageExports('components', [entry.file], program, checker)
+    if (items.length === 0) {
+      throw new Error(`${specifier}: zero exports extracted — refusing to omit the entry point.`)
+    }
+    md += `### \`${specifier}\`\n\n`
+    md += formatExports(items, {
+      sectionLevel: 4,
+      itemLevel: 5,
+      qualifier: specifier,
+    })
+  }
   return md
 }
 
@@ -950,7 +1015,51 @@ function injectSection(filePath: string, marker: string, content: string): void 
   writeFileSync(filePath, output)
 }
 
+function injectPackageVersion(filePath: string, version: string): void {
+  const existing = readFileSync(filePath, 'utf-8')
+  const startMarker = '<!-- package-version:start -->'
+  const endMarker = '<!-- package-version:end -->'
+  const block = `${startMarker}\n\n**Current package version:** \`${version}\`\n\n${endMarker}`
+  let output: string
+  if (existing.includes(startMarker)) {
+    const re = new RegExp(`${escapeRegex(startMarker)}[\\s\\S]*?${escapeRegex(endMarker)}`, 'g')
+    output = existing.replace(re, () => block)
+  } else {
+    const h1 = /^# .+$/m
+    if (!h1.test(existing)) throw new Error(`${filePath}: package page has no H1 for version block`)
+    output = existing.replace(h1, (heading) => `${heading}\n\n${block}`)
+  }
+  writeFileSync(filePath, output)
+}
+
 // ── Main ─────────────────────────────────────────────────────────
+
+export function assertPackageRegistryComplete(
+  packageRoot: string,
+  documentedSlugs: readonly string[],
+): void {
+  const documented = new Set(documentedSlugs)
+  const undocumented: string[] = []
+  for (const dir of readdirSync(packageRoot)) {
+    const manifestPath = resolve(packageRoot, dir, 'package.json')
+    if (!existsSync(manifestPath)) continue
+    const pkg = JSON.parse(readFileSync(manifestPath, 'utf-8')) as {
+      name?: string
+      private?: boolean
+      exports?: unknown
+    }
+    if (!pkg.private && pkg.exports !== undefined && !documented.has(dir)) {
+      undocumented.push(pkg.name ?? dir)
+    }
+  }
+  if (undocumented.length > 0) {
+    throw new Error(
+      `PUBLISHABLE PACKAGES ABSENT FROM THE API REGISTRY (pages/api/@pkg/packages.ts):\n` +
+        undocumented.map((name) => `  - ${name}`).join('\n') +
+        `\nThey get no API page, route, nav entry, or llms.txt line. Register or mark private.`,
+    )
+  }
+}
 
 /**
  * Regenerate every `content/api/*.md`. Guarded behind the entry-point check
@@ -966,68 +1075,67 @@ function main(): void {
   // LOUDLY surfaced (previously such a package silently produced no page). The
   // registry lives in `pages/api/@pkg/packages.ts`; add the package there (route +
   // nav + llms.txt + this page all key off it) or mark it `private`.
-  {
-    const documented = new Set(PACKAGE_SLUGS)
-    const undocumented: string[] = []
-    for (const dir of readdirSync(packagesDir)) {
-      const pjPath = resolve(packagesDir, dir, 'package.json')
-      if (!existsSync(pjPath)) continue
-      const pkg = JSON.parse(readFileSync(pjPath, 'utf-8')) as {
-        private?: boolean
-        exports?: unknown
-      }
-      const publishable = !pkg.private && pkg.exports !== undefined
-      if (publishable && !documented.has(dir)) undocumented.push(dir)
-    }
-    if (undocumented.length > 0) {
-      console.error(
-        `\n  ⚠ PUBLISHABLE PACKAGES ABSENT FROM THE API REGISTRY (pages/api/@pkg/packages.ts):\n` +
-          undocumented.map((d) => `      - @llui/${d}`).join('\n') +
-          `\n    They get NO API page, route, nav entry, or llms.txt line. Register or mark private.\n`,
-      )
-    }
-  }
+  assertPackageRegistryComplete(packagesDir, PACKAGE_SLUGS)
 
   // Resolve entrypoints for every generic package up front, then build ONE program
   // spanning them all (transitive re-exports resolve through the type system).
-  const pkgEntries = new Map<string, string[]>()
-  for (const slug of genericSlugs) {
+  const pkgEntries = new Map<string, PackageEntrySource[]>()
+  for (const slug of PACKAGE_SLUGS) {
     const pkgDir = resolve(packagesDir, slug)
     if (!existsSync(pkgDir)) {
       throw new Error(
         `@llui/${slug} is in the registry but packages/${slug} does not exist on disk.`,
       )
     }
-    const files = entrySourceFiles(pkgDir)
-    if (files.length === 0) {
+    const entries = entrySources(pkgDir)
+    if (entries.length === 0) {
       throw new Error(
         `@llui/${slug}: no resolvable src entrypoints from package.json#exports (mapped dist→src).`,
       )
     }
-    pkgEntries.set(slug, files)
+    pkgEntries.set(slug, entries)
   }
 
-  const program = ts.createProgram([...pkgEntries.values()].flat(), {
-    target: ts.ScriptTarget.ES2022,
-    module: ts.ModuleKind.ESNext,
-    moduleResolution: ts.ModuleResolutionKind.Bundler,
-    allowJs: true,
-    skipLibCheck: true,
-    noEmit: true,
-    strict: false,
-  })
+  const program = ts.createProgram(
+    [...pkgEntries.values()].flatMap((entries) => entries.map((entry) => entry.file)),
+    {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      moduleResolution: ts.ModuleResolutionKind.Bundler,
+      allowJs: true,
+      skipLibCheck: true,
+      noEmit: true,
+      strict: false,
+    },
+  )
   const checker = program.getTypeChecker()
 
   // Components are special — use the component extractor.
   console.log('Generating component API reference...')
   const componentsSeed = resolve(contentDir, 'components.md')
   if (!existsSync(componentsSeed)) throw new Error('missing seed content/api/components.md')
-  injectSection(componentsSeed, 'auto-api', generateComponentsDoc())
+  const componentsManifest = JSON.parse(
+    readFileSync(resolve(packagesDir, 'components', 'package.json'), 'utf-8'),
+  ) as { name: string; version: string }
+  injectPackageVersion(componentsSeed, componentsManifest.version)
+  injectSection(
+    componentsSeed,
+    'auto-api',
+    generateComponentsDoc(pkgEntries.get('components')!, program, checker, componentsManifest.name),
+  )
   console.log('  → components.md')
 
   // All other packages use the generic checker-based extractor.
   for (const slug of genericSlugs) {
-    const items = extractPackageExports(slug, pkgEntries.get(slug)!, program, checker)
+    const entries = pkgEntries.get(slug)!
+    const rootEntries = entries.filter((entry) => entry.subpath === '.')
+    const primaryEntries = rootEntries.length > 0 ? rootEntries : entries
+    const items = extractPackageExports(
+      slug,
+      primaryEntries.map((entry) => entry.file),
+      program,
+      checker,
+    )
     if (items.length === 0) {
       throw new Error(`@llui/${slug}: zero exports extracted — refusing to emit an empty API page.`)
     }
@@ -1035,7 +1143,32 @@ function main(): void {
     if (!existsSync(contentFile)) {
       throw new Error(`@llui/${slug}: missing seed content/api/${slug}.md`)
     }
-    injectSection(contentFile, 'auto-api', formatExports(items))
+    const pkg = JSON.parse(readFileSync(resolve(packagesDir, slug, 'package.json'), 'utf-8')) as {
+      name: string
+      version: string
+    }
+    injectPackageVersion(contentFile, pkg.version)
+    let generated = formatExports(items)
+    const subpaths = entries.filter((entry) => entry.subpath !== '.')
+    if (subpaths.length > 0) {
+      generated += '## Public Entry Points\n\n'
+      for (const entry of subpaths) {
+        const specifier = pkg.name + entry.subpath.slice(1)
+        const entryItems = extractPackageExports(slug, [entry.file], program, checker)
+        if (entryItems.length === 0) {
+          throw new Error(
+            `${specifier}: zero exports extracted — refusing to omit the entry point.`,
+          )
+        }
+        generated += `### \`${specifier}\`\n\n`
+        generated += formatExports(entryItems, {
+          sectionLevel: 4,
+          itemLevel: 5,
+          qualifier: specifier,
+        })
+      }
+    }
+    injectSection(contentFile, 'auto-api', generated)
     console.log(`  → ${slug}.md (${items.length} exports)`)
   }
 

@@ -1,160 +1,181 @@
 # LLui Component
 
-You are writing a TypeScript component using the LLui framework.
+You are writing TypeScript with LLui, a compile-time-optimized web framework built on
+The Elm Architecture. LLui has no virtual DOM: `view()` runs once at mount and builds
+real DOM nodes with reactive signal bindings.
 
-## Pattern
-
-LLui uses The Elm Architecture: `init` returns initial state and effects;
-`update(state, msg)` returns `[newState, effects]`; `view({ send, text, ... })`
-returns DOM nodes once at mount and binds state to the DOM through accessor
-functions. State is immutable. Effects are plain data objects returned from
-`update()`. Destructure view helpers from the single `View<S, M>` parameter.
-
-## Key Types
+## Component shape
 
 ```typescript
-interface ComponentDef<S, M, E> {
-  name: string
-  init: (props?: Record<string, unknown>) => [S, E[]]
-  update: (state: S, msg: M) => [S, E[]]
-  view: (h: View<S, M>) => Node[]
-  onEffect?: (ctx: { effect: E; send: (msg: M) => void; signal: AbortSignal }) => void
-}
-
-// View<S, M> is a bundle of state-bound helpers + send. Destructure in
-// `view` to drop per-call generics — every accessor infers `s: S` from
-// the component.
-interface View<S, M> {
-  send: (msg: M) => void
-  show(opts: { when: (s: S) => boolean; render: (h: View<S, M>) => Node[] }): Node[]
-  branch(opts: {
-    on: (s: S) => string | number
-    cases: Record<string, (h: View<S, M>) => Node[]>
-  }): Node[]
-  each<T>(opts: {
-    items: (s: S) => T[]
-    key: (item: T) => string | number
-    render: (bag: { item; index: () => number; send }) => Node[]
-  }): Node[]
-  text(accessor: ((s: S) => string) | string): Text
-  memo<T>(accessor: (s: S) => T): (s: S) => T
-  ctx<T>(c: Context<T>): (s: S) => T
-}
-// slice(h, selector) — standalone function for sub-slice view composition
-function slice<Root, Sub, M>(h: View<Root, M>, sel: (s: Root) => Sub): View<Sub, M>
-
-function onMount(callback: (el: Element) => (() => void) | void): void
-// item accessor: item.field (shorthand) or item(t => t.expr) (computed) — both return () => V
+component<State, Msg, Effect>({
+  name,
+  init: () => State | [State, Effect[]],
+  update: (state, msg) => State | [State, Effect[]],
+  view: ({ state, send, batch }) => Renderable,
+  onEffect: (effect, api) => void | (() => void),
+})
 ```
 
-## Effects
+- `State` is plain JSON-serializable data. Do not store `Map`, `Set`, `Date`, class
+  instances, functions, `NaN`, or infinities.
+- `Msg` and `Effect` are discriminated unions with a `type` field.
+- `update` is pure. Never mutate state; return a new object for changed paths.
+- Effects are data returned by `update`, then handled by `onEffect`.
+- The view bag contains exactly `state`, `send`, and `batch`. Element and structural
+  helpers are imports from `@llui/dom`.
 
-Effects use **typed message constructors** — callbacks, not strings:
+## Signal authoring
 
-```typescript
-import { http, cancel, debounce, handleEffects } from '@llui/effects'
-import type { ApiError } from '@llui/effects'
+`state` is a `Signal<State>` with three operations:
 
-// HTTP with typed callbacks + flexible body:
-http({
-  url: '/api/users',
-  method: 'POST',
-  body: { name: 'Franco' },             // auto JSON.stringify + Content-Type
-  // body: formData,                     // FormData/Blob/URLSearchParams pass through
-  timeout: 5000,                         // optional request timeout (ms)
-  onSuccess: (data, headers) => ({ type: 'usersLoaded' as const, payload: data }),
-  onError: (err: ApiError) => ({ type: 'fetchFailed' as const, error: err }),
-})
+- `state.at('field')` narrows to a precise reactive path and is chainable.
+- `state.map(fn)` derives a reactive value from the whole signal.
+- `state.peek()` performs a one-shot read. Use it only inside event handlers, effects,
+  and `onMount`; never use it as a reactive slot value.
 
-// Compose: cancel previous + debounce + http
-cancel('search', debounce('search', 300, http({
-  url: `/api/search?q=${q}`,
-  onSuccess: (data) => ({ type: 'results' as const, payload: data }),
-  onError: (err) => ({ type: 'searchError' as const, error: err }),
-})))
-
-// WebSocket:
-import { websocket, wsSend } from '@llui/effects'
-websocket({
-  url: 'wss://api.example.com/ws',
-  key: 'feed',
-  onMessage: (data) => ({ type: 'wsMessage' as const, payload: data }),
-  onClose: (code, reason) => ({ type: 'wsDisconnected' as const }),
-})
-wsSend('feed', { action: 'subscribe', channel: 'updates' })
-
-// Retry with exponential backoff:
-import { retry } from '@llui/effects'
-retry(http({ url: '/api/data', onSuccess: ..., onError: ... }), {
-  maxAttempts: 3,
-  delayMs: 1000,  // 1s, 2s, 4s
-})
-
-// Handle effects:
-onEffect: handleEffects<Effect, Msg>()
-  .else(({ effect, send, signal }) => { /* custom effects */ })
-```
-
-## Example
+Combine signals with the imported `derived(...)` helper. There is no `.select()`, and a
+mapped signal cannot be narrowed with `.at()` afterward.
 
 ```typescript
-import { component, div, button } from '@llui/dom'
+import { component, mountApp, div, button, text } from '@llui/dom'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' }
 
-export const Counter = component<State, Msg, never>({
+const Counter = component<State, Msg, never>({
   name: 'Counter',
-  init: () => [{ count: 0 }, []],
+  init: () => ({ count: 0 }),
   update: (state, msg) => {
     switch (msg.type) {
       case 'inc':
-        return [{ ...state, count: state.count + 1 }, []]
+        return { ...state, count: state.count + 1 }
       case 'dec':
-        return [{ ...state, count: Math.max(0, state.count - 1) }, []]
+        return { ...state, count: state.count - 1 }
     }
   },
-  view: ({ send, text }) =>
+  view: ({ state, send }) => [
     div({ class: 'counter' }, [
       button({ onClick: () => send({ type: 'dec' }) }, [text('-')]),
-      text((s) => String(s.count)),
+      text(state.at('count').map(String)),
       button({ onClick: () => send({ type: 'inc' }) }, [text('+')]),
     ]),
+  ],
+})
+
+mountApp(document.getElementById('app')!, Counter)
+```
+
+An element with no props uses the children-only form, such as `div([text('Hi')])`.
+Do not write `div({}, [...])`. Author with `text`, `each`, `show`, and `branch`; names
+such as `signalText` and `signalEach` are compiler targets, not authoring APIs.
+
+## Structural primitives
+
+Import all structural primitives from `@llui/dom`.
+
+```typescript
+show(
+  state.at('user'),
+  (user) => [text(user.at('name'))],
+  () => [text('Signed out')],
+)
+
+branch(
+  state.at('page').map((page) => page.type),
+  {
+    search: () => [searchView(state, send)],
+    repo: () => [repoView(state, send)],
+  },
+)
+
+each(state.at('todos'), {
+  key: (todo) => todo.id,
+  render: (item) => [
+    div({ class: item.at('done').map((done) => (done ? 'done' : '')) }, [text(item.at('label'))]),
+  ],
 })
 ```
 
+- `each` keys must be stable value identities, never array indexes.
+- The `item` and `index` passed to a row renderer are signals. Rows are reused on
+  reorder, so read them reactively; call `.peek()` only at event time.
+- A keyed row needs a stable element root, not a bare structural primitive.
+- `show`, `branch`, `each`, `lazy`, `portal`, `foreign`, and `onMount` return lazy
+  `Mountable` recipes. They do nothing unless placed in the returned view tree.
+- `onMount` may return a cleanup function. Its returned `Mountable` must be in the view.
+
+Factor sub-views as plain functions that accept sliced signals:
+
+```typescript
+function header(state: Signal<HeaderState>, send: (msg: Msg) => void): Renderable {
+  return [h1([text(state.at('title'))])]
+}
+
+view: ({ state, send }) => [header(state.at('header'), send)]
+```
+
+There is no `child()` composition API. Use `mapSend` to route a child state machine's
+messages into the parent's union.
+
+## Effects
+
+```typescript
+import { http, debounce, handleEffects, asOnEffect } from '@llui/effects'
+
+const chain = handleEffects<Effect, Msg>().else(({ effect }) =>
+  console.warn('unhandled effect', effect),
+)
+
+const App = component<State, Msg, Effect>({
+  // init, update, view...
+  onEffect: asOnEffect(chain),
+})
+
+const search = (query: string) =>
+  debounce(
+    'search',
+    300,
+    http<Msg>({
+      url: `/api/search?q=${encodeURIComponent(query)}`,
+      onSuccess: (data) => ({ type: 'searchLoaded', data }),
+      onError: (error) => ({ type: 'searchFailed', error }),
+    }),
+  )
+```
+
+Do not perform I/O in `init`, `update`, or the synchronous body of `view`. Every emitted
+effect needs a handler. Use stable cancellation keys for debounce, interval, retry, and
+superseded requests.
+
+## Headless components
+
+`@llui/components` ships 66 headless state machines. Pass a sliced signal handle to
+`connect`, never an accessor or the whole root signal:
+
+```typescript
+import { dialog } from '@llui/components/dialog'
+import { mapSend } from '@llui/dom'
+
+const parts = dialog.connect(
+  state.at('dialog'),
+  mapSend(send, (msg) => ({ type: 'dialog', msg })),
+  { id: 'edit-profile' },
+)
+```
+
+Spread the returned part bags onto elements. Place overlay helpers in the view tree.
+Use `@llui/interactions` for custom focus, dismissal, floating, modal, or roving behavior.
+
 ## Rules
 
-- Never mutate state in `update()`. Always return a new object: `{ ...state, field: newValue }`.
-- Reactive values in `view()` are arrow functions: `text(s => s.label)`, `div({ class: s => s.active ? 'on' : '' })`.
-- Static values are literals: `div({ class: 'container' })`.
-- Destructure view helpers from the `view` argument: `view: ({ send, show, each, branch, text, memo }) => [...]`. This pins `s: S` across all state-bound calls — no per-call generics. Import element helpers (`div`, `button`, `span`…) normally.
-- **Never import `text`, `each`, `show`, `branch`, `memo` from `@llui/dom`** — always use the view bag's versions. The bag versions are typed to the component's `State`; the import versions are weakly typed.
-- When extracting view helpers (functions called from `view`), pass the needed primitives as arguments: `function myHelper(text: View<S,M>['text'], send: Send<M>): Node[]`.
-- Never use `.map()` on state arrays in `view()`. Always use `each()` for reactive lists.
-- Never spread arrays into element children: `div([...arr.map(...)])` prevents template-clone optimization. Use `each()` instead, even for static arrays.
-- In `each()`, `render` receives `item` (a scoped accessor proxy) and `index` (a getter).
-  Read item properties via property access: `item.text` (returns a reactive accessor).
-  Use `item(t => t.expr)` for computed expressions.
-  Invoke the accessor to read imperatively: `item.id()` (e.g. inside event handlers).
-- Wrap derived values used in multiple places in `memo()`.
-- Use `show` for boolean conditions. Use `branch` for named states (3+ cases or non-boolean).
-- Use `lazy({ loader, fallback, error?, data? })` for code-split components: `loader: () => import('./Heavy').then(m => m.default)`. Renders `fallback` until loaded; the `error` handler fires on rejection. Cancels cleanly if the parent scope is disposed mid-load.
-- Use `virtualEach({ items, key, itemHeight, containerHeight, render })` from `@llui/dom` for large lists (1k+ rows) with fixed row height. Renders only visible rows; scrolling reconciles in place without touching component state.
-- For composition, use view functions (Level 1) with `(props, send)` convention.
-  Only use `child()` for library components with encapsulated internals or 30+ state paths.
-- For forms with many fields, use a single `setField` message:
-  `{ type: 'setField'; field: keyof Fields; value: string }` instead of one message per field.
-  Use `applyField(state, msg.field, msg.value)` from `@llui/dom` to apply updates.
-- Effects use typed message constructors: `onSuccess: (data) => ({ type: 'loaded', payload: data })`.
-  Never use string-based effect callbacks.
-- For `http`, `cancel`, `debounce`, `websocket`, `retry`: import from `@llui/effects`.
-  Wire into onEffect with `handleEffects<Effect, Msg>().else(handler)`.
-- `send()` batches via microtask. Use `flush()` only when reading DOM state immediately.
-- `@llui/components` ships 58 headless state machines. Each exports `init`, `update`, `connect` and a `Parts` type. Wire them into your app reducer via `sliceHandler` or a single `msg.type === 'compName'` case. Pointer + keyboard accessibility is built in.
-- For forms, use the `form` state machine (`FormState` tracks submit status + touched fields) with `validateSchema(schema, values)` against any Standard Schema library (Zod, Valibot, ArkType). Values live in parent state; `form` is a coordinator.
-- For drag-to-reorder, use the `sortable` state machine. Call `reorder(arr, from, to)` in the `drop` case. Multiple sortable containers share state and track `fromContainer`/`toContainer` for cross-container drag.
-- For theme toggling, use the `themeSwitch` state machine plus `applyTheme(resolveTheme(state.theme))` to set `data-theme` on `<html>`. CSS selectors use `[data-theme='dark']`.
-- For scroll-triggered behavior, use the `inView` state machine with `inView.createObserver(el, send, { once: true })` inside `onMount`.
-- For component label translations, components read from `LocaleContext` (created with English defaults) — English apps need zero setup. Non-English apps call `provide(LocaleContext, (s) => s.locale, () => [...])` at the root.
-- For number/date/list/plural formatting, use `formatNumber`, `formatDate`, `formatRelativeTime`, `formatList`, `formatPlural`, `formatFileSize` from `@llui/components` — all wrap `Intl.*` with caching and accept an optional `locale` option.
+- `view()` runs once. Build a static graph of reactive bindings; it does not re-render.
+- Prefer precise `.at()` paths. Root `.map()` reads coarsen dependency gating.
+- Never use `peek()` where a signal should remain reactive.
+- Never mutate state or store non-JSON values.
+- `send()` is synchronous. Use `batch(fn)` to coalesce several sends into one DOM commit;
+  use the optional `raf` scheduler for frame-coalesced rendering.
+- Place every lifecycle or structural `Mountable` you create.
+- Keep `init()` deterministic for SSR. Browser-only work belongs in effects or `onMount`.
+- Use `unsafeHtml` only with trusted or sanitized HTML.
+- Reach for `@llui/components`, `@llui/interactions`, and `@llui/effects` before
+  reimplementing their behavior.

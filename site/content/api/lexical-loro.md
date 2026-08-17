@@ -5,6 +5,12 @@ description: 'Opt-in collaborative editing for the LLui ↔ Lexical editor over 
 
 # @llui/lexical-loro
 
+<!-- package-version:start -->
+
+**Current package version:** `0.1.2`
+
+<!-- package-version:end -->
+
 Opt-in collaborative editing over [Loro](https://loro.dev). `loroCollab` composes
 a full bidirectional binding into one `register` you hand to `lexicalForeign`,
 and satisfies `@llui/markdown-editor`'s `CollabBinding` structurally.

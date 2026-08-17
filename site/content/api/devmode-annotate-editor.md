@@ -5,6 +5,12 @@ description: 'Optional rich Markdown editor upgrade for the annotation HUD'
 
 # @llui/devmode-annotate-editor
 
+<!-- package-version:start -->
+
+**Current package version:** `0.1.1`
+
+<!-- package-version:end -->
+
 The optional Lexical-powered note surface for [`@llui/devmode-annotate`](/api/devmode-annotate). Core always provides a plain Markdown textarea; importing this package before the HUD mounts registers the existing rich editor with its floating selection toolbar and slash commands.
 
 ```bash
@@ -36,6 +42,16 @@ Register the rich editor explicitly and receive a scoped disposer.
 
 ```typescript
 function registerMarkdownAnnotateEditor(): () => void
+```
+
+## Constants
+
+### `markdownAnnotateEditor`
+
+The rich Markdown surface installed into future annotation-HUD mounts.
+
+```typescript
+const markdownAnnotateEditor: AnnotateEditorRegistration
 ```
 
 <!-- auto-api:end -->

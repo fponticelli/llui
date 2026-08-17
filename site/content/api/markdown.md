@@ -5,6 +5,12 @@ description: 'Reactive Markdown rendering for LLui — parse to mdast and build 
 
 # @llui/markdown
 
+<!-- package-version:start -->
+
+**Current package version:** `0.13.0`
+
+<!-- package-version:end -->
+
 Turns a Markdown string into real LLui DOM. `markdown(source)` parses to an [mdast](https://github.com/syntax-tree/mdast) AST and renders it through LLui's authoring helpers as live reactive nodes — there is no virtual DOM and no `dangerouslySetInnerHTML`. Bind it to a reactive `source` signal and the preview re-renders as the string changes; top-level blocks are content-hash-keyed, so a growing or streaming document reuses the DOM of unchanged blocks instead of rebuilding.
 
 This is the render-only counterpart to [`@llui/markdown-editor`](/api/markdown-editor). Reach for `@llui/markdown` when you want to _display_ Markdown (docs, previews, chat transcripts, streamed model output); reach for the editor when you want a WYSIWYG editing surface.
@@ -431,6 +437,425 @@ Reactive Markdown view (CommonMark + GFM). Composes like `text()` — returns a
 
 ```typescript
 const markdown
+```
+
+## Public Entry Points
+
+### `@llui/markdown/commonmark`
+
+#### Functions
+
+##### `blockSource()` from `@llui/markdown/commonmark`
+
+The block's source text (via mdast position offsets), or a structural fallback.
+
+```typescript
+function blockSource(node: RootContent, source: string): string
+```
+
+##### `collectDefinitions()` from `@llui/markdown/commonmark`
+
+Walk the tree and collect every link/image reference definition, keyed by
+lowercased identifier (so `linkReference`/`imageReference` nodes can resolve).
+The result is the WHOLE-document table — a definition anywhere, including one
+that arrives late in a streamed tail, resolves for a reference anywhere.
+
+Collection is incremental: blocks reused from the previous parse contribute
+their already-collected definitions instead of being re-walked, so a streamed
+append costs O(tail) rather than O(document).
+
+BREAKING (behaviour, not just the type): this used to build and hand back a
+FRESH, safely-mutable `Map` on every call. It now returns the LIVE memoized
+table for that tree. The `ReadonlyMap` type says so, but a cast defeats it —
+`(collectDefinitions(root) as Map<string, Definition>).delete('r')` permanently
+poisons the cache for `root`, and every later render of that tree sees the
+damage. Copy it (`new Map(collectDefinitions(root))`) if you need to mutate.
+For the same reason the tree itself is treated as immutable once parsed: do not
+mutate a tree's nodes and re-collect, the memo will not notice.
+
+```typescript
+function collectDefinitions(root: Root): ReadonlyMap<string, Definition>
+```
+
+##### `collectDocumentLabels()` from `@llui/markdown/commonmark`
+
+The document-global labels of `root` (see {@link DocumentLabels}).
+
+```typescript
+function collectDocumentLabels(root: Root): DocumentLabels
+```
+
+##### `createMarkdown()` from `@llui/markdown/commonmark`
+
+Build a reactive Markdown view bound to a specific parser.
+
+- Plain `string` source → parsed once, rendered statically.
+- `Signal<string>` source → re-parsed on change; top-level blocks are keyed by a
+  content hash (folding in the reference definitions each block resolves) and
+  rendered through `each`, so unchanged earlier blocks keep their DOM and only the
+  changing tail (and appended / newly-resolved blocks) rebuild. This makes
+  streaming / growing Markdown (e.g. LLM output) cheap to render.
+
+```typescript
+function createMarkdown(parse: ParseFn)
+```
+
+##### `incrementalParse()` from `@llui/markdown/commonmark`
+
+Parse `source` incrementally against `cache` (the previous source + tree), or
+fully when no safe reuse boundary exists. The returned tree is structurally
+identical to `parse(source)` — reuse only ever changes which node OBJECTS are
+shared with the previous tree (so their keys, and thus their DOM, survive).
+
+```typescript
+function incrementalParse(
+  cache: ParseCache | undefined,
+  source: string,
+  parse: (src: string) => Root,
+  allowPrefixReuse = true,
+): IncrementalResult
+```
+
+##### `makeContext()` from `@llui/markdown/commonmark`
+
+Build the context renderers receive: `render` dispatches one node through the
+merged registry, `renderChildren` recurses, `definitions` resolves references.
+
+```typescript
+function makeContext(
+  options: ResolvedOptions,
+  definitions: ReadonlyMap<string, Definition>,
+): RenderContext
+```
+
+##### `mergeRenderers()` from `@llui/markdown/commonmark`
+
+Merge user overrides over the built-in defaults into a uniform registry.
+
+```typescript
+function mergeRenderers(user?: Renderers): ResolvedRenderers
+```
+
+##### `parseMarkdown()` from `@llui/markdown/commonmark`
+
+Parse Markdown source into an mdast {@link Root} using CommonMark only. The
+`gfm` option is ignored here (there is no GFM on this path); pass
+`extensions`/`mdastExtensions` for custom syntax.
+
+```typescript
+function parseMarkdown(src: string, opts: MarkdownOptions = {}): Root
+```
+
+##### `renderMarkdown()` from `@llui/markdown/commonmark`
+
+Render an already-parsed mdast {@link Root} to LLui DOM (no wrapper element).
+Returns the rendered top-level blocks. Parser-agnostic (takes an mdast tree).
+
+```typescript
+function renderMarkdown(root: Root, opts: MarkdownOptions = {}): Renderable
+```
+
+##### `resolveOptions()` from `@llui/markdown/commonmark`
+
+```typescript
+function resolveOptions(opts: MarkdownOptions = {}): ResolvedOptions
+```
+
+##### `resolveUrl()` from `@llui/markdown/commonmark`
+
+Resolve a link/image URL through `transformLink` (if any) then sanitize it.
+Returns the final URL, or `null` if the link/image should be dropped.
+
+```typescript
+function resolveUrl(
+  url: string,
+  node: Link | Image | LinkReference | ImageReference,
+  options: ResolvedOptions,
+): string | null
+```
+
+##### `sanitizeUrl()` from `@llui/markdown/commonmark`
+
+Returns the URL unchanged if its scheme is on `allowedProtocols` (or it is a
+relative/anchor/query URL — always safe), otherwise `null`.
+
+Mirrors micromark's `sanitizeUri`: a scheme only "counts" when its colon
+precedes any `/`, `?`, or `#`. Tab/CR/LF are stripped and leading control/space
+chars ignored first, the way a browser does — so `java\tscript:` or a leading
+control char cannot hide a dangerous scheme.
+
+`allowedProtocols` defaults to {@link defaultAllowedProtocols}.
+
+```typescript
+export declare function sanitizeUrl(
+  url: string,
+  allowedProtocols?: readonly string[],
+): string | null
+```
+
+##### `toKeyedBlocks()` from `@llui/markdown/commonmark`
+
+Derive a stable, unique-per-render key for each top-level block. Identical block
+source (AND identical resolved references) ⇒ identical base key; duplicate keys —
+whether from identical content or a user `keyOf` — get a `#n` suffix so the outer
+`each` never receives a colliding key (which would corrupt its keyed reconcile).
+
+```typescript
+function toKeyedBlocks(
+  root: Root,
+  source: string,
+  options: ResolvedOptions,
+  definitions: ReadonlyMap<string, Definition>,
+): KeyedBlock[]
+```
+
+#### Types
+
+##### `NodeRenderer` from `@llui/markdown/commonmark`
+
+A node renderer turns one mdast node into Renderable LLui DOM. It receives the
+node and a {@link RenderContext} for recursing into children / sibling nodes.
+
+```typescript
+export type NodeRenderer<N extends Node = Node> = (node: N, ctx: RenderContext) => Renderable
+```
+
+##### `ParseFn` from `@llui/markdown/commonmark`
+
+A Markdown → mdast parser (GFM or CommonMark). Injected into {@link createMarkdown}.
+
+```typescript
+export type ParseFn = (src: string, opts?: MarkdownOptions) => Root
+```
+
+##### `Renderers` from `@llui/markdown/commonmark`
+
+Per-node-type render overrides, merged OVER the built-in {@link defaultRenderers}.
+Known mdast types are precisely typed; the string index admits custom node types.
+
+The index value is typed `NodeRenderer<never>` on purpose: a `(node: Heading) => …`
+renderer is assignable to `(node: never) => …` (parameters are contravariant, and
+`never` is a subtype of every type), so the precise per-type renderers and custom
+renderers coexist without the variance conflict a `NodeRenderer<Node>` index would
+cause. Author custom renderers with an explicit param type (`(node: MyNode) => …`).
+
+```typescript
+export type Renderers = {
+  [K in Nodes['type']]?: NodeRenderer<Extract<Nodes, { type: K }>>
+} & {
+  [type: string]: NodeRenderer<never> | undefined
+}
+```
+
+##### `TransformLink` from `@llui/markdown/commonmark`
+
+A URL the renderer is about to emit (link href / image src), with the source
+node. Return a rewritten URL, or `null` to drop the link/image entirely.
+
+```typescript
+export type TransformLink = (
+  href: string,
+  node: Link | Image | LinkReference | ImageReference,
+) => string | null
+```
+
+#### Interfaces
+
+##### `DocumentLabels` from `@llui/markdown/commonmark`
+
+The document-global label tables of one tree.
+
+```typescript
+export interface DocumentLabels {
+  /** Link/image reference definitions by lowercased identifier (first wins). */
+  readonly definitions: ReadonlyMap<string, Definition>
+  /** Namespaced label identifiers — `l:` for reference definitions, `f:` for
+   * footnote definitions — so a link def `x` stays distinct from a footnote def
+   * `x`. This is the set the incremental parser's reuse guard compares. */
+  readonly ids: ReadonlySet<string>
+}
+```
+
+##### `IncrementalResult` from `@llui/markdown/commonmark`
+
+Result of one (incremental or full) parse: the tree plus the cache to thread
+into the next update. `reused` is the number of prefix blocks reused (0 = full
+parse) — used only for dev diagnostics.
+
+```typescript
+export interface IncrementalResult {
+  readonly root: Root
+  readonly cache: ParseCache
+  readonly reused: number
+}
+```
+
+##### `KeyedBlock` from `@llui/markdown/commonmark`
+
+```typescript
+export interface KeyedBlock {
+  /** Reconcile identity for the outer keyed list (from `keyOf`, else content-based). */
+  key: string | number
+  /** Content identity — changes iff the block's source (or the reference
+   * definitions it resolves) changes. Drives in-place row rebuilds when a custom
+   * `keyOf` gives blocks stable identity. */
+  hash: string
+  node: Nodes
+}
+```
+
+##### `MarkdownOptions` from `@llui/markdown/commonmark`
+
+```typescript
+export interface MarkdownOptions {
+  /** Enable GitHub Flavored Markdown (tables, strikethrough, task lists,
+   * autolinks, footnotes). Default `true`. */
+  gfm?: boolean
+  /** Per-node-type render overrides, merged over the built-in defaults. */
+  renderers?: Renderers
+  /** Extra micromark syntax extensions (custom block/inline syntax). */
+  extensions?: FromMarkdownOptions['extensions']
+  /** Extra mdast extensions matching the syntax extensions above. */
+  mdastExtensions?: FromMarkdownOptions['mdastExtensions']
+  /** Opt in to incremental (tail-reuse) parsing for a REACTIVE source even when
+   * custom `extensions`/`mdastExtensions` are present. Off by default: the
+   * incremental parser's seal invariant is only proven for CommonMark + GFM, so a
+   * custom extension whose syntax can retro-reclassify an earlier block (crossing a
+   * blank-line seal) would leave a stale prefix. Set `true` ONLY when your
+   * extensions are seal-safe (no cross-block/document-global effects). Ignored when
+   * no custom extensions are configured (built-in reuse always applies). */
+  sealSafeExtensions?: boolean
+  /** Sanitizer for raw HTML nodes. Raw HTML is **dropped by default**
+   * (safe for untrusted/LLM content). To render it, supply a function
+   * that takes the raw HTML and returns a sanitized string (e.g. wrap
+   * DOMPurify); the result is injected verbatim. There is intentionally
+   * no "render raw HTML unsanitized" switch — that would be an XSS sink. */
+  sanitizeHtml?: (html: string) => string
+  /** URL schemes permitted in links/images. A URL with no scheme (relative,
+   * anchor, query) is always allowed. Default `['http','https','mailto','tel']`. */
+  allowedProtocols?: string[]
+  /** Rewrite or drop link/image URLs before sanitization. */
+  transformLink?: TransformLink
+  /** Class applied to the root wrapper element. Default `'markdown-body'`. */
+  class?: string
+  /** Override the key derived for each top-level block (controls reuse during
+   * reactive/streaming updates). Default: a content hash of the block's source. */
+  keyOf?: (node: Nodes, index: number) => string | number
+}
+```
+
+##### `ParseCache` from `@llui/markdown/commonmark`
+
+Old source + its parsed tree, threaded across reactive updates.
+
+```typescript
+export interface ParseCache {
+  readonly source: string
+  readonly root: Root
+}
+```
+
+##### `RenderContext` from `@llui/markdown/commonmark`
+
+Passed to every {@link NodeRenderer}: recurse, resolve references, read options.
+
+```typescript
+export interface RenderContext {
+  /** Render a single node via the registry (unknown types render nothing). */
+  render: (node: Node) => Renderable
+  /** Render all children of a parent node, flattened. */
+  renderChildren: (parent: { children: readonly Node[] }) => Renderable
+  /** Link/image reference definitions collected from the whole document, keyed
+   * by lowercased identifier. */
+  definitions: ReadonlyMap<string, Definition>
+  /** The resolved options. */
+  options: ResolvedOptions
+}
+```
+
+##### `ResolvedOptions` from `@llui/markdown/commonmark`
+
+Fully-resolved options with defaults applied — what renderers see on `ctx`.
+
+```typescript
+export interface ResolvedOptions {
+  gfm: boolean
+  renderers: ResolvedRenderers
+  extensions: FromMarkdownOptions['extensions']
+  mdastExtensions: FromMarkdownOptions['mdastExtensions']
+  sealSafeExtensions: boolean
+  sanitizeHtml: ((html: string) => string) | undefined
+  allowedProtocols: string[]
+  transformLink: TransformLink | undefined
+  class: string
+  keyOf: ((node: Nodes, index: number) => string | number) | undefined
+}
+```
+
+#### Constants
+
+##### `defaultRenderers` from `@llui/markdown/commonmark`
+
+```typescript
+const defaultRenderers: BuiltinRenderers
+```
+
+##### `markdown` from `@llui/markdown/commonmark`
+
+Reactive Markdown view (CommonMark only — no GFM). Composes like `text()` —
+returns a `Mountable`.
+
+```typescript
+const markdown
+```
+
+### `@llui/markdown/security`
+
+#### Functions
+
+##### `resolveUrl()` from `@llui/markdown/security`
+
+Resolve a link/image URL through `transformLink` (if any) then sanitize it.
+Returns the final URL, or `null` if the link/image should be dropped.
+
+```typescript
+function resolveUrl(
+  url: string,
+  node: Link | Image | LinkReference | ImageReference,
+  options: ResolvedOptions,
+): string | null
+```
+
+##### `sanitizeUrl()` from `@llui/markdown/security`
+
+Returns the URL unchanged if its scheme is on `allowedProtocols` (or it is a
+relative/anchor/query URL — always safe), otherwise `null`.
+
+Mirrors micromark's `sanitizeUri`: a scheme only "counts" when its colon
+precedes any `/`, `?`, or `#`. Tab/CR/LF are stripped and leading control/space
+chars ignored first, the way a browser does — so `java\tscript:` or a leading
+control char cannot hide a dangerous scheme.
+
+`allowedProtocols` defaults to {@link defaultAllowedProtocols}.
+
+```typescript
+export declare function sanitizeUrl(
+  url: string,
+  allowedProtocols?: readonly string[],
+): string | null
+```
+
+#### Constants
+
+##### `defaultAllowedProtocols` from `@llui/markdown/security`
+
+The schemes permitted by default in links (and, via markdown, images).
+Relative URLs (no scheme) are always allowed regardless of this list. This is
+the shared baseline every consumer builds on instead of hand-rolling a
+divergent allowlist.
+
+```typescript
+const defaultAllowedProtocols: readonly string[]
 ```
 
 <!-- auto-api:end -->

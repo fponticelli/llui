@@ -5,6 +5,12 @@ description: 'Shared URL + loopback-origin sanitization for the DOM-sink and dev
 
 # @llui/security
 
+<!-- package-version:start -->
+
+**Current package version:** `0.2.1`
+
+<!-- package-version:end -->
+
 The tiny, dependency-free home of [LLui](https://github.com/fponticelli/llui)'s security-sensitive primitives, owned in exactly **one** place so a fix to any of them can't drift between copies. Everything here uses only the WHATWG `URL` API plus regex — no `node:*` builtins — so it is safe to import from browser bundles.
 
 Two surfaces:
@@ -107,6 +113,84 @@ divergent allowlist.
 
 ```typescript
 const defaultAllowedProtocols: readonly string[]
+```
+
+## Public Entry Points
+
+### `@llui/security/url`
+
+#### Functions
+
+##### `sanitizeUrl()` from `@llui/security/url`
+
+Returns the URL unchanged if its scheme is on `allowedProtocols` (or it is a
+relative/anchor/query URL — always safe), otherwise `null`.
+
+Mirrors micromark's `sanitizeUri`: a scheme only "counts" when its colon
+precedes any `/`, `?`, or `#`. Tab/CR/LF are stripped and leading control/space
+chars ignored first, the way a browser does — so `java\tscript:` or a leading
+control char cannot hide a dangerous scheme.
+
+`allowedProtocols` defaults to {@link defaultAllowedProtocols}.
+
+```typescript
+function sanitizeUrl(
+  url: string,
+  allowedProtocols: readonly string[] = defaultAllowedProtocols,
+): string | null
+```
+
+#### Constants
+
+##### `defaultAllowedProtocols` from `@llui/security/url`
+
+The schemes permitted by default in links (and, via markdown, images).
+Relative URLs (no scheme) are always allowed regardless of this list. This is
+the shared baseline every consumer builds on instead of hand-rolling a
+divergent allowlist.
+
+```typescript
+const defaultAllowedProtocols: readonly string[]
+```
+
+### `@llui/security/loopback`
+
+#### Functions
+
+##### `isLoopbackAuthority()` from `@llui/security/loopback`
+
+True when an authority (`host` or `host:port`, IPv6 bracketed as `[::1]:port`)
+is a loopback host. An ABSENT/empty authority → `false`: a request with no
+Host header is not provably same-machine, so it must not pass the guard.
+
+```typescript
+function isLoopbackAuthority(authority: string | undefined): boolean
+```
+
+##### `isLoopbackHost()` from `@llui/security/loopback`
+
+True when `host` — a bare hostname with NO port (IPv6 may be bracketed
+`[::1]` or bare `::1`) — names the loopback interface.
+
+```typescript
+function isLoopbackHost(host: string): boolean
+```
+
+##### `isLoopbackOrigin()` from `@llui/security/loopback`
+
+True when an `Origin` header value is same-origin/local: either ABSENT (a
+native, non-browser client sends none) or a loopback host. A cross-origin
+browser page (CSWSH / drive-by hijack) presents a non-loopback Origin and is
+rejected. A literal `Origin: null` (sandboxed / `file:` / `data:` context)
+fails `new URL` and is likewise rejected — it is NOT the same as an absent
+header.
+
+IPv6 loopback origins arrive bracketed (`http://[::1]`), and WHATWG
+`URL.hostname` keeps the brackets (`[::1]`); {@link isLoopbackHost} strips them
+before the comparison so bracketed IPv6 loopback is recognised.
+
+```typescript
+function isLoopbackOrigin(origin: string | undefined): boolean
 ```
 
 <!-- auto-api:end -->

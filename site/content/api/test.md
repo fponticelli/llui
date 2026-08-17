@@ -5,6 +5,12 @@ description: 'Test harness: testComponent, testView, propertyTest, replayTrace'
 
 # @llui/test
 
+<!-- package-version:start -->
+
+**Current package version:** `0.13.0`
+
+<!-- package-version:end -->
+
 Test harness for [LLui](https://github.com/fponticelli/llui) components. Mount components in jsdom, send messages, and assert on state and DOM.
 
 ```bash

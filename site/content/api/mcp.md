@@ -5,6 +5,12 @@ description: 'MCP server exposing LLM debug tools via Model Context Protocol'
 
 # @llui/mcp
 
+<!-- package-version:start -->
+
+**Current package version:** `0.15.0`
+
+<!-- package-version:end -->
+
 [Model Context Protocol](https://spec.modelcontextprotocol.io/) server for [LLui](https://github.com/fponticelli/llui). Exposes debug tools for LLM-assisted development.
 
 ```bash

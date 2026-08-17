@@ -5,6 +5,12 @@ description: 'Opt-in collaborative editing for the LLui ↔ Lexical binding — 
 
 # @llui/lexical-collab
 
+<!-- package-version:start -->
+
+**Current package version:** `0.4.0`
+
+<!-- package-version:end -->
+
 Adds real-time collaborative editing to the [`@llui/lexical`](/api/lexical) binding. `yjsCollab(...)` produces a `foreign` fragment you spread into `lexicalForeign({ …, ...collab.foreign })` — or you pass the handle through the [markdown editor's](/api/markdown-editor) `collab` option, which does this for you. Sync runs over a [Yjs](https://yjs.dev) provider you inject, so you keep control of the transport (WebSocket, WebRTC, …).
 
 There is nothing else to remember: `foreign` carries the binding registration in the seam's `externalUndo` slot — whose presence **forces the built-in `@lexical/history` stack off** — together with `seedMode: 'deferred'`. The handle deliberately exposes no `register` member, so the combination that would run a local undo stack beside the CRDT one (and double-apply every undo) cannot be expressed.

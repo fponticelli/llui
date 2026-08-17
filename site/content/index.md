@@ -61,7 +61,7 @@ mountApp(document.getElementById('app')!, Counter)
 LLui provides first-class tooling for AI workflows:
 
 - **[llms.txt](/llms.txt)** — concise framework reference for system prompts
-- **[llms-full.txt](/llms-full.txt)** — comprehensive reference with all APIs, patterns, and rules (~515KB, full API surface)
+- **[llms-full.txt](/llms-full.txt)** — comprehensive reference with all APIs, patterns, and rules (full API surface)
 - **[@llui/agent](/api/agent)** — LLM-driven control surface: Claude reads state, enumerates actions, dispatches messages into the live app
 - **[@llui/mcp](/api/mcp)** — MCP server exposing debug tools directly to LLMs via Model Context Protocol
 - **[@llui/compiler](/api/compiler)** — compile-time error rules that catch common LLM mistakes at build time, not as lint warnings

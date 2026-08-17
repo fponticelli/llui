@@ -5,6 +5,12 @@ description: 'Low-level binding between Lexical and the LLui signal runtime — 
 
 # @llui/lexical
 
+<!-- package-version:start -->
+
+**Current package version:** `0.5.0`
+
+<!-- package-version:end -->
+
 The seam between [Lexical](https://lexical.dev) (Meta's extensible text-editor framework) and the LLui signal runtime. It mounts a Lexical editor as a [`foreign()`](/api/dom) island inside an LLui view, defines a small plugin contract so editor behavior composes the same way LLui views do, and bridges Lexical `DecoratorNode`s to LLui sub-views so rich embeds (callouts, math, images, …) are authored as ordinary LLui components.
 
 This is the low-level layer. If you want a ready-made WYSIWYG editor, reach for [`@llui/markdown-editor`](/api/markdown-editor), which is built on top of this package. Use `@llui/lexical` directly when you are building your own editor surface or a custom node type.

@@ -41,10 +41,11 @@ const stripFrontmatter = (md: string): string => md.replace(/^---[\s\S]*?---\n/,
 const packageList = PACKAGES.map(({ slug }) => {
   const pkg = JSON.parse(read(`packages/${slug}/package.json`)) as {
     name: string
+    version: string
     description?: string
   }
   const desc = (pkg.description ?? '').trim()
-  return `- ${pkg.name}${desc ? ` — ${desc}` : ''}`
+  return `- ${pkg.name}@${pkg.version}${desc ? ` — ${desc}` : ''}`
 }).join('\n')
 
 const llmsTxt = `# LLui
@@ -117,6 +118,7 @@ const apiRef = PACKAGES.map(({ slug }) => {
   // Drop frontmatter and the auto-api injection markers (HTML comments).
   return stripFrontmatter(md)
     .replace(/<!-- auto-api:(?:start|end) -->\n?/g, '')
+    .replace(/\n*<!-- package-version:(?:start|end) -->\n*/g, '\n\n')
     .trim()
 }).join('\n\n---\n\n')
 
@@ -147,7 +149,7 @@ ${cookbook}
 ## Part 4: API Reference
 
 ${apiRef}
-`
+`.replace(/[ \t]+$/gm, '')
 
 writeFileSync(resolve(publicDir, 'llms-full.txt'), llmsFullTxt)
 console.log('Generated llms-full.txt')

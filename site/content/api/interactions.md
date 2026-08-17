@@ -5,6 +5,12 @@ description: 'Standalone focus, dismissal, floating-positioning, modal-isolation
 
 # @llui/interactions
 
+<!-- package-version:start -->
+
+**Current package version:** `0.1.1`
+
+<!-- package-version:end -->
+
 Low-level DOM interaction primitives for applications and libraries that own their component
 state machines and markup. It provides the interaction layer used by `@llui/components` without
 requiring that package's component catalog.
