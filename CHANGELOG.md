@@ -11,10 +11,14 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package that consumes `@llui/dom` declares it as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. Interaction consumers use the same peer pattern for `@llui/interactions`, preserving one document-level registry. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
-## Unreleased
+## 2026-08-17 — 0.13.0
 
-Merged but not yet published. `/publish` folds this block into the next dated
-release entry and deletes it — do not leave it here across a release.
+**Released:** `@llui/{agent,compiler,compiler-ssr,dom,markdown,test,vike}@0.13.0`; `@llui/{a2ui,effects}@0.3.0`; `@llui/components@0.14.0`; `@llui/{devmode-annotate,lexical-collab}@0.4.0`; `@llui/lexical@0.5.0`; `@llui/markdown-editor@0.8.0`; `@llui/mcp@0.15.0`; `@llui/{router,transitions}@0.12.0`; `@llui/{devmode-annotate-editor,interactions}@0.1.1`; `@llui/lexical-loro@0.1.2`; `@llui/{notes-format,security}@0.2.1`; `@llui/vite-plugin@0.12.1`; `llui-agent@0.11.1`
+
+This release introduces named typed routing, shared interaction primitives,
+optional annotation rich editing, headless TEA composition APIs, and extensive
+correctness improvements across the compiler, runtime, components, transitions,
+rich text, agents, and development tooling.
 
 ### Breaking
 
@@ -55,6 +59,13 @@ release entry and deletes it — do not leave it here across a release.
 - **`@llui/compiler`** — the new `empty-props` build error rejects provably
   redundant element calls such as `div({}, [...])`; use the children-only call
   `div([...])`. The diagnostic carries the mechanical fix. ([#82])
+- **`@llui/compiler` / `@llui/compiler-ssr`** — low-level compiler analysis now
+  shares one filename-aware `ParsedModule`. The former root analyzer exports
+  (`collectDeps`, `extractPaths`, the accessor-resolver helpers, and related
+  compatibility types) are replaced by `parseModule`, `analyzeAccessor`,
+  `analyzeSignalExpr`, and `collectSignalDeps`. `transformUseClientSsr` now takes
+  that parsed module instead of `(source, filename)`, so compiler integrations
+  that called these APIs directly must migrate. ([#92], [#93])
 
 - **`@llui/interactions` / `@llui/components`** — nested-layer ownership now
   fails closed. A missing or unresolved `registerNestedLayer(..., { owner })`
@@ -119,6 +130,9 @@ release entry and deletes it — do not leave it here across a release.
   `ctx.onCommit` / `ctx.withFacts` instead of adding another update listener.
 - Rewrite `tag({}, [...])` to `tag([...])` where the compiler reports
   `empty-props`.
+- Parse each source once with `parseModule(source, filename)`, pass that module
+  to `transformUseClientSsr`, and move low-level dependency analysis to
+  `analyzeAccessor` / `analyzeSignalExpr` / `collectSignalDeps`.
 - If you read `NumberInputState.min`/`max` or `FloatingPanelState.maxSize` as a
   plain `number`, **handle the absent case** — absence is now spelled by
   omitting the key, so `state.min ?? -Infinity` is the direct replacement for
@@ -141,7 +155,7 @@ release entry and deletes it — do not leave it here across a release.
   field ends the chain, so that hop's verdict — including a `false` — is never
   asked for. Decide on the fields your `href` carries. ([#212])
 
-### `@llui/dom`
+### `@llui/dom@0.13.0`
 
 - **Added** `mapSend(parentSend, wrap)` for type-safe parent/child message
   routing, and the supported view-less `createTeaDriver()` with the mounted
@@ -158,39 +172,61 @@ release entry and deletes it — do not leave it here across a release.
   framework/commit-token failures remain branded instead of being swallowed as
   a blank subtree. ([#53], [#60], [#165], [#216], [#225])
 
-### `@llui/compiler`, `@llui/compiler-ssr`, `@llui/vite-plugin`
+### `@llui/compiler@0.13.0`
 
 - **Added** `tag-send-drift`, JSON-form `@example({...})`, stricter annotation
   parsing, nullable/optional state-schema handling, and the `empty-props` rule.
   The signal compiler emits final metadata keys directly and the debug/agent
   surfaces consume one shared collector. ([#45], [#82], [#88], [#89], [#98],
   [#118])
-- **Fixed** cross-file analysis is resolved per `component()` call, parses each
-  module once, shifts source maps for every injected relay, aliases generated
-  helper imports around local names, and recognizes helpers by import provenance
-  without losing expression self-bindings. ([#87], [#90], [#91], [#92], [#93],
-  [#213])
+- **Fixed** cross-file analysis is resolved per `component()` call and parses
+  each module once; generated helper imports avoid local-name collisions, and
+  helpers are recognized by import provenance without losing expression
+  self-bindings. ([#90], [#91], [#92], [#93], [#213])
 - **Fixed** `tag-send-drift` now handles self-named handlers, returned
   closures/containers, method shorthands, accessors, decorators, and parameter
-  defaults without inventing variants. TypeScript moved from a private
-  dependency to a shared `>=5 <7` peer across compiler packages and the Vite
-  adapter. ([#64], [#118], [#181], [#182], [#194])
-- **Refactored** the Vite integration into named compile/config/dev-server/HUD
-  plugins. When `@llui/devmode-annotate-editor` is installed, the development
-  bootstrap resolves it from the consumer root and registers it before mounting
-  the HUD.
+  defaults without inventing variants. ([#118], [#181], [#182], [#194])
+- **Breaking** low-level analysis now consumes a shared `ParsedModule`; see the
+  migration section above. TypeScript is a `>=5 <7` peer rather than a private
+  dependency. ([#64], [#92], [#93])
 
-### `@llui/interactions` and `@llui/components`
+### `@llui/compiler-ssr@0.13.0`
 
-- **Added** `@llui/interactions@0.1.0`, containing the standalone floating,
-  focus, dismissal/outside, modal isolation, scroll lock, direction, nested
-  layer, and roving-navigation primitives. Component utility/formatter wildcard
-  subpaths are now granular and tree-shakeable. ([#49])
+- **Breaking** `transformUseClientSsr` now consumes the shared filename-aware
+  `ParsedModule` instead of reparsing `(source, filename)`, preserving the real
+  script kind for TSX and sharing one parse with the signal compiler. TypeScript
+  is a `>=5 <7` peer. See the migration section above. ([#64], [#93])
+
+### `@llui/vite-plugin@0.12.1`
+
+- **Fixed** injected development relays shift source maps with their generated
+  code, and compiler transforms share the filename-aware parsed module. ([#87],
+  [#93])
+- **Improved** the Vite integration is composed from named
+  compile/config/dev-server/HUD plugins. When
+  `@llui/devmode-annotate-editor` is installed, the development bootstrap
+  resolves it from the consumer root and registers it before mounting the HUD.
+- **Improved** TypeScript is now a shared `>=5 <7` peer rather than a private
+  dependency. ([#64])
+
+### `@llui/interactions@0.1.1`
+
+- **Added** standalone floating, focus, dismissal/outside, modal isolation,
+  scroll lock, direction, nested-layer, and roving-navigation primitives. ([#49])
 - **Fixed** overlay layers no longer lose Escape handling, timers, live-region
   cleanup, outside-interaction ordering, or focus restoration. Non-modal portals
-  register scoped nested-layer ownership; nested dialogs restore the immediately
-  previous dialog's focus; effectively hidden controls are excluded from focus
-  enumeration. ([#123], [#155], [#209], [#215], [#219])
+  register scoped nested-layer ownership, and effectively hidden controls are
+  excluded from focus enumeration. ([#123], [#155], [#215], [#219])
+
+### `@llui/components@0.14.0`
+
+- **Improved** utility and formatter wildcard subpaths are granular and
+  tree-shakeable, while compatibility exports retain one shared interaction
+  registry. ([#49])
+- **Fixed** overlay layers preserve Escape handling, timers, live-region
+  cleanup, outside-interaction ordering, and focus restoration; nested dialogs
+  restore the immediately previous dialog's focus. ([#123], [#155], [#209],
+  [#215])
 - **Fixed** keyboard accessibility across table, tree-view, menubar,
   navigation-menu, tags-input, sortable headers, and other single-tab-stop
   widgets. Header cells participate in table roving focus, disabled items are
@@ -208,7 +244,13 @@ release entry and deletes it — do not leave it here across a release.
   large lists avoid per-item/per-update allocation. ([#120], [#124], [#127],
   [#128])
 
-### `@llui/router`
+### `@llui/a2ui@0.3.0`
+
+- **Breaking** headless catalog interactions now resolve through the shared
+  `@llui/interactions` peer so focus, dismissal, modal, and nested-layer state
+  cannot split across package instances. See the migration section above. ([#49])
+
+### `@llui/router@0.12.0`
 
 - **Added** named typed route locations, exact name-specific generation,
   Standard Schema codecs/refinements, defaults, optional/rest templates,
@@ -225,7 +267,7 @@ release entry and deletes it — do not leave it here across a release.
   a no-op, and anchors with `download` or a non-self target remain native.
   ([#104], [#109], [#111], [#143], [#161])
 
-### `@llui/transitions`
+### `@llui/transitions@0.12.0`
 
 - **Fixed** `waitForEnd` filters by transitioned property and consumes
   `transitioncancel`; interrupted enter/leave phases resume from live values;
@@ -236,61 +278,96 @@ release entry and deletes it — do not leave it here across a release.
   through shared offset-parent chains without absorbing scroll. ([#107], [#144],
   [#185], [#217])
 
-### Effects, Markdown, and rich text
+### `@llui/effects@0.3.0`
 
-- **`@llui/effects`** — websocket retirement is idempotent, and aborting a
-  debounce removes both its timer and abort listener. ([#77], [#83])
-- **`@llui/markdown`** — incremental definition collection avoids rescanning
-  completed blocks; block fingerprints now distinguish footnote references and
-  remain injective/diffable. ([#73], [#84], [#94])
-- **`@llui/lexical` / `@llui/markdown-editor`** — the foreign seam is the single
-  controlled-value echo authority and the commit hub shares one editor read,
-  selection walk, and measurement across overlay plugins. Key commands carry
-  their real payload types. ([#70], [#71], [#74])
-- **`@llui/markdown-editor`** — task-list typing/import, adjacent-list marker
-  boundaries, old stock `ListNode` upgrades, wikilink-search cancellation, and
-  Escape release across dismissed typeahead surfaces are corrected. ([#99],
-  [#100], [#129], [#130], [#183])
-- **`@llui/lexical-collab`** — collab undo and local history can no longer be
-  enabled in conflict. **`@llui/lexical-loro`** preserves custom `TextNode`
-  subclasses through the JSON carrier and splits accumulated-history stress
-  coverage from the ordinary PR lane. ([#72], [#223])
+- **Fixed** websocket retirement is idempotent, and aborting a debounce removes
+  both its timer and abort listener. ([#77], [#83])
 
-### SSR, devtools, agents, and tests
+### `@llui/markdown@0.13.0`
 
-- **`@llui/vike`** — hydration manifests validate version, layer chain, and
-  server/client seed provenance; dev builds verify deterministic JSON-safe
-  `init()` state across server and client; misaligned `lluiLayoutData` is loud
-  instead of seeding the wrong layer. ([#112], [#113])
-- **`@llui/devmode-annotate`** — screenshot URLs are bounded/reclaimed, HUD
-  mounting is reentrancy-safe, teardown errors remain visible, and the live-app
-  install path is dynamically split. Rich editing lives in the new optional
-  editor package. ([#114], [#115], [#116])
-- **`@llui/mcp`** — concurrent runs have independent handshake state and
-  ephemeral ports; source searches use tracked files; test/dev child processes
-  shut down when their parent disappears unless deliberate daemonization sets
+- **Improved** incremental definition collection avoids rescanning completed
+  blocks; block fingerprints distinguish footnote references and remain
+  injective and diffable. ([#73], [#84], [#94])
+
+### `@llui/lexical@0.5.0`
+
+- **Added** the shared commit hub, which is the single controlled-value echo,
+  editor-read, selection-walk, and measurement authority across editor plugins.
+  ([#70], [#71], [#74])
+
+### `@llui/markdown-editor@0.8.0`
+
+- **Improved** the shared commit hub coordinates overlay plugins and key
+  commands carry their real payload types. ([#70], [#71], [#74])
+- **Fixed** task-list typing/import, adjacent-list marker boundaries, old stock
+  `ListNode` upgrades, wikilink-search cancellation, and Escape release across
+  dismissed typeahead surfaces. ([#99], [#100], [#129], [#130], [#183])
+
+### `@llui/lexical-collab@0.4.0`
+
+- **Fixed** collab undo and local history can no longer be enabled in conflict.
+  ([#72])
+
+### `@llui/lexical-loro@0.1.2`
+
+- **Fixed** custom `TextNode` subclasses survive the JSON carrier, and
+  accumulated-history stress coverage is separated from the ordinary PR lane.
+  ([#223])
+
+### `@llui/vike@0.13.0`
+
+- **Fixed** hydration manifests validate version, layer chain, and server/client
+  seed provenance; dev builds verify deterministic JSON-safe `init()` state
+  across server and client; misaligned `lluiLayoutData` is loud instead of
+  seeding the wrong layer. ([#112], [#113])
+
+### `@llui/devmode-annotate@0.4.0`
+
+- **Fixed** screenshot URLs are bounded and reclaimed, HUD mounting is
+  reentrancy-safe, teardown errors remain visible, and the live-app install path
+  is dynamically split. Rich editing lives in the new optional editor package.
+  ([#114], [#115], [#116])
+
+### `@llui/devmode-annotate-editor@0.1.1`
+
+- **Added** the optional Lexical-powered rich Markdown surface for annotation
+  HUDs, with explicit registration and side-effect registration entry points.
+
+### `@llui/mcp@0.15.0`
+
+- **Fixed** concurrent runs have independent handshake state and ephemeral
+  ports; source searches use tracked files; test/dev child processes shut down
+  when their parent disappears unless deliberate daemonization sets
   `LLUI_MCP_NO_PARENT_WATCH=1`. ([#85], [#86])
-- **`@llui/agent`** — MCP endpoints are authenticated and bounded, closed-session
-  buffers are reclaimed, dropped sessions can resume only through a valid
-  pairing, revoked tokens cannot re-enter through resurrection, and durable
+
+### `@llui/agent@0.13.0`
+
+- **Fixed** MCP endpoints are authenticated and bounded, closed-session buffers
+  are reclaimed, dropped sessions can resume only through a valid pairing,
+  revoked tokens cannot re-enter through resurrection, and durable
   deletion/reservation bookkeeping remains exact. ([#101], [#102], [#190])
-- **`@llui/test`** — `testView`/property mounts forward real mount options and
+
+### `@llui/test@0.13.0`
+
+- **Improved** `testView` and property mounts forward real mount options and
   always dispose; `assertEffects` treats expected `undefined` as an assertion;
   `replayTrace` validates format version and component identity before reducing.
   ([#66], [#67], [#68], [#69])
 
-### Packaging and repository verification
+### `llui-agent@0.11.1`
 
-- Component/package barrels no longer create accidental whole-package edges;
-  `llui-agent` declares its CLI side effect; one shared interaction registry is
-  retained across compatibility exports. The generated API reference now gates
-  on the actual package export graph and preserves JSDoc paragraphs/member kinds.
-- CI now type-checks and lints the site, checks generated documentation and
-  package output, runs root-script and example smoke tests, serializes
-  lint-staged across worktrees, kills orphan MCP processes, and reports
-  load-normalized per-file test-duration regressions. Benchmark setup/execution
-  is scripted, idempotent, containerized, and tied to the pinned Chrome/JFB
-  environment rather than a hand-run install chain.
+- **Fixed** the package declares its CLI side effect so bundlers preserve the
+  executable entry.
+
+### Docs
+
+- **Improved** generated API references gate on the real package export graph
+  and preserve JSDoc paragraphs and member kinds. Repository verification now
+  type-checks and lints the site, checks generated documentation and package
+  output, runs root-script and example smoke tests, serializes lint-staged across
+  worktrees, kills orphan MCP processes, and reports load-normalized per-file
+  test-duration regressions. Benchmark setup and execution are scripted,
+  idempotent, containerized, and tied to the pinned Chrome/JFB environment.
 
 [#45]: https://github.com/fponticelli/llui/issues/45
 [#46]: https://github.com/fponticelli/llui/issues/46
