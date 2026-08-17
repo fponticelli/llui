@@ -3,45 +3,7 @@ import { resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import {
-  benchmarkArgsFromCli,
-  dockerBuildArgs,
-  dockerRunArgs,
-  validateBenchmarkPublicationMode,
-} from '../lib/benchmark-container.mjs'
-
-describe('benchmark container CLI', () => {
-  it('forwards ordinary benchmark arguments without parsing or shell interpretation', () => {
-    const args = ['--framework', 'llui with spaces', '--only', 'burst-1k; touch nope']
-
-    expect(benchmarkArgsFromCli(args, {})).toEqual(args)
-  })
-
-  it('accepts a JSON argv array from a named environment variable for workflow dispatch', () => {
-    expect(
-      benchmarkArgsFromCli(['--args-json-env', 'BENCHMARK_ARGS'], {
-        BENCHMARK_ARGS: '["--runs","5","--save"]',
-      }),
-    ).toEqual(['--runs', '5', '--save'])
-  })
-
-  it('rejects malformed workflow arguments instead of falling back to shell parsing', () => {
-    expect(() =>
-      benchmarkArgsFromCli(['--args-json-env', 'BENCHMARK_ARGS'], {
-        BENCHMARK_ARGS: '["--runs",5]',
-      }),
-    ).toThrow('JSON array of strings')
-  })
-
-  it('requires workflow publication and --save to agree', () => {
-    expect(() => validateBenchmarkPublicationMode(['--runs', '5', '--save'], true)).not.toThrow()
-    expect(() => validateBenchmarkPublicationMode(['--runs', '1'], false)).not.toThrow()
-    expect(() => validateBenchmarkPublicationMode(['--runs', '5'], true)).toThrow('requires --save')
-    expect(() => validateBenchmarkPublicationMode(['--save'], false)).toThrow(
-      'requires baseline publication',
-    )
-  })
-})
+import { dockerBuildArgs, dockerRunArgs } from '../lib/benchmark-container.mjs'
 
 describe('benchmark Docker invocation', () => {
   it('builds only the pinned benchmark image context', () => {
@@ -108,14 +70,18 @@ describe('benchmark Docker invocation', () => {
   })
 })
 
-describe('homelab benchmark workflow', () => {
-  it('keeps the PID column required by docker top while checking runner arguments', () => {
-    const workflow = readFileSync(
-      resolve(import.meta.dirname, '../../.github/workflows/benchmarks-homelab.yml'),
+describe('benchmark container entrypoint', () => {
+  it('builds workspace dist outputs before executing either benchmark suite', () => {
+    const entrypoint = readFileSync(
+      resolve(import.meta.dirname, '../../benchmarks/container/benchmark-entrypoint.sh'),
       'utf8',
     )
+    const build = entrypoint.indexOf('pnpm turbo build')
+    const benchmark = entrypoint.indexOf('exec pnpm bench:all "$@"')
 
-    expect(workflow).toContain('docker top "$runner" -eo pid,args')
-    expect(workflow).not.toContain('docker top "$runner" -eo args')
+    expect(build).toBeGreaterThan(-1)
+    expect(benchmark).toBeGreaterThan(build)
+    expect(entrypoint).toContain('pnpm bench:setup\n')
+    expect(entrypoint).not.toContain('pnpm bench:setup --force')
   })
 })

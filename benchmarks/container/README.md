@@ -17,8 +17,9 @@ The image fixes every environment input that materially affects a capture:
 - repository dependencies by `pnpm-lock.yaml`
 
 The entrypoint verifies Node, pnpm, and Chrome before doing any setup. It then
-performs a frozen workspace install, refreshes and verifies the pinned JFB
-checkout, applies the ticker harness patches, and executes `bench:all`.
+performs a frozen workspace install, builds every workspace package so the
+benchmarks consume current `dist/` output, refreshes and verifies the pinned
+JFB checkout, applies the ticker harness patches, and executes `bench:all`.
 
 Named Docker volumes cache pnpm/npm downloads and the JFB checkout. They are
 data caches, not running services; setup still verifies the JFB pin and every
@@ -45,28 +46,25 @@ The cache volumes can be discarded without losing results:
 docker volume rm llui-benchmark-pnpm llui-benchmark-npm llui-benchmark-jfb
 ```
 
-## Homelab workflow
+## Homelab use
 
-Run **Homelab benchmarks** from GitHub Actions. `arguments_json` is a JSON array
-of the exact `bench:all` argv, for example:
+The homelab benchmark is deliberately not CI. From the PVE host, run the
+on-demand action maintained by `homelab-ops`:
 
-```json
-["--framework", "llui", "--only", "batch-1k", "--runs", "1"]
+```bash
+llui-benchmark -- --framework llui --runs 1
+llui-benchmark --branch main --commit -- --runs 5 --save
 ```
 
-This representation is intentional: a free-form shell string cannot preserve
-argument boundaries safely. `publish_baseline` must agree with `--save`.
-Publishing is accepted only from `main` and pushes the three canonical outputs
-to `benchmark-baseline/<run-id>` for review. It never pushes measured values
-directly to `main`.
+Action options precede the required `--`; every argument after it is forwarded
+as one unchanged `bench:all` argv element. The action fetches the latest commit
+of the selected branch, creates a clean checkout in VM 101, and launches this
+one-shot container. Image layers, package downloads, and the verified JFB
+checkout are cached; no benchmark process or service remains running.
 
-The Linux homelab has four Actions runners on one VM. The workflow waits for
-the three sibling runners to become idle, pauses them, then starts the benchmark
-container. A temporary watchdog and an `always()` cleanup both unpause them;
-the watchdog is the backstop for a hard-cancelled Actions job. No runner is
-recreated or restarted.
-
-The live runner workdir is not host-visible, so the workflow clones the exact
-triggering commit into the existing `/ci-cache` bind mount before invoking the
-sibling container. This avoids the empty-workspace failure mode documented in
-the homelab runner topology without changing the fleet.
+All four organization Actions runners share VM 101. The PVE action waits for
+them to become idle and temporarily pauses them while measuring. Normal cleanup
+and an independent Docker watchdog both restore every runner owned by the
+action. Reports are retained on VM 101 and copied with SHA-256 verification to
+PVE. `--commit` requires a complete `--save` capture and pushes only the three
+canonical generated outputs to the same branch that was measured.

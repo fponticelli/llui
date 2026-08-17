@@ -35,7 +35,8 @@ cd /workspace
 git config --global --add safe.directory /workspace
 
 pnpm install --frozen-lockfile --store-dir /cache/pnpm
-pnpm bench:setup --force
+pnpm turbo build
+pnpm bench:setup
 pnpm bench:ticker:setup
 
 exec pnpm bench:all "$@"

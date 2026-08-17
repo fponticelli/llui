@@ -123,4 +123,4 @@ LLui is measured with [js-framework-benchmark](https://github.com/krausest/js-fr
 
 The currently tracked capture is explicitly marked `legacy`: its standard and ticker suites were recorded independently and do not have complete shared provenance. It is retained as historical data, not as a machine-comparable regression baseline. The next complete homelab capture will replace both suites atomically.
 
-Authoritative captures run on demand in the [pinned benchmark container](benchmarks/container/README.md). The GitHub **Homelab benchmarks** workflow accepts exact argv as JSON, quiesces the shared runner VM for the measurement, and publishes saved results to a review branch.
+Authoritative captures run on demand in the [pinned benchmark container](benchmarks/container/README.md). The PVE-hosted `llui-benchmark` action fetches a selected branch, forwards exact benchmark argv into VM 101, quiesces the shared runner VM for the measurement, retains reports on PVE and the VM, and can commit a complete saved capture back to the measured branch. It is not a CI workflow or a persistent service.

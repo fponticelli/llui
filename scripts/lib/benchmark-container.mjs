@@ -5,55 +5,6 @@ import { resolve } from 'node:path'
 export const BENCHMARK_IMAGE = 'llui-benchmark:node24-chrome150'
 
 /**
- * Decode workflow-dispatch arguments without asking a shell to interpret them.
- * Ordinary callers receive exact argv forwarding; Actions supplies a JSON array
- * through a named environment variable because workflow inputs are strings.
- *
- * @param {readonly string[]} cliArgs
- * @param {Readonly<Record<string, string | undefined>>} environment
- * @returns {string[]}
- */
-export function benchmarkArgsFromCli(cliArgs, environment) {
-  if (cliArgs[0] !== '--args-json-env') return [...cliArgs]
-  if (cliArgs.length !== 2 || cliArgs[1] === undefined) {
-    throw new Error('--args-json-env requires exactly one environment-variable name')
-  }
-
-  const variable = cliArgs[1]
-  const raw = environment[variable]
-  if (raw === undefined) throw new Error(`${variable} is not set`)
-
-  let parsed
-  try {
-    parsed = JSON.parse(raw)
-  } catch (error) {
-    throw new Error(`${variable} must be a JSON array of strings`, { cause: error })
-  }
-  if (!Array.isArray(parsed) || !parsed.every((value) => typeof value === 'string')) {
-    throw new Error(`${variable} must be a JSON array of strings`)
-  }
-  return parsed
-}
-
-/**
- * Keep workflow intent and benchmark mutation semantics aligned. A diagnostic
- * run must never produce an unpublished canonical baseline, and publication
- * must never silently run without the transaction flag.
- *
- * @param {readonly string[]} benchmarkArgs
- * @param {boolean} publishBaseline
- */
-export function validateBenchmarkPublicationMode(benchmarkArgs, publishBaseline) {
-  const saves = benchmarkArgs.includes('--save')
-  if (publishBaseline && !saves) {
-    throw new Error('Baseline publication requires --save in the benchmark argv')
-  }
-  if (!publishBaseline && saves) {
-    throw new Error('--save requires baseline publication to be enabled')
-  }
-}
-
-/**
  * @param {string} root
  * @param {string} image
  * @returns {string[]}

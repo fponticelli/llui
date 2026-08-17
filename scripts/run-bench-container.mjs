@@ -5,26 +5,13 @@ import { spawnSync } from 'node:child_process'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import {
-  BENCHMARK_IMAGE,
-  benchmarkArgsFromCli,
-  dockerBuildArgs,
-  dockerRunArgs,
-  validateBenchmarkPublicationMode,
-} from './lib/benchmark-container.mjs'
+import { BENCHMARK_IMAGE, dockerBuildArgs, dockerRunArgs } from './lib/benchmark-container.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const cliArgs = process.argv.slice(2)
 const smoke = cliArgs.length === 1 && cliArgs[0] === '--smoke-image'
-const benchmarkArgs = smoke ? [] : benchmarkArgsFromCli(cliArgs, process.env)
+const benchmarkArgs = smoke ? [] : cliArgs
 const workspaceHost = process.env.LLUI_BENCH_WORKSPACE_HOST ?? root
-const publicationMode = process.env.LLUI_BENCH_PUBLISH_BASELINE
-if (publicationMode !== undefined) {
-  if (publicationMode !== 'true' && publicationMode !== 'false') {
-    throw new Error('LLUI_BENCH_PUBLISH_BASELINE must be true or false')
-  }
-  validateBenchmarkPublicationMode(benchmarkArgs, publicationMode === 'true')
-}
 
 /** @param {readonly string[]} args */
 function docker(args) {
