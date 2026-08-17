@@ -5,15 +5,15 @@ description: '66 headless components + opt-in CSS theme and Tailwind class helpe
 
 # @llui/components
 
-66 headless UI components for [LLui](https://github.com/fponticelli/llui). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes.
+66 headless UI components for [LLui](https://github.com/fponticelli/llui). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes. Component state is JSON-serializable: numeric inputs reject non-finite runtime values, use finite-or-absent bounds, and validate positive divisors such as pagination `pageSize` and numeric crop `aspectRatio`.
 
 ## Install
 
 ```bash
-pnpm add @llui/components
+pnpm add @llui/components @llui/dom @llui/interactions
 ```
 
-Peer dependency: `@llui/dom`.
+`@llui/dom` and [`@llui/interactions`](/api/interactions) are peer dependencies. Resolve one instance of each across the application and its libraries so signal state and the focus/dismissal/nested-layer registries are shared.
 
 ## Usage
 

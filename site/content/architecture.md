@@ -102,7 +102,7 @@ todos       -> bit in chunk 0
 
 ### No path ceiling
 
-There is **no fixed path budget.** A 200-path component uses 7 chunks, and each binding's gate is still a handful of integer ANDs over the chunks its mask touches — ~constant regardless of total path count. (This replaces the older fixed two-word `mask`/`maskHi` design and its 62-path limit, which was deleted along with the legacy runtime.) Update cost scales with what changed, not with state depth, so a large flat state is fine — reach for view functions (sliced signals) before a `child()` boundary.
+There is **no fixed path budget.** A 200-path component uses 7 chunks, and each binding's gate is still a handful of integer ANDs over the chunks its mask touches — ~constant regardless of total path count. (This replaces the older fixed two-word `mask`/`maskHi` design and its 62-path limit, which was deleted along with the legacy runtime.) Update cost scales with what changed, not with state depth, so a large flat state is fine — reach for view functions (sliced signals) before the separate update loop of `subApp()` from `@llui/dom/escape-hatch`.
 
 ### Per-array handling
 

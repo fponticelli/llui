@@ -31,7 +31,7 @@ What stays the **consumer's** responsibility (deliberately not shipped):
 ## Install
 
 ```bash
-pnpm add @llui/components
+pnpm add @llui/components @llui/dom @llui/interactions
 ```
 
 Peer dependencies: `@llui/dom` and `@llui/interactions`. Both carry shared runtime registries,

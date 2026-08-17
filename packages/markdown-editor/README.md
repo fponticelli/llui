@@ -3,7 +3,7 @@
 WYSIWYG Markdown editor for [LLui](https://github.com/fponticelli/llui) — hides Markdown behind a rich, pluggable editing widget built on Lexical.
 
 ```bash
-pnpm add @llui/markdown-editor @llui/lexical @llui/components lexical
+pnpm add @llui/markdown-editor @llui/lexical @llui/components @llui/interactions @llui/markdown @llui/dom lexical
 ```
 
 ## Usage
@@ -56,7 +56,10 @@ Markdown into it directly bypasses that decision and re-opens the echo loop.
 | `@llui/markdown-editor/surfaces/toolbar`  | Toolbar surface                |
 | `@llui/markdown-editor/styles/editor.css` | Editor styles                  |
 
-Peers on `@llui/dom`, `@llui/lexical`, `@llui/components`, `lexical`, and the relevant `@lexical/*` packages (`^0.49`).
+Peers on `@llui/dom`, `@llui/lexical`, `@llui/components`, `@llui/interactions`,
+`@llui/markdown`, `lexical`, and the relevant `@lexical/*` packages (`^0.49`). Resolve one
+instance of DOM and interactions across the host and editor so render context and overlay
+ownership stay shared.
 
 `@lexical/table` is an **optional** peer. It is imported by exactly one module —
 the table plugin — which is why that plugin is _not_ re-exported from the barrel:

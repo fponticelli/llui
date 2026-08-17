@@ -19,7 +19,7 @@ child scope and reconciles the DOM region between its anchors. Copy the closest
 existing one: `packages/dom/src/signals/lazy.ts` (simplest, single anchor region),
 `show-branch.ts` (arm-swapping via `ArmController`), or `each.ts` (keyed rows).
 
-**Read `CLAUDE.md`'s "Invariants & landmines" first** — this primitive must uphold
+**Read `AGENTS.md`'s "Invariants & landmines" first** — this primitive must uphold
 all of the runtime invariants there.
 
 ## The pattern
@@ -123,7 +123,7 @@ component and assert on real DOM. A good test proves:
 - **Structural spec** sets `structural: true` with an identity `produce`.
 - The `draining` reentrancy guard and disposed-drain rules are the runtime's, but a
   primitive that can `send()` from a bind/blur must not assume it commits synchronously
-  mid-reconcile — see `CLAUDE.md`.
+  mid-reconcile — see `AGENTS.md`.
 - Errors crossing the public runtime boundary remain branded LLui errors, and item-state seams
   must be total: do not use impossible casts or partial accessors to force a structural row type.
 

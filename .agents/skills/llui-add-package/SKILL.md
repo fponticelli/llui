@@ -6,7 +6,7 @@ description: >-
   new workspace package in this repo: the package.json shape (exports map, files, scripts,
   sideEffects), the tsconfig chain, the CRITICAL singleton-packages-must-be-peers rule (a hard
   @llui/dom dependency causes the two-context provide() production bug), how build/publish order is
-  derived, and the CLAUDE.md + site registry drift-gates you MUST update or CI fails. This
+  derived, and the AGENTS.md + site registry drift-gates you MUST update or CI fails. This
   is framework-internals / monorepo-plumbing work. Load it before scaffolding the package.
 ---
 
@@ -72,12 +72,12 @@ split overlay ownership just as two DOM copies split render context.
   consumes the TSV and cascades skips on failure. No order file to edit.
 - `scripts/emit-deps.mjs` (`__llui_deps.json` producer) is **dormant** and NOT wired into any
   package build or into the published tarball — leave it unless you are deliberately reviving
-  the ABI (see `CLAUDE.md` Active proposals).
+  the ABI (see `AGENTS.md` Active proposals).
 - `pnpm-workspace.yaml` already globs `packages/*` — no edit needed.
 
 ## Drift-gates you MUST update (CI fails otherwise)
 
-1. **Root `CLAUDE.md`** — add a row to the "Monorepo Structure" package table (and bump the
+1. **Root `AGENTS.md`** — add a row to the "Monorepo Structure" package table (and bump the
    package count in the sentence above it). The table is the de-facto spec; a missing row is a
    review finding.
 2. **`site/pages/api/@pkg/packages.ts`** — add a `PackageMeta` entry `{ slug, category, blurb }`

@@ -11,7 +11,7 @@ that stream, built on LLui's chunked-mask reconciler, and it reuses
 parts.
 
 ```bash
-pnpm add @llui/a2ui
+pnpm add @llui/a2ui @llui/dom @llui/interactions
 ```
 
 `@llui/dom` and `@llui/interactions` are peer dependencies; `@llui/components` comes along for

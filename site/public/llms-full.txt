@@ -409,9 +409,10 @@ through the parent's own `Msg` union (`send({ type: 'dialog', msg })`). See the
 [Composition patterns guide](/cookbook#library-components-connect--delegated-update).
 
 For embedding a genuinely independent app (third-party bundled widget, an independent
-effect lifecycle), the escape hatch is a full `child()` boundary (or `lazy()` to load one
-asynchronously). Don't reach for it to "isolate a complex component" — the chunked-mask
-reactivity gates each binding precisely regardless of nesting depth.
+effect lifecycle), the escape hatch is `subApp()` from `@llui/dom/escape-hatch` (or `lazy()`
+to load one asynchronously). `subApp()` requires a `reason` documenting why the separate
+TEA loop is warranted. Don't reach for it to "isolate a complex component" — the
+chunked-mask reactivity gates each binding precisely regardless of nesting depth.
 
 ### SSR
 
@@ -8707,15 +8708,15 @@ const delay
 
 # @llui/components
 
-66 headless UI components for [LLui](https://github.com/fponticelli/llui). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes.
+66 headless UI components for [LLui](https://github.com/fponticelli/llui). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes. Component state is JSON-serializable: numeric inputs reject non-finite runtime values, use finite-or-absent bounds, and validate positive divisors such as pagination `pageSize` and numeric crop `aspectRatio`.
 
 ## Install
 
 ```bash
-pnpm add @llui/components
+pnpm add @llui/components @llui/dom @llui/interactions
 ```
 
-Peer dependency: `@llui/dom`.
+`@llui/dom` and [`@llui/interactions`](/api/interactions) are peer dependencies. Resolve one instance of each across the application and its libraries so signal state and the focus/dismissal/nested-layer registries are shared.
 
 ## Usage
 
@@ -10546,6 +10547,9 @@ requiring that package's component catalog.
 ```bash
 pnpm add @llui/interactions @llui/dom
 ```
+
+`@llui/dom` is a peer dependency. Libraries that expose interactions should keep both packages
+as peers so the application owns one render context and one set of document-level registries.
 
 ## Usage
 
@@ -17521,8 +17525,12 @@ const NOTE_SCHEMA_VERSION
 The optional Lexical-powered note surface for [`@llui/devmode-annotate`](/api/devmode-annotate). Core always provides a plain Markdown textarea; importing this package before the HUD mounts registers the existing rich editor with its floating selection toolbar and slash commands.
 
 ```bash
-pnpm add -D @llui/devmode-annotate @llui/devmode-annotate-editor
+pnpm add -D @llui/devmode-annotate @llui/devmode-annotate-editor @llui/dom @llui/interactions
 ```
+
+The three companion packages are peers of the editor. Keep the DOM and interactions instances
+shared with the application so its overlay layers participate in the same render, focus, and
+dismissal registries.
 
 The LLui Vite plugin detects the package automatically in development. For a manual mount, import the registration entry first:
 
@@ -18210,10 +18218,10 @@ const NOTE_SCHEMA_VERSION
 Renders Google's [**A2UI**](https://a2ui.org) (Agent-to-UI) protocol on the LLui signal runtime. A2UI is a transport-agnostic JSON protocol: a local or remote agent streams declarative UI messages that reference components from a **catalog the client already trusts** — the agent never ships code. `@llui/a2ui` is a renderer for that stream, built on LLui's chunked-mask reconciler, and it reuses [`@llui/components`](/api/components) headless primitives for the interactive parts.
 
 ```bash
-pnpm add @llui/a2ui
+pnpm add @llui/a2ui @llui/dom @llui/interactions
 ```
 
-`@llui/dom` is a peer dependency; [`@llui/components`](/api/components) comes along for the ride.
+`@llui/dom` and [`@llui/interactions`](/api/interactions) are peer dependencies; [`@llui/components`](/api/components) comes along for the ride. Resolve one instance of both peers so the renderer shares the host's signal runtime and interaction registries.
 
 ## Usage
 
@@ -19486,10 +19494,12 @@ const markdown
 A WYSIWYG Markdown editor you drop into an LLui app as a single component. The user edits rich text; the editor's state holds the Markdown. It is built on [`@llui/lexical`](/api/lexical) and ships a transformer registry (GFM, callouts, …), a toolbar surface, and a set of opt-in plugins for the features beyond plain prose — links, images, tables, math, mentions, emoji, slash commands, and more.
 
 ```bash
-pnpm add @llui/markdown-editor @llui/lexical @llui/dom lexical
+pnpm add @llui/markdown-editor @llui/lexical @llui/components @llui/interactions @llui/markdown @llui/dom lexical
 ```
 
-`@llui/lexical` and `lexical` come along as the editing engine.
+The editor declares these as peers. Resolve one `@llui/dom` and `@llui/interactions` instance
+across the host and editor so render context, focus, dismissal, and nested-layer ownership stay
+shared. `@llui/lexical` and `lexical` provide the editing engine.
 
 ## Quick start
 

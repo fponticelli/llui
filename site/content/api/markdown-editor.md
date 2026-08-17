@@ -8,10 +8,12 @@ description: 'WYSIWYG Markdown editor for LLui — hides Markdown behind a rich,
 A WYSIWYG Markdown editor you drop into an LLui app as a single component. The user edits rich text; the editor's state holds the Markdown. It is built on [`@llui/lexical`](/api/lexical) and ships a transformer registry (GFM, callouts, …), a toolbar surface, and a set of opt-in plugins for the features beyond plain prose — links, images, tables, math, mentions, emoji, slash commands, and more.
 
 ```bash
-pnpm add @llui/markdown-editor @llui/lexical @llui/dom lexical
+pnpm add @llui/markdown-editor @llui/lexical @llui/components @llui/interactions @llui/markdown @llui/dom lexical
 ```
 
-`@llui/lexical` and `lexical` come along as the editing engine.
+The editor declares these as peers. Resolve one `@llui/dom` and `@llui/interactions` instance
+across the host and editor so render context, focus, dismissal, and nested-layer ownership stay
+shared. `@llui/lexical` and `lexical` provide the editing engine.
 
 ## Quick start
 

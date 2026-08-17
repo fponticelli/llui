@@ -13,6 +13,9 @@ requiring that package's component catalog.
 pnpm add @llui/interactions @llui/dom
 ```
 
+`@llui/dom` is a peer dependency. Libraries that expose interactions should keep both packages
+as peers so the application owns one render context and one set of document-level registries.
+
 ## Usage
 
 ```ts

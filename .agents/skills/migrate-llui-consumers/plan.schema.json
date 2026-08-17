@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "llui-migration-plan",
+  "title": "LLui consumer migration plan",
+  "description": "The structured artifact a Step-3 Explore agent produces per project. It is the unit reviewed at the Step-4 gate and consumed by the Step-5 implementer. Being structured makes it diffable, resumable, and checkable against the deterministic discover/changelog output rather than trusted as prose.",
+  "type": "object",
+  "required": ["project", "dir", "bumps", "breakingFixes", "refactors", "upstreamIssues", "verify"],
+  "additionalProperties": false,
+  "properties": {
+    "project": { "type": "string", "description": "package.json name, e.g. @dl/client" },
+    "dir": { "type": "string", "description": "absolute path to the project dir" },
+    "summary": { "type": "string", "description": "one-paragraph human overview of the migration" },
+    "risk": {
+      "type": "string",
+      "enum": ["low", "medium", "high"],
+      "description": "overall risk; high = multiple breaking changes or a large refactor"
+    },
+    "bumps": {
+      "type": "array",
+      "description": "version bumps, one per @llui/* dep that is behind. Must reconcile with discover.mjs output.",
+      "items": {
+        "type": "object",
+        "required": ["name", "from", "to"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "from": {
+            "type": "string",
+            "description": "pinned version, or the range for local-link"
+          },
+          "to": { "type": "string", "description": "target version (npm dist-tags.latest)" },
+          "field": {
+            "type": "string",
+            "enum": ["dependencies", "devDependencies", "peerDependencies"]
+          }
+        }
+      }
+    },
+    "breakingFixes": {
+      "type": "array",
+      "description": "concrete edits required by breaking changes between from and to. Each ties a consumer call site to the llui commit that broke it.",
+      "items": {
+        "type": "object",
+        "required": ["package", "sites", "change"],
+        "additionalProperties": false,
+        "properties": {
+          "package": {
+            "type": "string",
+            "description": "the @llui/* package whose change forces this"
+          },
+          "lluiCommit": {
+            "type": "string",
+            "description": "short hash from changelog.mjs that introduced the change"
+          },
+          "change": {
+            "type": "string",
+            "description": "what changed in llui (the breaking delta)"
+          },
+          "sites": {
+            "type": "array",
+            "description": "consumer call sites to edit",
+            "items": {
+              "type": "object",
+              "required": ["file", "fix"],
+              "additionalProperties": false,
+              "properties": {
+                "file": { "type": "string", "description": "relative path within the project" },
+                "line": { "type": "integer" },
+                "before": { "type": "string" },
+                "after": { "type": "string" },
+                "fix": { "type": "string", "description": "what to do at this site" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "refactors": {
+      "type": "array",
+      "description": "library-replacement refactors: hand-rolled code that an llui library already provides (FOLDED INTO the migration per the user's decision). Keep as separately-labeled commits so they're reviewable apart from the bumps.",
+      "items": {
+        "type": "object",
+        "required": ["replaces", "withLibrary", "sites", "rationale"],
+        "additionalProperties": false,
+        "properties": {
+          "replaces": {
+            "type": "string",
+            "description": "what custom code is being removed, e.g. 'hand-rolled accordion'"
+          },
+          "withLibrary": {
+            "type": "string",
+            "description": "the @llui/* export to use instead, e.g. '@llui/components accordion'"
+          },
+          "sites": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["file", "action"],
+              "additionalProperties": false,
+              "properties": {
+                "file": { "type": "string" },
+                "line": { "type": "integer" },
+                "action": { "type": "string", "description": "delete / rewrite / wire-in" }
+              }
+            }
+          },
+          "rationale": { "type": "string" },
+          "behaviorParity": {
+            "type": "string",
+            "description": "how parity with the old behavior is confirmed (which test / manual check)"
+          }
+        }
+      }
+    },
+    "upstreamIssues": {
+      "type": "array",
+      "description": "genuine bugs/gaps in llui itself surfaced while planning (Step 6). Not consumer problems. These get fixed on a branch in the llui repo, never worked around in the consumer.",
+      "items": {
+        "type": "object",
+        "required": ["package", "symptom", "repro"],
+        "additionalProperties": false,
+        "properties": {
+          "package": { "type": "string", "description": "affected @llui/* package" },
+          "symptom": { "type": "string" },
+          "repro": { "type": "string", "description": "minimal reproduction" },
+          "suggestedFix": { "type": "string" },
+          "blocksMigration": {
+            "type": "boolean",
+            "description": "true if the consumer cannot complete until this is fixed + released"
+          }
+        }
+      }
+    },
+    "verify": {
+      "type": "object",
+      "description": "the oracles that decide Step-5 success — the migration is done only when these go green. Commands are run in the project dir.",
+      "required": ["commands"],
+      "additionalProperties": false,
+      "properties": {
+        "commands": {
+          "type": "array",
+          "description": "ordered: install, then build/typecheck/test. The llui vite-plugin's compile-time lint errors run as part of build — a botched migration will not compile.",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "manualChecks": {
+          "type": "array",
+          "description": "things only a human/agent can confirm (e.g. a screenshot of the replaced component still renders)",
+          "items": { "type": "string" }
+        }
+      }
+    }
+  }
+}

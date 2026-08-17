@@ -8,8 +8,12 @@ description: 'Optional rich Markdown editor upgrade for the annotation HUD'
 The optional Lexical-powered note surface for [`@llui/devmode-annotate`](/api/devmode-annotate). Core always provides a plain Markdown textarea; importing this package before the HUD mounts registers the existing rich editor with its floating selection toolbar and slash commands.
 
 ```bash
-pnpm add -D @llui/devmode-annotate @llui/devmode-annotate-editor
+pnpm add -D @llui/devmode-annotate @llui/devmode-annotate-editor @llui/dom @llui/interactions
 ```
+
+The three companion packages are peers of the editor. Keep the DOM and interactions instances
+shared with the application so its overlay layers participate in the same render, focus, and
+dismissal registries.
 
 The LLui Vite plugin detects the package automatically in development. For a manual mount, import the registration entry first:
 

@@ -239,9 +239,10 @@ through the parent's own `Msg` union (`send({ type: 'dialog', msg })`). See the
 [Composition patterns guide](/cookbook#library-components-connect--delegated-update).
 
 For embedding a genuinely independent app (third-party bundled widget, an independent
-effect lifecycle), the escape hatch is a full `child()` boundary (or `lazy()` to load one
-asynchronously). Don't reach for it to "isolate a complex component" — the chunked-mask
-reactivity gates each binding precisely regardless of nesting depth.
+effect lifecycle), the escape hatch is `subApp()` from `@llui/dom/escape-hatch` (or `lazy()`
+to load one asynchronously). `subApp()` requires a `reason` documenting why the separate
+TEA loop is warranted. Don't reach for it to "isolate a complex component" — the
+chunked-mask reactivity gates each binding precisely regardless of nesting depth.
 
 ### SSR
 

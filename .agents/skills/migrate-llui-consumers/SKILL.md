@@ -50,9 +50,9 @@ Node ≥ 20 and git. Nothing to install — both drivers are dependency-free
 
 ```bash
 # default root is ~/projects; pass a path to scope it
-node .claude/skills/migrate-llui-consumers/discover.mjs
-node .claude/skills/migrate-llui-consumers/discover.mjs ~/projects --json
-node .claude/skills/migrate-llui-consumers/discover.mjs --no-npm   # offline: target = local checkout
+node .agents/skills/migrate-llui-consumers/discover.mjs
+node .agents/skills/migrate-llui-consumers/discover.mjs ~/projects --json
+node .agents/skills/migrate-llui-consumers/discover.mjs --no-npm   # offline: target = local checkout
 ```
 
 "Latest" is the npm registry `dist-tags.latest` (fetched concurrently — what a
@@ -116,8 +116,8 @@ each commit (not by parsing commit subjects) — the commit that _set_ the versi
 to the pinned value is the start of the delta:
 
 ```bash
-node .claude/skills/migrate-llui-consumers/changelog.mjs @llui/dom 0.9.0
-node .claude/skills/migrate-llui-consumers/changelog.mjs @llui/effects 0.1.0 --json
+node .agents/skills/migrate-llui-consumers/changelog.mjs @llui/dom 0.9.0
+node .agents/skills/migrate-llui-consumers/changelog.mjs @llui/effects 0.1.0 --json
 ```
 
 Output: the anchor commit (the release that shipped the pinned version), then
@@ -184,7 +184,7 @@ When a subagent reports a genuine llui bug/gap (per the user's decision: report
 2. Create a dedicated branch (`git checkout -b fix/<short-desc>` — never commit
    the migration's incidental changes onto `main`).
 3. Have a subagent implement + test the fix in the relevant `packages/*` (TDD:
-   failing test first — see CLAUDE.md). Do **not** push or merge automatically.
+   failing test first — see AGENTS.md). Do **not** push or merge automatically.
 4. Report the branch + what it fixes. The consumer migration that surfaced it
    may need to wait for a new llui release, or temporarily pin local source.
 

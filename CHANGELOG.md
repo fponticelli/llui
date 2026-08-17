@@ -9,7 +9,7 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **How to read this file:** entries are anchored by **release date**. Inside each release, fixes are grouped by **`@llui/<package>@<version>`** sub-sections so you always know exactly which package and version a bullet applies to. Cross-cutting changes that affect every package (like build-output fixes) live under a shared "All packages" section. Breaking changes and migration notes sit at the top of each release block because they usually cut across multiple packages.
 
-**Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package declares `@llui/dom` as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
+**Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package that consumes `@llui/dom` declares it as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. Interaction consumers use the same peer pattern for `@llui/interactions`, preserving one document-level registry. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
 ## Unreleased
 
@@ -17,6 +17,44 @@ Merged but not yet published. `/publish` folds this block into the next dated
 release entry and deletes it — do not leave it here across a release.
 
 ### Breaking
+
+- **`@llui/router`** — routing now uses a named, bidirectional registry:
+  `createRouter({ home: route('/'), article: route('/articles/:slug') })`.
+  The former ordered route array, `param()`/`rest()` segments, mapping callbacks,
+  and fabricated `fallback` route are removed. `match()` returns
+  `{ name, params } | null`; `location`/`href`/`toPath`, connected links, and
+  navigation effects all take the route name plus its exact parameters. Typed
+  path/query values use synchronous Standard Schema `routeCodec()` /
+  `repeatedRouteCodec()` pairs and must round-trip canonically as JSON-safe URL
+  identity. ([#156])
+- **`@llui/components` / `@llui/a2ui` / `@llui/markdown-editor`** — interaction
+  primitives moved to the new `@llui/interactions` peer. Applications and
+  libraries must resolve one shared instance of both `@llui/dom` and
+  `@llui/interactions`; duplicate interaction packages split focus-trap,
+  dismissal, nested-layer, modal-isolation, and scroll-lock registries.
+  `@llui/components/utils` remains a compatibility re-export, while new custom
+  interaction consumers import `@llui/interactions` directly. ([#49])
+- **`@llui/devmode-annotate`** — the Lexical editor is now the optional
+  `@llui/devmode-annotate-editor` package. Core keeps a functional Markdown
+  textarea and no Lexical dependency. The Vite plugin auto-registers the rich
+  editor when both packages are installed; manual/live-app mounts import the
+  editor before activation. ([#75])
+- **`@llui/lexical`** — `PluginContext` now includes the shared commit-hub seams
+  `onCommit` and `withFacts`. Custom hosts/tests that constructed `{ emit }` by
+  hand must use `createCommitHub(editor, emit)`. The hub is now the single
+  update-listener/read/selection-measurement authority for editor plugins.
+  ([#70], [#74])
+- **`@llui/markdown-editor`** — `@lexical/table` is optional and the table plugin
+  is no longer re-exported from the root barrel. Import `tablePlugin` from
+  `@llui/markdown-editor/plugins/table`; editors without tables no longer install
+  or bundle the table package. ([#75])
+- **`@llui/components/table`** — `selectAllCheckbox(columnId)` now requires the
+  header column whose roving tab stop operates it. The header row participates in
+  the grid roving sequence as `TABLE_HEADER_ROW_INDEX`; this replaces a
+  keyboard-unreachable select-all control. ([#122])
+- **`@llui/compiler`** — the new `empty-props` build error rejects provably
+  redundant element calls such as `div({}, [...])`; use the children-only call
+  `div([...])`. The diagnostic carries the mechanical fix. ([#82])
 
 - **`@llui/interactions` / `@llui/components`** — nested-layer ownership now
   fails closed. A missing or unresolved `registerNestedLayer(..., { owner })`
@@ -60,6 +98,27 @@ release entry and deletes it — do not leave it here across a release.
 
 ### Migration
 
+- Replace ordered callback routes with a named route registry. Model the current
+  route as `RouteLocation<typeof routes>`, branch on `location.name`, treat
+  `match()` returning `null` explicitly, return `routing.push`/`replace`/
+  `navigate` as effects, place `...routing.listener(send)` in the view, and feed
+  `routing.handleEffect` to the effect chain.
+- Add `@llui/interactions` beside packages that declare it as a peer and dedupe it
+  across the application. Move standalone imports from
+  `@llui/components/utils` to `@llui/interactions`; compatibility imports may
+  remain temporarily, but must still resolve the same singleton.
+- If the annotation HUD needs rich editing, add
+  `@llui/devmode-annotate-editor`; manual mounts import its side-effect entry
+  before `mountAnnotateHud()`, while live-app activation dynamically imports it
+  immediately before core activation.
+- Import the editor table plugin from
+  `@llui/markdown-editor/plugins/table`, and install `@lexical/table` only in apps
+  that enable it.
+- Replace custom Lexical `{ emit }` plugin contexts with
+  `createCommitHub(editor, emit)` and subscribe selection-aware plugins through
+  `ctx.onCommit` / `ctx.withFacts` instead of adding another update listener.
+- Rewrite `tag({}, [...])` to `tag([...])` where the compiler reports
+  `empty-props`.
 - If you read `NumberInputState.min`/`max` or `FloatingPanelState.maxSize` as a
   plain `number`, **handle the absent case** — absence is now spelled by
   omitting the key, so `state.min ?? -Infinity` is the direct replacement for
@@ -69,8 +128,8 @@ release entry and deletes it — do not leave it here across a release.
   every reducer of both changed shapes and behave identically or better, so this
   is not a regression — but nothing rewrites them.
 - If you implement your own `RouterEnv`, **delete the `replaceLocation` member**.
-  With the documented pattern — an object literal annotated `const env:
-RouterEnv = {…}` — leaving it in is a compile error. It is **not** an error
+  With the documented pattern — an object literal annotated `const env: RouterEnv = {…}` —
+  leaving it in is a compile error. It is **not** an error
   behind an `as RouterEnv` cast or an unannotated factory; there the member is
   simply dead, so grep for it.
 - If your `beforeEnter` returns a route that the same `beforeEnter` would itself
@@ -82,11 +141,252 @@ RouterEnv = {…}` — leaving it in is a compile error. It is **not** an error
   field ends the chain, so that hop's verdict — including a `false` — is never
   asked for. Decide on the fields your `href` carries. ([#212])
 
+### `@llui/dom`
+
+- **Added** `mapSend(parentSend, wrap)` for type-safe parent/child message
+  routing, and the supported view-less `createTeaDriver()` with the mounted
+  runtime's real synchronous reducer, effect-frame, reentrancy, batching, and
+  disposal semantics. `onTransition` observes every reducer call;
+  `onStateChange` observes settled state. ([#46], [#76])
+- **Fixed** portals remove their complete live region, lazy children mounted
+  after cancellation dispose immediately, throwing subscribers are isolated
+  from dispatch/effects, and reentrant commit scope is shared consistently.
+  ([#55], [#56], [#57], [#59])
+- **Fixed** `each`/`virtualEach` reject malformed item seams without corrupting
+  the tree, structural children keep reconciling across gated row updates, fresh
+  child scopes are deferred to the next traversal boundary, and escaped
+  framework/commit-token failures remain branded instead of being swallowed as
+  a blank subtree. ([#53], [#60], [#165], [#216], [#225])
+
+### `@llui/compiler`, `@llui/compiler-ssr`, `@llui/vite-plugin`
+
+- **Added** `tag-send-drift`, JSON-form `@example({...})`, stricter annotation
+  parsing, nullable/optional state-schema handling, and the `empty-props` rule.
+  The signal compiler emits final metadata keys directly and the debug/agent
+  surfaces consume one shared collector. ([#45], [#82], [#88], [#89], [#98],
+  [#118])
+- **Fixed** cross-file analysis is resolved per `component()` call, parses each
+  module once, shifts source maps for every injected relay, aliases generated
+  helper imports around local names, and recognizes helpers by import provenance
+  without losing expression self-bindings. ([#87], [#90], [#91], [#92], [#93],
+  [#213])
+- **Fixed** `tag-send-drift` now handles self-named handlers, returned
+  closures/containers, method shorthands, accessors, decorators, and parameter
+  defaults without inventing variants. TypeScript moved from a private
+  dependency to a shared `>=5 <7` peer across compiler packages and the Vite
+  adapter. ([#64], [#118], [#181], [#182], [#194])
+- **Refactored** the Vite integration into named compile/config/dev-server/HUD
+  plugins. When `@llui/devmode-annotate-editor` is installed, the development
+  bootstrap resolves it from the consumer root and registers it before mounting
+  the HUD.
+
+### `@llui/interactions` and `@llui/components`
+
+- **Added** `@llui/interactions@0.1.0`, containing the standalone floating,
+  focus, dismissal/outside, modal isolation, scroll lock, direction, nested
+  layer, and roving-navigation primitives. Component utility/formatter wildcard
+  subpaths are now granular and tree-shakeable. ([#49])
+- **Fixed** overlay layers no longer lose Escape handling, timers, live-region
+  cleanup, outside-interaction ordering, or focus restoration. Non-modal portals
+  register scoped nested-layer ownership; nested dialogs restore the immediately
+  previous dialog's focus; effectively hidden controls are excluded from focus
+  enumeration. ([#123], [#155], [#209], [#215], [#219])
+- **Fixed** keyboard accessibility across table, tree-view, menubar,
+  navigation-menu, tags-input, sortable headers, and other single-tab-stop
+  widgets. Header cells participate in table roving focus, disabled items are
+  skipped consistently, and engine-initiated focus moves no longer masquerade
+  as outside interactions. ([#121], [#122], [#126], [#145])
+- **Fixed** numeric/date/component state now stays JSON-safe at every init and
+  reducer ingress. Non-finite positions/measurements are ignored atomically;
+  finite bounds and positive divisors are validated; slider, pin-input,
+  date-input, image-cropper, number-input, floating-panel, pagination, and
+  related controls normalize consistently. ([#119], [#125], [#152], [#177],
+  [#214])
+- **Fixed** carousel autoplay, file-handle cleanup, disabled agent-dispatch
+  gates, menu direction, hover-timer teardown, and five isolated component
+  correctness defects. Membership lookups and empty collections are shared so
+  large lists avoid per-item/per-update allocation. ([#120], [#124], [#127],
+  [#128])
+
+### `@llui/router`
+
+- **Added** named typed route locations, exact name-specific generation,
+  Standard Schema codecs/refinements, defaults, optional/rest templates,
+  deterministic precedence/ambiguity rejection, canonical round trips, and
+  explicit unmatched locations. ([#156])
+- **Fixed** history/hash integrity: foreign state survives replacement,
+  unstamped positions remain unknown, blocked traversals restore without
+  destroying forward history, hash echoes are paired rather than guessed, and
+  same-fragment traversals are observed. ([#103], [#108], [#110], [#150],
+  [#163], [#164])
+- **Fixed** route-definition choice is verified by round trip, duplicate path
+  slashes normalize internally, redirected browser navigation writes the final
+  URL, guard redirects settle to a fixed point, current-location navigation is
+  a no-op, and anchors with `download` or a non-self target remain native.
+  ([#104], [#109], [#111], [#143], [#161])
+
+### `@llui/transitions`
+
+- **Fixed** `waitForEnd` filters by transitioned property and consumes
+  `transitioncancel`; interrupted enter/leave phases resume from live values;
+  staggered deferred phases cancel per node. ([#105], [#106])
+- **Fixed** `flip()` batches layout reads, cancels/supersedes the live animation,
+  resumes from the visual position, composes the author's transform, measures
+  layout rather than transformed drawing coordinates, and rebases origins
+  through shared offset-parent chains without absorbing scroll. ([#107], [#144],
+  [#185], [#217])
+
+### Effects, Markdown, and rich text
+
+- **`@llui/effects`** — websocket retirement is idempotent, and aborting a
+  debounce removes both its timer and abort listener. ([#77], [#83])
+- **`@llui/markdown`** — incremental definition collection avoids rescanning
+  completed blocks; block fingerprints now distinguish footnote references and
+  remain injective/diffable. ([#73], [#84], [#94])
+- **`@llui/lexical` / `@llui/markdown-editor`** — the foreign seam is the single
+  controlled-value echo authority and the commit hub shares one editor read,
+  selection walk, and measurement across overlay plugins. Key commands carry
+  their real payload types. ([#70], [#71], [#74])
+- **`@llui/markdown-editor`** — task-list typing/import, adjacent-list marker
+  boundaries, old stock `ListNode` upgrades, wikilink-search cancellation, and
+  Escape release across dismissed typeahead surfaces are corrected. ([#99],
+  [#100], [#129], [#130], [#183])
+- **`@llui/lexical-collab`** — collab undo and local history can no longer be
+  enabled in conflict. **`@llui/lexical-loro`** preserves custom `TextNode`
+  subclasses through the JSON carrier and splits accumulated-history stress
+  coverage from the ordinary PR lane. ([#72], [#223])
+
+### SSR, devtools, agents, and tests
+
+- **`@llui/vike`** — hydration manifests validate version, layer chain, and
+  server/client seed provenance; dev builds verify deterministic JSON-safe
+  `init()` state across server and client; misaligned `lluiLayoutData` is loud
+  instead of seeding the wrong layer. ([#112], [#113])
+- **`@llui/devmode-annotate`** — screenshot URLs are bounded/reclaimed, HUD
+  mounting is reentrancy-safe, teardown errors remain visible, and the live-app
+  install path is dynamically split. Rich editing lives in the new optional
+  editor package. ([#114], [#115], [#116])
+- **`@llui/mcp`** — concurrent runs have independent handshake state and
+  ephemeral ports; source searches use tracked files; test/dev child processes
+  shut down when their parent disappears unless deliberate daemonization sets
+  `LLUI_MCP_NO_PARENT_WATCH=1`. ([#85], [#86])
+- **`@llui/agent`** — MCP endpoints are authenticated and bounded, closed-session
+  buffers are reclaimed, dropped sessions can resume only through a valid
+  pairing, revoked tokens cannot re-enter through resurrection, and durable
+  deletion/reservation bookkeeping remains exact. ([#101], [#102], [#190])
+- **`@llui/test`** — `testView`/property mounts forward real mount options and
+  always dispose; `assertEffects` treats expected `undefined` as an assertion;
+  `replayTrace` validates format version and component identity before reducing.
+  ([#66], [#67], [#68], [#69])
+
+### Packaging and repository verification
+
+- Component/package barrels no longer create accidental whole-package edges;
+  `llui-agent` declares its CLI side effect; one shared interaction registry is
+  retained across compatibility exports. The generated API reference now gates
+  on the actual package export graph and preserves JSDoc paragraphs/member kinds.
+- CI now type-checks and lints the site, checks generated documentation and
+  package output, runs root-script and example smoke tests, serializes
+  lint-staged across worktrees, kills orphan MCP processes, and reports
+  load-normalized per-file test-duration regressions. Benchmark setup/execution
+  is scripted, idempotent, containerized, and tied to the pinned Chrome/JFB
+  environment rather than a hand-run install chain.
+
+[#45]: https://github.com/fponticelli/llui/issues/45
+[#46]: https://github.com/fponticelli/llui/issues/46
+[#49]: https://github.com/fponticelli/llui/issues/49
+[#53]: https://github.com/fponticelli/llui/issues/53
+[#55]: https://github.com/fponticelli/llui/issues/55
+[#56]: https://github.com/fponticelli/llui/issues/56
+[#57]: https://github.com/fponticelli/llui/issues/57
+[#59]: https://github.com/fponticelli/llui/issues/59
+[#60]: https://github.com/fponticelli/llui/issues/60
+[#64]: https://github.com/fponticelli/llui/issues/64
+[#66]: https://github.com/fponticelli/llui/issues/66
+[#67]: https://github.com/fponticelli/llui/issues/67
+[#68]: https://github.com/fponticelli/llui/issues/68
+[#69]: https://github.com/fponticelli/llui/issues/69
+[#70]: https://github.com/fponticelli/llui/issues/70
+[#71]: https://github.com/fponticelli/llui/issues/71
+[#72]: https://github.com/fponticelli/llui/issues/72
+[#73]: https://github.com/fponticelli/llui/issues/73
+[#74]: https://github.com/fponticelli/llui/issues/74
+[#75]: https://github.com/fponticelli/llui/issues/75
+[#76]: https://github.com/fponticelli/llui/issues/76
+[#77]: https://github.com/fponticelli/llui/issues/77
+[#82]: https://github.com/fponticelli/llui/issues/82
+[#83]: https://github.com/fponticelli/llui/issues/83
+[#84]: https://github.com/fponticelli/llui/issues/84
+[#85]: https://github.com/fponticelli/llui/issues/85
+[#86]: https://github.com/fponticelli/llui/issues/86
+[#87]: https://github.com/fponticelli/llui/issues/87
+[#88]: https://github.com/fponticelli/llui/issues/88
+[#89]: https://github.com/fponticelli/llui/issues/89
+[#90]: https://github.com/fponticelli/llui/issues/90
+[#91]: https://github.com/fponticelli/llui/issues/91
+[#92]: https://github.com/fponticelli/llui/issues/92
+[#93]: https://github.com/fponticelli/llui/issues/93
+[#94]: https://github.com/fponticelli/llui/issues/94
+[#98]: https://github.com/fponticelli/llui/issues/98
+[#99]: https://github.com/fponticelli/llui/issues/99
+[#100]: https://github.com/fponticelli/llui/issues/100
+[#101]: https://github.com/fponticelli/llui/issues/101
+[#102]: https://github.com/fponticelli/llui/issues/102
+[#103]: https://github.com/fponticelli/llui/issues/103
+[#104]: https://github.com/fponticelli/llui/issues/104
+[#105]: https://github.com/fponticelli/llui/issues/105
+[#106]: https://github.com/fponticelli/llui/issues/106
+[#107]: https://github.com/fponticelli/llui/issues/107
+[#108]: https://github.com/fponticelli/llui/issues/108
+[#109]: https://github.com/fponticelli/llui/issues/109
+[#110]: https://github.com/fponticelli/llui/issues/110
+[#111]: https://github.com/fponticelli/llui/issues/111
+[#112]: https://github.com/fponticelli/llui/issues/112
+[#113]: https://github.com/fponticelli/llui/issues/113
+[#114]: https://github.com/fponticelli/llui/issues/114
+[#115]: https://github.com/fponticelli/llui/issues/115
+[#116]: https://github.com/fponticelli/llui/issues/116
+[#118]: https://github.com/fponticelli/llui/issues/118
+[#119]: https://github.com/fponticelli/llui/issues/119
+[#120]: https://github.com/fponticelli/llui/issues/120
+[#121]: https://github.com/fponticelli/llui/issues/121
+[#122]: https://github.com/fponticelli/llui/issues/122
+[#123]: https://github.com/fponticelli/llui/issues/123
+[#124]: https://github.com/fponticelli/llui/issues/124
+[#125]: https://github.com/fponticelli/llui/issues/125
+[#126]: https://github.com/fponticelli/llui/issues/126
+[#127]: https://github.com/fponticelli/llui/issues/127
+[#128]: https://github.com/fponticelli/llui/issues/128
+[#129]: https://github.com/fponticelli/llui/issues/129
+[#130]: https://github.com/fponticelli/llui/issues/130
+[#143]: https://github.com/fponticelli/llui/issues/143
+[#144]: https://github.com/fponticelli/llui/issues/144
+[#145]: https://github.com/fponticelli/llui/issues/145
+[#150]: https://github.com/fponticelli/llui/issues/150
+[#152]: https://github.com/fponticelli/llui/issues/152
+[#155]: https://github.com/fponticelli/llui/issues/155
+[#156]: https://github.com/fponticelli/llui/issues/156
 [#161]: https://github.com/fponticelli/llui/issues/161
+[#163]: https://github.com/fponticelli/llui/issues/163
 [#164]: https://github.com/fponticelli/llui/issues/164
+[#165]: https://github.com/fponticelli/llui/issues/165
 [#177]: https://github.com/fponticelli/llui/issues/177
+[#181]: https://github.com/fponticelli/llui/issues/181
+[#182]: https://github.com/fponticelli/llui/issues/182
+[#183]: https://github.com/fponticelli/llui/issues/183
+[#185]: https://github.com/fponticelli/llui/issues/185
+[#190]: https://github.com/fponticelli/llui/issues/190
+[#194]: https://github.com/fponticelli/llui/issues/194
+[#209]: https://github.com/fponticelli/llui/issues/209
 [#212]: https://github.com/fponticelli/llui/issues/212
+[#213]: https://github.com/fponticelli/llui/issues/213
+[#214]: https://github.com/fponticelli/llui/issues/214
 [#215]: https://github.com/fponticelli/llui/issues/215
+[#216]: https://github.com/fponticelli/llui/issues/216
+[#217]: https://github.com/fponticelli/llui/issues/217
+[#219]: https://github.com/fponticelli/llui/issues/219
+[#223]: https://github.com/fponticelli/llui/issues/223
+[#225]: https://github.com/fponticelli/llui/issues/225
 
 ## 2026-08-10 — @llui/markdown-editor@0.7.0
 

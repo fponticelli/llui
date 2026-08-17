@@ -402,7 +402,7 @@ release: @llui/{dom,vite-plugin,test,router,transitions,components,vike}@X.Y.Z, 
 
 <one-line summary of what this release ships>
 
-<the Co-Authored-By / Claude-Session trailers your harness specifies — don't hard-code a model name here, it goes stale>
+<the Co-Authored-By / Codex-Session trailers your harness specifies — don't hard-code a model name here, it goes stale>
 EOF
 )"
 ```

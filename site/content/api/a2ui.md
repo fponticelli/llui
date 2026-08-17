@@ -8,10 +8,10 @@ description: "Renderer for Google's A2UI (Agent-to-UI) protocol on the LLui sign
 Renders Google's [**A2UI**](https://a2ui.org) (Agent-to-UI) protocol on the LLui signal runtime. A2UI is a transport-agnostic JSON protocol: a local or remote agent streams declarative UI messages that reference components from a **catalog the client already trusts** — the agent never ships code. `@llui/a2ui` is a renderer for that stream, built on LLui's chunked-mask reconciler, and it reuses [`@llui/components`](/api/components) headless primitives for the interactive parts.
 
 ```bash
-pnpm add @llui/a2ui
+pnpm add @llui/a2ui @llui/dom @llui/interactions
 ```
 
-`@llui/dom` is a peer dependency; [`@llui/components`](/api/components) comes along for the ride.
+`@llui/dom` and [`@llui/interactions`](/api/interactions) are peer dependencies; [`@llui/components`](/api/components) comes along for the ride. Resolve one instance of both peers so the renderer shares the host's signal runtime and interaction registries.
 
 ## Usage
 
