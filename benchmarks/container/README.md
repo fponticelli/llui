@@ -21,6 +21,8 @@ performs a frozen workspace install, refreshes and verifies the pinned JFB
 checkout, applies the ticker harness patches, and executes `bench:all`. The
 combined runner rebuilds the complete benchmark dependency graph before either
 suite, so both consume current `dist/` output without building unrelated apps.
+Setup and measurement run as the unprivileged `node` user; Chrome uses its
+standard setuid sandbox inside the container.
 
 Named Docker volumes cache pnpm/npm downloads and the JFB checkout. They are
 data caches, not running services; setup still verifies the JFB pin and every

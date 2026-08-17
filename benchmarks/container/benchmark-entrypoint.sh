@@ -4,6 +4,35 @@ set -euo pipefail
 readonly expected_node='v24.14.1'
 readonly expected_pnpm='10.33.0'
 readonly expected_chrome='150.0.7871.46'
+readonly benchmark_user='node'
+
+drop_root_privileges() {
+  if [[ "$(id -u)" -ne 0 ]]; then
+    return
+  fi
+
+  local benchmark_uid benchmark_gid path owner
+  benchmark_uid=$(id -u "$benchmark_user")
+  benchmark_gid=$(id -g "$benchmark_user")
+
+  mkdir -p "$HOME" /cache/npm /cache/pnpm /cache/jfb
+  for path in "$HOME" /cache/npm /cache/pnpm /cache/jfb; do
+    owner=$(stat --format='%u:%g' "$path")
+    if [[ "$owner" != "$benchmark_uid:$benchmark_gid" ]]; then
+      chown -R "$benchmark_uid:$benchmark_gid" "$path"
+    fi
+  done
+
+  if [[ "${LLUI_BENCH_SMOKE:-0}" != '1' ]]; then
+    owner=$(stat --format='%u:%g' /workspace)
+    if [[ "$owner" != "$benchmark_uid:$benchmark_gid" ]]; then
+      chown -R "$benchmark_uid:$benchmark_gid" /workspace
+    fi
+  fi
+
+  export LLUI_BENCH_PRIVILEGES_DROPPED=1
+  exec setpriv --reuid=node --regid=node --init-groups "$0" "$@"
+}
 
 assert_version() {
   local label=$1
@@ -16,7 +45,13 @@ assert_version() {
   printf '%s: %s\n' "$label" "$actual"
 }
 
-mkdir -p "$HOME" /cache/npm /cache/pnpm
+drop_root_privileges "$@"
+
+if [[ "${LLUI_BENCH_PRIVILEGES_DROPPED:-0}" != '1' || "$(id -u)" -eq 0 ]]; then
+  printf 'ERROR: benchmark entrypoint must run as an unprivileged user.\n' >&2
+  exit 1
+fi
+
 assert_version Node "$(node --version)" "$expected_node"
 assert_version pnpm "$(pnpm --version)" "$expected_pnpm"
 assert_version Chrome "$(google-chrome --version)" "$expected_chrome"

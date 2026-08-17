@@ -73,6 +73,24 @@ describe('benchmark Docker invocation', () => {
 })
 
 describe('benchmark container entrypoint', () => {
+  it('drops root before running Chrome and enables its standard setuid sandbox', () => {
+    const dockerfile = readFileSync(
+      resolve(import.meta.dirname, '../../benchmarks/container/Dockerfile'),
+      'utf8',
+    )
+    const entrypoint = readFileSync(
+      resolve(import.meta.dirname, '../../benchmarks/container/benchmark-entrypoint.sh'),
+      'utf8',
+    )
+    const privilegeDrop = entrypoint.indexOf('exec setpriv --reuid=node --regid=node --init-groups')
+    const chromeCheck = entrypoint.indexOf('assert_version Chrome')
+
+    expect(dockerfile).toContain('chmod 4755 /opt/chrome/chrome_sandbox')
+    expect(entrypoint).not.toContain('--no-sandbox')
+    expect(privilegeDrop).toBeGreaterThan(-1)
+    expect(chromeCheck).toBeGreaterThan(privilegeDrop)
+  })
+
   it('delegates to a combined runner that builds current benchmark dependencies first', () => {
     const entrypoint = readFileSync(
       resolve(import.meta.dirname, '../../benchmarks/container/benchmark-entrypoint.sh'),
