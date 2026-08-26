@@ -108,22 +108,33 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
                     // top, and `SidebarSeparator` carries no collapse rule
                     // precisely because it is still dividing something.
                     SidebarHeader([
-                      div({ class: 'flex items-center gap-2 px-2' }, [
-                        span(
-                          {
-                            class:
-                              'grid size-6 shrink-0 place-items-center rounded-md bg-sidebar-primary text-xs font-bold text-sidebar-primary-foreground',
-                          },
-                          [text('A')],
-                        ),
-                        span(
-                          {
-                            class:
-                              'truncate text-sm font-semibold group-data-[collapsible=icon]:hidden',
-                          },
-                          [text('Acme Inc')],
-                        ),
-                      ]),
+                      // `justify-center` + no horizontal padding in the rail:
+                      // `px-2` leaves a 32px content box in a 48px rail, so a
+                      // 24px mark sits hard left while the menu icons below are
+                      // centred by their own `size-8!` square. The two columns
+                      // have to agree or the rail looks crooked.
+                      div(
+                        {
+                          class:
+                            'flex items-center gap-2 px-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0',
+                        },
+                        [
+                          span(
+                            {
+                              class:
+                                'grid size-6 shrink-0 place-items-center rounded-md bg-sidebar-primary text-xs font-bold text-sidebar-primary-foreground',
+                            },
+                            [text('A')],
+                          ),
+                          span(
+                            {
+                              class:
+                                'truncate text-sm font-semibold group-data-[collapsible=icon]:hidden',
+                            },
+                            [text('Acme Inc')],
+                          ),
+                        ],
+                      ),
                     ]),
                     SidebarSeparator(),
                     SidebarContent([

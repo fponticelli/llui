@@ -45,7 +45,6 @@ import {
   ComboboxItem,
   ComboboxList,
   ComboboxLiveRegion,
-  ComboboxRoot,
   ComboboxTrigger,
 } from '../components/ui/combobox'
 import { Input } from '../components/ui/input'
@@ -305,7 +304,17 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'Combobox',
       'shadcn ships no `combobox.tsx` — its docs compose Popover + Command, so these ARE the Command recipes under Combobox names. The listbox is never focused: the input keeps focus and drives the highlight through `aria-activedescendant`.',
       [
-        ComboboxRoot({ ...cb.root, class: 'max-w-xs bg-transparent' }, [
+        // A plain `div`, NOT `ComboboxRoot`. That recipe is `Command` — a full
+        // palette SURFACE (`h-full w-full flex-col overflow-hidden rounded-md
+        // bg-popover`) meant for the dropdown panel, not for a labelled field.
+        // Its `overflow-hidden` CLIPS the input's focus ring on three sides:
+        // the input's bottom edge coincides with the wrapper's, so left, right
+        // and bottom are cut and only the segment above the input survives —
+        // rendering as a thick dark band along the top of the field whenever it
+        // is focused, which is always, since the control is driven by typing.
+        // It is a clip, not a border, which is why chasing borders and offsets
+        // twice found nothing.
+        div({ ...cb.root, class: 'max-w-xs' }, [
           Label({ for: cb.input.id, class: 'mb-1.5 block' }, [text('Framework')]),
           // The trigger is `absolute top-0 right-0`, so it anchors to the
           // nearest positioned ancestor — which must be a box containing ONLY
