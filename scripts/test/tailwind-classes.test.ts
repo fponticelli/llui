@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 // @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
-import { extractClassCandidates } from '../lib/registry-classes.mjs'
+import { extractClassCandidates, isPureReExport } from '../lib/registry-classes.mjs'
 // @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import { appEntry, compileCandidates, selectorFor } from '../lib/tailwind-compile.mjs'
 
@@ -45,7 +45,16 @@ describe('registry Tailwind classes', () => {
     const ui = [...byFile].filter(([file]) => file.startsWith('ui'))
     expect(ui.length).toBeGreaterThan(10)
     for (const [file, candidates] of ui) {
-      expect(candidates.length, `${file} produced no class candidates`).toBeGreaterThan(0)
+      if (candidates.length > 0) continue
+      // A pure re-export module (context-menu is the dropdown's recipes under
+      // other names) legitimately declares none. That has to be PROVEN from the
+      // module's shape — accepting any empty result would switch the guard off
+      // the moment a real recipe became unreadable.
+      const source = await readFile(path.join(REGISTRY, file), 'utf8')
+      expect(
+        isPureReExport(file, source),
+        `${file} produced no class candidates and is not a pure re-export`,
+      ).toBe(true)
     }
   })
 

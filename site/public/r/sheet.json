@@ -1,0 +1,16 @@
+{
+  "name": "sheet",
+  "type": "registry:ui",
+  "title": "Sheet / Drawer",
+  "description": "Skin for @llui/components/drawer — an edge-anchored panel, side as a variant.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/sheet.ts",
+      "type": "registry:ui",
+      "target": "sheet.ts",
+      "content": "import { button, div, h2, p } from '@llui/dom'\nimport { classPart, createVariantsPart } from '@/lib/utils'\n\n/**\n * Sheet — skin for `@llui/components/drawer`: a panel anchored to one edge.\n * shadcn calls it Sheet, LLui's machine is `drawer`; both names are here so\n * neither audience has to translate.\n *\n * `side` is a variant on the CONTENT rather than something the package decides,\n * because the machine only owns open/close and focus — which edge it flies in\n * from is presentation. Pass `positionerClass: 'fixed inset-0 z-dialog flex'`\n * plus the matching justification.\n */\nexport const SheetContent = createVariantsPart(div, {\n  base: 'relative flex h-full w-full flex-col gap-4 bg-popover p-6 text-popover-foreground shadow-lg transition-transform duration-normal',\n  variants: {\n    side: {\n      right: 'ml-auto max-w-sm border-l border-border data-[state=closed]:translate-x-full',\n      left: 'mr-auto max-w-sm border-r border-border data-[state=closed]:-translate-x-full',\n      top: 'mb-auto max-h-96 border-b border-border data-[state=closed]:-translate-y-full',\n      bottom: 'mt-auto max-h-96 border-t border-border data-[state=closed]:translate-y-full',\n    },\n  },\n  defaultVariants: { side: 'right' },\n})\n\nexport const SheetBackdrop = classPart(\n  div,\n  'absolute inset-0 bg-black/50 transition-opacity duration-fast data-[state=closed]:opacity-0',\n)\nexport const SheetHeader = classPart(div, 'flex flex-col gap-1.5')\nexport const SheetTitle = classPart(h2, 'text-lg leading-none font-semibold')\nexport const SheetDescription = classPart(p, 'text-sm text-muted-foreground')\nexport const SheetFooter = classPart(div, 'mt-auto flex flex-col gap-2')\nexport const SheetClose = classPart(\n  button,\n  'absolute top-4 right-4 rounded-sm text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',\n)\n\nexport {\n  SheetContent as DrawerContent,\n  SheetBackdrop as DrawerBackdrop,\n  SheetHeader as DrawerHeader,\n  SheetTitle as DrawerTitle,\n  SheetDescription as DrawerDescription,\n  SheetFooter as DrawerFooter,\n  SheetClose as DrawerClose,\n}\n"
+    }
+  ]
+}

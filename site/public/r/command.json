@@ -1,0 +1,16 @@
+{
+  "name": "command",
+  "type": "registry:ui",
+  "title": "Command",
+  "description": "Skin for @llui/components/patterns/command-menu — the ⌘K palette.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/command.ts",
+      "type": "registry:ui",
+      "target": "command.ts",
+      "content": "import { div, input } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Command — skin for `@llui/components/patterns/command-menu`, the ⌘K palette\n * built on `listbox` + `dialog`.\n *\n * The pattern owns filtering, highlight movement and Enter-to-run. Render the\n * empty state: a palette that shows a blank box for \"no results\" reads as broken.\n */\nexport const Command = classPart(\n  div,\n  'flex w-full flex-col overflow-hidden rounded-lg bg-popover text-popover-foreground',\n)\nexport const CommandInput = classPart(\n  input,\n  'h-11 w-full border-0 border-b border-border bg-transparent px-4 text-sm outline-none placeholder:text-muted-foreground',\n)\nexport const CommandList = classPart(div, 'max-h-80 overflow-y-auto overflow-x-hidden p-1')\nexport const CommandEmpty = classPart(div, 'py-8 text-center text-sm text-muted-foreground')\nexport const CommandGroup = classPart(div, 'overflow-hidden p-1')\nexport const CommandGroupLabel = classPart(\n  div,\n  'px-2 py-1.5 text-xs font-medium text-muted-foreground',\n)\nexport const CommandItem = classPart(\n  div,\n  'relative flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0',\n)\nexport const CommandSeparator = classPart(div, '-mx-1 my-1 h-px bg-border')\n"
+    }
+  ]
+}

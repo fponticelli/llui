@@ -1,0 +1,16 @@
+{
+  "name": "avatar",
+  "type": "registry:ui",
+  "title": "Avatar",
+  "description": "Skin for @llui/components/avatar, with image/fallback states.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/avatar.ts",
+      "type": "registry:ui",
+      "target": "avatar.ts",
+      "content": "import { div, img, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/** Avatar — skin for `@llui/components/avatar`. The package owns image\n * load/error state; `data-state` on the parts drives which of image/fallback is\n * visible, so nothing here reads state. */\nexport const Avatar = classPart(\n  div,\n  'relative flex size-8 shrink-0 overflow-hidden rounded-full bg-muted',\n)\nexport const AvatarImage = classPart(img, 'aspect-square size-full object-cover')\nexport const AvatarFallback = classPart(\n  span,\n  'flex size-full items-center justify-center rounded-full text-xs font-medium text-muted-foreground',\n)\n"
+    }
+  ]
+}

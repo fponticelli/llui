@@ -1,0 +1,16 @@
+{
+  "name": "alert-dialog",
+  "type": "registry:ui",
+  "title": "Alert Dialog",
+  "description": "Skin for @llui/components/alert-dialog — a confirmation that will not dismiss on an outside click.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["dialog", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/alert-dialog.ts",
+      "type": "registry:ui",
+      "target": "alert-dialog.ts",
+      "content": "import { div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\nexport {\n  DialogBackdrop as AlertDialogBackdrop,\n  DialogContent as AlertDialogContent,\n  DialogDescription as AlertDialogDescription,\n  DialogFooter as AlertDialogFooter,\n  DialogTitle as AlertDialogTitle,\n} from '@/ui/dialog'\n\n/**\n * AlertDialog — skin for `@llui/components/alert-dialog`, which is `dialog` with\n * `closeOnOutsideClick` defaulted OFF: a destructive confirmation must not be\n * dismissible by a stray click. The recipes are the dialog's, re-exported rather\n * than restated.\n *\n * There is deliberately no `AlertDialogClose`. The pattern is an explicit\n * cancel/confirm pair in the footer — a corner ✕ next to \"Delete permanently\"\n * is exactly the ambiguity this component exists to remove.\n */\nexport const AlertDialogActions = classPart(\n  div,\n  'mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end',\n)\n"
+    }
+  ]
+}

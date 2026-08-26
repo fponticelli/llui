@@ -1,0 +1,16 @@
+{
+  "name": "item",
+  "type": "registry:ui",
+  "title": "Item",
+  "description": "The generic row: media, title, description, trailing actions.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/item.ts",
+      "type": "registry:ui",
+      "target": "item.ts",
+      "content": "import { div, p, type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { classPart, createVariantsPart } from '@/lib/utils'\n\n/**\n * Item — the generic row: leading media, a title and description, trailing\n * actions. It is the shape behind list rows, settings entries and command\n * results, factored out so those do not each re-derive it.\n */\nexport const Item = createVariantsPart(div, {\n  base: 'flex w-full items-center gap-4 rounded-md border border-transparent p-3 text-sm transition-colors duration-fast',\n  variants: {\n    variant: {\n      default: '',\n      outline: 'border-border',\n      muted: 'bg-muted',\n    },\n    size: {\n      default: 'p-3',\n      sm: 'gap-3 p-2',\n    },\n  },\n  defaultVariants: { variant: 'default', size: 'default' },\n})\n\nexport const ItemMedia = classPart(\n  div,\n  'flex shrink-0 items-center justify-center text-muted-foreground [&_svg]:size-4',\n)\nexport const ItemContent = classPart(div, 'flex min-w-0 flex-1 flex-col gap-0.5')\nexport const ItemTitle = classPart(div, 'flex items-center gap-2 text-sm font-medium leading-none')\nexport const ItemDescription = classPart(p, 'line-clamp-2 text-sm text-muted-foreground')\nexport const ItemActions = classPart(div, 'flex shrink-0 items-center gap-2')\n\n/** A group of Items with dividers, e.g. a settings list. */\nexport function ItemGroup(\n  a0?: ElProps | readonly ChildNode[],\n  a1?: readonly ChildNode[],\n): Mountable {\n  return classPart(div, 'flex flex-col')(a0 as ElProps, a1)\n}\n"
+    }
+  ]
+}

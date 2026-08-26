@@ -1,0 +1,16 @@
+{
+  "name": "meter",
+  "type": "registry:ui",
+  "title": "Meter",
+  "description": "Skin for @llui/components/meter — a measurement tinted by data-state.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/meter.ts",
+      "type": "registry:ui",
+      "target": "meter.ts",
+      "content": "import { div, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Meter — skin for `@llui/components/meter`. Unlike Progress, a meter shows a\n * measurement within a known range, so the range part is tinted by\n * `data-state` (`optimal` / `suboptimal` / `critical`) rather than always\n * primary.\n */\nexport const Meter = classPart(div, 'flex w-full flex-col gap-1.5')\nexport const MeterLabel = classPart(span, 'text-sm font-medium')\nexport const MeterTrack = classPart(div, 'h-2 w-full overflow-hidden rounded-full bg-muted')\nexport const MeterRange = classPart(\n  div,\n  'h-full rounded-full bg-primary transition-[width] duration-normal data-[state=critical]:bg-destructive data-[state=suboptimal]:bg-accent-strong',\n)\n"
+    }
+  ]
+}

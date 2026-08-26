@@ -1,0 +1,16 @@
+{
+  "name": "collapsible",
+  "type": "registry:ui",
+  "title": "Collapsible",
+  "description": "Skin for @llui/components/collapsible.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/collapsible.ts",
+      "type": "registry:ui",
+      "target": "collapsible.ts",
+      "content": "import { button, div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/** Collapsible — skin for `@llui/components/collapsible`. */\nexport const Collapsible = classPart(div, 'flex flex-col gap-2')\nexport const CollapsibleTrigger = classPart(\n  button,\n  'flex items-center justify-between gap-2 rounded-md text-sm font-medium transition-colors duration-fast outline-none focus-visible:ring-2 focus-visible:ring-ring data-[disabled]:pointer-events-none data-[disabled]:opacity-50',\n)\nexport const CollapsibleContent = classPart(div, 'text-sm data-[state=closed]:hidden')\n"
+    }
+  ]
+}

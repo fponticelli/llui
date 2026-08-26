@@ -1,0 +1,16 @@
+{
+  "name": "typography",
+  "type": "registry:ui",
+  "title": "Typography",
+  "description": "Prose primitives — headings, paragraphs, lists, code, blockquote.",
+  "dependencies": ["@llui/dom"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/typography.ts",
+      "type": "registry:ui",
+      "target": "typography.ts",
+      "content": "import { blockquote, code, h1, h2, h3, h4, li, p, pre, ul } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Typography — prose primitives for rendered content.\n *\n * Deliberately individual components rather than one `.prose` class on a\n * wrapper: content in this framework is usually BUILT (a view assembling\n * headings and paragraphs), not injected as an HTML blob, so per-element\n * helpers are what a view actually reaches for. Use a prose plugin instead when\n * you are rendering untrusted HTML you do not construct.\n */\nexport const TypographyH1 = classPart(\n  h1,\n  'scroll-m-20 text-4xl font-extrabold tracking-tight text-balance',\n)\nexport const TypographyH2 = classPart(\n  h2,\n  'scroll-m-20 border-b border-border pb-2 text-3xl font-semibold tracking-tight first:mt-0',\n)\nexport const TypographyH3 = classPart(h3, 'scroll-m-20 text-2xl font-semibold tracking-tight')\nexport const TypographyH4 = classPart(h4, 'scroll-m-20 text-xl font-semibold tracking-tight')\nexport const TypographyP = classPart(p, 'leading-7 not-first:mt-6')\nexport const TypographyLead = classPart(p, 'text-xl text-muted-foreground')\nexport const TypographyLarge = classPart(p, 'text-lg font-semibold')\nexport const TypographySmall = classPart(p, 'text-sm leading-none font-medium')\nexport const TypographyMuted = classPart(p, 'text-sm text-muted-foreground')\nexport const TypographyBlockquote = classPart(\n  blockquote,\n  'mt-6 border-l-2 border-border pl-6 italic',\n)\nexport const TypographyList = classPart(ul, 'my-6 ml-6 list-disc [&>li]:mt-2')\nexport const TypographyListItem = classPart(li, '')\nexport const TypographyInlineCode = classPart(\n  code,\n  'relative rounded bg-muted px-[0.3rem] py-[0.2rem] font-mono text-sm font-semibold',\n)\nexport const TypographyPre = classPart(\n  pre,\n  'my-6 overflow-x-auto rounded-lg border border-border bg-muted p-4 font-mono text-sm',\n)\n"
+    }
+  ]
+}

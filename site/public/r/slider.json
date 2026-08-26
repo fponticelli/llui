@@ -1,0 +1,16 @@
+{
+  "name": "slider",
+  "type": "registry:ui",
+  "title": "Slider",
+  "description": "Skin for @llui/components/slider, single or range.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/slider.ts",
+      "type": "registry:ui",
+      "target": "slider.ts",
+      "content": "import { div, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Slider — skin for `@llui/components/slider`. The package writes the thumb's\n * offset and the range's extent as inline styles from the value; the recipe only\n * describes appearance, which is why dragging works without a view reading state.\n */\nexport const Slider = classPart(\n  div,\n  'relative flex w-full touch-none items-center select-none data-[orientation=vertical]:h-40 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col data-[disabled]:opacity-50',\n)\nexport const SliderControl = classPart(div, 'relative flex w-full grow items-center')\nexport const SliderTrack = classPart(\n  div,\n  'relative h-1.5 w-full grow overflow-hidden rounded-full bg-muted data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5',\n)\nexport const SliderRange = classPart(div, 'absolute h-full rounded-full bg-primary')\nexport const SliderThumb = classPart(\n  span,\n  'block size-4 shrink-0 rounded-full border border-primary bg-background shadow-sm transition-colors duration-fast outline-none focus-visible:ring-2 focus-visible:ring-ring',\n)\n"
+    }
+  ]
+}

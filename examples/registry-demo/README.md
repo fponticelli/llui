@@ -1,9 +1,13 @@
 # Registry Demo
 
-Every component in the [LLui registry](../../registry), rendered from source that
+All 58 components in the [LLui registry](../../registry), rendered from source that
 `llui add` copied into this app. Nothing on the page is imported from a styling
 package — `src/components/ui/` is ordinary project source, and editing it changes what
 you see.
+
+Coverage is shadcn/ui parity minus Chart and Sidebar, plus the components LLui has and
+shadcn does not (rating group, tags input, tree view, steps, meter, number input,
+toolbar).
 
 ## What it demonstrates
 
@@ -28,8 +32,17 @@ you see.
 
 ## UI
 
-One page, two groups: presentational components first, then the skins. Overlay triggers
-sit at the bottom; the dialog, popover and tooltip portal to `<body>`.
+One page in five groups — Presentational, Forms, Data display, Navigation & disclosure,
+Overlays. The overlay triggers sit at the bottom; every overlay portals to `<body>`.
+
+## Type-checked, unlike the other examples
+
+This example has a `tsconfig.json` and a `check` script, so `turbo check` compiles it in
+CI. That is deliberate: `src/components/ui/` is the CLI's real output, so if `llui add`
+ever emits something that does not compile, this is where it surfaces. It caught four
+defects the day it was added, three of them the same one — a `connect()` accessor
+returning a BAG OF BAGS (`item(value)` → `{ trigger, content, item }`), where spreading
+the wrapper emits `trigger="[object Object]"` and silently drops every real attribute.
 
 ## Regenerating the copied source
 

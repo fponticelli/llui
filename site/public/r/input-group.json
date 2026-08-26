@@ -1,0 +1,16 @@
+{
+  "name": "input-group",
+  "type": "registry:ui",
+  "title": "Input Group",
+  "description": "An input fused with icons, prefixes, suffixes or a button.",
+  "dependencies": ["@llui/dom"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/input-group.ts",
+      "type": "registry:ui",
+      "target": "input-group.ts",
+      "content": "import { div, type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { classPart, mergeClass, splitArgs } from '@/lib/utils'\n\n/**\n * InputGroup — an input with an icon, prefix, suffix or button fused to it.\n *\n * The group owns the border and focus ring; the inner control gives them up\n * (`border-0 shadow-none focus-visible:ring-0`), which is why the recipe reaches\n * into `[&>input]` rather than asking the caller to pass a stripped Input. A\n * focus ring drawn on the inner control would sit INSIDE the group's border.\n */\nexport function InputGroup(\n  a0?: ElProps | readonly ChildNode[],\n  a1?: readonly ChildNode[],\n): Mountable {\n  const { props, children } = splitArgs(a0, a1)\n  const { class: className, ...rest } = props\n  return div(\n    {\n      ...rest,\n      class: mergeClass(\n        'flex h-9 w-full items-center gap-2 rounded-md border border-border bg-transparent px-3 shadow-sm transition-colors duration-fast focus-within:ring-2 focus-within:ring-ring has-[input:disabled]:cursor-not-allowed has-[input:disabled]:opacity-50 [&>input]:h-full [&>input]:w-full [&>input]:border-0 [&>input]:bg-transparent [&>input]:p-0 [&>input]:shadow-none [&>input]:outline-none [&>input]:focus-visible:ring-0',\n        className,\n      ),\n    },\n    children,\n  )\n}\n\nexport const InputGroupAddon = classPart(\n  div,\n  'flex shrink-0 items-center gap-1.5 text-sm text-muted-foreground [&_svg]:size-4',\n)\nexport const InputGroupText = classPart(div, 'shrink-0 text-sm text-muted-foreground')\n"
+    }
+  ]
+}

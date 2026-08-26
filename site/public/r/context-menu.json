@@ -1,0 +1,16 @@
+{
+  "name": "context-menu",
+  "type": "registry:ui",
+  "title": "Context Menu",
+  "description": "Skin for @llui/components/context-menu; reuses the dropdown recipes.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["dropdown-menu"],
+  "files": [
+    {
+      "path": "registry/llui/ui/context-menu.ts",
+      "type": "registry:ui",
+      "target": "context-menu.ts",
+      "content": "export {\n  DropdownMenuContent as ContextMenuContent,\n  DropdownMenuGroup as ContextMenuGroup,\n  DropdownMenuItem as ContextMenuItem,\n  DropdownMenuLabel as ContextMenuLabel,\n  DropdownMenuSeparator as ContextMenuSeparator,\n  DropdownMenuShortcut as ContextMenuShortcut,\n  DropdownMenuSubContent as ContextMenuSubContent,\n  DropdownMenuSubTrigger as ContextMenuSubTrigger,\n} from '@/ui/dropdown-menu'\n\n/**\n * ContextMenu — skin for `@llui/components/context-menu`.\n *\n * Deliberately re-exports the dropdown recipes rather than restating them: the\n * two differ only in what OPENS them (a right-click vs a trigger button), and\n * `menu-machine.ts` gives them the same parts. Duplicating the recipes is how\n * two menus drift apart visually.\n *\n * Note that `context-menu` is anchorless by design, so its overlay registers\n * UNOWNED in the nested-layer registry — see llui issue #215 before nesting one\n * inside a modal.\n */\n"
+    }
+  ]
+}

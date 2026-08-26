@@ -90,6 +90,9 @@ export function extractClassCandidates(fileName, source) {
       if (CLASS_CALLS.has(callee)) node.arguments.forEach(pushString)
       else if (callee === 'createVariants' && node.arguments[0] !== undefined) {
         readCreateVariants(node.arguments[0])
+      } else if (callee === 'createVariantsPart' && node.arguments[1] !== undefined) {
+        // Same config object, one argument further along — the tag comes first.
+        readCreateVariants(node.arguments[1])
       }
     }
     // `div({ class: 'flex gap-2' }, …)` — the app-code spelling. Only a literal
@@ -122,4 +125,47 @@ export function extractClassCandidates(fileName, source) {
 
 function scriptKind(fileName) {
   return fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+}
+
+/**
+ * True when a module only RE-EXPORTS other modules' components and declares no
+ * recipes of its own (`context-menu` is the dropdown's recipes under different
+ * names).
+ *
+ * The vacuity guard asserts every `ui/` file yields at least one class
+ * candidate, which is what caught three components whose recipes the extractor
+ * could not see. A pure re-export legitimately yields none — but "yields none"
+ * must be PROVEN, not assumed from an empty result, or the guard silently stops
+ * guarding the moment a real recipe becomes unreadable. So this checks the
+ * shape: every statement is an import or an `export … from`, and no recipe
+ * builder is named anywhere in the file.
+ */
+export function isPureReExport(fileName, source) {
+  const sf = ts.createSourceFile(
+    fileName,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    scriptKind(fileName),
+  )
+  let reExports = 0
+  for (const stmt of sf.statements) {
+    if (ts.isImportDeclaration(stmt)) continue
+    if (ts.isExportDeclaration(stmt) && stmt.moduleSpecifier !== undefined) {
+      reExports++
+      continue
+    }
+    return false
+  }
+  if (reExports === 0) return false
+  // A recipe builder mentioned anywhere means the file DOES declare recipes and
+  // the extractor simply failed to read them — exactly what the guard is for.
+  const named = new Set([...CLASS_CALLS, 'createVariants', 'createVariantsPart'])
+  let buildsRecipes = false
+  const walk = (n) => {
+    if (ts.isIdentifier(n) && named.has(n.text)) buildsRecipes = true
+    ts.forEachChild(n, walk)
+  }
+  walk(sf)
+  return !buildsRecipes
 }

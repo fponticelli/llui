@@ -1,0 +1,16 @@
+{
+  "name": "toggle-group",
+  "type": "registry:ui",
+  "title": "Toggle Group",
+  "description": "Skin for @llui/components/toggle-group.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/toggle-group.ts",
+      "type": "registry:ui",
+      "target": "toggle-group.ts",
+      "content": "import { button, div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * ToggleGroup — skin for `@llui/components/toggle-group`. The items are fused\n * into one control the way ButtonGroup does it, via `[&>*:not(...)]` selectors\n * rather than a class per item, so adding or reordering items stays correct.\n */\nexport const ToggleGroup = classPart(\n  div,\n  'inline-flex items-center rounded-md data-[orientation=vertical]:flex-col [&>*:not(:first-child)]:-ml-px [&>*:not(:first-child)]:rounded-l-none [&>*:not(:last-child)]:rounded-r-none',\n)\nexport const ToggleGroupItem = classPart(\n  button,\n  'inline-flex h-9 min-w-9 items-center justify-center gap-2 border border-border bg-transparent px-2 text-sm font-medium transition-colors duration-fast outline-none first:rounded-l-md last:rounded-r-md hover:bg-muted focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring data-[state=on]:bg-accent data-[state=on]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',\n)\n"
+    }
+  ]
+}

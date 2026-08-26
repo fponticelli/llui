@@ -1,0 +1,13 @@
+{
+  // The example is type-checked in CI (`turbo check`) because its
+  // `src/components/ui/` is the CLI's actual output — if `llui add` ever emits
+  // something that does not compile, this is where it surfaces. The other
+  // examples rely on the vite build alone, which runs the LLui compiler but not
+  // a full `tsc`.
+  "extends": "../../tsconfig.json",
+  "include": ["src"],
+  "compilerOptions": {
+    "noEmit": true,
+    "types": []
+  }
+}

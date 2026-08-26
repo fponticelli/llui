@@ -1,0 +1,16 @@
+{
+  "name": "dropdown-menu",
+  "type": "registry:ui",
+  "title": "Dropdown Menu",
+  "description": "Skin for @llui/components/menu, with groups, submenus and shortcuts.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/dropdown-menu.ts",
+      "type": "registry:ui",
+      "target": "dropdown-menu.ts",
+      "content": "import { button, div, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * DropdownMenu — skin for `@llui/components/menu`. Roving focus, typeahead,\n * submenus and dismissal are the package's; pass the content's z-index to\n * `overlay()` as `positionerClass: 'z-popover'`.\n *\n * `menu-machine.ts` supplies the item/group/separator/submenu parts shared with\n * `context-menu` and `menubar`, so these recipes are reused by all three.\n */\nexport const DropdownMenuTrigger = classPart(\n  button,\n  'inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors duration-fast outline-none focus-visible:ring-2 focus-visible:ring-ring',\n)\nexport const DropdownMenuContent = classPart(\n  div,\n  'min-w-32 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-opacity duration-fast data-[state=closed]:opacity-0',\n)\nexport const DropdownMenuItem = classPart(\n  div,\n  'relative flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:size-4 [&_svg]:shrink-0',\n)\nexport const DropdownMenuGroup = classPart(div, '')\nexport const DropdownMenuLabel = classPart(div, 'px-2 py-1.5 text-sm font-medium')\nexport const DropdownMenuSeparator = classPart(div, '-mx-1 my-1 h-px bg-border')\nexport const DropdownMenuShortcut = classPart(\n  span,\n  'ml-auto text-xs tracking-widest text-muted-foreground',\n)\nexport const DropdownMenuSubTrigger = classPart(\n  div,\n  'flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[state=open]:bg-accent',\n)\nexport const DropdownMenuSubContent = classPart(\n  div,\n  'min-w-32 overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-lg',\n)\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "kbd",
+  "type": "registry:ui",
+  "title": "Kbd",
+  "description": "Keyboard key and chord display, on a semantic <kbd>.",
+  "dependencies": ["@llui/dom"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/kbd.ts",
+      "type": "registry:ui",
+      "target": "kbd.ts",
+      "content": "import { type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { classPart, customTag, mergeClass, splitArgs } from '@/lib/utils'\n\n// `<kbd>` has no named helper in `@llui/dom`; `customTag` adapts `el` for it.\n// The semantic tag is not decoration — screen readers announce keyboard input.\nconst kbdEl = customTag('kbd')\n\nexport const Kbd = classPart(\n  kbdEl,\n  'inline-flex h-5 min-w-5 items-center justify-center gap-1 rounded-sm bg-muted px-1 font-sans text-xs font-medium text-muted-foreground select-none',\n)\n\n/** A group of keys rendered as one chord (`⌘ K`). */\nexport function KbdGroup(\n  a0?: ElProps | readonly ChildNode[],\n  a1?: readonly ChildNode[],\n): Mountable {\n  const { props, children } = splitArgs(a0, a1)\n  const { class: className, ...rest } = props\n  return kbdEl(\n    { ...rest, class: mergeClass('inline-flex items-center gap-1', className) },\n    children,\n  )\n}\n"
+    }
+  ]
+}

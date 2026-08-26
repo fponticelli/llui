@@ -1,0 +1,16 @@
+{
+  "name": "aspect-ratio",
+  "type": "registry:ui",
+  "title": "Aspect Ratio",
+  "description": "Constrains children to a ratio via native aspect-ratio.",
+  "dependencies": ["@llui/dom"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/aspect-ratio.ts",
+      "type": "registry:ui",
+      "target": "aspect-ratio.ts",
+      "content": "import { div, type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { mergeClass, splitArgs } from '@/lib/utils'\n\n/** AspectRatio — constrains children to a ratio using the native `aspect-ratio`\n * property. `ratio` is a Tailwind fraction (`16/9`), passed through as an\n * arbitrary value so any ratio works without adding a token. */\nexport function AspectRatio(\n  a0?: (ElProps & { ratio?: string }) | readonly ChildNode[],\n  a1?: readonly ChildNode[],\n): Mountable {\n  const { props, children } = splitArgs(a0, a1)\n  const { ratio = '16/9', class: className, ...rest } = props as ElProps & { ratio?: string }\n  return div(\n    {\n      ...rest,\n      class: mergeClass('w-full overflow-hidden', className),\n      'style.aspect-ratio': ratio,\n    },\n    children,\n  )\n}\n"
+    }
+  ]
+}

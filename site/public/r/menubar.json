@@ -1,0 +1,16 @@
+{
+  "name": "menubar",
+  "type": "registry:ui",
+  "title": "Menubar",
+  "description": "Skin for @llui/components/menubar; reuses the dropdown recipes.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["dropdown-menu", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/menubar.ts",
+      "type": "registry:ui",
+      "target": "menubar.ts",
+      "content": "import { button, div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\nexport {\n  DropdownMenuContent as MenubarContent,\n  DropdownMenuGroup as MenubarGroup,\n  DropdownMenuItem as MenubarItem,\n  DropdownMenuLabel as MenubarLabel,\n  DropdownMenuSeparator as MenubarSeparator,\n  DropdownMenuShortcut as MenubarShortcut,\n  DropdownMenuSubContent as MenubarSubContent,\n  DropdownMenuSubTrigger as MenubarSubTrigger,\n} from '@/ui/dropdown-menu'\n\n/** Menubar — skin for `@llui/components/menubar`. The bar itself is unique; the\n * dropped panels reuse the dropdown recipes. */\nexport const Menubar = classPart(\n  div,\n  'flex h-9 items-center gap-1 rounded-md border border-border bg-background p-1 shadow-sm',\n)\nexport const MenubarTrigger = classPart(\n  button,\n  'flex items-center rounded-sm px-2 py-1 text-sm font-medium outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[state=open]:bg-accent data-[state=open]:text-accent-foreground',\n)\n"
+    }
+  ]
+}

@@ -2,7 +2,7 @@
   "name": "dialog",
   "type": "registry:ui",
   "title": "Dialog",
-  "description": "Skin for @llui/components/dialog — backdrop, positioner, content, title, close.",
+  "description": "Skin for @llui/components/dialog — backdrop, content, title, close, footer.",
   "dependencies": ["@llui/dom", "@llui/components"],
   "registryDependencies": ["utils"],
   "files": [

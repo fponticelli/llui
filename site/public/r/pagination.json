@@ -1,0 +1,16 @@
+{
+  "name": "pagination",
+  "type": "registry:ui",
+  "title": "Pagination",
+  "description": "Skin for @llui/components/pagination.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/pagination.ts",
+      "type": "registry:ui",
+      "target": "pagination.ts",
+      "content": "import { a, button, li, nav, span, ul } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/** Pagination — skin for `@llui/components/pagination`. `data-selected` marks\n * the current page; the package also sets `aria-current`. */\nexport const Pagination = classPart(nav, 'mx-auto flex w-full justify-center')\nexport const PaginationContent = classPart(ul, 'flex flex-row items-center gap-1')\nexport const PaginationItem = classPart(li, '')\nexport const PaginationLink = classPart(\n  a,\n  'inline-flex size-9 items-center justify-center rounded-md text-sm font-medium transition-colors duration-fast outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring data-[selected]:border data-[selected]:border-border data-[selected]:bg-background data-[selected]:shadow-sm',\n)\nexport const PaginationPrevious = classPart(\n  button,\n  'inline-flex h-9 items-center justify-center gap-1 rounded-md px-2.5 text-sm font-medium transition-colors duration-fast outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring data-[disabled]:pointer-events-none data-[disabled]:opacity-50',\n)\nexport const PaginationNext = PaginationPrevious\nexport const PaginationEllipsis = classPart(\n  span,\n  'flex size-9 items-center justify-center text-muted-foreground',\n)\n"
+    }
+  ]
+}

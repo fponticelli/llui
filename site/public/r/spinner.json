@@ -1,0 +1,16 @@
+{
+  "name": "spinner",
+  "type": "registry:ui",
+  "title": "Spinner",
+  "description": "Loading ring, aria-hidden so the state lives on the region it describes.",
+  "dependencies": ["@llui/dom"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/spinner.ts",
+      "type": "registry:ui",
+      "target": "spinner.ts",
+      "content": "import { circle, path, svg, type ElProps, type Mountable } from '@llui/dom'\nimport { mergeClass } from '@/lib/utils'\n\n/**\n * Spinner — `aria-hidden`, because the loading STATE belongs on the region it\n * describes (`aria-busy`, or a live region), not on the decoration. A spinner\n * that announces itself reads as \"image\" and tells the user nothing.\n *\n * Built from `@llui/dom`'s namespaced SVG helpers rather than `elNS`, so the\n * children are typed the same way every other element in this directory is.\n */\nexport function Spinner(props?: ElProps): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return svg(\n    {\n      ...rest,\n      'aria-hidden': 'true',\n      viewBox: '0 0 24 24',\n      fill: 'none',\n      class: mergeClass('size-4 animate-spin text-muted-foreground', className),\n    },\n    [\n      circle({\n        cx: '12',\n        cy: '12',\n        r: '10',\n        stroke: 'currentColor',\n        'stroke-width': '3',\n        class: 'opacity-25',\n      }),\n      path({\n        fill: 'currentColor',\n        class: 'opacity-90',\n        d: 'M12 2a10 10 0 0 1 10 10h-3a7 7 0 0 0-7-7V2Z',\n      }),\n    ],\n  )\n}\n"
+    }
+  ]
+}

@@ -6,195 +6,15 @@
     {
       "name": "utils",
       "type": "registry:lib",
-      "title": "cn / mergeClass",
-      "description": "Class-merge helpers. `cn` resolves Tailwind conflicts so a caller override wins; `mergeClass` additionally preserves reactivity when `class` is a Signal, which `cn` alone would stringify to \"[object Object]\".",
-      "dependencies": ["@llui/dom", "clsx", "tailwind-merge"],
+      "title": "cn / mergeClass / classPart",
+      "description": "Class-merge helpers and the shared part factories every component here is built from.",
+      "dependencies": ["@llui/dom", "clsx", "tailwind-merge", "@llui/components"],
       "registryDependencies": [],
       "files": [
         {
           "path": "registry/llui/lib/utils.ts",
           "type": "registry:lib",
           "target": "utils.ts"
-        }
-      ]
-    },
-    {
-      "name": "button",
-      "type": "registry:ui",
-      "title": "Button",
-      "description": "Button element helper with variant and size recipes.",
-      "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/button.ts",
-          "type": "registry:ui",
-          "target": "button.ts"
-        }
-      ]
-    },
-    {
-      "name": "card",
-      "type": "registry:ui",
-      "title": "Card",
-      "description": "Card surface and its header/title/description/content/footer parts.",
-      "dependencies": ["@llui/dom"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/card.ts",
-          "type": "registry:ui",
-          "target": "card.ts"
-        }
-      ]
-    },
-    {
-      "name": "input",
-      "type": "registry:ui",
-      "title": "Input",
-      "description": "Text input. The caller owns the value binding \u2014 see the controlled-input compiler rule.",
-      "dependencies": ["@llui/dom"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/input.ts",
-          "type": "registry:ui",
-          "target": "input.ts"
-        }
-      ]
-    },
-    {
-      "name": "textarea",
-      "type": "registry:ui",
-      "title": "Textarea",
-      "description": "Multi-line text input, same caller-owns-the-value contract as Input.",
-      "dependencies": ["@llui/dom"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/textarea.ts",
-          "type": "registry:ui",
-          "target": "textarea.ts"
-        }
-      ]
-    },
-    {
-      "name": "label",
-      "type": "registry:ui",
-      "title": "Label",
-      "description": "Form label. Associate with `for`; `htmlFor` is a compile error.",
-      "dependencies": ["@llui/dom"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/label.ts",
-          "type": "registry:ui",
-          "target": "label.ts"
-        }
-      ]
-    },
-    {
-      "name": "badge",
-      "type": "registry:ui",
-      "title": "Badge",
-      "description": "Inline status badge with variant recipes.",
-      "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/badge.ts",
-          "type": "registry:ui",
-          "target": "badge.ts"
-        }
-      ]
-    },
-    {
-      "name": "separator",
-      "type": "registry:ui",
-      "title": "Separator",
-      "description": "Horizontal or vertical rule, decorative by default.",
-      "dependencies": ["@llui/dom"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/separator.ts",
-          "type": "registry:ui",
-          "target": "separator.ts"
-        }
-      ]
-    },
-    {
-      "name": "skeleton",
-      "type": "registry:ui",
-      "title": "Skeleton",
-      "description": "Loading placeholder block.",
-      "dependencies": ["@llui/dom"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/skeleton.ts",
-          "type": "registry:ui",
-          "target": "skeleton.ts"
-        }
-      ]
-    },
-    {
-      "name": "alert",
-      "type": "registry:ui",
-      "title": "Alert",
-      "description": "Live-region alert with title and description parts.",
-      "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/alert.ts",
-          "type": "registry:ui",
-          "target": "alert.ts"
-        }
-      ]
-    },
-    {
-      "name": "table",
-      "type": "registry:ui",
-      "title": "Table",
-      "description": "Data table parts, wrapped so a wide table scrolls inside its own box.",
-      "dependencies": ["@llui/dom"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/table.ts",
-          "type": "registry:ui",
-          "target": "table.ts"
-        }
-      ]
-    },
-    {
-      "name": "switch",
-      "type": "registry:ui",
-      "title": "Switch",
-      "description": "Skin for @llui/components/switch \u2014 recipe only, state stays in the package.",
-      "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/switch.ts",
-          "type": "registry:ui",
-          "target": "switch.ts"
-        }
-      ]
-    },
-    {
-      "name": "tabs",
-      "type": "registry:ui",
-      "title": "Tabs",
-      "description": "Skin for @llui/components/tabs.",
-      "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
-      "files": [
-        {
-          "path": "registry/llui/ui/tabs.ts",
-          "type": "registry:ui",
-          "target": "tabs.ts"
         }
       ]
     },
@@ -214,10 +34,250 @@
       ]
     },
     {
+      "name": "alert",
+      "type": "registry:ui",
+      "title": "Alert",
+      "description": "Live-region alert with title and description parts.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/alert.ts",
+          "type": "registry:ui",
+          "target": "alert.ts"
+        }
+      ]
+    },
+    {
+      "name": "alert-dialog",
+      "type": "registry:ui",
+      "title": "Alert Dialog",
+      "description": "Skin for @llui/components/alert-dialog \u2014 a confirmation that will not dismiss on an outside click.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["dialog", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/alert-dialog.ts",
+          "type": "registry:ui",
+          "target": "alert-dialog.ts"
+        }
+      ]
+    },
+    {
+      "name": "aspect-ratio",
+      "type": "registry:ui",
+      "title": "Aspect Ratio",
+      "description": "Constrains children to a ratio via native aspect-ratio.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/aspect-ratio.ts",
+          "type": "registry:ui",
+          "target": "aspect-ratio.ts"
+        }
+      ]
+    },
+    {
+      "name": "avatar",
+      "type": "registry:ui",
+      "title": "Avatar",
+      "description": "Skin for @llui/components/avatar, with image/fallback states.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/avatar.ts",
+          "type": "registry:ui",
+          "target": "avatar.ts"
+        }
+      ]
+    },
+    {
+      "name": "badge",
+      "type": "registry:ui",
+      "title": "Badge",
+      "description": "Inline status badge with variant recipes.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/badge.ts",
+          "type": "registry:ui",
+          "target": "badge.ts"
+        }
+      ]
+    },
+    {
+      "name": "breadcrumb",
+      "type": "registry:ui",
+      "title": "Breadcrumb",
+      "description": "Skin for @llui/components/breadcrumbs, with ellipsis overflow.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/breadcrumb.ts",
+          "type": "registry:ui",
+          "target": "breadcrumb.ts"
+        }
+      ]
+    },
+    {
+      "name": "button",
+      "type": "registry:ui",
+      "title": "Button",
+      "description": "Button element helper with variant and size recipes.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/button.ts",
+          "type": "registry:ui",
+          "target": "button.ts"
+        }
+      ]
+    },
+    {
+      "name": "button-group",
+      "type": "registry:ui",
+      "title": "Button Group",
+      "description": "Fuses adjacent buttons into one segmented control.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/button-group.ts",
+          "type": "registry:ui",
+          "target": "button-group.ts"
+        }
+      ]
+    },
+    {
+      "name": "calendar",
+      "type": "registry:ui",
+      "title": "Calendar / Date Picker",
+      "description": "Skin for @llui/components/date-picker \u2014 month grid, presets, range states.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/calendar.ts",
+          "type": "registry:ui",
+          "target": "calendar.ts"
+        }
+      ]
+    },
+    {
+      "name": "card",
+      "type": "registry:ui",
+      "title": "Card",
+      "description": "Card surface and its header/title/description/content/footer parts.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/card.ts",
+          "type": "registry:ui",
+          "target": "card.ts"
+        }
+      ]
+    },
+    {
+      "name": "carousel",
+      "type": "registry:ui",
+      "title": "Carousel",
+      "description": "Skin for @llui/components/carousel, with indicators and prev/next.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/carousel.ts",
+          "type": "registry:ui",
+          "target": "carousel.ts"
+        }
+      ]
+    },
+    {
+      "name": "checkbox",
+      "type": "registry:ui",
+      "title": "Checkbox",
+      "description": "Skin for @llui/components/checkbox, including the indeterminate state.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/checkbox.ts",
+          "type": "registry:ui",
+          "target": "checkbox.ts"
+        }
+      ]
+    },
+    {
+      "name": "collapsible",
+      "type": "registry:ui",
+      "title": "Collapsible",
+      "description": "Skin for @llui/components/collapsible.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/collapsible.ts",
+          "type": "registry:ui",
+          "target": "collapsible.ts"
+        }
+      ]
+    },
+    {
+      "name": "combobox",
+      "type": "registry:ui",
+      "title": "Combobox",
+      "description": "Skin for @llui/components/combobox \u2014 filtering input over an anchored list.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/combobox.ts",
+          "type": "registry:ui",
+          "target": "combobox.ts"
+        }
+      ]
+    },
+    {
+      "name": "command",
+      "type": "registry:ui",
+      "title": "Command",
+      "description": "Skin for @llui/components/patterns/command-menu \u2014 the \u2318K palette.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/command.ts",
+          "type": "registry:ui",
+          "target": "command.ts"
+        }
+      ]
+    },
+    {
+      "name": "context-menu",
+      "type": "registry:ui",
+      "title": "Context Menu",
+      "description": "Skin for @llui/components/context-menu; reuses the dropdown recipes.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["dropdown-menu"],
+      "files": [
+        {
+          "path": "registry/llui/ui/context-menu.ts",
+          "type": "registry:ui",
+          "target": "context-menu.ts"
+        }
+      ]
+    },
+    {
       "name": "dialog",
       "type": "registry:ui",
       "title": "Dialog",
-      "description": "Skin for @llui/components/dialog \u2014 backdrop, positioner, content, title, close.",
+      "description": "Skin for @llui/components/dialog \u2014 backdrop, content, title, close, footer.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -225,6 +285,231 @@
           "path": "registry/llui/ui/dialog.ts",
           "type": "registry:ui",
           "target": "dialog.ts"
+        }
+      ]
+    },
+    {
+      "name": "dropdown-menu",
+      "type": "registry:ui",
+      "title": "Dropdown Menu",
+      "description": "Skin for @llui/components/menu, with groups, submenus and shortcuts.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/dropdown-menu.ts",
+          "type": "registry:ui",
+          "target": "dropdown-menu.ts"
+        }
+      ]
+    },
+    {
+      "name": "empty",
+      "type": "registry:ui",
+      "title": "Empty",
+      "description": "The \"nothing here yet\" state, with media, title, description and actions.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/empty.ts",
+          "type": "registry:ui",
+          "target": "empty.ts"
+        }
+      ]
+    },
+    {
+      "name": "field",
+      "type": "registry:ui",
+      "title": "Field",
+      "description": "Skin for @llui/components/field \u2014 label, description and error wiring.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/field.ts",
+          "type": "registry:ui",
+          "target": "field.ts"
+        }
+      ]
+    },
+    {
+      "name": "hover-card",
+      "type": "registry:ui",
+      "title": "Hover Card",
+      "description": "Skin for @llui/components/hover-card.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/hover-card.ts",
+          "type": "registry:ui",
+          "target": "hover-card.ts"
+        }
+      ]
+    },
+    {
+      "name": "input",
+      "type": "registry:ui",
+      "title": "Input",
+      "description": "Text input. The caller owns the value binding \u2014 see the controlled-input rule.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/input.ts",
+          "type": "registry:ui",
+          "target": "input.ts"
+        }
+      ]
+    },
+    {
+      "name": "input-group",
+      "type": "registry:ui",
+      "title": "Input Group",
+      "description": "An input fused with icons, prefixes, suffixes or a button.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/input-group.ts",
+          "type": "registry:ui",
+          "target": "input-group.ts"
+        }
+      ]
+    },
+    {
+      "name": "input-otp",
+      "type": "registry:ui",
+      "title": "Input OTP",
+      "description": "Skin for @llui/components/pin-input \u2014 paste-splitting and auto-advance.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/input-otp.ts",
+          "type": "registry:ui",
+          "target": "input-otp.ts"
+        }
+      ]
+    },
+    {
+      "name": "item",
+      "type": "registry:ui",
+      "title": "Item",
+      "description": "The generic row: media, title, description, trailing actions.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/item.ts",
+          "type": "registry:ui",
+          "target": "item.ts"
+        }
+      ]
+    },
+    {
+      "name": "kbd",
+      "type": "registry:ui",
+      "title": "Kbd",
+      "description": "Keyboard key and chord display, on a semantic <kbd>.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/kbd.ts",
+          "type": "registry:ui",
+          "target": "kbd.ts"
+        }
+      ]
+    },
+    {
+      "name": "label",
+      "type": "registry:ui",
+      "title": "Label",
+      "description": "Form label. Associate with `for`; `htmlFor` is a compile error.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/label.ts",
+          "type": "registry:ui",
+          "target": "label.ts"
+        }
+      ]
+    },
+    {
+      "name": "menubar",
+      "type": "registry:ui",
+      "title": "Menubar",
+      "description": "Skin for @llui/components/menubar; reuses the dropdown recipes.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["dropdown-menu", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/menubar.ts",
+          "type": "registry:ui",
+          "target": "menubar.ts"
+        }
+      ]
+    },
+    {
+      "name": "meter",
+      "type": "registry:ui",
+      "title": "Meter",
+      "description": "Skin for @llui/components/meter \u2014 a measurement tinted by data-state.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/meter.ts",
+          "type": "registry:ui",
+          "target": "meter.ts"
+        }
+      ]
+    },
+    {
+      "name": "navigation-menu",
+      "type": "registry:ui",
+      "title": "Navigation Menu",
+      "description": "Skin for @llui/components/navigation-menu.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/navigation-menu.ts",
+          "type": "registry:ui",
+          "target": "navigation-menu.ts"
+        }
+      ]
+    },
+    {
+      "name": "number-input",
+      "type": "registry:ui",
+      "title": "Number Input",
+      "description": "Skin for @llui/components/number-input \u2014 clamping, step, press-and-hold.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/number-input.ts",
+          "type": "registry:ui",
+          "target": "number-input.ts"
+        }
+      ]
+    },
+    {
+      "name": "pagination",
+      "type": "registry:ui",
+      "title": "Pagination",
+      "description": "Skin for @llui/components/pagination.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/pagination.ts",
+          "type": "registry:ui",
+          "target": "pagination.ts"
         }
       ]
     },
@@ -244,6 +529,321 @@
       ]
     },
     {
+      "name": "progress",
+      "type": "registry:ui",
+      "title": "Progress",
+      "description": "Skin for @llui/components/progress, including the indeterminate state.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/progress.ts",
+          "type": "registry:ui",
+          "target": "progress.ts"
+        }
+      ]
+    },
+    {
+      "name": "radio-group",
+      "type": "registry:ui",
+      "title": "Radio Group",
+      "description": "Skin for @llui/components/radio-group.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/radio-group.ts",
+          "type": "registry:ui",
+          "target": "radio-group.ts"
+        }
+      ]
+    },
+    {
+      "name": "rating-group",
+      "type": "registry:ui",
+      "title": "Rating Group",
+      "description": "Skin for @llui/components/rating-group \u2014 keyboard-navigable, half-star capable.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/rating-group.ts",
+          "type": "registry:ui",
+          "target": "rating-group.ts"
+        }
+      ]
+    },
+    {
+      "name": "resizable",
+      "type": "registry:ui",
+      "title": "Resizable",
+      "description": "Skin for @llui/components/splitter, with a hit area wider than the rule.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/resizable.ts",
+          "type": "registry:ui",
+          "target": "resizable.ts"
+        }
+      ]
+    },
+    {
+      "name": "scroll-area",
+      "type": "registry:ui",
+      "title": "Scroll Area",
+      "description": "Skin for @llui/components/scroll-area \u2014 a custom scrollbar over native scrolling.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/scroll-area.ts",
+          "type": "registry:ui",
+          "target": "scroll-area.ts"
+        }
+      ]
+    },
+    {
+      "name": "select",
+      "type": "registry:ui",
+      "title": "Select",
+      "description": "Skin for @llui/components/select, including the hidden native form control.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/select.ts",
+          "type": "registry:ui",
+          "target": "select.ts"
+        }
+      ]
+    },
+    {
+      "name": "separator",
+      "type": "registry:ui",
+      "title": "Separator",
+      "description": "Horizontal or vertical rule, decorative by default.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/separator.ts",
+          "type": "registry:ui",
+          "target": "separator.ts"
+        }
+      ]
+    },
+    {
+      "name": "sheet",
+      "type": "registry:ui",
+      "title": "Sheet / Drawer",
+      "description": "Skin for @llui/components/drawer \u2014 an edge-anchored panel, side as a variant.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/sheet.ts",
+          "type": "registry:ui",
+          "target": "sheet.ts"
+        }
+      ]
+    },
+    {
+      "name": "skeleton",
+      "type": "registry:ui",
+      "title": "Skeleton",
+      "description": "Loading placeholder block.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/skeleton.ts",
+          "type": "registry:ui",
+          "target": "skeleton.ts"
+        }
+      ]
+    },
+    {
+      "name": "slider",
+      "type": "registry:ui",
+      "title": "Slider",
+      "description": "Skin for @llui/components/slider, single or range.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/slider.ts",
+          "type": "registry:ui",
+          "target": "slider.ts"
+        }
+      ]
+    },
+    {
+      "name": "sonner",
+      "type": "registry:ui",
+      "title": "Sonner / Toast",
+      "description": "Skin for @llui/components/toast, with one shared live region.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/sonner.ts",
+          "type": "registry:ui",
+          "target": "sonner.ts"
+        }
+      ]
+    },
+    {
+      "name": "spinner",
+      "type": "registry:ui",
+      "title": "Spinner",
+      "description": "Loading ring, aria-hidden so the state lives on the region it describes.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/spinner.ts",
+          "type": "registry:ui",
+          "target": "spinner.ts"
+        }
+      ]
+    },
+    {
+      "name": "steps",
+      "type": "registry:ui",
+      "title": "Steps",
+      "description": "Skin for @llui/components/steps \u2014 a stepper/wizard indicator.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/steps.ts",
+          "type": "registry:ui",
+          "target": "steps.ts"
+        }
+      ]
+    },
+    {
+      "name": "switch",
+      "type": "registry:ui",
+      "title": "Switch",
+      "description": "Skin for @llui/components/switch \u2014 recipe only, state stays in the package.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/switch.ts",
+          "type": "registry:ui",
+          "target": "switch.ts"
+        }
+      ]
+    },
+    {
+      "name": "table",
+      "type": "registry:ui",
+      "title": "Table",
+      "description": "Data table parts, wrapped so a wide table scrolls inside its own box.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/table.ts",
+          "type": "registry:ui",
+          "target": "table.ts"
+        }
+      ]
+    },
+    {
+      "name": "tabs",
+      "type": "registry:ui",
+      "title": "Tabs",
+      "description": "Skin for @llui/components/tabs.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/tabs.ts",
+          "type": "registry:ui",
+          "target": "tabs.ts"
+        }
+      ]
+    },
+    {
+      "name": "tags-input",
+      "type": "registry:ui",
+      "title": "Tags Input",
+      "description": "Skin for @llui/components/tags-input.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/tags-input.ts",
+          "type": "registry:ui",
+          "target": "tags-input.ts"
+        }
+      ]
+    },
+    {
+      "name": "textarea",
+      "type": "registry:ui",
+      "title": "Textarea",
+      "description": "Multi-line text input, same caller-owns-the-value contract as Input.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/textarea.ts",
+          "type": "registry:ui",
+          "target": "textarea.ts"
+        }
+      ]
+    },
+    {
+      "name": "toggle",
+      "type": "registry:ui",
+      "title": "Toggle",
+      "description": "Skin for @llui/components/toggle.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/toggle.ts",
+          "type": "registry:ui",
+          "target": "toggle.ts"
+        }
+      ]
+    },
+    {
+      "name": "toggle-group",
+      "type": "registry:ui",
+      "title": "Toggle Group",
+      "description": "Skin for @llui/components/toggle-group.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/toggle-group.ts",
+          "type": "registry:ui",
+          "target": "toggle-group.ts"
+        }
+      ]
+    },
+    {
+      "name": "toolbar",
+      "type": "registry:ui",
+      "title": "Toolbar",
+      "description": "Skin for @llui/components/toolbar \u2014 roving focus across groups.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/toolbar.ts",
+          "type": "registry:ui",
+          "target": "toolbar.ts"
+        }
+      ]
+    },
+    {
       "name": "tooltip",
       "type": "registry:ui",
       "title": "Tooltip",
@@ -255,6 +855,36 @@
           "path": "registry/llui/ui/tooltip.ts",
           "type": "registry:ui",
           "target": "tooltip.ts"
+        }
+      ]
+    },
+    {
+      "name": "tree-view",
+      "type": "registry:ui",
+      "title": "Tree View",
+      "description": "Skin for @llui/components/tree-view \u2014 full role=\"tree\" keyboard nav.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/tree-view.ts",
+          "type": "registry:ui",
+          "target": "tree-view.ts"
+        }
+      ]
+    },
+    {
+      "name": "typography",
+      "type": "registry:ui",
+      "title": "Typography",
+      "description": "Prose primitives \u2014 headings, paragraphs, lists, code, blockquote.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/typography.ts",
+          "type": "registry:ui",
+          "target": "typography.ts"
         }
       ]
     }

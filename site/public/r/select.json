@@ -1,0 +1,16 @@
+{
+  "name": "select",
+  "type": "registry:ui",
+  "title": "Select",
+  "description": "Skin for @llui/components/select, including the hidden native form control.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/select.ts",
+      "type": "registry:ui",
+      "target": "select.ts",
+      "content": "import { button, div, option, select as selectEl } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Select — skin for `@llui/components/select`. Pass\n * `positionerClass: 'z-popover'` to `overlay()`.\n *\n * Render `hiddenSelect` / `hiddenOption`: they are what carries the value into a\n * native form submit. `sr-only` rather than `hidden`, because a hidden control\n * is excluded from `FormData` in some browsers.\n */\nexport const SelectTrigger = classPart(\n  button,\n  'flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-sm transition-colors duration-fast outline-none focus-visible:ring-2 focus-visible:ring-ring data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[placeholder]:text-muted-foreground [&_svg]:size-4 [&_svg]:shrink-0',\n)\nexport const SelectContent = classPart(\n  div,\n  'max-h-72 min-w-32 overflow-y-auto overflow-x-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-opacity duration-fast data-[state=closed]:opacity-0',\n)\nexport const SelectItem = classPart(\n  div,\n  'relative flex w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[state=checked]:font-medium data-[disabled]:pointer-events-none data-[disabled]:opacity-50',\n)\nexport const SelectGroup = classPart(div, '')\nexport const SelectLabel = classPart(div, 'px-2 py-1.5 text-xs font-medium text-muted-foreground')\nexport const SelectSeparator = classPart(div, '-mx-1 my-1 h-px bg-border')\nexport const SelectHiddenSelect = classPart(selectEl, 'sr-only')\nexport const SelectHiddenOption = classPart(option, '')\n"
+    }
+  ]
+}

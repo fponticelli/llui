@@ -1,0 +1,16 @@
+{
+  "name": "toolbar",
+  "type": "registry:ui",
+  "title": "Toolbar",
+  "description": "Skin for @llui/components/toolbar — roving focus across groups.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/toolbar.ts",
+      "type": "registry:ui",
+      "target": "toolbar.ts",
+      "content": "import { div, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/** Toolbar — skin for `@llui/components/toolbar`. No shadcn equivalent; the\n * package supplies `role=\"toolbar\"` roving focus across groups. */\nexport const Toolbar = classPart(\n  div,\n  'flex items-center gap-1 rounded-md border border-border bg-background p-1 shadow-sm data-[orientation=vertical]:flex-col',\n)\nexport const ToolbarGroup = classPart(div, 'flex items-center gap-1')\nexport const ToolbarGroupLabel = classPart(span, 'px-1 text-xs text-muted-foreground')\nexport const ToolbarSeparator = classPart(\n  div,\n  'mx-1 w-px self-stretch bg-border data-[orientation=vertical]:mx-0 data-[orientation=vertical]:my-1 data-[orientation=vertical]:h-px data-[orientation=vertical]:w-auto',\n)\n"
+    }
+  ]
+}

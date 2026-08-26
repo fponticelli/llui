@@ -15910,6 +15910,16 @@ export interface AccordionState {
 
 ```typescript
 export interface AlertDialogOverlayOptions {
+  /**
+   * Class applied to the positioner — the wrapper `div` `dialog.overlay` builds
+   * around the content. Forwarded verbatim; the consumer supplies the layer's
+   * `fixed inset-0` and `z-index`, since the part bag carries only `data-*`.
+   *
+   * This interface does not spread `DialogOverlayOptions`, so a new dialog
+   * option has to be restated here to reach `dialogOverlay` through the `...opts`
+   * below — which is exactly how this one was missed the first time.
+   */
+  positionerClass?: string
   state: Signal<DialogState>
   send: Send<DialogMsg>
   parts: AlertDialogParts
@@ -30878,6 +30888,16 @@ export type AlertDialogParts = DialogParts
 
 ```typescript
 export interface AlertDialogOverlayOptions {
+  /**
+   * Class applied to the positioner — the wrapper `div` `dialog.overlay` builds
+   * around the content. Forwarded verbatim; the consumer supplies the layer's
+   * `fixed inset-0` and `z-index`, since the part bag carries only `data-*`.
+   *
+   * This interface does not spread `DialogOverlayOptions`, so a new dialog
+   * option has to be restated here to reach `dialogOverlay` through the `...opts`
+   * below — which is exactly how this one was missed the first time.
+   */
+  positionerClass?: string
   state: Signal<DialogState>
   send: Send<DialogMsg>
   parts: AlertDialogParts

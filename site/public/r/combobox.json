@@ -1,0 +1,16 @@
+{
+  "name": "combobox",
+  "type": "registry:ui",
+  "title": "Combobox",
+  "description": "Skin for @llui/components/combobox — filtering input over an anchored list.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/combobox.ts",
+      "type": "registry:ui",
+      "target": "combobox.ts",
+      "content": "import { button, div, input } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Combobox — skin for `@llui/components/combobox`: a text input that filters an\n * anchored list. Pass `positionerClass: 'z-popover'` to `overlay()`.\n *\n * Render the `liveRegion` part. It is `sr-only` and announces the result count\n * as the query changes — without it a screen-reader user gets no feedback that\n * typing did anything.\n */\nexport const ComboboxRoot = classPart(div, 'relative w-full')\nexport const ComboboxControl = classPart(\n  input,\n  'flex h-9 w-full rounded-md border border-border bg-transparent px-3 py-1 text-sm shadow-sm transition-colors duration-fast outline-none placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',\n)\nexport const ComboboxTrigger = classPart(\n  button,\n  'absolute top-0 right-0 flex h-9 w-9 items-center justify-center text-muted-foreground transition-colors duration-fast hover:text-foreground',\n)\nexport const ComboboxContent = classPart(\n  div,\n  'max-h-72 min-w-32 overflow-y-auto rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-opacity duration-fast data-[state=closed]:opacity-0',\n)\nexport const ComboboxItem = classPart(\n  div,\n  'relative flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[state=checked]:font-medium data-[disabled]:pointer-events-none data-[disabled]:opacity-50',\n)\nexport const ComboboxGroup = classPart(div, '')\nexport const ComboboxGroupLabel = classPart(\n  div,\n  'px-2 py-1.5 text-xs font-medium text-muted-foreground',\n)\nexport const ComboboxEmpty = classPart(div, 'px-2 py-6 text-center text-sm text-muted-foreground')\nexport const ComboboxLiveRegion = classPart(div, 'sr-only')\n"
+    }
+  ]
+}

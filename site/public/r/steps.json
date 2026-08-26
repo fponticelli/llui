@@ -1,0 +1,16 @@
+{
+  "name": "steps",
+  "type": "registry:ui",
+  "title": "Steps",
+  "description": "Skin for @llui/components/steps — a stepper/wizard indicator.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/steps.ts",
+      "type": "registry:ui",
+      "target": "steps.ts",
+      "content": "import { button, div, li, ol } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/** Steps — skin for `@llui/components/steps`. A stepper/wizard indicator;\n * `data-state` is `complete` / `current` / `incomplete`. */\nexport const Steps = classPart(\n  ol,\n  'flex w-full items-center gap-2 data-[orientation=vertical]:flex-col data-[orientation=vertical]:items-start',\n)\nexport const StepsItem = classPart(li, 'flex flex-1 items-center gap-2')\nexport const StepsTrigger = classPart(\n  button,\n  'inline-flex items-center gap-2 rounded-md text-sm font-medium transition-colors duration-fast outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=current]:text-foreground data-[state=incomplete]:text-muted-foreground data-[state=complete]:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',\n)\nexport const StepsSeparator = classPart(\n  div,\n  'h-px flex-1 bg-border data-[state=complete]:bg-primary',\n)\n"
+    }
+  ]
+}

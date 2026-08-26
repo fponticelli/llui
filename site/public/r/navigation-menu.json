@@ -1,0 +1,16 @@
+{
+  "name": "navigation-menu",
+  "type": "registry:ui",
+  "title": "Navigation Menu",
+  "description": "Skin for @llui/components/navigation-menu.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/navigation-menu.ts",
+      "type": "registry:ui",
+      "target": "navigation-menu.ts",
+      "content": "import { button, div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/** NavigationMenu — skin for `@llui/components/navigation-menu`. */\nexport const NavigationMenu = classPart(\n  div,\n  'relative flex max-w-max flex-1 items-center justify-center',\n)\nexport const NavigationMenuList = classPart(div, 'flex flex-1 list-none items-center gap-1')\nexport const NavigationMenuTrigger = classPart(\n  button,\n  'inline-flex h-9 items-center justify-center gap-1 rounded-md bg-background px-4 py-2 text-sm font-medium transition-colors duration-fast outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-accent data-[state=open]:text-accent-foreground',\n)\nexport const NavigationMenuContent = classPart(\n  div,\n  'rounded-md border border-border bg-popover p-2 text-popover-foreground shadow-md transition-opacity duration-fast data-[state=closed]:opacity-0',\n)\n"
+    }
+  ]
+}

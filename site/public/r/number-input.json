@@ -1,0 +1,16 @@
+{
+  "name": "number-input",
+  "type": "registry:ui",
+  "title": "Number Input",
+  "description": "Skin for @llui/components/number-input — clamping, step, press-and-hold.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/number-input.ts",
+      "type": "registry:ui",
+      "target": "number-input.ts",
+      "content": "import { button, div, input } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/** NumberInput — skin for `@llui/components/number-input`. No shadcn\n * equivalent; the package owns clamping, step, and press-and-hold repeat. */\nexport const NumberInput = classPart(\n  div,\n  'inline-flex h-9 items-center rounded-md border border-border bg-transparent shadow-sm transition-colors duration-fast focus-within:ring-2 focus-within:ring-ring data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',\n)\nexport const NumberInputControl = classPart(\n  input,\n  'h-full w-16 border-0 bg-transparent px-2 text-center text-sm tabular-nums outline-none',\n)\nexport const NumberInputDecrement = classPart(\n  button,\n  'inline-flex h-full w-8 items-center justify-center rounded-l-md text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',\n)\nexport const NumberInputIncrement = classPart(\n  button,\n  'inline-flex h-full w-8 items-center justify-center rounded-r-md text-muted-foreground transition-colors duration-fast hover:bg-muted hover:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',\n)\n"
+    }
+  ]
+}

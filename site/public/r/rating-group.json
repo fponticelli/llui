@@ -1,0 +1,16 @@
+{
+  "name": "rating-group",
+  "type": "registry:ui",
+  "title": "Rating Group",
+  "description": "Skin for @llui/components/rating-group — keyboard-navigable, half-star capable.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/rating-group.ts",
+      "type": "registry:ui",
+      "target": "rating-group.ts",
+      "content": "import { div, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/** RatingGroup — skin for `@llui/components/rating-group`. No shadcn equivalent;\n * the package supplies keyboard navigation and half-star support. */\nexport const RatingGroup = classPart(div, 'inline-flex items-center gap-0.5')\nexport const RatingGroupItem = classPart(\n  span,\n  'cursor-pointer text-muted-foreground transition-colors duration-fast outline-none focus-visible:ring-2 focus-visible:ring-ring data-[highlighted]:text-primary data-[state=half]:text-primary data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 [&_svg]:size-5',\n)\n"
+    }
+  ]
+}

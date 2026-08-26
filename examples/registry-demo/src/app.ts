@@ -11,70 +11,69 @@
  * which scope owns their teardown.
  */
 import { component, div, type Mountable } from '@llui/dom'
-import * as buttons from './sections/buttons'
+import * as presentational from './sections/presentational'
 import * as forms from './sections/forms'
-import * as controls from './sections/controls'
+import * as navigation from './sections/navigation'
 import * as overlays from './sections/overlays'
-import * as feedback from './sections/feedback'
 import * as data from './sections/data'
 import { groupHeading } from './sections/shared'
 
 interface State {
-  buttons: buttons.State
+  presentational: presentational.State
   forms: forms.State
-  controls: controls.State
+  navigation: navigation.State
   overlays: overlays.State
-  feedback: feedback.State
   data: data.State
 }
 
 type Msg =
-  | { type: 'buttons'; msg: buttons.Msg }
+  | { type: 'presentational'; msg: presentational.Msg }
   | { type: 'forms'; msg: forms.Msg }
-  | { type: 'controls'; msg: controls.Msg }
+  | { type: 'navigation'; msg: navigation.Msg }
   | { type: 'overlays'; msg: overlays.Msg }
-  | { type: 'feedback'; msg: feedback.Msg }
   | { type: 'data'; msg: data.Msg }
 
 export const App = component<State, Msg, never>({
   name: 'RegistryDemo',
   init: () => [
     {
-      buttons: buttons.init()[0],
+      presentational: presentational.init()[0],
       forms: forms.init()[0],
-      controls: controls.init()[0],
+      navigation: navigation.init()[0],
       overlays: overlays.init()[0],
-      feedback: feedback.init()[0],
       data: data.init()[0],
     },
     [],
   ],
   update: (state, msg) => {
     switch (msg.type) {
-      case 'buttons':
-        return [{ ...state, buttons: buttons.update(state.buttons)[0] }, []]
+      case 'presentational':
+        return [{ ...state, presentational: presentational.update(state.presentational)[0] }, []]
       case 'forms':
         return [{ ...state, forms: forms.update(state.forms, msg.msg)[0] }, []]
-      case 'controls':
-        return [{ ...state, controls: controls.update(state.controls, msg.msg)[0] }, []]
+      case 'navigation':
+        return [{ ...state, navigation: navigation.update(state.navigation, msg.msg)[0] }, []]
       case 'overlays':
         return [{ ...state, overlays: overlays.update(state.overlays, msg.msg)[0] }, []]
-      case 'feedback':
-        return [{ ...state, feedback: feedback.update(state.feedback)[0] }, []]
       case 'data':
-        return [{ ...state, data: data.update(state.data)[0] }, []]
+        return [{ ...state, data: data.update(state.data, msg.msg)[0] }, []]
     }
   },
   view: ({ state, send }): readonly Mountable[] => [
     div([
       groupHeading('Presentational'),
-      buttons.view(),
-      forms.view(state.at('forms'), (msg) => send({ type: 'forms', msg })),
-      feedback.view(),
-      data.view(),
+      ...presentational.view(),
 
-      groupHeading('Skins over @llui/components'),
-      controls.view(state.at('controls'), (msg) => send({ type: 'controls', msg })),
+      groupHeading('Forms'),
+      ...forms.view(state.at('forms'), (msg) => send({ type: 'forms', msg })),
+
+      groupHeading('Data display'),
+      ...data.view(state.at('data'), (msg) => send({ type: 'data', msg })),
+
+      groupHeading('Navigation & disclosure'),
+      ...navigation.view(state.at('navigation'), (msg) => send({ type: 'navigation', msg })),
+
+      groupHeading('Overlays'),
       ...overlays.view(state.at('overlays'), (msg) => send({ type: 'overlays', msg })),
     ]),
   ],

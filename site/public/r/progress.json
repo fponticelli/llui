@@ -1,0 +1,16 @@
+{
+  "name": "progress",
+  "type": "registry:ui",
+  "title": "Progress",
+  "description": "Skin for @llui/components/progress, including the indeterminate state.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/progress.ts",
+      "type": "registry:ui",
+      "target": "progress.ts",
+      "content": "import { div, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Progress — skin for `@llui/components/progress`. The `range` part's width is\n * written by the package as an inline style from the value, so the recipe never\n * computes it; that is what keeps this a pure skin.\n */\nexport const Progress = classPart(div, 'flex w-full flex-col gap-1.5')\nexport const ProgressLabel = classPart(span, 'text-sm font-medium')\nexport const ProgressTrack = classPart(\n  div,\n  'relative h-2 w-full overflow-hidden rounded-full bg-muted',\n)\nexport const ProgressRange = classPart(\n  div,\n  'h-full rounded-full bg-primary transition-[width] duration-normal data-[state=indeterminate]:animate-pulse',\n)\n"
+    }
+  ]
+}

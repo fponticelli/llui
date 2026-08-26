@@ -1,0 +1,16 @@
+{
+  "name": "resizable",
+  "type": "registry:ui",
+  "title": "Resizable",
+  "description": "Skin for @llui/components/splitter, with a hit area wider than the rule.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/resizable.ts",
+      "type": "registry:ui",
+      "target": "resizable.ts",
+      "content": "import { div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Resizable — skin for `@llui/components/splitter`. shadcn's name is Resizable;\n * LLui's machine is `splitter`. Both are exported.\n *\n * The handle is deliberately larger than it looks: a 1px visual rule with an\n * `after:` pseudo-element widening the hit area, because a hairline drag target\n * is unusable on touch and only slightly better with a mouse.\n */\nexport const ResizablePanelGroup = classPart(\n  div,\n  'flex h-full w-full data-[orientation=vertical]:flex-col',\n)\nexport const ResizablePanel = classPart(div, 'overflow-hidden')\nexport const ResizableHandle = classPart(\n  div,\n  'relative flex w-px items-center justify-center bg-border transition-colors duration-fast outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-3 after:-translate-x-1/2 hover:bg-border-hover focus-visible:ring-2 focus-visible:ring-ring data-[orientation=vertical]:h-px data-[orientation=vertical]:w-full data-[orientation=vertical]:after:inset-x-0 data-[orientation=vertical]:after:top-1/2 data-[orientation=vertical]:after:h-3 data-[orientation=vertical]:after:w-full data-[orientation=vertical]:after:-translate-y-1/2 data-[orientation=vertical]:after:translate-x-0 data-[resizing]:bg-primary',\n)\n\nexport {\n  ResizablePanelGroup as Splitter,\n  ResizablePanel as SplitterPanel,\n  ResizableHandle as SplitterResizeTrigger,\n}\n"
+    }
+  ]
+}

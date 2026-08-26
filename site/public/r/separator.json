@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Separator",
   "description": "Horizontal or vertical rule, decorative by default.",
-  "dependencies": ["@llui/dom"],
+  "dependencies": ["@llui/dom", "@llui/components"],
   "registryDependencies": ["utils"],
   "files": [
     {

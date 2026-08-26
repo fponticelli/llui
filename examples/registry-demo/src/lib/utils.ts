@@ -1,10 +1,18 @@
 import {
+  el,
   isSignalHandle,
   type AttrValue,
   type ChildNode,
   type ElProps,
   type Mountable,
+  type PropValue,
 } from '@llui/dom'
+import {
+  createVariants,
+  type VariantConfig,
+  type VariantProps,
+  type VariantRecord,
+} from '@llui/components/styles'
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 
@@ -115,3 +123,60 @@ export function classPart(
 }
 
 export type { ClassValue }
+
+/**
+ * `classPart` with variants: a tag plus a `createVariants` recipe, where the
+ * caller's variant keys are destructured out of the props bag before the rest is
+ * spread onto the element.
+ *
+ * Without this, every variant-bearing component restates the same six lines of
+ * destructure-resolve-merge. It also keeps the recipe inside a `createVariants`
+ * call, which is a position the repo's Tailwind check reads in full — a recipe
+ * assembled any other way is only partially checked.
+ */
+export function createVariantsPart<V extends VariantRecord>(
+  tag: (props?: ElProps, children?: readonly ChildNode[]) => Mountable,
+  config: VariantConfig<V>,
+): (
+  a0?: (ElProps & { [K in keyof V]?: keyof V[K] }) | readonly ChildNode[],
+  a1?: readonly ChildNode[],
+) => Mountable {
+  const recipe = createVariants(config)
+  const keys = Object.keys(config.variants)
+  return (a0, a1) => {
+    const { props, children } = splitArgs(a0 as ElProps | readonly ChildNode[], a1)
+    const rest: Record<string, unknown> = {}
+    const chosen: Record<string, unknown> = {}
+    for (const key of Object.keys(props)) {
+      if (keys.includes(key)) chosen[key] = props[key]
+      else rest[key] = props[key]
+    }
+    const { class: className, ...attrs } = rest
+    return tag(
+      { ...(attrs as ElProps), class: mergeClass(recipe(chosen as VariantProps<V>), className) },
+      children,
+    )
+  }
+}
+
+/**
+ * Element helper for a tag `@llui/dom` does not export a named helper for
+ * (`<kbd>`, `<output>`, …).
+ *
+ * `el` takes `Record<string, PropValue>`, and `PropValue` does NOT admit
+ * `undefined` while `ElProps`'s index signature does — an optional prop left off
+ * a spread is `undefined`, so the two are not directly assignable. Dropping
+ * undefined entries here is the honest adaptation; casting between them hides a
+ * real difference and would let a stray `undefined` reach `applyAttr`.
+ */
+export function customTag(tag: string): PartHelper {
+  return ((a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable => {
+    const { props, children } = splitArgs(a0, a1)
+    const lowered: Record<string, PropValue> = {}
+    for (const key of Object.keys(props)) {
+      const value = props[key]
+      if (value !== undefined) lowered[key] = value as PropValue
+    }
+    return el(tag, lowered, children)
+  }) as PartHelper
+}

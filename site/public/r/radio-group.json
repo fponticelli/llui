@@ -1,0 +1,16 @@
+{
+  "name": "radio-group",
+  "type": "registry:ui",
+  "title": "Radio Group",
+  "description": "Skin for @llui/components/radio-group.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/radio-group.ts",
+      "type": "registry:ui",
+      "target": "radio-group.ts",
+      "content": "import { button, div, label, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/** RadioGroup — skin for `@llui/components/radio-group`. */\nexport const RadioGroup = classPart(\n  div,\n  'grid gap-2 data-[orientation=horizontal]:grid-flow-col data-[orientation=horizontal]:auto-cols-max',\n)\nexport const RadioGroupItem = classPart(\n  button,\n  'aspect-square size-4 shrink-0 rounded-full border border-border text-primary shadow-sm transition-colors duration-fast outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=checked]:border-primary data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',\n)\nexport const RadioGroupIndicator = classPart(\n  span,\n  'flex size-full items-center justify-center after:block after:size-2 after:rounded-full after:bg-primary data-[state=unchecked]:after:hidden',\n)\nexport const RadioGroupLabel = classPart(label, 'text-sm leading-none font-medium select-none')\n"
+    }
+  ]
+}
