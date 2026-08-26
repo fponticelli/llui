@@ -304,10 +304,16 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'Combobox',
       'shadcn ships no `combobox.tsx` — its docs compose Popover + Command, so these ARE the Command recipes under Combobox names. The listbox is never focused: the input keeps focus and drives the highlight through `aria-activedescendant`.',
       [
-        ComboboxRoot({ ...cb.root, class: 'relative max-w-xs bg-transparent' }, [
+        ComboboxRoot({ ...cb.root, class: 'max-w-xs bg-transparent' }, [
           Label({ for: cb.input.id, class: 'mb-1.5 block' }, [text('Framework')]),
-          Input({ ...cb.input, placeholder: 'Search frameworks…' }),
-          ComboboxTrigger({ ...cb.trigger }, [ChevronDownIcon({ class: 'size-4' })]),
+          // The trigger is `absolute top-0 right-0`, so it anchors to the
+          // nearest positioned ancestor — which must be a box containing ONLY
+          // the input. Making the whole root `relative` (label included) floats
+          // the chevron up beside the label instead of into the field.
+          div({ class: 'relative' }, [
+            Input({ ...cb.input, placeholder: 'Search frameworks…', class: 'pr-9' }),
+            ComboboxTrigger({ ...cb.trigger }, [ChevronDownIcon({ class: 'size-4' })]),
+          ]),
           // Announces the result count as the query changes. Without it a
           // screen-reader user gets no feedback that typing did anything.
           //

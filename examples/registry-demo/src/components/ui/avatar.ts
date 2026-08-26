@@ -1,5 +1,5 @@
 import { div, img, span } from '@llui/dom'
-import { classPart } from '../../lib/utils'
+import { classPart, classPartWithDefaults } from '../../lib/utils'
 
 /**
  * Ported verbatim from shadcn/ui (MIT © 2023 shadcn).
@@ -8,9 +8,12 @@ import { classPart } from '../../lib/utils'
  * `group/avatar` name. `@llui/components/avatar` does not emit it, so pass
  * `'data-size': 'default'` (or `'sm'` / `'lg'`) on the root.
  */
-export const Avatar = classPart(
+export const Avatar = classPartWithDefaults(
   div,
   'group/avatar relative flex size-8 shrink-0 overflow-hidden rounded-full select-none data-[size=lg]:size-10 data-[size=sm]:size-6',
+  // shadcn defaults `size="default"` as a prop; without it the indicator's
+  // `group-data-[size=default]/avatar:` sizing matches nothing.
+  { 'data-size': 'default' },
 )
 export const AvatarImage = classPart(img, 'aspect-square size-full')
 export const AvatarFallback = classPart(

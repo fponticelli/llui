@@ -242,6 +242,52 @@ describe('registry recipes only style attributes their machine publishes', () =>
     ).toEqual([])
   })
 
+  /**
+   * A recipe that puts a property behind `data-[x=default]:` is porting a shadcn
+   * component whose React signature DEFAULTS that prop (`size = "default"`). A
+   * recipe-only port keeps the class and loses the default, so unless the part
+   * supplies it the rule matches nothing.
+   *
+   * `Switch` is why this exists: its entire geometry sits behind
+   * `data-[size=default]:h-[1.15rem] w-8` with the thumb behind
+   * `group-data-[size=default]/switch:size-4`. Without the attribute it rendered
+   * as a ~2px sliver with a zero-size thumb — toggling correctly, looking like
+   * nothing happened, and passing every check including the attribute guard
+   * above (which allows `data-size` precisely because the consumer sets it).
+   */
+  it('every data-[x=default] recipe supplies that attribute as a default', async () => {
+    const files = (await readdir(UI)).filter((f) => f.endsWith('.ts'))
+    const problems: string[] = []
+    for (const file of files) {
+      const full = path.join(UI, file)
+      const source = await readFile(full, 'utf8')
+      const candidates: string[] = extractClassCandidates(full, source)
+      // The bracketed form is the only one that can carry `=default`:
+      // `data-[size=default]:h-9`, `group-data-[size=default]/switch:size-4`.
+      const gated = new Set<string>()
+      for (const c of candidates) {
+        for (const m of c.matchAll(/(?:data|aria)-\[([a-zA-Z0-9-]+)=default\]/g)) {
+          gated.add(`data-${m[1]}`)
+        }
+      }
+      // COMMENTS STRIPPED FIRST. Checking the raw source passed on a `switch.ts`
+      // whose default had been deleted, because its own doc comment explains the
+      // attribute and mentions `'data-size': 'sm'` — the guard read the prose as
+      // the fix. Measured: the mutation survived until this line existed.
+      const code = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+      for (const attr of [...gated].sort()) {
+        // The default may arrive through `classPartWithDefaults` or be written
+        // before the spread in a hand-rolled part; both spell the key literally.
+        if (code.includes(`'${attr}':`)) continue
+        problems.push(
+          `  ${file}: styles \`${attr}=default\` but never supplies ${attr}, so those rules ` +
+            `match nothing (shadcn defaults it as a prop)`,
+        )
+      }
+    }
+    expect(problems, problems.join('\n')).toEqual([])
+  })
+
   it('detects a misspelled attribute', async () => {
     // The check is only worth its runtime if it can fail. This is the exact
     // shape that shipped: the carousel indicator styling `data-[state=active]`

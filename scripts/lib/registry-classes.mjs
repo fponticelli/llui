@@ -14,6 +14,10 @@
 //   3. a literal `class:` property in an element props bag — how app code
 //      (`examples/components-demo`) spells the same thing
 //
+// `classPartWithDefaults` is in that list for the same reason `classPart` is:
+// its recipe sits in the same argument position, and a helper this file does not
+// name is a recipe nobody checks.
+//
 // `classPart` is in that list because it USED to be a per-file local factory,
 // and three components' recipes were invisible here until it became one shared
 // named seam. That is the failure mode to watch for: a recipe reached through a
@@ -24,7 +28,7 @@
 // position is a one-line change next to its name.
 import ts from 'typescript'
 
-const CLASS_CALLS = new Set(['cn', 'mergeClass', 'classPart'])
+const CLASS_CALLS = new Set(['cn', 'mergeClass', 'classPart', 'classPartWithDefaults'])
 
 /** @returns {string[]} whitespace-split class candidates, deduped. */
 export function extractClassCandidates(fileName, source) {

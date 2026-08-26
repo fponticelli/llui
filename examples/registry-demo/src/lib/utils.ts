@@ -122,6 +122,37 @@ export function classPart(
   }) as PartHelper
 }
 
+/**
+ * `classPart` that also supplies DEFAULT attributes the caller may override.
+ *
+ * shadcn's components are React functions with default PROPS — `size =
+ * "default"`, `variant = "default"` — and the recipe then keys off the
+ * resulting `data-size` / `data-variant`. A recipe-only port keeps the classes
+ * and silently loses the default, so a caller who does not think to pass
+ * `data-size` gets an element whose `data-[size=default]:` rules never match.
+ *
+ * That is not a cosmetic loss. `Switch` puts its ENTIRE geometry behind
+ * `data-[size=default]:h-[1.15rem] w-8` and its thumb behind
+ * `group-data-[size=default]/switch:size-4`, so without the attribute the
+ * control renders as a ~2px sliver with an invisible thumb — it toggles
+ * correctly and looks like nothing happened. Measured in the demo.
+ *
+ * Defaulting here rather than editing the recipe keeps the recipe byte-identical
+ * to upstream, which is the registry's standing rule.
+ */
+export function classPartWithDefaults(
+  tag: (props?: ElProps, children?: readonly ChildNode[]) => Mountable,
+  recipe: string,
+  defaults: Record<string, unknown>,
+): PartHelper {
+  return ((a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable => {
+    const { props, children } = splitArgs(a0, a1)
+    const { class: className, ...rest } = props
+    // `defaults` FIRST so an explicit caller value wins.
+    return tag({ ...defaults, ...rest, class: mergeClass(recipe, className) }, children)
+  }) as PartHelper
+}
+
 export type { ClassValue }
 
 /**
@@ -137,6 +168,12 @@ export type { ClassValue }
 export function createVariantsPart<V extends VariantRecord>(
   tag: (props?: ElProps, children?: readonly ChildNode[]) => Mountable,
   config: VariantConfig<V>,
+  /** Default ATTRIBUTES (not variants) the caller may override — the same
+   * `size = "default"`-style prop default `classPartWithDefaults` restores.
+   * Needed here whenever a SIBLING recipe reads the value off the DOM through
+   * `peer-data-[…]` / `group-data-[…]`, because a variant resolved to a class
+   * leaves nothing on the element for the sibling to match. */
+  defaults: Record<string, unknown> = {},
 ): (
   a0?: (ElProps & { [K in keyof V]?: keyof V[K] }) | readonly ChildNode[],
   a1?: readonly ChildNode[],
@@ -153,7 +190,11 @@ export function createVariantsPart<V extends VariantRecord>(
     }
     const { class: className, ...attrs } = rest
     return tag(
-      { ...(attrs as ElProps), class: mergeClass(recipe(chosen as VariantProps<V>), className) },
+      {
+        ...defaults,
+        ...(attrs as ElProps),
+        class: mergeClass(recipe(chosen as VariantProps<V>), className),
+      },
       children,
     )
   }

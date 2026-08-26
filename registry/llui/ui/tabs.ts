@@ -1,5 +1,5 @@
 import { button, div } from '@llui/dom'
-import { classPart } from '@/lib/utils'
+import { classPart, classPartWithDefaults } from '@/lib/utils'
 
 /**
  * Ported verbatim from shadcn/ui (MIT © 2023 shadcn).
@@ -13,9 +13,12 @@ import { classPart } from '@/lib/utils'
  * `'data-variant': 'default'` (or `'line'`) on the list yourself.
  */
 export const Tabs = classPart(div, 'group/tabs flex gap-2 data-[orientation=horizontal]:flex-col')
-export const TabsList = classPart(
+export const TabsList = classPartWithDefaults(
   div,
   'group/tabs-list inline-flex w-fit items-center justify-center rounded-lg bg-muted p-[3px] text-muted-foreground group-data-[orientation=horizontal]/tabs:h-9 group-data-[orientation=vertical]/tabs:h-fit group-data-[orientation=vertical]/tabs:flex-col data-[variant=line]:rounded-none data-[variant=line]:bg-transparent',
+  // shadcn defaults `variant="default"`; without it the active trigger's
+  // `group-data-[variant=default]/tabs-list:` shadow matches nothing.
+  { 'data-variant': 'default' },
 )
 export const TabsTrigger = classPart(
   button,

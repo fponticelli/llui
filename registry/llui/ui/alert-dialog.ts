@@ -1,5 +1,5 @@
 import { div } from '@llui/dom'
-import { classPart } from '@/lib/utils'
+import { classPart, classPartWithDefaults } from '@/lib/utils'
 
 export {
   DialogBackdrop as AlertDialogBackdrop,
@@ -20,9 +20,15 @@ export {
  * the pattern is an explicit cancel/confirm pair in the footer, and a corner ✕
  * next to "Delete permanently" is exactly the ambiguity this component removes.
  */
-export const AlertDialogContent = classPart(
+export const AlertDialogContent = classPartWithDefaults(
   div,
   'group/alert-dialog-content fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 data-[size=sm]:max-w-xs data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[size=default]:sm:max-w-lg',
+  // shadcn's React component defaults `size="default"`; a recipe-only port loses
+  // that, and the `data-[size=default]:` half of this recipe — the `sm:max-w-lg`
+  // cap, plus the header's whole left-aligned layout, which reads it through
+  // `group/alert-dialog-content` — then matches nothing. The dialog silently
+  // renders full-width with a centred header at every breakpoint.
+  { 'data-size': 'default' },
 )
 export const AlertDialogHeader = classPart(
   div,
