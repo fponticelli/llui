@@ -49,12 +49,18 @@ function paginationLink(
   }
 }
 
+// Named `*Recipe` consts, not inline arguments: a class string passed as a
+// function ARGUMENT sits in no position the repo's Tailwind check reads, so
+// these went unverified until they were hoisted here.
+const paginationPreviousRecipe = 'gap-1 px-2.5 sm:pl-2.5'
+const paginationNextRecipe = 'gap-1 px-2.5 sm:pr-2.5'
+
 export const PaginationLink = paginationLink('icon')
-export const PaginationPrevious = paginationLink('default', 'gap-1 px-2.5 sm:pl-2.5', {
+export const PaginationPrevious = paginationLink('default', paginationPreviousRecipe, {
   at: 'start',
   icon: ChevronLeftIcon,
 })
-export const PaginationNext = paginationLink('default', 'gap-1 px-2.5 sm:pr-2.5', {
+export const PaginationNext = paginationLink('default', paginationNextRecipe, {
   at: 'end',
   icon: ChevronRightIcon,
 })

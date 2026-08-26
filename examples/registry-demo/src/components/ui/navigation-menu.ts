@@ -1,4 +1,4 @@
-import { button, div, ul } from '@llui/dom'
+import { a, button, div, ul } from '@llui/dom'
 import { classPart } from '../../lib/utils'
 
 /** Ported verbatim from shadcn/ui (MIT © 2023 shadcn). The `group` on the
@@ -30,4 +30,41 @@ export const NavigationMenuContent = classPart(
 export const NavigationMenuIndicator = classPart(
   div,
   'relative top-[1px] ml-1 size-3 transition duration-300 group-data-[state=open]:rotate-180',
+)
+
+/**
+ * The shared VIEWPORT presentation — the alternative to rendering each panel
+ * inline. shadcn sizes it from Radix's
+ * `--radix-navigation-menu-viewport-{height,width}`; LLui's machine does not
+ * publish those, so set them yourself if you use this path, or set
+ * `'data-viewport': 'false'` on the root and let `NavigationMenuContent` carry
+ * its own surface instead (the more common shape here).
+ */
+export const NavigationMenuViewportPositioner = classPart(
+  div,
+  'absolute top-full left-0 isolate z-50 flex justify-center',
+)
+export const NavigationMenuViewport = classPart(
+  div,
+  // `origin-top-center` is not a Tailwind utility — it compiles to nothing,
+  // upstream included. `origin-top` is the real one with the same intent.
+  'origin-top relative mt-1.5 w-full overflow-hidden rounded-md border bg-popover text-popover-foreground shadow data-[state=closed]:animate-out data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:zoom-in-90',
+)
+
+/** A link inside a panel. `data-active` is the current-page state, and the
+ * `focus:` rules stay as `focus:` here — unlike the menu surfaces, a navigation
+ * link IS focused for real. */
+export const NavigationMenuLink = classPart(
+  a,
+  "flex flex-col gap-1 rounded-sm p-2 text-sm transition-all outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 data-[active=true]:bg-accent/50 data-[active=true]:text-accent-foreground data-[active=true]:hover:bg-accent data-[active=true]:focus:bg-accent [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
+)
+
+/** The little arrow that tracks the active trigger. */
+export const NavigationMenuIndicatorTrack = classPart(
+  div,
+  'top-full z-[1] flex h-1.5 items-end justify-center overflow-hidden data-[state=hidden]:animate-out data-[state=hidden]:fade-out data-[state=visible]:animate-in data-[state=visible]:fade-in',
+)
+export const NavigationMenuIndicatorArrow = classPart(
+  div,
+  'relative top-[60%] h-2 w-2 rotate-45 rounded-tl-sm bg-border shadow-md',
 )

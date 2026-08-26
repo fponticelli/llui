@@ -26,10 +26,23 @@ export const AlertDialogContent = classPart(
 )
 export const AlertDialogHeader = classPart(
   div,
-  'grid grid-rows-[auto_1fr] place-items-center gap-1.5 text-center has-data-[part=alert-dialog-media]:grid-rows-[auto_auto_1fr] has-data-[part=alert-dialog-media]:gap-x-6 sm:group-data-[size=default]/alert-dialog-content:place-items-start sm:group-data-[size=default]/alert-dialog-content:text-left',
+  'grid grid-rows-[auto_1fr] place-items-center gap-1.5 text-center has-data-[part=alert-dialog-media]:grid-rows-[auto_auto_1fr] has-data-[part=alert-dialog-media]:gap-x-6 sm:group-data-[size=default]/alert-dialog-content:has-data-[part=alert-dialog-media]:grid-rows-[auto_1fr] sm:group-data-[size=default]/alert-dialog-content:place-items-start sm:group-data-[size=default]/alert-dialog-content:text-left',
 )
 export const AlertDialogFooter = classPart(
   div,
   'flex flex-col-reverse gap-2 group-data-[size=sm]/alert-dialog-content:grid group-data-[size=sm]/alert-dialog-content:grid-cols-2 sm:flex-row sm:justify-end',
 )
+/** An icon or illustration above the title. Its presence switches the header to
+ * a three-row grid, and on `sm:` with the default size moves the title into
+ * column 2 beside it — which is why the title carries the matching
+ * `group-has-data-[part=alert-dialog-media]` rule. */
+export const AlertDialogMedia = classPart(
+  div,
+  "mb-2 inline-flex size-16 items-center justify-center rounded-md bg-muted sm:group-data-[size=default]/alert-dialog-content:row-span-2 *:[svg:not([class*='size-'])]:size-8",
+)
+export const AlertDialogTitleText = classPart(
+  div,
+  'text-lg font-semibold sm:group-data-[size=default]/alert-dialog-content:group-has-data-[part=alert-dialog-media]/alert-dialog-content:col-start-2',
+)
+
 export { AlertDialogFooter as AlertDialogActions }
