@@ -9,7 +9,7 @@ import * as numberInput from '@llui/components/number-input'
 import * as pinInput from '@llui/components/pin-input'
 import * as tagsInput from '@llui/components/tags-input'
 import { Input } from '../components/ui/input'
-import { InputGroup, InputGroupAddon } from '../components/ui/input-group'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '../components/ui/input-group'
 import { Textarea } from '../components/ui/textarea'
 import { Label } from '../components/ui/label'
 import { Field, FieldDescription, FieldError, FieldLabel } from '../components/ui/field'
@@ -170,14 +170,20 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
           Input({ placeholder: 'Invalid', 'aria-invalid': 'true' }),
           FieldError([text('That address is already registered.')]),
         ]),
+        // `InputGroupInput`, NOT `Input`. The GROUP owns the border, the focus
+        // ring and the invalid state, and the inner control gives them up —
+        // that inversion is the whole design, and it is driven by `has-[]` on a
+        // `data-part=input-group-control` marker that only the group's own input
+        // part carries. A plain `Input` here draws its own border inside the
+        // group's, which is exactly the doubled box it looks like.
         row('Input group', [
           InputGroup({ class: 'max-w-64' }, [
             InputGroupAddon([text('🔍')]),
-            Input({ placeholder: 'Search components…' }),
+            InputGroupInput({ placeholder: 'Search components…' }),
           ]),
           InputGroup({ class: 'max-w-64' }, [
-            Input({ placeholder: 'llui' }),
             InputGroupAddon([text('.dev')]),
+            InputGroupInput({ placeholder: 'llui' }),
           ]),
         ]),
         row('Disabled', [Input({ placeholder: 'Disabled', disabled: true, class: 'max-w-56' })]),

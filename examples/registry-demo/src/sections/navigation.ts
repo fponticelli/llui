@@ -140,9 +140,14 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
           ),
         ),
         ToolbarSeparator({ ...toolbar.separator }),
-        div({ class: 'flex items-center gap-1 text-xs text-muted-foreground' }, [
-          text('Try'),
+        // A HINT, not a control — `Kbd` renders a keycap, and a bare "Try →"
+        // beside three real buttons reads as a fourth one. Naming both keys and
+        // saying what they do removes the ambiguity.
+        div({ class: 'flex items-center gap-1.5 text-xs text-muted-foreground' }, [
+          text('Focus a button, then'),
+          Kbd([text('←')]),
           Kbd([text('→')]),
+          text('to move'),
         ]),
       ]),
     ]),

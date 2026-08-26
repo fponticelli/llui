@@ -327,6 +327,41 @@ describe('slider.connect', () => {
     expect(style).toContain('right:20%')
   })
 
+  /**
+   * A SINGLE-thumb slider fills from the start of the track to the value —
+   * that is what a slider looks like everywhere, native included, and it is the
+   * `SliderRange` element's only job.
+   *
+   * The range used to span lowest-value → highest-value unconditionally, which
+   * is right for two thumbs and degenerate for one: `left:40%; right:60%` is a
+   * zero-width band. Measured in the demo at 0.008px against a 256px track — a
+   * slider that tracked its value perfectly and drew no fill at all, which reads
+   * as "this control has no state".
+   */
+  it('a single thumb fills from the START of the track', () => {
+    const p = connect(rootSignal(), vi.fn())
+    const style = read(p.range.style, init({ value: [40], min: 0, max: 100 }))
+    expect(style).toContain('left:0%')
+    expect(style).toContain('right:60%')
+  })
+
+  it('a single thumb fills from the start under a non-zero min', () => {
+    const p = connect(rootSignal(), vi.fn())
+    const style = read(p.range.style, init({ value: [30], min: 20, max: 40 }))
+    expect(style).toContain('left:0%')
+    expect(style).toContain('right:50%')
+  })
+
+  it('vertical, single thumb, fills from the bottom', () => {
+    const p = connect(rootSignal(), vi.fn())
+    const style = read(
+      p.range.style,
+      init({ value: [40], min: 0, max: 100, orientation: 'vertical' }),
+    )
+    expect(style).toContain('bottom:0%')
+    expect(style).toContain('top:60%')
+  })
+
   it('tabindex=-1 when disabled', () => {
     const p = connect(rootSignal(), vi.fn())
     expect(read(p.thumb(0).thumb.tabindex, init({ disabled: true }))).toBe(-1)

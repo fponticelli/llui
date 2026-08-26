@@ -163,6 +163,54 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       "shadcn's Resizable over `@llui/components/splitter`. Both `aria-orientation` and `data-orientation` are bound, so the upstream classes apply verbatim and the LLui machine still drives them.",
       [
         ResizablePanelGroup({ ...sp.root, class: 'h-40 rounded-lg border' }, [
+          // The machine's `resizeTrigger` only sends `startDrag` — tracking the
+          // pointer is the CONSUMER's, deliberately, because only the view knows
+          // which element's rect the percentage is measured against. Without
+          // this the handle is inert to the mouse (arrow keys still work, which
+          // is what makes it look like a styling problem rather than a missing
+          // binding).
+          //
+          // Listeners go on the WINDOW, not the handle: a 1px-wide target loses
+          // the pointer the moment the drag outruns the cursor, and `pointerup`
+          // routinely lands outside it.
+          onMount((container) => {
+            const group = container.querySelector('[data-scope="splitter"][data-part="root"]')
+            const trigger = container.querySelector(
+              '[data-scope="splitter"][data-part="resize-trigger"]',
+            )
+            if (!(group instanceof HTMLElement) || !(trigger instanceof HTMLElement)) return
+            const move = (e: PointerEvent): void => {
+              const current = state.at('split').peek()
+              if (current === undefined) return
+              send({
+                type: 'split',
+                msg: {
+                  type: 'setPosition',
+                  position: splitterC.positionFromPoint(
+                    current,
+                    group.getBoundingClientRect(),
+                    e.clientX,
+                    e.clientY,
+                  ),
+                },
+              })
+            }
+            const up = (): void => {
+              send({ type: 'split', msg: { type: 'endDrag' } })
+              window.removeEventListener('pointermove', move)
+              window.removeEventListener('pointerup', up)
+            }
+            const down = (): void => {
+              window.addEventListener('pointermove', move)
+              window.addEventListener('pointerup', up)
+            }
+            trigger.addEventListener('pointerdown', down)
+            return () => {
+              trigger.removeEventListener('pointerdown', down)
+              window.removeEventListener('pointermove', move)
+              window.removeEventListener('pointerup', up)
+            }
+          }),
           ResizablePanel({ ...sp.primaryPanel, class: 'grid place-items-center' }, [
             span({ class: 'text-sm text-muted-foreground' }, [text('Panel one')]),
           ]),

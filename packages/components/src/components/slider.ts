@@ -346,7 +346,11 @@ function rangeStyle(state: SliderState): string {
   const high = sorted[sorted.length - 1]!
   const range = state.max - state.min
   if (range === 0) return ''
-  const startPct = ((low - state.min) / range) * 100
+  // A SINGLE thumb fills from the start of the track to the value — that is
+  // what a slider is. Spanning low→high unconditionally is right for two thumbs
+  // and degenerate for one (`left:40%;right:60%` is a zero-width band), so a
+  // single-value slider drew no fill at all while tracking its value perfectly.
+  const startPct = state.value.length === 1 ? 0 : ((low - state.min) / range) * 100
   const endPct = ((high - state.min) / range) * 100
   if (state.orientation === 'horizontal') {
     return `position:absolute;left:${startPct}%;right:${100 - endPct}%;`
