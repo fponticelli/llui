@@ -4,3 +4,4 @@ packages:
   - 'benchmarks/js-framework-benchmark'
   - 'benchmarks/jfb-ticker/frameworks/*'
   - 'site'
+  - 'registry'

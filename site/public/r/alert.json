@@ -1,0 +1,16 @@
+{
+  "name": "alert",
+  "type": "registry:ui",
+  "title": "Alert",
+  "description": "Live-region alert with title and description parts.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/alert.ts",
+      "type": "registry:ui",
+      "target": "alert.ts",
+      "content": "import { div, h5, type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { createVariants, type VariantProps } from '@llui/components/styles'\nimport { mergeClass } from '@/lib/utils'\n\nconst variants = {\n  variant: {\n    default: 'bg-card text-card-foreground',\n    destructive: 'border-destructive/50 text-destructive',\n  },\n}\n\nexport const alertVariants = createVariants({\n  base: 'relative w-full rounded-lg border border-border px-4 py-3 text-sm',\n  variants,\n  defaultVariants: { variant: 'default' },\n})\n\nexport type AlertVariants = VariantProps<typeof variants>\n\n/**\n * Alert — `role=\"alert\"` on the ROOT is deliberate and is what makes this an\n * alert rather than a coloured box: assistive tech announces the subtree when it\n * is inserted. It is applied before the caller's spread, so a caller wiring a\n * `status`/`log` live region instead can override it.\n */\nexport function Alert(\n  props: (ElProps & AlertVariants) | undefined,\n  children: readonly ChildNode[] = [],\n): Mountable {\n  const { variant, class: className, ...rest } = props ?? {}\n  return div(\n    { role: 'alert', ...rest, class: mergeClass(alertVariants({ variant }), className) },\n    children,\n  )\n}\n\nexport function AlertTitle(\n  props: ElProps | undefined,\n  children: readonly ChildNode[] = [],\n): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return h5(\n    { ...rest, class: mergeClass('mb-1 font-medium leading-none tracking-tight', className) },\n    children,\n  )\n}\n\nexport function AlertDescription(\n  props: ElProps | undefined,\n  children: readonly ChildNode[] = [],\n): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return div({ ...rest, class: mergeClass('text-sm [&_p]:leading-relaxed', className) }, children)\n}\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "card",
+  "type": "registry:ui",
+  "title": "Card",
+  "description": "Card surface and its header/title/description/content/footer parts.",
+  "dependencies": ["@llui/dom"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/card.ts",
+      "type": "registry:ui",
+      "target": "card.ts",
+      "content": "import { div, h3, p } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\nexport const Card = classPart(\n  div,\n  'rounded-xl border border-border bg-card text-card-foreground shadow-sm',\n)\nexport const CardHeader = classPart(div, 'flex flex-col space-y-1.5 p-6')\nexport const CardTitle = classPart(h3, 'font-semibold leading-none tracking-tight')\nexport const CardDescription = classPart(p, 'text-sm text-muted-foreground')\nexport const CardContent = classPart(div, 'p-6 pt-0')\nexport const CardFooter = classPart(div, 'flex items-center p-6 pt-0')\n"
+    }
+  ]
+}

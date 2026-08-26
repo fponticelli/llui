@@ -1,0 +1,16 @@
+{
+  "name": "tooltip",
+  "type": "registry:ui",
+  "title": "Tooltip",
+  "description": "Skin for @llui/components/tooltip.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/tooltip.ts",
+      "type": "registry:ui",
+      "target": "tooltip.ts",
+      "content": "import { div, type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { mergeClass } from '@/lib/utils'\n\n/** Tooltip — the SKIN for `@llui/components/tooltip`. Open/close delays, pointer\n * and focus triggers, and dismissal live in the package. */\nexport function TooltipPositioner(\n  props: ElProps | undefined,\n  children: readonly ChildNode[] = [],\n): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return div({ ...rest, class: mergeClass('z-tooltip', className) }, children)\n}\n\nexport function TooltipContent(\n  props: ElProps | undefined,\n  children: readonly ChildNode[] = [],\n): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return div(\n    {\n      ...rest,\n      class: mergeClass(\n        'w-fit rounded-md bg-primary px-3 py-1.5 text-xs text-balance text-primary-foreground shadow-md transition-opacity duration-fast data-[state=closed]:opacity-0',\n        className,\n      ),\n    },\n    children,\n  )\n}\n\nexport function TooltipArrow(props?: ElProps): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return div({ ...rest, class: mergeClass('size-2 rotate-45 bg-primary', className) })\n}\n"
+    }
+  ]
+}

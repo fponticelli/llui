@@ -1,0 +1,16 @@
+{
+  "name": "input",
+  "type": "registry:ui",
+  "title": "Input",
+  "description": "Text input. The caller owns the value binding — see the controlled-input compiler rule.",
+  "dependencies": ["@llui/dom"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/input.ts",
+      "type": "registry:ui",
+      "target": "input.ts",
+      "content": "import { input as inputEl, type ElProps, type Mountable } from '@llui/dom'\nimport { mergeClass } from '@/lib/utils'\n\nexport const inputRecipe =\n  'flex h-9 w-full rounded-md border border-border bg-transparent px-3 py-1 text-sm shadow-sm transition-colors duration-fast file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive'\n\n/**\n * Input — the caller owns the value binding.\n *\n * LLui does NOT bind `value` for you, and must not: the `controlled-input`\n * compiler rule is a build ERROR on an `input` with a reactive `value` and no\n * `onInput`/`onChange`, because the binding would overwrite every keystroke.\n * Pass both, or neither.\n */\nexport function Input(props?: ElProps): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return inputEl({ ...rest, class: mergeClass(inputRecipe, className) })\n}\n"
+    }
+  ]
+}

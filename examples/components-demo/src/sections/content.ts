@@ -260,14 +260,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       ]),
       card('Cascade Select', [
         div({ ...cs.root, class: 'flex flex-col gap-3' }, [
-          p({ class: 'text-xs text-text-muted' }, [
+          p({ class: 'text-xs text-muted-foreground' }, [
             text(
               'Region options depend on the selected country; choosing a new country resets the region.',
             ),
           ]),
           // Country buttons
           div({ class: 'flex items-center gap-2' }, [
-            span({ class: 'text-xs font-semibold text-text-muted w-16' }, [text('Country:')]),
+            span({ class: 'text-xs font-semibold text-muted-foreground w-16' }, [text('Country:')]),
             button(
               {
                 class: state
@@ -299,14 +299,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           // value from component state, which resolves correctly inside a branch
           // arm (arms mount on the component state).
           div({ class: 'flex items-center gap-2 flex-wrap' }, [
-            span({ class: 'text-xs font-semibold text-text-muted w-16' }, [text('Region:')]),
+            span({ class: 'text-xs font-semibold text-muted-foreground w-16' }, [text('Region:')]),
             branch(
               state
                 .at('cascade')
                 .map((c): 'US' | 'IT' | 'none' => (c.values[0] as 'US' | 'IT' | null) ?? 'none'),
               {
                 none: () => [
-                  span({ class: 'text-xs text-text-muted italic' }, [
+                  span({ class: 'text-xs text-muted-foreground italic' }, [
                     text('(pick a country first)'),
                   ]),
                 ],
@@ -316,7 +316,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             ),
           ]),
           // Current selection readout
-          div({ class: 'text-sm font-mono text-text bg-surface-muted px-2 py-1 rounded' }, [
+          div({ class: 'text-sm font-mono text-foreground bg-muted px-2 py-1 rounded' }, [
             text('Selection: '),
             text(
               state
@@ -336,9 +336,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           each(state.at('list.items'), {
             key: (i) => i.id,
             render: (item) => [
-              div({ class: 'px-2 py-1 rounded bg-surface-muted text-sm' }, [
-                text(item.at('label')),
-              ]),
+              div({ class: 'px-2 py-1 rounded bg-muted text-sm' }, [text(item.at('label'))]),
             ],
           }),
           div({ class: 'mt-2 flex gap-2' }, [
@@ -356,7 +354,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 ),
               ],
             ),
-            span({ class: 'text-xs text-text-muted' }, [
+            span({ class: 'text-xs text-muted-foreground' }, [
               text(state.at('list').map((l) => `status: ${l.status} · ${l.items.length} items`)),
             ]),
           ]),
@@ -385,7 +383,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       ]),
       card('QR Code', [
         div({ class: 'flex flex-col gap-3' }, [
-          p({ class: 'text-xs text-text-muted' }, [
+          p({ class: 'text-xs text-muted-foreground' }, [
             text("Type in the box to re-encode. llui's qr-code component holds the matrix; "),
             text('this demo uses '),
             span({ class: 'font-mono' }, [text('uqr')]),
@@ -412,16 +410,16 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                   qr.matrix.length > 0 ? qrCode.toDataUrl(qr.matrix, '#0f172a', '#ffffff') : '',
                 ),
             }),
-            div({ class: 'flex flex-col gap-1 text-xs text-text-muted' }, [
+            div({ class: 'flex flex-col gap-1 text-xs text-muted-foreground' }, [
               div([
                 text('Size: '),
-                span({ class: 'font-mono text-text' }, [
+                span({ class: 'font-mono text-foreground' }, [
                   text(state.at('qr').map((qr) => `${qrCode.size(qr)}×${qrCode.size(qr)}`)),
                 ]),
               ]),
               div([
                 text('Value: '),
-                span({ class: 'font-mono text-text break-all' }, [
+                span({ class: 'font-mono text-foreground break-all' }, [
                   text(state.at('qr.value').map((v) => v || '(empty)')),
                 ]),
               ]),
@@ -431,7 +429,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       ]),
       card('In View', [
         div({ class: 'flex flex-col gap-3' }, [
-          p({ class: 'text-xs text-text-muted' }, [
+          p({ class: 'text-xs text-muted-foreground' }, [
             text('Scroll the panel below. The badge flips when the tracked box '),
             text('crosses 60% visibility (IntersectionObserver).'),
           ]),
@@ -443,9 +441,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 .map(
                   (s) =>
                     'self-start rounded px-2 py-1 text-xs font-semibold ' +
-                    (s.visible
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-surface-muted text-text-muted'),
+                    (s.visible ? 'bg-green-100 text-green-700' : 'bg-muted text-muted-foreground'),
                 ),
             },
             [text(state.at('inView').map((s) => (s.visible ? 'In view' : 'Out of view')))],
@@ -454,10 +450,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           // genuinely enters and leaves as you scroll.
           div(
             {
-              class: 'h-40 overflow-y-auto rounded border border-border bg-surface-muted/40 p-2',
+              class: 'h-40 overflow-y-auto rounded border border-border bg-muted/40 p-2',
             },
             [
-              div({ class: 'h-40 flex items-end justify-center text-xs text-text-muted' }, [
+              div({ class: 'h-40 flex items-end justify-center text-xs text-muted-foreground' }, [
                 text('↓ scroll down ↓'),
               ]),
               div(
@@ -468,12 +464,12 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                     .map(
                       (s) =>
                         'mx-auto flex h-24 w-full items-center justify-center rounded text-sm font-medium transition-colors ' +
-                        (s.visible ? 'bg-blue-500 text-white' : 'bg-surface text-text-muted'),
+                        (s.visible ? 'bg-blue-500 text-white' : 'bg-card text-muted-foreground'),
                     ),
                 },
                 [text(state.at('inView').map((s) => (s.visible ? '👁 visible' : 'hidden')))],
               ),
-              div({ class: 'h-40 flex items-start justify-center text-xs text-text-muted' }, [
+              div({ class: 'h-40 flex items-start justify-center text-xs text-muted-foreground' }, [
                 text('↑ scroll up ↑'),
               ]),
             ],
@@ -482,7 +478,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       ]),
       card('Theme Switch', [
         div({ ...tw.root, class: 'flex flex-col gap-3' }, [
-          p({ class: 'text-xs text-text-muted' }, [
+          p({ class: 'text-xs text-muted-foreground' }, [
             text('Sets '),
             span({ class: 'font-mono' }, [text('data-theme')]),
             text(' on '),
@@ -494,14 +490,16 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             themeOption('dark', 'Dark'),
             themeOption('system', 'System'),
           ]),
-          div({ class: 'flex items-center gap-4 text-sm text-text-muted' }, [
+          div({ class: 'flex items-center gap-4 text-sm text-muted-foreground' }, [
             div([
               text('Preference: '),
-              span({ class: 'font-mono text-text' }, [text(state.at('themeSwitch').at('theme'))]),
+              span({ class: 'font-mono text-foreground' }, [
+                text(state.at('themeSwitch').at('theme')),
+              ]),
             ]),
             div([
               text('Resolved: '),
-              span({ class: 'font-mono text-text' }, [
+              span({ class: 'font-mono text-foreground' }, [
                 text(state.at('themeSwitch').map((t) => themeSwitch.resolveTheme(t.theme))),
               ]),
             ]),

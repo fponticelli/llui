@@ -55,6 +55,9 @@ importers:
       simple-git-hooks:
         specifier: ^2.13.1
         version: 2.13.1
+      tailwindcss:
+        specifier: ^4.2.2
+        version: 4.2.2
       tsx:
         specifier: ^4.21.0
         version: 4.21.0
@@ -492,6 +495,22 @@ importers:
       '@types/ws':
         specifier: ^8.5.13
         version: 8.18.1
+
+  packages/cli:
+    dependencies:
+      zod:
+        specifier: ^4.0.0
+        version: 4.3.6
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.15
+      typescript:
+        specifier: ^6.0.0
+        version: 6.0.2
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
 
   packages/compiler:
     dependencies:
@@ -997,6 +1016,27 @@ importers:
         version: link:../dom
       typescript:
         specifier: ^6.0.2
+        version: 6.0.2
+
+  registry:
+    devDependencies:
+      '@llui/components':
+        specifier: workspace:*
+        version: link:../packages/components
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../packages/dom
+      '@llui/interactions':
+        specifier: workspace:*
+        version: link:../packages/interactions
+      clsx:
+        specifier: ^2.1.1
+        version: 2.1.1
+      tailwind-merge:
+        specifier: ^3.0.0
+        version: 3.6.0
+      typescript:
+        specifier: ^6.0.0
         version: 6.0.2
 
   site:
@@ -5487,6 +5527,12 @@ packages:
         integrity: sha512-9QNk5KwDF+Bvz+PyObkmSYjI5ksVUYtjW7AU22r2NKcfLJcXp96hkDWU3+XndOsUb+AQ9QhfzfCT2O+CNWT5Tw==,
       }
 
+  tailwind-merge@3.6.0:
+    resolution:
+      {
+        integrity: sha512-uxL7qAVQriqRQPAyK3pj66VqskWqoZ37PW94jwOTwNfq/z9oyu1V+eqrZqtR2+fCiXdYOZe/Modt8GtvqNzu+w==,
+      }
+
   tailwindcss@4.2.2:
     resolution:
       {
@@ -8792,6 +8838,8 @@ snapshots:
       - '@typescript-eslint/types'
 
   symbol-tree@3.2.4: {}
+
+  tailwind-merge@3.6.0: {}
 
   tailwindcss@4.2.2: {}
 

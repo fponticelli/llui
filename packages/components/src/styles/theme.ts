@@ -1,69 +1,105 @@
 /**
- * Theme token types — documents the CSS custom properties available
- * in theme.css for TypeScript consumers.
+ * Theme token types — documents the CSS custom properties defined by
+ * `styles/theme.css`, which follows the shadcn/ui token contract: paired
+ * `--x` / `--x-foreground` surfaces plus `--border` / `--input` / `--ring`,
+ * the chart and sidebar scales, and a single `--radius` that derives the rest.
  *
- * Override any token via Tailwind 4 `@theme` in your CSS:
+ * A shadcn/ui theme (including the output of the community theme generators)
+ * can be pasted over the `:root` / `.dark` blocks of `theme.css` verbatim.
+ *
+ * Override a token in your own CSS — plain `:root`, no Tailwind needed, because
+ * `theme.css` maps them into Tailwind's `--color-*` namespace with `@theme inline`:
  * ```css
- * @theme {
- *   --color-primary: #8b5cf6;
- *   --radius-lg: 1rem;
- * }
+ * :root { --primary: oklch(0.55 0.22 264); --radius: 1rem; }
  * ```
  */
 
-export interface ThemeTokens {
-  // Surface
-  '--color-surface': string
-  '--color-surface-muted': string
-  '--color-surface-hover': string
-  '--color-surface-active': string
+/** The base surface/foreground pairs and functional colors — the tokens a
+ * shadcn/ui theme defines. Every one is overridable per `.dark` /
+ * `[data-theme='dark']` scope. */
+export interface ThemeBaseTokens {
+  '--background': string
+  '--foreground': string
+  '--card': string
+  '--card-foreground': string
+  '--popover': string
+  '--popover-foreground': string
+  '--primary': string
+  '--primary-foreground': string
+  '--secondary': string
+  '--secondary-foreground': string
+  '--muted': string
+  '--muted-foreground': string
+  '--accent': string
+  '--accent-foreground': string
+  '--destructive': string
+  '--destructive-foreground': string
+  '--border': string
+  '--input': string
+  '--ring': string
 
-  // Border
-  '--color-border': string
-  '--color-border-hover': string
-  '--color-border-focus': string
+  '--chart-1': string
+  '--chart-2': string
+  '--chart-3': string
+  '--chart-4': string
+  '--chart-5': string
 
-  // Text
-  '--color-text': string
-  '--color-text-muted': string
-  '--color-text-inverted': string
+  '--sidebar': string
+  '--sidebar-foreground': string
+  '--sidebar-primary': string
+  '--sidebar-primary-foreground': string
+  '--sidebar-accent': string
+  '--sidebar-accent-foreground': string
+  '--sidebar-border': string
+  '--sidebar-ring': string
+}
 
-  // Primary
-  '--color-primary': string
-  '--color-primary-hover': string
-  '--color-primary-active': string
+/** LLui additions: interaction states the baseline stylesheet needs and shadcn
+ * expresses per-component. Each is a `color-mix()` over a base token mixed toward
+ * `--foreground`, so it tracks light/dark automatically — override a base token
+ * and these follow. Defining one explicitly is supported but rarely needed. */
+export interface ThemeDerivedTokens {
+  '--accent-strong': string
+  '--border-hover': string
+  '--primary-hover': string
+  '--primary-active': string
+  '--primary-soft-foreground': string
+  '--destructive-hover': string
+}
 
-  // Destructive
-  '--color-destructive': string
-  '--color-destructive-hover': string
-
-  // Radius
+/** Non-colour scales. These live in `theme.css`'s `@theme` block, so each is BOTH
+ * a real custom property and a Tailwind utility (`rounded-md`, `shadow-lg`,
+ * `duration-fast`, `z-dialog`).
+ *
+ * The namespace prefixes are load-bearing: Tailwind v4 reads durations from
+ * `--transition-duration-*` and z-indexes from `--z-index-*`. Spelling them
+ * `--duration-*` / `--z-*` produces valid-looking classes that emit NO CSS. */
+export interface ThemeScaleTokens {
+  '--radius': string
   '--radius-sm': string
   '--radius-md': string
   '--radius-lg': string
   '--radius-xl': string
 
-  // Spacing
-  '--space-1': string
-  '--space-2': string
-  '--space-3': string
-  '--space-4': string
-  '--space-6': string
-  '--space-8': string
-
-  // Shadows
   '--shadow-sm': string
   '--shadow-md': string
   '--shadow-lg': string
 
-  // Transitions
-  '--duration-fast': string
-  '--duration-normal': string
+  '--transition-duration-fast': string
+  '--transition-duration-normal': string
 
-  // Z-index
-  '--z-popover': string
-  '--z-dialog': string
-  '--z-tooltip': string
+  '--z-index-popover': string
+  '--z-index-dialog': string
+  '--z-index-tooltip': string
+
+  '--spacing-1': string
+  '--spacing-2': string
+  '--spacing-3': string
+  '--spacing-4': string
+  '--spacing-6': string
+  '--spacing-8': string
 }
+
+export interface ThemeTokens extends ThemeBaseTokens, ThemeDerivedTokens, ThemeScaleTokens {}
 
 export type ThemeToken = keyof ThemeTokens

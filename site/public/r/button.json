@@ -1,0 +1,16 @@
+{
+  "name": "button",
+  "type": "registry:ui",
+  "title": "Button",
+  "description": "Button element helper with variant and size recipes.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/button.ts",
+      "type": "registry:ui",
+      "target": "button.ts",
+      "content": "import { button as buttonEl, type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { createVariants, type VariantProps } from '@llui/components/styles'\nimport { mergeClass } from '@/lib/utils'\n\nconst variants = {\n  variant: {\n    default: 'bg-primary text-primary-foreground shadow-sm hover:bg-primary-hover',\n    destructive:\n      'bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive-hover focus-visible:ring-destructive',\n    outline:\n      'border border-border bg-background shadow-sm hover:bg-accent hover:text-accent-foreground',\n    secondary: 'bg-secondary text-secondary-foreground shadow-sm hover:bg-accent-strong',\n    ghost: 'hover:bg-accent hover:text-accent-foreground',\n    link: 'text-primary underline-offset-4 hover:underline',\n  },\n  size: {\n    default: 'h-9 px-4 py-2',\n    sm: 'h-8 rounded-md px-3 text-xs',\n    lg: 'h-10 rounded-md px-6',\n    icon: 'size-9',\n  },\n}\n\nexport const buttonVariants = createVariants({\n  base: 'inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-colors duration-fast outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50',\n  variants,\n  defaultVariants: { variant: 'default', size: 'default' },\n})\n\nexport type ButtonVariants = VariantProps<typeof variants>\nexport type ButtonProps = ElProps & ButtonVariants\n\n/**\n * Button — a presentational element helper, NOT a TEA component: no state, no\n * `update`, no scope of its own. It returns a `Mountable` the caller places in a\n * view like any other element helper.\n *\n * `props` is a plain `ElProps` bag, so a `connect()` part bag spreads in and\n * keeps its handlers, ARIA and `data-*`:\n *\n *   Button({ ...parts.trigger, variant: 'outline' }, [text('Open')])\n *\n * `type: 'button'` is applied BEFORE the spread so a part bag that declares its\n * own `type` (dialog's trigger does) still wins.\n */\nexport function Button(\n  props: ButtonProps | undefined,\n  children: readonly ChildNode[] = [],\n): Mountable {\n  const { variant, size, class: className, ...rest } = props ?? {}\n  return buttonEl(\n    { type: 'button', ...rest, class: mergeClass(buttonVariants({ variant, size }), className) },\n    children,\n  )\n}\n"
+    }
+  ]
+}

@@ -163,7 +163,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         span(
           {
             role: 'columnheader',
-            class: 'text-center text-[0.625rem] uppercase text-text-muted py-1',
+            class: 'text-center text-[0.625rem] uppercase text-muted-foreground py-1',
           },
           [text(d)],
         ),
@@ -183,7 +183,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                   {
                     role: 'gridcell',
                     class:
-                      'inline-flex items-center justify-center w-9 h-9 rounded-md text-sm cursor-pointer bg-transparent border-none text-text hover:bg-surface-hover transition-colors duration-fast data-[selected]:bg-primary data-[selected]:text-text-inverted data-[today]:font-bold data-[in-month=false]:opacity-40',
+                      'inline-flex items-center justify-center w-9 h-9 rounded-md text-sm cursor-pointer bg-transparent border-none text-foreground hover:bg-accent transition-colors duration-fast data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[today]:font-bold data-[in-month=false]:opacity-40',
                     'data-date': cell.iso,
                     'data-in-month': cell.inMonth ? 'true' : 'false',
                     'data-today': cell.iso === todayIsoString() ? '' : undefined,
@@ -246,7 +246,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           // the weekday header into a left-packed run instead of 7 columns.
           div({ ...dp.grid() }, dpGrid()),
         ]),
-        div({ class: 'mt-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Selected: '),
           text(state.at('datePicker').map((s) => s.value ?? 'none')),
         ]),
@@ -254,13 +254,13 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       card('Time Picker', [
         div({ ...tp.root }, [
           input({ ...tp.hoursInput }),
-          span({ class: 'font-semibold text-text-muted' }, [text(':')]),
+          span({ class: 'font-semibold text-muted-foreground' }, [text(':')]),
           input({ ...tp.minutesInput }),
           button({ ...tp.periodTrigger }, [
             text(state.at('timePicker').map((s) => (s.value.hours >= 12 ? 'PM' : 'AM'))),
           ]),
         ]),
-        div({ class: 'mt-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Time: '),
           text(state.at('timePicker').map((s) => formatTime(s))),
         ]),
@@ -272,18 +272,18 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             input({ ...cp.hexInput }),
           ]),
           div({ class: 'flex flex-col gap-1.5' }, [
-            label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
-              span([text('H')]),
-              input({ ...cp.hueSlider }),
-            ]),
-            label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
-              span([text('S')]),
-              input({ ...cp.saturationSlider }),
-            ]),
-            label({ class: 'flex items-center gap-2 text-xs text-text-muted font-semibold' }, [
-              span([text('L')]),
-              input({ ...cp.lightnessSlider }),
-            ]),
+            label(
+              { class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold' },
+              [span([text('H')]), input({ ...cp.hueSlider })],
+            ),
+            label(
+              { class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold' },
+              [span([text('S')]), input({ ...cp.saturationSlider })],
+            ),
+            label(
+              { class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold' },
+              [span([text('L')]), input({ ...cp.lightnessSlider })],
+            ),
           ]),
         ]),
       ]),
@@ -296,7 +296,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ]),
           input({ ...ed.input }),
         ]),
-        div({ class: 'mt-2 text-xs text-text-muted' }, [
+        div({ class: 'mt-2 text-xs text-muted-foreground' }, [
           text('Click, edit, Enter to commit, Esc to cancel'),
         ]),
       ]),
@@ -325,7 +325,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             text('Drag files here or click to browse'),
             input({ ...fu.hiddenInput }),
           ]),
-          div({ class: 'text-xs text-text-muted' }, [
+          div({ class: 'text-xs text-muted-foreground' }, [
             each(state.at('fileUpload.files'), {
               key: (f) => f.id,
               render: (item) => [
@@ -346,7 +346,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           div({ ...sp.resizeTrigger }, []),
           div({ ...sp.secondaryPanel }, [text('Right pane')]),
         ]),
-        div({ class: 'mt-2 text-xs text-text-muted' }, [
+        div({ class: 'mt-2 text-xs text-muted-foreground' }, [
           text('Drag handle or arrow keys — split at '),
           text(state.at('splitter').map((s) => `${s.position}%`)),
         ]),

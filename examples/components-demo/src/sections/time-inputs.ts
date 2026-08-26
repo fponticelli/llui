@@ -130,12 +130,12 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                   },
                   [],
                 ),
-                div({ ...ag.valueText, class: 'text-xs font-mono text-text-muted' }, [
+                div({ ...ag.valueText, class: 'text-xs font-mono text-muted-foreground' }, [
                   text(state.at('angle').map((a) => `${Math.round(a.value)}°`)),
                 ]),
               ],
             ),
-            span({ class: 'text-xs text-text-muted' }, [
+            span({ class: 'text-xs text-muted-foreground' }, [
               text('Focus, then Arrow/PageUp/Down/Home/End'),
             ]),
           ],
@@ -143,7 +143,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       ]),
       card('Date Input', [
         div({ ...di.root, class: 'flex flex-col gap-2' }, [
-          p({ class: 'text-xs text-text-muted' }, [
+          p({ class: 'text-xs text-muted-foreground' }, [
             text('Masked text input that parses ISO dates and validates against min/max (2026).'),
           ]),
           input({
@@ -157,9 +157,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
               ),
           }),
           div({ class: 'flex items-center justify-between text-xs' }, [
-            span({ class: 'text-text-muted' }, [
+            span({ class: 'text-muted-foreground' }, [
               text('Parsed: '),
-              span({ class: 'font-mono text-text' }, [
+              span({ class: 'font-mono text-foreground' }, [
                 text(state.at('date').map((d) => d.value ?? '(invalid or empty)')),
               ]),
             ]),

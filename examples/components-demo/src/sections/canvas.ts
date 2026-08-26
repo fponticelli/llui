@@ -166,7 +166,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     sectionGroup('Canvas + image', [
       card('Signature Pad', [
         div({ ...sp.root, class: 'flex flex-col gap-2' }, [
-          p({ class: 'text-xs text-text-muted' }, [
+          p({ class: 'text-xs text-muted-foreground' }, [
             text('Draw with mouse or touch. Strokes accumulate in state.'),
           ]),
           div(
@@ -228,7 +228,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           div({ class: 'flex items-center gap-2' }, [
             button({ ...sp.undoTrigger, class: 'btn btn-secondary text-xs' }, [text('Undo')]),
             button({ ...sp.clearTrigger, class: 'btn btn-secondary text-xs' }, [text('Clear')]),
-            span({ class: 'text-xs text-text-muted ml-auto' }, [
+            span({ class: 'text-xs text-muted-foreground ml-auto' }, [
               text(
                 state
                   .at('sig')
@@ -243,7 +243,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       ]),
       card('Image Cropper', [
         div({ ...ic.root, class: 'flex flex-col gap-2' }, [
-          p({ class: 'text-xs text-text-muted' }, [
+          p({ class: 'text-xs text-muted-foreground' }, [
             text('Drag the crop box to pan; drag the corner handle to resize (1:1 aspect).'),
           ]),
           div({ class: 'relative inline-block border border-border rounded overflow-hidden' }, [
@@ -286,7 +286,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ]),
           div({ class: 'flex items-center gap-2 text-xs' }, [
             button({ ...ic.resetTrigger, class: 'btn btn-secondary' }, [text('Reset crop')]),
-            span({ class: 'text-text-muted' }, [
+            span({ class: 'text-muted-foreground' }, [
               text(
                 state
                   .at('crop')

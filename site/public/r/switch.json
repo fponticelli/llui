@@ -1,0 +1,16 @@
+{
+  "name": "switch",
+  "type": "registry:ui",
+  "title": "Switch",
+  "description": "Skin for @llui/components/switch — recipe only, state stays in the package.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/switch.ts",
+      "type": "registry:ui",
+      "target": "switch.ts",
+      "content": "import { button, span, type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { mergeClass } from '@/lib/utils'\n\n/**\n * Switch — the SKIN for `@llui/components/switch`. The state machine, keyboard\n * handling and ARIA stay in the package; these helpers add the element tag and\n * the class recipe, and nothing else.\n *\n * Spread the part bag in; every visual state is driven by the `data-state` /\n * `data-disabled` attributes the bag already emits, so nothing here reads state:\n *\n *   const parts = switchConnect(state.at('enabled'), switchSend)\n *   Switch({ ...parts.root }, [ SwitchThumb({ ...parts.thumb }) ])\n */\nexport function Switch(props: ElProps | undefined, children: readonly ChildNode[] = []): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return button(\n    {\n      type: 'button',\n      ...rest,\n      class: mergeClass(\n        'peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent shadow-sm transition-colors duration-fast outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=checked]:bg-primary data-[state=unchecked]:bg-accent-strong data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',\n        className,\n      ),\n    },\n    children,\n  )\n}\n\nexport function SwitchThumb(props?: ElProps): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return span({\n    ...rest,\n    class: mergeClass(\n      'pointer-events-none block size-4 rounded-full bg-background shadow-lg ring-0 transition-transform duration-fast data-[state=checked]:translate-x-4 data-[state=unchecked]:translate-x-0',\n      className,\n    ),\n  })\n}\n"
+    }
+  ]
+}

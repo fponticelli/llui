@@ -1,0 +1,16 @@
+{
+  "name": "popover",
+  "type": "registry:ui",
+  "title": "Popover",
+  "description": "Skin for @llui/components/popover, with data-[side] enter animations.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/popover.ts",
+      "type": "registry:ui",
+      "target": "popover.ts",
+      "content": "import { div, type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { mergeClass } from '@/lib/utils'\n\n/**\n * Popover — the SKIN for `@llui/components/popover`. Floating placement,\n * dismissal, nested-layer ownership and focus restoration are the package's.\n *\n * `data-side` comes from the positioner, so the enter animation is written as a\n * `data-[side=…]:` variant rather than computed in a view.\n */\nexport function PopoverPositioner(\n  props: ElProps | undefined,\n  children: readonly ChildNode[] = [],\n): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return div({ ...rest, class: mergeClass('z-popover', className) }, children)\n}\n\nexport function PopoverContent(\n  props: ElProps | undefined,\n  children: readonly ChildNode[] = [],\n): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return div(\n    {\n      ...rest,\n      class: mergeClass(\n        'w-72 rounded-md border border-border bg-popover p-4 text-popover-foreground shadow-md outline-none transition-all duration-fast data-[state=closed]:opacity-0 data-[side=bottom]:data-[state=closed]:-translate-y-1 data-[side=top]:data-[state=closed]:translate-y-1',\n        className,\n      ),\n    },\n    children,\n  )\n}\n\nexport function PopoverArrow(props?: ElProps): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return div({ ...rest, class: mergeClass('size-2 rotate-45 border-border bg-popover', className) })\n}\n"
+    }
+  ]
+}

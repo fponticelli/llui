@@ -10,6 +10,7 @@
 - @llui/compiler-ssr@0.13.0 — LLui compiler — SSR support (opt-in). 'use client' directive handling and SSR-specific emission paths consumed by @llui/vike.
 - @llui/effects@0.3.0 — LLui effect builders — http, cancel, debounce, sequence, race, storage, broadcast
 - @llui/components@0.14.0 — 66 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more
+- @llui/cli@0.1.0 — LLui CLI — add registry components (`llui add button`) to an LLui app, shadcn-style
 - @llui/interactions@0.1.1 — Standalone DOM interaction primitives for focus, dismissal, positioning, modal isolation, and roving navigation
 - @llui/router@0.12.0 — LLui router — named type-safe routes, Standard Schema codecs, history/hash mode
 - @llui/transitions@0.12.0 — LLui animation helpers — transition(), fade, slide, scale, collapse for branch/show/each

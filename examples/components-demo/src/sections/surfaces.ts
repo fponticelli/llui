@@ -218,7 +218,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       button(
         {
           ...mb.menuTrigger(id),
-          class: 'px-3 py-1.5 rounded font-medium text-sm hover:bg-surface-hover',
+          class: 'px-3 py-1.5 rounded font-medium text-sm hover:bg-accent',
         },
         [text(menuLabels[id] ?? id)],
       ),
@@ -229,7 +229,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             {
               ...menuParts.content,
               class:
-                'absolute top-full left-0 mt-1 min-w-44 bg-surface border border-border rounded-md shadow-lg p-1 z-50 outline-none',
+                'absolute top-full left-0 mt-1 min-w-44 bg-card border border-border rounded-md shadow-lg p-1 z-50 outline-none',
             },
             items.map((it) =>
               it.kind === 'separator'
@@ -238,7 +238,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                     {
                       ...menuParts.item(it.value).item,
                       class:
-                        'px-2 py-1.5 rounded text-sm cursor-pointer data-[state=highlighted]:bg-surface-hover',
+                        'px-2 py-1.5 rounded text-sm cursor-pointer data-[state=highlighted]:bg-accent',
                     },
                     [text(itemLabels[it.value] ?? it.value)],
                   ),
@@ -284,7 +284,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ...tb.item(value).root,
         title,
         class:
-          'w-8 h-8 grid place-items-center rounded text-sm border border-border bg-surface hover:bg-surface-hover data-[disabled]:opacity-40',
+          'w-8 h-8 grid place-items-center rounded text-sm border border-border bg-card hover:bg-accent data-[disabled]:opacity-40',
       },
       [text(glyph)],
     )
@@ -295,7 +295,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     panelDragMount,
     sectionGroup('Surfaces + navigation', [
       card('Tour', [
-        div({ id: 'tour-target', class: 'p-4 bg-surface-muted rounded mb-3' }, [
+        div({ id: 'tour-target', class: 'p-4 bg-muted rounded mb-3' }, [
           text('Target element for the tour walkthrough.'),
         ]),
         div({ class: 'flex gap-2' }, [
@@ -311,17 +311,17 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div(
           {
             ...tr.root,
-            class: 'mt-3 border border-border rounded bg-surface-muted p-3',
+            class: 'mt-3 border border-border rounded bg-muted p-3',
           },
           [
             h3({ ...tr.title, class: 'font-semibold text-sm' }, [
               text(state.at('tour').map((t) => tour.currentStep(t)?.title ?? '')),
             ]),
-            p({ ...tr.description, class: 'mt-1 text-xs text-text-muted' }, [
+            p({ ...tr.description, class: 'mt-1 text-xs text-muted-foreground' }, [
               text(state.at('tour').map((t) => tour.currentStep(t)?.description ?? '')),
             ]),
             div({ class: 'mt-2 flex items-center gap-2' }, [
-              span({ ...tr.progressText, class: 'text-xs text-text-muted' }, [
+              span({ ...tr.progressText, class: 'text-xs text-muted-foreground' }, [
                 text(
                   state.at('tour').map((t) => {
                     const p = tour.progress(t)
@@ -349,29 +349,29 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             [text('Open panel')],
           ),
         ]),
-        p({ class: 'text-xs text-text-muted' }, [
+        p({ class: 'text-xs text-muted-foreground' }, [
           text('Click Open → panel appears (static position — drag/resize needs pointer wiring).'),
         ]),
-        div({ ...fp.root, class: 'border border-border bg-surface shadow-xl rounded' }, [
+        div({ ...fp.root, class: 'border border-border bg-card shadow-xl rounded' }, [
           div(
             {
               ...fp.dragHandle,
               class:
-                'flex items-center justify-between px-2 py-1 bg-surface-hover rounded-t cursor-move text-xs',
+                'flex items-center justify-between px-2 py-1 bg-accent rounded-t cursor-move text-xs',
             },
             [
               span([text('Floating Panel')]),
               div({ class: 'flex gap-1' }, [
-                button({ ...fp.minimizeTrigger, class: 'px-1 hover:bg-surface-hover rounded' }, [
+                button({ ...fp.minimizeTrigger, class: 'px-1 hover:bg-accent rounded' }, [
                   text('–'),
                 ]),
-                button({ ...fp.maximizeTrigger, class: 'px-1 hover:bg-surface-hover rounded' }, [
+                button({ ...fp.maximizeTrigger, class: 'px-1 hover:bg-accent rounded' }, [
                   text('□'),
                 ]),
                 button(
                   {
                     ...fp.closeTrigger,
-                    class: 'px-1 hover:bg-destructive hover:text-text-inverted rounded',
+                    class: 'px-1 hover:bg-destructive hover:text-primary-foreground rounded',
                   },
                   [text('×')],
                 ),
@@ -402,7 +402,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
               button(
                 {
                   ...nv.item('file', { isBranch: true }).trigger,
-                  class: 'px-3 py-1.5 rounded font-medium hover:bg-surface-hover',
+                  class: 'px-3 py-1.5 rounded font-medium hover:bg-accent',
                 },
                 [text('File')],
               ),
@@ -410,16 +410,16 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 {
                   ...nv.item('file', { isBranch: true }).content,
                   class:
-                    'absolute top-full left-0 mt-1 min-w-36 bg-surface border border-border rounded-md shadow-lg p-1 z-50',
+                    'absolute top-full left-0 mt-1 min-w-36 bg-card border border-border rounded-md shadow-lg p-1 z-50',
                 },
                 [
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
                     text('New File'),
                   ]),
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
                     text('Open...'),
                   ]),
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
                     text('Save'),
                   ]),
                 ],
@@ -429,7 +429,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
               button(
                 {
                   ...nv.item('edit', { isBranch: true }).trigger,
-                  class: 'px-3 py-1.5 rounded font-medium hover:bg-surface-hover',
+                  class: 'px-3 py-1.5 rounded font-medium hover:bg-accent',
                 },
                 [text('Edit')],
               ),
@@ -437,16 +437,16 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 {
                   ...nv.item('edit', { isBranch: true }).content,
                   class:
-                    'absolute top-full left-0 mt-1 min-w-36 bg-surface border border-border rounded-md shadow-lg p-1 z-50',
+                    'absolute top-full left-0 mt-1 min-w-36 bg-card border border-border rounded-md shadow-lg p-1 z-50',
                 },
                 [
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
                     text('Undo'),
                   ]),
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
                     text('Redo'),
                   ]),
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-surface-hover' }, [
+                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
                     text('Find & Replace'),
                   ]),
                 ],
@@ -455,13 +455,13 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             button(
               {
                 ...nv.item('help', { isBranch: false }).trigger,
-                class: 'px-3 py-1.5 rounded font-medium hover:bg-surface-hover',
+                class: 'px-3 py-1.5 rounded font-medium hover:bg-accent',
               },
               [text('Help')],
             ),
           ],
         ),
-        div({ class: 'mt-2 text-xs text-text-muted' }, [
+        div({ class: 'mt-2 text-xs text-muted-foreground' }, [
           text('Open: '),
           text(state.at('nav').map((n) => (n.open.length > 0 ? n.open.join(' › ') : '(none)'))),
         ]),
@@ -482,7 +482,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 div(
                   {
                     ...sa.content,
-                    class: 'p-3 text-sm text-text',
+                    class: 'p-3 text-sm text-foreground',
                   },
                   Array.from({ length: 30 }, (_, i) =>
                     div({ class: 'py-1 border-b border-border' }, [
@@ -494,7 +494,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             ),
           ],
         ),
-        div({ class: 'mt-2 text-xs text-text-muted' }, [
+        div({ class: 'mt-2 text-xs text-muted-foreground' }, [
           text(state.at('scroll').map((s) => `scrollTop: ${Math.round(s.scrollTop)}px`)),
         ]),
       ]),
@@ -511,14 +511,16 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                   li({ class: 'flex items-center gap-1' }, [
                     show(
                       index.map((i) => i > 0),
-                      () => [span({ ...bc.separator, class: 'text-text-muted' }, [text('/')])],
+                      () => [
+                        span({ ...bc.separator, class: 'text-muted-foreground' }, [text('/')]),
+                      ],
                     ),
                     branch(entry, (e) => e.type, {
                       ellipsis: () => [
                         button(
                           {
                             ...bc.ellipsisTrigger,
-                            class: 'px-1.5 rounded text-text-muted hover:bg-surface-hover',
+                            class: 'px-1.5 rounded text-muted-foreground hover:bg-accent',
                           },
                           [text('…')],
                         ),
@@ -531,7 +533,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                               ...bc.link(id),
                               href: '#',
                               class: it.map((e) =>
-                                e.current ? 'font-medium text-text' : 'text-accent hover:underline',
+                                e.current
+                                  ? 'font-medium text-foreground'
+                                  : 'text-accent hover:underline',
                               ),
                               onClick: (e: MouseEvent) => e.preventDefault(),
                             },
@@ -561,7 +565,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           { ...mb.root, class: 'flex gap-1' },
           menuDefs.map((m) => renderMenu(m.id, m.items)),
         ),
-        div({ class: 'mt-3 text-xs text-text-muted' }, [
+        div({ class: 'mt-3 text-xs text-muted-foreground' }, [
           text('Open menu: '),
           text(state.at('menubar').map((s) => s.open ?? '(none)')),
         ]),
@@ -582,7 +586,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             toolbarBtn('right', '➡', 'Align right'),
           ]),
         ]),
-        div({ class: 'mt-3 text-xs text-text-muted' }, [
+        div({ class: 'mt-3 text-xs text-muted-foreground' }, [
           text('Focused item: '),
           text(state.at('toolbar').map((s) => s.focused ?? '(none)')),
           text(' — Tab in, then arrow keys to rove.'),

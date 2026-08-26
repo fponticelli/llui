@@ -19,8 +19,13 @@
 import { execFileSync } from 'node:child_process'
 
 // Every path the site's `generate` script writes. Keep in sync with
-// `site/src/generate-{api,llms,examples,benchmarks}.ts` — `--strict` enforces it.
+// `site/src/generate-{api,llms,examples,benchmarks}.ts` and
+// `scripts/build-registry.mjs` — `--strict` enforces it.
 const GENERATED_PATHS = [
+  // The component registry llui.dev serves to `llui add`. Built from
+  // `registry/registry.json` + the item sources; committed so the docs site
+  // deploys it as static files and the CLI's default registry URL just works.
+  'site/public/r',
   'site/content/api',
   'site/content/examples',
   'site/content/examples.md',

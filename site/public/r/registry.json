@@ -1,0 +1,262 @@
+{
+  "$schema": "https://ui.shadcn.com/schema/registry.json",
+  "name": "llui",
+  "homepage": "https://llui.dev",
+  "items": [
+    {
+      "name": "utils",
+      "type": "registry:lib",
+      "title": "cn / mergeClass",
+      "description": "Class-merge helpers. `cn` resolves Tailwind conflicts so a caller override wins; `mergeClass` additionally preserves reactivity when `class` is a Signal, which `cn` alone would stringify to \"[object Object]\".",
+      "dependencies": ["@llui/dom", "clsx", "tailwind-merge"],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/llui/lib/utils.ts",
+          "type": "registry:lib",
+          "target": "utils.ts"
+        }
+      ]
+    },
+    {
+      "name": "button",
+      "type": "registry:ui",
+      "title": "Button",
+      "description": "Button element helper with variant and size recipes.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/button.ts",
+          "type": "registry:ui",
+          "target": "button.ts"
+        }
+      ]
+    },
+    {
+      "name": "card",
+      "type": "registry:ui",
+      "title": "Card",
+      "description": "Card surface and its header/title/description/content/footer parts.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/card.ts",
+          "type": "registry:ui",
+          "target": "card.ts"
+        }
+      ]
+    },
+    {
+      "name": "input",
+      "type": "registry:ui",
+      "title": "Input",
+      "description": "Text input. The caller owns the value binding — see the controlled-input compiler rule.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/input.ts",
+          "type": "registry:ui",
+          "target": "input.ts"
+        }
+      ]
+    },
+    {
+      "name": "textarea",
+      "type": "registry:ui",
+      "title": "Textarea",
+      "description": "Multi-line text input, same caller-owns-the-value contract as Input.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/textarea.ts",
+          "type": "registry:ui",
+          "target": "textarea.ts"
+        }
+      ]
+    },
+    {
+      "name": "label",
+      "type": "registry:ui",
+      "title": "Label",
+      "description": "Form label. Associate with `for`; `htmlFor` is a compile error.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/label.ts",
+          "type": "registry:ui",
+          "target": "label.ts"
+        }
+      ]
+    },
+    {
+      "name": "badge",
+      "type": "registry:ui",
+      "title": "Badge",
+      "description": "Inline status badge with variant recipes.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/badge.ts",
+          "type": "registry:ui",
+          "target": "badge.ts"
+        }
+      ]
+    },
+    {
+      "name": "separator",
+      "type": "registry:ui",
+      "title": "Separator",
+      "description": "Horizontal or vertical rule, decorative by default.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/separator.ts",
+          "type": "registry:ui",
+          "target": "separator.ts"
+        }
+      ]
+    },
+    {
+      "name": "skeleton",
+      "type": "registry:ui",
+      "title": "Skeleton",
+      "description": "Loading placeholder block.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/skeleton.ts",
+          "type": "registry:ui",
+          "target": "skeleton.ts"
+        }
+      ]
+    },
+    {
+      "name": "alert",
+      "type": "registry:ui",
+      "title": "Alert",
+      "description": "Live-region alert with title and description parts.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/alert.ts",
+          "type": "registry:ui",
+          "target": "alert.ts"
+        }
+      ]
+    },
+    {
+      "name": "table",
+      "type": "registry:ui",
+      "title": "Table",
+      "description": "Data table parts, wrapped so a wide table scrolls inside its own box.",
+      "dependencies": ["@llui/dom"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/table.ts",
+          "type": "registry:ui",
+          "target": "table.ts"
+        }
+      ]
+    },
+    {
+      "name": "switch",
+      "type": "registry:ui",
+      "title": "Switch",
+      "description": "Skin for @llui/components/switch — recipe only, state stays in the package.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/switch.ts",
+          "type": "registry:ui",
+          "target": "switch.ts"
+        }
+      ]
+    },
+    {
+      "name": "tabs",
+      "type": "registry:ui",
+      "title": "Tabs",
+      "description": "Skin for @llui/components/tabs.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/tabs.ts",
+          "type": "registry:ui",
+          "target": "tabs.ts"
+        }
+      ]
+    },
+    {
+      "name": "accordion",
+      "type": "registry:ui",
+      "title": "Accordion",
+      "description": "Skin for @llui/components/accordion; the trigger is wrapped in a heading.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/accordion.ts",
+          "type": "registry:ui",
+          "target": "accordion.ts"
+        }
+      ]
+    },
+    {
+      "name": "dialog",
+      "type": "registry:ui",
+      "title": "Dialog",
+      "description": "Skin for @llui/components/dialog — backdrop, positioner, content, title, close.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/dialog.ts",
+          "type": "registry:ui",
+          "target": "dialog.ts"
+        }
+      ]
+    },
+    {
+      "name": "popover",
+      "type": "registry:ui",
+      "title": "Popover",
+      "description": "Skin for @llui/components/popover, with data-[side] enter animations.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/popover.ts",
+          "type": "registry:ui",
+          "target": "popover.ts"
+        }
+      ]
+    },
+    {
+      "name": "tooltip",
+      "type": "registry:ui",
+      "title": "Tooltip",
+      "description": "Skin for @llui/components/tooltip.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/tooltip.ts",
+          "type": "registry:ui",
+          "target": "tooltip.ts"
+        }
+      ]
+    }
+  ]
+}

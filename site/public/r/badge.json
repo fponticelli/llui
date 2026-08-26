@@ -1,0 +1,16 @@
+{
+  "name": "badge",
+  "type": "registry:ui",
+  "title": "Badge",
+  "description": "Inline status badge with variant recipes.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/badge.ts",
+      "type": "registry:ui",
+      "target": "badge.ts",
+      "content": "import { span, type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { createVariants, type VariantProps } from '@llui/components/styles'\nimport { mergeClass } from '@/lib/utils'\n\nconst variants = {\n  variant: {\n    default:\n      'border-transparent bg-primary text-primary-foreground shadow-sm hover:bg-primary-hover',\n    secondary: 'border-transparent bg-secondary text-secondary-foreground hover:bg-accent-strong',\n    destructive:\n      'border-transparent bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive-hover',\n    outline: 'text-foreground',\n  },\n}\n\nexport const badgeVariants = createVariants({\n  base: 'inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',\n  variants,\n  defaultVariants: { variant: 'default' },\n})\n\nexport type BadgeVariants = VariantProps<typeof variants>\n\nexport function Badge(\n  props: (ElProps & BadgeVariants) | undefined,\n  children: readonly ChildNode[] = [],\n): Mountable {\n  const { variant, class: className, ...rest } = props ?? {}\n  return span({ ...rest, class: mergeClass(badgeVariants({ variant }), className) }, children)\n}\n"
+    }
+  ]
+}

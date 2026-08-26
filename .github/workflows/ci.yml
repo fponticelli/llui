@@ -102,6 +102,14 @@ jobs:
       - name: Benchmark tooling type check
         run: pnpm check:benchmarks
 
+      # The registry ships SOURCE that only a consumer's build compiles, so
+      # `turbo check` never sees it. This is the same blind spot that let
+      # `src/styles/classes/*` accumulate 116 dead Tailwind utilities behind a
+      # green suite; the companion check is the compile-the-real-Tailwind test
+      # in `Test root scripts` below, which fails on a class that emits no CSS.
+      - name: Registry type check
+        run: pnpm check:registry
+
       - name: Lint
         run: pnpm turbo lint
 

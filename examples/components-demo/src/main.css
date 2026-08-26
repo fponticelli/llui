@@ -2,18 +2,33 @@
 @import '@llui/components/styles/theme.css';
 @import '@llui/components/styles/theme-dark.css';
 
-/* Override colors for AA contrast with white text */
+/*
+ * Brand override — the shadcn/ui token contract, so this is exactly the shape a
+ * theme generator emits. Overriding the BASE token is all that is needed:
+ * `--primary-hover` / `--primary-active` are `color-mix()` expressions over it,
+ * so they follow automatically and must NOT be restated here.
+ *
+ * `--destructive-foreground` is set alongside `--destructive` because the pair is
+ * the contract: a surface token and the colour that stays legible on it.
+ */
 :root {
-  --color-primary: #2563eb;
-  --color-destructive: #dc2626;
-  --color-destructive-hover: #b91c1c;
+  --primary: oklch(0.55 0.21 258);
+  --primary-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.58 0.22 27);
+  --destructive-foreground: oklch(0.99 0 0);
+}
+
+.dark,
+[data-theme='dark'] {
+  --primary: oklch(0.7 0.15 258);
+  --primary-foreground: oklch(0.2 0.02 258);
 }
 
 /* Demo-specific layout */
 .demo-section {
   border-radius: var(--radius-lg);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
+  border: 1px solid var(--border);
+  background: var(--card);
   padding: 1.5rem;
 }
 
@@ -21,5 +36,43 @@
   margin-bottom: 1rem;
   font-size: 1.125rem;
   font-weight: 600;
-  color: var(--color-text);
+  color: var(--foreground);
+}
+
+/*
+ * `.input` — the demo's shared text-field look. It was used at three call sites
+ * for a long time while being DEFINED NOWHERE, so those fields rendered with no
+ * border, no radius and no focus ring; the same sweep that found it also found a
+ * `text-error` with no matching token. Both were invisible until
+ * `scripts/test/tailwind-classes.test.ts` started compiling this file's classes
+ * against this file. Written as plain CSS over the tokens rather than as
+ * utilities at each call site, so there is one place to change it.
+ */
+.input {
+  display: flex;
+  height: 2.25rem;
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  box-shadow: var(--shadow-sm);
+  transition:
+    color var(--transition-duration-fast),
+    box-shadow var(--transition-duration-fast);
+}
+
+.input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--ring);
+}
+
+.input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }

@@ -1,0 +1,16 @@
+{
+  "name": "label",
+  "type": "registry:ui",
+  "title": "Label",
+  "description": "Form label. Associate with `for`; `htmlFor` is a compile error.",
+  "dependencies": ["@llui/dom"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/label.ts",
+      "type": "registry:ui",
+      "target": "label.ts",
+      "content": "import { label as labelEl, type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { mergeClass } from '@/lib/utils'\n\nexport const labelRecipe =\n  'text-sm font-medium leading-none select-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70'\n\n/**\n * Label — associate it with a control through `for` (the HTML-native spelling).\n * `htmlFor` is a compile ERROR here: the `attr-name` rule rejects the React-ism\n * because it binds a dead attribute that never associates anything.\n */\nexport function Label(props: ElProps | undefined, children: readonly ChildNode[] = []): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return labelEl({ ...rest, class: mergeClass(labelRecipe, className) }, children)\n}\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "skeleton",
+  "type": "registry:ui",
+  "title": "Skeleton",
+  "description": "Loading placeholder block.",
+  "dependencies": ["@llui/dom"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/skeleton.ts",
+      "type": "registry:ui",
+      "target": "skeleton.ts",
+      "content": "import { div, type ElProps, type Mountable } from '@llui/dom'\nimport { mergeClass } from '@/lib/utils'\n\nexport function Skeleton(props?: ElProps): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return div({\n    ...rest,\n    'aria-hidden': 'true',\n    class: mergeClass('animate-pulse rounded-md bg-accent', className),\n  })\n}\n"
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "name": "@llui/cli",
+  "version": "0.1.0",
+  "type": "module",
+  "sideEffects": [
+    "./dist/cli.js"
+  ],
+  "bin": {
+    "llui": "./dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./registry": {
+      "types": "./dist/registry.d.ts",
+      "import": "./dist/registry.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "scripts": {
+    "prepack": "pnpm run build",
+    "build": "tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit -p tsconfig.check.json",
+    "lint": "eslint src",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^6.0.0",
+    "vitest": "^4.1.2"
+  },
+  "description": "LLui CLI — add registry components (`llui add button`) to an LLui app, shadcn-style",
+  "keywords": [
+    "llui",
+    "cli",
+    "registry",
+    "shadcn",
+    "components"
+  ],
+  "author": "Franco Ponticelli <franco.ponticelli@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fponticelli/llui.git",
+    "directory": "packages/cli"
+  },
+  "bugs": {
+    "url": "https://github.com/fponticelli/llui/issues"
+  },
+  "homepage": "https://github.com/fponticelli/llui/tree/main/packages/cli#readme",
+  "publishConfig": {
+    "access": "public"
+  }
+}

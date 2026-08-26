@@ -306,7 +306,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     content: () => [
       div({ ...dr.content }, [
         h3({ ...dr.title, class: 'text-lg font-semibold' }, [text('Drawer panel')]),
-        p({ class: 'mt-2 text-sm text-text-muted' }, [
+        p({ class: 'mt-2 text-sm text-muted-foreground' }, [
           text('Slide-in panel with focus trap, scroll lock, dismissable layer.'),
         ]),
         button({ ...dr.closeTrigger, class: 'btn btn-secondary mt-4' }, [text('Close')]),
@@ -393,7 +393,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         {
           ...cmd.dialog.content,
           class:
-            'w-[32rem] max-w-[90vw] overflow-hidden rounded-lg border border-border bg-surface shadow-2xl',
+            'w-[32rem] max-w-[90vw] overflow-hidden rounded-lg border border-border bg-card shadow-2xl',
         },
         [
           div({ ...cmd.combobox.root, class: 'border-b border-border' }, [
@@ -426,11 +426,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                     {
                       ...parts,
                       class:
-                        'flex cursor-pointer items-center justify-between rounded px-3 py-2 text-sm data-[highlighted]:bg-surface-hover',
+                        'flex cursor-pointer items-center justify-between rounded px-3 py-2 text-sm data-[highlighted]:bg-accent',
                     },
                     [
                       span([text(item.at('label'))]),
-                      span({ class: 'text-xs text-text-muted' }, [
+                      span({ class: 'text-xs text-muted-foreground' }, [
                         text(item.map((c) => c.shortcut ?? '')),
                       ]),
                     ],
@@ -438,7 +438,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 ]
               },
             }),
-            div({ ...cmd.empty, class: 'px-3 py-6 text-center text-sm text-text-muted' }, [
+            div({ ...cmd.empty, class: 'px-3 py-6 text-center text-sm text-muted-foreground' }, [
               text('No matching commands'),
             ]),
           ]),
@@ -455,8 +455,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     content: () => [
       div(
         {
-          class:
-            'min-w-[12rem] overflow-hidden rounded-md border border-border bg-surface shadow-lg',
+          class: 'min-w-[12rem] overflow-hidden rounded-md border border-border bg-card shadow-lg',
         },
         [
           div({ class: 'border-b border-border p-1' }, [
@@ -496,7 +495,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                           msg: { type: 'highlight', value },
                         }),
                       class:
-                        'cursor-pointer rounded px-3 py-1.5 text-sm data-[highlighted]:bg-surface-hover data-[state=selected]:font-semibold',
+                        'cursor-pointer rounded px-3 py-1.5 text-sm data-[highlighted]:bg-accent data-[state=selected]:font-semibold',
                     },
                     [text(item)],
                   ),
@@ -506,7 +505,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             div(
               {
                 ...ssel.empty,
-                class: 'px-3 py-4 text-center text-sm text-text-muted',
+                class: 'px-3 py-4 text-center text-sm text-muted-foreground',
               },
               [text('No results')],
             ),
@@ -530,11 +529,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             div(
               {
                 ...po.content,
-                class: 'min-w-[16rem] rounded-md border border-border bg-surface p-4 shadow-lg',
+                class: 'min-w-[16rem] rounded-md border border-border bg-card p-4 shadow-lg',
               },
               [
                 h3({ ...po.title, class: 'text-sm font-semibold' }, [text('Did you know?')]),
-                p({ class: 'mt-1 text-xs text-text-muted' }, [
+                p({ class: 'mt-1 text-xs text-muted-foreground' }, [
                   text('LLui gives each binding a chunked mask of the state paths it reads.'),
                 ]),
                 button({ ...po.closeTrigger, class: 'btn btn-secondary mt-3 text-xs' }, [
@@ -566,7 +565,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           content: () => [
             div({ ...hc.content }, [
               h3({ class: 'text-sm font-semibold' }, [text('LLui Components')]),
-              p({ class: 'mt-1 text-xs text-text-muted' }, [
+              p({ class: 'mt-1 text-xs text-muted-foreground' }, [
                 text('Full keyboard, screen-reader, pointer support.'),
               ]),
             ]),
@@ -604,7 +603,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           {
             ...cm.trigger,
             class:
-              'p-8 bg-surface-muted border-2 border-dashed border-border rounded-md text-center text-text-muted select-none',
+              'p-8 bg-muted border-2 border-dashed border-border rounded-md text-center text-muted-foreground select-none',
           },
           [text('Right-click me')],
         ),
@@ -664,7 +663,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             ]),
           ],
         }),
-        div({ class: 'mt-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Selected: '),
           text(state.at('combobox').map((c) => c.value[0] ?? 'none')),
         ]),
@@ -694,11 +693,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             ),
           ],
         ),
-        div({ class: 'mt-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Selected: '),
           text(state.at('searchSelect.combobox.value').map((v) => v[0] ?? 'none')),
         ]),
-        p({ class: 'mt-1 text-xs text-text-muted' }, [
+        p({ class: 'mt-1 text-xs text-muted-foreground' }, [
           text('Filter-only input — typed text never commits; pick from the list.'),
         ]),
       ]),
@@ -708,7 +707,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       ]),
       card('Alert Dialog', [
         button({ ...adlg.trigger, class: 'btn btn-danger' }, [text('Revoke API key…')]),
-        p({ class: 'mt-2 text-xs text-text-muted' }, [
+        p({ class: 'mt-2 text-xs text-muted-foreground' }, [
           text('role="alertdialog" — outside-click does not dismiss by default.'),
         ]),
       ]),
@@ -723,7 +722,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             span({ class: 'rounded bg-white/20 px-1.5 py-0.5 text-xs font-mono' }, [text('⌘K')]),
           ],
         ),
-        p({ class: 'mt-2 text-xs text-text-muted' }, [
+        p({ class: 'mt-2 text-xs text-muted-foreground' }, [
           text(
             'Type to filter, ↑↓ to navigate, Enter to run. Executed commands toast + rank as recents.',
           ),
@@ -756,7 +755,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ]),
       ]),
       card('Confirm Dialog', [
-        p({ class: 'mb-3 text-sm text-text-muted' }, [
+        p({ class: 'mb-3 text-sm text-muted-foreground' }, [
           text('Last action: '),
           span({ class: 'font-medium' }, [text(state.at('message').map((m) => m || 'none'))]),
         ]),

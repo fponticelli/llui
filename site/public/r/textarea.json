@@ -1,0 +1,16 @@
+{
+  "name": "textarea",
+  "type": "registry:ui",
+  "title": "Textarea",
+  "description": "Multi-line text input, same caller-owns-the-value contract as Input.",
+  "dependencies": ["@llui/dom"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/textarea.ts",
+      "type": "registry:ui",
+      "target": "textarea.ts",
+      "content": "import { textarea as textareaEl, type ElProps, type Mountable } from '@llui/dom'\nimport { mergeClass } from '@/lib/utils'\n\nexport const textareaRecipe =\n  'flex min-h-16 w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm shadow-sm transition-colors duration-fast placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive'\n\n/** Textarea — same caller-owns-the-value contract as {@link Input}. */\nexport function Textarea(props?: ElProps): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return textareaEl({ ...rest, class: mergeClass(textareaRecipe, className) })\n}\n"
+    }
+  ]
+}

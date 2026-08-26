@@ -354,10 +354,12 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           })
         },
       }),
-      p({ ...parts.description, class: 'text-xs text-text-muted' }, [text(description)]),
+      p({ ...parts.description, class: 'text-xs text-muted-foreground' }, [text(description)]),
       show(parts.errorVisible, () => {
         const { message: _msg, issues: _issues, ...errProps } = parts.errorText
-        return [p({ ...errProps, class: 'text-xs text-error' }, [text(parts.errorText.message)])]
+        return [
+          p({ ...errProps, class: 'text-xs text-destructive' }, [text(parts.errorText.message)]),
+        ]
       }),
     ])
 
@@ -437,7 +439,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             ])
           }),
         ),
-        div({ class: 'mt-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Size: '),
           text(state.at('radio').map((r) => r.value ?? 'none')),
         ]),
@@ -449,7 +451,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             button({ ...tg.item(v).root }, [text(v.charAt(0).toUpperCase())]),
           ),
         ),
-        div({ class: 'mt-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Active: '),
           text(state.at('togGroup').map((t) => (t.value.length > 0 ? t.value.join(', ') : 'none'))),
         ]),
@@ -460,7 +462,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           input({ ...ni.input, 'aria-label': 'Quantity' }),
           button({ ...ni.increment }, [text('+')]),
         ]),
-        div({ class: 'mt-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Quantity: '),
           text(state.at('number').map((n) => String(n.value ?? 0))),
         ]),
@@ -481,7 +483,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           input({ ...pin.input(2) }),
           input({ ...pin.input(3) }),
         ]),
-        div({ class: 'mt-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Code: '),
           text(state.at('pinInput').map((p) => p.values.join('') || '(empty)')),
         ]),
@@ -506,7 +508,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           div({ ...ra.item(3).root }, [text('★')]),
           div({ ...ra.item(4).root }, [text('★')]),
         ]),
-        div({ class: 'mt-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Rating: '),
           text(state.at('rating').map((r) => String(r.value))),
           text(' / '),
@@ -520,7 +522,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             div({ ...sl.thumb(0).thumb, 'aria-label': 'Volume' }, []),
           ]),
         ]),
-        div({ class: 'mt-2 text-sm text-text-muted' }, [
+        div({ class: 'mt-2 text-sm text-muted-foreground' }, [
           text('Value: '),
           text(state.at('slider').map((s) => String(s.value[0] ?? 0))),
         ]),
@@ -529,7 +531,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ ...pr.root, 'aria-label': 'Upload progress' }, [
           div({ ...pr.track }, [div({ ...pr.range }, [])]),
         ]),
-        div({ class: 'mt-2 text-sm text-text-muted' }, [text(pr.valueText)]),
+        div({ class: 'mt-2 text-sm text-muted-foreground' }, [text(pr.valueText)]),
         div({ class: 'mt-3 flex gap-2' }, [
           progressBtn('25%', 25),
           progressBtn('65%', 65),
@@ -539,11 +541,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       ]),
       card('Meter', [
         div({ ...mt.root, class: 'relative' }, [
-          div({ ...mt.track, class: 'h-2 rounded bg-surface-2 overflow-hidden' }, [
+          div({ ...mt.track, class: 'h-2 rounded bg-muted overflow-hidden' }, [
             div({ ...mt.range, class: 'h-full bg-accent' }, []),
           ]),
         ]),
-        div({ class: 'mt-2 text-sm text-text-muted' }, [
+        div({ class: 'mt-2 text-sm text-muted-foreground' }, [
           text('Disk usage: '),
           text(mt.valueText),
           text(' — '),
@@ -560,7 +562,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           input({ ...sf.input, placeholder: 'Search…', 'aria-label': 'Search', class: 'input' }),
           button({ ...sf.clearTrigger, class: 'btn btn-secondary text-xs' }, [text('×')]),
         ]),
-        div({ class: 'mt-2 text-sm text-text-muted' }, [
+        div({ class: 'mt-2 text-sm text-muted-foreground' }, [
           text('Query: '),
           text(state.at('search').map((s) => (s.value === '' ? '(empty)' : s.value))),
         ]),
@@ -571,11 +573,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ ...fd.root, class: 'flex flex-col gap-1' }, [
           label({ ...fd.label, class: 'text-sm font-medium' }, [text('Email')]),
           input({ ...fd.control, type: 'email', placeholder: 'you@example.com', class: 'input' }),
-          p({ ...fd.description, class: 'text-xs text-text-muted' }, [
+          p({ ...fd.description, class: 'text-xs text-muted-foreground' }, [
             text('We never share your email.'),
           ]),
           show(state.at('field').at('invalid'), () => [
-            p({ ...fd.errorText, class: 'text-xs text-error' }, [
+            p({ ...fd.errorText, class: 'text-xs text-destructive' }, [
               text('Please enter a valid email.'),
             ]),
           ]),
@@ -632,7 +634,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
               ),
             ],
           ),
-          span({ class: 'text-sm text-text-muted' }, [
+          span({ class: 'text-sm text-muted-foreground' }, [
             text(
               state
                 .at('fieldset')
@@ -666,7 +668,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 [text('Reset')],
               ),
             ]),
-            div({ class: 'text-sm text-text-muted' }, [
+            div({ class: 'text-sm text-muted-foreground' }, [
               text('Status: '),
               text(state.at('form').at('status')),
             ]),
@@ -744,7 +746,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                   send({ type: 'setWizardName', value: (e.target as HTMLInputElement).value })
                 },
               }),
-              p({ class: 'text-xs text-text-muted' }, [
+              p({ class: 'text-xs text-muted-foreground' }, [
                 text('Next is blocked until this is filled in.'),
               ]),
             ]),
@@ -758,7 +760,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           button({ ...wz.prevTrigger, class: 'btn btn-secondary text-sm' }, [text('Back')]),
           button({ ...wz.nextTrigger, class: 'btn btn-primary text-sm' }, [text('Next')]),
         ]),
-        div({ class: 'mt-2 text-sm text-text-muted' }, [
+        div({ class: 'mt-2 text-sm text-muted-foreground' }, [
           text(
             state
               .at('wizard')

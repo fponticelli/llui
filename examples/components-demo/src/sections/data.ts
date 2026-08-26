@@ -358,7 +358,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
 
   // ── Table (static data grid: sortable headers + multiple selection) ────
   const sortGlyph = (colId: string): Mountable =>
-    span({ class: 'ml-1 text-xs text-text-muted' }, [
+    span({ class: 'ml-1 text-xs text-muted-foreground' }, [
       text(
         state
           .at('table.sort')
@@ -372,7 +372,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       {
         ...h,
         class: sortableCol
-          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-left text-sm font-semibold hover:bg-surface-hover'
+          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-left text-sm font-semibold hover:bg-accent'
           : 'border-b border-border px-3 py-2 text-left text-sm font-semibold',
       },
       [text(label), sortableCol ? sortGlyph(colId) : span([])],
@@ -384,7 +384,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     return tr(
       {
         ...r,
-        class: 'cursor-pointer border-b border-border hover:bg-surface-hover',
+        class: 'cursor-pointer border-b border-border hover:bg-accent',
       },
       [
         td({ class: 'px-3 py-2 text-sm' }, [
@@ -457,7 +457,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       {
         ...it,
         class:
-          'flex items-center gap-2 rounded border border-border bg-surface-muted px-3 py-2 text-sm transition-colors',
+          'flex items-center gap-2 rounded border border-border bg-muted px-3 py-2 text-sm transition-colors',
         'data-dragging': sortableSig.map((s) =>
           s.dragging && s.dragging.id === label ? '' : undefined,
         ),
@@ -471,7 +471,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         span(
           {
             ...hd,
-            class: 'cursor-grab select-none text-text-muted',
+            class: 'cursor-grab select-none text-muted-foreground',
             onPointerDown: (e: PointerEvent) => {
               e.preventDefault()
               // Resolve the row's CURRENT position from the live order — the
@@ -505,13 +505,13 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       {
         ...h,
         class: sortableCol
-          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-left text-sm font-semibold hover:bg-surface-hover'
+          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-left text-sm font-semibold hover:bg-accent'
           : 'border-b border-border px-3 py-2 text-left text-sm font-semibold',
       },
       [
         text(label),
         sortableCol
-          ? span({ class: 'ml-1 text-xs text-text-muted' }, [
+          ? span({ class: 'ml-1 text-xs text-muted-foreground' }, [
               text(
                 state
                   .at('dataTable.table.sort')
@@ -531,7 +531,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     const person = dtById.get(rowId)
     const r = dt.table.row(rowId, idx)
     return [
-      tr({ ...r, class: 'cursor-pointer border-b border-border hover:bg-surface-hover' }, [
+      tr({ ...r, class: 'cursor-pointer border-b border-border hover:bg-accent' }, [
         td({ class: 'px-3 py-2 text-sm' }, [
           span(
             {
@@ -580,11 +580,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           pgItem(3),
           pgItem(4),
           pgItem(5),
-          span({ class: 'px-2 text-text-muted' }, [text('…')]),
+          span({ class: 'px-2 text-muted-foreground' }, [text('…')]),
           pgItem(10),
           button({ ...pg.nextTrigger }, [text('›')]),
         ]),
-        div({ class: 'mt-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Page '),
           text(state.at('pagination').map((p) => String(p.page))),
           text(' of '),
@@ -622,7 +622,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             }),
             span({ ...av.fallback }, [text('FP')]),
           ]),
-          div({ class: 'text-sm text-text-muted' }, [
+          div({ class: 'text-sm text-muted-foreground' }, [
             text('Status: '),
             text(state.at('avatar.status')),
           ]),
@@ -640,13 +640,13 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             return div(
               {
                 ...p,
-                class: 'cursor-pointer rounded px-2 py-1 text-sm hover:bg-surface-hover',
+                class: 'cursor-pointer rounded px-2 py-1 text-sm hover:bg-accent',
               },
               [text(v)],
             )
           }),
         ),
-        div({ class: 'mt-2 text-sm text-text-muted' }, [
+        div({ class: 'mt-2 text-sm text-muted-foreground' }, [
           text('Status: '),
           text(state.at('listbox').map((l) => l.value[0] ?? 'none')),
         ]),
@@ -672,7 +672,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
               text(state.at('collapsible').map((c) => (c.open ? 'Hide details' : 'Show details'))),
             ]),
           ]),
-          div({ ...cl.content, class: 'mt-2 text-sm text-text-muted' }, [
+          div({ ...cl.content, class: 'mt-2 text-sm text-muted-foreground' }, [
             text(
               'Simpler than accordion — single section, no keyboard nav between siblings. Uses role=region + aria-labelledby.',
             ),
@@ -713,7 +713,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             tbody(tableRows.map((person, i) => tableBodyRow(person, i))),
           ]),
         ]),
-        div({ class: 'mt-3 flex items-center gap-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 flex items-center gap-3 text-sm text-muted-foreground' }, [
           span([
             text('Sort: '),
             text(state.at('table.sort').map((s) => (s ? `${s.columnId} ${s.direction}` : 'none'))),
@@ -741,7 +741,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             },
           }),
         ]),
-        div({ class: 'mt-3 text-sm text-text-muted' }, [
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Order: '),
           text(state.at('order').map((o) => o.join(' → '))),
         ]),
@@ -764,8 +764,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             ]),
           ]),
         ]),
-        div({ ...dt.loadingOverlay, class: 'mt-2 text-sm text-text-muted' }, [text('Loading…')]),
-        div({ ...dt.emptyState, class: 'mt-2 text-sm text-text-muted' }, [text('No rows.')]),
+        div({ ...dt.loadingOverlay, class: 'mt-2 text-sm text-muted-foreground' }, [
+          text('Loading…'),
+        ]),
+        div({ ...dt.emptyState, class: 'mt-2 text-sm text-muted-foreground' }, [text('No rows.')]),
         div({ ...dt.errorState, class: 'mt-2 text-sm text-red-600' }, [text('Failed to load.')]),
         div({ class: 'mt-3 flex items-center gap-2' }, [
           button(
@@ -775,7 +777,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             },
             [text('‹ Prev')],
           ),
-          span({ class: 'text-sm text-text-muted' }, [
+          span({ class: 'text-sm text-muted-foreground' }, [
             text('Page '),
             text(state.at('dataTable.pagination').map((p) => String(p.page))),
             text(' of '),
@@ -792,7 +794,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             },
             [text('Next ›')],
           ),
-          span({ class: 'ml-3 text-sm text-text-muted' }, [
+          span({ class: 'ml-3 text-sm text-muted-foreground' }, [
             text('Selected: '),
             text(state.at('dataTable.table.selection').map((sel) => String(sel.length))),
           ]),

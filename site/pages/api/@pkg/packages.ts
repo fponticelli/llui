@@ -45,7 +45,16 @@ export const PACKAGES: PackageMeta[] = [
     category: 'libraries',
     blurb: 'http, debounce, race, websocket, retry, upload',
   },
-  { slug: 'components', category: 'libraries', blurb: '66 headless components + opt-in theme' },
+  {
+    slug: 'components',
+    category: 'libraries',
+    blurb: '66 headless components + shadcn-token theme',
+  },
+  {
+    slug: 'cli',
+    category: 'libraries',
+    blurb: '`llui add …` — copy registry components into your app',
+  },
   {
     slug: 'interactions',
     category: 'libraries',
