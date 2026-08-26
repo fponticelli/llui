@@ -99,14 +99,31 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
                 },
                 [
                   SidebarInner({ class: 'border-r' }, [
+                    // The header keeps a MARK in the rail and hides only the
+                    // wordmark. Hiding the whole header instead leaves the top
+                    // of the rail empty, and the separator below then divides
+                    // nothing from the icons — which reads as a stray line and
+                    // invites hiding the separator too. Upstream does it this
+                    // way for the same reason: a rail needs an anchor at the
+                    // top, and `SidebarSeparator` carries no collapse rule
+                    // precisely because it is still dividing something.
                     SidebarHeader([
-                      div(
-                        {
-                          class:
-                            'truncate px-2 text-sm font-semibold group-data-[collapsible=icon]:hidden',
-                        },
-                        [text('Acme Inc')],
-                      ),
+                      div({ class: 'flex items-center gap-2 px-2' }, [
+                        span(
+                          {
+                            class:
+                              'grid size-6 shrink-0 place-items-center rounded-md bg-sidebar-primary text-xs font-bold text-sidebar-primary-foreground',
+                          },
+                          [text('A')],
+                        ),
+                        span(
+                          {
+                            class:
+                              'truncate text-sm font-semibold group-data-[collapsible=icon]:hidden',
+                          },
+                          [text('Acme Inc')],
+                        ),
+                      ]),
                     ]),
                     SidebarSeparator(),
                     SidebarContent([

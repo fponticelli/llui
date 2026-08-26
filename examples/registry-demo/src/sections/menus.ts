@@ -41,6 +41,7 @@ import {
 import {
   ComboboxContent,
   ComboboxEmpty,
+  ComboboxGroup,
   ComboboxItem,
   ComboboxList,
   ComboboxLiveRegion,
@@ -344,13 +345,23 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       content: () => [
         ComboboxContent({ ...cb.content }, [
           ComboboxList([
-            each(state.at('combobox').at('filteredItems'), {
-              key: (v: string) => v,
-              render: (v: Signal<string>) => {
-                const value = v.peek()
-                return [ComboboxItem({ ...cb.item(value).item }, [text(value)])]
-              },
-            }),
+            // The `p-1` GROUP wrapper is not optional padding. `ComboboxList`
+            // has no padding of its own, so items rendered straight into it sit
+            // flush against the panel's border — and a highlighted first item's
+            // `bg-accent` block then merges with the 1px top border into one
+            // thick dark edge. That is the "heavy top border" this looked like,
+            // not the focus ring. shadcn never shows it because every item in
+            // its Command lives inside a `CommandGroup`, which is exactly this
+            // recipe under another name.
+            ComboboxGroup([
+              each(state.at('combobox').at('filteredItems'), {
+                key: (v: string) => v,
+                render: (v: Signal<string>) => {
+                  const value = v.peek()
+                  return [ComboboxItem({ ...cb.item(value).item }, [text(value)])]
+                },
+              }),
+            ]),
           ]),
           // Same asymmetry as the palette, the other way round: `combobox`'s
           // `empty` part is a bare marker with NO state, so it is toggled from
