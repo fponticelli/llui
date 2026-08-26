@@ -53,6 +53,21 @@ describe('select.connect', () => {
     expect(p.trigger.role).toBe('combobox')
   })
 
+  /**
+   * `data-placeholder` marks a trigger showing the PLACEHOLDER rather than a
+   * value, which is how every shadcn Select greys that text
+   * (`data-[placeholder]:text-muted-foreground` on the trigger). `valueText`
+   * already knows — it falls back to the placeholder on an empty value — but
+   * that is a string, not something CSS can branch on, so the placeholder
+   * rendered at full foreground weight and read as a real selection.
+   */
+  it('trigger carries data-placeholder while nothing is selected', () => {
+    expect(read(p.trigger['data-placeholder'], init({ items: ['a', 'b'] }))).toBe('')
+    expect(
+      read(p.trigger['data-placeholder'], { ...init({ items: ['a', 'b'] }), value: ['a'] }),
+    ).toBeUndefined()
+  })
+
   it('aria-activedescendant points to highlighted item id', () => {
     expect(
       read(p.trigger['aria-activedescendant'], {

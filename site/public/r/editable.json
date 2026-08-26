@@ -1,0 +1,16 @@
+{
+  "name": "editable",
+  "type": "registry:ui",
+  "title": "Editable",
+  "description": "Skin for @llui/components/editable — click-to-edit text.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["button", "input", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/editable.ts",
+      "type": "registry:ui",
+      "target": "editable.ts",
+      "content": "import { button, div, input, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { inputRecipe } from '@/ui/input'\nimport { buttonVariants } from '@/ui/button'\n\n/**\n * Editable — skin for `@llui/components/editable` (click-to-edit text). No\n * shadcn counterpart.\n *\n * The preview and the input are BOTH always in the DOM; the machine decides\n * which is shown. So the preview must be sized like the input it swaps with —\n * `h-9` and matching padding — or the row jumps on every edit. That is the only\n * non-obvious thing here, and it is invisible until you click.\n *\n * `data-editing` is on the ROOT, so a rule can reach the trigger row without\n * knowing which control is live.\n */\nexport const Editable = classPart(\n  div,\n  'flex items-center gap-1.5 data-disabled:pointer-events-none data-disabled:opacity-50',\n)\nexport const EditablePreview = classPart(\n  span,\n  'flex h-9 min-w-0 cursor-text items-center rounded-md px-3 py-1 text-base hover:bg-accent/50 md:text-sm',\n)\nexport const EditableInput = classPart(input, inputRecipe)\nexport const EditableEditTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'ghost', size: 'icon' }),\n)\nexport const EditableSubmitTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'default', size: 'sm' }),\n)\nexport const EditableCancelTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'ghost', size: 'sm' }),\n)\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "floating-panel",
+  "type": "registry:ui",
+  "title": "Floating Panel",
+  "description": "Skin for @llui/components/floating-panel — draggable, resizable, minimizable surface.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/floating-panel.ts",
+      "type": "registry:ui",
+      "target": "floating-panel.ts",
+      "content": "import { button, div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Floating panel — skin for `@llui/components/floating-panel`. No shadcn\n * counterpart; the surface is the Dialog's vocabulary (`bg-popover`, `border`,\n * `shadow-lg`) because it is the same kind of raised layer.\n *\n * The machine writes position and size as an inline `style` on the root, so\n * this recipe must NOT set any of `top`/`left`/`width`/`height` — an inline\n * style beats a class, so the class would be dead where it matters and win only\n * before the first commit, which is the worst of both.\n *\n * `data-minimized` collapses the panel to its handle: the CONTENT is hidden\n * rather than the root, so the drag handle stays grabbable. Hiding the root\n * would strand a minimized panel with no way to restore it.\n *\n * `touch-none` on the handle and the resize grip is required for pointer drags\n * on touch, exactly as in `sortable`.\n */\nexport const FloatingPanel = classPart(\n  div,\n  'fixed z-50 flex flex-col overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-lg data-dragging:select-none data-maximized:rounded-none data-resizing:select-none',\n)\nexport const FloatingPanelDragHandle = classPart(\n  div,\n  'flex h-9 shrink-0 cursor-grab touch-none items-center gap-2 border-b px-3 text-sm font-medium select-none active:cursor-grabbing',\n)\nexport const FloatingPanelContent = classPart(\n  div,\n  'min-h-0 flex-1 overflow-auto p-3 text-sm group-data-minimized:hidden',\n)\nconst panelTriggerRecipe =\n  \"inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg:not([class*='size-'])]:size-3.5\"\nexport const FloatingPanelMinimizeTrigger = classPart(button, panelTriggerRecipe)\nexport const FloatingPanelMaximizeTrigger = classPart(button, panelTriggerRecipe)\nexport const FloatingPanelCloseTrigger = classPart(button, panelTriggerRecipe)\nexport const FloatingPanelResizeHandle = classPart(\n  div,\n  'absolute right-0 bottom-0 size-3 cursor-nwse-resize touch-none',\n)\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "cascade-select",
+  "type": "registry:ui",
+  "title": "Cascade Select",
+  "description": "Skin for @llui/components/cascade-select — chained native selects.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["button", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/cascade-select.ts",
+      "type": "registry:ui",
+      "target": "cascade-select.ts",
+      "content": "import { button, div, label, select } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { buttonVariants } from '@/ui/button'\n\n/**\n * Cascade select — skin for `@llui/components/cascade-select`. No shadcn\n * counterpart.\n *\n * The levels are NATIVE `<select>` elements, not the registry's `Select` (which\n * skins a different, anchored-listbox machine), so this recipe styles a real\n * form control and keeps the platform's own disclosure arrow. Replacing it with\n * a themed chevron means `appearance-none` plus a background image, and the\n * only way to write one as a Tailwind arbitrary value is a data-URI with every\n * space escaped as `_` — a long, brittle string that the class extractor splits\n * on if a single space survives (it did, first time). If the arrow must match\n * the theme, use the registry's `Select` and drive it from a listbox machine\n * rather than fighting a native control.\n *\n * A level that is not yet reachable has no `data-ready`. Styling that as\n * \"muted\" rather than hiding it keeps the row's width stable as the user works\n * down the chain — a disappearing level makes the whole control jump.\n */\nexport const CascadeSelect = classPart(\n  div,\n  'flex flex-wrap items-end gap-2 data-disabled:pointer-events-none data-disabled:opacity-50',\n)\nexport const CascadeSelectLabel = classPart(\n  label,\n  'mb-1.5 block text-sm leading-none font-medium select-none',\n)\nexport const CascadeSelectLevel = classPart(\n  select,\n  'h-9 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 md:text-sm dark:bg-input/30 not-data-ready:text-muted-foreground',\n)\nexport const CascadeSelectClearTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'ghost', size: 'sm' }),\n)\n"
+    }
+  ]
+}

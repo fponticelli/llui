@@ -1,0 +1,16 @@
+{
+  "name": "date-input",
+  "type": "registry:ui",
+  "title": "Date Input",
+  "description": "Skin for @llui/components/date-input — typed date entry with an error region.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["input", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/date-input.ts",
+      "type": "registry:ui",
+      "target": "date-input.ts",
+      "content": "import { button, div, input, p } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { inputRecipe } from '@/ui/input'\n\n/**\n * Date input — skin for `@llui/components/date-input`, the typed alternative to\n * the Calendar's grid. No shadcn counterpart.\n *\n * The invalid state is expressed TWICE by the machine and each spelling has its\n * own job: the input carries `aria-invalid`, which the `Input` recipe already\n * styles (`aria-invalid:border-destructive`) and which is what assistive tech\n * reads; the root carries `data-invalid` for a rule that has to reach a sibling.\n * Neither is redundant — do not drop one for the other.\n *\n * `errorText` carries its own reactive `hidden` and `role=\"alert\"`, so it stays\n * mounted and announces on change. Toggling it with `show` instead would\n * unmount the live region and announce nothing.\n */\nexport const DateInput = classPart(div, 'relative')\nexport const DateInputControl = classPart(input, `${inputRecipe} pr-9`)\nexport const DateInputClearTrigger = classPart(\n  button,\n  \"absolute top-0 right-0 flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 [&_svg:not([class*='size-'])]:size-4\",\n)\nexport const DateInputErrorText = classPart(p, 'mt-1.5 text-sm text-destructive')\n"
+    }
+  ]
+}

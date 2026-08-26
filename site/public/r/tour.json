@@ -1,0 +1,16 @@
+{
+  "name": "tour",
+  "type": "registry:ui",
+  "title": "Tour",
+  "description": "Skin for @llui/components/tour — spotlight coach marks.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["button", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/tour.ts",
+      "type": "registry:ui",
+      "target": "tour.ts",
+      "content": "import { button, div, p } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { buttonVariants } from '@/ui/button'\n\n/**\n * Tour — skin for `@llui/components/tour`. No shadcn counterpart; the card is\n * the Popover's vocabulary because that is what a coach mark is.\n *\n * The SPOTLIGHT is the same enormous-`box-shadow` trick `image-cropper` uses,\n * and for the same reason: the dim is always exactly the complement of wherever\n * the highlighted element is, with no second element to keep in step. It is\n * `pointer-events-none` so the user can still interact with what is being\n * pointed at — a spotlight that blocks its own target is a dead-end step.\n *\n * The machine positions both the spotlight and the card through inline `style`,\n * so this recipe sets no geometry (see `floating-panel`).\n *\n * `data-last` on the root is what turns \"Next\" into \"Done\" — style from it\n * rather than counting steps in the view.\n */\nexport const Tour = classPart(\n  div,\n  'fixed z-50 flex max-w-xs flex-col gap-2 rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg outline-none',\n)\nexport const TourBackdrop = classPart(div, 'fixed inset-0 z-40 bg-black/50')\nexport const TourSpotlight = classPart(\n  div,\n  'pointer-events-none fixed z-40 rounded-md shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]',\n)\nexport const TourTitle = classPart(div, 'text-sm leading-none font-semibold')\nexport const TourDescription = classPart(p, 'text-sm text-muted-foreground')\nexport const TourProgressText = classPart(p, 'text-xs text-muted-foreground tabular-nums')\nexport const TourPrevTrigger = classPart(button, buttonVariants({ variant: 'ghost', size: 'sm' }))\nexport const TourNextTrigger = classPart(button, buttonVariants({ variant: 'default', size: 'sm' }))\nexport const TourCloseTrigger = classPart(\n  button,\n  \"absolute top-2 right-2 inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity outline-none hover:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg:not([class*='size-'])]:size-3.5\",\n)\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "search-field",
+  "type": "registry:ui",
+  "title": "Search Field",
+  "description": "Skin for @llui/components/search-field — search input with a clear affordance.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["input", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/search-field.ts",
+      "type": "registry:ui",
+      "target": "search-field.ts",
+      "content": "import { button, div, input, label } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { inputRecipe } from '@/ui/input'\n\n/**\n * Search field — skin for `@llui/components/search-field`. No shadcn\n * counterpart; the `Input` recipe verbatim plus the two affordances the machine\n * provides.\n *\n * Padded on BOTH sides (`pl-9 pr-9`): the leading glyph and the clear button\n * are absolutely positioned, so without the padding the value runs under them.\n * The leading glyph is the CONSUMER's to render — the machine has no part for\n * it, deliberately, since it is pure decoration.\n *\n * `clearTrigger` carries its own reactive `hidden`, so it disappears on an empty\n * field without a rule here. Do not add a `hidden:` variant of your own; you\n * would be duplicating a decision the machine already made.\n */\nexport const SearchField = classPart(div, 'relative')\nexport const SearchFieldLabel = classPart(\n  label,\n  'mb-1.5 block text-sm leading-none font-medium select-none',\n)\nexport const SearchFieldInput = classPart(input, `${inputRecipe} pr-9 pl-9`)\nexport const SearchFieldIcon = classPart(\n  div,\n  \"pointer-events-none absolute top-0 left-0 flex size-9 items-center justify-center text-muted-foreground [&_svg:not([class*='size-'])]:size-4\",\n)\nexport const SearchFieldClearTrigger = classPart(\n  button,\n  \"absolute top-0 right-0 flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg:not([class*='size-'])]:size-4\",\n)\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "marquee",
+  "type": "registry:ui",
+  "title": "Marquee",
+  "description": "Skin for @llui/components/marquee — clipped, edge-faded scrolling track.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/marquee.ts",
+      "type": "registry:ui",
+      "target": "marquee.ts",
+      "content": "import { div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Marquee — skin for `@llui/components/marquee`. No shadcn counterpart.\n *\n * The machine supplies the animation itself as an inline `style` on the\n * content, and publishes `data-axis`, `data-direction` and `data-running`. This\n * skin therefore owns only the CLIP and the edge fade: overriding the animation\n * from here would fight the inline style it cannot win against, and `-running`\n * is already reflected in the style the machine writes.\n *\n * The fade is a `mask-image`, not a pair of gradient overlays, so it works over\n * any background — an overlay has to know the surface colour, and gets it wrong\n * the moment the marquee is placed on a card.\n *\n * `overflow-hidden` is load-bearing: without it the duplicated track is simply\n * visible running off both edges.\n */\nexport const Marquee = classPart(\n  div,\n  'relative flex overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)] data-[axis=vertical]:flex-col',\n)\nexport const MarqueeContent = classPart(\n  div,\n  'flex shrink-0 items-center gap-4 data-[axis=vertical]:flex-col',\n)\n"
+    }
+  ]
+}

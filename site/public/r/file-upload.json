@@ -1,0 +1,16 @@
+{
+  "name": "file-upload",
+  "type": "registry:ui",
+  "title": "File Upload",
+  "description": "Skin for @llui/components/file-upload — dropzone with a file list.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["button", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/file-upload.ts",
+      "type": "registry:ui",
+      "target": "file-upload.ts",
+      "content": "import { button, div, img, input, label, li, p, ul } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { buttonVariants } from '@/ui/button'\n\n/**\n * File upload — skin for `@llui/components/file-upload`. No shadcn counterpart;\n * the dashed dropzone is the common vocabulary and the tokens are the\n * registry's.\n *\n * `data-dragging` is published on BOTH the root and the dropzone, and that is\n * not duplication: the dropzone highlights itself, while the root lets sibling\n * content (a hint line, a preview strip) respond to the same drag without\n * reaching inside.\n *\n * `hiddenInput` is the real `<input type=\"file\">`. It must stay in the DOM for\n * the picker to open and for a native form submit, so it is `sr-only` — never\n * `hidden`, which makes `.click()` on it a no-op in some browsers.\n *\n * The invalid state is `data-invalid` on the root and `aria-invalid` on the\n * hidden input: the styling hook and the announced state, both needed.\n */\nexport const FileUpload = classPart(\n  div,\n  'flex w-full max-w-sm flex-col gap-3 data-disabled:pointer-events-none data-disabled:opacity-50 data-readonly:pointer-events-none',\n)\nexport const FileUploadLabel = classPart(label, 'text-sm leading-none font-medium select-none')\nexport const FileUploadDropzone = classPart(\n  div,\n  \"flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-input px-6 py-8 text-center text-sm text-muted-foreground transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-dragging:border-primary data-dragging:bg-accent/50 [&_svg:not([class*='size-'])]:size-6\",\n)\nexport const FileUploadTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'outline', size: 'sm' }),\n)\nexport const FileUploadHiddenInput = classPart(input, 'sr-only')\nexport const FileUploadClearTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'ghost', size: 'sm' }),\n)\nexport const FileUploadItemGroup = classPart(ul, 'flex flex-col gap-2')\nexport const FileUploadItem = classPart(li, 'flex items-center gap-3 rounded-md border p-2 text-sm')\nexport const FileUploadItemPreview = classPart(\n  img,\n  'size-10 shrink-0 rounded-sm border object-cover',\n)\nexport const FileUploadItemName = classPart(p, 'min-w-0 flex-1 truncate font-medium')\nexport const FileUploadItemSizeText = classPart(\n  p,\n  'shrink-0 text-xs text-muted-foreground tabular-nums',\n)\nexport const FileUploadItemDeleteTrigger = classPart(\n  button,\n  \"inline-flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg:not([class*='size-'])]:size-4\",\n)\n"
+    }
+  ]
+}

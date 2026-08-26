@@ -1,0 +1,16 @@
+{
+  "name": "signature-pad",
+  "type": "registry:ui",
+  "title": "Signature Pad",
+  "description": "Skin for @llui/components/signature-pad — drawing surface with clear and undo.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["button", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/signature-pad.ts",
+      "type": "registry:ui",
+      "target": "signature-pad.ts",
+      "content": "import { button, div, input } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { buttonVariants } from '@/ui/button'\n\n/**\n * Signature pad — skin for `@llui/components/signature-pad`. No shadcn\n * counterpart.\n *\n * `data-drawing` is on the ROOT, not the canvas, so the border can respond\n * while the pointer is down without a rule reaching into the control.\n *\n * `guide` is the baseline the user signs on. It is `pointer-events-none`\n * because it sits OVER the drawing surface: without that it swallows the\n * pointer and the middle of the pad stops accepting strokes.\n *\n * `hiddenInput` carries the serialized signature for a native form submit and\n * must stay in the DOM — `sr-only`, never `hidden`.\n */\nexport const SignaturePad = classPart(\n  div,\n  'flex w-full max-w-sm flex-col gap-2 data-disabled:pointer-events-none data-disabled:opacity-50',\n)\nexport const SignaturePadControl = classPart(\n  div,\n  'relative h-32 w-full touch-none rounded-md border border-input bg-background shadow-xs transition-[color,box-shadow] data-drawing:border-ring data-readonly:pointer-events-none',\n)\nexport const SignaturePadGuide = classPart(\n  div,\n  'pointer-events-none absolute inset-x-4 bottom-6 border-b border-dashed border-muted-foreground/40',\n)\nexport const SignaturePadClearTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'outline', size: 'sm' }),\n)\nexport const SignaturePadUndoTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'ghost', size: 'sm' }),\n)\nexport const SignaturePadHiddenInput = classPart(input, 'sr-only')\n"
+    }
+  ]
+}

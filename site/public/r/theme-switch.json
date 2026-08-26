@@ -1,0 +1,16 @@
+{
+  "name": "theme-switch",
+  "type": "registry:ui",
+  "title": "Theme Switch",
+  "description": "Skin for @llui/components/theme-switch — segmented options or a single toggle.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/theme-switch.ts",
+      "type": "registry:ui",
+      "target": "theme-switch.ts",
+      "content": "import { button, div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Theme switch — skin for `@llui/components/theme-switch`. No shadcn\n * counterpart; shadcn's own docs use a dropdown, which this registry already\n * ships.\n *\n * Two presentations, both from the same machine: a segmented `option` row\n * (light / dark / system) and a single `toggle`. The pressed state comes from\n * `aria-pressed`, which is what the machine publishes — these are TOGGLE\n * BUTTONS, not tabs, so there is no `data-state` to key off and\n * `aria-pressed:` is the correct hook rather than a fallback.\n *\n * `data-theme` on an option names WHICH theme it selects, not which is active;\n * use it to place an icon, never to style the selection.\n */\nexport const ThemeSwitch = classPart(\n  div,\n  'inline-flex items-center gap-1 rounded-md border bg-background p-1 shadow-xs',\n)\nexport const ThemeSwitchOption = classPart(\n  button,\n  \"inline-flex size-7 items-center justify-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-pressed:bg-accent aria-pressed:text-accent-foreground [&_svg:not([class*='size-'])]:size-4\",\n)\nexport const ThemeSwitchToggle = classPart(\n  button,\n  \"inline-flex size-9 items-center justify-center rounded-md border bg-background text-foreground shadow-xs transition-colors outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg:not([class*='size-'])]:size-4\",\n)\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "image-cropper",
+  "type": "registry:ui",
+  "title": "Image Cropper",
+  "description": "Skin for @llui/components/image-cropper — crop box with corner grips.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["button", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/image-cropper.ts",
+      "type": "registry:ui",
+      "target": "image-cropper.ts",
+      "content": "import { button, div, img } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { buttonVariants } from '@/ui/button'\n\n/**\n * Image cropper — skin for `@llui/components/image-cropper`. No shadcn\n * counterpart.\n *\n * The crop box is positioned by the machine through an inline `style`, so this\n * recipe sets no geometry — same rule as `floating-panel`.\n *\n * The dimming outside the box is an enormous `box-shadow` on the box itself,\n * not four overlay divs. Overlays have to be positioned in step with the box\n * and get it wrong during a drag; a spread shadow is always exactly the\n * complement of wherever the box is.\n *\n * `pointer-events-none` on the image matters: without it the browser's native\n * image drag starts on every pointerdown and the crop gesture never begins.\n *\n * `data-handle` names WHICH corner a grip is (`nw`/`ne`/`sw`/`se`), so the\n * cursor and the placement are one rule per corner rather than four components.\n */\nexport const ImageCropper = classPart(\n  div,\n  'relative w-full max-w-sm touch-none overflow-hidden rounded-md border bg-muted select-none data-disabled:pointer-events-none data-disabled:opacity-50',\n)\nexport const ImageCropperImage = classPart(img, 'pointer-events-none block w-full select-none')\nexport const ImageCropperCropBox = classPart(\n  div,\n  'absolute cursor-move border-2 border-background shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] outline-none data-dragging:cursor-grabbing focus-visible:ring-[3px] focus-visible:ring-ring/50',\n)\nexport const ImageCropperResizeHandle = classPart(\n  div,\n  'absolute size-3 rounded-full border-2 border-background bg-primary data-[handle=ne]:-top-1.5 data-[handle=ne]:-right-1.5 data-[handle=ne]:cursor-nesw-resize data-[handle=nw]:-top-1.5 data-[handle=nw]:-left-1.5 data-[handle=nw]:cursor-nwse-resize data-[handle=se]:-right-1.5 data-[handle=se]:-bottom-1.5 data-[handle=se]:cursor-nwse-resize data-[handle=sw]:-bottom-1.5 data-[handle=sw]:-left-1.5 data-[handle=sw]:cursor-nesw-resize',\n)\nexport const ImageCropperResetTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'outline', size: 'sm' }),\n)\n"
+    }
+  ]
+}

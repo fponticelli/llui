@@ -10,9 +10,9 @@ export const Steps = classPart(
 export const StepsItem = classPart(li, 'flex flex-1 items-center gap-2')
 export const StepsTrigger = classPart(
   button,
-  'inline-flex items-center gap-2 rounded-md text-sm font-medium transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=current]:text-foreground data-[state=incomplete]:text-muted-foreground data-[state=complete]:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+  'inline-flex items-center gap-2 rounded-md text-sm font-medium transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[status=current]:text-foreground data-[status=pending]:text-muted-foreground data-[status=completed]:text-foreground data-[status=error]:text-destructive data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
 )
 export const StepsSeparator = classPart(
   div,
-  'h-px flex-1 bg-border data-[state=complete]:bg-primary',
+  'h-px flex-1 bg-border data-[status=completed]:bg-primary',
 )

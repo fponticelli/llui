@@ -8,7 +8,7 @@ export const TagsInput = classPart(
 )
 export const TagsInputTag = classPart(
   span,
-  'inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs font-medium data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground',
+  'inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 text-xs font-medium data-focused:bg-accent data-focused:text-accent-foreground',
 )
 export const TagsInputTagRemove = classPart(
   button,

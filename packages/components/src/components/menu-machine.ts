@@ -396,7 +396,11 @@ export interface MenuItemAttrs<Scope extends string> {
   id: string
   'aria-disabled': Signal<'true' | undefined>
   'aria-checked'?: Signal<'true' | 'false'>
-  'data-state': Signal<'highlighted' | undefined>
+  /** Bare presence flag, matching `select` / `combobox` / `listbox` and the
+   * baseline stylesheet. NOT `data-state="highlighted"`: `data-state` on this
+   * machine means open/closed (trigger, content), and spelling the highlight as
+   * an enum value of it matched nothing anyone styles. */
+  'data-highlighted': Signal<'' | undefined>
   'data-disabled': Signal<'' | undefined>
   'data-scope': Scope
   'data-part': 'item'
@@ -444,7 +448,11 @@ export interface MenuSubTriggerPartsOf<Scope extends string> {
   'aria-expanded': Signal<boolean>
   'aria-controls': string
   'aria-disabled': Signal<'true' | undefined>
-  'data-state': Signal<'highlighted' | undefined>
+  /** Bare presence flag, matching `select` / `combobox` / `listbox` and the
+   * baseline stylesheet. NOT `data-state="highlighted"`: `data-state` on this
+   * machine means open/closed (trigger, content), and spelling the highlight as
+   * an enum value of it matched nothing anyone styles. */
+  'data-highlighted': Signal<'' | undefined>
   'data-scope': Scope
   'data-part': 'subtrigger'
   'data-value': string
@@ -635,8 +643,8 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
     return levelIndex(items).get(value) ?? ''
   }
 
-  const highlightedState = (value: string): Signal<'highlighted' | undefined> =>
-    state.map((s) => (highlightedValues(s.highlights).has(value) ? 'highlighted' : undefined))
+  const highlightedState = (value: string): Signal<'' | undefined> =>
+    state.map((s) => (highlightedValues(s.highlights).has(value) ? '' : undefined))
 
   const itemAttrs = (
     value: string,
@@ -652,7 +660,7 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
             checkedValues(s.checked).has(value) ? 'true' : 'false',
           ),
         }),
-    'data-state': highlightedState(value),
+    'data-highlighted': highlightedState(value),
     'data-disabled': state.map((s) => (disabledValues(s.items).has(value) ? '' : undefined)),
     'data-scope': scope,
     'data-part': 'item',
@@ -791,7 +799,7 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
       'aria-expanded': state.map((s) => openValues(s.openPath).has(value)),
       'aria-controls': ids.subContentId(value),
       'aria-disabled': state.map((s) => (disabledValues(s.items).has(value) ? 'true' : undefined)),
-      'data-state': highlightedState(value),
+      'data-highlighted': highlightedState(value),
       'data-scope': scope,
       'data-part': 'subtrigger',
       'data-value': value,

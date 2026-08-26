@@ -1,0 +1,16 @@
+{
+  "name": "toc",
+  "type": "registry:ui",
+  "title": "Table of Contents",
+  "description": "Skin for @llui/components/toc — depth-indented outline with scroll tracking.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/toc.ts",
+      "type": "registry:ui",
+      "target": "toc.ts",
+      "content": "import { a, button, div, li, ul } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Table of contents — skin for `@llui/components/toc`. No shadcn counterpart,\n * though the indent-by-depth idiom is the Sidebar's.\n *\n * Indent comes from `data-level`, which the machine publishes as a number, so\n * it is the CONSUMER's to turn into padding — the same arrangement as the tree\n * view, and for the same reason: the step is a styling decision.\n *\n * The current entry is marked TWICE and both are needed: `aria-current` is what\n * assistive tech reads, `data-active` is the styling hook. `data-state` on the\n * expand trigger is open/closed, not active.\n */\nexport const Toc = classPart(div, 'flex flex-col gap-1 text-sm')\nexport const TocList = classPart(ul, 'flex flex-col gap-0.5 border-l')\nexport const TocItem = classPart(li, 'flex items-center gap-1')\nexport const TocLink = classPart(\n  a,\n  '-ml-px block border-l border-transparent py-1 pl-3 text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-active:border-primary data-active:font-medium data-active:text-foreground',\n)\nexport const TocExpandTrigger = classPart(\n  button,\n  'inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-transform outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:rotate-90',\n)\n"
+    }
+  ]
+}

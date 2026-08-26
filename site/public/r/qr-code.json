@@ -1,0 +1,16 @@
+{
+  "name": "qr-code",
+  "type": "registry:ui",
+  "title": "QR Code",
+  "description": "Skin for @llui/components/qr-code — rendered code with a download trigger.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["button", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/qr-code.ts",
+      "type": "registry:ui",
+      "target": "qr-code.ts",
+      "content": "import { button, div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { buttonVariants } from '@/ui/button'\n\n/**\n * QR code — skin for `@llui/components/qr-code`. No shadcn counterpart.\n *\n * The `background` and `foreground` parts are SVG elements the machine fills\n * with the module grid, and they are deliberately left to `fill-*` utilities\n * rather than given theme colours here: a QR code needs real contrast to scan,\n * and a themed pair that passes a contrast check for text can still fail a\n * scanner. `fill-white`/`fill-black` are the safe default; override at the call\n * site if the surrounding surface demands it, and test with a real scanner.\n */\nexport const QrCode = classPart(div, 'inline-flex flex-col items-center gap-2')\nexport const QrCodeSvg = classPart(div, 'size-32 rounded-md border bg-white p-2')\nexport const QrCodeBackground = classPart(div, 'fill-white')\nexport const QrCodeForeground = classPart(div, 'fill-black')\nexport const QrCodeDownloadTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'outline', size: 'sm' }),\n)\n"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "angle-slider",
+  "type": "registry:ui",
+  "title": "Angle Slider",
+  "description": "Skin for @llui/components/angle-slider — a circular dial.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/angle-slider.ts",
+      "type": "registry:ui",
+      "target": "angle-slider.ts",
+      "content": "import { div, input, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Angle slider — skin for `@llui/components/angle-slider`. No shadcn\n * counterpart; the tokens and focus idiom are the registry's.\n *\n * The control is a DIAL, so the thumb is positioned by the consumer from\n * `data-value` (degrees) — the machine publishes the number and takes no view\n * on how it becomes a transform, because the radius is a styling decision. The\n * usual shape is a `rotate` on a wrapper with the thumb pushed out along one\n * axis; `origin-bottom` on that wrapper is what makes the rotation orbit the\n * centre rather than spin in place.\n *\n * `hiddenInput` is a real form control and must stay in the DOM for a native\n * submit — style it `sr-only`, never `hidden`, which removes it from the form.\n */\nexport const AngleSlider = classPart(div, 'flex flex-col items-center gap-2')\nexport const AngleSliderControl = classPart(\n  div,\n  'relative size-24 rounded-full border border-input bg-muted/40 shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 data-disabled:pointer-events-none data-disabled:opacity-50',\n)\nexport const AngleSliderThumb = classPart(\n  div,\n  'absolute size-3 rounded-full border border-primary bg-background shadow-sm',\n)\nexport const AngleSliderValueText = classPart(\n  span,\n  'text-sm text-muted-foreground tabular-nums select-none',\n)\nexport const AngleSliderHiddenInput = classPart(input, 'sr-only')\n"
+    }
+  ]
+}

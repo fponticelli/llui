@@ -1,0 +1,16 @@
+{
+  "name": "async-list",
+  "type": "registry:ui",
+  "title": "Async List",
+  "description": "Skin for @llui/components/async-list — infinite list with sentinel, retry and error text.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["button", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/async-list.ts",
+      "type": "registry:ui",
+      "target": "async-list.ts",
+      "content": "import { button, div, p } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { buttonVariants } from '@/ui/button'\n\n/**\n * Async list — skin for `@llui/components/async-list`. No shadcn counterpart.\n *\n * `sentinel` is the IntersectionObserver target that triggers the next page. It\n * must have real HEIGHT — a zero-height element never intersects, and the list\n * silently stops loading. `h-px` is enough and is why it is here rather than\n * left to the consumer.\n *\n * `data-status` on the root is the full lifecycle (`idle` / `loading` /\n * `loaded` / `error`), which is what lets the trigger and the error text style\n * themselves from the container instead of each tracking state.\n */\nexport const AsyncList = classPart(div, 'flex flex-col gap-2')\nexport const AsyncListSentinel = classPart(div, 'h-px w-full')\nexport const AsyncListLoadMoreTrigger = classPart(\n  button,\n  `${buttonVariants({ variant: 'outline', size: 'sm' })} self-center`,\n)\nexport const AsyncListRetryTrigger = classPart(\n  button,\n  `${buttonVariants({ variant: 'outline', size: 'sm' })} self-center`,\n)\nexport const AsyncListErrorText = classPart(p, 'text-center text-sm text-destructive')\n"
+    }
+  ]
+}

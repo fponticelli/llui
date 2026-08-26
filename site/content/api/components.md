@@ -9856,6 +9856,12 @@ export interface SelectParts {
     id: string
     disabled: Signal<boolean>
     'data-state': Signal<'open' | 'closed'>
+    /** Present while the trigger is showing the PLACEHOLDER rather than a
+     * value. `valueText` already falls back to the placeholder string, but a
+     * string is not something CSS can branch on, so without this the
+     * placeholder renders at full foreground weight and reads as a real
+     * selection. This is the attribute every shadcn Select greys it from. */
+    'data-placeholder': Signal<'' | undefined>
     'data-scope': 'select'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -21468,6 +21474,12 @@ export interface SelectParts {
     id: string
     disabled: Signal<boolean>
     'data-state': Signal<'open' | 'closed'>
+    /** Present while the trigger is showing the PLACEHOLDER rather than a
+     * value. `valueText` already falls back to the placeholder string, but a
+     * string is not something CSS can branch on, so without this the
+     * placeholder renders at full foreground weight and reads as a real
+     * selection. This is the attribute every shadcn Select greys it from. */
+    'data-placeholder': Signal<'' | undefined>
     'data-scope': 'select'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void

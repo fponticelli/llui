@@ -451,15 +451,41 @@ describe('menu.connect', () => {
     expect(onSelect).toHaveBeenCalledWith('a')
   })
 
-  it('item data-state highlighted reflects state', () => {
+  /**
+   * The highlight is `data-highlighted`, a bare presence flag — NOT
+   * `data-state="highlighted"`, which is what this published for a long time.
+   *
+   * Every other highlightable list in the package (`select`, `combobox`,
+   * `listbox`, `tags-input`) publishes the bare flag, the baseline stylesheet
+   * keys on `[data-highlighted]`, and so does every registry menu recipe
+   * (shadcn's `focus:` translates to `data-[highlighted]:` — the one systematic
+   * rename the registry documents). So the ENUM spelling matched nothing: menu,
+   * dropdown, context-menu and menubar items had no hover or keyboard highlight
+   * at all, in the baseline sheet and in the registry alike. Valid CSS naming an
+   * attribute nobody emits, so it stayed green everywhere.
+   *
+   * `data-state` is left to mean open/closed, which is what it means on this
+   * machine's trigger and content — one attribute, one meaning per scope.
+   */
+  it('item highlight is a bare data-highlighted flag', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 'x' })
     const itemA = p.item('a').item
     const s1 = { ...init({ items: flat }) }
     s1.highlights[''] = 'a'
     const s2 = { ...init({ items: flat }) }
     s2.highlights[''] = 'b'
-    expect(read(itemA['data-state'], s1)).toBe('highlighted')
-    expect(read(itemA['data-state'], s2)).toBeUndefined()
+    expect(read(itemA['data-highlighted'], s1)).toBe('')
+    expect(read(itemA['data-highlighted'], s2)).toBeUndefined()
+    // and `data-state` is NOT how the highlight is spelled
+    expect('data-state' in itemA).toBe(false)
+  })
+
+  it('a subtrigger highlight is the same bare flag', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'x' })
+    const sub = p.subTrigger('a')
+    const s = { ...init({ items: flat }) }
+    s.highlights[''] = 'a'
+    expect(read(sub['data-highlighted'], s)).toBe('')
   })
 })
 

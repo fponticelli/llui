@@ -1,0 +1,16 @@
+{
+  "name": "clipboard",
+  "type": "registry:ui",
+  "title": "Clipboard",
+  "description": "Skin for @llui/components/clipboard — copy field with a live-region indicator.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["input", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/clipboard.ts",
+      "type": "registry:ui",
+      "target": "clipboard.ts",
+      "content": "import { button, div, input, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { inputRecipe } from '@/ui/input'\n\n/**\n * Clipboard — skin for `@llui/components/clipboard`. No shadcn counterpart.\n *\n * `indicator` is an `aria-live` region, so it stays MOUNTED and swaps its text;\n * `data-copied` is the styling hook. Toggling it with `show` would unmount the\n * live region and announce nothing — the same trap the Combobox live region\n * documents.\n */\nexport const Clipboard = classPart(div, 'relative flex w-full max-w-sm items-center')\nexport const ClipboardInput = classPart(input, `${inputRecipe} pr-9 font-mono`)\nexport const ClipboardTrigger = classPart(\n  button,\n  \"absolute top-0 right-0 flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-copied:text-primary [&_svg:not([class*='size-'])]:size-4\",\n)\nexport const ClipboardIndicator = classPart(span, 'sr-only')\n"
+    }
+  ]
+}

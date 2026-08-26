@@ -1,0 +1,16 @@
+{
+  "name": "time-picker",
+  "type": "registry:ui",
+  "title": "Time Picker",
+  "description": "Skin for @llui/components/time-picker — hour/minute spinbuttons with an AM/PM toggle.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/time-picker.ts",
+      "type": "registry:ui",
+      "target": "time-picker.ts",
+      "content": "import { button, div, input, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Time picker — skin for `@llui/components/time-picker`. No shadcn counterpart.\n *\n * The GROUP owns the border and the focus ring and the segments give them up —\n * the same inversion `input-group.ts` documents, and for the same reason: a ring\n * drawn on a segment would sit inside the group's border. Here it is driven by\n * `focus-within:` rather than a `has-[]` marker, because every segment is a real\n * focusable input.\n *\n * The segments are `type=\"number\"` with `role=\"spinbutton\"`, so the native\n * spinner arrows are suppressed — they would sit inside a two-character field\n * and the machine already owns Up/Down. `tabular-nums` keeps the two digits from\n * shifting as they change.\n *\n * `periodTrigger` carries its own reactive `hidden` (absent in 24-hour format)\n * and a `data-period` of 'AM'/'PM'; the root publishes `data-format`.\n */\nexport const TimePicker = classPart(\n  div,\n  'flex h-9 w-fit items-center rounded-md border border-input bg-transparent px-2 text-base shadow-xs transition-[color,box-shadow] outline-none focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 has-disabled:pointer-events-none has-disabled:opacity-50 md:text-sm dark:bg-input/30',\n)\nexport const TimePickerSegment = classPart(\n  input,\n  'w-7 bg-transparent p-0 text-center tabular-nums outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',\n)\nexport const TimePickerSeparator = classPart(span, 'px-0.5 text-muted-foreground select-none')\nexport const TimePickerPeriodTrigger = classPart(\n  button,\n  'ml-1 rounded-sm px-1.5 py-0.5 text-xs font-medium text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50',\n)\n"
+    }
+  ]
+}

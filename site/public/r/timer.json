@@ -1,0 +1,16 @@
+{
+  "name": "timer",
+  "type": "registry:ui",
+  "title": "Timer",
+  "description": "Skin for @llui/components/timer — tabular readout with transport controls.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["button", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/timer.ts",
+      "type": "registry:ui",
+      "target": "timer.ts",
+      "content": "import { button, div, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { buttonVariants } from '@/ui/button'\n\n/**\n * Timer — skin for `@llui/components/timer`. No shadcn counterpart.\n *\n * `tabular-nums` on the display is the whole point of this recipe: proportional\n * digits change width as they tick, so the readout jitters and the buttons\n * beside it shuffle every second.\n *\n * The display is an `aria-live` region and `data-direction` says whether it\n * counts up or down; `data-running` is on the ROOT so the controls can respond\n * without reaching into the display.\n */\nexport const Timer = classPart(div, 'flex items-center gap-3')\nexport const TimerDisplay = classPart(div, 'text-2xl font-semibold tabular-nums select-none')\nexport const TimerStartTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'default', size: 'sm' }),\n)\nexport const TimerPauseTrigger = classPart(\n  button,\n  buttonVariants({ variant: 'outline', size: 'sm' }),\n)\nexport const TimerResetTrigger = classPart(button, buttonVariants({ variant: 'ghost', size: 'sm' }))\nexport { span as TimerUnit }\n"
+    }
+  ]
+}

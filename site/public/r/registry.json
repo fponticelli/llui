@@ -4,21 +4,6 @@
   "homepage": "https://llui.dev",
   "items": [
     {
-      "name": "utils",
-      "type": "registry:lib",
-      "title": "cn / mergeClass / classPart",
-      "description": "Class-merge helpers and the shared part factories every component here is built from.",
-      "dependencies": ["@llui/dom", "clsx", "tailwind-merge", "@llui/components"],
-      "registryDependencies": [],
-      "files": [
-        {
-          "path": "registry/llui/lib/utils.ts",
-          "type": "registry:lib",
-          "target": "utils.ts"
-        }
-      ]
-    },
-    {
       "name": "accordion",
       "type": "registry:ui",
       "title": "Accordion",
@@ -64,6 +49,21 @@
       ]
     },
     {
+      "name": "angle-slider",
+      "type": "registry:ui",
+      "title": "Angle Slider",
+      "description": "Skin for @llui/components/angle-slider — a circular dial.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/angle-slider.ts",
+          "type": "registry:ui",
+          "target": "angle-slider.ts"
+        }
+      ]
+    },
+    {
       "name": "aspect-ratio",
       "type": "registry:ui",
       "title": "Aspect Ratio",
@@ -75,6 +75,21 @@
           "path": "registry/llui/ui/aspect-ratio.ts",
           "type": "registry:ui",
           "target": "aspect-ratio.ts"
+        }
+      ]
+    },
+    {
+      "name": "async-list",
+      "type": "registry:ui",
+      "title": "Async List",
+      "description": "Skin for @llui/components/async-list — infinite list with sentinel, retry and error text.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["button", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/async-list.ts",
+          "type": "registry:ui",
+          "target": "async-list.ts"
         }
       ]
     },
@@ -199,6 +214,21 @@
       ]
     },
     {
+      "name": "cascade-select",
+      "type": "registry:ui",
+      "title": "Cascade Select",
+      "description": "Skin for @llui/components/cascade-select — chained native selects.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["button", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/cascade-select.ts",
+          "type": "registry:ui",
+          "target": "cascade-select.ts"
+        }
+      ]
+    },
+    {
       "name": "checkbox",
       "type": "registry:ui",
       "title": "Checkbox",
@@ -214,6 +244,21 @@
       ]
     },
     {
+      "name": "clipboard",
+      "type": "registry:ui",
+      "title": "Clipboard",
+      "description": "Skin for @llui/components/clipboard — copy field with a live-region indicator.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["input", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/clipboard.ts",
+          "type": "registry:ui",
+          "target": "clipboard.ts"
+        }
+      ]
+    },
+    {
       "name": "collapsible",
       "type": "registry:ui",
       "title": "Collapsible",
@@ -225,6 +270,21 @@
           "path": "registry/llui/ui/collapsible.ts",
           "type": "registry:ui",
           "target": "collapsible.ts"
+        }
+      ]
+    },
+    {
+      "name": "color-picker",
+      "type": "registry:ui",
+      "title": "Color Picker",
+      "description": "Skin for @llui/components/color-picker — 2D area, native range sliders and preset swatches.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["input", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/color-picker.ts",
+          "type": "registry:ui",
+          "target": "color-picker.ts"
         }
       ]
     },
@@ -274,6 +334,21 @@
       ]
     },
     {
+      "name": "date-input",
+      "type": "registry:ui",
+      "title": "Date Input",
+      "description": "Skin for @llui/components/date-input — typed date entry with an error region.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["input", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/date-input.ts",
+          "type": "registry:ui",
+          "target": "date-input.ts"
+        }
+      ]
+    },
+    {
       "name": "dialog",
       "type": "registry:ui",
       "title": "Dialog",
@@ -300,6 +375,21 @@
           "path": "registry/llui/ui/dropdown-menu.ts",
           "type": "registry:ui",
           "target": "dropdown-menu.ts"
+        }
+      ]
+    },
+    {
+      "name": "editable",
+      "type": "registry:ui",
+      "title": "Editable",
+      "description": "Skin for @llui/components/editable — click-to-edit text.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["button", "input", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/editable.ts",
+          "type": "registry:ui",
+          "target": "editable.ts"
         }
       ]
     },
@@ -334,6 +424,36 @@
       ]
     },
     {
+      "name": "file-upload",
+      "type": "registry:ui",
+      "title": "File Upload",
+      "description": "Skin for @llui/components/file-upload — dropzone with a file list.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["button", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/file-upload.ts",
+          "type": "registry:ui",
+          "target": "file-upload.ts"
+        }
+      ]
+    },
+    {
+      "name": "floating-panel",
+      "type": "registry:ui",
+      "title": "Floating Panel",
+      "description": "Skin for @llui/components/floating-panel — draggable, resizable, minimizable surface.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/floating-panel.ts",
+          "type": "registry:ui",
+          "target": "floating-panel.ts"
+        }
+      ]
+    },
+    {
       "name": "hover-card",
       "type": "registry:ui",
       "title": "Hover Card",
@@ -360,6 +480,21 @@
           "path": "registry/llui/ui/icons.ts",
           "type": "registry:ui",
           "target": "icons.ts"
+        }
+      ]
+    },
+    {
+      "name": "image-cropper",
+      "type": "registry:ui",
+      "title": "Image Cropper",
+      "description": "Skin for @llui/components/image-cropper — crop box with corner grips.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["button", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/image-cropper.ts",
+          "type": "registry:ui",
+          "target": "image-cropper.ts"
         }
       ]
     },
@@ -454,6 +589,21 @@
       ]
     },
     {
+      "name": "marquee",
+      "type": "registry:ui",
+      "title": "Marquee",
+      "description": "Skin for @llui/components/marquee — clipped, edge-faded scrolling track.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/marquee.ts",
+          "type": "registry:ui",
+          "target": "marquee.ts"
+        }
+      ]
+    },
+    {
       "name": "menubar",
       "type": "registry:ui",
       "title": "Menubar",
@@ -529,6 +679,21 @@
       ]
     },
     {
+      "name": "password-input",
+      "type": "registry:ui",
+      "title": "Password Input",
+      "description": "Skin for @llui/components/password-input — text field with a reveal toggle.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["input", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/password-input.ts",
+          "type": "registry:ui",
+          "target": "password-input.ts"
+        }
+      ]
+    },
+    {
       "name": "popover",
       "type": "registry:ui",
       "title": "Popover",
@@ -555,6 +720,21 @@
           "path": "registry/llui/ui/progress.ts",
           "type": "registry:ui",
           "target": "progress.ts"
+        }
+      ]
+    },
+    {
+      "name": "qr-code",
+      "type": "registry:ui",
+      "title": "QR Code",
+      "description": "Skin for @llui/components/qr-code — rendered code with a download trigger.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["button", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/qr-code.ts",
+          "type": "registry:ui",
+          "target": "qr-code.ts"
         }
       ]
     },
@@ -619,6 +799,21 @@
       ]
     },
     {
+      "name": "search-field",
+      "type": "registry:ui",
+      "title": "Search Field",
+      "description": "Skin for @llui/components/search-field — search input with a clear affordance.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["input", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/search-field.ts",
+          "type": "registry:ui",
+          "target": "search-field.ts"
+        }
+      ]
+    },
+    {
       "name": "select",
       "type": "registry:ui",
       "title": "Select",
@@ -679,6 +874,21 @@
       ]
     },
     {
+      "name": "signature-pad",
+      "type": "registry:ui",
+      "title": "Signature Pad",
+      "description": "Skin for @llui/components/signature-pad — drawing surface with clear and undo.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["button", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/signature-pad.ts",
+          "type": "registry:ui",
+          "target": "signature-pad.ts"
+        }
+      ]
+    },
+    {
       "name": "skeleton",
       "type": "registry:ui",
       "title": "Skeleton",
@@ -720,6 +930,21 @@
           "path": "registry/llui/ui/sonner.ts",
           "type": "registry:ui",
           "target": "sonner.ts"
+        }
+      ]
+    },
+    {
+      "name": "sortable",
+      "type": "registry:ui",
+      "title": "Sortable",
+      "description": "Skin for @llui/components/sortable — drag-reorder list with drop feedback.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/sortable.ts",
+          "type": "registry:ui",
+          "target": "sortable.ts"
         }
       ]
     },
@@ -829,6 +1054,66 @@
       ]
     },
     {
+      "name": "theme-switch",
+      "type": "registry:ui",
+      "title": "Theme Switch",
+      "description": "Skin for @llui/components/theme-switch — segmented options or a single toggle.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/theme-switch.ts",
+          "type": "registry:ui",
+          "target": "theme-switch.ts"
+        }
+      ]
+    },
+    {
+      "name": "time-picker",
+      "type": "registry:ui",
+      "title": "Time Picker",
+      "description": "Skin for @llui/components/time-picker — hour/minute spinbuttons with an AM/PM toggle.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/time-picker.ts",
+          "type": "registry:ui",
+          "target": "time-picker.ts"
+        }
+      ]
+    },
+    {
+      "name": "timer",
+      "type": "registry:ui",
+      "title": "Timer",
+      "description": "Skin for @llui/components/timer — tabular readout with transport controls.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["button", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/timer.ts",
+          "type": "registry:ui",
+          "target": "timer.ts"
+        }
+      ]
+    },
+    {
+      "name": "toc",
+      "type": "registry:ui",
+      "title": "Table of Contents",
+      "description": "Skin for @llui/components/toc — depth-indented outline with scroll tracking.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/toc.ts",
+          "type": "registry:ui",
+          "target": "toc.ts"
+        }
+      ]
+    },
+    {
       "name": "toggle",
       "type": "registry:ui",
       "title": "Toggle",
@@ -889,6 +1174,21 @@
       ]
     },
     {
+      "name": "tour",
+      "type": "registry:ui",
+      "title": "Tour",
+      "description": "Skin for @llui/components/tour — spotlight coach marks.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["button", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/tour.ts",
+          "type": "registry:ui",
+          "target": "tour.ts"
+        }
+      ]
+    },
+    {
       "name": "tree-view",
       "type": "registry:ui",
       "title": "Tree View",
@@ -915,6 +1215,21 @@
           "path": "registry/llui/ui/typography.ts",
           "type": "registry:ui",
           "target": "typography.ts"
+        }
+      ]
+    },
+    {
+      "name": "utils",
+      "type": "registry:lib",
+      "title": "cn / mergeClass / classPart",
+      "description": "Class-merge helpers and the shared part factories every component here is built from.",
+      "dependencies": ["@llui/dom", "clsx", "tailwind-merge", "@llui/components"],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/llui/lib/utils.ts",
+          "type": "registry:lib",
+          "target": "utils.ts"
         }
       ]
     }
