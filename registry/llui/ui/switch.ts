@@ -1,5 +1,5 @@
 import { button, span, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { mergeClass } from '@/lib/utils'
+import { mergeClass, splitArgs } from '@/lib/utils'
 
 /**
  * Switch — the SKIN for `@llui/components/switch`. The state machine, keyboard
@@ -12,8 +12,9 @@ import { mergeClass } from '@/lib/utils'
  *   const parts = switchConnect(state.at('enabled'), switchSend)
  *   Switch({ ...parts.root }, [ SwitchThumb({ ...parts.thumb }) ])
  */
-export function Switch(props: ElProps | undefined, children: readonly ChildNode[] = []): Mountable {
-  const { class: className, ...rest } = props ?? {}
+export function Switch(a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable {
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props
   return button(
     {
       type: 'button',

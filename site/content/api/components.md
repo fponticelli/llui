@@ -6164,6 +6164,13 @@ export interface ComboboxItemParts {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<ComboboxState>
   send: Send<ComboboxMsg>
   parts: ComboboxParts
@@ -6310,6 +6317,13 @@ export interface ContextMenuInit {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<ContextMenuState>
   send: Send<ContextMenuMsg>
   parts: ContextMenuParts
@@ -6629,6 +6643,13 @@ export interface DialogInit {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   /** Dialog state slice as a Signal. */
   state: Signal<DialogState>
   /** Send dispatcher for dialog messages. */
@@ -6904,6 +6925,13 @@ export interface DrawerInit {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<DrawerState>
   send: Send<DrawerMsg>
   parts: DrawerParts
@@ -7807,6 +7835,13 @@ export interface HoverCardInit {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<HoverCardState>
   send: Send<HoverCardMsg>
   parts: HoverCardParts
@@ -8251,6 +8286,13 @@ export interface MenubarMenu {
 
 ```typescript
 export interface MenubarOverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<MenubarState>
   send: Send<MenubarMsg>
   /** The menu id this overlay renders. */
@@ -8353,6 +8395,13 @@ export interface MenuInit {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<MenuState>
   send: Send<MenuMsg>
   parts: MenuParts
@@ -9036,6 +9085,13 @@ export interface PopoverInit {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<PopoverState>
   send: Send<PopoverMsg>
   parts: PopoverParts
@@ -9740,6 +9796,13 @@ export interface SelectItemParts {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<SelectState>
   send: Send<SelectMsg>
   parts: SelectParts
@@ -11340,6 +11403,13 @@ export interface TooltipInit {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<TooltipState>
   send: Send<TooltipMsg>
   parts: TooltipParts
@@ -15941,6 +16011,26 @@ export interface NumericGrid {
 function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable
 ```
 
+##### `positionerProps()` from `@llui/components/utils/overlay-engine`
+
+Merge a consumer-supplied class into a positioner part bag.
+
+`createOverlay` BUILDS the positioner `div` itself (`div(opts.positioner,
+opts.content())`), so a consumer styling an overlay had no way to reach it —
+the one node in the tree they could not class. That is fine while the opt-in
+baseline stylesheet is doing the work (it targets
+`[data-scope][data-part='positioner']` directly), and a real gap for anyone
+styling with utilities instead, who could not put a `z-index` on the floating
+wrapper at all.
+
+Returns `base` UNCHANGED when no class is supplied, so every existing call
+site keeps its exact props object and allocates nothing extra on the overlay
+mount path.
+
+```typescript
+function positionerProps(base: ElProps, className: string | undefined): ElProps
+```
+
 #### Types
 
 ##### `OverlayElementReference` from `@llui/components/utils/overlay-engine`
@@ -18144,6 +18234,13 @@ export interface DialogState {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   /** Dialog state slice as a Signal. */
   state: Signal<DialogState>
   /** Send dispatcher for dialog messages. */
@@ -18271,6 +18368,13 @@ export interface ConnectOptions {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<PopoverState>
   send: Send<PopoverMsg>
   parts: PopoverParts
@@ -18476,6 +18580,13 @@ export interface ConnectOptions {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<TooltipState>
   send: Send<TooltipMsg>
   parts: TooltipParts
@@ -18872,6 +18983,13 @@ export interface MenuState extends MenuTreeState {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<MenuState>
   send: Send<MenuMsg>
   parts: MenuParts
@@ -20593,6 +20711,13 @@ export interface DrawerState {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<DrawerState>
   send: Send<DrawerMsg>
   parts: DrawerParts
@@ -21193,6 +21318,13 @@ export interface ConnectOptions {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<SelectState>
   send: Send<SelectMsg>
   parts: SelectParts
@@ -21726,6 +21858,13 @@ export interface ConnectOptions {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<ComboboxState>
   send: Send<ComboboxMsg>
   parts: ComboboxParts
@@ -21912,6 +22051,13 @@ export interface HoverCardState {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<HoverCardState>
   send: Send<HoverCardMsg>
   parts: HoverCardParts
@@ -23698,6 +23844,13 @@ export interface ContextMenuState extends MenuTreeState {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<ContextMenuState>
   send: Send<ContextMenuMsg>
   parts: ContextMenuParts
@@ -29315,6 +29468,13 @@ export interface MenubarMenu {
 
 ```typescript
 export interface MenubarOverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<MenubarState>
   send: Send<MenubarMsg>
   /** The menu id this overlay renders. */

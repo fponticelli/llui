@@ -1,189 +1,32 @@
 /*
- * @llui/components — opt-in base theme (shadcn/ui token contract)
+ * @llui/components — opt-in BASELINE STYLESHEET
  *
- * REQUIRES TAILWIND CSS v4. Colors live in plain `:root` / `.dark` blocks (so a
- * theme generator's output drops straight in), and are mapped into Tailwind's
- * `--color-*` namespace by an `@theme inline` block — the shadcn/ui convention.
- * The non-color scales (radius, shadow, duration, z-index) live in a plain
- * `@theme` block, which Tailwind resolves into BOTH real custom properties and
- * utilities. Without a Tailwind v4 pipeline those scales emit nothing and the
- * baseline rules below render unstyled.
+ * Design tokens plus a complete set of component rules, so every
+ * `@llui/components` part is styled the moment you import this file and spread
+ * a `connect()` part bag. Zero configuration, nothing to copy, no CLI.
  *
- * Import once at app root:
+ * REQUIRES TAILWIND CSS v4 (the tokens resolve through `@theme`):
  *   @import 'tailwindcss';
  *   @import '@llui/components/styles/theme.css';
  *   @import '@llui/components/styles/theme-dark.css';
  *
- * Token names follow shadcn/ui: paired `--x` / `--x-foreground` surfaces
- * (background, card, popover, primary, secondary, muted, accent, destructive)
- * plus `--border`, `--input`, `--ring`, `--chart-1..5`, `--sidebar-*` and a
- * single `--radius` that derives the rest of the scale. Any shadcn/ui theme —
- * including the output of the community theme generators — can be pasted over
- * the `:root` / `.dark` blocks verbatim.
+ * DO NOT combine this with the component registry (`llui add …`) or with your
+ * own Tailwind classes on component parts. The rules below are UNLAYERED, and
+ * unlayered CSS beats `@layer utilities` — so a registry component's
+ * `size-4` loses to the baseline's `width: 1.25rem` with no warning anywhere.
+ * (Measured: the registry Switch's thumb rendered at the baseline's 20px and
+ * ignored its own recipe entirely.) Import `tokens.css` instead — same tokens,
+ * no component rules:
  *
- * Derived tokens (`--*-hover`, `--*-active`, `--accent-strong`,
- * `--primary-soft-foreground`, `--border-hover`) are LLui additions: the
- * baseline stylesheet needs interaction states that shadcn expresses with
- * per-component utilities. They are `color-mix()` expressions over the base
- * tokens, so overriding a base token carries them along and no theme needs to
- * define them.
+ *   @import 'tailwindcss';
+ *   @import '@llui/components/styles/tokens.css';
+ *   @import '@llui/components/styles/tokens-dark.css';
  *
- * Colour credit: token names and default values follow shadcn/ui (MIT,
- * © 2023 shadcn) — https://ui.shadcn.com.
+ * Token names and defaults follow shadcn/ui (MIT, © 2023 shadcn) —
+ * https://ui.shadcn.com. See `tokens.css` for the full contract.
  */
 
-/* ─── Base tokens (shadcn/ui contract) ─── */
-:root {
-  --radius: 0.625rem;
-
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
-}
-
-/*
- * ─── Derived interaction tokens (LLui) ───
- *
- * `color-mix` toward `--foreground` rather than toward a fixed dark, so the same
- * expression darkens on a light theme and lightens on a dark one — `--foreground`
- * is near-black in light mode and near-white in dark. No `.dark` override needed
- * for any token in this block, which is why they are defined ONCE, outside the
- * theme blocks a generator overwrites.
- */
-:root {
-  --accent-strong: color-mix(in oklab, var(--accent) 82%, var(--foreground));
-  --border-hover: color-mix(in oklab, var(--border) 70%, var(--foreground));
-  --primary-hover: color-mix(in oklab, var(--primary) 88%, var(--foreground));
-  --primary-active: color-mix(in oklab, var(--primary) 76%, var(--foreground));
-  --destructive-hover: color-mix(in oklab, var(--destructive) 86%, var(--foreground));
-  /* Foreground for primary-tinted "soft" surfaces — selected/highlighted list
-   * items, tags, etc. (paired with a `color-mix(primary 15%, transparent)`
-   * background). Mixed toward `--foreground` so it stays legible against the
-   * tint in BOTH themes. */
-  --primary-soft-foreground: color-mix(in oklab, var(--primary) 70%, var(--foreground));
-
-  /* Spacing steps used by the baseline rules below. Deliberately NOT in `@theme`:
-   * every value equals Tailwind's own numeric scale (`--spacing` × n), so adding
-   * them as NAMED spacing entries would duplicate the scale for no gain. */
-  --spacing-1: 0.25rem;
-  --spacing-2: 0.5rem;
-  --spacing-3: 0.75rem;
-  --spacing-4: 1rem;
-  --spacing-6: 1.5rem;
-  --spacing-8: 2rem;
-}
-
-/*
- * ─── Tailwind namespace mapping ───
- *
- * `inline` makes each utility emit `var(--token)` instead of copying the value,
- * so a `.dark` (or `[data-theme='dark']`) override reaches `bg-card` and friends
- * without regenerating any CSS. Colors only — the scales below are static.
- */
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent-strong: var(--accent-strong);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-border-hover: var(--border-hover);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-primary-hover: var(--primary-hover);
-  --color-primary-active: var(--primary-active);
-  --color-primary-soft-foreground: var(--primary-soft-foreground);
-  --color-destructive-hover: var(--destructive-hover);
-  --color-chart-1: var(--chart-1);
-  --color-chart-2: var(--chart-2);
-  --color-chart-3: var(--chart-3);
-  --color-chart-4: var(--chart-4);
-  --color-chart-5: var(--chart-5);
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-}
-
-/*
- * ─── Non-colour scales ───
- *
- * A plain `@theme` (not `inline`): Tailwind emits each of these as a real custom
- * property AND generates its utility, so `var(--radius-md)` in the baseline rules
- * below and `rounded-md` in a registry component read the same value.
- *
- * The namespace names are load-bearing and are NOT free to rename. Tailwind v4
- * reads durations from `--transition-duration-*` and z-indexes from `--z-index-*`;
- * an earlier revision of this file declared `--duration-*` and `--z-*`, which are
- * not namespaces, so `duration-fast` / `z-dialog` / `z-popover` / `z-tooltip`
- * compiled to NOTHING — 116 dead utility occurrences across 55 files, with every
- * transition instant and every overlay unstacked. `test/tailwind-classes.test.ts`
- * compiles the real Tailwind build and fails on any class that emits no rule.
- */
-@theme {
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
-
-  --transition-duration-fast: 150ms;
-  --transition-duration-normal: 200ms;
-
-  --z-index-popover: 50;
-  --z-index-dialog: 100;
-  --z-index-tooltip: 150;
-}
+@import './tokens.css';
 
 /* ─── Accordion ─── */
 

@@ -313,6 +313,8 @@
       "types": "./dist/patterns/searchable-select.d.ts",
       "import": "./dist/patterns/searchable-select.js"
     },
+    "./styles/tokens.css": "./dist/styles/tokens.css",
+    "./styles/tokens-dark.css": "./dist/styles/tokens-dark.css",
     "./styles/theme.css": "./dist/styles/theme.css",
     "./styles/theme-dark.css": "./dist/styles/theme-dark.css",
     "./styles": {
@@ -322,7 +324,7 @@
   },
   "scripts": {
     "prepack": "pnpm run build",
-    "build": "tsc -p tsconfig.build.json && mkdir -p dist/styles && cp src/styles/theme.css src/styles/theme-dark.css dist/styles/",
+    "build": "tsc -p tsconfig.build.json && mkdir -p dist/styles && cp src/styles/theme.css src/styles/theme-dark.css src/styles/tokens.css src/styles/tokens-dark.css dist/styles/",
     "check": "tsc --noEmit -p tsconfig.check.json",
     "lint": "eslint src",
     "test": "vitest run"
@@ -346,7 +348,9 @@
   },
   "sideEffects": [
     "./dist/styles/theme.css",
-    "./dist/styles/theme-dark.css"
+    "./dist/styles/theme-dark.css",
+    "./dist/styles/tokens.css",
+    "./dist/styles/tokens-dark.css"
   ],
   "dependencies": {
     "@standard-schema/spec": "^1.0.0"

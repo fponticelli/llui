@@ -1,0 +1,8 @@
+{
+  "$schema": "https://llui.dev/schema/components.json",
+  "registry": "./registry",
+  "paths": {
+    "ui": "src/components/ui",
+    "lib": "src/lib"
+  }
+}

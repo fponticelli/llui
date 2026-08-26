@@ -48,6 +48,12 @@ export const EXAMPLES: ExampleMeta[] = [
     blurb: 'A sign-up form with Zod schema validation and live field errors.',
   },
   {
+    slug: 'registry-demo',
+    pkg: '@llui/example-registry-demo',
+    title: 'Registry Demo',
+    blurb: 'Every registry component, from source copied into the app by `llui add`.',
+  },
+  {
     slug: 'components-demo',
     pkg: '@llui/example-components-demo',
     title: 'Components Demo',

@@ -1,5 +1,5 @@
 import { button, div, h3, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { mergeClass } from '@/lib/utils'
+import { mergeClass, splitArgs } from '@/lib/utils'
 
 /**
  * Accordion — the SKIN for `@llui/components/accordion`.
@@ -10,10 +10,11 @@ import { mergeClass } from '@/lib/utils'
  * Pass `headingLevel` when the accordion sits under a different outline depth.
  */
 export function Accordion(
-  props: ElProps | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props as ElProps
   return div(
     {
       ...rest,
@@ -24,10 +25,11 @@ export function Accordion(
 }
 
 export function AccordionItem(
-  props: ElProps | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props as ElProps
   return div(
     { ...rest, class: mergeClass('border-b border-border last:border-b-0', className) },
     children,
@@ -35,10 +37,11 @@ export function AccordionItem(
 }
 
 export function AccordionTrigger(
-  props: ElProps | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props as ElProps
   return h3({ class: 'flex' }, [
     button(
       {
@@ -55,10 +58,11 @@ export function AccordionTrigger(
 }
 
 export function AccordionContent(
-  props: ElProps | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props as ElProps
   return div(
     { ...rest, class: mergeClass('px-4 pb-3 text-sm text-muted-foreground', className) },
     children,

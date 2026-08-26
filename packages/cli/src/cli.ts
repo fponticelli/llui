@@ -83,10 +83,15 @@ async function cmdInit(cwd: string, flags: Argv['flags']): Promise<void> {
   })
   const file = await writeConfig(cwd, config)
   console.log(`Wrote ${path.relative(cwd, file) || CONFIG_FILE}`)
-  console.log('\nAdd the theme to your app CSS:')
+  // TOKENS, not `theme.css`. The baseline stylesheet's component rules are
+  // unlayered and beat `@layer utilities`, so pairing it with registry
+  // components makes every recipe lose silently.
+  console.log('\nAdd the tokens to your app CSS:')
   console.log("  @import 'tailwindcss';")
-  console.log("  @import '@llui/components/styles/theme.css';")
-  console.log("  @import '@llui/components/styles/theme-dark.css';")
+  console.log("  @import '@llui/components/styles/tokens.css';")
+  console.log("  @import '@llui/components/styles/tokens-dark.css';")
+  console.log('\n(Not styles/theme.css — that is the opt-in baseline stylesheet,')
+  console.log(' whose unlayered rules would override every component you add.)')
   console.log('\nThen: llui add button card')
 }
 

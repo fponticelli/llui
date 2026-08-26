@@ -1,7 +1,7 @@
 import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
-import { createOverlay } from '../utils/overlay-engine.js'
+import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
 import type { PresenceStatus } from './presence.js'
 import { presenceClose, presenceEnd, presenceOpen } from './presence.js'
@@ -221,6 +221,13 @@ export function connect(
 }
 
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<HoverCardState>
   send: Send<HoverCardMsg>
   parts: HoverCardParts
@@ -251,7 +258,7 @@ export function overlay(opts: OverlayOptions): Mountable {
     state: opts.state,
     transition: opts.transition,
     host: resolvePortalTarget(opts.target ?? 'body'),
-    positioner: opts.parts.positioner,
+    positioner: positionerProps(opts.parts.positioner, opts.positionerClass),
     content: opts.content,
     contentId: opts.parts.content.id,
     relationships: {

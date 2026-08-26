@@ -1,26 +1,23 @@
 import { div, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { mergeClass } from '@/lib/utils'
+import { mergeClass, splitArgs } from '@/lib/utils'
 
 /**
  * Popover — the SKIN for `@llui/components/popover`. Floating placement,
  * dismissal, nested-layer ownership and focus restoration are the package's.
  *
+ * The floating wrapper is built by `overlay()` itself, so its class — the
+ * `z-index` for the layer — is passed as `positionerClass: 'z-popover'` rather
+ * than by wrapping a part bag.
+ *
  * `data-side` comes from the positioner, so the enter animation is written as a
  * `data-[side=…]:` variant rather than computed in a view.
  */
-export function PopoverPositioner(
-  props: ElProps | undefined,
-  children: readonly ChildNode[] = [],
-): Mountable {
-  const { class: className, ...rest } = props ?? {}
-  return div({ ...rest, class: mergeClass('z-popover', className) }, children)
-}
-
 export function PopoverContent(
-  props: ElProps | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props as ElProps
   return div(
     {
       ...rest,
@@ -35,5 +32,8 @@ export function PopoverContent(
 
 export function PopoverArrow(props?: ElProps): Mountable {
   const { class: className, ...rest } = props ?? {}
-  return div({ ...rest, class: mergeClass('size-2 rotate-45 border-border bg-popover', className) })
+  return div({
+    ...rest,
+    class: mergeClass('size-2.5 rotate-45 border border-border bg-popover', className),
+  })
 }

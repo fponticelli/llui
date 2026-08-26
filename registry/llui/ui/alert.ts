@@ -1,6 +1,6 @@
 import { div, h5, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
 import { createVariants, type VariantProps } from '@llui/components/styles'
-import { mergeClass } from '@/lib/utils'
+import { mergeClass, splitArgs } from '@/lib/utils'
 
 const variants = {
   variant: {
@@ -24,10 +24,11 @@ export type AlertVariants = VariantProps<typeof variants>
  * `status`/`log` live region instead can override it.
  */
 export function Alert(
-  props: (ElProps & AlertVariants) | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: (ElProps & AlertVariants) | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { variant, class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { variant, class: className, ...rest } = props as ElProps & AlertVariants
   return div(
     { role: 'alert', ...rest, class: mergeClass(alertVariants({ variant }), className) },
     children,
@@ -35,10 +36,11 @@ export function Alert(
 }
 
 export function AlertTitle(
-  props: ElProps | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props as ElProps
   return h5(
     { ...rest, class: mergeClass('mb-1 font-medium leading-none tracking-tight', className) },
     children,
@@ -46,9 +48,10 @@ export function AlertTitle(
 }
 
 export function AlertDescription(
-  props: ElProps | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props as ElProps
   return div({ ...rest, class: mergeClass('text-sm [&_p]:leading-relaxed', className) }, children)
 }

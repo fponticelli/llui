@@ -1,21 +1,15 @@
 import { div, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { mergeClass } from '@/lib/utils'
+import { mergeClass, splitArgs } from '@/lib/utils'
 
 /** Tooltip — the SKIN for `@llui/components/tooltip`. Open/close delays, pointer
- * and focus triggers, and dismissal live in the package. */
-export function TooltipPositioner(
-  props: ElProps | undefined,
-  children: readonly ChildNode[] = [],
-): Mountable {
-  const { class: className, ...rest } = props ?? {}
-  return div({ ...rest, class: mergeClass('z-tooltip', className) }, children)
-}
-
+ * and focus triggers, and dismissal live in the package. Pass
+ * `positionerClass: 'z-tooltip'` to `overlay()` for the floating layer's z-index. */
 export function TooltipContent(
-  props: ElProps | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props as ElProps
   return div(
     {
       ...rest,
@@ -30,5 +24,5 @@ export function TooltipContent(
 
 export function TooltipArrow(props?: ElProps): Mountable {
   const { class: className, ...rest } = props ?? {}
-  return div({ ...rest, class: mergeClass('size-2 rotate-45 bg-primary', className) })
+  return div({ ...rest, class: mergeClass('size-2.5 rotate-45 bg-primary', className) })
 }

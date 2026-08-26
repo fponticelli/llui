@@ -11,7 +11,7 @@ import {
   type ElProps,
   type Mountable,
 } from '@llui/dom'
-import { classPart } from '@/lib/utils'
+import { classPart, splitArgs } from '@/lib/utils'
 
 const tableInner = classPart(tableEl, 'w-full caption-bottom text-sm')
 
@@ -21,7 +21,8 @@ const tableInner = classPart(tableEl, 'w-full caption-bottom text-sm')
  * not the caller's job, because a table that overflows the viewport is the
  * default failure mode of every hand-rolled version of this.
  */
-export function Table(props: ElProps | undefined, children: readonly ChildNode[] = []): Mountable {
+export function Table(a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable {
+  const { props, children } = splitArgs(a0, a1)
   return div({ class: 'relative w-full overflow-x-auto' }, [tableInner(props, children)])
 }
 

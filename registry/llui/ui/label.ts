@@ -1,5 +1,5 @@
 import { label as labelEl, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { mergeClass } from '@/lib/utils'
+import { mergeClass, splitArgs } from '@/lib/utils'
 
 export const labelRecipe =
   'text-sm font-medium leading-none select-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70'
@@ -9,7 +9,8 @@ export const labelRecipe =
  * `htmlFor` is a compile ERROR here: the `attr-name` rule rejects the React-ism
  * because it binds a dead attribute that never associates anything.
  */
-export function Label(props: ElProps | undefined, children: readonly ChildNode[] = []): Mountable {
-  const { class: className, ...rest } = props ?? {}
+export function Label(a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable {
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props
   return labelEl({ ...rest, class: mergeClass(labelRecipe, className) }, children)
 }

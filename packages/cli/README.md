@@ -15,6 +15,18 @@ pnpm llui list
 pnpm llui add button card dialog
 ```
 
+Then import the **tokens** in your app CSS — not `styles/theme.css`:
+
+```css
+@import 'tailwindcss';
+@import '@llui/components/styles/tokens.css';
+@import '@llui/components/styles/tokens-dark.css';
+```
+
+`theme.css` is the opt-in baseline stylesheet. Its `[data-scope][data-part]` rules are
+unlayered, and unlayered CSS beats `@layer utilities` — importing it alongside registry
+components makes every one of their classes lose, with nothing to tell you.
+
 ## Commands
 
 |                      |                                                                                           |

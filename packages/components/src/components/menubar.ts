@@ -2,7 +2,7 @@ import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@ll
 import { mapSend, tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
-import { createOverlay } from '../utils/overlay-engine.js'
+import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { firstEnabled, rovingTabStop } from '../utils/list-navigation.js'
 import { deriveOnceN } from '../utils/derive.js'
@@ -367,6 +367,13 @@ export function connect(
 // ---- overlay (per-menu) ----
 
 export interface MenubarOverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   */
+  positionerClass?: string
   state: Signal<MenubarState>
   send: Send<MenubarMsg>
   /** The menu id this overlay renders. */
@@ -409,7 +416,7 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
     state: opts.state,
     transition: opts.transition,
     host: resolvePortalTarget(opts.target ?? 'body'),
-    positioner: opts.parts.positioner,
+    positioner: positionerProps(opts.parts.positioner, opts.positionerClass),
     content: opts.content,
     contentId: opts.parts.content.id,
     relationships: {

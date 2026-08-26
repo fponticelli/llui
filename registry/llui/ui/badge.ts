@@ -1,6 +1,6 @@
 import { span, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
 import { createVariants, type VariantProps } from '@llui/components/styles'
-import { mergeClass } from '@/lib/utils'
+import { mergeClass, splitArgs } from '@/lib/utils'
 
 const variants = {
   variant: {
@@ -22,9 +22,10 @@ export const badgeVariants = createVariants({
 export type BadgeVariants = VariantProps<typeof variants>
 
 export function Badge(
-  props: (ElProps & BadgeVariants) | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: (ElProps & BadgeVariants) | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { variant, class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { variant, class: className, ...rest } = props as ElProps & BadgeVariants
   return span({ ...rest, class: mergeClass(badgeVariants({ variant }), className) }, children)
 }

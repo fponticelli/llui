@@ -1,5 +1,5 @@
 import { button, div, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { classPart, mergeClass } from '@/lib/utils'
+import { classPart, mergeClass, splitArgs } from '@/lib/utils'
 
 /**
  * Tabs — the SKIN for `@llui/components/tabs`. Roving focus, arrow-key
@@ -25,10 +25,11 @@ export const TabsContent = classPart(
 )
 
 export function TabsTrigger(
-  props: ElProps | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props as ElProps
   return button(
     {
       ...rest,

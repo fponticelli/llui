@@ -1,0 +1,16 @@
+@import 'tailwindcss';
+@import '@llui/components/styles/tokens.css';
+@import '@llui/components/styles/tokens-dark.css';
+
+/*
+ * TOKENS, not `theme.css`. The baseline stylesheet's `[data-scope][data-part]`
+ * rules are unlayered, and unlayered CSS beats `@layer utilities` — importing it
+ * here would make every registry recipe lose to it silently. The Switch's thumb
+ * rendered at the baseline's 20px, ignoring its own `size-4`, until this import
+ * was narrowed.
+ *
+ * No token overrides either: this demo deliberately renders the SHIPPED defaults,
+ * so what you see is `llui add` plus an untouched theme. To rebrand, override a
+ * base token (`--primary`, `--radius`) in a `:root` block here; the derived
+ * interaction tokens are `color-mix()` expressions and follow along.
+ */

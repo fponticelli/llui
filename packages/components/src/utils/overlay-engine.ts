@@ -455,3 +455,22 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
     opts.host,
   )
 }
+
+/**
+ * Merge a consumer-supplied class into a positioner part bag.
+ *
+ * `createOverlay` BUILDS the positioner `div` itself (`div(opts.positioner,
+ * opts.content())`), so a consumer styling an overlay had no way to reach it —
+ * the one node in the tree they could not class. That is fine while the opt-in
+ * baseline stylesheet is doing the work (it targets
+ * `[data-scope][data-part='positioner']` directly), and a real gap for anyone
+ * styling with utilities instead, who could not put a `z-index` on the floating
+ * wrapper at all.
+ *
+ * Returns `base` UNCHANGED when no class is supplied, so every existing call
+ * site keeps its exact props object and allocates nothing extra on the overlay
+ * mount path.
+ */
+export function positionerProps(base: ElProps, className: string | undefined): ElProps {
+  return className === undefined ? base : { ...base, class: className }
+}

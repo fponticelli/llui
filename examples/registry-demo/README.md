@@ -1,0 +1,52 @@
+# Registry Demo
+
+Every component in the [LLui registry](../../registry), rendered from source that
+`llui add` copied into this app. Nothing on the page is imported from a styling
+package — `src/components/ui/` is ordinary project source, and editing it changes what
+you see.
+
+## What it demonstrates
+
+- **The two kinds of registry item.** Presentational element helpers (`Button`, `Card`,
+  `Input`, `Textarea`, `Label`, `Badge`, `Separator`, `Skeleton`, `Alert`, `Table`) and
+  skins over `@llui/components` (`Switch`, `Tabs`, `Accordion`, `Dialog`, `Popover`,
+  `Tooltip`) where the state machine, keyboard handling and ARIA stay in the package.
+- **Tokens without the baseline stylesheet.** `src/main.css` imports
+  `@llui/components/styles/tokens.css`, not `theme.css`. The baseline's
+  `[data-scope][data-part]` rules are unlayered, and unlayered CSS beats
+  `@layer utilities` — importing it here would make every registry recipe lose to it
+  silently. This app is the reason that split exists.
+- **State-driven styling as `data-*` variants.** No view on this page reads state to
+  build a class. Every visual state — the Switch thumb, the active tab, the open
+  accordion panel, the dialog's enter transition — is a `data-[state=…]:` variant over
+  the attributes `connect()` already emits.
+- **`cn` beating `cx`.** The Button section includes a `class: 'px-10'` override that
+  wins over the recipe's `px-4`. With plain concatenation it would lose by source order.
+- **What `overlay()` does and does not give you.** The floating wrapper is built by the
+  helper, so its class arrives as `positionerClass` — and `fixed inset-0` plus the
+  backdrop are the consumer's job, which is invisible until you style with utilities.
+
+## UI
+
+One page, two groups: presentational components first, then the skins. Overlay triggers
+sit at the bottom; the dialog, popover and tooltip portal to `<body>`.
+
+## Regenerating the copied source
+
+`src/components/ui/` and `src/lib/utils.ts` are checked in — that is what a real
+consumer's tree looks like, and it means CI compiles and boots the CLI's actual output.
+They are kept in sync with the registry by `scripts/test/registry-demo-sync.test.ts`.
+After changing a registry item:
+
+```bash
+pnpm build:registry
+pnpm exec node packages/cli/dist/cli.js add <item> --registry ./registry \
+  --cwd examples/registry-demo --overwrite
+```
+
+## Running locally
+
+```bash
+pnpm install
+pnpm --filter @llui/example-registry-demo dev
+```

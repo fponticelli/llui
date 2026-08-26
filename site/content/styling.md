@@ -100,6 +100,25 @@ not declare resolves nowhere, so relative is the default rather than the fallbac
 `llui add` never overwrites an existing file. The copied file is your source and is
 expected to have been edited; pass `--overwrite` when you really mean it.
 
+### Two things `overlay()` does not give you
+
+Both are invisible while the baseline stylesheet is doing the work, and both bite the
+moment you style with utilities:
+
+- **The positioner needs `fixed inset-0` from you.** `overlay()` builds the floating
+  wrapper div, but the part bag it spreads carries only `data-*` — nothing positions it.
+  Pass it, with the z-index, as `positionerClass`.
+- **The backdrop is yours to render**, inside `content()`. The engine does not emit one.
+  It sits _inside_ the positioner, so it wants `absolute inset-0`, not `fixed`.
+
+```ts
+dialogOverlay({
+  state, send, parts,
+  positionerClass: 'fixed inset-0 z-dialog grid place-items-center p-4',
+  content: () => [DialogBackdrop({ ...parts.backdrop }), DialogContent({ ...parts.content }, [...])],
+})
+```
+
 ### Presentational vs. skin items
 
 - **Presentational** — `button`, `card`, `input`, `textarea`, `label`, `badge`,

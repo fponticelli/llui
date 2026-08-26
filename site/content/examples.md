@@ -18,6 +18,10 @@ Every example below is a real LLui app, built from source and embedded live. Ope
     <h3>Form Validation</h3>
     <p>A sign-up form with Zod schema validation and live field errors.</p>
   </a>
+  <a class="example-card" href="/examples/registry-demo">
+    <h3>Registry Demo</h3>
+    <p>Every registry component, from source copied into the app by `llui add`.</p>
+  </a>
   <a class="example-card" href="/examples/components-demo">
     <h3>Components Demo</h3>
     <p>A gallery of the headless @llui/components primitives.</p>

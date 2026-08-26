@@ -1,6 +1,6 @@
 import { button as buttonEl, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
 import { createVariants, type VariantProps } from '@llui/components/styles'
-import { mergeClass } from '@/lib/utils'
+import { mergeClass, splitArgs } from '@/lib/utils'
 
 const variants = {
   variant: {
@@ -44,10 +44,11 @@ export type ButtonProps = ElProps & ButtonVariants
  * own `type` (dialog's trigger does) still wins.
  */
 export function Button(
-  props: ButtonProps | undefined,
-  children: readonly ChildNode[] = [],
+  a0?: ButtonProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
 ): Mountable {
-  const { variant, size, class: className, ...rest } = props ?? {}
+  const { props, children } = splitArgs(a0, a1)
+  const { variant, size, class: className, ...rest } = props as ButtonProps
   return buttonEl(
     { type: 'button', ...rest, class: mergeClass(buttonVariants({ variant, size }), className) },
     children,
