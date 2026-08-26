@@ -11,6 +11,112 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package that consumes `@llui/dom` declares it as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. Interaction consumers use the same peer pattern for `@llui/interactions`, preserving one document-level registry. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## 2026-08-26 — @llui/components@0.15.0, @llui/cli@0.1.0
+
+**Released:** `@llui/components@0.15.0`; `@llui/cli@0.1.0`; `@llui/a2ui@0.3.1`; `@llui/devmode-annotate@0.4.1`; `@llui/devmode-annotate-editor@0.1.2`; `@llui/markdown-editor@0.8.2`
+
+LLui adopts the shadcn/ui token contract and its distribution model: a component
+registry you copy source out of, installed by a new `llui add` CLI. The layer it
+replaces was shipped, untested against a real Tailwind build, and broken —
+116 utility occurrences across 55 files compiled to no CSS at all.
+
+### Breaking
+
+- **`@llui/components@0.15.0`** — every theme token is renamed to the shadcn/ui
+  contract. `--color-surface` → `--background` / `--card` / `--popover`,
+  `--color-text` → `--foreground`, `--color-text-muted` → `--muted-foreground`,
+  `--color-border-focus` → `--ring`, and the scales move to Tailwind's real
+  namespaces (`--duration-*` → `--transition-duration-*`, `--z-*` →
+  `--z-index-*`, `--space-*` → `--spacing-*`). Values are oklch. Any `:root`
+  override of a `--color-*` token stops applying.
+- **`@llui/components@0.15.0`** — `src/styles/classes/*` and its 61
+  `./styles/<component>` export entries are **removed**. The per-component
+  `xClasses()` helpers had no consumer, and 116 of the utility occurrences they
+  emitted produced no CSS: `duration-fast` (89 uses) and
+  `z-dialog`/`z-popover`/`z-tooltip` (18) were declared against `--duration-*`
+  and `--z-*`, which are not Tailwind v4 namespaces. Every transition was
+  instant and every overlay unstacked. Class recipes now ship as registry source
+  you own, verified by a real Tailwind compile in CI.
+- **`@llui/components@0.15.0`** — importing `styles/theme.css` alongside Tailwind
+  utility classes on component parts no longer works as intended, and never did.
+  Its `[data-scope][data-part]` rules are unlayered, and unlayered CSS beats
+  `@layer utilities`, so every utility on a component part loses to it silently.
+  Import the new `styles/tokens.css` instead.
+
+### Migration
+
+- Rename your token overrides to the shadcn/ui names, or paste a shadcn/ui theme
+  over the `:root` / `.dark` blocks — the contract is identical. Overriding a
+  base token is enough: `--primary-hover`, `--accent-strong`, `--border-hover`
+  and `--primary-soft-foreground` are `color-mix()` expressions over it and
+  follow automatically. Do not restate them in a dark block.
+- Replace `xClasses()` imports with `llui add <component>` and edit the copied
+  recipe, or write your own utilities.
+- Styling with utilities rather than the baseline stylesheet? Swap
+  `@import '@llui/components/styles/theme.css'` for
+  `@import '@llui/components/styles/tokens.css'` (and `theme-dark.css` for
+  `tokens-dark.css`). Keep `theme.css` only if you want every component styled
+  with no classes of your own.
+- Adding your own scale tokens? Use `--transition-duration-*`, `--z-index-*` and
+  `--spacing-*`. The wrong spelling still emits a valid custom property, so
+  `var(--duration-fast)` in plain CSS works while the `duration-fast` **class**
+  compiles to nothing — which is exactly how this shipped unnoticed.
+
+### `@llui/cli@0.1.0`
+
+- **Added** `llui init` / `llui add <item...>` / `llui list` — copies registry
+  component source into your project, shadcn-style. The copied file is compiled
+  by _your_ `@llui/vite-plugin`, so it gets view lowering, the compile-time lint
+  rules, and the agent metadata (`$ms` / `$ss` / `__lluiVariants`) that a
+  precompiled library cannot provide.
+- **Added** `components.json` config: `registry`, `paths.ui` / `paths.lib`, and
+  an optional `aliases`. Without `aliases`, imports are rewritten to **relative**
+  specifiers computed from where each file landed — an alias your tsconfig does
+  not declare would resolve nowhere, so relative is the default, not a fallback.
+- **Added** safety rules that are the point of the copy-in model: `add` never
+  overwrites an existing file (the copy is your source and is expected to have
+  been edited — pass `--overwrite`), registry file targets are validated against
+  `..` and absolute paths at load rather than at write, and unknown registry keys
+  are ignored so a registry ahead of your CLI still installs.
+- **Added** registry item JSON as a documented subset of shadcn's
+  `registry-item.json`, so a third-party registry is a supported thing to host.
+
+### `@llui/components@0.15.0`
+
+- **Added** `styles/tokens.css` and `styles/tokens-dark.css` — the design tokens
+  with **no** component rules. This is the import for the registry path or any
+  app styling with utilities. `theme.css` now imports them and adds the baseline
+  stylesheet on top, so existing consumers are unchanged.
+- **Added** `positionerClass` to every `overlay()` helper (dialog, alert-dialog,
+  drawer, popover, tooltip, hover-card, menu, menubar, context-menu, combobox,
+  select). `createOverlay` builds the floating wrapper `div` itself, so it was
+  the one node a consumer could not reach — and it is the element that carries
+  the layer's `z-index`. Omitting the option emits no `class` attribute and
+  reuses the same props object, so nothing changes for existing callers.
+- **Improved** the token contract is now shadcn/ui's, so any shadcn theme —
+  including the community theme generators' output — pastes in verbatim. Colours
+  are mapped through `@theme inline`, which means a `.dark` override reaches
+  `bg-card` with no regenerated CSS.
+- **Improved** dark mode activates three ways at once: `.dark` (what shadcn
+  tooling writes), `[data-theme='dark']` (what `theme-switch` writes), and
+  `prefers-color-scheme`. `.light` / `[data-theme='light']` opts a subtree out.
+
+### `@llui/{a2ui,devmode-annotate,devmode-annotate-editor,markdown-editor}`
+
+- **Improved** version-only republish so their `@llui/components` range admits
+  `0.15.0`. No code changes; without it, a consumer pulling `@llui/components`
+  directly alongside any of these would install two physical copies.
+
+### Docs
+
+- **Added** [Styling & the component registry](https://llui.dev/styling) — the
+  token contract, the two mutually exclusive styling paths, the Tailwind
+  namespace traps, and what `overlay()` does and does not give you.
+- **Added** the [Registry Demo](https://llui.dev/examples/registry-demo) example:
+  every registry component on one page, rendered from source `llui add` copied
+  into the app. Its `src/components/ui/` is checked in, so CI compiles and
+  browser-boots the CLI's actual output.
+
 ## 2026-08-17 — @llui/markdown-editor@0.8.1
 
 **Released:** `@llui/markdown-editor@0.8.1`
