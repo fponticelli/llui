@@ -139,44 +139,43 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'Table & Data Table',
       'The three status surfaces belong to `patterns/data-table`; the grid stays the plain `Table`. Each carries its own reactive `hidden`, and the two live regions must stay MOUNTED — `show` would unmount them and announce nothing.',
       [
-        Table([
-          TableCaption([text('A slice of the registry.')]),
-          TableHeader([
-            TableRow([
-              TableHead([text('Item')]),
-              TableHead([text('Kind')]),
-              TableHead({ class: 'text-right' }, [text('Status')]),
-            ]),
-          ]),
-          TableBody(
-            ROWS.map((r) =>
-              TableRow([
-                TableCell({ class: 'font-medium' }, [text(r.item)]),
-                TableCell({ class: 'text-muted-foreground' }, [text(r.kind)]),
-                TableCell({ class: 'text-right' }, [
-                  Badge({ variant: r.status === 'shipped' ? 'secondary' : 'outline' }, [
-                    text(r.status),
-                  ]),
+        // ONE stacking context holding all four states, because that is what a
+        // data table actually is: the grid, the two surfaces that REPLACE it,
+        // and the overlay that sits OVER it.
+        //
+        // `relative` is the CONSUMER's — the overlay is `absolute inset-0` and
+        // only the app knows how much of the surface it should cover. Rendering
+        // the surfaces as siblings BELOW the table instead leaves a blank gap in
+        // the ready state and turns the overlay into an ordinary block.
+        div({ class: 'relative' }, [
+          // Hidden, not unmounted: a load that returns rows again should not
+          // rebuild the whole grid, and `hidden` keeps the reconciler's keyed
+          // rows intact.
+          div({ hidden: status.map((s) => s === 'empty' || s === 'error') }, [
+            Table([
+              TableCaption([text('A slice of the registry.')]),
+              TableHeader([
+                TableRow([
+                  TableHead([text('Item')]),
+                  TableHead([text('Kind')]),
+                  TableHead({ class: 'text-right' }, [text('Status')]),
                 ]),
               ]),
-            ),
-          ),
-        ]),
-        // `relative` is the CONSUMER's: the overlay is `absolute inset-0`, and
-        // only the app knows how much of the surface it should cover. It sits
-        // OVER the table rather than replacing it, so a page-to-page load keeps
-        // the previous rows visible instead of collapsing to a spinner and back.
-        div({ class: 'relative' }, [
-          DataTableLoadingOverlay(
-            {
-              'data-scope': 'data-table',
-              'data-part': 'loading-overlay',
-              'aria-live': 'polite',
-              hidden: status.map((s) => s !== 'loading'),
-              class: 'static rounded-md border py-10',
-            },
-            [Spinner({ class: 'size-5' })],
-          ),
+              TableBody(
+                ROWS.map((r) =>
+                  TableRow([
+                    TableCell({ class: 'font-medium' }, [text(r.item)]),
+                    TableCell({ class: 'text-muted-foreground' }, [text(r.kind)]),
+                    TableCell({ class: 'text-right' }, [
+                      Badge({ variant: r.status === 'shipped' ? 'secondary' : 'outline' }, [
+                        text(r.status),
+                      ]),
+                    ]),
+                  ]),
+                ),
+              ),
+            ]),
+          ]),
           DataTableEmptyState(
             {
               role: 'status',
@@ -200,6 +199,18 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
               hidden: status.map((s) => s !== 'error'),
             },
             [text('Could not load rows.')],
+          ),
+          // LAST, so it stacks over the grid without a z-index fight, and with
+          // its own `absolute inset-0` left alone — overriding that to `static`
+          // makes it an ordinary block and it stops being an overlay at all.
+          DataTableLoadingOverlay(
+            {
+              'data-scope': 'data-table',
+              'data-part': 'loading-overlay',
+              'aria-live': 'polite',
+              hidden: status.map((s) => s !== 'loading'),
+            },
+            [Spinner({ class: 'size-5' })],
           ),
         ]),
         row(
