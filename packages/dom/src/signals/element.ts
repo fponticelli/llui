@@ -141,6 +141,22 @@ export function applyAttr(node: Element, name: string, value: unknown): void {
     }
     return
   }
+  // ARIA state attributes are ENUMERATED, not boolean: `aria-checked`,
+  // `aria-expanded`, `aria-pressed`, `aria-selected` and friends take the
+  // literal strings "true"/"false". The HTML boolean rule below is wrong for
+  // them in BOTH directions — `true` would render `aria-checked=""` (invalid,
+  // so assistive tech reports no state) and `false` would REMOVE it (a
+  // `role="switch"` with no `aria-checked` has no state at all). A part bag
+  // doing the natural `state.map((s) => s.checked)` hit exactly that, across
+  // seven component families.
+  //
+  // `null`/`undefined` still fall through to removal: that is how a part bag
+  // spells "not applicable" (`s.disabled ? 'true' : undefined`), and asserting
+  // "false" there would claim a state the component never did.
+  if (typeof value === 'boolean' && name.startsWith('aria-')) {
+    node.setAttribute(name, value ? 'true' : 'false')
+    return
+  }
   if (value == null || value === false) node.removeAttribute(name)
   else node.setAttribute(name, value === true ? '' : String(value))
 }
