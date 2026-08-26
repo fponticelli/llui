@@ -5,6 +5,7 @@ import { datePickerLocale } from '../locale/date-picker.js'
 import { formatDate } from '../format/format-date.js'
 import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
 import { defaultLocale } from '../format/defaults.js'
+import { deriveOnceN } from '../utils/derive.js'
 
 /**
  * Date picker — calendar with month navigation and date selection. Works
@@ -433,20 +434,24 @@ export function weekRows(cells: DayCell[]): DayCell[][] {
 export interface DayCellParts {
   cell: {
     role: 'gridcell'
-    'aria-selected': boolean
-    'aria-disabled': 'true' | undefined
-    tabindex: number
+    // Signals, not plain values: `view()` runs once, so a snapshot here freezes
+    // every flag at build time and no selection, focus move or range preview
+    // ever reaches the DOM. See `live` in `connect`.
+    'aria-selected': Signal<boolean>
+    'aria-disabled': Signal<'true' | undefined>
+    tabindex: Signal<number>
     'data-scope': 'date-picker'
     'data-part': 'day-cell'
+    /** The cell's identity — the one genuinely static attribute. */
     'data-date': string
-    'data-in-month': '' | undefined
-    'data-today': '' | undefined
-    'data-selected': '' | undefined
-    'data-focused': '' | undefined
-    'data-disabled': '' | undefined
-    'data-range-start': '' | undefined
-    'data-range-end': '' | undefined
-    'data-in-range': '' | undefined
+    'data-in-month': Signal<'' | undefined>
+    'data-today': Signal<'' | undefined>
+    'data-selected': Signal<'' | undefined>
+    'data-focused': Signal<'' | undefined>
+    'data-disabled': Signal<'' | undefined>
+    'data-range-start': Signal<'' | undefined>
+    'data-range-end': Signal<'' | undefined>
+    'data-in-range': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -534,6 +539,33 @@ export function connect(
   const gridLabel = opts.gridLabel ?? ((y: number, m: number) => monthLabel(y, m, localeTag))
   const isRange = opts.mode === 'range'
 
+  /**
+   * The cells of every visible month, keyed by ISO date, recomputed once per
+   * state and shared by every `dayCell` bag on the page.
+   *
+   * `dayCell` used to read its flags straight off the `DayCell` the caller
+   * passed. `view()` runs ONCE, so that froze them at build time — and a row's
+   * key in a keyed `each` is its date, which selecting a day does not change,
+   * so nothing rebuilt either. Selection, focus and range preview all updated
+   * in state and never reached the DOM. (`examples/components-demo` hand-rolls
+   * its cells with `state.map(...)` and never calls `dayCell`; that was the
+   * tell.) The passed cell now supplies IDENTITY only — its `iso` — and every
+   * flag is re-derived from live state for that date.
+   *
+   * Memoized on state identity because a bag has ~10 attributes and a month has
+   * ~42 cells: without it one commit would rebuild the grid ~420 times.
+   */
+  const cellsByIso = deriveOnceN((s: DatePickerState): ReadonlyMap<string, DayCell> => {
+    const map = new Map<string, DayCell>()
+    for (let offset = 0; offset < s.months; offset++) {
+      for (const c of monthGrid(s, offset)) map.set(c.iso, c)
+    }
+    return map
+  })
+  /** The live cell for a date, falling back to the caller's snapshot for a date
+   * outside every visible month (a preset row, a custom grid). */
+  const live = (s: DatePickerState, cell: DayCell): DayCell => cellsByIso(s).get(cell.iso) ?? cell
+
   return {
     root: {
       'data-scope': 'date-picker',
@@ -574,22 +606,26 @@ export function connect(
     dayCell: (cell: DayCell): DayCellParts => ({
       cell: {
         role: 'gridcell',
-        'aria-selected': cell.isSelected,
-        'aria-disabled': cell.isDisabled ? 'true' : undefined,
-        tabindex: cell.isFocused ? 0 : -1,
+        'aria-selected': state.map((s) => live(s, cell).isSelected),
+        'aria-disabled': state.map((s) => (live(s, cell).isDisabled ? 'true' : undefined)),
+        tabindex: state.map((s) => (live(s, cell).isFocused ? 0 : -1)),
         'data-scope': 'date-picker',
         'data-part': 'day-cell',
+        // The one attribute that is genuinely static: it IS the cell's identity.
         'data-date': cell.iso,
-        'data-in-month': cell.inMonth ? '' : undefined,
-        'data-today': cell.isToday ? '' : undefined,
-        'data-selected': cell.isSelected ? '' : undefined,
-        'data-focused': cell.isFocused ? '' : undefined,
-        'data-disabled': cell.isDisabled ? '' : undefined,
-        'data-range-start': cell.isRangeStart ? '' : undefined,
-        'data-range-end': cell.isRangeEnd ? '' : undefined,
-        'data-in-range': cell.isInRange ? '' : undefined,
+        'data-in-month': state.map((s) => (live(s, cell).inMonth ? '' : undefined)),
+        'data-today': state.map((s) => (live(s, cell).isToday ? '' : undefined)),
+        'data-selected': state.map((s) => (live(s, cell).isSelected ? '' : undefined)),
+        'data-focused': state.map((s) => (live(s, cell).isFocused ? '' : undefined)),
+        'data-disabled': state.map((s) => (live(s, cell).isDisabled ? '' : undefined)),
+        'data-range-start': state.map((s) => (live(s, cell).isRangeStart ? '' : undefined)),
+        'data-range-end': state.map((s) => (live(s, cell).isRangeEnd ? '' : undefined)),
+        'data-in-range': state.map((s) => (live(s, cell).isInRange ? '' : undefined)),
         onClick: tagSend(send, ['setFocused', 'selectFocused'], () => {
-          if (cell.isDisabled) return
+          // Read LIVE too: a handler built at mount must not act on a
+          // disabled-ness that was true only when the row was built.
+          const s = state.peek()
+          if ((s === undefined ? cell : live(s, cell)).isDisabled) return
           send({ type: 'setFocused', date: cell.iso })
           send({ type: 'selectFocused' })
         }),

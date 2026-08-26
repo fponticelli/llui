@@ -13,6 +13,9 @@ import { ChevronLeftIcon, ChevronRightIcon } from './icons'
  *
  * shadcn's carousel wraps Embla and has no indicator dots;
  * `@llui/components/carousel` provides them, so the indicator recipe is LLui's.
+ * Its active rule is `data-active:` — bare presence, which is what the machine
+ * publishes. It shipped as `data-[state=active]:`, a spelling nothing emits, so
+ * the current dot never highlighted; the class compiled, so nothing caught it.
  */
 export const Carousel = classPart(div, 'relative')
 export const CarouselViewport = classPart(div, 'overflow-hidden')
@@ -45,5 +48,5 @@ export const CarouselIndicatorGroup = classPart(
 )
 export const CarouselIndicator = classPart(
   button,
-  'size-2 rounded-full bg-border transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=active]:bg-primary',
+  'size-2 rounded-full bg-border transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-active:bg-primary',
 )

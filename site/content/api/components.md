@@ -6616,20 +6616,24 @@ export interface DayCell {
 export interface DayCellParts {
   cell: {
     role: 'gridcell'
-    'aria-selected': boolean
-    'aria-disabled': 'true' | undefined
-    tabindex: number
+    // Signals, not plain values: `view()` runs once, so a snapshot here freezes
+    // every flag at build time and no selection, focus move or range preview
+    // ever reaches the DOM. See `live` in `connect`.
+    'aria-selected': Signal<boolean>
+    'aria-disabled': Signal<'true' | undefined>
+    tabindex: Signal<number>
     'data-scope': 'date-picker'
     'data-part': 'day-cell'
+    /** The cell's identity — the one genuinely static attribute. */
     'data-date': string
-    'data-in-month': '' | undefined
-    'data-today': '' | undefined
-    'data-selected': '' | undefined
-    'data-focused': '' | undefined
-    'data-disabled': '' | undefined
-    'data-range-start': '' | undefined
-    'data-range-end': '' | undefined
-    'data-in-range': '' | undefined
+    'data-in-month': Signal<'' | undefined>
+    'data-today': Signal<'' | undefined>
+    'data-selected': Signal<'' | undefined>
+    'data-focused': Signal<'' | undefined>
+    'data-disabled': Signal<'' | undefined>
+    'data-range-start': Signal<'' | undefined>
+    'data-range-end': Signal<'' | undefined>
+    'data-in-range': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -24645,20 +24649,24 @@ export interface DayCell {
 export interface DayCellParts {
   cell: {
     role: 'gridcell'
-    'aria-selected': boolean
-    'aria-disabled': 'true' | undefined
-    tabindex: number
+    // Signals, not plain values: `view()` runs once, so a snapshot here freezes
+    // every flag at build time and no selection, focus move or range preview
+    // ever reaches the DOM. See `live` in `connect`.
+    'aria-selected': Signal<boolean>
+    'aria-disabled': Signal<'true' | undefined>
+    tabindex: Signal<number>
     'data-scope': 'date-picker'
     'data-part': 'day-cell'
+    /** The cell's identity — the one genuinely static attribute. */
     'data-date': string
-    'data-in-month': '' | undefined
-    'data-today': '' | undefined
-    'data-selected': '' | undefined
-    'data-focused': '' | undefined
-    'data-disabled': '' | undefined
-    'data-range-start': '' | undefined
-    'data-range-end': '' | undefined
-    'data-in-range': '' | undefined
+    'data-in-month': Signal<'' | undefined>
+    'data-today': Signal<'' | undefined>
+    'data-selected': Signal<'' | undefined>
+    'data-focused': Signal<'' | undefined>
+    'data-disabled': Signal<'' | undefined>
+    'data-range-start': Signal<'' | undefined>
+    'data-range-end': Signal<'' | undefined>
+    'data-in-range': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void

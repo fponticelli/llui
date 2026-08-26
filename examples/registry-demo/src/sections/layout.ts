@@ -67,26 +67,21 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
           // inline on the provider) and is what every `w-(--sidebar-width)` in
           // the recipes reads. The collapse below is real, not simulated.
           //
-          // TWO non-obvious constraints here, both measured, both of which made
-          // a WORKING collapse look like a broken one — the custom property and
-          // every `data-` attribute updated correctly while the rendered box
-          // never moved off 224px, the width its menu labels need:
-          //
-          //  1. NO `transition-[…]` on the sized property. A transition freezes
-          //     a `var()`-driven value: the DECLARED value (`var(--sidebar-width)`)
-          //     is identical before and after, so the transition never starts and
-          //     the computed value stays at its old resolution indefinitely — 600ms
-          //     later, and permanently. Removing the transition class alone took
-          //     `flex-basis` from a stuck 224px to 48px on the next toggle.
-          //     Animating this needs `@property { syntax: '<length>' }` on
-          //     `--sidebar-width` so the custom property itself is interpolable.
-          //  2. `basis-`, not `w-`, plus `min-w-0`. As a flex item this panel
-          //     ignored `width` entirely — including an inline `width: 48px
-          //     !important` — while `flex: 0 0 48px` applied immediately, and a
-          //     flex item's automatic minimum size is its CONTENT size.
-          //
-          // Upstream meets neither because its panel is `fixed` and the flex item
-          // is the sibling gap.
+          // A warning for whoever measures this next, because it cost hours: a
+          // Chrome tab whose `document.visibilityState` is `'hidden'` PAUSES CSS
+          // transitions, and `getComputedStyle` there returns the value the
+          // property is STUCK at rather than the one the cascade says it should
+          // have. Measured that way this panel looked like it ignored `width`
+          // outright — 224px in both states, while the custom property and every
+          // `data-` attribute updated correctly — and `min-w-0`, switching to
+          // `basis-`, and dropping the transition each looked like the fix.
+          // None of it was real: with nothing mid-flight, the plain
+          // `w-(--sidebar-width)` below goes 224px ↔ 48px and `min-w-0` changes
+          // nothing. Before believing ANY computed-style result about an
+          // animated property, check `document.visibilityState` and transition a
+          // scratch element between two literal colours — a plain red→blue
+          // transition freezes at red in a hidden tab, which is the two-line
+          // probe that settles it.
           SidebarProvider(
             {
               class: 'h-full min-h-0',
@@ -99,7 +94,8 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
                   'data-collapsible': open.map((o) => (o ? '' : 'icon')),
                   'data-variant': 'sidebar',
                   'data-side': 'left',
-                  class: 'block min-w-0 grow-0 basis-(--sidebar-width) overflow-hidden',
+                  class:
+                    'block w-(--sidebar-width) shrink-0 overflow-hidden transition-[width] duration-200',
                 },
                 [
                   SidebarInner({ class: 'border-r' }, [

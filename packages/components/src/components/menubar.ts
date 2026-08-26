@@ -289,14 +289,48 @@ export function connect(
   const menuBag = (id: string): MenuParts => {
     let bag = menuBags.get(id)
     if (bag === undefined) {
-      bag = menuConnect(menuSignal(id), menuSend(id), {
+      const delegated = menuConnect(menuSignal(id), menuSend(id), {
         id: `${base}:${id}`,
         onSelect: opts.onSelect ? (value) => opts.onSelect!(id, value) : undefined,
       })
+      bag = {
+        ...delegated,
+        content: { ...delegated.content, onKeyDown: contentKeyDown(delegated) },
+      }
       menuBags.set(id, bag)
     }
     return bag
   }
+
+  /**
+   * APG's cross-menu Left/Right, which the TRIGGER's handler cannot see.
+   *
+   * Once a menu opens, real focus moves to its CONTENT, so every arrow lands on
+   * the panel and the bar's own `focusNext`/`focusPrev` became unreachable: a
+   * keyboard user who opened File could not get to Edit without closing File
+   * first. `focusNext`/`focusPrev` already switch the OPEN menu in open mode —
+   * only the key never arrived.
+   *
+   * Consumption is read from `defaultPrevented`, not re-derived here. The panel
+   * `preventDefault`s exactly when it uses an arrow (ArrowRight opening a
+   * submenu, ArrowLeft stepping one level back) and returns without doing so
+   * otherwise, so an arrow that survives it is one the menubar owns. Walking
+   * unconditionally would swallow every submenu escape, which is the case the
+   * third test in this group pins; re-deriving "is the highlight a subtrigger"
+   * up here would duplicate the panel's own rule and drift from it.
+   */
+  const contentKeyDown =
+    (delegated: MenuParts) =>
+    (e: KeyboardEvent): void => {
+      delegated.content.onKeyDown(e)
+      if (e.defaultPrevented) return
+      // Raw `e.key`, matching the trigger handler above: the bar's own axis is
+      // the visual left/right of the strip, and the panel has already applied
+      // its own direction handling to the keys it took.
+      if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      e.preventDefault()
+      send(e.key === 'ArrowRight' ? { type: 'focusNext' } : { type: 'focusPrev' })
+    }
 
   return {
     root: {

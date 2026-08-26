@@ -18,6 +18,8 @@ import * as overlays from './sections/overlays'
 import * as layout from './sections/layout'
 import * as data from './sections/data'
 import * as advanced from './sections/advanced'
+import * as menus from './sections/menus'
+import * as media from './sections/media'
 import { groupHeading } from './sections/shared'
 
 interface State {
@@ -28,6 +30,8 @@ interface State {
   layout: layout.State
   data: data.State
   advanced: advanced.State
+  menus: menus.State
+  media: media.State
 }
 
 type Msg =
@@ -38,6 +42,8 @@ type Msg =
   | { type: 'layout'; msg: layout.Msg }
   | { type: 'data'; msg: data.Msg }
   | { type: 'advanced'; msg: advanced.Msg }
+  | { type: 'menus'; msg: menus.Msg }
+  | { type: 'media'; msg: media.Msg }
 
 export const App = component<State, Msg, never>({
   name: 'RegistryDemo',
@@ -50,6 +56,8 @@ export const App = component<State, Msg, never>({
       layout: layout.init()[0],
       data: data.init()[0],
       advanced: advanced.init()[0],
+      menus: menus.init()[0],
+      media: media.init()[0],
     },
     [],
   ],
@@ -69,6 +77,10 @@ export const App = component<State, Msg, never>({
         return [{ ...state, data: data.update(state.data, msg.msg)[0] }, []]
       case 'advanced':
         return [{ ...state, advanced: advanced.update(state.advanced, msg.msg)[0] }, []]
+      case 'menus':
+        return [{ ...state, menus: menus.update(state.menus, msg.msg)[0] }, []]
+      case 'media':
+        return [{ ...state, media: media.update(state.media, msg.msg)[0] }, []]
     }
   },
   view: ({ state, send }): readonly Mountable[] => [
@@ -90,6 +102,12 @@ export const App = component<State, Msg, never>({
 
       groupHeading('Scrolling, panes & trees'),
       ...advanced.view(state.at('advanced'), (msg) => send({ type: 'advanced', msg })),
+
+      groupHeading('Menus & command'),
+      ...menus.view(state.at('menus'), (msg) => send({ type: 'menus', msg })),
+
+      groupHeading('Media, dates & toasts'),
+      ...media.view(state.at('media'), (msg) => send({ type: 'media', msg })),
 
       groupHeading('Overlays'),
       ...overlays.view(state.at('overlays'), (msg) => send({ type: 'overlays', msg })),

@@ -7,7 +7,7 @@ import {
   monthLabel,
   weekdayLabels,
 } from '../../src/components/date-picker'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, read, signalOf } from '../_signal'
 
 function rangeCell(iso: string, overrides: Record<string, unknown> = {}) {
   return {
@@ -169,7 +169,12 @@ describe('date-picker.connect', () => {
 
   it('dayCell click on disabled day does nothing', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send)
+    // `signalOf`, not `rootSignal()`: the click handler reads disabled-ness from
+    // LIVE state rather than from the cell it was built with, so it peeks. A
+    // handler that trusted its build-time snapshot would keep firing on a day
+    // that a later `min`/`max` change had disabled.
+    const s = init({ min: '2024-06-10', visibleYear: 2024, visibleMonth: 6 })
+    const pc = connect(signalOf(s), send)
     const cell = {
       iso: '2024-06-05',
       day: 5,
@@ -184,6 +189,20 @@ describe('date-picker.connect', () => {
     }
     pc.dayCell(cell).cell.onClick(new MouseEvent('click'))
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('dayCell click reads LIVE disabled-ness, not the cell it was handed', () => {
+    // The caller's snapshot says enabled; live state (min = the 10th) says the
+    // 5th is disabled. A handler trusting its build-time cell would select it.
+    const send = vi.fn()
+    const s = init({ min: '2024-06-10', visibleYear: 2024, visibleMonth: 6 })
+    const bag = connect(signalOf(s), send)
+    const stale = rangeCell('2024-06-05')
+    expect(stale.isDisabled).toBe(false)
+    bag.dayCell(stale).cell.onClick(new MouseEvent('click'))
+    expect(send).not.toHaveBeenCalled()
+    // …and the attribute agrees, from the same source.
+    expect(read(bag.dayCell(stale).cell['data-disabled'], s)).toBe('')
   })
 })
 
@@ -372,19 +391,62 @@ describe('date-picker.connect range + multi-month + presets', () => {
     })
   })
 
-  it('dayCell exposes reactive range data attributes', () => {
+  it('dayCell range data attributes read the CELL passed in', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send)
+    const s = init({ mode: 'range', start: '2024-06-10', end: '2024-06-13' })
+    const pc = connect(signalOf(s), send, { mode: 'range' })
     const start = pc.dayCell(rangeCell('2024-06-10', { isRangeStart: true, isSelected: true })).cell
-    expect(start['data-range-start']).toBe('')
-    expect(start['data-range-end']).toBeUndefined()
-    expect(start['data-in-range']).toBeUndefined()
-    expect(start['aria-selected']).toBe(true)
+    expect(read(start['data-range-start'], s)).toBe('')
+    expect(read(start['data-range-end'], s)).toBeUndefined()
+    expect(read(start['data-in-range'], s)).toBeUndefined()
+    expect(read(start['aria-selected'], s)).toBe(true)
     const mid = pc.dayCell(rangeCell('2024-06-11', { isInRange: true, isSelected: true })).cell
-    expect(mid['data-in-range']).toBe('')
-    expect(mid['aria-selected']).toBe(true)
+    expect(read(mid['data-in-range'], s)).toBe('')
     const end = pc.dayCell(rangeCell('2024-06-13', { isRangeEnd: true, isSelected: true })).cell
-    expect(end['data-range-end']).toBe('')
+    expect(read(end['data-range-end'], s)).toBe('')
+  })
+
+  /**
+   * The bag has to be REACTIVE, not a snapshot of the `DayCell` handed in.
+   *
+   * `view()` runs once, so a plain `cell.isSelected ? '' : undefined` freezes at
+   * the value the cell had when the row was built — and a row's identity in a
+   * keyed `each` is its date, which selecting a day does not change. Every
+   * selection, focus move and range preview was therefore invisible: the state
+   * updated, `monthGrid` recomputed, and the DOM kept the flags it was born
+   * with. `examples/components-demo` hand-rolls its own cells with
+   * `state.map(...)` bindings and never calls `dayCell` — that was the tell.
+   *
+   * The passed `DayCell` still supplies the cell's IDENTITY (`iso`); the flags
+   * are re-derived from live state for that date.
+   */
+  it('dayCell attributes FOLLOW state, they are not frozen at build time', () => {
+    const send = vi.fn()
+    // June 2024 must be the VISIBLE month: outside every visible grid `live`
+    // falls back to the caller's snapshot, which is the documented behaviour and
+    // would make this test pass for the wrong reason.
+    const before = init({ mode: 'range', visibleYear: 2024, visibleMonth: 6 })
+    const cell = rangeCell('2024-06-10')
+    const pc = connect(signalOf(before), send, { mode: 'range' })
+    const bag = pc.dayCell(cell).cell
+    expect(read(bag['data-selected'], before)).toBeUndefined()
+    expect(read(bag['data-range-start'], before)).toBeUndefined()
+
+    // Same bag, later state: the day is now the range start.
+    const after = update(before, { type: 'setRange', start: '2024-06-10', end: '2024-06-13' })[0]
+    expect(read(bag['data-selected'], after)).toBe('')
+    expect(read(bag['data-range-start'], after)).toBe('')
+    expect(read(bag['aria-selected'], after)).toBe(true)
+  })
+
+  it('dayCell focus and tabindex follow state too', () => {
+    const send = vi.fn()
+    const before = init({ visibleYear: 2024, visibleMonth: 6 })
+    const bag = connect(signalOf(before), send).dayCell(rangeCell('2024-06-10')).cell
+    expect(read(bag['tabindex'], before)).toBe(-1)
+    const after = update(before, { type: 'setFocused', date: '2024-06-10' })[0]
+    expect(read(bag['data-focused'], after)).toBe('')
+    expect(read(bag['tabindex'], after)).toBe(0)
   })
 
   it('dayCell hover sends setHover in range mode', () => {

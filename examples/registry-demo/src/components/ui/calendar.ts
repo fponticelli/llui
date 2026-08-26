@@ -74,20 +74,41 @@ export const CalendarRow = classPart(tr, 'mt-2 flex w-full')
  * `first-child` / `last-child` rules are what round the ends of a range. */
 export const CalendarDay = classPart(
   td,
-  'group/day relative aspect-square h-full w-full p-0 text-center select-none [&:first-child[data-selected=true]_button]:rounded-l-md [&:last-child[data-selected=true]_button]:rounded-r-md data-[state=today]:rounded-md data-[state=today]:bg-accent data-[state=today]:text-accent-foreground data-[state=outside]:text-muted-foreground data-[state=outside]:opacity-50 data-[disabled]:text-muted-foreground data-[disabled]:opacity-50 data-[hidden]:invisible',
+  'group/day relative aspect-square h-full w-full p-0 text-center select-none [&:first-child[data-selected=true]_button]:rounded-l-md [&:last-child[data-selected=true]_button]:rounded-r-md data-[state=today]:rounded-md data-[state=today]:bg-accent data-[state=today]:text-accent-foreground data-[state=outside]:text-muted-foreground data-[state=outside]:opacity-50 data-[disabled]:text-muted-foreground data-[disabled]:opacity-50 data-[hidden]:invisible data-today:rounded-md data-today:bg-accent data-today:text-accent-foreground not-data-in-month:text-muted-foreground not-data-in-month:opacity-50 [&:first-child[data-selected]_button]:rounded-l-md [&:last-child[data-selected]_button]:rounded-r-md',
 )
 
 export const CalendarDayButton = classPart(
   button,
-  `${buttonVariants({ variant: 'ghost' })} flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50 data-[range-end=true]:rounded-md data-[range-end=true]:rounded-r-md data-[range-end=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-accent data-[range-middle=true]:text-accent-foreground data-[range-start=true]:rounded-md data-[range-start=true]:rounded-l-md data-[range-start=true]:bg-primary data-[range-start=true]:text-primary-foreground data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground data-[state=selected]:bg-primary data-[state=selected]:text-primary-foreground dark:hover:text-accent-foreground [&>span]:text-xs [&>span]:opacity-70`,
+  `${buttonVariants({ variant: 'ghost' })} flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50 data-[range-end=true]:rounded-md data-[range-end=true]:rounded-r-md data-[range-end=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-accent data-[range-middle=true]:text-accent-foreground data-[range-start=true]:rounded-md data-[range-start=true]:rounded-l-md data-[range-start=true]:bg-primary data-[range-start=true]:text-primary-foreground data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground data-[state=selected]:bg-primary data-[state=selected]:text-primary-foreground group-data-focused/day:relative group-data-focused/day:z-10 group-data-focused/day:border-ring group-data-focused/day:ring-[3px] group-data-focused/day:ring-ring/50 group-data-selected/day:bg-primary group-data-selected/day:text-primary-foreground group-data-range-start/day:rounded-md group-data-range-start/day:rounded-l-md group-data-range-start/day:bg-primary group-data-range-start/day:text-primary-foreground group-data-range-end/day:rounded-md group-data-range-end/day:rounded-r-md group-data-range-end/day:bg-primary group-data-range-end/day:text-primary-foreground group-data-in-range/day:rounded-none! group-data-in-range/day:bg-accent! group-data-in-range/day:text-accent-foreground! dark:hover:text-accent-foreground [&>span]:text-xs [&>span]:opacity-70`,
 )
 
 /**
- * The day-modifier classes upstream applies to a cell. `CalendarDay` above
- * already carries them as `data-[state=…]:` variants, which is the shape
- * `@llui/components/date-picker` publishes; these exist unprefixed for a
- * consumer driving the modifiers themselves, and carry upstream's strings
- * verbatim.
+ * The day-modifier classes upstream applies to a cell, unprefixed, for a
+ * consumer driving the modifiers themselves. Upstream's strings verbatim.
+ *
+ * `CalendarDay` and `CalendarDayButton` above carry BOTH spellings, and the
+ * reason is worth stating: `data-[state=…]` is react-day-picker's shape, and
+ * `@llui/components/date-picker` does NOT publish it. Its cell publishes bare
+ * presence flags — `data-today`, `data-selected`, `data-focused`,
+ * `data-range-start`/`-end`, `data-in-range`, `data-in-month` — so EVERY
+ * upstream state rule silently matched nothing: no today marker, no selection
+ * fill, no range, and no keyboard focus ring on any day. A comment here used to
+ * claim the `data-[state=…]` spelling was "the shape the machine publishes",
+ * which is exactly backwards, and nothing in the check suite disagrees — the
+ * classes all compile, so only a render shows it.
+ *
+ * Note the day BUTTON has no part bag of its own: the machine puts everything
+ * on the cell, which is why its half is spelled `group-data-…/day:`.
+ * "Outside this month" is the NEGATION of `data-in-month` (`not-data-in-month:`)
+ * rather than a flag of its own.
+ *
+ * The in-range rules carry `!` because a range MIDDLE day is also
+ * `data-selected` — the machine marks every day in the range selected, endpoints
+ * and interior alike. Both variants are one attribute deep, so they tie on
+ * specificity and Tailwind's own utility ordering decides, which painted the
+ * interior with the endpoints' solid `bg-primary` instead of the flat
+ * `bg-accent` band upstream draws. The `!` states the precedence instead of
+ * inheriting it from a sort order.
  */
 export const calendarDayModifiers = {
   today: 'rounded-md bg-accent text-accent-foreground data-[selected=true]:rounded-none',

@@ -288,6 +288,79 @@ describe('menubar.connect — APG keyboard', () => {
     // delegated to the menu machine's content keynav => close
     expect(send).toHaveBeenCalledWith({ type: 'menuMsg', id: 'file', msg: { type: 'close' } })
   })
+
+  // APG: with a menu open, focus lives on the CONTENT, so Left/Right land there
+  // and never reach the trigger's handler. The panel's own handler `preventDefault`s
+  // exactly when it consumes an arrow (opening a submenu, closing one), so an
+  // arrow that survives it is one the menubar owns — that is the fall-through
+  // this pins. Without it a keyboard user who opened File could not reach Edit
+  // without closing the menu first, and the two directions were silent.
+  it('delegated content ArrowRight walks to the next menu when the panel did not use it', () => {
+    const send = vi.fn()
+    const openState = update(baseInit(), { type: 'openMenu', id: 'file' })[0]
+    const p = connect(signalFrom(openState), send, { id: 'mb' })
+    const ev = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
+    p.menu('file').content.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusNext' })
+  })
+
+  it('delegated content ArrowLeft walks to the previous menu', () => {
+    const send = vi.fn()
+    const openState = update(baseInit(), { type: 'openMenu', id: 'edit' })[0]
+    const p = connect(signalFrom(openState), send, { id: 'mb' })
+    const ev = new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true })
+    p.menu('edit').content.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: 'focusPrev' })
+  })
+
+  it('does NOT walk when the panel consumed the arrow (submenu open/close)', () => {
+    // ArrowLeft with a submenu open is the panel's — it steps back one level.
+    // Reading `defaultPrevented` is what separates the two cases, so a menubar
+    // that walked unconditionally would swallow every submenu escape.
+    const send = vi.fn()
+    const withSub = init({
+      menus: [
+        {
+          id: 'file',
+          items: [
+            { value: 'new', kind: 'action' },
+            { value: 'recent', kind: 'action', children: [{ value: 'r1', kind: 'action' }] },
+          ],
+        },
+        { id: 'edit', items: editItems },
+      ],
+    })
+    let s = update(withSub, { type: 'openMenu', id: 'file' })[0]
+    s = update(s, { type: 'menuMsg', id: 'file', msg: { type: 'openSub', value: 'recent' } })[0]
+    const p = connect(signalFrom(s), send, { id: 'mb' })
+    const ev = new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true })
+    p.menu('file').content.onKeyDown(ev)
+    expect(send).toHaveBeenCalledWith({
+      type: 'menuMsg',
+      id: 'file',
+      msg: { type: 'closeSub' },
+    })
+    expect(send).not.toHaveBeenCalledWith({ type: 'focusPrev' })
+  })
+
+  it('leaves a key the panel did NOT consume alone', () => {
+    // Tab, deliberately: it is the one key here the panel neither consumes nor
+    // wants. `ArrowDown` would NOT test this — the panel `preventDefault`s it,
+    // so the `defaultPrevented` guard returns first and the key filter is never
+    // reached. Measured: with `ArrowDown` here, deleting the key filter
+    // entirely left the suite GREEN, and every Tab out of an open menu then
+    // walked the bar instead.
+    const send = vi.fn()
+    const openState = update(baseInit(), { type: 'openMenu', id: 'file' })[0]
+    const p = connect(signalFrom(openState), send, { id: 'mb' })
+    const ev = new KeyboardEvent('keydown', { key: 'Tab', cancelable: true })
+    p.menu('file').content.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(false)
+    expect(send).not.toHaveBeenCalledWith({ type: 'focusNext' })
+    expect(send).not.toHaveBeenCalledWith({ type: 'focusPrev' })
+  })
 })
 
 // helper: a Signal backed by a concrete state value for handler-time peeks.

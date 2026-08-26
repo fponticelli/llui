@@ -11,7 +11,13 @@ import { SearchIcon } from '@/ui/icons'
  * LLui list. The remaining recipes are shadcn's verbatim.
  *
  * Render the empty state: a palette that shows a blank box for "no results"
- * reads as broken.
+ * reads as broken. `CommandEmpty` is an UNCONDITIONAL recipe and does not hide
+ * itself — toggling it is the consumer's, because the two machines that use
+ * these recipes disagree about how: `patterns/command-menu`'s `empty` part
+ * publishes `data-empty` (pair it with `hidden data-empty:block`), while
+ * `combobox`'s is a bare marker with no state at all, so a `data-empty` rule
+ * baked in here would leave IT permanently hidden. Left untoggled it renders
+ * "No results" above a full list.
  */
 export const Command = classPart(
   div,

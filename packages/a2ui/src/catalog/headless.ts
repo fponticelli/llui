@@ -559,8 +559,18 @@ const DateTimeInput: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
     WEEKDAYS.map((w) => elx('span', { class: 'a2ui-dp-weekday' }, [text(w)])),
   )
 
-  // dayCell parts are static values (not signals), so the whole grid rebuilds
-  // wholesale when the calendar state changes — keyed by the visible window.
+  // The grid rebuilds WHOLESALE when the calendar state changes, keyed by the
+  // visible window, and the cell attributes below are read off the `DayCell`
+  // rather than spread from `parts.dayCell(...)`.
+  //
+  // That bag became reactive (its flags are Signals, so a normal consumer needs
+  // no rebuild at all), but its signals are rooted in `scope.uiState` /
+  // `scope.data` — a2ui's own surface store, not this component's state — and a
+  // signal rooted outside the component cannot be mounted inside an `each` ROW,
+  // whose reads are rebased onto the row context. Spreading the bag here made
+  // `scope.uiState` produce the row ctx and threw on `ui[id]`. Only the
+  // HANDLERS are taken from it: they run from a DOM event, outside any row
+  // build, so their `peek()` reads the real root.
   const gridUnits = state.map((s) => [
     {
       key: `${s.visibleYear}-${s.visibleMonth}-${s.value}-${s.focused}`,
@@ -577,15 +587,37 @@ const DateTimeInput: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
           elx(
             'div',
             { ...parts.row, class: 'a2ui-dp-row' },
-            cells
-              .slice(w * 7, w * 7 + 7)
-              .map((cell) =>
-                elx(
-                  'button',
-                  { ...parts.dayCell(cell).cell, class: 'a2ui-dp-cell', type: 'button' },
-                  [text(String(cell.day))],
-                ),
-              ),
+            cells.slice(w * 7, w * 7 + 7).map((cell) => {
+              const bag = parts.dayCell(cell).cell
+              return elx(
+                'button',
+                {
+                  role: 'gridcell',
+                  'aria-selected': cell.isSelected,
+                  'aria-disabled': cell.isDisabled ? 'true' : undefined,
+                  tabindex: cell.isFocused ? 0 : -1,
+                  'data-scope': 'date-picker',
+                  'data-part': 'day-cell',
+                  'data-date': cell.iso,
+                  'data-in-month': cell.inMonth ? '' : undefined,
+                  'data-today': cell.isToday ? '' : undefined,
+                  'data-selected': cell.isSelected ? '' : undefined,
+                  'data-focused': cell.isFocused ? '' : undefined,
+                  'data-disabled': cell.isDisabled ? '' : undefined,
+                  'data-range-start': cell.isRangeStart ? '' : undefined,
+                  'data-range-end': cell.isRangeEnd ? '' : undefined,
+                  'data-in-range': cell.isInRange ? '' : undefined,
+                  onClick: bag.onClick,
+                  onKeyDown: bag.onKeyDown,
+                  onFocus: bag.onFocus,
+                  onPointerEnter: bag.onPointerEnter,
+                  onPointerLeave: bag.onPointerLeave,
+                  class: 'a2ui-dp-cell',
+                  type: 'button',
+                },
+                [text(String(cell.day))],
+              )
+            }),
           ),
         )
       }
