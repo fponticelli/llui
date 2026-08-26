@@ -184,6 +184,32 @@ describe('combobox async loading', () => {
       'boom',
     )
   })
+
+  /**
+   * `'idle'` is the status of a combobox whose items were supplied
+   * SYNCHRONOUSLY — `init({ items })` sets it and nothing but a `loadSuccess`
+   * ever moves off it. Announcing only on `'loaded'` therefore left the live
+   * region permanently empty for the ordinary, non-async case: the whole point
+   * of the region (telling a screen-reader user that typing narrowed the list)
+   * was delivered only to consumers who happened to fetch their options.
+   *
+   * `'idle'` means "not fetching", so `filteredItems` is settled and
+   * authoritative. `'loading'` is the one status with nothing to say.
+   */
+  it('liveRegion announces N results when idle too, not only after a load', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'cb' })
+    expect(
+      read(p.liveRegion.text, { status: 'idle', filteredItems: ['a', 'b'], error: null }),
+    ).toBe('2 results')
+    expect(read(p.liveRegion.text, { status: 'idle', filteredItems: [], error: null })).toBe(
+      '0 results',
+    )
+  })
+
+  it('liveRegion stays silent while loading', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'cb' })
+    expect(read(p.liveRegion.text, { status: 'loading', filteredItems: [], error: null })).toBe('')
+  })
 })
 
 describe('combobox option groups', () => {

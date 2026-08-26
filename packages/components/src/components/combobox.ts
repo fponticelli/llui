@@ -704,7 +704,12 @@ export function connect(
       'data-part': 'live-region',
       text: state.map((s) => {
         if (s.status === 'error') return s.error ?? ''
-        if (s.status === 'loaded') {
+        // `'idle'` as well as `'loaded'`: a combobox given its items
+        // synchronously stays `'idle'` for its whole life, and announcing only
+        // on `'loaded'` left the region permanently empty for that — the
+        // ordinary case. Both mean "not fetching", so `filteredItems` is
+        // settled. `'loading'` is the one status with nothing to say.
+        if (s.status === 'idle' || s.status === 'loaded') {
           const n = s.filteredItems.filter((v) => v !== CREATE_OPTION_VALUE).length
           return locale.resultCount(n)
         }

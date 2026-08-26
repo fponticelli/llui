@@ -1,9 +1,10 @@
-import { a, button, div, each, li, nav, span, text, ul } from '@llui/dom'
+import { div, each, li, nav, show, span, text, ul } from '@llui/dom'
 import type { Mountable, Send, Signal } from '@llui/dom'
 import * as contextMenuC from '@llui/components/context-menu'
 import * as menubarC from '@llui/components/menubar'
 import * as navMenuC from '@llui/components/navigation-menu'
 import * as commandMenuC from '@llui/components/patterns/command-menu'
+import * as comboboxC from '@llui/components/combobox'
 import {
   ContextMenuContent,
   ContextMenuItem,
@@ -37,6 +38,17 @@ import {
   CommandList,
   CommandShortcut,
 } from '../components/ui/command'
+import {
+  ComboboxContent,
+  ComboboxEmpty,
+  ComboboxItem,
+  ComboboxList,
+  ComboboxLiveRegion,
+  ComboboxRoot,
+  ComboboxTrigger,
+} from '../components/ui/combobox'
+import { Input } from '../components/ui/input'
+import { Label } from '../components/ui/label'
 import { ChevronDownIcon } from '../components/ui/icons'
 import { section } from './shared'
 
@@ -85,6 +97,8 @@ const NAV_ITEMS = [
   },
 ] as const
 
+const FRAMEWORKS = ['LLui', 'Svelte', 'Solid', 'Qwik', 'Lit', 'Vue']
+
 const COMMANDS: commandMenuC.Command[] = [
   { id: 'new-file', label: 'New File', group: 'File', shortcut: '⌘N' },
   { id: 'open-file', label: 'Open File…', group: 'File', keywords: ['find'], shortcut: '⌘O' },
@@ -97,6 +111,7 @@ export interface State {
   menubar: menubarC.MenubarState
   navMenu: navMenuC.NavMenuState
   palette: commandMenuC.CommandMenuState
+  combobox: comboboxC.ComboboxState
   /** What the palette last executed — the demo's stand-in for a real side
    * effect, so the `execute` effect is visibly consumed rather than dropped. */
   lastCommand: string | null
@@ -107,6 +122,7 @@ export type Msg =
   | { type: 'menubar'; msg: menubarC.MenubarMsg }
   | { type: 'navMenu'; msg: navMenuC.NavMenuMsg }
   | { type: 'palette'; msg: commandMenuC.CommandMenuMsg }
+  | { type: 'combobox'; msg: comboboxC.ComboboxMsg }
 
 export const init = (): [State, never[]] => [
   {
@@ -126,6 +142,7 @@ export const init = (): [State, never[]] => [
       items: NAV_ITEMS.map((n) => n.id),
     }),
     palette: commandMenuC.init({ commands: COMMANDS, open: true }),
+    combobox: comboboxC.init({ items: FRAMEWORKS }),
     lastCommand: null,
   },
   [],
@@ -139,6 +156,8 @@ export function update(state: State, msg: Msg): [State, never[]] {
       return [{ ...state, menubar: menubarC.update(state.menubar, msg.msg)[0] }, []]
     case 'navMenu':
       return [{ ...state, navMenu: navMenuC.update(state.navMenu, msg.msg)[0] }, []]
+    case 'combobox':
+      return [{ ...state, combobox: comboboxC.update(state.combobox, msg.msg)[0] }, []]
     case 'palette': {
       const [palette, effects] = commandMenuC.update(state.palette, msg.msg)
       // The machine never performs IO — `execute` is data, and running it is the
@@ -173,6 +192,9 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const bar = menubarC.connect(state.at('menubar'), barSend, { id: 'demo-menubar' })
   const navm = navMenuC.connect(state.at('navMenu'), navSend, { id: 'demo-nav' })
   const pal = commandMenuC.connect(state.at('palette'), palSend, { id: 'demo-palette' })
+  const cbSend = (m: comboboxC.ComboboxMsg): void => send({ type: 'combobox', msg: m })
+  const cb = comboboxC.connect(state.at('combobox'), cbSend, { id: 'demo-combobox' })
+  const { text: liveText, ...liveAttrs } = cb.liveRegion
 
   return [
     section(
@@ -277,6 +299,55 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
         ]),
       ],
     ),
+
+    section(
+      'Combobox',
+      'shadcn ships no `combobox.tsx` — its docs compose Popover + Command, so these ARE the Command recipes under Combobox names. The listbox is never focused: the input keeps focus and drives the highlight through `aria-activedescendant`.',
+      [
+        ComboboxRoot({ ...cb.root, class: 'relative max-w-xs bg-transparent' }, [
+          Label({ for: cb.input.id, class: 'mb-1.5 block' }, [text('Framework')]),
+          Input({ ...cb.input, placeholder: 'Search frameworks…' }),
+          ComboboxTrigger({ ...cb.trigger }, [ChevronDownIcon({ class: 'size-4' })]),
+          // Announces the result count as the query changes. Without it a
+          // screen-reader user gets no feedback that typing did anything.
+          //
+          // `liveRegion.text` is a Signal for the region's CHILD, not an
+          // attribute — spreading the whole bag emits a literal `text="…"`
+          // attribute and announces nothing, which is the failure this shape
+          // avoids.
+          ComboboxLiveRegion({ ...liveAttrs }, [text(liveText)]),
+        ]),
+      ],
+    ),
+    comboboxC.overlay({
+      state: state.at('combobox'),
+      send: cbSend,
+      parts: cb,
+      positionerClass: 'z-popover',
+      content: () => [
+        ComboboxContent({ ...cb.content }, [
+          ComboboxList([
+            each(state.at('combobox').at('filteredItems'), {
+              key: (v: string) => v,
+              render: (v: Signal<string>) => {
+                const value = v.peek()
+                return [ComboboxItem({ ...cb.item(value).item }, [text(value)])]
+              },
+            }),
+          ]),
+          // Same asymmetry as the palette, the other way round: `combobox`'s
+          // `empty` part is a bare marker with NO state, so it is toggled from
+          // the filtered list rather than from a `data-empty` flag.
+          show(
+            state
+              .at('combobox')
+              .at('filteredItems')
+              .map((f) => f.length === 0),
+            () => [ComboboxEmpty({ ...cb.empty }, [text('No framework found.')])],
+          ),
+        ]),
+      ],
+    }),
 
     section(
       'Command',

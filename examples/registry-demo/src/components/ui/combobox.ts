@@ -10,6 +10,16 @@
  *
  * Render the live region. It announces the result count as the query changes —
  * without it a screen-reader user gets no feedback that typing did anything.
+ *
+ * Its part bag carries `text` as a Signal for the region's CHILD, not as an
+ * attribute, so spread the REST and render the text:
+ *
+ *   const { text: liveText, ...liveAttrs } = parts.liveRegion
+ *   ComboboxLiveRegion({ ...liveAttrs }, [text(liveText)])
+ *
+ * Spreading the whole bag emits a literal `text="…"` attribute on an
+ * `aria-live` element with no content, which announces nothing — the exact
+ * failure the region exists to prevent, and silent in every check.
  */
 import { button, div } from '@llui/dom'
 import { classPart } from '../../lib/utils'
