@@ -1,5 +1,6 @@
-import { div, input, span } from '@llui/dom'
-import { classPart } from '../../lib/utils'
+import { div, input, span, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
+import { classPart, mergeClass, splitArgs } from '../../lib/utils'
+import { SearchIcon } from './icons'
 
 /**
  * Ported from shadcn/ui (MIT © 2023 shadcn). shadcn's Command wraps the `cmdk`
@@ -16,7 +17,20 @@ export const Command = classPart(
   div,
   'flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground',
 )
-export const CommandInputWrapper = classPart(div, 'flex h-9 items-center gap-2 border-b px-3')
+const commandInputWrapperRecipe = 'flex h-9 items-center gap-2 border-b px-3'
+
+/** Renders its own search glyph, as shadcn's does. */
+export function CommandInputWrapper(
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
+): Mountable {
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props
+  return div({ ...rest, class: mergeClass(commandInputWrapperRecipe, className) }, [
+    SearchIcon({ class: 'size-4 shrink-0 opacity-50' }),
+    ...children,
+  ])
+}
 export const CommandInput = classPart(
   input,
   'flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',

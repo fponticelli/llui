@@ -3,6 +3,7 @@ import { classPart } from '../../lib/utils'
 import { buttonVariants } from './button'
 import { mergeClass, splitArgs } from '../../lib/utils'
 import { button, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
+import { ChevronLeftIcon, ChevronRightIcon } from './icons'
 
 /**
  * Ported from shadcn/ui (MIT © 2023 shadcn). Like Pagination, shadcn's prev/next
@@ -18,7 +19,7 @@ export const CarouselViewport = classPart(div, 'overflow-hidden')
 export const CarouselContent = classPart(div, 'flex')
 export const CarouselSlide = classPart(div, 'min-w-0 shrink-0 grow-0 basis-full')
 
-function arrow(position: string) {
+function arrow(position: string, glyph: (props?: ElProps) => Mountable) {
   return (a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable => {
     const { props, children } = splitArgs(a0, a1)
     const { class: className, ...rest } = props
@@ -31,13 +32,13 @@ function arrow(position: string) {
           className,
         ),
       },
-      children,
+      children.length > 0 ? children : [glyph({ class: 'size-4' })],
     )
   }
 }
 
-export const CarouselPrevious = arrow('top-1/2 -left-12 -translate-y-1/2')
-export const CarouselNext = arrow('top-1/2 -right-12 -translate-y-1/2')
+export const CarouselPrevious = arrow('top-1/2 -left-12 -translate-y-1/2', ChevronLeftIcon)
+export const CarouselNext = arrow('top-1/2 -right-12 -translate-y-1/2', ChevronRightIcon)
 export const CarouselIndicatorGroup = classPart(
   div,
   'mt-3 flex items-center justify-center gap-1.5',

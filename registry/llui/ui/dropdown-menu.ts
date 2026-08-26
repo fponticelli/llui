@@ -1,5 +1,6 @@
-import { button, div, span } from '@llui/dom'
-import { classPart } from '@/lib/utils'
+import { button, div, span, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
+import { classPart, mergeClass, splitArgs } from '@/lib/utils'
+import { ChevronRightIcon } from '@/ui/icons'
 
 /**
  * Ported from shadcn/ui (MIT © 2023 shadcn) with ONE systematic translation, and
@@ -46,10 +47,23 @@ export const DropdownMenuShortcut = classPart(
   span,
   'ml-auto text-xs tracking-widest text-muted-foreground',
 )
-export const DropdownMenuSubTrigger = classPart(
-  div,
-  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[inset]:pl-8 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
-)
+const dropdownMenuSubTriggerRecipe =
+  "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[inset]:pl-8 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground"
+
+/** Renders its own trailing chevron, as shadcn's does — the affordance that says
+ * "this opens a submenu" is part of the component, not the caller's job. */
+export function DropdownMenuSubTrigger(
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
+): Mountable {
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props
+  return div({ ...rest, class: mergeClass(dropdownMenuSubTriggerRecipe, className) }, [
+    ...children,
+    ChevronRightIcon({ class: 'ml-auto size-4' }),
+  ])
+}
+
 export const DropdownMenuSubContent = classPart(
   div,
   'z-50 min-w-[8rem] overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-lg data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',

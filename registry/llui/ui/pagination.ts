@@ -1,4 +1,5 @@
 import { a, li, nav, span, ul } from '@llui/dom'
+import { ChevronLeftIcon, ChevronRightIcon } from '@/ui/icons'
 import { classPart } from '@/lib/utils'
 import { buttonVariants } from '@/ui/button'
 import { mergeClass, splitArgs } from '@/lib/utils'
@@ -18,7 +19,11 @@ export const Pagination = classPart(nav, 'mx-auto flex w-full justify-center')
 export const PaginationContent = classPart(ul, 'flex flex-row items-center gap-1')
 export const PaginationItem = classPart(li, '')
 
-function paginationLink(defaultSize: 'icon' | 'default', extra = '') {
+function paginationLink(
+  defaultSize: 'icon' | 'default',
+  extra = '',
+  glyph?: { at: 'start' | 'end'; icon: (props?: ElProps) => Mountable },
+) {
   return (a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable => {
     const { props, children } = splitArgs(a0, a1)
     const { class: className, ...rest } = props
@@ -35,12 +40,22 @@ function paginationLink(defaultSize: 'icon' | 'default', extra = '') {
           className,
         ),
       },
-      children,
+      glyph === undefined
+        ? children
+        : glyph.at === 'start'
+          ? [glyph.icon({ class: 'size-4' }), ...children]
+          : [...children, glyph.icon({ class: 'size-4' })],
     )
   }
 }
 
 export const PaginationLink = paginationLink('icon')
-export const PaginationPrevious = paginationLink('default', 'gap-1 px-2.5 sm:pl-2.5')
-export const PaginationNext = paginationLink('default', 'gap-1 px-2.5 sm:pr-2.5')
+export const PaginationPrevious = paginationLink('default', 'gap-1 px-2.5 sm:pl-2.5', {
+  at: 'start',
+  icon: ChevronLeftIcon,
+})
+export const PaginationNext = paginationLink('default', 'gap-1 px-2.5 sm:pr-2.5', {
+  at: 'end',
+  icon: ChevronRightIcon,
+})
 export const PaginationEllipsis = classPart(span, 'flex size-9 items-center justify-center')

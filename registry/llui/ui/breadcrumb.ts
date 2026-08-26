@@ -1,5 +1,6 @@
-import { a, li, nav, ol, span } from '@llui/dom'
-import { classPart } from '@/lib/utils'
+import { a, li, nav, ol, span, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
+import { classPart, mergeClass, splitArgs } from '@/lib/utils'
+import { ChevronRightIcon } from '@/ui/icons'
 
 /**
  * Ported verbatim from shadcn/ui (MIT © 2023 shadcn).
@@ -19,5 +20,22 @@ export const BreadcrumbLink = classPart(
   'transition-colors hover:text-foreground data-[current]:pointer-events-none data-[current]:font-normal data-[current]:text-foreground',
 )
 export const BreadcrumbPage = classPart(span, 'font-normal text-foreground')
-export const BreadcrumbSeparator = classPart(li, '[&>svg]:size-3.5')
+/** Defaults to a chevron, as shadcn's does; pass children for a different one
+ * (shadcn's docs use a slash). */
+export function BreadcrumbSeparator(
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
+): Mountable {
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props
+  return li(
+    {
+      role: 'presentation',
+      'aria-hidden': 'true',
+      ...rest,
+      class: mergeClass('[&>svg]:size-3.5', className),
+    },
+    children.length > 0 ? children : [ChevronRightIcon()],
+  )
+}
 export const BreadcrumbEllipsis = classPart(span, 'flex size-9 items-center justify-center')

@@ -182,14 +182,18 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
               BreadcrumbLink({ ...crumbs.link(c.id), href: '#' }, [text(c.label)]),
             ]),
             ...(i < CRUMBS.length - 1
-              ? [BreadcrumbSeparator({ ...crumbs.separator }, [text('/')])]
+              ? // No children: the separator renders its own chevron, as shadcn's does.
+                [BreadcrumbSeparator({ ...crumbs.separator })]
               : []),
           ]),
         ),
       ]),
       Pagination({ ...page.root }, [
         PaginationContent([
-          PaginationItem([PaginationPrevious({ ...page.prevTrigger }, [text('‹ Prev')])]),
+          PaginationItem([
+            // The arrow is the component's own; pass only the label.
+            PaginationPrevious({ ...page.prevTrigger }, [text('Prev')]),
+          ]),
           // The visible window (siblings + boundaries + ellipsis) is computed by
           // the machine's own `pageItems`, so the view never derives a window of
           // its own. It is a pure function of state, so it belongs in an `each`
@@ -211,7 +215,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
               ]
             },
           }),
-          PaginationItem([PaginationNext({ ...page.nextTrigger }, [text('Next ›')])]),
+          PaginationItem([PaginationNext({ ...page.nextTrigger }, [text('Next')])]),
         ]),
       ]),
       Steps(

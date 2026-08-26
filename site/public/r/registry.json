@@ -114,7 +114,7 @@
       "title": "Breadcrumb",
       "description": "Skin for @llui/components/breadcrumbs, with ellipsis overflow.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/breadcrumb.ts",
@@ -189,7 +189,7 @@
       "title": "Carousel",
       "description": "Skin for @llui/components/carousel, with indicators and prev/next.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["button", "utils"],
+      "registryDependencies": ["button", "icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/carousel.ts",
@@ -249,7 +249,7 @@
       "title": "Command",
       "description": "Skin for @llui/components/patterns/command-menu — the ⌘K palette.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/command.ts",
@@ -294,7 +294,7 @@
       "title": "Dropdown Menu",
       "description": "Skin for @llui/components/menu, with groups, submenus and shortcuts.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/dropdown-menu.ts",
@@ -519,7 +519,7 @@
       "title": "Pagination",
       "description": "Skin for @llui/components/pagination.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["button", "utils"],
+      "registryDependencies": ["button", "icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/pagination.ts",
@@ -594,7 +594,7 @@
       "title": "Resizable",
       "description": "Skin for @llui/components/splitter, with a hit area wider than the rule.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/resizable.ts",
@@ -714,7 +714,7 @@
       "title": "Spinner",
       "description": "Loading ring, aria-hidden so the state lives on the region it describes.",
       "dependencies": ["@llui/dom"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/spinner.ts",

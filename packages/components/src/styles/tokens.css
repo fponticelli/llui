@@ -243,6 +243,23 @@
     outline-color: color-mix(in oklab, var(--ring) 50%, transparent);
   }
 
+  /*
+   * Tailwind v3's preflight set `button { cursor: pointer }`; v4 REMOVED it, so
+   * without this rule every button on the page shows the default arrow. shadcn
+   * adds it back in its own `globals.css` for exactly that reason, and its
+   * components rely on it — they set `cursor-default` (menu items),
+   * `cursor-not-allowed` (disabled) and `cursor-text` (input addons), but never
+   * `cursor-pointer`, because this is where it comes from.
+   *
+   * `:not(:disabled)` so a disabled control keeps the not-allowed cursor its own
+   * recipe sets, and `[role='button']` covers the parts LLui renders on a
+   * non-button element.
+   */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
   body {
     background-color: var(--background);
     color: var(--foreground);
