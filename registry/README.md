@@ -60,7 +60,13 @@ AND `data-[orientation=…]`, `input-otp` carries `data-[active=true]` AND
    the checker reads a template's static text only.
 3. **Express state with `data-*` variants**, not computed classes. Every part bag emits
    `data-state` / `data-disabled` / `data-orientation` / `data-side`.
-4. **Use an intersection for prop types**, not `interface X extends ElProps` — an
+4. **Do not wrap a `Button` in a part that is already a `<button>`.** Many parts
+   render one — `CollapsibleTrigger`, `SidebarTrigger`, `AccordionTrigger`,
+   `DialogClose`, `Checkbox`, `Switch`. Nesting gives invalid HTML and the inner
+   element swallows the click target. Borrow the look instead:
+   `class: buttonVariants({ variant: 'outline', size: 'sm' })`. Both demo
+   sections hit this; a `button button` query is the quickest way to catch it.
+5. **Use an intersection for prop types**, not `interface X extends ElProps` — an
    interface extending `ElProps` drops its index signature, so `props.class` and every
    spread `data-*` key stop type-checking.
 

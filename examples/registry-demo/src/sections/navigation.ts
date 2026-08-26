@@ -12,7 +12,7 @@ import {
 } from '../components/ui/accordion'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible'
 import { Toolbar, ToolbarGroup, ToolbarSeparator } from '../components/ui/toolbar'
-import { Button } from '../components/ui/button'
+import { Button, buttonVariants } from '../components/ui/button'
 import { Kbd } from '../components/ui/kbd'
 import { section } from './shared'
 
@@ -115,9 +115,16 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       ),
 
       Collapsible({ ...details.root }, [
-        CollapsibleTrigger({ ...details.trigger, class: 'w-fit' }, [
-          Button({ variant: 'outline', size: 'sm' }, [text('Toggle details')]),
-        ]),
+        // `CollapsibleTrigger` IS a <button>. Wrapping a `Button` in it nests one
+        // button inside another — invalid HTML, and the inner one swallows the
+        // click target. Borrow the button's LOOK via `buttonVariants` instead.
+        CollapsibleTrigger(
+          {
+            ...details.trigger,
+            class: `${buttonVariants({ variant: 'outline', size: 'sm' })} w-fit`,
+          },
+          [text('Toggle details')],
+        ),
         CollapsibleContent({ ...details.content, class: 'text-muted-foreground' }, [
           text('The content stays in the DOM and is hidden by data-[state=closed].'),
         ]),

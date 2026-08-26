@@ -664,6 +664,21 @@
       ]
     },
     {
+      "name": "sidebar",
+      "type": "registry:ui",
+      "title": "Sidebar",
+      "description": "Skin for a collapsible app sidebar \u2014 header, groups, menu, submenus, rail and inset. Presentation only; the open/closed state stays in your app.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/sidebar.ts",
+          "type": "registry:ui",
+          "target": "sidebar.ts"
+        }
+      ]
+    },
+    {
       "name": "skeleton",
       "type": "registry:ui",
       "title": "Skeleton",

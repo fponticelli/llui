@@ -15,6 +15,7 @@ import * as presentational from './sections/presentational'
 import * as forms from './sections/forms'
 import * as navigation from './sections/navigation'
 import * as overlays from './sections/overlays'
+import * as layout from './sections/layout'
 import * as data from './sections/data'
 import { groupHeading } from './sections/shared'
 
@@ -23,6 +24,7 @@ interface State {
   forms: forms.State
   navigation: navigation.State
   overlays: overlays.State
+  layout: layout.State
   data: data.State
 }
 
@@ -31,6 +33,7 @@ type Msg =
   | { type: 'forms'; msg: forms.Msg }
   | { type: 'navigation'; msg: navigation.Msg }
   | { type: 'overlays'; msg: overlays.Msg }
+  | { type: 'layout'; msg: layout.Msg }
   | { type: 'data'; msg: data.Msg }
 
 export const App = component<State, Msg, never>({
@@ -41,6 +44,7 @@ export const App = component<State, Msg, never>({
       forms: forms.init()[0],
       navigation: navigation.init()[0],
       overlays: overlays.init()[0],
+      layout: layout.init()[0],
       data: data.init()[0],
     },
     [],
@@ -55,6 +59,8 @@ export const App = component<State, Msg, never>({
         return [{ ...state, navigation: navigation.update(state.navigation, msg.msg)[0] }, []]
       case 'overlays':
         return [{ ...state, overlays: overlays.update(state.overlays, msg.msg)[0] }, []]
+      case 'layout':
+        return [{ ...state, layout: layout.update(state.layout, msg.msg)[0] }, []]
       case 'data':
         return [{ ...state, data: data.update(state.data, msg.msg)[0] }, []]
     }
@@ -72,6 +78,9 @@ export const App = component<State, Msg, never>({
 
       groupHeading('Navigation & disclosure'),
       ...navigation.view(state.at('navigation'), (msg) => send({ type: 'navigation', msg })),
+
+      groupHeading('Layout'),
+      ...layout.view(state.at('layout'), (msg) => send({ type: 'layout', msg })),
 
       groupHeading('Overlays'),
       ...overlays.view(state.at('overlays'), (msg) => send({ type: 'overlays', msg })),

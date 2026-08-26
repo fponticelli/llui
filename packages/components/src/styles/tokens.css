@@ -112,6 +112,14 @@
   --spacing-4: 1rem;
   --spacing-6: 1.5rem;
   --spacing-8: 2rem;
+
+  /* Sidebar layout. shadcn sets these inline on its provider; defaulting them
+   * here means a registry Sidebar lays out with no wiring, and overriding one on
+   * the wrapper still resizes the whole thing (`w-(--sidebar-width)` and
+   * `group-data-[collapsible=icon]:w-(--sidebar-width-icon)` both read them). */
+  --sidebar-width: 16rem;
+  --sidebar-width-icon: 3rem;
+  --sidebar-width-mobile: 18rem;
 }
 
 /*

@@ -73,3 +73,25 @@ export const GripVerticalIcon = icon(() =>
 )
 /** The spinner arc. Pair with `animate-spin`. */
 export const LoaderIcon = icon(() => [path({ d: 'M21 12a9 9 0 1 1-6.219-8.56' })])
+
+// Nav glyphs. Not baked into any shadcn component — these exist because the
+// Sidebar's icon rail is only legible with them: collapsed to `--sidebar-width-icon`
+// a text-only menu button shows a truncated label, which is what upstream's
+// `[&>span:last-child]:truncate` is there to clip AROUND an icon, not instead of one.
+export const LayoutDashboardIcon = icon(() => [
+  path({ d: 'M3 3h7v9H3z' }),
+  path({ d: 'M14 3h7v5h-7z' }),
+  path({ d: 'M14 12h7v9h-7z' }),
+  path({ d: 'M3 16h7v5H3z' }),
+])
+export const FolderIcon = icon(() => [
+  path({
+    d: 'M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z',
+  }),
+])
+export const SettingsIcon = icon(() => [
+  path({ d: 'M20 7h-9' }),
+  path({ d: 'M14 17H5' }),
+  circle({ cx: '17', cy: '17', r: '3' }),
+  circle({ cx: '7', cy: '7', r: '3' }),
+])
