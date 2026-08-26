@@ -13,6 +13,7 @@ const GUIDE_SLUGS = [
   'index',
   'getting-started',
   'cookbook',
+  'components',
   'styling',
   'composition-patterns',
   'publishing-a-precompiled-library',
@@ -87,6 +88,7 @@ export function siteLayout({
             navLink('/', 'index', 'Home', slug),
             navLink('/getting-started', 'getting-started', 'Getting Started', slug),
             navLink('/cookbook', 'cookbook', 'Cookbook', slug),
+            navLink('/components', 'components', 'Using the Components', slug),
             navLink('/styling', 'styling', 'Styling & Registry', slug),
             navLink('/composition-patterns', 'composition-patterns', 'Composition Patterns', slug),
             navLink(
