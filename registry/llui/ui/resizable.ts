@@ -31,15 +31,26 @@ import { GripVerticalIcon } from '@/ui/icons'
  * The handle's `after:` pseudo-element is not decoration: it widens a 1px visual
  * rule into a usable drag target. A hairline hit area is unusable on touch and
  * only slightly better with a mouse.
+ *
+ * The CURSOR and the hover/drag feedback are LLui additions, and they are the
+ * same class of loss as a missing default prop: react-resizable-panels sets the
+ * resize cursor itself, so shadcn's recipe never carries one, and a port that
+ * copies only the classes leaves a drag handle showing the default arrow with no
+ * hover state — it reads as decoration rather than a control. `touch-none` is
+ * required too, or the browser claims the gesture for scrolling and the drag
+ * never starts on touch.
+ *
+ * The drag colour comes through `group/resizable` on the panel group, because
+ * `data-dragging` is published on the splitter's ROOT and not on the trigger.
  */
 export const ResizablePanelGroup = classPart(
   div,
-  'flex h-full w-full data-[orientation=vertical]:flex-col',
+  'group/resizable flex h-full w-full data-[orientation=vertical]:flex-col',
 )
 export const ResizablePanel = classPart(div, 'overflow-hidden')
 export const ResizableHandle = classPart(
   div,
-  'relative flex w-px items-center justify-center bg-border after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:outline-hidden data-[orientation=vertical]:h-px data-[orientation=vertical]:w-full data-[orientation=vertical]:after:left-0 data-[orientation=vertical]:after:h-1 data-[orientation=vertical]:after:w-full data-[orientation=vertical]:after:translate-x-0 data-[orientation=vertical]:after:-translate-y-1/2 [&[data-orientation=vertical]>div]:rotate-90',
+  'relative flex w-px cursor-col-resize touch-none items-center justify-center bg-border transition-colors hover:bg-ring group-data-dragging/resizable:bg-ring data-[orientation=vertical]:cursor-row-resize after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:outline-hidden data-[orientation=vertical]:h-px data-[orientation=vertical]:w-full data-[orientation=vertical]:after:left-0 data-[orientation=vertical]:after:h-1 data-[orientation=vertical]:after:w-full data-[orientation=vertical]:after:translate-x-0 data-[orientation=vertical]:after:-translate-y-1/2 [&[data-orientation=vertical]>div]:rotate-90',
 )
 /** The optional grip shadcn renders inside the handle. */
 export function ResizableHandleGrip(props?: ElProps): Mountable {

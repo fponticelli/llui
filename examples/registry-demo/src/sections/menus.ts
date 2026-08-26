@@ -330,6 +330,17 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       send: cbSend,
       parts: cb,
       positionerClass: 'z-popover',
+      // The default 4px offset collides with the input's FOCUS RING. The ring is
+      // `ring-[3px]` and draws OUTSIDE the border, so at 4px it stops 1px short
+      // of the panel's own 1px border: field and list merge into one thick fuzzy
+      // band along the top of the list, visible only while the input is focused
+      // — which is always, since this combobox is driven by typing.
+      //
+      // shadcn never meets this because its Combobox puts the input INSIDE the
+      // popover, so there is one surface and one ring. Here the input must stay
+      // outside (the machine keeps focus on it and anchors the list to it), so
+      // the gap has to clear the ring instead.
+      offset: 10,
       content: () => [
         ComboboxContent({ ...cb.content }, [
           ComboboxList([

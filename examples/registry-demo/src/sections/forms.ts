@@ -1,4 +1,4 @@
-import { div, each, text, type Mountable, type Send, type Signal } from '@llui/dom'
+import { div, each, onMount, text, type Mountable, type Send, type Signal } from '@llui/dom'
 import * as checkboxC from '@llui/components/checkbox'
 import * as radioGroup from '@llui/components/radio-group'
 import * as switchC from '@llui/components/switch'
@@ -237,6 +237,50 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       row('Slider', [
         div({ class: 'w-64' }, [
           Slider({ ...volume.root }, [
+            // The machine is keyboard-complete but does NOT track the pointer:
+            // its `control.onPointerDown` only `preventDefault`s (to suppress
+            // text selection), and the drag is the CONSUMER's to wire from
+            // `valueFromPoint` + `closestThumbIndex` — only the view knows which
+            // element's rect the percentage is measured against. Its own source
+            // says exactly this. Without it the slider moves with arrow keys and
+            // ignores the mouse, which reads as "the slider doesn't work".
+            //
+            // Listeners go on the WINDOW: a drag routinely outruns the thumb and
+            // `pointerup` lands anywhere on the page.
+            onMount((container) => {
+              const control = container.querySelector('[data-scope="slider"][data-part="control"]')
+              if (!(control instanceof HTMLElement)) return
+              const apply = (e: PointerEvent): void => {
+                const current = state.at('volume').peek()
+                if (current === undefined) return
+                const rect = control.getBoundingClientRect()
+                const raw = sliderC.valueFromPoint(current, rect, e.clientX, e.clientY)
+                send({
+                  type: 'volume',
+                  msg: {
+                    type: 'setThumb',
+                    index: sliderC.closestThumbIndex(current, raw),
+                    value: raw,
+                  },
+                })
+              }
+              const up = (): void => {
+                window.removeEventListener('pointermove', apply)
+                window.removeEventListener('pointerup', up)
+              }
+              const down = (e: PointerEvent): void => {
+                // Jump to the click position first, then track — clicking the
+                // track should move the thumb, not just arm a drag.
+                apply(e)
+                window.addEventListener('pointermove', apply)
+                window.addEventListener('pointerup', up)
+              }
+              control.addEventListener('pointerdown', down)
+              return () => {
+                control.removeEventListener('pointerdown', down)
+                up()
+              }
+            }),
             SliderControl({ ...volume.control }, [
               SliderTrack({ ...volume.track }, [SliderRange({ ...volume.range })]),
               SliderThumb({ ...volume.thumb(0).thumb }),
