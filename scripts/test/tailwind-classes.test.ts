@@ -14,11 +14,28 @@ import {
 
 const ROOT = path.resolve(__dirname, '../..')
 const REGISTRY = path.join(ROOT, 'registry/llui')
-// The demo is in scope because it is the only in-repo consumer of the theme, and
-// it is where the SECOND instance of this defect was found: `bg-surface-2` named
-// a token that never existed in any version of theme.css, and had been rendering
-// nothing for as long as it had been there.
-const DEMO = path.join(ROOT, 'examples/components-demo/src')
+// Both in-repo consumers of the theme. `components-demo` is where the SECOND
+// instance of the dead-class defect was found (`bg-surface-2` named a token that
+// never existed in any version of theme.css); `registry-demo` was outside this
+// check entirely until the icon work, so its own classes went unverified.
+const DEMOS = [
+  path.join(ROOT, 'examples/components-demo/src'),
+  path.join(ROOT, 'examples/registry-demo/src'),
+]
+
+/**
+ * Modules that legitimately declare NO class recipe, with the reason.
+ *
+ * `icons.ts` renders the Lucide glyphs shadcn bakes into its components, and
+ * deliberately carries no size class of its own — every recipe sizes them with
+ * `[&_svg:not([class*='size-'])]:size-4`, which applies only when the icon has
+ * not sized itself. A size here would silently beat every recipe.
+ *
+ * The exemption is CHECKED, not asserted: the test requires these files to have
+ * exactly zero candidates, so adding a recipe to one fails until it is removed
+ * from this list.
+ */
+const RECIPE_FREE = new Set(['ui/icons.ts'])
 
 async function sourceFiles(dir: string): Promise<string[]> {
   const out: string[] = []
@@ -51,6 +68,10 @@ describe('registry Tailwind classes', () => {
     const ui = [...byFile].filter(([file]) => file.startsWith('ui'))
     expect(ui.length).toBeGreaterThan(10)
     for (const [file, candidates] of ui) {
+      if (RECIPE_FREE.has(file)) {
+        expect(candidates, `${file} is listed as recipe-free but declares classes`).toEqual([])
+        continue
+      }
       if (candidates.length > 0) continue
       // A pure re-export module (context-menu is the dropdown's recipes under
       // other names) legitimately declares none. That has to be PROVEN from the
@@ -117,9 +138,11 @@ describe('registry Tailwind classes', () => {
     expect(dead).toEqual(['z-nonexistent-layer'])
   })
 
-  it('every class the components demo emits produces real CSS', async () => {
+  it.each(DEMOS)('every class %s emits produces real CSS', async (DEMO: string) => {
     const byFile = await candidatesUnder(DEMO)
-    const all = [...new Set([...byFile.values()].flat())].sort()
+    const all = [...new Set([...byFile.values()].flat())]
+      .filter((c) => markerName(c) === null)
+      .sort()
     // Compiled against the demo's OWN entry CSS, not the theme alone: app code
     // mixes utilities with hand-written classes (`.demo-section`), and both are
     // legitimately "defined". Only a class no rule anywhere defines is dead.

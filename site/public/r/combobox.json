@@ -4,7 +4,7 @@
   "title": "Combobox",
   "description": "Skin for @llui/components/combobox — filtering input over an anchored list.",
   "dependencies": ["@llui/dom", "@llui/components"],
-  "registryDependencies": ["utils"],
+  "registryDependencies": ["command", "select", "utils"],
   "files": [
     {
       "path": "registry/llui/ui/combobox.ts",

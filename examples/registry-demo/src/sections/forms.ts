@@ -190,9 +190,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       [
         row('Checkbox', [
           div({ class: 'flex items-center gap-2' }, [
-            Checkbox({ ...terms.root, id: 'terms' }, [
-              CheckboxIndicator({ ...terms.indicator }, [text('✓')]),
-            ]),
+            Checkbox({ ...terms.root, id: 'terms' }, [CheckboxIndicator({ ...terms.indicator })]),
             CheckboxHiddenInput({ ...terms.hiddenInput }),
             Label({ for: 'terms' }, [text('Accept terms')]),
           ]),

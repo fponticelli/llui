@@ -4,7 +4,7 @@
   "title": "Context Menu",
   "description": "Skin for @llui/components/context-menu; reuses the dropdown recipes.",
   "dependencies": ["@llui/dom", "@llui/components"],
-  "registryDependencies": ["dropdown-menu"],
+  "registryDependencies": ["dropdown-menu", "utils"],
   "files": [
     {
       "path": "registry/llui/ui/context-menu.ts",

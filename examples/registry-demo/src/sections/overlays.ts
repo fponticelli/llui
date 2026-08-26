@@ -33,7 +33,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
 } from '../components/ui/dropdown-menu'
-import { SelectContent, SelectItem, SelectTrigger } from '../components/ui/select'
+import {
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SelectViewport,
+  SelectItemIndicator,
+} from '../components/ui/select'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Avatar, AvatarFallback } from '../components/ui/avatar'
@@ -137,9 +144,14 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
           Button({ ...hc.trigger, variant: 'ghost' }, [text('@fponticelli')]),
           Button({ ...menu.trigger, variant: 'outline' }, [text('Menu ▾')]),
         ]),
-        div({ class: 'flex max-w-64 flex-col gap-2' }, [
+        div({ class: 'flex w-[180px] flex-col gap-2' }, [
           Label([text('Framework')]),
-          SelectTrigger({ ...sel.trigger }, [text(sel.valueText), text('▾')]),
+          // `SelectValue` carries `data-part=select-value`, which is what the
+          // trigger's `*:data-[part=select-value]:…` rules target. The chevron is
+          // the trigger's own — not passed in.
+          SelectTrigger({ ...sel.trigger, class: 'w-full' }, [
+            SelectValue({ 'data-part': 'select-value' }, [text(sel.valueText)]),
+          ]),
         ]),
       ],
     ),
@@ -158,7 +170,8 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
           DialogDescription({ ...dlg.description }, [
             text('Make changes to your profile here. Click save when you are done.'),
           ]),
-          DialogClose({ ...dlg.closeTrigger, 'aria-label': 'Close' }, [text('✕')]),
+          // No children: the component renders its own ✕, as shadcn's does.
+          DialogClose({ ...dlg.closeTrigger, 'aria-label': 'Close' }),
           div({ class: 'mt-4 flex flex-col gap-2' }, [
             Label({ for: 'name' }, [text('Name')]),
             Input({ id: 'name', value: 'Franco', onInput: () => undefined }),

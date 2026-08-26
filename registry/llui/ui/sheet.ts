@@ -1,5 +1,6 @@
-import { button, div, p } from '@llui/dom'
-import { classPart, createVariantsPart } from '@/lib/utils'
+import { button, div, p, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
+import { classPart, createVariantsPart, mergeClass, splitArgs } from '@/lib/utils'
+import { XIcon } from '@/ui/icons'
 
 /**
  * Sheet — ported verbatim from shadcn/ui (MIT © 2023 shadcn). shadcn calls it
@@ -36,10 +37,21 @@ export const SheetHeader = classPart(div, 'flex flex-col gap-1.5 p-4')
 export const SheetFooter = classPart(div, 'mt-auto flex flex-col gap-2 p-4')
 export const SheetTitle = classPart(div, 'font-semibold text-foreground')
 export const SheetDescription = classPart(p, 'text-sm text-muted-foreground')
-export const SheetClose = classPart(
-  button,
-  'absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary',
-)
+const sheetCloseRecipe =
+  'absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary'
+
+/** Renders its own ✕, as shadcn's does. */
+export function SheetClose(
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
+): Mountable {
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props
+  return button(
+    { type: 'button', ...rest, class: mergeClass(sheetCloseRecipe, className) },
+    children.length > 0 ? children : [XIcon({ class: 'size-4' })],
+  )
+}
 
 export {
   SheetContent as DrawerContent,

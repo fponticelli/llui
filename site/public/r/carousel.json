@@ -4,7 +4,7 @@
   "title": "Carousel",
   "description": "Skin for @llui/components/carousel, with indicators and prev/next.",
   "dependencies": ["@llui/dom", "@llui/components"],
-  "registryDependencies": ["utils"],
+  "registryDependencies": ["button", "utils"],
   "files": [
     {
       "path": "registry/llui/ui/carousel.ts",

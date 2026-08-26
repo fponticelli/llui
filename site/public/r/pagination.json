@@ -4,7 +4,7 @@
   "title": "Pagination",
   "description": "Skin for @llui/components/pagination.",
   "dependencies": ["@llui/dom", "@llui/components"],
-  "registryDependencies": ["utils"],
+  "registryDependencies": ["button", "utils"],
   "files": [
     {
       "path": "registry/llui/ui/pagination.ts",

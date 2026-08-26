@@ -4,7 +4,7 @@
   "title": "Calendar / Date Picker",
   "description": "Skin for @llui/components/date-picker — month grid, presets, range states.",
   "dependencies": ["@llui/dom", "@llui/components"],
-  "registryDependencies": ["utils"],
+  "registryDependencies": ["button", "utils"],
   "files": [
     {
       "path": "registry/llui/ui/calendar.ts",

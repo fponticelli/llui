@@ -1,5 +1,6 @@
-import { button, div, p } from '@llui/dom'
-import { classPart } from '@/lib/utils'
+import { button, div, p, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
+import { classPart, mergeClass, splitArgs } from '@/lib/utils'
+import { XIcon } from '@/ui/icons'
 
 /**
  * Ported verbatim from shadcn/ui (MIT © 2023 shadcn).
@@ -39,9 +40,20 @@ export const DialogHeader = classPart(div, 'flex flex-col gap-2 text-center sm:t
 export const DialogFooter = classPart(div, 'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end')
 export const DialogTitle = classPart(div, 'text-lg leading-none font-semibold')
 export const DialogDescription = classPart(p, 'text-sm text-muted-foreground')
-export const DialogClose = classPart(
-  button,
-  "absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
-)
+const dialogCloseRecipe =
+  "absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4"
+
+/** Renders its own ✕, as shadcn's does. */
+export function DialogClose(
+  a0?: ElProps | readonly ChildNode[],
+  a1?: readonly ChildNode[],
+): Mountable {
+  const { props, children } = splitArgs(a0, a1)
+  const { class: className, ...rest } = props
+  return button(
+    { type: 'button', ...rest, class: mergeClass(dialogCloseRecipe, className) },
+    children.length > 0 ? children : [XIcon({ class: 'size-4' })],
+  )
+}
 
 export { DialogBackdrop as DialogOverlay }

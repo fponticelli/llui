@@ -1,6 +1,7 @@
 import { button, div, h3 } from '@llui/dom'
 import { type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { classPart, customTag, mergeClass, splitArgs } from '@/lib/utils'
+import { classPart, mergeClass, splitArgs } from '@/lib/utils'
+import { ChevronDownIcon } from '@/ui/icons'
 
 /**
  * Ported verbatim from shadcn/ui (MIT © 2023 shadcn).
@@ -33,7 +34,13 @@ export function AccordionTrigger(
           className,
         ),
       },
-      children,
+      [
+        ...children,
+        ChevronDownIcon({
+          class:
+            'pointer-events-none size-4 shrink-0 translate-y-0.5 text-muted-foreground transition-transform duration-200',
+        }),
+      ],
     ),
   ])
 }
@@ -46,10 +53,3 @@ export const AccordionContent = classPart(
  * animated height wrapper stays padding-free (padding on an animating element
  * makes the collapse jump). */
 export const AccordionContentInner = classPart(div, 'pt-0 pb-4')
-
-/** The disclosure chevron. The trigger rotates it via
- * `[&[data-state=open]>svg]:rotate-180`, so this only sizes and tints it. */
-export const AccordionChevron = classPart(
-  customTag('svg'),
-  'pointer-events-none size-4 shrink-0 translate-y-0.5 text-muted-foreground transition-transform duration-200',
-)
