@@ -8,6 +8,11 @@ import { classPart } from '../../lib/utils'
  * widening halo rather than a colour change, which is why the thumb declares
  * `ring-ring/50` up front with a zero-width ring.
  *
+ * `bg-white`, not `bg-background`, and that is upstream's choice rather than an
+ * oversight: the thumb stays white in BOTH themes so it reads against the
+ * primary-filled range either way. Swapping it for the theme token makes the
+ * thumb vanish into a dark track.
+ *
  * `@llui/components/slider` writes the thumb offset and range extent as inline
  * styles from the value, so no view here reads state.
  */
@@ -26,5 +31,5 @@ export const SliderRange = classPart(
 )
 export const SliderThumb = classPart(
   span,
-  'block size-4 shrink-0 rounded-full border border-primary bg-background shadow-sm ring-ring/50 transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50',
+  'block size-4 shrink-0 rounded-full border border-primary bg-white shadow-sm ring-ring/50 transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50',
 )

@@ -48,3 +48,8 @@ export const ItemDescription = classPart(
 )
 export const ItemActions = classPart(div, 'flex items-center gap-2')
 export const ItemSeparator = classPart(div, 'my-0')
+
+/** Full-width rows above and below an Item's main line — upstream uses them for
+ * a title bar and a meta strip inside the same card. */
+export const ItemHeader = classPart(div, 'flex basis-full items-center justify-between gap-2')
+export const ItemFooter = classPart(div, 'flex basis-full items-center justify-between gap-2')

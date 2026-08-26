@@ -20,6 +20,34 @@ registry/
   tag and the classes for `@llui/components` parts. The state machine, keyboard handling
   and ARIA stay in the package; the consumer spreads the part bag in.
 
+## Fidelity to shadcn/ui
+
+Recipes are ported VERBATIM from shadcn/ui's source (new-york-v4, MIT © 2023
+shadcn), measured at a **98% mean class-set match** across the 45 components with
+an upstream counterpart — 38 of them at 100%.
+
+What remains is not approximation. It is, in order of size:
+
+1. **Radix runtime variables.** `origin-(--radix-…-transform-origin)`,
+   `max-h-(--radix-…-available-height)`,
+   `h-[var(--radix-navigation-menu-viewport-height)]`. Radix's positioner writes
+   these; LLui's floating layer does not, so the classes would resolve to
+   `var(--undefined)`. Dropping them costs the zoom animation its trigger-edge
+   origin — the only visual difference in those files.
+2. **`cmdk` selectors.** `command`'s `[&_[cmdk-group-heading]]` block targets
+   that library's own attributes. There is no cmdk here;
+   `@llui/components/patterns/command-menu` publishes `data-highlighted` like
+   every other LLui list.
+3. **A measurement limit, not a gap.** The comparison reads each file's own
+   recipes; a few upstream classes it reports as missing are present under the
+   `data-slot` → `data-part` rename (e.g. `select`'s
+   `*:data-[part=select-value]:…`). Check the file before believing the number.
+
+Where upstream and LLui disagree on the ATTRIBUTE that drives a state, both are
+bound rather than one being chosen — `resizable` carries `aria-[orientation=…]`
+AND `data-[orientation=…]`, `input-otp` carries `data-[active=true]` AND
+`focus-visible:`. A shadcn snippet pasted in behaves the same as an LLui part bag.
+
 ## Rules for anything added here
 
 1. **Route `class` through `mergeClass`, never `cn` directly.** `class` is

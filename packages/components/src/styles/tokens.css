@@ -203,6 +203,23 @@
    * the Radix-style `--content-height` custom property the component sets. */
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  /* The blinking caret in the one-time-code input. shadcn/ui defines this in the
+   * app's own stylesheet; it lives here so a registry `InputOTPCaret` blinks with
+   * no extra setup. */
+  --animate-caret-blink: caret-blink 1.25s ease-out infinite;
+}
+
+@keyframes caret-blink {
+  0%,
+  70%,
+  100% {
+    opacity: 1;
+  }
+  20%,
+  50% {
+    opacity: 0;
+  }
 }
 
 @keyframes accordion-down {

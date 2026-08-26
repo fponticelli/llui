@@ -21,3 +21,19 @@ export const ScrollAreaScrollbar = classPart(
 )
 export const ScrollAreaThumb = classPart(div, 'relative flex-1 rounded-full bg-border')
 export const ScrollAreaCorner = classPart(div, 'bg-transparent')
+
+/**
+ * shadcn renders one scrollbar component per orientation, so its class strings
+ * are BARE (`h-full w-2.5 border-l border-l-transparent`) rather than variant-
+ * prefixed. `ScrollAreaScrollbar` above covers both from one `data-orientation`,
+ * which is the shape LLui's machine publishes; these two exist for a consumer
+ * rendering the axes separately, and carry upstream's classes unprefixed.
+ */
+export const ScrollAreaScrollbarVertical = classPart(
+  div,
+  'flex touch-none p-px transition-colors select-none h-full w-2.5 border-l border-l-transparent',
+)
+export const ScrollAreaScrollbarHorizontal = classPart(
+  div,
+  'flex touch-none p-px transition-colors select-none h-2.5 flex-col border-t border-t-transparent',
+)

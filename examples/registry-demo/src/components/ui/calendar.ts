@@ -44,6 +44,12 @@ export const CalendarCaption = classPart(
   'flex h-(--cell-size) w-full items-center justify-center px-(--cell-size)',
 )
 export const CalendarCaptionLabel = classPart(div, 'text-sm font-medium select-none')
+/** The caption label when the month/year DROPDOWN layout is used — it becomes a
+ * control with a chevron rather than plain text. */
+export const CalendarCaptionLabelDropdown = classPart(
+  div,
+  'font-medium select-none flex h-8 items-center gap-1 rounded-md pr-1 pl-2 text-sm [&>svg]:size-3.5 [&>svg]:text-muted-foreground',
+)
 /** The month/year dropdown controls shadcn offers as an alternative caption. The
  * native `<select>` is transparent and stacked over a styled shell, which is how
  * it keeps the platform picker while looking like the rest of the theme. */
@@ -75,6 +81,23 @@ export const CalendarDayButton = classPart(
   button,
   `${buttonVariants({ variant: 'ghost' })} flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50 data-[range-end=true]:rounded-md data-[range-end=true]:rounded-r-md data-[range-end=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-accent data-[range-middle=true]:text-accent-foreground data-[range-start=true]:rounded-md data-[range-start=true]:rounded-l-md data-[range-start=true]:bg-primary data-[range-start=true]:text-primary-foreground data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground data-[state=selected]:bg-primary data-[state=selected]:text-primary-foreground dark:hover:text-accent-foreground [&>span]:text-xs [&>span]:opacity-70`,
 )
+
+/**
+ * The day-modifier classes upstream applies to a cell. `CalendarDay` above
+ * already carries them as `data-[state=…]:` variants, which is the shape
+ * `@llui/components/date-picker` publishes; these exist unprefixed for a
+ * consumer driving the modifiers themselves, and carry upstream's strings
+ * verbatim.
+ */
+export const calendarDayModifiers = {
+  today: 'rounded-md bg-accent text-accent-foreground data-[selected=true]:rounded-none',
+  rangeStart: 'rounded-l-md bg-accent',
+  rangeMiddle: 'rounded-none',
+  rangeEnd: 'rounded-r-md bg-accent',
+  outside: 'text-muted-foreground aria-selected:text-muted-foreground',
+  disabled: 'text-muted-foreground opacity-50',
+  hidden: 'invisible',
+} as const
 
 export const CalendarWeekNumber = classPart(td, 'text-[0.8rem] text-muted-foreground select-none')
 export const CalendarWeekNumberHeader = classPart(th, 'w-(--cell-size) select-none')

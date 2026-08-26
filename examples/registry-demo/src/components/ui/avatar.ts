@@ -21,3 +21,13 @@ export const AvatarBadge = classPart(
   span,
   'absolute right-0 bottom-0 z-10 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background select-none group-data-[size=sm]/avatar:size-2 group-data-[size=sm]/avatar:[&>svg]:hidden group-data-[size=default]/avatar:size-2.5 group-data-[size=default]/avatar:[&>svg]:size-2 group-data-[size=lg]/avatar:size-3 group-data-[size=lg]/avatar:[&>svg]:size-2',
 )
+
+/**
+ * A stack of overlapping avatars. `data-size` on the GROUP resizes every member
+ * through `group-has-data-[size=…]/avatar-group:`, which is why the members read
+ * the group rather than each carrying their own size.
+ */
+export const AvatarGroup = classPart(
+  div,
+  'group/avatar-group flex -space-x-2 *:ring-2 *:ring-background group-has-data-[size=lg]/avatar-group:size-10 group-has-data-[size=sm]/avatar-group:size-6 [&>svg]:size-4 group-has-data-[size=lg]/avatar-group:[&>svg]:size-5 group-has-data-[size=sm]/avatar-group:[&>svg]:size-3',
+)

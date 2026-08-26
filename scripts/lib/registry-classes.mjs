@@ -140,6 +140,24 @@ export function extractClassCandidates(fileName, source) {
     ) {
       pushString(node.initializer)
     }
+    // A record of class strings (`calendarDayModifiers`) — every string VALUE is
+    // a recipe. Keyed on the `Modifiers`/`Classes` suffix so an arbitrary object
+    // of strings is not mistaken for one.
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      /(?:Modifiers|Classes)$/.test(node.name.text)
+    ) {
+      const obj = asObject(
+        node.initializer !== undefined && ts.isAsExpression(node.initializer)
+          ? node.initializer.expression
+          : node.initializer,
+      )
+      if (obj !== undefined) {
+        for (const prop of obj.properties)
+          if (ts.isPropertyAssignment(prop)) pushString(prop.initializer)
+      }
+    }
     // A recipe assigned to a `const` and passed by name (`inputRecipe`) never
     // reaches a call argument, so read exported string consts named *Recipe too.
     if (
