@@ -177,7 +177,15 @@ export function connect(state: Signal<SplitterState>, send: Send<SplitterMsg>): 
     },
     resizeTrigger: {
       role: 'separator',
-      'aria-orientation': state.map((s) => s.orientation),
+      // The SEPARATOR's axis, which is the inverse of the SPLIT's: panels laid
+      // out side by side (`orientation: 'horizontal'`) are divided by a rule
+      // that runs top to bottom. Publishing `s.orientation` straight through
+      // announced every splitter the wrong way round, and nothing but a screen
+      // reader could see it. `data-orientation` below keeps the machine's own
+      // vocabulary — it is the styling hook, not an ARIA claim.
+      'aria-orientation': state.map((s) =>
+        s.orientation === 'horizontal' ? 'vertical' : 'horizontal',
+      ),
       'aria-valuemin': state.map((s) => s.min),
       'aria-valuemax': state.map((s) => s.max),
       'aria-valuenow': state.map((s) => s.position),

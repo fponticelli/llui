@@ -44,9 +44,19 @@ What remains is not approximation. It is, in order of size:
    `*:data-[part=select-value]:…`). Check the file before believing the number.
 
 Where upstream and LLui disagree on the ATTRIBUTE that drives a state, both are
-bound rather than one being chosen — `resizable` carries `aria-[orientation=…]`
-AND `data-[orientation=…]`, `input-otp` carries `data-[active=true]` AND
+bound rather than one being chosen — `scroll-area` carries `data-[axis=…]` AND
+`data-[orientation=…]`, `input-otp` carries `data-[active=true]` AND
 `focus-visible:`. A shadcn snippet pasted in behaves the same as an LLui part bag.
+
+**Bind both only when both mean the same thing.** `resizable` used to carry
+`aria-[orientation=…]` alongside `data-[orientation=…]` and that was a BUG, not
+belt-and-braces: react-resizable-panels reports the axis of the DIVIDER while
+`splitter` reports the axis of the SPLIT, so for one layout the handle is
+`data-orientation="horizontal"` and `aria-orientation="vertical"` at the same
+time. Both rules applied, the later won, and the divider rendered as a bar
+across the top of the group instead of a rule between the panels. It compiled,
+it spread, the suite was green — a render is the only thing that shows it.
+Check what an attribute MEANS on both sides before pairing them.
 
 ## Rules for anything added here
 

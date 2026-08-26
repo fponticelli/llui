@@ -17,6 +17,7 @@ import * as navigation from './sections/navigation'
 import * as overlays from './sections/overlays'
 import * as layout from './sections/layout'
 import * as data from './sections/data'
+import * as advanced from './sections/advanced'
 import { groupHeading } from './sections/shared'
 
 interface State {
@@ -26,6 +27,7 @@ interface State {
   overlays: overlays.State
   layout: layout.State
   data: data.State
+  advanced: advanced.State
 }
 
 type Msg =
@@ -35,6 +37,7 @@ type Msg =
   | { type: 'overlays'; msg: overlays.Msg }
   | { type: 'layout'; msg: layout.Msg }
   | { type: 'data'; msg: data.Msg }
+  | { type: 'advanced'; msg: advanced.Msg }
 
 export const App = component<State, Msg, never>({
   name: 'RegistryDemo',
@@ -46,6 +49,7 @@ export const App = component<State, Msg, never>({
       overlays: overlays.init()[0],
       layout: layout.init()[0],
       data: data.init()[0],
+      advanced: advanced.init()[0],
     },
     [],
   ],
@@ -63,6 +67,8 @@ export const App = component<State, Msg, never>({
         return [{ ...state, layout: layout.update(state.layout, msg.msg)[0] }, []]
       case 'data':
         return [{ ...state, data: data.update(state.data, msg.msg)[0] }, []]
+      case 'advanced':
+        return [{ ...state, advanced: advanced.update(state.advanced, msg.msg)[0] }, []]
     }
   },
   view: ({ state, send }): readonly Mountable[] => [
@@ -81,6 +87,9 @@ export const App = component<State, Msg, never>({
 
       groupHeading('Layout'),
       ...layout.view(state.at('layout'), (msg) => send({ type: 'layout', msg })),
+
+      groupHeading('Scrolling, panes & trees'),
+      ...advanced.view(state.at('advanced'), (msg) => send({ type: 'advanced', msg })),
 
       groupHeading('Overlays'),
       ...overlays.view(state.at('overlays'), (msg) => send({ type: 'overlays', msg })),

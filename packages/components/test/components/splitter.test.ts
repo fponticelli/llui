@@ -126,4 +126,30 @@ describe('splitter.connect', () => {
       read(p.secondaryPanel.style, init({ position: 40, orientation: 'horizontal' })),
     ).toContain('width:60%')
   })
+
+  // `state.orientation` names the axis of the SPLIT — 'horizontal' lays the
+  // panels out side by side, which the two style tests above pin by asserting
+  // `width`. `aria-orientation` on a `role="separator"` names the axis of the
+  // SEPARATOR ITSELF, and between side-by-side panels that rule runs top to
+  // bottom. The two are therefore always OPPOSITE, and publishing
+  // `state.orientation` straight through announced every splitter the wrong way
+  // round. Nothing else reads it, so the only place this was ever visible is a
+  // screen reader.
+  it('aria-orientation is the separator axis, the INVERSE of the split axis', () => {
+    expect(read(p.resizeTrigger['aria-orientation'], init({ orientation: 'horizontal' }))).toBe(
+      'vertical',
+    )
+    expect(read(p.resizeTrigger['aria-orientation'], init({ orientation: 'vertical' }))).toBe(
+      'horizontal',
+    )
+  })
+
+  it('data-orientation still reports the split axis', () => {
+    // The `data-` attribute is the styling hook and keeps the machine's own
+    // vocabulary; only the ARIA attribute flips. A skin keying off both would
+    // otherwise apply two contradictory rules to one handle.
+    expect(read(p.resizeTrigger['data-orientation'], init({ orientation: 'horizontal' }))).toBe(
+      'horizontal',
+    )
+  })
 })
