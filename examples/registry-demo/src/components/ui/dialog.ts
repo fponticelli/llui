@@ -1,133 +1,47 @@
-import { button, div, h2, p, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { mergeClass, splitArgs } from '../../lib/utils'
+import { button, div, p } from '@llui/dom'
+import { classPart } from '../../lib/utils'
 
 /**
- * Dialog — the SKIN for `@llui/components/dialog`. The focus trap, scroll lock,
- * sibling `aria-hidden`, portal and focus restoration are the package's
- * `overlay()` helper; these are the classes that go on its parts.
+ * Ported verbatim from shadcn/ui (MIT © 2023 shadcn).
+ *
+ * TWO LLui-specific things, both about the positioner:
+ *
+ *  1. `DialogContent` POSITIONS ITSELF (`fixed top-[50%] left-[50%]
+ *     translate-x-[-50%] translate-y-[-50%]`), exactly as shadcn's does. So the
+ *     wrapper `div` that `overlay()` builds must stay out of the way — pass
+ *     `positionerClass: 'contents'`, which removes it from layout entirely and
+ *     leaves the content behaving byte-for-byte like shadcn's.
+ *  2. The BACKDROP is yours to render, inside `content()`. The engine does not
+ *     emit one. With the positioner set to `contents` it is a sibling of the
+ *     content in the layout, so it keeps shadcn's `fixed inset-0`.
  *
  *   const parts = dialogConnect(dialogState, dialogSend, { id: 'confirm' })
- *   [
- *     Button({ ...parts.trigger }, [text('Delete')]),
- *     dialogOverlay({
- *       state: dialogState, send: dialogSend, parts,
- *       positionerClass: 'fixed inset-0 z-dialog grid place-items-center p-4',
- *       content: () => [
- *         DialogBackdrop({ ...parts.backdrop }),
- *         DialogContent({ ...parts.content }, [
- *           DialogTitle({ ...parts.title }, [text('Are you sure?')]),
- *         ]),
- *       ],
- *     }),
- *   ]
- *
- * Two things about that shape are easy to get wrong and have no error to tell
- * you so — the dialog simply renders in the page flow with nothing dimmed:
- *
- *  - **The positioner needs `fixed inset-0` from you.** `overlay()` builds the
- *    div, but the part bag it spreads carries only `data-*`; nothing positions
- *    it. (The opt-in baseline stylesheet does it in CSS, which is why this is
- *    invisible until you style with utilities instead.)
- *  - **The backdrop is yours to render**, inside `content()`. The engine does
- *    not emit one. It sits INSIDE the positioner, hence `absolute inset-0`
- *    below rather than `fixed`.
- *
- * There is deliberately no `DialogPositioner` here. `overlay()` BUILDS the
- * positioner div itself, so a component wrapping the part bag would never be
- * placed; the class for that node goes through the helper's `positionerClass`
- * option instead. Same for popover and tooltip.
- *
- * `z-dialog` / `z-popover` / `z-tooltip` are real utilities (theme.css declares
- * them in Tailwind's `--z-index-*` namespace). Spelled `--z-*` they compile to
- * nothing and every overlay renders unstacked — the defect this registry replaced.
+ *   dialogOverlay({
+ *     state: dialogState, send: dialogSend, parts,
+ *     positionerClass: 'contents',
+ *     content: () => [
+ *       DialogBackdrop({ ...parts.backdrop }),
+ *       DialogContent({ ...parts.content }, [
+ *         DialogHeader([DialogTitle({ ...parts.title }, [text('Are you sure?')])]),
+ *       ]),
+ *     ],
+ *   })
  */
-/** The dimming layer. `absolute`, not `fixed`: it renders INSIDE the positioner,
- * which is the element carrying `fixed inset-0` and the z-index. */
-export function DialogBackdrop(props?: ElProps): Mountable {
-  const { class: className, ...rest } = props ?? {}
-  return div({
-    ...rest,
-    class: mergeClass(
-      'absolute inset-0 bg-black/50 transition-opacity duration-fast data-[state=closed]:opacity-0',
-      className,
-    ),
-  })
-}
+export const DialogBackdrop = classPart(
+  div,
+  'fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
+)
+export const DialogContent = classPart(
+  div,
+  'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg',
+)
+export const DialogHeader = classPart(div, 'flex flex-col gap-2 text-center sm:text-left')
+export const DialogFooter = classPart(div, 'flex flex-col-reverse gap-2 sm:flex-row sm:justify-end')
+export const DialogTitle = classPart(div, 'text-lg leading-none font-semibold')
+export const DialogDescription = classPart(p, 'text-sm text-muted-foreground')
+export const DialogClose = classPart(
+  button,
+  "absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+)
 
-export function DialogContent(
-  a0?: ElProps | readonly ChildNode[],
-  a1?: readonly ChildNode[],
-): Mountable {
-  const { props, children } = splitArgs(a0, a1)
-  const { class: className, ...rest } = props as ElProps
-  return div(
-    {
-      ...rest,
-      class: mergeClass(
-        // `relative` so it stacks above the absolutely-positioned backdrop that
-        // shares the positioner with it.
-        'relative w-full max-w-lg rounded-xl border border-border bg-popover p-6 text-popover-foreground shadow-lg transition-all duration-normal data-[state=closed]:scale-95 data-[state=closed]:opacity-0',
-        className,
-      ),
-    },
-    children,
-  )
-}
-
-export function DialogTitle(
-  a0?: ElProps | readonly ChildNode[],
-  a1?: readonly ChildNode[],
-): Mountable {
-  const { props, children } = splitArgs(a0, a1)
-  const { class: className, ...rest } = props as ElProps
-  return h2(
-    { ...rest, class: mergeClass('text-lg leading-none font-semibold', className) },
-    children,
-  )
-}
-
-export function DialogDescription(
-  a0?: ElProps | readonly ChildNode[],
-  a1?: readonly ChildNode[],
-): Mountable {
-  const { props, children } = splitArgs(a0, a1)
-  const { class: className, ...rest } = props as ElProps
-  return p(
-    { ...rest, class: mergeClass('mt-2 text-sm text-muted-foreground', className) },
-    children,
-  )
-}
-
-export function DialogClose(
-  a0?: ElProps | readonly ChildNode[],
-  a1?: readonly ChildNode[],
-): Mountable {
-  const { props, children } = splitArgs(a0, a1)
-  const { class: className, ...rest } = props as ElProps
-  return button(
-    {
-      type: 'button',
-      ...rest,
-      class: mergeClass(
-        'absolute top-3 right-3 rounded-sm text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
-        className,
-      ),
-    },
-    children,
-  )
-}
-
-export function DialogFooter(
-  a0?: ElProps | readonly ChildNode[],
-  a1?: readonly ChildNode[],
-): Mountable {
-  const { props, children } = splitArgs(a0, a1)
-  const { class: className, ...rest } = props as ElProps
-  return div(
-    {
-      ...rest,
-      class: mergeClass('mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end', className),
-    },
-    children,
-  )
-}
+export { DialogBackdrop as DialogOverlay }

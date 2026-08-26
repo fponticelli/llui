@@ -5,7 +5,7 @@ import { classPart } from '@/lib/utils'
  * package supplies `role="toolbar"` roving focus across groups. */
 export const Toolbar = classPart(
   div,
-  'flex items-center gap-1 rounded-md border border-border bg-background p-1 shadow-sm data-[orientation=vertical]:flex-col',
+  'flex items-center gap-1 rounded-md border border-input bg-background p-1 shadow-xs data-[orientation=vertical]:flex-col',
 )
 export const ToolbarGroup = classPart(div, 'flex items-center gap-1')
 export const ToolbarGroupLabel = classPart(span, 'px-1 text-xs text-muted-foreground')

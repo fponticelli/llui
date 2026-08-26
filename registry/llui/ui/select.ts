@@ -1,28 +1,44 @@
-import { button, div, option, select as selectEl } from '@llui/dom'
+import { div, option, select as selectEl, span, button } from '@llui/dom'
 import { classPart } from '@/lib/utils'
 
 /**
- * Select — skin for `@llui/components/select`. Pass
- * `positionerClass: 'z-popover'` to `overlay()`.
+ * Ported from shadcn/ui (MIT © 2023 shadcn) with the same `focus:` →
+ * `data-[highlighted]:` translation `dropdown-menu.ts` explains, and with the
+ * Radix positioning variables dropped (`max-h-(--radix-select-content-available-height)`,
+ * `origin-(--radix-select-content-transform-origin)`, and the trigger-width
+ * clamp on the viewport — all written by Radix's positioner, not LLui's).
  *
- * Render `hiddenSelect` / `hiddenOption`: they are what carries the value into a
- * native form submit. `sr-only` rather than `hidden`, because a hidden control
- * is excluded from `FormData` in some browsers.
+ * Two things to actually render:
+ *  - `hiddenSelect` / `hiddenOption`, which carry the value into a native form
+ *    submit. `sr-only`, NOT `hidden` — a hidden control is excluded from
+ *    `FormData` in some browsers.
+ *  - The trigger's `data-size`: shadcn drives the height from it
+ *    (`data-[size=default]:h-9`), and LLui's machine does not emit it, so pass
+ *    `'data-size': 'default'` yourself or the trigger has no height.
+ *
+ * `*:data-[part=select-value]:…` styles the value span the caller places inside
+ * the trigger — shadcn spells that attribute `data-slot`.
  */
 export const SelectTrigger = classPart(
   button,
-  'flex h-9 w-full items-center justify-between gap-2 rounded-md border border-border bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-sm transition-colors duration-fast outline-none focus-visible:ring-2 focus-visible:ring-ring data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[placeholder]:text-muted-foreground [&_svg]:size-4 [&_svg]:shrink-0',
+  "flex w-fit items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[placeholder]:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[part=select-value]:line-clamp-1 *:data-[part=select-value]:flex *:data-[part=select-value]:items-center *:data-[part=select-value]:gap-2 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
 )
+export const SelectValue = classPart(span, '')
 export const SelectContent = classPart(
   div,
-  'max-h-72 min-w-32 overflow-y-auto overflow-x-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none transition-opacity duration-fast data-[state=closed]:opacity-0',
+  'relative z-50 max-h-72 min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-md border bg-popover text-popover-foreground shadow-md data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
 )
+export const SelectViewport = classPart(div, 'p-1')
 export const SelectItem = classPart(
   div,
-  'relative flex w-full cursor-pointer items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[state=checked]:font-medium data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+  "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+)
+export const SelectItemIndicator = classPart(
+  span,
+  'absolute right-2 flex size-3.5 items-center justify-center',
 )
 export const SelectGroup = classPart(div, '')
-export const SelectLabel = classPart(div, 'px-2 py-1.5 text-xs font-medium text-muted-foreground')
-export const SelectSeparator = classPart(div, '-mx-1 my-1 h-px bg-border')
+export const SelectLabel = classPart(div, 'px-2 py-1.5 text-xs text-muted-foreground')
+export const SelectSeparator = classPart(div, 'pointer-events-none -mx-1 my-1 h-px bg-border')
 export const SelectHiddenSelect = classPart(selectEl, 'sr-only')
 export const SelectHiddenOption = classPart(option, '')

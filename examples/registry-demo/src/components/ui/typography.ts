@@ -37,5 +37,5 @@ export const TypographyInlineCode = classPart(
 )
 export const TypographyPre = classPart(
   pre,
-  'my-6 overflow-x-auto rounded-lg border border-border bg-muted p-4 font-mono text-sm',
+  'my-6 overflow-x-auto rounded-lg border border-input bg-muted p-4 font-mono text-sm',
 )

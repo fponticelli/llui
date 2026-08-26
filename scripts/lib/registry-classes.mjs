@@ -37,6 +37,34 @@ export function extractClassCandidates(fileName, source) {
   )
   const strings = []
 
+  // Index module-level `const X = { … }` so a `createVariants({ variants })`
+  // SHORTHAND can be followed to its object. Without this the whole variant map
+  // of any component written that way is invisible: `button.ts` and `badge.ts`
+  // both are, and every one of their variant classes was going unchecked while
+  // the file still reported plenty of candidates from its base recipe — a silent
+  // hole, not an obvious one.
+  const objectConsts = new Map()
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue
+    for (const decl of stmt.declarationList.declarations) {
+      if (
+        ts.isIdentifier(decl.name) &&
+        decl.initializer !== undefined &&
+        ts.isObjectLiteralExpression(decl.initializer)
+      ) {
+        objectConsts.set(decl.name.text, decl.initializer)
+      }
+    }
+  }
+
+  /** Resolve to an object literal, following a module-level const by name. */
+  const asObject = (node) => {
+    if (node === undefined) return undefined
+    if (ts.isObjectLiteralExpression(node)) return node
+    if (ts.isIdentifier(node)) return objectConsts.get(node.text)
+    return undefined
+  }
+
   // Template literals contribute their STATIC text only. An interpolated span is
   // an arbitrary expression whose value this pass cannot know, so reading it is
   // impossible and reporting it would be a false failure; the static head/tail
@@ -53,8 +81,9 @@ export function extractClassCandidates(fileName, source) {
     }
   }
 
-  const readVariantsObject = (obj) => {
-    if (!ts.isObjectLiteralExpression(obj)) return
+  const readVariantsObject = (maybe) => {
+    const obj = asObject(maybe)
+    if (obj === undefined) return
     for (const group of obj.properties) {
       if (!ts.isPropertyAssignment(group)) continue
       if (!ts.isObjectLiteralExpression(group.initializer)) continue
@@ -65,8 +94,14 @@ export function extractClassCandidates(fileName, source) {
   }
 
   const readCreateVariants = (arg) => {
-    if (!ts.isObjectLiteralExpression(arg)) return
-    for (const prop of arg.properties) {
+    const config = asObject(arg)
+    if (config === undefined) return
+    for (const prop of config.properties) {
+      if (ts.isShorthandPropertyAssignment(prop)) {
+        // `{ base, variants, defaultVariants }` — the shorthand names the const.
+        if (prop.name.text === 'variants') readVariantsObject(prop.name)
+        continue
+      }
       if (!ts.isPropertyAssignment(prop)) continue
       const key =
         ts.isIdentifier(prop.name) || ts.isStringLiteral(prop.name) ? prop.name.text : null

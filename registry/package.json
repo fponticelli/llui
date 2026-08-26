@@ -14,6 +14,7 @@
     "@llui/interactions": "workspace:*",
     "clsx": "^2.1.1",
     "tailwind-merge": "^3.0.0",
-    "typescript": "^6.0.0"
+    "typescript": "^6.0.0",
+    "tw-animate-css": "^1.0.0"
   }
 }

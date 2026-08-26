@@ -4,7 +4,13 @@ import path from 'node:path'
 // @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import { extractClassCandidates, isPureReExport } from '../lib/registry-classes.mjs'
 // @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
-import { appEntry, compileCandidates, selectorFor } from '../lib/tailwind-compile.mjs'
+import {
+  appEntry,
+  compileCandidates,
+  markerName,
+  markerReferences,
+  selectorFor,
+} from '../lib/tailwind-compile.mjs'
 
 const ROOT = path.resolve(__dirname, '../..')
 const REGISTRY = path.join(ROOT, 'registry/llui')
@@ -58,9 +64,39 @@ describe('registry Tailwind classes', () => {
     }
   })
 
+  it('every group-…/name: variant has a matching marker', async () => {
+    // `group/name` and `peer/name` emit NO rule — they exist only to be
+    // referenced by a `group-…/name:` variant on a descendant, so compiling
+    // cannot check them and they are excluded from the dead-class assertion.
+    //
+    // The check runs from the REFERENCE side, not the declaration side, because
+    // only that direction is always a bug: a `group-data-[x]/typo:` with no
+    // `group/typo` anywhere is CSS that can never match. The reverse — a marker
+    // nobody references — is legitimate and upstream does it deliberately
+    // (`group/calendar`, `group/item-group` are hooks for the CONSUMER's own
+    // classes), so flagging it would fail on a faithful port.
+    const byFile = await allCandidates()
+    const dangling: string[] = []
+    for (const [file, candidates] of byFile) {
+      const declared = new Set(candidates.map(markerName).filter((n: string | null) => n !== null))
+      for (const candidate of candidates) {
+        for (const name of markerReferences(candidate)) {
+          if (!declared.has(name))
+            dangling.push(`${file}: ${candidate} (no group/${name} declared)`)
+        }
+      }
+    }
+    expect(
+      dangling,
+      `These variants reference a marker their file never declares:\n${dangling.join('\n')}`,
+    ).toEqual([])
+  })
+
   it('every class the registry emits produces real CSS', async () => {
     const byFile = await allCandidates()
-    const all = [...new Set([...byFile.values()].flat())].sort()
+    const all = [...new Set([...byFile.values()].flat())]
+      .filter((c) => markerName(c) === null)
+      .sort()
     const { dead } = await compileCandidates(all)
 
     const blame = dead.map((c) => {

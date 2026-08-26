@@ -10,7 +10,7 @@
       "path": "registry/llui/ui/skeleton.ts",
       "type": "registry:ui",
       "target": "skeleton.ts",
-      "content": "import { div, type ElProps, type Mountable } from '@llui/dom'\nimport { mergeClass } from '@/lib/utils'\n\nexport function Skeleton(props?: ElProps): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return div({\n    ...rest,\n    'aria-hidden': 'true',\n    class: mergeClass('animate-pulse rounded-md bg-accent', className),\n  })\n}\n"
+      "content": "import { div, type ElProps, type Mountable } from '@llui/dom'\nimport { mergeClass } from '@/lib/utils'\n\n/** Ported verbatim from shadcn/ui (MIT © 2023 shadcn). `aria-hidden` is an LLui\n * addition: a loading shape is decoration, and the loading STATE belongs on the\n * region it stands in for. */\nexport function Skeleton(props?: ElProps): Mountable {\n  const { class: className, ...rest } = props ?? {}\n  return div({\n    ...rest,\n    'aria-hidden': 'true',\n    class: mergeClass('animate-pulse rounded-md bg-accent', className),\n  })\n}\n"
     }
   ]
 }

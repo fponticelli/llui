@@ -1,5 +1,4 @@
 import { div, type ElProps, type Mountable } from '@llui/dom'
-import { createVariants } from '@llui/components/styles'
 import { mergeClass } from '@/lib/utils'
 
 /** An INTERSECTION, not `interface … extends ElProps`: `ElProps` is itself an
@@ -14,17 +13,11 @@ export type SeparatorProps = ElProps & {
   decorative?: boolean
 }
 
-/** A `createVariants` recipe rather than a template literal with a ternary in
- * it. Both render the same classes; only this one is fully readable by the
- * Tailwind check, which can extract a template literal's STATIC text but never
- * the classes hidden inside an interpolation. */
-export const separatorVariants = createVariants({
-  base: 'shrink-0 bg-border',
-  variants: {
-    orientation: { horizontal: 'h-px w-full', vertical: 'h-full w-px' },
-  },
-  defaultVariants: { orientation: 'horizontal' },
-})
+/** Ported verbatim from shadcn/ui (MIT © 2023 shadcn). Orientation is expressed
+ * as a `data-orientation` variant rather than a class ternary, which is both
+ * shadcn's shape and the form the repo's Tailwind check can read in full. */
+export const separatorRecipe =
+  'shrink-0 bg-border data-[orientation=horizontal]:h-px data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-px'
 
 export function Separator(props?: SeparatorProps): Mountable {
   const { orientation = 'horizontal', decorative = true, class: className, ...rest } = props ?? {}
@@ -33,6 +26,6 @@ export function Separator(props?: SeparatorProps): Mountable {
     role: decorative ? 'none' : 'separator',
     'aria-orientation': decorative ? undefined : orientation,
     'data-orientation': orientation,
-    class: mergeClass(separatorVariants({ orientation }), className),
+    class: mergeClass(separatorRecipe, className),
   })
 }

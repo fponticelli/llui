@@ -1,39 +1,23 @@
-import { div, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { mergeClass, splitArgs } from '../../lib/utils'
+import { div } from '@llui/dom'
+import { classPart } from '../../lib/utils'
 
 /**
- * Popover — the SKIN for `@llui/components/popover`. Floating placement,
- * dismissal, nested-layer ownership and focus restoration are the package's.
+ * Ported verbatim from shadcn/ui (MIT © 2023 shadcn), minus one class:
+ * `origin-(--radix-popover-content-transform-origin)`. That custom property is
+ * written by Radix's positioning engine; LLui's floating layer does not set it,
+ * so the class would resolve to `transform-origin: var(--undefined)`. Dropping
+ * it means the zoom animation scales from the element's centre rather than from
+ * the trigger's edge — the only visual difference in this file.
  *
- * The floating wrapper is built by `overlay()` itself, so its class — the
- * `z-index` for the layer — is passed as `positionerClass: 'z-popover'` rather
- * than by wrapping a part bag.
- *
- * `data-side` comes from the positioner, so the enter animation is written as a
- * `data-[side=…]:` variant rather than computed in a view.
+ * The floating wrapper is built by `overlay()`, so its z-index goes through
+ * `positionerClass: 'z-popover'`.
  */
-export function PopoverContent(
-  a0?: ElProps | readonly ChildNode[],
-  a1?: readonly ChildNode[],
-): Mountable {
-  const { props, children } = splitArgs(a0, a1)
-  const { class: className, ...rest } = props as ElProps
-  return div(
-    {
-      ...rest,
-      class: mergeClass(
-        'w-72 rounded-md border border-border bg-popover p-4 text-popover-foreground shadow-md outline-none transition-all duration-fast data-[state=closed]:opacity-0 data-[side=bottom]:data-[state=closed]:-translate-y-1 data-[side=top]:data-[state=closed]:translate-y-1',
-        className,
-      ),
-    },
-    children,
-  )
-}
-
-export function PopoverArrow(props?: ElProps): Mountable {
-  const { class: className, ...rest } = props ?? {}
-  return div({
-    ...rest,
-    class: mergeClass('size-2.5 rotate-45 border border-border bg-popover', className),
-  })
-}
+export const PopoverContent = classPart(
+  div,
+  'z-50 w-72 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+)
+export const PopoverHeader = classPart(div, 'flex flex-col gap-1 text-sm')
+export const PopoverArrow = classPart(
+  div,
+  'size-2.5 rotate-45 rounded-[2px] border border-border bg-popover',
+)

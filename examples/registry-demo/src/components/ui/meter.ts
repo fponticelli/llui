@@ -12,5 +12,5 @@ export const MeterLabel = classPart(span, 'text-sm font-medium')
 export const MeterTrack = classPart(div, 'h-2 w-full overflow-hidden rounded-full bg-muted')
 export const MeterRange = classPart(
   div,
-  'h-full rounded-full bg-primary transition-[width] duration-normal data-[state=critical]:bg-destructive data-[state=suboptimal]:bg-accent-strong',
+  'h-full rounded-full bg-primary transition-all data-[state=critical]:bg-destructive data-[state=suboptimal]:bg-accent',
 )

@@ -10,7 +10,7 @@
       "path": "registry/llui/ui/collapsible.ts",
       "type": "registry:ui",
       "target": "collapsible.ts",
-      "content": "import { button, div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/** Collapsible — skin for `@llui/components/collapsible`. */\nexport const Collapsible = classPart(div, 'flex flex-col gap-2')\nexport const CollapsibleTrigger = classPart(\n  button,\n  'flex items-center justify-between gap-2 rounded-md text-sm font-medium transition-colors duration-fast outline-none focus-visible:ring-2 focus-visible:ring-ring data-[disabled]:pointer-events-none data-[disabled]:opacity-50',\n)\nexport const CollapsibleContent = classPart(div, 'text-sm data-[state=closed]:hidden')\n"
+      "content": "import { button, div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * shadcn's Collapsible is unstyled — it re-exports Radix's primitives with no\n * `cn()` call at all, leaving the appearance entirely to the caller. These\n * recipes therefore carry only what LLui genuinely needs: the trigger's focus\n * ring (shadcn's shared idiom) and hiding the content when closed, which Radix\n * does with its own `hidden` attribute and LLui expresses as a data variant.\n */\nexport const Collapsible = classPart(div, 'flex flex-col gap-2')\nexport const CollapsibleTrigger = classPart(\n  button,\n  'flex items-center justify-between gap-2 rounded-md text-sm font-medium transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50',\n)\nexport const CollapsibleContent = classPart(div, 'text-sm data-[state=closed]:hidden')\n"
     }
   ]
 }

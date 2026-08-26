@@ -5,9 +5,14 @@ import { classPart, customTag, mergeClass, splitArgs } from '../../lib/utils'
 // The semantic tag is not decoration — screen readers announce keyboard input.
 const kbdEl = customTag('kbd')
 
+/**
+ * Ported from shadcn/ui (MIT © 2023 shadcn), with `data-slot` rewritten to
+ * LLui's `data-part`. The last rule inverts the key inside a tooltip, whose
+ * surface is dark — without it a muted key on a dark tooltip is unreadable.
+ */
 export const Kbd = classPart(
   kbdEl,
-  'inline-flex h-5 min-w-5 items-center justify-center gap-1 rounded-sm bg-muted px-1 font-sans text-xs font-medium text-muted-foreground select-none',
+  "pointer-events-none inline-flex h-5 w-fit min-w-5 items-center justify-center gap-1 rounded-sm bg-muted px-1 font-sans text-xs font-medium text-muted-foreground select-none [&_svg:not([class*='size-'])]:size-3 [[data-part=tooltip-content]_&]:bg-background/20 [[data-part=tooltip-content]_&]:text-background dark:[[data-part=tooltip-content]_&]:bg-background/10",
 )
 
 /** A group of keys rendered as one chord (`⌘ K`). */

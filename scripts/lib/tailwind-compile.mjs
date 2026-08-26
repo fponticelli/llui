@@ -10,6 +10,7 @@
 // transition was instant and every overlay unstacked, and the suite was green.
 import { compile } from 'tailwindcss'
 import { readFile } from 'node:fs/promises'
+import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -20,6 +21,11 @@ const STYLES = path.join(ROOT, 'packages/components/src/styles')
  * Tailwind utilities by policy and have no other stylesheet to come from. */
 export const THEME_ONLY = [
   '@import "tailwindcss";',
+  // shadcn's recipes use `animate-in` / `fade-in-0` / `slide-in-from-top-2`,
+  // which come from `tw-animate-css`, not Tailwind core. The registry declares
+  // it as a dependency, so the check must resolve it too — otherwise every
+  // ported overlay recipe reports as dead CSS.
+  '@import "tw-animate-css";',
   `@import "${path.join(STYLES, 'theme.css')}";`,
   `@import "${path.join(STYLES, 'theme-dark.css')}";`,
 ].join('\n')
@@ -47,23 +53,51 @@ export const appEntry = (cssFile) => `@import "${cssFile}";`
  */
 const WORKSPACE_CSS = /^@llui\/([a-z-]+)\/(.+)$/
 
+/**
+ * Resolve a bare CSS specifier the way a CSS bundler does — through the `style`
+ * export condition, then `main`.
+ *
+ * `import.meta.resolve` uses the `import` condition, and a CSS-only package can
+ * legitimately publish nothing under it: `tw-animate-css` exports exactly
+ * `{ ".": { "style": "./dist/tw-animate.css" } }`. Resolving its `package.json`
+ * and reading the condition directly is what Tailwind's own loader does.
+ */
+function resolvePackageCss(id) {
+  // Read the manifest off disk rather than through `import.meta.resolve`: a
+  // CSS-only package legitimately exports NOTHING to Node. `tw-animate-css`
+  // publishes exactly `{ ".": { "style": "./dist/tw-animate.css" } }`, so both
+  // `import(id)` and `resolve(id + '/package.json')` throw
+  // ERR_PACKAGE_PATH_NOT_EXPORTED. This is repo tooling running against the
+  // repo's own install, so the workspace root's `node_modules` is the honest
+  // place to look — a bundler would resolve the `style` condition instead.
+  const dir = path.join(ROOT, 'node_modules', id)
+  const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))
+  const entry = pkg.exports?.['.']?.style ?? pkg.style ?? pkg.main
+  if (entry === undefined) throw new Error(`No CSS entry for "${id}"`)
+  return path.resolve(dir, entry)
+}
+
 async function loadStylesheet(id, base) {
   let file
   if (id.startsWith('.') || path.isAbsolute(id)) {
     file = path.resolve(base, id)
   } else {
     const workspace = WORKSPACE_CSS.exec(id)
-    file = workspace
-      ? path.join(ROOT, 'packages', workspace[1], 'src', workspace[2])
-      : fileURLToPath(import.meta.resolve(id === 'tailwindcss' ? 'tailwindcss/index.css' : id))
+    if (workspace) file = path.join(ROOT, 'packages', workspace[1], 'src', workspace[2])
+    else if (id === 'tailwindcss')
+      file = fileURLToPath(import.meta.resolve('tailwindcss/index.css'))
+    else file = resolvePackageCss(id)
   }
   return { path: file, base: path.dirname(file), content: await readFile(file, 'utf8') }
 }
 
 /**
  * @param {readonly string[]} candidates
+ * @param {string} [input] CSS entry to compile against — `THEME_ONLY` for
+ *   registry classes, `appEntry(file)` for an app that mixes utilities with its
+ *   own hand-written rules.
  * @returns {Promise<{ css: string, dead: string[] }>} `dead` lists candidates
- *   that produced no rule — in source order, so a failure names the first one.
+ *   that produced no rule, in source order, so a failure names the first one.
  */
 export async function compileCandidates(candidates, input = THEME_ONLY) {
   const compiler = await compile(input, { base: ROOT, loadStylesheet })
@@ -79,4 +113,21 @@ export function selectorFor(candidate) {
   let out = ''
   for (const ch of candidate) out += /[A-Za-z0-9_-]/.test(ch) ? ch : `\\${ch}`
   return `.${out}`
+}
+
+/** `group/<name>` and `peer/<name>` are MARKER classes: Tailwind emits no rule
+ * for them, because their only job is to be referenced by a
+ * `group-…/<name>:` or `peer-…/<name>:` variant on a descendant. (Bare `group`
+ * and `peer` DO emit a rule, so they are not markers.) */
+export function markerName(candidate) {
+  const m = /^(group|peer)\/([A-Za-z0-9_-]+)$/.exec(candidate)
+  return m === null ? null : m[2]
+}
+
+/** The `<name>` a `group-…/<name>:` or `peer-…/<name>:` variant references. */
+export function markerReferences(candidate) {
+  const out = []
+  for (const m of candidate.matchAll(/\b(?:group|peer)-[^\s:]*?\/([A-Za-z0-9_-]+):/g))
+    out.push(m[1])
+  return out
 }

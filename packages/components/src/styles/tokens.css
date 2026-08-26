@@ -190,7 +190,61 @@
   --transition-duration-fast: 150ms;
   --transition-duration-normal: 200ms;
 
+  --shadow-2xs: 0 1px rgba(0, 0, 0, 0.05);
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+
   --z-index-popover: 50;
   --z-index-dialog: 100;
   --z-index-tooltip: 150;
+
+  /* Accordion open/close keyframes, referenced by `animate-accordion-down` /
+   * `-up`. shadcn/ui defines these in the app's own stylesheet; they live here
+   * so a registry Accordion animates with no extra setup. The height comes from
+   * the Radix-style `--content-height` custom property the component sets. */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--content-height, auto);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--content-height, auto);
+  }
+  to {
+    height: 0;
+  }
+}
+
+/*
+ * ─── Base layer (shadcn/ui) ───
+ *
+ * Tailwind v4 changed the default border colour to `currentColor`, so a bare
+ * `border` in a recipe paints BLACK rather than the theme's border token. Every
+ * shadcn component relies on this rule to fix that — `Card`, `Dialog`,
+ * `Popover`, `Select` and the `outline` Button all write plain `border`.
+ * Without it they render with a hard black outline, which is what a port that
+ * copies the recipes but not this block looks like.
+ *
+ * `outline-ring/50` gives the same treatment to the focus outline colour.
+ *
+ * In `@layer base`, so ANY utility or app rule outranks it.
+ */
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: color-mix(in oklab, var(--ring) 50%, transparent);
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
 }

@@ -2,19 +2,25 @@ import { span, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
 import { createVariants, type VariantProps } from '@llui/components/styles'
 import { mergeClass, splitArgs } from '../../lib/utils'
 
+/**
+ * Ported verbatim from shadcn/ui (MIT © 2023 shadcn).
+ *
+ * The `[a&]:hover:` prefixes mean "when this element is also an `<a>`" — a badge
+ * is not interactive unless it is a link, so the hover states are scoped to that
+ * case rather than applied unconditionally.
+ */
 const variants = {
   variant: {
-    default:
-      'border-transparent bg-primary text-primary-foreground shadow-sm hover:bg-primary-hover',
-    secondary: 'border-transparent bg-secondary text-secondary-foreground hover:bg-accent-strong',
+    default: 'bg-primary text-primary-foreground [a&]:hover:bg-primary/90',
+    secondary: 'bg-secondary text-secondary-foreground [a&]:hover:bg-secondary/90',
     destructive:
-      'border-transparent bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive-hover',
-    outline: 'text-foreground',
+      'bg-destructive text-white focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90',
+    outline: 'border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground',
   },
 }
 
 export const badgeVariants = createVariants({
-  base: 'inline-flex items-center rounded-md border border-border px-2 py-0.5 text-xs font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+  base: 'inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&>svg]:pointer-events-none [&>svg]:size-3',
   variants,
   defaultVariants: { variant: 'default' },
 })

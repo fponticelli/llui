@@ -1,4 +1,5 @@
 @import 'tailwindcss';
+@import 'tw-animate-css';
 @import '@llui/components/styles/tokens.css';
 @import '@llui/components/styles/tokens-dark.css';
 

@@ -12,7 +12,8 @@
     "@llui/components": "workspace:*",
     "@llui/dom": "workspace:*",
     "clsx": "^2.1.1",
-    "tailwind-merge": "^3.0.0"
+    "tailwind-merge": "^3.0.0",
+    "tw-animate-css": "^1.0.0"
   },
   "devDependencies": {
     "@llui/cli": "workspace:*",

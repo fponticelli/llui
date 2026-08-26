@@ -7,13 +7,13 @@ import { classPart } from '@/lib/utils'
 export const TreeView = classPart(div, 'flex flex-col gap-0.5 text-sm')
 export const TreeViewItem = classPart(
   div,
-  'flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1 outline-none select-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-[selected]:bg-accent data-[selected]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+  'flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1 outline-none select-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[selected]:bg-accent data-[selected]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
 )
 export const TreeViewBranchTrigger = classPart(
   button,
-  'inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground transition-transform duration-fast data-[state=open]:rotate-90',
+  'inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground transition-transform data-[state=open]:rotate-90',
 )
 export const TreeViewCheckbox = classPart(
   div,
-  'inline-flex size-4 shrink-0 items-center justify-center rounded-sm border border-border data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary',
+  'inline-flex size-4 shrink-0 items-center justify-center rounded-sm border border-input data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary',
 )

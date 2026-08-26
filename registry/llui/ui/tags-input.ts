@@ -4,7 +4,7 @@ import { classPart } from '@/lib/utils'
 /** TagsInput — skin for `@llui/components/tags-input`. No shadcn equivalent. */
 export const TagsInput = classPart(
   div,
-  'flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-md border border-border bg-transparent px-2 py-1 text-sm shadow-sm transition-colors duration-fast focus-within:ring-2 focus-within:ring-ring data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
+  'flex min-h-9 w-full flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-2 py-1 text-sm shadow-xs transition-[color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
 )
 export const TagsInputTag = classPart(
   span,
@@ -12,7 +12,7 @@ export const TagsInputTag = classPart(
 )
 export const TagsInputTagRemove = classPart(
   button,
-  'text-muted-foreground transition-colors duration-fast hover:text-foreground',
+  'text-muted-foreground transition-[color,box-shadow] hover:text-foreground',
 )
 export const TagsInputControl = classPart(
   input,
@@ -20,5 +20,5 @@ export const TagsInputControl = classPart(
 )
 export const TagsInputClear = classPart(
   button,
-  'text-muted-foreground transition-colors duration-fast hover:text-foreground',
+  'text-muted-foreground transition-[color,box-shadow] hover:text-foreground',
 )

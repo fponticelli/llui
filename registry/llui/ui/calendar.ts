@@ -1,32 +1,47 @@
 import { button, div, td, tr } from '@llui/dom'
 import { classPart } from '@/lib/utils'
+import { buttonVariants } from '@/ui/button'
 
 /**
- * Calendar / DatePicker — skin for `@llui/components/date-picker`. shadcn splits
- * these into Calendar (the grid) and Date Picker (grid inside a popover); LLui
- * has one machine, so both names point here.
+ * Ported from shadcn/ui (MIT © 2023 shadcn), condensed.
  *
- * Day cells carry `data-state` (`selected` / `today` / `outside` / `disabled`)
- * and `data-in-range`, so a range selection needs no view logic.
+ * shadcn's Calendar wraps `react-day-picker` and its recipe is a large
+ * `classNames` map keyed to that library's internal slots; only the parts with
+ * an `@llui/components/date-picker` counterpart are kept. The sizing idiom is
+ * shadcn's and is load-bearing: `--cell-size` on the root drives every cell,
+ * so one custom property resizes the whole grid.
+ *
+ * Day buttons reuse `buttonVariants({ variant: 'ghost' })`, as shadcn's do.
  */
-export const Calendar = classPart(div, 'w-fit rounded-lg border border-border bg-popover p-3')
-export const CalendarGrid = classPart(div, 'w-full border-collapse')
+export const Calendar = classPart(
+  div,
+  'group/calendar bg-background p-3 [--cell-size:--spacing(8)] [[data-part=card-content]_&]:bg-transparent [[data-part=popover-content]_&]:bg-transparent',
+)
+export const CalendarHeader = classPart(
+  div,
+  'flex w-full items-center justify-between gap-1 h-(--cell-size)',
+)
+export const CalendarGrid = classPart(div, 'flex w-full flex-col gap-4')
 export const CalendarRow = classPart(tr, 'flex w-full')
+export const CalendarWeekday = classPart(
+  div,
+  'flex-1 select-none rounded-md text-[0.8rem] font-normal text-muted-foreground',
+)
 export const CalendarDay = classPart(
   td,
-  'relative flex size-9 items-center justify-center p-0 text-center text-sm',
+  'relative aspect-square h-full w-full p-0 text-center select-none group/day',
 )
 export const CalendarDayButton = classPart(
   button,
-  'inline-flex size-9 items-center justify-center rounded-md text-sm font-normal transition-colors duration-fast outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=selected]:bg-primary data-[state=selected]:text-primary-foreground data-[state=today]:border data-[state=today]:border-border data-[state=outside]:text-muted-foreground data-[state=outside]:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
+  `${buttonVariants({ variant: 'ghost' })} flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 leading-none font-normal data-[state=selected]:bg-primary data-[state=selected]:text-primary-foreground data-[state=today]:bg-accent data-[state=today]:text-accent-foreground data-[state=outside]:text-muted-foreground data-[state=outside]:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:text-muted-foreground data-[disabled]:opacity-50 data-[in-range]:rounded-none data-[in-range]:bg-accent group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50`,
 )
 export const CalendarNav = classPart(
   button,
-  'inline-flex size-7 items-center justify-center rounded-md border border-border transition-colors duration-fast outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+  `${buttonVariants({ variant: 'ghost' })} size-(--cell-size) p-0 aria-disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50`,
 )
 export const CalendarPreset = classPart(
   button,
-  'rounded-md px-2 py-1 text-xs font-medium transition-colors duration-fast hover:bg-accent hover:text-accent-foreground',
+  `${buttonVariants({ variant: 'ghost', size: 'sm' })} justify-start`,
 )
 
 export { Calendar as DatePicker, CalendarDayButton as DatePickerDay }

@@ -1,10 +1,13 @@
 import { div } from '@llui/dom'
 import { classPart } from '@/lib/utils'
 
-/** HoverCard — skin for `@llui/components/hover-card`. Pass
- * `positionerClass: 'z-popover'` to `overlay()`. */
+/** Ported verbatim from shadcn/ui (MIT © 2023 shadcn), minus
+ * `origin-(--radix-hover-card-content-transform-origin)` — see `popover.ts`. */
 export const HoverCardContent = classPart(
   div,
-  'w-64 rounded-md border border-border bg-popover p-4 text-popover-foreground shadow-md outline-none transition-opacity duration-fast data-[state=closed]:opacity-0',
+  'z-50 w-64 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
 )
-export const HoverCardArrow = classPart(div, 'size-2.5 rotate-45 border border-border bg-popover')
+export const HoverCardArrow = classPart(
+  div,
+  'size-2.5 rotate-45 rounded-[2px] border border-border bg-popover',
+)

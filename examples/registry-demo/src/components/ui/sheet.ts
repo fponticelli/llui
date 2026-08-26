@@ -1,40 +1,44 @@
-import { button, div, h2, p } from '@llui/dom'
+import { button, div, p } from '@llui/dom'
 import { classPart, createVariantsPart } from '../../lib/utils'
 
 /**
- * Sheet — skin for `@llui/components/drawer`: a panel anchored to one edge.
- * shadcn calls it Sheet, LLui's machine is `drawer`; both names are here so
- * neither audience has to translate.
+ * Sheet — ported verbatim from shadcn/ui (MIT © 2023 shadcn). shadcn calls it
+ * Sheet; LLui's machine is `drawer`, and both names are exported.
  *
- * `side` is a variant on the CONTENT rather than something the package decides,
+ * As with Dialog, the content positions ITSELF, so pass
+ * `positionerClass: 'contents'` and render the backdrop inside `content()`.
+ *
+ * `side` is a variant on the CONTENT rather than something the machine decides,
  * because the machine only owns open/close and focus — which edge it flies in
- * from is presentation. Pass `positionerClass: 'fixed inset-0 z-dialog flex'`
- * plus the matching justification.
+ * from is presentation.
  */
+export const SheetBackdrop = classPart(
+  div,
+  'fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
+)
+
 export const SheetContent = createVariantsPart(div, {
-  base: 'relative flex h-full w-full flex-col gap-4 bg-popover p-6 text-popover-foreground shadow-lg transition-transform duration-normal',
+  base: 'fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500',
   variants: {
     side: {
-      right: 'ml-auto max-w-sm border-l border-border data-[state=closed]:translate-x-full',
-      left: 'mr-auto max-w-sm border-r border-border data-[state=closed]:-translate-x-full',
-      top: 'mb-auto max-h-96 border-b border-border data-[state=closed]:-translate-y-full',
-      bottom: 'mt-auto max-h-96 border-t border-border data-[state=closed]:translate-y-full',
+      right:
+        'inset-y-0 right-0 h-full w-3/4 border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-sm',
+      left: 'inset-y-0 left-0 h-full w-3/4 border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left sm:max-w-sm',
+      top: 'inset-x-0 top-0 h-auto border-b data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top',
+      bottom:
+        'inset-x-0 bottom-0 h-auto border-t data-[state=closed]:slide-out-to-bottom data-[state=open]:slide-in-from-bottom',
     },
   },
   defaultVariants: { side: 'right' },
 })
 
-export const SheetBackdrop = classPart(
-  div,
-  'absolute inset-0 bg-black/50 transition-opacity duration-fast data-[state=closed]:opacity-0',
-)
-export const SheetHeader = classPart(div, 'flex flex-col gap-1.5')
-export const SheetTitle = classPart(h2, 'text-lg leading-none font-semibold')
+export const SheetHeader = classPart(div, 'flex flex-col gap-1.5 p-4')
+export const SheetFooter = classPart(div, 'mt-auto flex flex-col gap-2 p-4')
+export const SheetTitle = classPart(div, 'font-semibold text-foreground')
 export const SheetDescription = classPart(p, 'text-sm text-muted-foreground')
-export const SheetFooter = classPart(div, 'mt-auto flex flex-col gap-2')
 export const SheetClose = classPart(
   button,
-  'absolute top-4 right-4 rounded-sm text-muted-foreground transition-colors duration-fast hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
+  'absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary',
 )
 
 export {
