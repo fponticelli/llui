@@ -1,0 +1,16 @@
+{
+  "name": "data-table",
+  "type": "registry:ui",
+  "title": "Data Table",
+  "description": "Loading / empty / error surfaces for the data-table pattern; the grid stays @/ui/table.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["table", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/data-table.ts",
+      "type": "registry:ui",
+      "target": "data-table.ts",
+      "content": "import { div, p } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/**\n * Data table — skin for `@llui/components/patterns/data-table`.\n *\n * shadcn ships no `data-table.tsx`: its docs are a GUIDE to composing `table`\n * with TanStack Table, so there is no upstream recipe to port. The table itself\n * therefore stays `@/ui/table`, verbatim — this module adds only the three\n * status surfaces the pattern owns and `table` has no notion of.\n *\n * Each of the three carries its own reactive `hidden`, so the machine decides\n * which is showing and none of them needs a rule here. Do NOT toggle them with\n * `show` instead: `emptyState` and `errorState` are `aria-live` regions\n * (`role=\"status\"` / `role=\"alert\"`), and unmounting a live region announces\n * nothing — the whole point of having them.\n *\n * `loadingOverlay` is `absolute inset-0` over the table rather than replacing\n * it, so a page-to-page load keeps the previous rows visible underneath instead\n * of collapsing the layout to a spinner and back. Its container needs\n * `relative`; that is the consumer's, since only they know how much of the\n * surface the overlay should cover.\n */\nexport const DataTableLoadingOverlay = classPart(\n  div,\n  'absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60 backdrop-blur-[1px]',\n)\nexport const DataTableEmptyState = classPart(\n  div,\n  'flex flex-col items-center justify-center gap-1 px-6 py-12 text-center',\n)\nexport const DataTableEmptyTitle = classPart(p, 'text-sm font-medium')\nexport const DataTableEmptyDescription = classPart(p, 'text-sm text-muted-foreground')\nexport const DataTableErrorState = classPart(\n  div,\n  'flex flex-col items-center justify-center gap-2 rounded-md border border-destructive/50 px-6 py-12 text-center text-sm text-destructive',\n)\n"
+    }
+  ]
+}

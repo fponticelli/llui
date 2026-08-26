@@ -28,6 +28,15 @@ import {
   PaginationEllipsis,
 } from '../components/ui/pagination'
 import { Steps, StepsItem, StepsSeparator, StepsTrigger } from '../components/ui/steps'
+import { Button } from '../components/ui/button'
+import { Spinner } from '../components/ui/spinner'
+import {
+  DataTableEmptyDescription,
+  DataTableEmptyState,
+  DataTableEmptyTitle,
+  DataTableErrorState,
+  DataTableLoadingOverlay,
+} from '../components/ui/data-table'
 import {
   Table,
   TableBody,
@@ -39,6 +48,8 @@ import {
 } from '../components/ui/table'
 import { row, section } from './shared'
 
+export type TableStatus = 'ready' | 'loading' | 'empty' | 'error'
+
 export interface State {
   progress: progressC.ProgressState
   storage: meterC.MeterState
@@ -47,6 +58,7 @@ export interface State {
   crumbs: breadcrumbs.BreadcrumbsState
   page: paginationC.PaginationState
   steps: stepsC.StepsState
+  tableStatus: TableStatus
 }
 
 export type Msg =
@@ -55,6 +67,7 @@ export type Msg =
   | { type: 'crumbs'; msg: breadcrumbs.BreadcrumbsMsg }
   | { type: 'page'; msg: paginationC.PaginationMsg }
   | { type: 'steps'; msg: stepsC.StepsMsg }
+  | { type: 'tableStatus'; status: TableStatus }
 
 const CRUMBS = [
   { id: 'home', label: 'Home' },
@@ -71,6 +84,7 @@ export const init = (): [State, never[]] => [
     avatar: avatarC.init(),
     crumbs: breadcrumbs.init({ items: CRUMBS }),
     page: paginationC.init({ page: 3, pageSize: 10, total: 96 }),
+    tableStatus: 'ready',
     steps: stepsC.init({ steps: STEP_LABELS, current: 1, completed: [0] }),
   },
   [],
@@ -88,6 +102,8 @@ export function update(state: State, msg: Msg): [State, never[]] {
       return [{ ...state, page: paginationC.update(state.page, msg.msg)[0] }, []]
     case 'steps':
       return [{ ...state, steps: stepsC.update(state.steps, msg.msg)[0] }, []]
+    case 'tableStatus':
+      return [{ ...state, tableStatus: msg.status }, []]
   }
 }
 
@@ -105,6 +121,7 @@ const ROWS: readonly RegistryRow[] = [
 ]
 
 export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[] {
+  const status = state.at('tableStatus')
   // `progress` and `meter` are READ-ONLY: their `connect` takes a `send` and
   // ignores it (`_send`), because neither produces a message. The parameter is
   // there so every component's `connect` has the same shape.
@@ -118,31 +135,88 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const steps = stepsC.connect(state.at('steps'), (m) => send({ type: 'steps', msg: m }))
 
   return [
-    section('Table', 'The Table part wraps itself so a wide table scrolls in its own frame.', [
-      Table([
-        TableCaption([text('A slice of the registry.')]),
-        TableHeader([
-          TableRow([
-            TableHead([text('Item')]),
-            TableHead([text('Kind')]),
-            TableHead({ class: 'text-right' }, [text('Status')]),
-          ]),
-        ]),
-        TableBody(
-          ROWS.map((r) =>
+    section(
+      'Table & Data Table',
+      'The three status surfaces belong to `patterns/data-table`; the grid stays the plain `Table`. Each carries its own reactive `hidden`, and the two live regions must stay MOUNTED — `show` would unmount them and announce nothing.',
+      [
+        Table([
+          TableCaption([text('A slice of the registry.')]),
+          TableHeader([
             TableRow([
-              TableCell({ class: 'font-medium' }, [text(r.item)]),
-              TableCell({ class: 'text-muted-foreground' }, [text(r.kind)]),
-              TableCell({ class: 'text-right' }, [
-                Badge({ variant: r.status === 'shipped' ? 'secondary' : 'outline' }, [
-                  text(r.status),
+              TableHead([text('Item')]),
+              TableHead([text('Kind')]),
+              TableHead({ class: 'text-right' }, [text('Status')]),
+            ]),
+          ]),
+          TableBody(
+            ROWS.map((r) =>
+              TableRow([
+                TableCell({ class: 'font-medium' }, [text(r.item)]),
+                TableCell({ class: 'text-muted-foreground' }, [text(r.kind)]),
+                TableCell({ class: 'text-right' }, [
+                  Badge({ variant: r.status === 'shipped' ? 'secondary' : 'outline' }, [
+                    text(r.status),
+                  ]),
                 ]),
               ]),
-            ]),
+            ),
+          ),
+        ]),
+        // `relative` is the CONSUMER's: the overlay is `absolute inset-0`, and
+        // only the app knows how much of the surface it should cover. It sits
+        // OVER the table rather than replacing it, so a page-to-page load keeps
+        // the previous rows visible instead of collapsing to a spinner and back.
+        div({ class: 'relative' }, [
+          DataTableLoadingOverlay(
+            {
+              'data-scope': 'data-table',
+              'data-part': 'loading-overlay',
+              'aria-live': 'polite',
+              hidden: status.map((s) => s !== 'loading'),
+              class: 'static rounded-md border py-10',
+            },
+            [Spinner({ class: 'size-5' })],
+          ),
+          DataTableEmptyState(
+            {
+              role: 'status',
+              'aria-live': 'polite',
+              'data-scope': 'data-table',
+              'data-part': 'empty-state',
+              hidden: status.map((s) => s !== 'empty'),
+              class: 'rounded-md border',
+            },
+            [
+              DataTableEmptyTitle([text('No results')]),
+              DataTableEmptyDescription([text('Try a different filter.')]),
+            ],
+          ),
+          DataTableErrorState(
+            {
+              role: 'alert',
+              'aria-live': 'polite',
+              'data-scope': 'data-table',
+              'data-part': 'error-state',
+              hidden: status.map((s) => s !== 'error'),
+            },
+            [text('Could not load rows.')],
+          ),
+        ]),
+        row(
+          'Status',
+          (['ready', 'loading', 'empty', 'error'] as const).map((s) =>
+            Button(
+              {
+                variant: 'outline',
+                size: 'sm',
+                onClick: () => send({ type: 'tableStatus', status: s }),
+              },
+              [text(s)],
+            ),
           ),
         ),
-      ]),
-    ]),
+      ],
+    ),
 
     section('Progress, Meter, Rating & Avatar', 'Read-only indicators and small displays.', [
       row('Progress', [

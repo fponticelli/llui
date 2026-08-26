@@ -45,6 +45,8 @@ const MACHINE_OF: Record<string, readonly string[]> = {
   'scroll-area': ['scroll-area'],
   pagination: ['pagination'],
   'tree-view': ['tree-view'],
+  // Lives under `patterns/`, which the vacuity check does not scan.
+  'data-table': ['data-table'],
   'button-group': [],
   'input-group': [],
   typography: [],
@@ -115,6 +117,12 @@ const ALLOWED: Record<string, Allowance> = {
     reason: 'the consumer sets it to pick inline vs shared-viewport presentation',
   },
   'input-group.ts: data-align': { reason: 'an addon position the consumer chooses' },
+  'date-picker.ts: data-empty': {
+    reason:
+      'upstream\'s own spelling for "no date chosen yet", set by the CONSUMER — ' +
+      '`@llui/components/date-picker` has no trigger part at all, because the trigger ' +
+      'belongs to whatever surface is hosting the calendar.',
+  },
   'sidebar.ts: data-variant': { reason: 'a presentational variant the consumer sets' },
   'sidebar.ts: data-size': { reason: 'a menu-button size the consumer sets' },
   'sidebar.ts: data-collapsible': {

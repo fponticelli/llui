@@ -2,6 +2,7 @@ import { div, each, span, table, tbody, text, thead, tr } from '@llui/dom'
 import type { Mountable, Send, Signal } from '@llui/dom'
 import * as carouselC from '@llui/components/carousel'
 import * as datePickerC from '@llui/components/date-picker'
+import * as popoverC from '@llui/components/popover'
 import * as toastC from '@llui/components/toast'
 import {
   Carousel,
@@ -30,6 +31,24 @@ import {
   CalendarWeekdays,
 } from '../components/ui/calendar'
 import {
+  DatePickerCalendar,
+  DatePickerCaption,
+  DatePickerCaptionLabel,
+  DatePickerContent,
+  DatePickerDay,
+  DatePickerDayButton,
+  DatePickerGrid,
+  DatePickerMonth,
+  DatePickerMonths,
+  DatePickerNav,
+  DatePickerNext,
+  DatePickerPrevious,
+  DatePickerRow,
+  DatePickerTrigger,
+  DatePickerWeekday,
+  DatePickerWeekdays,
+} from '../components/ui/date-picker'
+import {
   Toast,
   ToastClose,
   ToastDescription,
@@ -46,6 +65,8 @@ export interface State {
   carousel: carouselC.CarouselState
   calendar: datePickerC.DatePickerState
   toaster: toastC.ToasterState
+  pickerOpen: popoverC.PopoverState
+  picker: datePickerC.DatePickerState
   /** Monotonic id source. `Date.now()` would make State non-reproducible
    * between a record and a replay, which the harness relies on. */
   nextToast: number
@@ -55,6 +76,8 @@ export type Msg =
   | { type: 'carousel'; msg: carouselC.CarouselMsg }
   | { type: 'calendar'; msg: datePickerC.DatePickerMsg }
   | { type: 'toaster'; msg: toastC.ToasterMsg }
+  | { type: 'pickerOpen'; msg: popoverC.PopoverMsg }
+  | { type: 'picker'; msg: datePickerC.DatePickerMsg }
   | { type: 'pushToast'; variant: 'default' | 'destructive' }
 
 export const init = (): [State, never[]] => [
@@ -64,6 +87,8 @@ export const init = (): [State, never[]] => [
     carousel: carouselC.init({ count: SLIDES.length, loop: true }),
     calendar: datePickerC.init({ mode: 'range' }),
     toaster: toastC.init({ max: 3 }),
+    pickerOpen: popoverC.init(),
+    picker: datePickerC.init({ mode: 'single' }),
     nextToast: 1,
   },
   [],
@@ -77,6 +102,19 @@ export function update(state: State, msg: Msg): [State, never[]] {
       return [{ ...state, calendar: datePickerC.update(state.calendar, msg.msg)[0] }, []]
     case 'toaster':
       return [{ ...state, toaster: toastC.update(state.toaster, msg.msg)[0] }, []]
+    case 'pickerOpen':
+      return [{ ...state, pickerOpen: popoverC.update(state.pickerOpen, msg.msg)[0] }, []]
+    case 'picker': {
+      const picker = datePickerC.update(state.picker, msg.msg)[0]
+      // Picking a day closes the popover — the two machines are independent, so
+      // that coupling is the CONSUMER's and belongs here in the reducer rather
+      // than in either component.
+      const closed =
+        msg.msg.type === 'selectFocused' || msg.msg.type === 'setValue'
+          ? popoverC.update(state.pickerOpen, { type: 'close' })[0]
+          : state.pickerOpen
+      return [{ ...state, picker, pickerOpen: closed }, []]
+    }
     case 'pushToast': {
       const id = `t${state.nextToast}`
       const [toaster] = toastC.update(state.toaster, {
@@ -107,6 +145,13 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const toastSend = (m: toastC.ToasterMsg): void => send({ type: 'toaster', msg: m })
 
   const car = carouselC.connect(state.at('carousel'), carSend, { id: 'demo-carousel' })
+  const pickSend = (m: popoverC.PopoverMsg): void => send({ type: 'pickerOpen', msg: m })
+  const pickOpen = popoverC.connect(state.at('pickerOpen'), pickSend, { id: 'demo-date-picker' })
+  const pick = datePickerC.connect(state.at('picker'), (m) => send({ type: 'picker', msg: m }), {
+    mode: 'single',
+  })
+  const pickWeeks = state.at('picker').map((s) => datePickerC.weekRows(datePickerC.monthGrid(s)))
+  const pickWeekdays = state.at('picker').map((s) => datePickerC.weekdayLabels(s.weekStartsOn))
   const cal = datePickerC.connect(state.at('calendar'), calSend, { mode: 'range' })
   const toaster = toastC.connect(state.at('toaster'), toastSend, {})
 
@@ -199,6 +244,75 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
         ]),
       ],
     ),
+
+    section(
+      'Date Picker',
+      "shadcn ships no `date-picker.tsx` — its docs compose Button + Popover + Calendar, so the registry item carries only what that composition adds: the trigger recipe and the content's `w-auto p-0`.",
+      [
+        DatePickerTrigger(
+          {
+            ...pickOpen.trigger,
+            // Upstream's own spelling for "nothing chosen yet". The machine has
+            // no trigger part — the trigger belongs to whatever surface hosts
+            // the calendar — so this is the consumer's to set.
+            'data-empty': state.at('picker').map((s) => (s.value === null ? 'true' : undefined)),
+          },
+          [text(state.at('picker').map((s) => s.value ?? 'Pick a date'))],
+        ),
+      ],
+    ),
+    popoverC.overlay({
+      state: state.at('pickerOpen'),
+      send: pickSend,
+      parts: pickOpen,
+      positionerClass: 'z-popover',
+      content: () => [
+        DatePickerContent({ ...pickOpen.content }, [
+          DatePickerCalendar({ ...pick.root }, [
+            DatePickerMonths([
+              DatePickerMonth([
+                DatePickerNav([
+                  DatePickerPrevious({ ...pick.prevMonthTrigger }, [
+                    ChevronLeftIcon({ class: 'size-4' }),
+                  ]),
+                  DatePickerNext({ ...pick.nextMonthTrigger }, [
+                    ChevronRightIcon({ class: 'size-4' }),
+                  ]),
+                ]),
+                DatePickerCaption([DatePickerCaptionLabel([text(pick.grid()['aria-label'])])]),
+                DatePickerGrid({ ...pick.grid(), class: 'w-full' }, [
+                  thead([
+                    DatePickerWeekdays([
+                      each(pickWeekdays, {
+                        key: (d: string) => d,
+                        render: (d: Signal<string>) => [DatePickerWeekday([text(d)])],
+                      }),
+                    ]),
+                  ]),
+                  tbody([
+                    each(pickWeeks, {
+                      key: (w: datePickerC.DayCell[]) => w[0]?.iso ?? '',
+                      render: (w: Signal<datePickerC.DayCell[]>) => {
+                        const cells = w.peek()
+                        return [
+                          DatePickerRow({ ...pick.row }, [
+                            ...cells.map((c) =>
+                              DatePickerDay({ ...pick.dayCell(c).cell }, [
+                                DatePickerDayButton({ type: 'button' }, [text(String(c.day))]),
+                              ]),
+                            ),
+                          ]),
+                        ]
+                      },
+                    }),
+                  ]),
+                ]),
+              ]),
+            ]),
+          ]),
+        ]),
+      ],
+    }),
 
     section(
       'Toast (Sonner)',

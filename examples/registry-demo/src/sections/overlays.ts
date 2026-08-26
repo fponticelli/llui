@@ -18,6 +18,16 @@ import {
 } from '../components/ui/dialog'
 import { AlertDialogActions } from '../components/ui/alert-dialog'
 import {
+  DrawerBackdrop,
+  DrawerClose,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHandle,
+  DrawerHeader,
+  DrawerTitle,
+} from '../components/ui/drawer'
+import {
   SheetBackdrop,
   SheetContent,
   SheetDescription,
@@ -50,6 +60,7 @@ export interface State {
   dialog: dialogC.DialogState
   confirm: alertDialogC.AlertDialogState
   sheet: drawerC.DrawerState
+  drawer: drawerC.DrawerState
   popover: popoverC.PopoverState
   tooltip: tooltipC.TooltipState
   hoverCard: hoverCardC.HoverCardState
@@ -61,6 +72,7 @@ export type Msg =
   | { type: 'dialog'; msg: dialogC.DialogMsg }
   | { type: 'confirm'; msg: alertDialogC.AlertDialogMsg }
   | { type: 'sheet'; msg: drawerC.DrawerMsg }
+  | { type: 'drawer'; msg: drawerC.DrawerMsg }
   | { type: 'popover'; msg: popoverC.PopoverMsg }
   | { type: 'tooltip'; msg: tooltipC.TooltipMsg }
   | { type: 'hoverCard'; msg: hoverCardC.HoverCardMsg }
@@ -79,6 +91,7 @@ export const init = (): [State, never[]] => [
     dialog: dialogC.init(),
     confirm: alertDialogC.init(),
     sheet: drawerC.init(),
+    drawer: drawerC.init(),
     popover: popoverC.init(),
     tooltip: tooltipC.init(),
     hoverCard: hoverCardC.init(),
@@ -96,6 +109,8 @@ export function update(state: State, msg: Msg): [State, never[]] {
       return [{ ...state, confirm: alertDialogC.update(state.confirm, msg.msg)[0] }, []]
     case 'sheet':
       return [{ ...state, sheet: drawerC.update(state.sheet, msg.msg)[0] }, []]
+    case 'drawer':
+      return [{ ...state, drawer: drawerC.update(state.drawer, msg.msg)[0] }, []]
     case 'popover':
       return [{ ...state, popover: popoverC.update(state.popover, msg.msg)[0] }, []]
     case 'tooltip':
@@ -121,7 +136,9 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
 
   const dlg = dialogC.connect(state.at('dialog'), dlgSend, { id: 'demo-dialog' })
   const cfm = alertDialogC.connect(state.at('confirm'), cfmSend, { id: 'demo-confirm' })
-  const sht = drawerC.connect(state.at('sheet'), shtSend, { id: 'demo-sheet' })
+  const sht = drawerC.connect(state.at('sheet'), shtSend, { id: 'demo-sheet', side: 'right' })
+  const drwSend = (m: drawerC.DrawerMsg): void => send({ type: 'drawer', msg: m })
+  const drw = drawerC.connect(state.at('drawer'), drwSend, { id: 'demo-drawer', side: 'bottom' })
   const pop = popoverC.connect(state.at('popover'), popSend, { id: 'demo-popover' })
   const tip = tooltipC.connect(state.at('tooltip'), tipSend, { id: 'demo-tooltip' })
   const hc = hoverCardC.connect(state.at('hoverCard'), hcSend, { id: 'demo-hovercard' })
@@ -137,6 +154,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
           Button({ ...dlg.trigger, variant: 'outline' }, [text('Dialog')]),
           Button({ ...cfm.trigger, variant: 'destructive' }, [text('Delete project')]),
           Button({ ...sht.trigger, variant: 'outline' }, [text('Sheet')]),
+          Button({ ...drw.trigger, variant: 'outline' }, [text('Drawer')]),
         ]),
         row('Non-modal', [
           Button({ ...pop.trigger, variant: 'outline' }, [text('Popover')]),
@@ -213,7 +231,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       positionerClass: 'fixed inset-0 z-dialog flex',
       content: () => [
         SheetBackdrop({ ...sht.backdrop }),
-        SheetContent({ ...sht.content, side: 'right' }, [
+        SheetContent({ ...sht.content }, [
           SheetHeader([
             SheetTitle({ ...sht.title }, [text('Panel')]),
             SheetDescription({ ...sht.description }, [
@@ -221,6 +239,34 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
             ]),
           ]),
           Button({ ...sht.closeTrigger, variant: 'outline', class: 'w-fit' }, [text('Close')]),
+        ]),
+      ],
+    }),
+
+    // Drawer, NOT Sheet. Same machine, different upstream component: shadcn's
+    // `drawer.tsx` wraps vaul — rounded on the entering edge, capped at 80vh,
+    // and carrying a grab handle. The handle is an AFFORDANCE ONLY here; this
+    // machine has no drag gesture, so Escape, the backdrop and the close button
+    // are what dismiss it.
+    drawerC.overlay({
+      state: state.at('drawer'),
+      send: drwSend,
+      parts: drw,
+      positionerClass: 'fixed inset-0 z-dialog flex',
+      content: () => [
+        DrawerBackdrop({ ...drw.backdrop }),
+        DrawerContent({ ...drw.content }, [
+          DrawerHandle(),
+          DrawerHeader([
+            DrawerTitle({ ...drw.title }, [text('Move to project')]),
+            DrawerDescription({ ...drw.description }, [
+              text(
+                'The header centres itself on the horizontal drawers and left-aligns on the side ones.',
+              ),
+            ]),
+          ]),
+          DrawerFooter([Button({ ...drw.closeTrigger, variant: 'outline' }, [text('Cancel')])]),
+          DrawerClose({ ...drw.closeTrigger }),
         ]),
       ],
     }),

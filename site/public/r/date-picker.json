@@ -1,0 +1,16 @@
+{
+  "name": "date-picker",
+  "type": "registry:ui",
+  "title": "Date Picker",
+  "description": "Button + Popover + Calendar, the composition shadcn documents.",
+  "dependencies": ["@llui/dom", "@llui/components"],
+  "registryDependencies": ["button", "calendar", "icons", "popover", "utils"],
+  "files": [
+    {
+      "path": "registry/llui/ui/date-picker.ts",
+      "type": "registry:ui",
+      "target": "date-picker.ts",
+      "content": "import { button, type ChildNode, type ElProps, type Mountable } from '@llui/dom'\nimport { classPart, mergeClass, splitArgs } from '@/lib/utils'\nimport { buttonVariants } from '@/ui/button'\nimport { CalendarIcon } from '@/ui/icons'\nimport { PopoverContent } from '@/ui/popover'\n\n/**\n * Date picker.\n *\n * shadcn ships NO `date-picker.tsx` — its docs compose Button + Popover +\n * Calendar, so there is no upstream recipe file to port and inventing one would\n * guarantee drift from the docs it is meant to match. This module therefore\n * carries only the two things that composition actually adds — the trigger's\n * recipe and the content's `w-auto p-0` override — and re-exports the rest.\n *\n * Both are taken verbatim from the docs example, `data-[empty=true]` included:\n * that is upstream's own spelling for \"no date chosen yet\", set by the CONSUMER\n * (`'data-empty': value === null ? 'true' : undefined`), because\n * `@llui/components/date-picker` has no trigger part at all — the trigger\n * belongs to whatever surface is hosting the calendar.\n *\n * `w-auto p-0` on the content is not cosmetic. `PopoverContent`'s own `w-72 p-4`\n * would both squeeze the month grid and pad it away from its own border; the\n * calendar draws its own padding (`p-3`) and sizes itself from `--cell-size`.\n */\nconst datePickerTriggerRecipe = `${buttonVariants({ variant: 'outline' })} w-[280px] justify-start text-left font-normal data-[empty=true]:text-muted-foreground`\n\n/** Renders its own calendar glyph, as shadcn's docs example does. */\nexport function DatePickerTrigger(\n  a0?: ElProps | readonly ChildNode[],\n  a1?: readonly ChildNode[],\n): Mountable {\n  const { props, children } = splitArgs(a0, a1)\n  const { class: className, ...rest } = props\n  return button(\n    { type: 'button', ...rest, class: mergeClass(datePickerTriggerRecipe, className) },\n    [CalendarIcon({ class: 'size-4' }), ...children],\n  )\n}\n\nexport const DatePickerContent = classPart(PopoverContent, 'w-auto p-0')\n\nexport {\n  Calendar as DatePickerCalendar,\n  CalendarCaption as DatePickerCaption,\n  CalendarCaptionLabel as DatePickerCaptionLabel,\n  CalendarDay as DatePickerDay,\n  CalendarDayButton as DatePickerDayButton,\n  CalendarGrid as DatePickerGrid,\n  CalendarMonth as DatePickerMonth,\n  CalendarMonths as DatePickerMonths,\n  CalendarNav as DatePickerNav,\n  CalendarNext as DatePickerNext,\n  CalendarPrevious as DatePickerPrevious,\n  CalendarRow as DatePickerRow,\n  CalendarWeekday as DatePickerWeekday,\n  CalendarWeekdays as DatePickerWeekdays,\n} from '@/ui/calendar'\n"
+    }
+  ]
+}

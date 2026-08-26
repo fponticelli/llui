@@ -334,6 +334,21 @@
       ]
     },
     {
+      "name": "data-table",
+      "type": "registry:ui",
+      "title": "Data Table",
+      "description": "Loading / empty / error surfaces for the data-table pattern; the grid stays @/ui/table.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["table", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/data-table.ts",
+          "type": "registry:ui",
+          "target": "data-table.ts"
+        }
+      ]
+    },
+    {
       "name": "date-input",
       "type": "registry:ui",
       "title": "Date Input",
@@ -349,6 +364,21 @@
       ]
     },
     {
+      "name": "date-picker",
+      "type": "registry:ui",
+      "title": "Date Picker",
+      "description": "Button + Popover + Calendar, the composition shadcn documents.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["button", "calendar", "icons", "popover", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/date-picker.ts",
+          "type": "registry:ui",
+          "target": "date-picker.ts"
+        }
+      ]
+    },
+    {
       "name": "dialog",
       "type": "registry:ui",
       "title": "Dialog",
@@ -360,6 +390,21 @@
           "path": "registry/llui/ui/dialog.ts",
           "type": "registry:ui",
           "target": "dialog.ts"
+        }
+      ]
+    },
+    {
+      "name": "drawer",
+      "type": "registry:ui",
+      "title": "Drawer",
+      "description": "vaul-style edge panel — rounded entering edge, 80vh cap, grab handle.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["icons", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/drawer.ts",
+          "type": "registry:ui",
+          "target": "drawer.ts"
         }
       ]
     },
