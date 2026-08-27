@@ -81,7 +81,15 @@ If you are on the baseline and want to move: replace the `theme.css` / `theme-da
 with `tokens.css` / `tokens-dark.css`, add Tailwind, then `llui add` the components you use. The
 tokens are the same in both, so your theme survives the move.
 
+> **The rest of this page assumes the registry.** Only three parts of it differ by path —
+> setup (below), copying components (§2), and customizing (§5). **Wiring a machine (§3) and
+> placing an overlay (§4) are identical either way**, because the machine and its `data-*`
+> contract are identical. Baseline readers: skim §1's second tab, skip §2, and read §3 and
+> §4 as written.
+
 ## 1. Set up
+
+### On the registry path
 
 ```bash
 pnpm add @llui/dom @llui/components clsx tailwind-merge
@@ -98,17 +106,32 @@ pnpm llui init
 @import '@llui/components/styles/tokens-dark.css';
 ```
 
-**Do not also import `styles/theme.css`.** That is the opt-in _baseline stylesheet_ — a
-complete look built from `[data-scope][data-part]` rules, for apps that want components to
-look finished without Tailwind. Its rules are **unlayered**, and unlayered CSS beats
-`@layer utilities`, so importing it alongside registry components makes every recipe lose
-to it. Silently: the CSS for both is present and correct, and the wrong one wins.
+`tw-animate-css` is not optional polish. `animate-in`, `fade-in-0`, `zoom-in-95` and
+`slide-in-from-*` are the entire enter/exit vocabulary of every overlay recipe, and they are
+not Tailwind core.
 
-`tw-animate-css` is not optional polish either. `animate-in`, `fade-in-0`, `zoom-in-95`
-and `slide-in-from-*` are the entire enter/exit vocabulary of every overlay recipe, and
-they are not Tailwind core.
+### On the baseline path
+
+```bash
+pnpm add @llui/dom @llui/components
+pnpm add -D @llui/vite-plugin
+```
+
+```css
+@import '@llui/components/styles/theme.css';
+@import '@llui/components/styles/theme-dark.css';
+```
+
+That is the whole setup — no Tailwind, no CLI, no per-component files. `theme.css` imports
+the same tokens the registry uses and adds ~207 `[data-scope][data-part]` rules on top, so
+every component you wire is styled the moment you spread its part bag.
+
+Import one set or the other, never both — see [choosing a styling
+path](#choosing-a-styling-path).
 
 ## 2. Copy a component
+
+> Registry path only. On the baseline there are no per-component files to copy — skip to §3.
 
 ```bash
 pnpm llui list
@@ -130,6 +153,12 @@ Button({ variant: 'destructive', size: 'sm' }, [text('Delete')])
 `label`, `badge`, `separator`, `skeleton`, `alert` and `table`. Nothing to wire.
 
 ## 3. Wire a machine
+
+> **Identical on both paths.** The machine, its `connect`, its part bags and its `data-*`
+> contract do not know how you are styling. The only difference below is where `Switch` and
+> `SwitchThumb` come from: your copied `./components/ui/switch` on the registry path, or
+> plain `button` / `span` element helpers from `@llui/dom` on the baseline, where
+> `theme.css` styles them from the `data-scope` / `data-part` the bag already carries.
 
 Most components are a **skin**: classes and the right tag for a machine's parts. The state
 lives in your app, like any other TEA slice.
@@ -182,8 +211,14 @@ Three rules that cover almost every skin:
 ## 4. Overlays
 
 Dialogs, popovers, menus, tooltips and selects go through `overlay()`, which portals the
-content and owns focus, dismissal and floating position. Two things it deliberately does
-**not** give you, both invisible until you style with utilities:
+content and owns focus, dismissal and floating position.
+
+> **Identical on both paths**, with one asymmetry worth knowing: the two omissions below are
+> what the baseline stylesheet fills in for you. It targets `[data-part='positioner']` and
+> paints a backdrop directly, which is exactly why they are invisible until you style with
+> utilities — and why they bite on the registry path.
+
+Two things `overlay()` deliberately does **not** give you:
 
 ```ts
 import * as dialogC from '@llui/components/dialog'
@@ -259,11 +294,30 @@ arguments to `cn` / `mergeClass` / `classPart`, and `createVariants`'s `base` / 
 longer checked. Prefer `createVariants` over a template literal for anything conditional; a
 template contributes only its static text.
 
+### Restyle on the baseline path
+
+There is no recipe to edit, so overrides go in your own CSS against the parts the machine
+publishes:
+
+```css
+[data-scope='dialog'][data-part='content'] {
+  max-width: 32rem;
+}
+[data-scope='switch'][data-part='root'][data-state='checked'] {
+  background: var(--primary);
+}
+```
+
+Your rules are unlayered like the sheet's, so plain source order decides — import
+`theme.css` first, then your overrides. Most restyling should not need this: the tokens
+below reach every rule in the sheet.
+
 ### Retheme
 
-`tokens.css` defines shadcn's token names (`--background`, `--primary`,
-`--primary-foreground`, `--radius`, …) in `:root`, so **any shadcn theme generator's output
-pastes in verbatim**:
+**Both paths share this.** `tokens.css` defines shadcn's token names (`--background`,
+`--primary`, `--primary-foreground`, `--radius`, …) in `:root`, and `theme.css` imports the
+same file — so **any shadcn theme generator's output pastes in verbatim**, and a theme you
+build survives a move between the two paths:
 
 ```css
 @import '@llui/components/styles/tokens.css';

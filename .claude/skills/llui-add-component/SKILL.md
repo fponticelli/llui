@@ -111,11 +111,24 @@ Before reporting interaction coverage, apply and inspect a faithful mutation of 
 then record the per-test kill/survival table with reasons. A malformed mutation that also breaks
 teardown or paired bookkeeping is not evidence.
 
-## The registry skin — a downstream obligation, not an optional extra
+## Styling — a downstream obligation, not an optional extra
 
-A component with a VISUAL surface is not finished when its machine is. `registry/llui/ui/`
-carries a shadcn-styled skin for every such machine, `examples/registry-demo` renders it, and
-two guards will fail the build if you skip either:
+A component with a VISUAL surface is not finished when its machine is, and there are TWO
+consumers of its `data-*` contract, not one:
+
+1. **`registry/llui/ui/<name>.ts`** — the shadcn-styled skin, copied into consumer projects by
+   `llui add`, rendered in `examples/registry-demo`.
+2. **`packages/components/src/styles/theme.css`** — the opt-in BASELINE stylesheet, which
+   styles the same parts with `[data-scope][data-part]` rules for apps with no Tailwind build.
+   A component with no rules here is simply unstyled for every baseline consumer.
+
+`scripts/test/registry-attrs.test.ts` cross-checks BOTH against the machine's part-bag types,
+so a selector naming an attribute you never publish fails the build on either side. Add the
+component to the registry's `MACHINE_OF` and, if its scope needs it, the sheet's
+`THEME_MACHINE_OF` — each map has a vacuity check, so a new scope cannot silently fall out of
+coverage.
+
+For the registry half specifically, two guards will fail the build if you skip either:
 
 - **`scripts/test/registry-attrs.test.ts`** cross-checks every `data-*` / `aria-*` a recipe
   styles against what the machine's part-bag TYPES declare. It has a vacuity check on its

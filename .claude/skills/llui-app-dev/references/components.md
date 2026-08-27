@@ -17,7 +17,8 @@ import { select } from '@llui/components/select'
 ```
 
 Each component module exports `init`, `update`, `connect` (and its `State`/`Msg` types).
-Optional styling: `import '@llui/components/styles/theme.css'`. The root barrel also
+Optional styling: the baseline sheet (`styles/theme.css`) or the registry — see "Styling
+them" below; pick one, never both. The root barrel also
 exports i18n/format helpers: `LocaleContext`, `en`, `formatDate`, `formatNumber`,
 `formatRelativeTime`, `validateSchema`.
 
@@ -118,18 +119,32 @@ must replicate it.)
 
 ## Styling them: the registry
 
-The machines carry no classes. Most apps style them with the **registry** — shadcn/ui's
-recipes copied into the project by `@llui/cli` (`llui init`, `llui add button dialog`) and
-spread onto the part bags. The copied file is the app's own source and is expected to have
-been edited; `llui add` never overwrites without `--overwrite`.
+The machines carry no classes, so the CSS comes from one of TWO supported paths. Identify
+which the app is on before reviewing any styling — the advice differs, and half of it is
+wrong on the other path.
 
-Full walkthrough: **https://llui.dev/components**. What matters in review:
+|                | **Registry** (`llui add`)     | **Baseline** (`theme.css`)                 |
+| -------------- | ----------------------------- | ------------------------------------------ |
+| CSS lives in   | the app's repo, per component | the package, one stylesheet                |
+| Needs Tailwind | yes                           | no                                         |
+| Restyle by     | editing the copied recipe     | overriding `[data-scope][data-part]` rules |
 
-- **`tokens.css`, NOT `theme.css`.** `theme.css` is the opt-in BASELINE stylesheet, and its
-  `[data-scope][data-part]` rules are UNLAYERED — unlayered CSS beats `@layer utilities`, so
-  importing it alongside registry components makes every recipe lose to it. Silently: both
-  stylesheets are present and correct, and the wrong one wins. An app importing both has a bug
-  even if nothing looks obviously off yet.
+Both drive the identical machines through the identical `data-*` contract, so **`connect`
+wiring, part-bag spreading and `overlay()` usage are the same on both** — only the source of
+the classes differs. Neither is legacy; the baseline exists for apps that do not want a
+Tailwind pipeline (`examples/markdown-showcase` is one).
+
+Full walkthrough with the trade-offs: **https://llui.dev/components**. What matters in review:
+
+- **An app must import ONE, never both.** `theme.css`'s `[data-scope][data-part]` rules are
+  UNLAYERED, and unlayered CSS beats `@layer utilities`, so with both imported every registry
+  recipe silently loses to the baseline — both stylesheets present and correct, wrong one wins.
+  Not out-writable: layer precedence ignores specificity. An app importing both has a bug even
+  if nothing looks obviously off yet. `llui init` / `llui add` warn about it; nothing else does.
+- **On the BASELINE path, most of the registry advice below does not apply.** There is no
+  recipe to edit and no `class` override to merge — overrides are plain CSS against the part
+  attributes, unlayered like the sheet, so source order decides. Do not tell someone to reach
+  for Tailwind utilities on a project that has no Tailwind build.
 - **Style state from `data-*`, and check the machine publishes it.** Every part bag emits
   `data-state` / `data-disabled` / `data-orientation` and friends; the branch belongs in the
   recipe (`data-[state=open]:bg-muted`), not in a computed class. A recipe naming an attribute
@@ -139,9 +154,11 @@ Full walkthrough: **https://llui.dev/components**. What matters in review:
 - **A `class` override wins**, because the registry routes it through `tailwind-merge`. A
   reactive class puts the conditional INSIDE the `.map` body — the compiler rejects an operator
   applied to a Signal.
-- **`overlay()` gives you neither position nor backdrop.** Pass `positionerClass` for the
-  `fixed inset-0` and the z-index; render the backdrop yourself inside `content()`, where it
-  wants `absolute inset-0`.
+- **`overlay()` gives you neither position nor backdrop** — on the REGISTRY path. Pass
+  `positionerClass` for the `fixed inset-0` and the z-index; render the backdrop yourself
+  inside `content()`, where it wants `absolute inset-0`. The baseline sheet fills both in by
+  targeting `[data-part='positioner']` directly, which is exactly why this is invisible until
+  an app moves to utilities.
 
 ### Traps that look like framework bugs
 
