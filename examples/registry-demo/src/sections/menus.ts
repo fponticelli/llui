@@ -1,4 +1,4 @@
-import { div, each, li, nav, show, span, text, ul } from '@llui/dom'
+import { div, each, li, nav, onMount, show, span, text, ul } from '@llui/dom'
 import type { Mountable, Send, Signal } from '@llui/dom'
 import * as contextMenuC from '@llui/components/context-menu'
 import * as menubarC from '@llui/components/menubar'
@@ -23,6 +23,8 @@ import {
   NavigationMenu,
   NavigationMenuContent,
   NavigationMenuIndicator,
+  NavigationMenuIndicatorArrow,
+  NavigationMenuIndicatorTrack,
   NavigationMenuLink,
   NavigationMenuList,
   NavigationMenuTrigger,
@@ -271,6 +273,15 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       [
         NavigationMenu({ 'data-viewport': 'false', class: 'w-full max-w-none justify-start' }, [
           nav({ ...navm.root }, [
+            // The machine answers WHETHER the arrow shows (`indicator`'s
+            // data-state); where it sits is layout, so the watcher measures the
+            // open trigger and writes --indicator-left/--indicator-width onto
+            // the track. The marker must be PLACED in the view array or nothing
+            // is registered, and the returned disposer disconnects the
+            // observers on teardown.
+            onMount((root) =>
+              root instanceof HTMLElement ? navMenuC.watchNavMenuIndicator(root) : undefined,
+            ),
             NavigationMenuList({ class: 'justify-start' }, [
               ...NAV_ITEMS.map((n) => {
                 const item = navm.item(n.id, { isBranch: true })
@@ -294,6 +305,9 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
                 ])
               }),
             ]),
+            // A sibling of the list, inside the positioned root: the track is
+            // `absolute` and resolves its offset against `NavigationMenu`.
+            NavigationMenuIndicatorTrack({ ...navm.indicator }, [NavigationMenuIndicatorArrow()]),
           ]),
         ]),
       ],

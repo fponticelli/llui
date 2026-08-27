@@ -59,10 +59,47 @@ export const NavigationMenuLink = classPart(
   "flex flex-col gap-1 rounded-sm p-2 text-sm transition-all outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1 data-[active=true]:bg-accent/50 data-[active=true]:text-accent-foreground data-[active=true]:hover:bg-accent data-[active=true]:focus:bg-accent [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
 )
 
-/** The little arrow that tracks the active trigger. */
+/**
+ * The little arrow that tracks the open top-level trigger. Spread
+ * `navigationMenu.connect(...).indicator` onto it and render it as a sibling of
+ * `NavigationMenuList`, inside `NavigationMenu` (which is `relative`).
+ *
+ * `top-full z-[1] flex h-1.5 …` onward is shadcn's recipe verbatim: the
+ * animation and the arrow's box, and nothing else. Upstream needs nothing else
+ * because Radix's `NavigationMenuIndicator` primitive supplies the POSITIONING
+ * as an inline style (`position:absolute; left:0;
+ * width:var(--radix-…-indicator-size);
+ * transform:translateX(var(--radix-…-indicator-position))`).
+ *
+ * LLui has no such primitive, so the LEADING utilities are that inline style
+ * expressed as classes, reading the custom properties
+ * `navigationMenu.watchNavMenuIndicator(root)` writes. Without them the arrow
+ * sits pinned at the list's left edge at its own intrinsic width — the same
+ * gap `positionerClass` closes for `overlay()`. The `translate`/`width` half of
+ * the transition is the slide between triggers, which upstream also gets from
+ * Radix.
+ *
+ * THE HIDDEN STATE IS A DELIBERATE DEVIATION, and it is forced. Upstream's
+ * pair is `data-[state=hidden]:animate-out data-[state=hidden]:fade-out`, which
+ * works there because Radix UNMOUNTS the indicator once the exit animation
+ * finishes — `hidden` is a transient state it passes through, never one it
+ * rests in. This part stays MOUNTED (nothing here can unmount a node after its
+ * own exit animation), so `hidden` IS the resting state, and a CSS animation
+ * with the default `animation-fill-mode: none` releases its hold the moment it
+ * ends. Measured on the rendered page: the arrow faded out and then snapped
+ * back to `opacity: 1`, fully visible with `data-state="hidden"`. Applying the
+ * animation on top of a static `opacity-0` fixes the rest but then plays the
+ * exit ONCE AT MOUNT, flashing the arrow in on every page load.
+ *
+ * So the visibility is driven from the CASCADE — `opacity-0`, raised by
+ * `data-[state=visible]:opacity-100` — with `transition-opacity` supplying the
+ * fade. Both states are then correct at rest and there is nothing to play at
+ * mount. Upstream's two `visible` classes are kept as-is: `animate-in fade-in`
+ * composes correctly with a cascade that already resolves to `opacity-100`.
+ */
 export const NavigationMenuIndicatorTrack = classPart(
   div,
-  'top-full z-[1] flex h-1.5 items-end justify-center overflow-hidden data-[state=hidden]:animate-out data-[state=hidden]:fade-out data-[state=visible]:animate-in data-[state=visible]:fade-in',
+  'absolute left-0 w-(--indicator-width) translate-x-(--indicator-left) opacity-0 transition-[translate,width,opacity] duration-200 data-[state=visible]:opacity-100 top-full z-[1] flex h-1.5 items-end justify-center overflow-hidden data-[state=visible]:animate-in data-[state=visible]:fade-in',
 )
 export const NavigationMenuIndicatorArrow = classPart(
   div,

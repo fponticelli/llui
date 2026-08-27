@@ -1059,9 +1059,9 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `item`
+**Parts:** `root`, `indicator`, `item`
 
-**Utilities:** `isOpen()`
+**Utilities:** `isOpen()`, `watchNavMenuIndicator()`
 
 ---
 
@@ -9318,6 +9318,31 @@ export interface NavMenuParts {
     'data-disabled': Signal<'' | undefined>
     onPointerLeave: (e: PointerEvent) => void
     onPointerEnter: (e: PointerEvent) => void
+  }
+  /**
+   * The arrow that tracks the open top-level trigger — Radix's
+   * `NavigationMenuIndicator`, whose `data-state="visible" | "hidden"` drives
+   * the enter/exit animation. Render it as a sibling of the trigger list,
+   * inside the positioned root.
+   *
+   * It stays MOUNTED in both states: the recipe animates it out with
+   * `data-[state=hidden]:animate-out fade-out`, and a `show(...)` would unmount
+   * the node the exit animation is running on. Same reason `formField`'s live
+   * region is hidden rather than gated.
+   *
+   * `data-state` is all the MACHINE can answer — where the arrow sits is a
+   * layout fact, not state (`NavMenuState` is JSON-serializable and holds no
+   * pixels), so the position arrives through `watchNavMenuIndicator`, which
+   * writes `--indicator-left`/`--indicator-width` onto this element. That is
+   * the same split `tabs` uses for its own indicator.
+   */
+  indicator: {
+    // Pure decoration: it duplicates no information a screen reader cannot get
+    // from the trigger's own `aria-expanded`, and it is always in the tree.
+    'aria-hidden': 'true'
+    'data-scope': 'navigation-menu'
+    'data-part': 'indicator'
+    'data-state': Signal<'visible' | 'hidden'>
   }
   /**
    * Parts for one trigger (+ its panel when it is a branch).
@@ -29509,6 +29534,44 @@ function isOpen(state: NavMenuState, id: string): boolean
 function update(state: NavMenuState, msg: NavMenuMsg): [NavMenuState, never[]]
 ```
 
+##### `watchNavMenuIndicator()` from `@llui/components/navigation-menu`
+
+Track the open top-level trigger and write CSS custom properties onto the
+`indicator` part so the arrow can be animated into position. Call from
+`onMount` with the navigation-menu ROOT element; the returned function
+removes the observers.
+
+Sets `--indicator-left`, `--indicator-top`, `--indicator-width` and
+`--indicator-height` on the indicator element every time a trigger's
+`data-state` flips or the root resizes. Style the indicator with:
+left: 0;
+width: var(--indicator-width);
+transform: translateX(var(--indicator-left));
+
+This is the same state/layout split `tabs` uses (`watchTabIndicator`), and
+for the same reason: `NavMenuState` is JSON-serializable and holds no pixels,
+so a measured position cannot live in it without breaking time-travel,
+`@llui/test` replay and SSR. The machine answers `data-state`; the DOM
+answers where.
+
+TWO deliberate differences from `watchTabIndicator`, both forced by this
+component's DOM:
+
+1.  It resolves the position against the INDICATOR'S OWN `offsetParent`
+    rather than reading `trigger.offsetLeft`. A navigation menu wraps each
+    trigger in a positioned `li` (upstream's own markup does — the inline
+    panel is absolutely positioned against it), which makes the trigger its
+    own offset parent and `offsetLeft` 0 for every item. `tabs` can use
+    `offsetLeft` because its trigger list is flat.
+2.  It takes the FIRST open trigger in document order, not the only one.
+    Nested branches publish `data-state="open"` too, and a child trigger
+    lives inside its parent's panel — so document order puts the outermost
+    open branch first, which is exactly the one the arrow tracks.
+
+```typescript
+function watchNavMenuIndicator(root: HTMLElement): () => void
+```
+
 #### Types
 
 ##### `NavMenuMsg` from `@llui/components/navigation-menu`
@@ -29609,6 +29672,31 @@ export interface NavMenuParts {
     'data-disabled': Signal<'' | undefined>
     onPointerLeave: (e: PointerEvent) => void
     onPointerEnter: (e: PointerEvent) => void
+  }
+  /**
+   * The arrow that tracks the open top-level trigger — Radix's
+   * `NavigationMenuIndicator`, whose `data-state="visible" | "hidden"` drives
+   * the enter/exit animation. Render it as a sibling of the trigger list,
+   * inside the positioned root.
+   *
+   * It stays MOUNTED in both states: the recipe animates it out with
+   * `data-[state=hidden]:animate-out fade-out`, and a `show(...)` would unmount
+   * the node the exit animation is running on. Same reason `formField`'s live
+   * region is hidden rather than gated.
+   *
+   * `data-state` is all the MACHINE can answer — where the arrow sits is a
+   * layout fact, not state (`NavMenuState` is JSON-serializable and holds no
+   * pixels), so the position arrives through `watchNavMenuIndicator`, which
+   * writes `--indicator-left`/`--indicator-width` onto this element. That is
+   * the same split `tabs` uses for its own indicator.
+   */
+  indicator: {
+    // Pure decoration: it duplicates no information a screen reader cannot get
+    // from the trigger's own `aria-expanded`, and it is always in the tree.
+    'aria-hidden': 'true'
+    'data-scope': 'navigation-menu'
+    'data-part': 'indicator'
+    'data-state': Signal<'visible' | 'hidden'>
   }
   /**
    * Parts for one trigger (+ its panel when it is a branch).

@@ -179,6 +179,31 @@ export interface NavMenuParts {
     onPointerEnter: (e: PointerEvent) => void
   }
   /**
+   * The arrow that tracks the open top-level trigger — Radix's
+   * `NavigationMenuIndicator`, whose `data-state="visible" | "hidden"` drives
+   * the enter/exit animation. Render it as a sibling of the trigger list,
+   * inside the positioned root.
+   *
+   * It stays MOUNTED in both states: the recipe animates it out with
+   * `data-[state=hidden]:animate-out fade-out`, and a `show(...)` would unmount
+   * the node the exit animation is running on. Same reason `formField`'s live
+   * region is hidden rather than gated.
+   *
+   * `data-state` is all the MACHINE can answer — where the arrow sits is a
+   * layout fact, not state (`NavMenuState` is JSON-serializable and holds no
+   * pixels), so the position arrives through `watchNavMenuIndicator`, which
+   * writes `--indicator-left`/`--indicator-width` onto this element. That is
+   * the same split `tabs` uses for its own indicator.
+   */
+  indicator: {
+    // Pure decoration: it duplicates no information a screen reader cannot get
+    // from the trigger's own `aria-expanded`, and it is always in the tree.
+    'aria-hidden': 'true'
+    'data-scope': 'navigation-menu'
+    'data-part': 'indicator'
+    'data-state': Signal<'visible' | 'hidden'>
+  }
+  /**
    * Parts for one trigger (+ its panel when it is a branch).
    *
    * `ancestorIds` is the open-path this item lives under, root-first. It drives
@@ -353,6 +378,14 @@ export function connect(
       onPointerLeave: (e: PointerEvent) => scheduleClose(eventRoot(e)),
       onPointerEnter: () => cancelClose(),
     },
+    indicator: {
+      'aria-hidden': 'true',
+      'data-scope': 'navigation-menu',
+      'data-part': 'indicator',
+      // Any open branch shows the arrow. `open` is root-first, so a non-empty
+      // list always has a top-level entry — the one the arrow points at.
+      'data-state': state.map((st) => (st.open.length > 0 ? 'visible' : 'hidden')),
+    },
     item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }): NavItemParts => {
       const ancestorIds = options.ancestorIds ?? []
       // First call wins the position, so re-mounting a row keeps document
@@ -419,4 +452,86 @@ export function connect(
   }
 }
 
-export const navigationMenu = { init, update, connect, isOpen }
+/**
+ * Track the open top-level trigger and write CSS custom properties onto the
+ * `indicator` part so the arrow can be animated into position. Call from
+ * `onMount` with the navigation-menu ROOT element; the returned function
+ * removes the observers.
+ *
+ * Sets `--indicator-left`, `--indicator-top`, `--indicator-width` and
+ * `--indicator-height` on the indicator element every time a trigger's
+ * `data-state` flips or the root resizes. Style the indicator with:
+ *   left: 0;
+ *   width: var(--indicator-width);
+ *   transform: translateX(var(--indicator-left));
+ *
+ * This is the same state/layout split `tabs` uses (`watchTabIndicator`), and
+ * for the same reason: `NavMenuState` is JSON-serializable and holds no pixels,
+ * so a measured position cannot live in it without breaking time-travel,
+ * `@llui/test` replay and SSR. The machine answers `data-state`; the DOM
+ * answers where.
+ *
+ * TWO deliberate differences from `watchTabIndicator`, both forced by this
+ * component's DOM:
+ *
+ *  1. It resolves the position against the INDICATOR'S OWN `offsetParent`
+ *     rather than reading `trigger.offsetLeft`. A navigation menu wraps each
+ *     trigger in a positioned `li` (upstream's own markup does — the inline
+ *     panel is absolutely positioned against it), which makes the trigger its
+ *     own offset parent and `offsetLeft` 0 for every item. `tabs` can use
+ *     `offsetLeft` because its trigger list is flat.
+ *  2. It takes the FIRST open trigger in document order, not the only one.
+ *     Nested branches publish `data-state="open"` too, and a child trigger
+ *     lives inside its parent's panel — so document order puts the outermost
+ *     open branch first, which is exactly the one the arrow tracks.
+ */
+export function watchNavMenuIndicator(root: HTMLElement): () => void {
+  const indicator = root.querySelector<HTMLElement>(
+    '[data-scope="navigation-menu"][data-part="indicator"]',
+  )
+  if (!indicator) return () => {}
+
+  const sync = (): void => {
+    const active = root.querySelector<HTMLElement>(
+      '[data-scope="navigation-menu"][data-part="trigger"][data-state="open"]',
+    )
+    // Nothing open: KEEP the last position. The arrow is fading out in place
+    // and moving it mid-exit is the one thing that looks broken.
+    if (!active) return
+    // Null while the indicator (or an ancestor) is `display: none`. Measuring
+    // then would write a position computed against the viewport origin.
+    const parent = indicator.offsetParent
+    if (!(parent instanceof HTMLElement)) return
+
+    const pr = parent.getBoundingClientRect()
+    const ar = active.getBoundingClientRect()
+    // The offsetLeft/offsetTop of `active` had `parent` been its offset parent:
+    // border box difference, less the parent's own border, plus its scroll.
+    // `left`/`top` are what a `translate` resolves against, so they must be in
+    // the parent's padding-box coordinates, not the viewport's.
+    const left = ar.left - pr.left - parent.clientLeft + parent.scrollLeft
+    const top = ar.top - pr.top - parent.clientTop + parent.scrollTop
+    indicator.style.setProperty('--indicator-left', `${left}px`)
+    indicator.style.setProperty('--indicator-top', `${top}px`)
+    indicator.style.setProperty('--indicator-width', `${ar.width}px`)
+    indicator.style.setProperty('--indicator-height', `${ar.height}px`)
+  }
+
+  sync()
+
+  const mo = new MutationObserver(sync)
+  mo.observe(root, { attributes: true, attributeFilter: ['data-state'], subtree: true })
+
+  // ResizeObserver may be absent in older environments or jsdom — skip
+  // gracefully; layout changes that don't involve a data-state flip just
+  // won't reposition the arrow until the next attribute change.
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(sync) : null
+  ro?.observe(root)
+
+  return () => {
+    mo.disconnect()
+    ro?.disconnect()
+  }
+}
+
+export const navigationMenu = { init, update, connect, isOpen, watchNavMenuIndicator }

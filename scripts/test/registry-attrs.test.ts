@@ -250,19 +250,6 @@ const VALUE_ALLOWED: Record<string, Allowance> = {
       "the CONSUMER flips expanded/collapsed on the sidebar root — see SidebarTrigger's note. " +
       "The `collapsible` machine's own open/closed lives on a different element.",
   },
-
-  // Radix renders a viewport-tracking indicator and drives it with
-  // `data-state="visible" | "hidden"`. `@llui/components/navigation-menu` has NO
-  // indicator part, so a consumer using this pair positions and drives it
-  // itself. Recorded rather than deleted because the recipes are upstream\'s and
-  // are still correct for whoever supplies the state; recorded rather than left
-  // silent because nothing in the package will ever produce it.
-  'navigation-menu.ts: data-state=visible': {
-    reason: 'consumer-driven: the LLui machine has no indicator part (see #229)',
-  },
-  'navigation-menu.ts: data-state=hidden': {
-    reason: 'consumer-driven: the LLui machine has no indicator part (see #229)',
-  },
 }
 
 async function machineAttrs(names: readonly string[]): Promise<Set<string>> {
