@@ -109,6 +109,8 @@ export const SVG_ELEMENT_HELPERS: ReadonlySet<string> = new Set([
   'polygon',
   'ellipse',
   'svgText',
+  'svgTitle',
+  'svgDesc',
 ])
 
 /**

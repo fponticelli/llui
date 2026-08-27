@@ -298,7 +298,7 @@ describe('formField connect — formField(name) part bag', () => {
     )
   })
 
-  it('errorText.message renders first issue for the field, visible only when gated', () => {
+  it('error.message renders first issue for the field, visible only when gated', () => {
     const p = connect(rootSignal<FormFieldState>(), vi.fn(), { id: 'signup', fields: ['email'] })
     const f = p.formField('email')
 
@@ -309,19 +309,21 @@ describe('formField connect — formField(name) part bag', () => {
     })
     untouched.fields.email!.invalid = true
     // not touched → no visible message
-    expect(read(f.errorVisible, untouched)).toBe(false)
-    expect(read(f.errorText.message, untouched)).toBe('')
+    expect(read(f.error.visible, untouched)).toBe(false)
+    expect(read(f.error.message, untouched)).toBe('')
+    expect(read(f.errorText.hidden, untouched)).toBe(true)
 
     const touched = stateOf({
       issues: [{ message: 'Invalid email', path: ['email'] }],
     })
     touched.fields.email!.invalid = true
     touched.form.touched.email = true
-    expect(read(f.errorVisible, touched)).toBe(true)
-    expect(read(f.errorText.message, touched)).toBe('Invalid email')
+    expect(read(f.error.visible, touched)).toBe(true)
+    expect(read(f.error.message, touched)).toBe('Invalid email')
+    expect(read(f.errorText.hidden, touched)).toBe(false)
   })
 
-  it('errorText exposes all issues for the field for custom rendering', () => {
+  it('error exposes all issues for the field for custom rendering', () => {
     const p = connect(rootSignal<FormFieldState>(), vi.fn(), { id: 'signup', fields: ['email'] })
     const f = p.formField('email')
     const st = stateOf({
@@ -333,8 +335,25 @@ describe('formField connect — formField(name) part bag', () => {
     })
     st.fields.email!.invalid = true
     st.form.touched.email = true
-    const all = read(f.errorText.issues, st)
+    const all = read(f.error.issues, st)
     expect(all.map((i) => i.message)).toEqual(['Invalid email', 'Email taken'])
+  })
+
+  it('errorText carries ATTRIBUTES ONLY, so it can be spread onto an element', () => {
+    // The regression this pins: `message` and `issues` used to live in this bag,
+    // which made it the one part bag in the package a consumer could not spread
+    // — spreading it bound a Signal-of-string and a Signal-of-array as DOM
+    // attributes. Every call site had to destructure them back out first.
+    const p = connect(rootSignal<FormFieldState>(), vi.fn(), { id: 'signup', fields: ['email'] })
+    const f = p.formField('email')
+    expect(Object.keys(f.errorText).sort()).toEqual([
+      'aria-live',
+      'data-part',
+      'data-scope',
+      'hidden',
+      'id',
+      'role',
+    ])
   })
 
   it('pending exposes async-validation state on the control', () => {

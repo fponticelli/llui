@@ -259,6 +259,14 @@ export const polygon = svgHelper('polygon')
 export const ellipse = svgHelper('ellipse')
 // SVG <text> — named `svgText` to avoid colliding with the `text()` node helper.
 export const svgText = svgHelper('text')
+// SVG <title>/<desc>. Named apart from the HTML `title` attribute helper for the
+// same reason, and present because they are not decoration: an `<svg>` carrying
+// `role="img"` is announced through them, and without one it is an unlabelled
+// graphic. They must be the FIRST children of the <svg> — an assistive
+// technology that does not resolve `aria-labelledby` falls back to the first
+// <title> it finds.
+export const svgTitle = svgHelper('title')
+export const svgDesc = svgHelper('desc')
 
 // ── Structural primitives ───────────────────────────────────────────
 // The items handle's deps say nothing about what the ROWS read: a row can reach

@@ -58,7 +58,7 @@ import {
  *     el('div', email.root, [
  *       el('label', email.label, [text('Email')]),
  *       el('input', { ...email.control, type: 'email' }),
- *       show(email.errorVisible, () => el('p', email.errorText, [text(email.errorText.message)])),
+ *       el('p', email.errorText, [text(email.error.message)]),
  *     ]),
  *   ]
  * }
@@ -264,20 +264,37 @@ export interface FormFieldFieldParts {
     'data-scope': 'form-field'
     'data-part': 'description'
   }
+  /**
+   * The error live region's ATTRIBUTES — spreadable as-is, like every other
+   * `errorText` bag in the package (`field`, `fieldset`, `async-list`,
+   * `date-input`). It carries its own reactive `hidden`, so the element stays
+   * MOUNTED and `role="alert"` announces when it is revealed; unmounting it
+   * with `show(...)` would register no live region and announce nothing.
+   *
+   * The message and the issues are DATA, not attributes, and live on
+   * {@link FormFieldFieldParts.error}. They used to sit in this bag, which made
+   * it the one part bag in the package a consumer could not spread — spreading
+   * it bound `message` and `issues` as junk DOM attributes, so every call site
+   * had to destructure them back out first.
+   */
   errorText: {
     id: string
     role: 'alert'
     'aria-live': 'polite'
     'data-scope': 'form-field'
     'data-part': 'error'
+    hidden: Signal<boolean>
+  }
+  /** The error CONTENT, for rendering — never spread onto an element. */
+  error: {
     /** First visible issue message for this field, or '' when no error is shown. */
     message: Signal<string>
     /** Every issue mapped to this field (for custom rendering). */
     issues: Signal<StandardSchemaV1.Issue[]>
+    /** True only when the field is invalid AND its error should be visible
+     * (`touched || status === 'submitted'`). */
+    visible: Signal<boolean>
   }
-  /** True only when the field is invalid AND its error should be visible
-   * (`touched || status === 'submitted'`). Use to gate `show(...)`. */
-  errorVisible: Signal<boolean>
 }
 
 export interface FormFieldParts {
@@ -388,14 +405,17 @@ export function connect(
           'aria-live': 'polite',
           'data-scope': 'form-field',
           'data-part': 'error',
+          hidden: state.map((s) => !(s.fields[name]?.invalid && isErrorVisible(s, name))),
+        },
+        error: {
           message: state.map((s) => {
             if (!isErrorVisible(s, name)) return ''
             const first = issuesForField(s, name)[0]
             return first ? first.message : ''
           }),
           issues: state.map((s) => issuesForField(s, name)),
+          visible: state.map((s) => !!s.fields[name]?.invalid && isErrorVisible(s, name)),
         },
-        errorVisible: state.map((s) => !!s.fields[name]?.invalid && isErrorVisible(s, name)),
       }
     },
   }

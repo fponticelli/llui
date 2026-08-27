@@ -320,6 +320,10 @@
     "./styles": {
       "types": "./dist/styles/index.d.ts",
       "import": "./dist/styles/index.js"
+    },
+    "./chart": {
+      "types": "./dist/components/chart.d.ts",
+      "import": "./dist/components/chart.js"
     }
   },
   "scripts": {

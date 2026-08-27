@@ -355,12 +355,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         },
       }),
       p({ ...parts.description, class: 'text-xs text-muted-foreground' }, [text(description)]),
-      show(parts.errorVisible, () => {
-        const { message: _msg, issues: _issues, ...errProps } = parts.errorText
-        return [
-          p({ ...errProps, class: 'text-xs text-destructive' }, [text(parts.errorText.message)]),
-        ]
-      }),
+      // Hidden rather than unmounted: `errorText` carries its own reactive
+      // `hidden`, so the live region is registered before it has anything to
+      // say. `show` would rebuild it on every transition.
+      p({ ...parts.errorText, class: 'text-xs text-destructive' }, [text(parts.error.message)]),
     ])
 
   return [

@@ -1915,6 +1915,20 @@ export interface EffectTimelineEntry {
 }
 ```
 
+### `ElementHelper`
+
+An element helper accepts `tag(children)`, `tag(props, children)`, `tag(props)`,
+or `tag()` — a leading array literal is children. Children are `Mountable`s (from
+other helpers) or bare strings/numbers (coerced to text nodes at append time).
+Returns a `Mountable`, materialized when placed.
+
+```typescript
+export interface ElementHelper {
+  (children: readonly ChildNode[]): Mountable
+  (props?: ElProps, children?: readonly ChildNode[]): Mountable
+}
+```
+
 ### `ElementReport`
 
 ```typescript
@@ -3195,10 +3209,22 @@ const summary
 const svg
 ```
 
+### `svgDesc`
+
+```typescript
+const svgDesc
+```
+
 ### `svgText`
 
 ```typescript
 const svgText
+```
+
+### `svgTitle`
+
+```typescript
+const svgTitle
 ```
 
 ### `table`

@@ -27,9 +27,18 @@ import { classPart, createVariantsPart, mergeClass, splitArgs } from '@/lib/util
  *    declares `@container/field-group`. Without that container the responsive
  *    variant silently behaves as vertical at every width.
  *  - **The `group/…` names** (`group/field`, `group/field-content`,
- *    `group/field-label`, `peer/field-label`). `data-[invalid=true]` and
- *    `data-[disabled=true]` are set on the ROOT and read by descendants through
- *    them, so renaming one turns off every rule keyed to it with no error.
+ *    `group/field-label`, `peer/field-label`). The invalid/disabled state is set
+ *    on the ROOT and read by descendants through them, so renaming one turns off
+ *    every rule keyed to it with no error.
+ *
+ * Both VALUE spellings of that state are bound, for the reason
+ * `registry/README.md` gives for `input-otp` and `scroll-area`: upstream writes
+ * `data-invalid="true"` / `data-disabled="true"`, every LLui machine
+ * (`field`, `fieldset`, `patterns/form-field`) publishes the BARE attribute
+ * (`'' | undefined`, the package-wide convention for a boolean `data-*`). Only
+ * the upstream spelling used to be here, so `data-[invalid=true]:text-destructive`
+ * and both `group-data-[disabled=true]/field:opacity-50` rules could never match
+ * a part bag — they compiled, they spread, and they styled nothing.
  */
 export const FieldSet = classPart(
   fieldset,
@@ -46,7 +55,7 @@ export const FieldGroup = classPart(
 )
 
 export const Field = createVariantsPart(div, {
-  base: 'group/field flex w-full gap-3 data-[invalid=true]:text-destructive',
+  base: 'group/field flex w-full gap-3 data-[invalid=true]:text-destructive data-invalid:text-destructive',
   variants: {
     orientation: {
       vertical: 'flex-col [&>*]:w-full [&>.sr-only]:w-auto',
@@ -65,11 +74,11 @@ export const FieldContent = classPart(
 )
 export const FieldLabel = classPart(
   label,
-  'group/field-label peer/field-label flex w-fit gap-2 leading-snug text-sm font-medium select-none group-data-[disabled=true]/field:opacity-50 has-[>[data-part=field]]:w-full has-[>[data-part=field]]:flex-col has-[>[data-part=field]]:rounded-md has-[>[data-part=field]]:border [&>*]:data-[part=field]:p-4 has-data-[state=checked]:border-primary has-data-[state=checked]:bg-primary/5 dark:has-data-[state=checked]:bg-primary/10',
+  'group/field-label peer/field-label flex w-fit gap-2 leading-snug text-sm font-medium select-none group-data-[disabled=true]/field:opacity-50 group-data-disabled/field:opacity-50 has-[>[data-part=field]]:w-full has-[>[data-part=field]]:flex-col has-[>[data-part=field]]:rounded-md has-[>[data-part=field]]:border [&>*]:data-[part=field]:p-4 has-data-[state=checked]:border-primary has-data-[state=checked]:bg-primary/5 dark:has-data-[state=checked]:bg-primary/10',
 )
 export const FieldTitle = classPart(
   div,
-  'flex w-fit items-center gap-2 text-sm leading-snug font-medium group-data-[disabled=true]/field:opacity-50',
+  'flex w-fit items-center gap-2 text-sm leading-snug font-medium group-data-[disabled=true]/field:opacity-50 group-data-disabled/field:opacity-50',
 )
 export const FieldDescription = classPart(
   p,

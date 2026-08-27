@@ -35,6 +35,7 @@ export { passwordInput } from './password-input.js'
 export { steps } from './steps.js'
 export { timePicker } from './time-picker.js'
 export { carousel } from './carousel.js'
+export { chart } from './chart.js'
 export { datePicker } from './date-picker.js'
 export { colorPicker } from './color-picker.js'
 export { timer } from './timer.js'
@@ -443,6 +444,24 @@ export type {
   CarouselDrag,
   CarouselEffect,
 } from './carousel.js'
+export type {
+  ChartState,
+  ChartMsg,
+  ChartInit,
+  ChartParts,
+  ChartConnectOptions,
+  ChartSeries,
+  ChartRow,
+  ChartPadding,
+  ChartCoord,
+  ChartGeometry,
+  ChartMark,
+  ChartVertex,
+  ChartGridLine,
+  ChartCategoryTick,
+  ChartTooltipRow,
+  MarkType,
+} from './chart.js'
 export type {
   DatePickerState,
   DatePickerMsg,

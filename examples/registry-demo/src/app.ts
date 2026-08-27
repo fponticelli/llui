@@ -17,6 +17,7 @@ import * as navigation from './sections/navigation'
 import * as overlays from './sections/overlays'
 import * as layout from './sections/layout'
 import * as data from './sections/data'
+import * as charts from './sections/charts'
 import * as advanced from './sections/advanced'
 import * as menus from './sections/menus'
 import * as media from './sections/media'
@@ -30,6 +31,7 @@ interface State {
   overlays: overlays.State
   layout: layout.State
   data: data.State
+  charts: charts.State
   advanced: advanced.State
   menus: menus.State
   media: media.State
@@ -43,6 +45,7 @@ type Msg =
   | { type: 'overlays'; msg: overlays.Msg }
   | { type: 'layout'; msg: layout.Msg }
   | { type: 'data'; msg: data.Msg }
+  | { type: 'charts'; msg: charts.Msg }
   | { type: 'advanced'; msg: advanced.Msg }
   | { type: 'menus'; msg: menus.Msg }
   | { type: 'media'; msg: media.Msg }
@@ -58,6 +61,7 @@ export const App = component<State, Msg, never>({
       overlays: overlays.init()[0],
       layout: layout.init()[0],
       data: data.init()[0],
+      charts: charts.init()[0],
       advanced: advanced.init()[0],
       menus: menus.init()[0],
       media: media.init()[0],
@@ -79,6 +83,8 @@ export const App = component<State, Msg, never>({
         return [{ ...state, layout: layout.update(state.layout, msg.msg)[0] }, []]
       case 'data':
         return [{ ...state, data: data.update(state.data, msg.msg)[0] }, []]
+      case 'charts':
+        return [{ ...state, charts: charts.update(state.charts, msg.msg)[0] }, []]
       case 'advanced':
         return [{ ...state, advanced: advanced.update(state.advanced, msg.msg)[0] }, []]
       case 'menus':
@@ -99,6 +105,7 @@ export const App = component<State, Msg, never>({
 
       groupHeading('Data display'),
       ...data.view(state.at('data'), (msg) => send({ type: 'data', msg })),
+      ...charts.view(state.at('charts'), (msg) => send({ type: 'charts', msg })),
 
       groupHeading('Navigation & disclosure'),
       ...navigation.view(state.at('navigation'), (msg) => send({ type: 'navigation', msg })),

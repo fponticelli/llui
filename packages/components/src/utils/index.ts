@@ -53,6 +53,42 @@ export { TreeCollection } from './tree-collection.js'
 export type { TreeNode } from './tree-collection.js'
 
 export { deriveOnce, deriveOnceN, indexMap, membershipSet } from './derive.js'
+// Chart geometry: scales (data → normalized), path builders, and the
+// cartesian/polar projection seam. Public because a consumer measuring or
+// testing a chart needs them without mounting one.
+export {
+  normalize,
+  denormalize,
+  tickIncrement,
+  ticks,
+  niceDomain,
+  valueDomain,
+  bandExtent,
+  bandCenter,
+  nearestBand,
+} from './scale.js'
+export type { Sample, Domain, Band } from './scale.js'
+export {
+  fmt,
+  linearPath,
+  stepPath,
+  monotonePath,
+  curvePath,
+  areaPath,
+  rectPath,
+  circlePath,
+  polarPoint,
+  annularSectorPath,
+} from './path.js'
+export type { Point, Curve } from './path.js'
+export { cartesianProjection, polarProjection, projectionFor } from './projection.js'
+export type {
+  Projection,
+  Frame,
+  TickPlacement,
+  CartesianOptions,
+  PolarOptions,
+} from './projection.js'
 
 export {
   allFiniteNumbers,

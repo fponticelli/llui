@@ -1,4 +1,4 @@
-import { div, each, form, p, span, text } from '@llui/dom'
+import { div, each, p, span, text } from '@llui/dom'
 import type { Mountable, Send, Signal } from '@llui/dom'
 import * as confirmC from '@llui/components/patterns/confirm-dialog'
 import * as formFieldC from '@llui/components/patterns/form-field'
@@ -14,7 +14,7 @@ import {
   AlertDialogTitle,
 } from '../components/ui/alert-dialog'
 import { DialogBackdrop } from '../components/ui/dialog'
-import { Field, FieldDescription, FieldError, FieldLabel } from '../components/ui/field'
+import { Form, FormDescription, FormItem, FormLabel, FormMessage } from '../components/ui/form'
 import { Input } from '../components/ui/input'
 import { SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { CommandInput, CommandList } from '../components/ui/command'
@@ -178,26 +178,26 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const pick = searchableC.connect(state.at('picker'), pickSend, { id: 'demo-searchable' })
   const wiz = wizardC.connect(state.at('wizard'), wizSend, { label: 'Signup steps' })
 
+  // shadcn's `FormItem` / `FormLabel` / `FormDescription` / `FormMessage`,
+  // bound to `patterns/form-field` where upstream binds react-hook-form. There
+  // is no `FormControl`: upstream's is a Slot forwarding id + aria onto its
+  // child, and `parts.control` already carries exactly those, reactively.
   const field = (name: 'email' | 'name', label: string, hint: string): Mountable => {
-    const parts = signup.formField(name)
-    const { message: _m, issues: _i, ...errorAttrs } = parts.errorText
-    return Field({ ...parts.root }, [
-      FieldLabel({ ...parts.label }, [text(label)]),
+    const parts = signup.formField(name, { hasDescription: true })
+    return FormItem({ ...parts.root }, [
+      FormLabel({ ...parts.label }, [text(label)]),
       Input({
         ...parts.control,
         value: state.at('values').at(name),
         onInput: (e: Event) =>
           send({ type: 'setValue', field: name, value: (e.target as HTMLInputElement).value }),
       }),
-      FieldDescription({ ...parts.description }, [text(hint)]),
-      // Spread the ATTRIBUTES only. The bag also carries `message` (the text,
-      // as a child) and `issues` (an array — not an attribute value at all, and
-      // the compiler says so). `errorVisible` is the separate signal that says
-      // whether to show it: touched OR submitted, which is what stops a form
-      // shouting at someone who has typed one character.
-      FieldError({ ...errorAttrs, hidden: parts.errorVisible.map((v) => !v) }, [
-        text(parts.errorText.message),
-      ]),
+      FormDescription({ ...parts.description }, [text(hint)]),
+      // `errorText` is attributes only and carries its own reactive `hidden`:
+      // touched OR submitted, which is what stops a form shouting at someone
+      // who has typed one character. The element stays MOUNTED so the live
+      // region is registered before it has anything to say.
+      FormMessage({ ...parts.errorText }, [text(parts.error.message)]),
     ])
   }
 
@@ -253,10 +253,10 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'Form Field',
       'Validation is a REDUCER concern, not a binding one: the schema runs in `update`, the pattern holds validity, touched and submission, and the values stay ordinary app state.',
       [
-        form(
+        Form(
           {
             ...signup.root,
-            class: 'flex max-w-sm flex-col gap-4',
+            class: 'max-w-sm',
             onSubmit: (e: Event) => {
               e.preventDefault()
               signupSend({ type: 'submit' })

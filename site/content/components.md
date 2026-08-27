@@ -82,10 +82,10 @@ with `tokens.css` / `tokens-dark.css`, add Tailwind, then `llui add` the compone
 tokens are the same in both, so your theme survives the move.
 
 > **The rest of this page assumes the registry.** Only three parts of it differ by path —
-> setup (below), copying components (§2), and customizing (§5). **Wiring a machine (§3) and
-> placing an overlay (§4) are identical either way**, because the machine and its `data-*`
-> contract are identical. Baseline readers: skim §1's second tab, skip §2, and read §3 and
-> §4 as written.
+> setup (below), copying components (§2), and customizing (§6). **Wiring a machine (§3),
+> placing an overlay (§4) and building a form (§5) are identical either way**, because the
+> machine and its `data-*` contract are identical. Baseline readers: skim §1's second tab,
+> skip §2, and read §3–§5 as written.
 
 ## 1. Set up
 
@@ -245,7 +245,162 @@ dialogC.overlay({
 shadcn's does. For that one, pass `positionerClass: 'contents'` so the wrapper drops out
 of layout entirely and the content behaves exactly like upstream.
 
-## 5. Customize
+## 5. Forms
+
+A validated form is the one composition most apps need on day one, and it is where LLui
+differs most from what a shadcn tutorial will show you. React's answer is
+**react-hook-form**: a `Controller` per field, a context deriving ids and error state, and
+a resolver seam for a schema. LLui's answer is that **validation is a reducer concern** —
+it runs in `update` and produces errors as ordinary data.
+
+> **Identical on both paths.** `form` is a registry item, but everything below it —
+> the machine, the messages, the ARIA — is the same on the baseline.
+
+`@llui/components/patterns/form-field` composes the whole thing. Your values stay ordinary
+state; the pattern holds validity, touched, submission status, and every derived id.
+
+```bash
+pnpm llui add form input label
+```
+
+### The state
+
+```ts
+import { formField, type FormFieldState } from '@llui/components/patterns/form-field'
+import { z } from 'zod'
+
+const schema = z.object({
+  email: z.string().email('Enter a valid email address.'),
+  name: z.string().min(2, 'Name must be at least 2 characters.'),
+})
+
+interface State {
+  values: { email: string; name: string }
+  ff: FormFieldState
+}
+
+const init = (): [State, never[]] => [
+  {
+    values: { email: '', name: '' },
+    ff: formField.init({ id: 'signup', fields: ['email', 'name'] }),
+  },
+  [],
+]
+```
+
+Any [Standard Schema](https://standardschema.dev) works — Zod, Valibot, ArkType. The
+pattern never imports one; it reads the `~standard` interface.
+
+### The reducer
+
+```ts
+function update(state: State, msg: Msg): [State, Effect[]] {
+  switch (msg.type) {
+    case 'setValue': {
+      const values = { ...state.values, [msg.field]: msg.value }
+      // Re-validate on every keystroke. Errors do not BECOME VISIBLE yet — the
+      // pattern gates that on touched-or-submitted — so this only means a field
+      // stops showing an error the moment it is fixed.
+      const [ff] = formField.update(state.ff, { type: 'validate', schema, values })
+      return [{ ...state, values, ff }, []]
+    }
+    case 'submit': {
+      const [validated] = formField.update(state.ff, {
+        type: 'validate',
+        schema,
+        values: state.values,
+      })
+      const invalid = Object.values(validated.fields).some((f) => f.invalid)
+      if (invalid) {
+        // Reveal every error at once, including on fields never focused.
+        const [ff] = formField.update(validated, { type: 'touchAll' })
+        return [{ ...state, ff }, []]
+      }
+      const [ff] = formField.update(validated, { type: 'submit' })
+      return [{ ...state, ff }, [saveEffect(state.values)]]
+    }
+  }
+}
+```
+
+`submitSuccess` / `submitError` close the lifecycle from `onEffect`.
+
+### The view
+
+```ts
+import { Form, FormItem, FormLabel, FormDescription, FormMessage } from './components/ui/form'
+import { Input } from './components/ui/input'
+
+view: ({ state, send }) => {
+  const parts = formField.connect(state.at('ff'), (m) => send({ type: 'ff', msg: m }), {
+    id: 'signup',
+    fields: ['email', 'name'],
+  })
+  const email = parts.formField('email', { hasDescription: true })
+
+  return [
+    Form(
+      {
+        ...parts.root,
+        onSubmit: (e) => {
+          e.preventDefault()
+          send({ type: 'submit' })
+        },
+      },
+      [
+        FormItem({ ...email.root }, [
+          FormLabel({ ...email.label }, [text('Email')]),
+          Input({
+            ...email.control,
+            type: 'email',
+            value: state.at('values').at('email'),
+            onInput: (e) => send({ type: 'setValue', field: 'email', value: e.target.value }),
+          }),
+          FormDescription({ ...email.description }, [text('We only use this to sign you in.')]),
+          FormMessage({ ...email.errorText }, [text(email.error.message)]),
+        ]),
+        Button({ ...parts.submit }, [text('Create account')]),
+      ],
+    ),
+  ]
+}
+```
+
+Nothing here computes an id, an `aria-describedby`, or when to show an error. The bag does
+all of it, reactively.
+
+### What maps to what
+
+| shadcn / react-hook-form   | LLui                                                  |
+| -------------------------- | ----------------------------------------------------- |
+| `useForm` + `zodResolver`  | a `validate` message + any Standard Schema            |
+| `<Form>` (FormProvider)    | one `FormFieldState` slice in your own state          |
+| `<FormField>` (Controller) | `parts.formField(name)`                               |
+| `useFormField()`           | the returned bag — ids, ARIA, error, touched, pending |
+| `<FormControl>` (a Slot)   | `{...field.control}` spread onto **your** control     |
+
+### Three things that bite
+
+**There is no `FormControl`.** Upstream's is a Radix `Slot`: it renders nothing and
+forwards `id` / `aria-describedby` / `aria-invalid` onto its child. `field.control` already
+carries exactly those, so spread it onto your `Input` directly.
+
+**`FormMessage` stays mounted.** `errorText` carries its own reactive `hidden`, so the live
+region is registered before it has anything to say. Wrapping it in `show(...)` unmounts and
+rebuilds it on every transition, and a screen reader may announce nothing.
+
+**Errors are gated on touched-or-submitted.** `email.error.visible` is
+`invalid && (touched || status === 'submitted')`. That is why validating on every keystroke
+is safe: a field that has never been focused stays quiet until submit calls `touchAll`.
+
+### Async validation
+
+For a uniqueness check, dispatch `validateAsync` with a `requestId`, run
+`formField.validateSchemaAsync` in an effect, and dispatch `validateResult` with the same
+id. A result whose id no longer matches is **dropped** — a slow earlier validation can
+never overwrite a newer one. Every field reports `aria-busy` while one is in flight.
+
+## 6. Customize
 
 Four levels, cheapest first.
 
@@ -335,6 +490,131 @@ and darken in light mode while lightening in dark. Do not restate them per theme
 Dark mode activates on `.dark`, `[data-theme='dark']` **and** `prefers-color-scheme` — the
 first is what shadcn tooling writes, the second is what `@llui/components/theme-switch`
 writes.
+
+## 7. Charts
+
+`llui add chart` gives you shadcn's container, tooltip and legend recipes over
+`@llui/components/chart` — a plotting machine that derives geometry as data and
+lets you render it with ordinary SVG.
+
+> **Identical on both paths**, except that the recipes are a registry item. The
+> machine, the geometry and the `data-*` are the same either way.
+
+### One field decides the coordinate system
+
+```ts
+send({ type: 'setCoord', coord: 'polar' })
+```
+
+That is the whole switch. Every mark, gridline, tick, hit test and tooltip anchor
+re-projects from the same series and the same data:
+
+| Series         | Cartesian        | Polar                  |
+| -------------- | ---------------- | ---------------------- |
+| `mark: 'line'` | a polyline       | a radar outline        |
+| `mark: 'area'` | a filled band    | a filled radar polygon |
+| `mark: 'bar'`  | a bar            | a wedge (rose / donut) |
+| gridlines      | horizontal rules | rings, or a radar web  |
+
+Your view never asks which one it has. Everything the coordinate system touches
+lives in `utils/projection.ts`, behind a `Projection` interface with two
+implementations.
+
+### Setting one up
+
+```ts
+import * as chartC from '@llui/components/chart'
+
+chartC.init({
+  series: [
+    { key: 'desktop', label: 'Desktop', mark: 'bar' },
+    { key: 'mobile', label: 'Mobile', mark: 'bar' },
+  ],
+  rows: [
+    { label: 'Jan', values: { desktop: 186, mobile: 80 } },
+    { label: 'Feb', values: { desktop: 305, mobile: 200 } },
+  ],
+  label: 'Visitors by device',
+  description: 'Desktop and mobile visitors this year.',
+})
+```
+
+Colours come from a `ChartConfig` on the container, which publishes them as
+`--color-<key>` custom properties — upstream's `ChartStyle`, without the
+generated id:
+
+```ts
+ChartContainer({ ...parts.root, config: {
+  desktop: { label: 'Desktop', color: 'var(--chart-1)' },
+  mobile: { label: 'Mobile', color: 'var(--chart-2)' },
+} }, [ … ])
+```
+
+`--chart-1` … `--chart-5` are already in the theme, light and dark.
+
+### Rendering the geometry
+
+`connect` returns derived arrays as signals. Render them with `each` — this is
+ordinary reactive DOM, not a black box:
+
+```ts
+ChartSvg({ ...parts.svg }, [
+  ChartTitle({ ...parts.title }, [text(state.at('label'))]),
+  ChartDesc({ ...parts.desc }, [text(state.at('description'))]),
+  ChartLayer({ ...parts.layer }, [
+    each(parts.gridLines, {
+      key: (l) => String(l.value),
+      render: (l) => [ChartGrid({ ...parts.grid, d: l.at('d') })],
+    }),
+  ]),
+  ChartLayer({ ...parts.layer }, [
+    each(parts.marks, {
+      key: (m) => `${m.seriesKey}:${m.index ?? 'all'}`,
+      render: (m) => {
+        const mark = m.peek()
+        return [
+          ChartMark({
+            ...parts.markProps(mark),
+            d: m.at('d'),
+            style: `--mark-color:var(--color-${mark.seriesKey})`,
+          }),
+        ]
+      },
+    }),
+  ]),
+])
+```
+
+### Sizing
+
+`width` / `height` are user units and go straight into the `viewBox`, so the
+geometry is a pure function of state — no layout read, no `ResizeObserver`, and
+an SSR render matches the client. CSS scales it. For true 1:1 pixels, observe
+your container and dispatch `setSize`; for a polar chart, a square box uses the
+space a wide one wastes.
+
+### Accessibility is a table
+
+The `<svg>` is `role="img"`, named through its own `<title>` and `<desc>`. The
+numbers live in a visually-hidden `<table>` beside it — render it from the same
+rows and spread `parts.table`. That is the fallback that works today; support
+for the WAI-ARIA graphics roles is still thin enough that a chart relying on
+them announces a name and nothing else.
+
+Arrow keys walk the rows, Home/End jump to the ends, Escape clears — and the
+tooltip is a `role="status"` live region, so the cursor is announced as it moves.
+
+### Two things that surprise people
+
+**Polar draws `monotone` as `linear`, on purpose.** Monotone cubic's guarantee
+is that it never overshoots between two samples, and it is defined on a function
+`y = f(x)` with increasing `x`. A closed angular loop has no such ordering, so
+honouring the request would draw values nobody measured. `projection.curves`
+tells you what is supported.
+
+**Unstacked bar series sit side by side, not on top of each other.** Overlaying
+them hides the shorter series and reads as a stacked chart — the picture would
+not merely omit data, it would misstate it. `setStacked` is the other layout.
 
 ## Gotchas
 

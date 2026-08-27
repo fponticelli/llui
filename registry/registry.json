@@ -229,6 +229,21 @@
       ]
     },
     {
+      "name": "chart",
+      "type": "registry:ui",
+      "title": "Chart",
+      "description": "Skin for @llui/components/chart — shadcn's container, tooltip and legend recipes over a cartesian/polar plotting machine.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/chart.ts",
+          "type": "registry:ui",
+          "target": "chart.ts"
+        }
+      ]
+    },
+    {
       "name": "checkbox",
       "type": "registry:ui",
       "title": "Checkbox",
@@ -495,6 +510,21 @@
           "path": "registry/llui/ui/floating-panel.ts",
           "type": "registry:ui",
           "target": "floating-panel.ts"
+        }
+      ]
+    },
+    {
+      "name": "form",
+      "type": "registry:ui",
+      "title": "Form",
+      "description": "Skin for @llui/components/patterns/form-field — shadcn's form recipes bound to a Standard Schema reducer instead of react-hook-form.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils", "label", "input"],
+      "files": [
+        {
+          "path": "registry/llui/ui/form.ts",
+          "type": "registry:ui",
+          "target": "form.ts"
         }
       ]
     },

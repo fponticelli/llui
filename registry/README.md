@@ -26,6 +26,13 @@ Recipes are ported VERBATIM from shadcn/ui's source (new-york-v4, MIT © 2023
 shadcn), measured at a **98% mean class-set match** across the 45 components with
 an upstream counterpart — 38 of them at 100%.
 
+Two items are ports of something that could not come across whole, and each says
+so in its own header: **`form`** is upstream's five recipes re-bound to
+`@llui/components/patterns/form-field` where upstream binds react-hook-form, and
+**`chart`** carries upstream's `ChartConfig` → `--color-<key>` bridge and its
+tooltip/legend recipes, but draws with `@llui/components/chart` because Recharts
+is React-only.
+
 What remains is not approximation. It is, in order of size:
 
 1. **Radix runtime variables.** `origin-(--radix-…-transform-origin)`,
@@ -43,8 +50,14 @@ What remains is not approximation. It is, in order of size:
    `data-slot` → `data-part` rename (e.g. `select`'s
    `*:data-[part=select-value]:…`). Check the file before believing the number.
 
-Where upstream and LLui disagree on the ATTRIBUTE that drives a state, both are
-bound rather than one being chosen — `scroll-area` carries `data-[axis=…]` AND
+Where upstream and LLui disagree on the ATTRIBUTE **or the VALUE** that drives a
+state, both are bound rather than one being chosen. The value case is the easier
+one to miss: shadcn writes `data-invalid="true"` and every LLui machine publishes
+the BARE `data-invalid`, so `data-[invalid=true]:text-destructive` matched nothing
+in `field.ts` for as long as it shipped — three rules, all green under the
+name-level check. `scripts/test/registry-attrs.test.ts` now checks values too.
+
+The attribute case — `scroll-area` carries `data-[axis=…]` AND
 `data-[orientation=…]`, `input-otp` carries `data-[active=true]` AND
 `focus-visible:`. A shadcn snippet pasted in behaves the same as an LLui part bag.
 

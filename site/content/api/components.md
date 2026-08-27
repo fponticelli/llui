@@ -239,7 +239,7 @@ Supported on: editable, number-input, tags-input, pin-input, file-upload.
 
 ## Component Reference
 
-All 66 components follow the same pattern:
+All 67 components follow the same pattern:
 
 ```typescript
 import { componentName } from '@llui/components/component-name'
@@ -427,6 +427,41 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 **Parts:** `root`, `clearTrigger`, `level`
 
 **Utilities:** `isLevelReady()`, `isComplete()`, `completeValues()`
+
+---
+
+### Chart
+
+**State** (`ChartState`):
+
+| Field          | Type             |
+| -------------- | ---------------- |
+| `coord`        | `ChartCoord`     |
+| `series`       | `ChartSeries[]`  |
+| `rows`         | `ChartRow[]`     |
+| `label`        | `string`         |
+| `description`  | `string`         |
+| `width`        | `number`         |
+| `height`       | `number`         |
+| `padding`      | `ChartPadding`   |
+| `min`          | `number`         |
+| `max`          | `number`         |
+| `tickCount`    | `number`         |
+| `stacked`      | `boolean`        |
+| `activeIndex`  | `number \| null` |
+| `activeSeries` | `string \| null` |
+| `innerRadius`  | `number`         |
+| `horizontal`   | `boolean`        |
+
+**Messages:** `setCoord`, `setActive`, `moveActive`, `firstActive`, `lastActive`, `setActiveSeries`, `setRows`, `setMin`, `setMax`, `setStacked`, `setSize`, `setInnerRadius`, `setHorizontal`
+
+**Init options:** `series: readonly ChartSeries[], rows?: readonly ChartRow[], coord?: ChartCoord, label?: string, description?: string, width?: number, height?: number, padding?: Partial<ChartPadding>, min?: number, max?: number, tickCount?: number, stacked?: boolean, innerRadius?: number, horizontal?: boolean`
+
+**Connect options:** `ChartConnectOptions`
+
+**Parts:** `root`, `svg`, `title`, `desc`, `table`, `tooltip`, `layer`, `grid`, `axisLabel`, `dotProps`, `legendItem`, `markProps`, `marks`, `vertices`, `gridLines`, `categoryTicks`, `tooltipRows`, `activeLabel`, `rows`, `series`
+
+**Utilities:** `geometry()`
 
 ---
 
@@ -1868,6 +1903,25 @@ function allFiniteNumbers(...values: readonly unknown[]): boolean
 function anatomy<P extends string>(name: string, parts: readonly P[]): Anatomy<P>
 ```
 
+##### `annularSectorPath()` from `@llui/components`
+
+An annular sector — the polar answer to a bar. `r0` is the inner radius (0
+gives a pie wedge, > 0 a donut segment); angles follow {@link polarPoint}.
+
+A sweep of a full turn or more is drawn as a complete ring, because the arc
+endpoints would otherwise coincide and SVG would draw nothing at all.
+
+```typescript
+function annularSectorPath(
+  cx: number,
+  cy: number,
+  r0: number,
+  r1: number,
+  a0: number,
+  a1: number,
+): string
+```
+
 ##### `applySelection()` from `@llui/components`
 
 Apply a click/Enter on `value` to the current selection. Single mode
@@ -1892,6 +1946,21 @@ like `[data-theme='dark'] { ... }` will then take effect.
 function applyTheme(resolved: ResolvedTheme): void
 ```
 
+##### `areaPath()` from `@llui/components`
+
+A filled region between an upper run and a lower run. The lower run is walked
+BACKWARDS and appended, then the path is closed — one subpath, so a fill-rule
+cannot punch a hole in it the way two separate subpaths can.
+
+```typescript
+function areaPath(
+  upper: readonly Point[],
+  lower: readonly Point[],
+  curve: Curve,
+  axis: CurveAxis = 'x',
+): string
+```
+
 ##### `attachFloating()` from `@llui/components`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
@@ -1899,6 +1968,37 @@ Applies `left` + `top` styles to the floating element. Returns a cleanup.
 
 ```typescript
 export declare function attachFloating(opts: FloatingOptions): () => void
+```
+
+##### `bandCenter()` from `@llui/components`
+
+The centre of band `i` in normalized u.
+
+```typescript
+function bandCenter(i: number, band: Band): number
+```
+
+##### `bandExtent()` from `@llui/components`
+
+The [start, end] extent of band `i` in normalized u.
+
+```typescript
+function bandExtent(i: number, band: Band): [number, number]
+```
+
+##### `cartesianProjection()` from `@llui/components`
+
+```typescript
+function cartesianProjection(frame: Frame, opts: CartesianOptions = {}): Projection
+```
+
+##### `circlePath()` from `@llui/components`
+
+A full circle, as two arcs — one arc of 360° is degenerate and draws
+nothing, which is the classic way a polar gridline disappears.
+
+```typescript
+function circlePath(cx: number, cy: number, r: number): string
 ```
 
 ##### `clamp()` from `@llui/components`
@@ -1931,6 +2031,20 @@ It is always FINITE too — the clamp rejects a non-finite input first (#152).
 function clampToStep(value: number, grid: NumericGrid): number
 ```
 
+##### `curvePath()` from `@llui/components`
+
+Join a run of points with the named curve. `closed` applies to `linear`
+only — the other two are defined on an open, x-increasing run.
+
+```typescript
+function curvePath(
+  points: readonly Point[],
+  curve: Curve,
+  closed = false,
+  axis: CurveAxis = 'x',
+): string
+```
+
 ##### `decimalPlaces()` from `@llui/components`
 
 Fraction digits `n` is written with, INCLUDING exponential notation —
@@ -1938,6 +2052,14 @@ Fraction digits `n` is written with, INCLUDING exponential notation —
 
 ```typescript
 function decimalPlaces(n: number): number
+```
+
+##### `denormalize()` from `@llui/components`
+
+Inverse of {@link normalize}.
+
+```typescript
+function denormalize(u: number, domain: Domain): number
 ```
 
 ##### `deriveOnce()` from `@llui/components`
@@ -2073,6 +2195,15 @@ The second argument is the direction source:
 
 ```typescript
 export declare function flipArrow(key: string, source: Element | null | TextDirection): string
+```
+
+##### `fmt()` from `@llui/components`
+
+Format a coordinate. A non-finite input becomes 0 — a `NaN` in a path
+silently voids the WHOLE path element, taking every later command with it.
+
+```typescript
+function fmt(n: number): string
 ```
 
 ##### `focusLingeredInside()` from `@llui/components`
@@ -2312,6 +2443,14 @@ export declare function lastEnabled(
 function lastEnabledIndex(items: readonly string[], disabled: readonly string[]): number | null
 ```
 
+##### `linearPath()` from `@llui/components`
+
+Straight segments through every point.
+
+```typescript
+function linearPath(points: readonly Point[], closed = false): string
+```
+
 ##### `lockBodyScroll()` from `@llui/components`
 
 Lock body scroll while an overlay is open, preserving scrollbar width to
@@ -2368,6 +2507,34 @@ function menubarOverlay(opts: MenubarOverlayOptions): Mountable
 function menubarUpdate(state: MenubarState, msg: MenubarMsg): [MenubarState, never[]]
 ```
 
+##### `monotonePath()` from `@llui/components`
+
+Monotone cubic interpolation (Fritsch–Carlson). Its defining property is that
+the curve NEVER OVERSHOOTS the data: between two samples it stays within
+their values, so a series that only rises cannot dip below a point on the way.
+A plain Catmull-Rom or cardinal spline does overshoot, and on a chart that
+means drawing a number nobody measured.
+
+Defined on a function y = f(x) with strictly increasing x. It is therefore
+meaningless on a closed angular loop, which is why `polarProjection` declines
+it — see `projection.ts`.
+
+```typescript
+function monotonePath(points: readonly Point[], axis: CurveAxis = 'x'): string
+```
+
+##### `nearestBand()` from `@llui/components`
+
+The band index nearest a normalized position — the hit test behind hover and
+pointer tracking. Returns `null` for an empty axis.
+
+Nearest-CENTRE, not containment: the gaps between bands belong to whichever
+band is closer, so a pointer never falls into a dead zone between two bars.
+
+```typescript
+function nearestBand(u: number, band: Band): number | null
+```
+
 ##### `nextEnabled()` from `@llui/components`
 
 ```typescript
@@ -2395,10 +2562,47 @@ function nextEnabledIndex(
 ): number | null
 ```
 
+##### `niceDomain()` from `@llui/components`
+
+Extend `[min, max]` outward to the nearest round tick boundaries, so the axis
+ends on a labelled value instead of mid-air. Iterates because widening the
+domain can change the chosen step, which can change the boundaries again;
+d3's `nice` does the same, and it converges in at most a few rounds.
+
+```typescript
+function niceDomain(min: number, max: number, count: number): Domain
+```
+
+##### `normalize()` from `@llui/components`
+
+Map a value into [0, 1] across `domain`. A DEGENERATE domain (min === max)
+maps everything to 0.5 rather than dividing by zero — a single-valued series
+draws as a flat line through the middle, which is the only reading that is
+not a crash or a NaN in a path string.
+
+```typescript
+function normalize(value: number, domain: Domain): number
+```
+
 ##### `parseDateValue()` from `@llui/components`
 
 ```typescript
 function parseDateValue(value: DateValue): ParsedDateValue
+```
+
+##### `polarPoint()` from `@llui/components`
+
+A point on a circle. Angles are RADIANS CLOCKWISE FROM 12 O'CLOCK, which is
+where every reader expects a chart to start; SVG's own 0 is 3 o'clock.
+
+```typescript
+function polarPoint(cx: number, cy: number, r: number, angle: number): Point
+```
+
+##### `polarProjection()` from `@llui/components`
+
+```typescript
+function polarProjection(frame: Frame, opts: PolarOptions = {}): Projection
 ```
 
 ##### `positiveFinite()` from `@llui/components`
@@ -2439,6 +2643,18 @@ function presenceEndHandler<E extends AnimationEvent | TransitionEvent>(
 ): (e: E) => void
 ```
 
+##### `projectionFor()` from `@llui/components`
+
+Build the projection a chart's coordinate setting names.
+
+```typescript
+function projectionFor(
+  coord: ChartCoord,
+  frame: Frame,
+  opts: CartesianOptions & PolarOptions = {},
+): Projection
+```
+
 ##### `pruneToEnabled()` from `@llui/components`
 
 Keep `value` only while it still names an enabled item, else null. Every
@@ -2477,6 +2693,14 @@ trap and (optionally) restores focus to the element active before push.
 
 ```typescript
 export declare function pushFocusTrap(opts: FocusTrapOptions): () => void
+```
+
+##### `rectPath()` from `@llui/components`
+
+An axis-aligned rectangle, corners in any order.
+
+```typescript
+function rectPath(x0: number, y0: number, x1: number, y1: number): string
 ```
 
 ##### `registerNestedLayer()` from `@llui/components`
@@ -2731,6 +2955,36 @@ happened to start.
 function stepBy(value: number, count: number, grid: NumericGrid): number
 ```
 
+##### `stepPath()` from `@llui/components`
+
+Axis-aligned staircase: hold each value until halfway along the independent
+axis, then step.
+
+```typescript
+function stepPath(points: readonly Point[], axis: CurveAxis = 'x'): string
+```
+
+##### `tickIncrement()` from `@llui/components`
+
+The step size a nice axis would use to fit about `count` ticks into
+`[start, stop]`. A negative return means "one tick every 1/-step units" —
+d3's encoding, kept because the reciprocal form avoids the float drift that
+`10 ** -power` introduces for small steps.
+
+```typescript
+function tickIncrement(start: number, stop: number, count: number): number
+```
+
+##### `ticks()` from `@llui/components`
+
+Round, human-readable tick values covering `[start, stop]`. Returns an EMPTY
+array for a non-finite or degenerate range rather than looping forever —
+a chart with no data is a normal state, not an error.
+
+```typescript
+function ticks(start: number, stop: number, count: number): number[]
+```
+
 ##### `typeaheadAccumulate()` from `@llui/components`
 
 Advance the typeahead query based on a new keystroke and the previous
@@ -2796,6 +3050,23 @@ function validateSchemaAsync<T>(
   schema: StandardSchemaV1<T>,
   values: unknown,
 ): Promise<ValidateResult<T>>
+```
+
+##### `valueDomain()` from `@llui/components`
+
+The value-axis domain for a set of series.
+
+`min` / `max` are UNBOUNDED-CAPABLE bounds in the sense of `finiteBound`
+(#177): an absent one means "derive it", never `±Infinity`. A derived domain
+always INCLUDES ZERO, because a bar whose baseline is not zero misrepresents
+its own length — the one axis default worth being opinionated about. A caller
+who wants otherwise passes both bounds.
+
+```typescript
+function valueDomain(
+  values: readonly number[],
+  opts: { min?: number; max?: number; tickCount: number },
+): Domain
 ```
 
 ##### `visibleItems()` from `@llui/components`
@@ -3084,6 +3355,44 @@ export type CascadeSelectMsg =
   | { type: 'clear' }
 ```
 
+##### `ChartCoord` from `@llui/components`
+
+```typescript
+export type ChartCoord = 'cartesian' | 'polar'
+```
+
+##### `ChartMsg` from `@llui/components`
+
+```typescript
+export type ChartMsg =
+  /** @intent("Switch between cartesian and polar projection") */
+  | { type: 'setCoord'; coord: ChartCoord }
+  /** @intent("Set the row under the cursor, or clear it with null") */
+  | { type: 'setActive'; index: number | null }
+  /** @intent("Move the keyboard cursor along the rows by delta, wrapping") */
+  | { type: 'moveActive'; delta: number }
+  /** @intent("Move the keyboard cursor to the first row") */
+  | { type: 'firstActive' }
+  /** @intent("Move the keyboard cursor to the last row") */
+  | { type: 'lastActive' }
+  /** @intent("Isolate one series, or show them all again with null") */
+  | { type: 'setActiveSeries'; key: string | null }
+  /** @intent("Replace the plotted rows") */
+  | { type: 'setRows'; rows: ChartRow[] }
+  /** @intent("Pin the low end of the value axis, or derive it again with null") */
+  | { type: 'setMin'; value: number | null }
+  /** @intent("Pin the high end of the value axis, or derive it again with null") */
+  | { type: 'setMax'; value: number | null }
+  /** @intent("Stack the series instead of overlaying them") */
+  | { type: 'setStacked'; stacked: boolean }
+  /** @intent("Set the viewBox size in user units") */
+  | { type: 'setSize'; width: number; height: number }
+  /** @intent("Set the polar inner radius as a fraction of the outer") */
+  | { type: 'setInnerRadius'; value: number }
+  /** @intent("Swap the cartesian axes for a horizontal bar chart") */
+  | { type: 'setHorizontal'; horizontal: boolean }
+```
+
 ##### `CheckboxMsg` from `@llui/components`
 
 ```typescript
@@ -3311,6 +3620,14 @@ export type ContextMenuSubPositionerParts = MenuSubPositionerPartsOf<'context-me
 
 ```typescript
 export type ContextMenuSubTriggerParts = MenuSubTriggerPartsOf<'context-menu'>
+```
+
+##### `Curve` from `@llui/components`
+
+How a run of points is joined.
+
+```typescript
+export type Curve = 'linear' | 'monotone' | 'step'
 ```
 
 ##### `DateError` from `@llui/components`
@@ -3804,6 +4121,12 @@ export type ListboxMsg =
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @humanOnly */
   | { type: 'typeahead'; char: string; now: number }
+```
+
+##### `MarkType` from `@llui/components`
+
+```typescript
+export type MarkType = 'line' | 'area' | 'bar'
 ```
 
 ##### `MarqueeDirection` from `@llui/components`
@@ -5470,6 +5793,20 @@ export interface AvatarState {
 }
 ```
 
+##### `Band` from `@llui/components`
+
+A discrete axis of `count` slots laid out across [0, 1].
+
+```typescript
+export interface Band {
+  count: number
+  /** Gap between adjacent bands, as a fraction of a slot. */
+  paddingInner: number
+  /** Gap before the first and after the last band, as a fraction of a slot. */
+  paddingOuter: number
+}
+```
+
 ##### `BreadcrumbItem` from `@llui/components`
 
 Breadcrumbs — a hierarchical trail of links to ancestor pages.
@@ -5684,6 +6021,17 @@ export interface CarouselState {
 }
 ```
 
+##### `CartesianOptions` from `@llui/components`
+
+```typescript
+export interface CartesianOptions {
+  /** Swap the axes: `u` runs top-to-bottom and `v` left-to-right. This is what
+   *  turns a column chart into a horizontal bar chart, and it is a PROJECTION
+   *  concern — no mark, scale or hit test changes. */
+  horizontal?: boolean
+}
+```
+
 ##### `CascadeLevel` from `@llui/components`
 
 Cascade select — a series of dependent selects where each level's
@@ -5766,6 +6114,296 @@ export interface CascadeSelectState {
   /** Parallel to levels: one value per level, or null. */
   values: (string | null)[]
   disabled: boolean
+}
+```
+
+##### `ChartCategoryTick` from `@llui/components`
+
+```typescript
+export interface ChartCategoryTick {
+  index: number
+  label: string
+  x: number
+  y: number
+  anchor: 'start' | 'middle' | 'end'
+  baseline: 'auto' | 'middle' | 'hanging'
+  active: boolean
+}
+```
+
+##### `ChartConnectOptions` from `@llui/components`
+
+```typescript
+export interface ChartConnectOptions {
+  /** Base id; the title and description ids derive from it. */
+  id: string
+}
+```
+
+##### `ChartGeometry` from `@llui/components`
+
+```typescript
+export interface ChartGeometry {
+  frame: Frame
+  domain: Domain
+  band: Band
+  projection: Projection
+  marks: ChartMark[]
+  vertices: ChartVertex[]
+  gridLines: ChartGridLine[]
+  categoryTicks: ChartCategoryTick[]
+  /** Anchor for the tooltip, in user units. `null` when nothing is active. */
+  tooltipAt: { x: number; y: number } | null
+  tooltipRows: ChartTooltipRow[]
+}
+```
+
+##### `ChartGridLine` from `@llui/components`
+
+```typescript
+export interface ChartGridLine {
+  value: number
+  label: string
+  d: string
+  x: number
+  y: number
+  anchor: 'start' | 'middle' | 'end'
+  baseline: 'auto' | 'middle' | 'hanging'
+}
+```
+
+##### `ChartInit` from `@llui/components`
+
+```typescript
+export interface ChartInit {
+  series: readonly ChartSeries[]
+  rows?: readonly ChartRow[]
+  coord?: ChartCoord
+  label?: string
+  description?: string
+  width?: number
+  height?: number
+  padding?: Partial<ChartPadding>
+  min?: number
+  max?: number
+  tickCount?: number
+  stacked?: boolean
+  innerRadius?: number
+  horizontal?: boolean
+}
+```
+
+##### `ChartMark` from `@llui/components`
+
+A drawn mark: one series, one path.
+
+```typescript
+export interface ChartMark {
+  seriesKey: string
+  label: string
+  mark: MarkType
+  /** The SVG path `d`. */
+  d: string
+  /** Row index, for a `bar`/wedge — `null` for a whole-series line or area. */
+  index: number | null
+  active: boolean
+  dimmed: boolean
+}
+```
+
+##### `ChartPadding` from `@llui/components`
+
+```typescript
+export interface ChartPadding {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+```
+
+##### `ChartParts` from `@llui/components`
+
+```typescript
+export interface ChartParts {
+  root: {
+    'data-scope': 'chart'
+    'data-part': 'root'
+    // Spelled out rather than aliased: `scripts/test/registry-attrs.test.ts`
+    // reads part-bag VALUES syntactically, and an imported alias reads as an
+    // open type it declines to give a verdict on.
+    'data-coord': Signal<'cartesian' | 'polar'>
+    'data-active': Signal<'' | undefined>
+  }
+  /**
+   * The `<svg>`. `role="img"` with a name and description is what a screen
+   * reader announces; the real data path is {@link ChartParts.table}, because
+   * AT support for the WAI-ARIA graphics roles is still thin enough that a
+   * chart relying on them alone is unreadable.
+   *
+   * `tabindex="0"` makes the plot itself the keyboard target: arrows walk the
+   * rows, Home/End jump to the ends, Escape clears. There is no
+   * `aria-activedescendant` — it is not valid on `role="img"`, and the tooltip
+   * live region is what actually announces the cursor.
+   */
+  svg: {
+    'data-scope': 'chart'
+    'data-part': 'svg'
+    role: 'img'
+    'aria-labelledby': string
+    viewBox: Signal<string>
+    tabindex: 0
+    onKeyDown: (e: KeyboardEvent) => void
+    onPointerMove: (e: PointerEvent) => void
+    onPointerLeave: (e: PointerEvent) => void
+    onBlur: (e: FocusEvent) => void
+  }
+  title: { id: string; 'data-scope': 'chart'; 'data-part': 'title' }
+  desc: { id: string; 'data-scope': 'chart'; 'data-part': 'desc' }
+  /** The visually-hidden `<table>` fallback. Render it with the rows below. */
+  table: {
+    'data-scope': 'chart'
+    'data-part': 'table'
+    'aria-label': Signal<string>
+  }
+  /** Tooltip ATTRIBUTES — spreadable, with its own reactive `hidden`. */
+  tooltip: {
+    'data-scope': 'chart'
+    'data-part': 'tooltip'
+    role: 'status'
+    'aria-live': 'polite'
+    hidden: Signal<boolean>
+    style: Signal<string>
+  }
+  /** A `<g>` stacking layer. Static — spread it on each layer group. */
+  layer: { 'data-scope': 'chart'; 'data-part': 'layer' }
+  /** A value gridline. Pass `d` from the {@link ChartGridLine}. */
+  grid: { 'data-scope': 'chart'; 'data-part': 'grid' }
+  /** An axis label — value ticks and category names. */
+  axisLabel: { 'data-scope': 'chart'; 'data-part': 'axis-label' }
+  /** Attributes for one vertex dot on a line or area series. */
+  dotProps: (vertex: ChartVertex) => {
+    'data-scope': 'chart'
+    'data-part': 'dot'
+    'data-series': string
+    'data-active': '' | undefined
+    cx: number
+    cy: number
+  }
+  legendItem: (key: string) => {
+    type: 'button'
+    'data-scope': 'chart'
+    'data-part': 'legend-item'
+    'data-series': string
+    'data-dimmed': Signal<'' | undefined>
+    'aria-pressed': Signal<boolean>
+    onClick: (e: MouseEvent) => void
+  }
+  /** Attributes for one drawn mark. Spread onto a `<path>` and pass `d`. */
+  markProps: (mark: ChartMark) => {
+    'data-scope': 'chart'
+    'data-part': 'mark'
+    'data-mark': 'line' | 'area' | 'bar'
+    'data-series': string
+    'data-active': '' | undefined
+    'data-dimmed': '' | undefined
+    d: string
+    onPointerEnter: (e: PointerEvent) => void
+  }
+  // Derived geometry, as signals the view renders with `each`.
+  marks: Signal<ChartMark[]>
+  vertices: Signal<ChartVertex[]>
+  gridLines: Signal<ChartGridLine[]>
+  categoryTicks: Signal<ChartCategoryTick[]>
+  tooltipRows: Signal<ChartTooltipRow[]>
+  activeLabel: Signal<string>
+  rows: Signal<ChartRow[]>
+  series: Signal<ChartSeries[]>
+}
+```
+
+##### `ChartRow` from `@llui/components`
+
+One row of the independent axis: a category and its value per series.
+
+```typescript
+export interface ChartRow {
+  label: string
+  values: Record<string, number>
+}
+```
+
+##### `ChartSeries` from `@llui/components`
+
+```typescript
+export interface ChartSeries {
+  /** Stable key. Also the `--color-<key>` variable a skin reads. */
+  key: string
+  /** Human label, used by the legend, the tooltip and the a11y table. */
+  label: string
+  mark: MarkType
+  /** Ignored by a polar projection, which supports `linear` only. */
+  curve?: Curve
+}
+```
+
+##### `ChartState` from `@llui/components`
+
+```typescript
+export interface ChartState {
+  coord: ChartCoord
+  series: ChartSeries[]
+  rows: ChartRow[]
+  /** Accessible name for the whole chart. */
+  label: string
+  /** Longer description, announced with the name. */
+  description: string
+  width: number
+  height: number
+  padding: ChartPadding
+  /**
+   * Explicit value-axis bounds. UNBOUNDED-CAPABLE in the sense of `finiteBound`
+   * (#177): "derive it" is spelled by OMITTING the key, never by `undefined`,
+   * `null` or `±Infinity` — only the omission survives a JSON round trip
+   * unchanged.
+   */
+  min?: number
+  max?: number
+  tickCount: number
+  /** Stack series instead of overlaying them. */
+  stacked: boolean
+  /** Row index under the pointer or the keyboard cursor. */
+  activeIndex: number | null
+  /** Series key the legend has isolated, or `null` for all. */
+  activeSeries: string | null
+  /** Polar only: inner radius as a fraction of the outer (0 = pie, .5 = donut). */
+  innerRadius: number
+  /** Cartesian only: swap the axes for a horizontal bar chart. */
+  horizontal: boolean
+}
+```
+
+##### `ChartTooltipRow` from `@llui/components`
+
+```typescript
+export interface ChartTooltipRow {
+  seriesKey: string
+  label: string
+  value: number
+}
+```
+
+##### `ChartVertex` from `@llui/components`
+
+A vertex on a line or area series, for the dot layer and hit feedback.
+
+```typescript
+export interface ChartVertex {
+  seriesKey: string
+  index: number
+  x: number
+  y: number
+  active: boolean
 }
 ```
 
@@ -6835,6 +7473,17 @@ export interface DismissableOptions {
 }
 ```
 
+##### `Domain` from `@llui/components`
+
+A closed numeric interval. Both ends are finite by construction.
+
+```typescript
+export interface Domain {
+  min: number
+  max: number
+}
+```
+
 ##### `DragState` from `@llui/components`
 
 Sortable — pointer-based reorderable list.
@@ -7832,6 +8481,20 @@ export interface FormState {
   status: FormStatus
   touched: Record<string, boolean>
   submitError: string | null
+}
+```
+
+##### `Frame` from `@llui/components`
+
+The plot area in user units — the box marks are drawn inside, already
+inset by whatever padding the axes need.
+
+```typescript
+export interface Frame {
+  x: number
+  y: number
+  width: number
+  height: number
 }
 ```
 
@@ -9085,6 +9748,39 @@ export interface PinInputState {
 }
 ```
 
+##### `Point` from `@llui/components`
+
+```typescript
+export interface Point {
+  x: number
+  y: number
+}
+```
+
+##### `PolarOptions` from `@llui/components`
+
+```typescript
+export interface PolarOptions {
+  /** Inner radius as a fraction of the outer. `0` is a pie, `0.5` a donut, and
+   *  a radar usually wants `0`. */
+  innerRadius?: number
+  /** Where `u = 0` sits, in radians clockwise from 12 o'clock. */
+  startAngle?: number
+  /** Total sweep in radians. Defaults to a full turn, which is what makes the
+   *  projection `closed`. */
+  sweep?: number
+  /**
+   * Gridline shape. `ring` is a circle at the given magnitude — right for a
+   * pie or a rose. `web` joins the `spokes` sample positions with straight
+   * segments — right for a radar, where a circular grid reads as a different
+   * chart from the polygonal data on top of it.
+   */
+  grid?: 'ring' | 'web'
+  /** How many spokes a `web` gridline has. Ignored for `ring`. */
+  spokes?: number
+}
+```
+
 ##### `PopoverInit` from `@llui/components`
 
 ```typescript
@@ -9330,6 +10026,46 @@ export interface ProgressState {
 }
 ```
 
+##### `Projection` from `@llui/components`
+
+```typescript
+export interface Projection {
+  readonly kind: ChartCoord
+  /**
+   * Whether the independent axis is a CLOSED loop. `true` for a polar
+   * projection covering a full turn, which is what makes a radar outline join
+   * back to its first vertex instead of leaving a gap.
+   */
+  readonly closed: boolean
+  /**
+   * Curves this projection can honour. A caller asking for one outside the set
+   * gets `linear` — see the polar note below for why this is the honest answer
+   * rather than a silent approximation.
+   */
+  readonly curves: readonly Curve[]
+  /** Normalized (u, v) → a point in user units. */
+  point(u: number, v: number): Point
+  /** A run of samples joined along increasing `u`. */
+  line(samples: readonly Sample[], curve: Curve): string
+  /** The region between an upper run and a lower run of the same length. */
+  area(upper: readonly Sample[], lower: readonly Sample[], curve: Curve): string
+  /** A band spanning `u0..u1` and `v0..v1`: a bar, or a wedge. */
+  band(u0: number, u1: number, v0: number, v1: number): string
+  /** The iso-magnitude line at `v` — a value gridline. */
+  gridline(v: number): string
+  /** Where the independent-axis tick for `u` belongs. */
+  tick(u: number): TickPlacement
+  /** Where the DEPENDENT-axis tick for `v` belongs. */
+  valueTick(v: number): TickPlacement
+  /**
+   * Invert a point in user units back to `u`, for pointer hit testing. Returns
+   * `null` when the point carries no meaningful `u` — the exact centre of a
+   * polar chart, where every angle is equally close.
+   */
+  locate(x: number, y: number): number | null
+}
+```
+
 ##### `QrCodeInit` from `@llui/components`
 
 ```typescript
@@ -9571,6 +10307,17 @@ export interface RovingOptions {
    * `dir="rtl"`, ArrowLeft/ArrowRight swap. Optional.
    */
   element?: Element | null
+}
+```
+
+##### `Sample` from `@llui/components`
+
+A normalized sample: position along the independent axis, and magnitude.
+
+```typescript
+export interface Sample {
+  u: number
+  v: number
 }
 ```
 
@@ -10836,6 +11583,21 @@ export interface ThemeSwitchState {
 }
 ```
 
+##### `TickPlacement` from `@llui/components`
+
+Where an independent-axis tick label sits, and how to align it there.
+
+```typescript
+export interface TickPlacement {
+  x: number
+  y: number
+  /** SVG `text-anchor`. */
+  anchor: 'start' | 'middle' | 'end'
+  /** SVG `dominant-baseline`. */
+  baseline: 'auto' | 'middle' | 'hanging'
+}
+```
+
 ##### `TimePickerInit` from `@llui/components`
 
 ```typescript
@@ -11958,6 +12720,12 @@ const carousel
 const cascadeSelect
 ```
 
+##### `chart` from `@llui/components`
+
+```typescript
+const chart
+```
+
 ##### `checkbox` from `@llui/components`
 
 ```typescript
@@ -12397,6 +13165,25 @@ function allFiniteNumbers(...values: readonly unknown[]): boolean
 function anatomy<P extends string>(name: string, parts: readonly P[]): Anatomy<P>
 ```
 
+##### `annularSectorPath()` from `@llui/components/utils`
+
+An annular sector — the polar answer to a bar. `r0` is the inner radius (0
+gives a pie wedge, > 0 a donut segment); angles follow {@link polarPoint}.
+
+A sweep of a full turn or more is drawn as a complete ring, because the arc
+endpoints would otherwise coincide and SVG would draw nothing at all.
+
+```typescript
+function annularSectorPath(
+  cx: number,
+  cy: number,
+  r0: number,
+  r1: number,
+  a0: number,
+  a1: number,
+): string
+```
+
 ##### `applySelection()` from `@llui/components/utils`
 
 Apply a click/Enter on `value` to the current selection. Single mode
@@ -12412,6 +13199,21 @@ function applySelection(
 ): string[]
 ```
 
+##### `areaPath()` from `@llui/components/utils`
+
+A filled region between an upper run and a lower run. The lower run is walked
+BACKWARDS and appended, then the path is closed — one subpath, so a fill-rule
+cannot punch a hole in it the way two separate subpaths can.
+
+```typescript
+function areaPath(
+  upper: readonly Point[],
+  lower: readonly Point[],
+  curve: Curve,
+  axis: CurveAxis = 'x',
+): string
+```
+
 ##### `attachFloating()` from `@llui/components/utils`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
@@ -12419,6 +13221,37 @@ Applies `left` + `top` styles to the floating element. Returns a cleanup.
 
 ```typescript
 export declare function attachFloating(opts: FloatingOptions): () => void
+```
+
+##### `bandCenter()` from `@llui/components/utils`
+
+The centre of band `i` in normalized u.
+
+```typescript
+function bandCenter(i: number, band: Band): number
+```
+
+##### `bandExtent()` from `@llui/components/utils`
+
+The [start, end] extent of band `i` in normalized u.
+
+```typescript
+function bandExtent(i: number, band: Band): [number, number]
+```
+
+##### `cartesianProjection()` from `@llui/components/utils`
+
+```typescript
+function cartesianProjection(frame: Frame, opts: CartesianOptions = {}): Projection
+```
+
+##### `circlePath()` from `@llui/components/utils`
+
+A full circle, as two arcs — one arc of 360° is degenerate and draws
+nothing, which is the classic way a polar gridline disappears.
+
+```typescript
+function circlePath(cx: number, cy: number, r: number): string
 ```
 
 ##### `clamp()` from `@llui/components/utils`
@@ -12451,6 +13284,20 @@ It is always FINITE too — the clamp rejects a non-finite input first (#152).
 function clampToStep(value: number, grid: NumericGrid): number
 ```
 
+##### `curvePath()` from `@llui/components/utils`
+
+Join a run of points with the named curve. `closed` applies to `linear`
+only — the other two are defined on an open, x-increasing run.
+
+```typescript
+function curvePath(
+  points: readonly Point[],
+  curve: Curve,
+  closed = false,
+  axis: CurveAxis = 'x',
+): string
+```
+
 ##### `decimalPlaces()` from `@llui/components/utils`
 
 Fraction digits `n` is written with, INCLUDING exponential notation —
@@ -12458,6 +13305,14 @@ Fraction digits `n` is written with, INCLUDING exponential notation —
 
 ```typescript
 function decimalPlaces(n: number): number
+```
+
+##### `denormalize()` from `@llui/components/utils`
+
+Inverse of {@link normalize}.
+
+```typescript
+function denormalize(u: number, domain: Domain): number
 ```
 
 ##### `deriveOnce()` from `@llui/components/utils`
@@ -12593,6 +13448,15 @@ The second argument is the direction source:
 
 ```typescript
 export declare function flipArrow(key: string, source: Element | null | TextDirection): string
+```
+
+##### `fmt()` from `@llui/components/utils`
+
+Format a coordinate. A non-finite input becomes 0 — a `NaN` in a path
+silently voids the WHOLE path element, taking every later command with it.
+
+```typescript
+function fmt(n: number): string
 ```
 
 ##### `focusLingeredInside()` from `@llui/components/utils`
@@ -12748,6 +13612,14 @@ export declare function lastEnabled(
 function lastEnabledIndex(items: readonly string[], disabled: readonly string[]): number | null
 ```
 
+##### `linearPath()` from `@llui/components/utils`
+
+Straight segments through every point.
+
+```typescript
+function linearPath(points: readonly Point[], closed = false): string
+```
+
 ##### `lockBodyScroll()` from `@llui/components/utils`
 
 Lock body scroll while an overlay is open, preserving scrollbar width to
@@ -12769,6 +13641,34 @@ an allocation to answer `false` to everything.
 
 ```typescript
 function membershipSet<T>(): (values: readonly T[] | null | undefined) => ReadonlySet<T>
+```
+
+##### `monotonePath()` from `@llui/components/utils`
+
+Monotone cubic interpolation (Fritsch–Carlson). Its defining property is that
+the curve NEVER OVERSHOOTS the data: between two samples it stays within
+their values, so a series that only rises cannot dip below a point on the way.
+A plain Catmull-Rom or cardinal spline does overshoot, and on a chart that
+means drawing a number nobody measured.
+
+Defined on a function y = f(x) with strictly increasing x. It is therefore
+meaningless on a closed angular loop, which is why `polarProjection` declines
+it — see `projection.ts`.
+
+```typescript
+function monotonePath(points: readonly Point[], axis: CurveAxis = 'x'): string
+```
+
+##### `nearestBand()` from `@llui/components/utils`
+
+The band index nearest a normalized position — the hit test behind hover and
+pointer tracking. Returns `null` for an empty axis.
+
+Nearest-CENTRE, not containment: the gaps between bands belong to whichever
+band is closer, so a pointer never falls into a dead zone between two bars.
+
+```typescript
+function nearestBand(u: number, band: Band): number | null
 ```
 
 ##### `nextEnabled()` from `@llui/components/utils`
@@ -12798,10 +13698,47 @@ function nextEnabledIndex(
 ): number | null
 ```
 
+##### `niceDomain()` from `@llui/components/utils`
+
+Extend `[min, max]` outward to the nearest round tick boundaries, so the axis
+ends on a labelled value instead of mid-air. Iterates because widening the
+domain can change the chosen step, which can change the boundaries again;
+d3's `nice` does the same, and it converges in at most a few rounds.
+
+```typescript
+function niceDomain(min: number, max: number, count: number): Domain
+```
+
+##### `normalize()` from `@llui/components/utils`
+
+Map a value into [0, 1] across `domain`. A DEGENERATE domain (min === max)
+maps everything to 0.5 rather than dividing by zero — a single-valued series
+draws as a flat line through the middle, which is the only reading that is
+not a crash or a NaN in a path string.
+
+```typescript
+function normalize(value: number, domain: Domain): number
+```
+
 ##### `parseDateValue()` from `@llui/components/utils`
 
 ```typescript
 function parseDateValue(value: DateValue): ParsedDateValue
+```
+
+##### `polarPoint()` from `@llui/components/utils`
+
+A point on a circle. Angles are RADIANS CLOCKWISE FROM 12 O'CLOCK, which is
+where every reader expects a chart to start; SVG's own 0 is 3 o'clock.
+
+```typescript
+function polarPoint(cx: number, cy: number, r: number, angle: number): Point
+```
+
+##### `polarProjection()` from `@llui/components/utils`
+
+```typescript
+function polarProjection(frame: Frame, opts: PolarOptions = {}): Projection
 ```
 
 ##### `positiveFinite()` from `@llui/components/utils`
@@ -12842,6 +13779,18 @@ function presenceEndHandler<E extends AnimationEvent | TransitionEvent>(
 ): (e: E) => void
 ```
 
+##### `projectionFor()` from `@llui/components/utils`
+
+Build the projection a chart's coordinate setting names.
+
+```typescript
+function projectionFor(
+  coord: ChartCoord,
+  frame: Frame,
+  opts: CartesianOptions & PolarOptions = {},
+): Projection
+```
+
 ##### `pruneToEnabled()` from `@llui/components/utils`
 
 Keep `value` only while it still names an enabled item, else null. Every
@@ -12880,6 +13829,14 @@ trap and (optionally) restores focus to the element active before push.
 
 ```typescript
 export declare function pushFocusTrap(opts: FocusTrapOptions): () => void
+```
+
+##### `rectPath()` from `@llui/components/utils`
+
+An axis-aligned rectangle, corners in any order.
+
+```typescript
+function rectPath(x0: number, y0: number, x1: number, y1: number): string
 ```
 
 ##### `registerNestedLayer()` from `@llui/components/utils`
@@ -13103,6 +14060,36 @@ happened to start.
 function stepBy(value: number, count: number, grid: NumericGrid): number
 ```
 
+##### `stepPath()` from `@llui/components/utils`
+
+Axis-aligned staircase: hold each value until halfway along the independent
+axis, then step.
+
+```typescript
+function stepPath(points: readonly Point[], axis: CurveAxis = 'x'): string
+```
+
+##### `tickIncrement()` from `@llui/components/utils`
+
+The step size a nice axis would use to fit about `count` ticks into
+`[start, stop]`. A negative return means "one tick every 1/-step units" —
+d3's encoding, kept because the reciprocal form avoids the float drift that
+`10 ** -power` introduces for small steps.
+
+```typescript
+function tickIncrement(start: number, stop: number, count: number): number
+```
+
+##### `ticks()` from `@llui/components/utils`
+
+Round, human-readable tick values covering `[start, stop]`. Returns an EMPTY
+array for a non-finite or degenerate range rather than looping forever —
+a chart with no data is a normal state, not an error.
+
+```typescript
+function ticks(start: number, stop: number, count: number): number[]
+```
+
 ##### `typeaheadAccumulate()` from `@llui/components/utils`
 
 Advance the typeahead query based on a new keystroke and the previous
@@ -13146,6 +14133,23 @@ function typeaheadMatchByItems(
 ): number | null
 ```
 
+##### `valueDomain()` from `@llui/components/utils`
+
+The value-axis domain for a set of series.
+
+`min` / `max` are UNBOUNDED-CAPABLE bounds in the sense of `finiteBound`
+(#177): an absent one means "derive it", never `±Infinity`. A derived domain
+always INCLUDES ZERO, because a bar whose baseline is not zero misrepresents
+its own length — the one axis default worth being opinionated about. A caller
+who wants otherwise passes both bounds.
+
+```typescript
+function valueDomain(
+  values: readonly number[],
+  opts: { min?: number; max?: number; tickCount: number },
+): Domain
+```
+
 ##### `watchInteractOutside()` from `@llui/components/utils`
 
 Watch for pointer or focus events outside a given element. Returns a
@@ -13162,6 +14166,14 @@ export declare function watchInteractOutside(opts: InteractOutsideOptions): () =
 ```
 
 #### Types
+
+##### `Curve` from `@llui/components/utils`
+
+How a run of points is joined.
+
+```typescript
+export type Curve = 'linear' | 'monotone' | 'step'
+```
 
 ##### `DateValue` from `@llui/components/utils`
 
@@ -13321,6 +14333,31 @@ export interface AnatomyScope<P extends string> {
 }
 ```
 
+##### `Band` from `@llui/components/utils`
+
+A discrete axis of `count` slots laid out across [0, 1].
+
+```typescript
+export interface Band {
+  count: number
+  /** Gap between adjacent bands, as a fraction of a slot. */
+  paddingInner: number
+  /** Gap before the first and after the last band, as a fraction of a slot. */
+  paddingOuter: number
+}
+```
+
+##### `CartesianOptions` from `@llui/components/utils`
+
+```typescript
+export interface CartesianOptions {
+  /** Swap the axes: `u` runs top-to-bottom and `v` left-to-right. This is what
+   *  turns a column chart into a horizontal bar chart, and it is a PROJECTION
+   *  concern — no mark, scale or hit test changes. */
+  horizontal?: boolean
+}
+```
+
 ##### `DismissableOptions` from `@llui/components/utils`
 
 ```typescript
@@ -13343,6 +14380,17 @@ export interface DismissableOptions {
   disableOutside?: boolean
   /** Disable Escape-key dismissal (default: false). */
   disableEscape?: boolean
+}
+```
+
+##### `Domain` from `@llui/components/utils`
+
+A closed numeric interval. Both ends are finite by construction.
+
+```typescript
+export interface Domain {
+  min: number
+  max: number
 }
 ```
 
@@ -13436,6 +14484,20 @@ export interface FocusTrapOptions {
 }
 ```
 
+##### `Frame` from `@llui/components/utils`
+
+The plot area in user units — the box marks are drawn inside, already
+inset by whatever padding the axes need.
+
+```typescript
+export interface Frame {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+```
+
 ##### `InteractOutsideOptions` from `@llui/components/utils`
 
 ```typescript
@@ -13513,6 +14575,79 @@ export interface ParsedDateValue {
 }
 ```
 
+##### `Point` from `@llui/components/utils`
+
+```typescript
+export interface Point {
+  x: number
+  y: number
+}
+```
+
+##### `PolarOptions` from `@llui/components/utils`
+
+```typescript
+export interface PolarOptions {
+  /** Inner radius as a fraction of the outer. `0` is a pie, `0.5` a donut, and
+   *  a radar usually wants `0`. */
+  innerRadius?: number
+  /** Where `u = 0` sits, in radians clockwise from 12 o'clock. */
+  startAngle?: number
+  /** Total sweep in radians. Defaults to a full turn, which is what makes the
+   *  projection `closed`. */
+  sweep?: number
+  /**
+   * Gridline shape. `ring` is a circle at the given magnitude — right for a
+   * pie or a rose. `web` joins the `spokes` sample positions with straight
+   * segments — right for a radar, where a circular grid reads as a different
+   * chart from the polygonal data on top of it.
+   */
+  grid?: 'ring' | 'web'
+  /** How many spokes a `web` gridline has. Ignored for `ring`. */
+  spokes?: number
+}
+```
+
+##### `Projection` from `@llui/components/utils`
+
+```typescript
+export interface Projection {
+  readonly kind: ChartCoord
+  /**
+   * Whether the independent axis is a CLOSED loop. `true` for a polar
+   * projection covering a full turn, which is what makes a radar outline join
+   * back to its first vertex instead of leaving a gap.
+   */
+  readonly closed: boolean
+  /**
+   * Curves this projection can honour. A caller asking for one outside the set
+   * gets `linear` — see the polar note below for why this is the honest answer
+   * rather than a silent approximation.
+   */
+  readonly curves: readonly Curve[]
+  /** Normalized (u, v) → a point in user units. */
+  point(u: number, v: number): Point
+  /** A run of samples joined along increasing `u`. */
+  line(samples: readonly Sample[], curve: Curve): string
+  /** The region between an upper run and a lower run of the same length. */
+  area(upper: readonly Sample[], lower: readonly Sample[], curve: Curve): string
+  /** A band spanning `u0..u1` and `v0..v1`: a bar, or a wedge. */
+  band(u0: number, u1: number, v0: number, v1: number): string
+  /** The iso-magnitude line at `v` — a value gridline. */
+  gridline(v: number): string
+  /** Where the independent-axis tick for `u` belongs. */
+  tick(u: number): TickPlacement
+  /** Where the DEPENDENT-axis tick for `v` belongs. */
+  valueTick(v: number): TickPlacement
+  /**
+   * Invert a point in user units back to `u`, for pointer hit testing. Returns
+   * `null` when the point carries no meaningful `u` — the exact centre of a
+   * polar chart, where every angle is equally close.
+   */
+  locate(x: number, y: number): number | null
+}
+```
+
 ##### `RovingItem` from `@llui/components/utils`
 
 ```typescript
@@ -13537,6 +14672,32 @@ export interface RovingOptions {
    * `dir="rtl"`, ArrowLeft/ArrowRight swap. Optional.
    */
   element?: Element | null
+}
+```
+
+##### `Sample` from `@llui/components/utils`
+
+A normalized sample: position along the independent axis, and magnitude.
+
+```typescript
+export interface Sample {
+  u: number
+  v: number
+}
+```
+
+##### `TickPlacement` from `@llui/components/utils`
+
+Where an independent-axis tick label sits, and how to align it there.
+
+```typescript
+export interface TickPlacement {
+  x: number
+  y: number
+  /** SVG `text-anchor`. */
+  anchor: 'start' | 'middle' | 'end'
+  /** SVG `dominant-baseline`. */
+  baseline: 'auto' | 'middle' | 'hanging'
 }
 ```
 
@@ -14273,6 +15434,25 @@ function allFiniteNumbers(...values: readonly unknown[]): boolean
 function anatomy<P extends string>(name: string, parts: readonly P[]): Anatomy<P>
 ```
 
+##### `annularSectorPath()` from `@llui/components/utils/index`
+
+An annular sector — the polar answer to a bar. `r0` is the inner radius (0
+gives a pie wedge, > 0 a donut segment); angles follow {@link polarPoint}.
+
+A sweep of a full turn or more is drawn as a complete ring, because the arc
+endpoints would otherwise coincide and SVG would draw nothing at all.
+
+```typescript
+function annularSectorPath(
+  cx: number,
+  cy: number,
+  r0: number,
+  r1: number,
+  a0: number,
+  a1: number,
+): string
+```
+
 ##### `applySelection()` from `@llui/components/utils/index`
 
 Apply a click/Enter on `value` to the current selection. Single mode
@@ -14288,6 +15468,21 @@ function applySelection(
 ): string[]
 ```
 
+##### `areaPath()` from `@llui/components/utils/index`
+
+A filled region between an upper run and a lower run. The lower run is walked
+BACKWARDS and appended, then the path is closed — one subpath, so a fill-rule
+cannot punch a hole in it the way two separate subpaths can.
+
+```typescript
+function areaPath(
+  upper: readonly Point[],
+  lower: readonly Point[],
+  curve: Curve,
+  axis: CurveAxis = 'x',
+): string
+```
+
 ##### `attachFloating()` from `@llui/components/utils/index`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
@@ -14295,6 +15490,37 @@ Applies `left` + `top` styles to the floating element. Returns a cleanup.
 
 ```typescript
 export declare function attachFloating(opts: FloatingOptions): () => void
+```
+
+##### `bandCenter()` from `@llui/components/utils/index`
+
+The centre of band `i` in normalized u.
+
+```typescript
+function bandCenter(i: number, band: Band): number
+```
+
+##### `bandExtent()` from `@llui/components/utils/index`
+
+The [start, end] extent of band `i` in normalized u.
+
+```typescript
+function bandExtent(i: number, band: Band): [number, number]
+```
+
+##### `cartesianProjection()` from `@llui/components/utils/index`
+
+```typescript
+function cartesianProjection(frame: Frame, opts: CartesianOptions = {}): Projection
+```
+
+##### `circlePath()` from `@llui/components/utils/index`
+
+A full circle, as two arcs — one arc of 360° is degenerate and draws
+nothing, which is the classic way a polar gridline disappears.
+
+```typescript
+function circlePath(cx: number, cy: number, r: number): string
 ```
 
 ##### `clamp()` from `@llui/components/utils/index`
@@ -14327,6 +15553,20 @@ It is always FINITE too — the clamp rejects a non-finite input first (#152).
 function clampToStep(value: number, grid: NumericGrid): number
 ```
 
+##### `curvePath()` from `@llui/components/utils/index`
+
+Join a run of points with the named curve. `closed` applies to `linear`
+only — the other two are defined on an open, x-increasing run.
+
+```typescript
+function curvePath(
+  points: readonly Point[],
+  curve: Curve,
+  closed = false,
+  axis: CurveAxis = 'x',
+): string
+```
+
 ##### `decimalPlaces()` from `@llui/components/utils/index`
 
 Fraction digits `n` is written with, INCLUDING exponential notation —
@@ -14334,6 +15574,14 @@ Fraction digits `n` is written with, INCLUDING exponential notation —
 
 ```typescript
 function decimalPlaces(n: number): number
+```
+
+##### `denormalize()` from `@llui/components/utils/index`
+
+Inverse of {@link normalize}.
+
+```typescript
+function denormalize(u: number, domain: Domain): number
 ```
 
 ##### `deriveOnce()` from `@llui/components/utils/index`
@@ -14469,6 +15717,15 @@ The second argument is the direction source:
 
 ```typescript
 export declare function flipArrow(key: string, source: Element | null | TextDirection): string
+```
+
+##### `fmt()` from `@llui/components/utils/index`
+
+Format a coordinate. A non-finite input becomes 0 — a `NaN` in a path
+silently voids the WHOLE path element, taking every later command with it.
+
+```typescript
+function fmt(n: number): string
 ```
 
 ##### `focusLingeredInside()` from `@llui/components/utils/index`
@@ -14624,6 +15881,14 @@ export declare function lastEnabled(
 function lastEnabledIndex(items: readonly string[], disabled: readonly string[]): number | null
 ```
 
+##### `linearPath()` from `@llui/components/utils/index`
+
+Straight segments through every point.
+
+```typescript
+function linearPath(points: readonly Point[], closed = false): string
+```
+
 ##### `lockBodyScroll()` from `@llui/components/utils/index`
 
 Lock body scroll while an overlay is open, preserving scrollbar width to
@@ -14645,6 +15910,34 @@ an allocation to answer `false` to everything.
 
 ```typescript
 function membershipSet<T>(): (values: readonly T[] | null | undefined) => ReadonlySet<T>
+```
+
+##### `monotonePath()` from `@llui/components/utils/index`
+
+Monotone cubic interpolation (Fritsch–Carlson). Its defining property is that
+the curve NEVER OVERSHOOTS the data: between two samples it stays within
+their values, so a series that only rises cannot dip below a point on the way.
+A plain Catmull-Rom or cardinal spline does overshoot, and on a chart that
+means drawing a number nobody measured.
+
+Defined on a function y = f(x) with strictly increasing x. It is therefore
+meaningless on a closed angular loop, which is why `polarProjection` declines
+it — see `projection.ts`.
+
+```typescript
+function monotonePath(points: readonly Point[], axis: CurveAxis = 'x'): string
+```
+
+##### `nearestBand()` from `@llui/components/utils/index`
+
+The band index nearest a normalized position — the hit test behind hover and
+pointer tracking. Returns `null` for an empty axis.
+
+Nearest-CENTRE, not containment: the gaps between bands belong to whichever
+band is closer, so a pointer never falls into a dead zone between two bars.
+
+```typescript
+function nearestBand(u: number, band: Band): number | null
 ```
 
 ##### `nextEnabled()` from `@llui/components/utils/index`
@@ -14674,10 +15967,47 @@ function nextEnabledIndex(
 ): number | null
 ```
 
+##### `niceDomain()` from `@llui/components/utils/index`
+
+Extend `[min, max]` outward to the nearest round tick boundaries, so the axis
+ends on a labelled value instead of mid-air. Iterates because widening the
+domain can change the chosen step, which can change the boundaries again;
+d3's `nice` does the same, and it converges in at most a few rounds.
+
+```typescript
+function niceDomain(min: number, max: number, count: number): Domain
+```
+
+##### `normalize()` from `@llui/components/utils/index`
+
+Map a value into [0, 1] across `domain`. A DEGENERATE domain (min === max)
+maps everything to 0.5 rather than dividing by zero — a single-valued series
+draws as a flat line through the middle, which is the only reading that is
+not a crash or a NaN in a path string.
+
+```typescript
+function normalize(value: number, domain: Domain): number
+```
+
 ##### `parseDateValue()` from `@llui/components/utils/index`
 
 ```typescript
 function parseDateValue(value: DateValue): ParsedDateValue
+```
+
+##### `polarPoint()` from `@llui/components/utils/index`
+
+A point on a circle. Angles are RADIANS CLOCKWISE FROM 12 O'CLOCK, which is
+where every reader expects a chart to start; SVG's own 0 is 3 o'clock.
+
+```typescript
+function polarPoint(cx: number, cy: number, r: number, angle: number): Point
+```
+
+##### `polarProjection()` from `@llui/components/utils/index`
+
+```typescript
+function polarProjection(frame: Frame, opts: PolarOptions = {}): Projection
 ```
 
 ##### `positiveFinite()` from `@llui/components/utils/index`
@@ -14718,6 +16048,18 @@ function presenceEndHandler<E extends AnimationEvent | TransitionEvent>(
 ): (e: E) => void
 ```
 
+##### `projectionFor()` from `@llui/components/utils/index`
+
+Build the projection a chart's coordinate setting names.
+
+```typescript
+function projectionFor(
+  coord: ChartCoord,
+  frame: Frame,
+  opts: CartesianOptions & PolarOptions = {},
+): Projection
+```
+
 ##### `pruneToEnabled()` from `@llui/components/utils/index`
 
 Keep `value` only while it still names an enabled item, else null. Every
@@ -14756,6 +16098,14 @@ trap and (optionally) restores focus to the element active before push.
 
 ```typescript
 export declare function pushFocusTrap(opts: FocusTrapOptions): () => void
+```
+
+##### `rectPath()` from `@llui/components/utils/index`
+
+An axis-aligned rectangle, corners in any order.
+
+```typescript
+function rectPath(x0: number, y0: number, x1: number, y1: number): string
 ```
 
 ##### `registerNestedLayer()` from `@llui/components/utils/index`
@@ -14979,6 +16329,36 @@ happened to start.
 function stepBy(value: number, count: number, grid: NumericGrid): number
 ```
 
+##### `stepPath()` from `@llui/components/utils/index`
+
+Axis-aligned staircase: hold each value until halfway along the independent
+axis, then step.
+
+```typescript
+function stepPath(points: readonly Point[], axis: CurveAxis = 'x'): string
+```
+
+##### `tickIncrement()` from `@llui/components/utils/index`
+
+The step size a nice axis would use to fit about `count` ticks into
+`[start, stop]`. A negative return means "one tick every 1/-step units" —
+d3's encoding, kept because the reciprocal form avoids the float drift that
+`10 ** -power` introduces for small steps.
+
+```typescript
+function tickIncrement(start: number, stop: number, count: number): number
+```
+
+##### `ticks()` from `@llui/components/utils/index`
+
+Round, human-readable tick values covering `[start, stop]`. Returns an EMPTY
+array for a non-finite or degenerate range rather than looping forever —
+a chart with no data is a normal state, not an error.
+
+```typescript
+function ticks(start: number, stop: number, count: number): number[]
+```
+
 ##### `typeaheadAccumulate()` from `@llui/components/utils/index`
 
 Advance the typeahead query based on a new keystroke and the previous
@@ -15022,6 +16402,23 @@ function typeaheadMatchByItems(
 ): number | null
 ```
 
+##### `valueDomain()` from `@llui/components/utils/index`
+
+The value-axis domain for a set of series.
+
+`min` / `max` are UNBOUNDED-CAPABLE bounds in the sense of `finiteBound`
+(#177): an absent one means "derive it", never `±Infinity`. A derived domain
+always INCLUDES ZERO, because a bar whose baseline is not zero misrepresents
+its own length — the one axis default worth being opinionated about. A caller
+who wants otherwise passes both bounds.
+
+```typescript
+function valueDomain(
+  values: readonly number[],
+  opts: { min?: number; max?: number; tickCount: number },
+): Domain
+```
+
 ##### `watchInteractOutside()` from `@llui/components/utils/index`
 
 Watch for pointer or focus events outside a given element. Returns a
@@ -15038,6 +16435,14 @@ export declare function watchInteractOutside(opts: InteractOutsideOptions): () =
 ```
 
 #### Types
+
+##### `Curve` from `@llui/components/utils/index`
+
+How a run of points is joined.
+
+```typescript
+export type Curve = 'linear' | 'monotone' | 'step'
+```
 
 ##### `DateValue` from `@llui/components/utils/index`
 
@@ -15197,6 +16602,31 @@ export interface AnatomyScope<P extends string> {
 }
 ```
 
+##### `Band` from `@llui/components/utils/index`
+
+A discrete axis of `count` slots laid out across [0, 1].
+
+```typescript
+export interface Band {
+  count: number
+  /** Gap between adjacent bands, as a fraction of a slot. */
+  paddingInner: number
+  /** Gap before the first and after the last band, as a fraction of a slot. */
+  paddingOuter: number
+}
+```
+
+##### `CartesianOptions` from `@llui/components/utils/index`
+
+```typescript
+export interface CartesianOptions {
+  /** Swap the axes: `u` runs top-to-bottom and `v` left-to-right. This is what
+   *  turns a column chart into a horizontal bar chart, and it is a PROJECTION
+   *  concern — no mark, scale or hit test changes. */
+  horizontal?: boolean
+}
+```
+
 ##### `DismissableOptions` from `@llui/components/utils/index`
 
 ```typescript
@@ -15219,6 +16649,17 @@ export interface DismissableOptions {
   disableOutside?: boolean
   /** Disable Escape-key dismissal (default: false). */
   disableEscape?: boolean
+}
+```
+
+##### `Domain` from `@llui/components/utils/index`
+
+A closed numeric interval. Both ends are finite by construction.
+
+```typescript
+export interface Domain {
+  min: number
+  max: number
 }
 ```
 
@@ -15312,6 +16753,20 @@ export interface FocusTrapOptions {
 }
 ```
 
+##### `Frame` from `@llui/components/utils/index`
+
+The plot area in user units — the box marks are drawn inside, already
+inset by whatever padding the axes need.
+
+```typescript
+export interface Frame {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+```
+
 ##### `InteractOutsideOptions` from `@llui/components/utils/index`
 
 ```typescript
@@ -15389,6 +16844,79 @@ export interface ParsedDateValue {
 }
 ```
 
+##### `Point` from `@llui/components/utils/index`
+
+```typescript
+export interface Point {
+  x: number
+  y: number
+}
+```
+
+##### `PolarOptions` from `@llui/components/utils/index`
+
+```typescript
+export interface PolarOptions {
+  /** Inner radius as a fraction of the outer. `0` is a pie, `0.5` a donut, and
+   *  a radar usually wants `0`. */
+  innerRadius?: number
+  /** Where `u = 0` sits, in radians clockwise from 12 o'clock. */
+  startAngle?: number
+  /** Total sweep in radians. Defaults to a full turn, which is what makes the
+   *  projection `closed`. */
+  sweep?: number
+  /**
+   * Gridline shape. `ring` is a circle at the given magnitude — right for a
+   * pie or a rose. `web` joins the `spokes` sample positions with straight
+   * segments — right for a radar, where a circular grid reads as a different
+   * chart from the polygonal data on top of it.
+   */
+  grid?: 'ring' | 'web'
+  /** How many spokes a `web` gridline has. Ignored for `ring`. */
+  spokes?: number
+}
+```
+
+##### `Projection` from `@llui/components/utils/index`
+
+```typescript
+export interface Projection {
+  readonly kind: ChartCoord
+  /**
+   * Whether the independent axis is a CLOSED loop. `true` for a polar
+   * projection covering a full turn, which is what makes a radar outline join
+   * back to its first vertex instead of leaving a gap.
+   */
+  readonly closed: boolean
+  /**
+   * Curves this projection can honour. A caller asking for one outside the set
+   * gets `linear` — see the polar note below for why this is the honest answer
+   * rather than a silent approximation.
+   */
+  readonly curves: readonly Curve[]
+  /** Normalized (u, v) → a point in user units. */
+  point(u: number, v: number): Point
+  /** A run of samples joined along increasing `u`. */
+  line(samples: readonly Sample[], curve: Curve): string
+  /** The region between an upper run and a lower run of the same length. */
+  area(upper: readonly Sample[], lower: readonly Sample[], curve: Curve): string
+  /** A band spanning `u0..u1` and `v0..v1`: a bar, or a wedge. */
+  band(u0: number, u1: number, v0: number, v1: number): string
+  /** The iso-magnitude line at `v` — a value gridline. */
+  gridline(v: number): string
+  /** Where the independent-axis tick for `u` belongs. */
+  tick(u: number): TickPlacement
+  /** Where the DEPENDENT-axis tick for `v` belongs. */
+  valueTick(v: number): TickPlacement
+  /**
+   * Invert a point in user units back to `u`, for pointer hit testing. Returns
+   * `null` when the point carries no meaningful `u` — the exact centre of a
+   * polar chart, where every angle is equally close.
+   */
+  locate(x: number, y: number): number | null
+}
+```
+
 ##### `RovingItem` from `@llui/components/utils/index`
 
 ```typescript
@@ -15413,6 +16941,32 @@ export interface RovingOptions {
    * `dir="rtl"`, ArrowLeft/ArrowRight swap. Optional.
    */
   element?: Element | null
+}
+```
+
+##### `Sample` from `@llui/components/utils/index`
+
+A normalized sample: position along the independent axis, and magnitude.
+
+```typescript
+export interface Sample {
+  u: number
+  v: number
+}
+```
+
+##### `TickPlacement` from `@llui/components/utils/index`
+
+Where an independent-axis tick label sits, and how to align it there.
+
+```typescript
+export interface TickPlacement {
+  x: number
+  y: number
+  /** SVG `text-anchor`. */
+  anchor: 'start' | 'middle' | 'end'
+  /** SVG `dominant-baseline`. */
+  baseline: 'auto' | 'middle' | 'hanging'
 }
 ```
 
@@ -16245,6 +17799,164 @@ export interface OverlayRelationships {
 }
 ```
 
+### `@llui/components/utils/path`
+
+#### Functions
+
+##### `annularSectorPath()` from `@llui/components/utils/path`
+
+An annular sector — the polar answer to a bar. `r0` is the inner radius (0
+gives a pie wedge, > 0 a donut segment); angles follow {@link polarPoint}.
+
+A sweep of a full turn or more is drawn as a complete ring, because the arc
+endpoints would otherwise coincide and SVG would draw nothing at all.
+
+```typescript
+function annularSectorPath(
+  cx: number,
+  cy: number,
+  r0: number,
+  r1: number,
+  a0: number,
+  a1: number,
+): string
+```
+
+##### `areaPath()` from `@llui/components/utils/path`
+
+A filled region between an upper run and a lower run. The lower run is walked
+BACKWARDS and appended, then the path is closed — one subpath, so a fill-rule
+cannot punch a hole in it the way two separate subpaths can.
+
+```typescript
+function areaPath(
+  upper: readonly Point[],
+  lower: readonly Point[],
+  curve: Curve,
+  axis: CurveAxis = 'x',
+): string
+```
+
+##### `circlePath()` from `@llui/components/utils/path`
+
+A full circle, as two arcs — one arc of 360° is degenerate and draws
+nothing, which is the classic way a polar gridline disappears.
+
+```typescript
+function circlePath(cx: number, cy: number, r: number): string
+```
+
+##### `curvePath()` from `@llui/components/utils/path`
+
+Join a run of points with the named curve. `closed` applies to `linear`
+only — the other two are defined on an open, x-increasing run.
+
+```typescript
+function curvePath(
+  points: readonly Point[],
+  curve: Curve,
+  closed = false,
+  axis: CurveAxis = 'x',
+): string
+```
+
+##### `fmt()` from `@llui/components/utils/path`
+
+Format a coordinate. A non-finite input becomes 0 — a `NaN` in a path
+silently voids the WHOLE path element, taking every later command with it.
+
+```typescript
+function fmt(n: number): string
+```
+
+##### `linearPath()` from `@llui/components/utils/path`
+
+Straight segments through every point.
+
+```typescript
+function linearPath(points: readonly Point[], closed = false): string
+```
+
+##### `monotonePath()` from `@llui/components/utils/path`
+
+Monotone cubic interpolation (Fritsch–Carlson). Its defining property is that
+the curve NEVER OVERSHOOTS the data: between two samples it stays within
+their values, so a series that only rises cannot dip below a point on the way.
+A plain Catmull-Rom or cardinal spline does overshoot, and on a chart that
+means drawing a number nobody measured.
+
+Defined on a function y = f(x) with strictly increasing x. It is therefore
+meaningless on a closed angular loop, which is why `polarProjection` declines
+it — see `projection.ts`.
+
+```typescript
+function monotonePath(points: readonly Point[], axis: CurveAxis = 'x'): string
+```
+
+##### `polarPoint()` from `@llui/components/utils/path`
+
+A point on a circle. Angles are RADIANS CLOCKWISE FROM 12 O'CLOCK, which is
+where every reader expects a chart to start; SVG's own 0 is 3 o'clock.
+
+```typescript
+function polarPoint(cx: number, cy: number, r: number, angle: number): Point
+```
+
+##### `rectPath()` from `@llui/components/utils/path`
+
+An axis-aligned rectangle, corners in any order.
+
+```typescript
+function rectPath(x0: number, y0: number, x1: number, y1: number): string
+```
+
+##### `stepPath()` from `@llui/components/utils/path`
+
+Axis-aligned staircase: hold each value until halfway along the independent
+axis, then step.
+
+```typescript
+function stepPath(points: readonly Point[], axis: CurveAxis = 'x'): string
+```
+
+#### Types
+
+##### `Curve` from `@llui/components/utils/path`
+
+How a run of points is joined.
+
+```typescript
+export type Curve = 'linear' | 'monotone' | 'step'
+```
+
+##### `CurveAxis` from `@llui/components/utils/path`
+
+Which coordinate a curve is a FUNCTION OF. `monotone` and `step` are both
+defined on `w = f(t)` with increasing `t`; this names which of x/y plays `t`.
+
+It is not a formatting detail. A horizontal bar/line chart puts the
+independent axis on y, and running the curve along x regardless offsets every
+control point along the wrong axis: measured, a four-point series emitted
+`M150,0C190,25 230,75 270,75`, where the second control already sits at the
+segment's end instead of two thirds along it. The endpoints stay correct in
+both orientations, which is why it reads as a smoothing artefact rather than
+a bug — and why asserting the path advances monotonically catches nothing.
+
+```typescript
+export type CurveAxis = 'x' | 'y'
+```
+
+#### Interfaces
+
+##### `Point` from `@llui/components/utils/path`
+
+```typescript
+export interface Point {
+  x: number
+  y: number
+}
+```
+
 ### `@llui/components/utils/portal-target`
 
 #### Functions
@@ -16323,6 +18035,148 @@ The pair of end handlers a presence-bearing part spreads.
 export interface PresenceEndProps {
   onAnimationEnd: (e: AnimationEvent) => void
   onTransitionEnd: (e: TransitionEvent) => void
+}
+```
+
+### `@llui/components/utils/projection`
+
+#### Functions
+
+##### `cartesianProjection()` from `@llui/components/utils/projection`
+
+```typescript
+function cartesianProjection(frame: Frame, opts: CartesianOptions = {}): Projection
+```
+
+##### `polarProjection()` from `@llui/components/utils/projection`
+
+```typescript
+function polarProjection(frame: Frame, opts: PolarOptions = {}): Projection
+```
+
+##### `projectionFor()` from `@llui/components/utils/projection`
+
+Build the projection a chart's coordinate setting names.
+
+```typescript
+function projectionFor(
+  coord: ChartCoord,
+  frame: Frame,
+  opts: CartesianOptions & PolarOptions = {},
+): Projection
+```
+
+#### Types
+
+##### `ChartCoord` from `@llui/components/utils/projection`
+
+```typescript
+export type ChartCoord = 'cartesian' | 'polar'
+```
+
+#### Interfaces
+
+##### `CartesianOptions` from `@llui/components/utils/projection`
+
+```typescript
+export interface CartesianOptions {
+  /** Swap the axes: `u` runs top-to-bottom and `v` left-to-right. This is what
+   *  turns a column chart into a horizontal bar chart, and it is a PROJECTION
+   *  concern — no mark, scale or hit test changes. */
+  horizontal?: boolean
+}
+```
+
+##### `Frame` from `@llui/components/utils/projection`
+
+The plot area in user units — the box marks are drawn inside, already
+inset by whatever padding the axes need.
+
+```typescript
+export interface Frame {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+```
+
+##### `PolarOptions` from `@llui/components/utils/projection`
+
+```typescript
+export interface PolarOptions {
+  /** Inner radius as a fraction of the outer. `0` is a pie, `0.5` a donut, and
+   *  a radar usually wants `0`. */
+  innerRadius?: number
+  /** Where `u = 0` sits, in radians clockwise from 12 o'clock. */
+  startAngle?: number
+  /** Total sweep in radians. Defaults to a full turn, which is what makes the
+   *  projection `closed`. */
+  sweep?: number
+  /**
+   * Gridline shape. `ring` is a circle at the given magnitude — right for a
+   * pie or a rose. `web` joins the `spokes` sample positions with straight
+   * segments — right for a radar, where a circular grid reads as a different
+   * chart from the polygonal data on top of it.
+   */
+  grid?: 'ring' | 'web'
+  /** How many spokes a `web` gridline has. Ignored for `ring`. */
+  spokes?: number
+}
+```
+
+##### `Projection` from `@llui/components/utils/projection`
+
+```typescript
+export interface Projection {
+  readonly kind: ChartCoord
+  /**
+   * Whether the independent axis is a CLOSED loop. `true` for a polar
+   * projection covering a full turn, which is what makes a radar outline join
+   * back to its first vertex instead of leaving a gap.
+   */
+  readonly closed: boolean
+  /**
+   * Curves this projection can honour. A caller asking for one outside the set
+   * gets `linear` — see the polar note below for why this is the honest answer
+   * rather than a silent approximation.
+   */
+  readonly curves: readonly Curve[]
+  /** Normalized (u, v) → a point in user units. */
+  point(u: number, v: number): Point
+  /** A run of samples joined along increasing `u`. */
+  line(samples: readonly Sample[], curve: Curve): string
+  /** The region between an upper run and a lower run of the same length. */
+  area(upper: readonly Sample[], lower: readonly Sample[], curve: Curve): string
+  /** A band spanning `u0..u1` and `v0..v1`: a bar, or a wedge. */
+  band(u0: number, u1: number, v0: number, v1: number): string
+  /** The iso-magnitude line at `v` — a value gridline. */
+  gridline(v: number): string
+  /** Where the independent-axis tick for `u` belongs. */
+  tick(u: number): TickPlacement
+  /** Where the DEPENDENT-axis tick for `v` belongs. */
+  valueTick(v: number): TickPlacement
+  /**
+   * Invert a point in user units back to `u`, for pointer hit testing. Returns
+   * `null` when the point carries no meaningful `u` — the exact centre of a
+   * polar chart, where every angle is equally close.
+   */
+  locate(x: number, y: number): number | null
+}
+```
+
+##### `TickPlacement` from `@llui/components/utils/projection`
+
+Where an independent-axis tick label sits, and how to align it there.
+
+```typescript
+export interface TickPlacement {
+  x: number
+  y: number
+  /** SVG `text-anchor`. */
+  anchor: 'start' | 'middle' | 'end'
+  /** SVG `dominant-baseline`. */
+  baseline: 'auto' | 'middle' | 'hanging'
 }
 ```
 
@@ -16533,6 +18387,144 @@ export interface RovingOptions {
    * `dir="rtl"`, ArrowLeft/ArrowRight swap. Optional.
    */
   element?: Element | null
+}
+```
+
+### `@llui/components/utils/scale`
+
+#### Functions
+
+##### `bandCenter()` from `@llui/components/utils/scale`
+
+The centre of band `i` in normalized u.
+
+```typescript
+function bandCenter(i: number, band: Band): number
+```
+
+##### `bandExtent()` from `@llui/components/utils/scale`
+
+The [start, end] extent of band `i` in normalized u.
+
+```typescript
+function bandExtent(i: number, band: Band): [number, number]
+```
+
+##### `denormalize()` from `@llui/components/utils/scale`
+
+Inverse of {@link normalize}.
+
+```typescript
+function denormalize(u: number, domain: Domain): number
+```
+
+##### `nearestBand()` from `@llui/components/utils/scale`
+
+The band index nearest a normalized position — the hit test behind hover and
+pointer tracking. Returns `null` for an empty axis.
+
+Nearest-CENTRE, not containment: the gaps between bands belong to whichever
+band is closer, so a pointer never falls into a dead zone between two bars.
+
+```typescript
+function nearestBand(u: number, band: Band): number | null
+```
+
+##### `niceDomain()` from `@llui/components/utils/scale`
+
+Extend `[min, max]` outward to the nearest round tick boundaries, so the axis
+ends on a labelled value instead of mid-air. Iterates because widening the
+domain can change the chosen step, which can change the boundaries again;
+d3's `nice` does the same, and it converges in at most a few rounds.
+
+```typescript
+function niceDomain(min: number, max: number, count: number): Domain
+```
+
+##### `normalize()` from `@llui/components/utils/scale`
+
+Map a value into [0, 1] across `domain`. A DEGENERATE domain (min === max)
+maps everything to 0.5 rather than dividing by zero — a single-valued series
+draws as a flat line through the middle, which is the only reading that is
+not a crash or a NaN in a path string.
+
+```typescript
+function normalize(value: number, domain: Domain): number
+```
+
+##### `tickIncrement()` from `@llui/components/utils/scale`
+
+The step size a nice axis would use to fit about `count` ticks into
+`[start, stop]`. A negative return means "one tick every 1/-step units" —
+d3's encoding, kept because the reciprocal form avoids the float drift that
+`10 ** -power` introduces for small steps.
+
+```typescript
+function tickIncrement(start: number, stop: number, count: number): number
+```
+
+##### `ticks()` from `@llui/components/utils/scale`
+
+Round, human-readable tick values covering `[start, stop]`. Returns an EMPTY
+array for a non-finite or degenerate range rather than looping forever —
+a chart with no data is a normal state, not an error.
+
+```typescript
+function ticks(start: number, stop: number, count: number): number[]
+```
+
+##### `valueDomain()` from `@llui/components/utils/scale`
+
+The value-axis domain for a set of series.
+
+`min` / `max` are UNBOUNDED-CAPABLE bounds in the sense of `finiteBound`
+(#177): an absent one means "derive it", never `±Infinity`. A derived domain
+always INCLUDES ZERO, because a bar whose baseline is not zero misrepresents
+its own length — the one axis default worth being opinionated about. A caller
+who wants otherwise passes both bounds.
+
+```typescript
+function valueDomain(
+  values: readonly number[],
+  opts: { min?: number; max?: number; tickCount: number },
+): Domain
+```
+
+#### Interfaces
+
+##### `Band` from `@llui/components/utils/scale`
+
+A discrete axis of `count` slots laid out across [0, 1].
+
+```typescript
+export interface Band {
+  count: number
+  /** Gap between adjacent bands, as a fraction of a slot. */
+  paddingInner: number
+  /** Gap before the first and after the last band, as a fraction of a slot. */
+  paddingOuter: number
+}
+```
+
+##### `Domain` from `@llui/components/utils/scale`
+
+A closed numeric interval. Both ends are finite by construction.
+
+```typescript
+export interface Domain {
+  min: number
+  max: number
+}
+```
+
+##### `Sample` from `@llui/components/utils/scale`
+
+A normalized sample: position along the independent axis, and magnitude.
+
+```typescript
+export interface Sample {
+  u: number
+  v: number
 }
 ```
 
@@ -31052,20 +33044,37 @@ export interface FormFieldFieldParts {
     'data-scope': 'form-field'
     'data-part': 'description'
   }
+  /**
+   * The error live region's ATTRIBUTES — spreadable as-is, like every other
+   * `errorText` bag in the package (`field`, `fieldset`, `async-list`,
+   * `date-input`). It carries its own reactive `hidden`, so the element stays
+   * MOUNTED and `role="alert"` announces when it is revealed; unmounting it
+   * with `show(...)` would register no live region and announce nothing.
+   *
+   * The message and the issues are DATA, not attributes, and live on
+   * {@link FormFieldFieldParts.error}. They used to sit in this bag, which made
+   * it the one part bag in the package a consumer could not spread — spreading
+   * it bound `message` and `issues` as junk DOM attributes, so every call site
+   * had to destructure them back out first.
+   */
   errorText: {
     id: string
     role: 'alert'
     'aria-live': 'polite'
     'data-scope': 'form-field'
     'data-part': 'error'
+    hidden: Signal<boolean>
+  }
+  /** The error CONTENT, for rendering — never spread onto an element. */
+  error: {
     /** First visible issue message for this field, or '' when no error is shown. */
     message: Signal<string>
     /** Every issue mapped to this field (for custom rendering). */
     issues: Signal<StandardSchemaV1.Issue[]>
+    /** True only when the field is invalid AND its error should be visible
+     * (`touched || status === 'submitted'`). */
+    visible: Signal<boolean>
   }
-  /** True only when the field is invalid AND its error should be visible
-   * (`touched || status === 'submitted'`). Use to gate `show(...)`. */
-  errorVisible: Signal<boolean>
 }
 ```
 
@@ -31789,20 +33798,37 @@ export interface FormFieldFieldParts {
     'data-scope': 'form-field'
     'data-part': 'description'
   }
+  /**
+   * The error live region's ATTRIBUTES — spreadable as-is, like every other
+   * `errorText` bag in the package (`field`, `fieldset`, `async-list`,
+   * `date-input`). It carries its own reactive `hidden`, so the element stays
+   * MOUNTED and `role="alert"` announces when it is revealed; unmounting it
+   * with `show(...)` would register no live region and announce nothing.
+   *
+   * The message and the issues are DATA, not attributes, and live on
+   * {@link FormFieldFieldParts.error}. They used to sit in this bag, which made
+   * it the one part bag in the package a consumer could not spread — spreading
+   * it bound `message` and `issues` as junk DOM attributes, so every call site
+   * had to destructure them back out first.
+   */
   errorText: {
     id: string
     role: 'alert'
     'aria-live': 'polite'
     'data-scope': 'form-field'
     'data-part': 'error'
+    hidden: Signal<boolean>
+  }
+  /** The error CONTENT, for rendering — never spread onto an element. */
+  error: {
     /** First visible issue message for this field, or '' when no error is shown. */
     message: Signal<string>
     /** Every issue mapped to this field (for custom rendering). */
     issues: Signal<StandardSchemaV1.Issue[]>
+    /** True only when the field is invalid AND its error should be visible
+     * (`touched || status === 'submitted'`). */
+    visible: Signal<boolean>
   }
-  /** True only when the field is invalid AND its error should be visible
-   * (`touched || status === 'submitted'`). Use to gate `show(...)`. */
-  errorVisible: Signal<boolean>
 }
 ```
 
@@ -32923,6 +34949,387 @@ export interface VariantConfig<V extends VariantRecord> {
   defaultVariants?: { [K in keyof V]?: keyof V[K] }
   compoundVariants?: Array<{ [K in keyof V]?: keyof V[K] } & { class: string }>
 }
+```
+
+### `@llui/components/chart`
+
+#### Functions
+
+##### `connect()` from `@llui/components/chart`
+
+```typescript
+function connect(
+  state: Signal<ChartState>,
+  send: Send<ChartMsg>,
+  opts: ChartConnectOptions,
+): ChartParts
+```
+
+##### `geometry()` from `@llui/components/chart`
+
+The derived geometry for a state. Exported so a consumer can measure or test
+a chart without mounting one.
+
+```typescript
+function geometry(state: ChartState): ChartGeometry
+```
+
+##### `init()` from `@llui/components/chart`
+
+```typescript
+function init(opts: ChartInit): ChartState
+```
+
+##### `update()` from `@llui/components/chart`
+
+```typescript
+function update(state: ChartState, msg: ChartMsg): [ChartState, never[]]
+```
+
+#### Types
+
+##### `ChartCoord` from `@llui/components/chart`
+
+```typescript
+export type ChartCoord = 'cartesian' | 'polar'
+```
+
+##### `ChartMsg` from `@llui/components/chart`
+
+```typescript
+export type ChartMsg =
+  /** @intent("Switch between cartesian and polar projection") */
+  | { type: 'setCoord'; coord: ChartCoord }
+  /** @intent("Set the row under the cursor, or clear it with null") */
+  | { type: 'setActive'; index: number | null }
+  /** @intent("Move the keyboard cursor along the rows by delta, wrapping") */
+  | { type: 'moveActive'; delta: number }
+  /** @intent("Move the keyboard cursor to the first row") */
+  | { type: 'firstActive' }
+  /** @intent("Move the keyboard cursor to the last row") */
+  | { type: 'lastActive' }
+  /** @intent("Isolate one series, or show them all again with null") */
+  | { type: 'setActiveSeries'; key: string | null }
+  /** @intent("Replace the plotted rows") */
+  | { type: 'setRows'; rows: ChartRow[] }
+  /** @intent("Pin the low end of the value axis, or derive it again with null") */
+  | { type: 'setMin'; value: number | null }
+  /** @intent("Pin the high end of the value axis, or derive it again with null") */
+  | { type: 'setMax'; value: number | null }
+  /** @intent("Stack the series instead of overlaying them") */
+  | { type: 'setStacked'; stacked: boolean }
+  /** @intent("Set the viewBox size in user units") */
+  | { type: 'setSize'; width: number; height: number }
+  /** @intent("Set the polar inner radius as a fraction of the outer") */
+  | { type: 'setInnerRadius'; value: number }
+  /** @intent("Swap the cartesian axes for a horizontal bar chart") */
+  | { type: 'setHorizontal'; horizontal: boolean }
+```
+
+##### `MarkType` from `@llui/components/chart`
+
+```typescript
+export type MarkType = 'line' | 'area' | 'bar'
+```
+
+#### Interfaces
+
+##### `ChartCategoryTick` from `@llui/components/chart`
+
+```typescript
+export interface ChartCategoryTick {
+  index: number
+  label: string
+  x: number
+  y: number
+  anchor: 'start' | 'middle' | 'end'
+  baseline: 'auto' | 'middle' | 'hanging'
+  active: boolean
+}
+```
+
+##### `ChartConnectOptions` from `@llui/components/chart`
+
+```typescript
+export interface ChartConnectOptions {
+  /** Base id; the title and description ids derive from it. */
+  id: string
+}
+```
+
+##### `ChartGeometry` from `@llui/components/chart`
+
+```typescript
+export interface ChartGeometry {
+  frame: Frame
+  domain: Domain
+  band: Band
+  projection: Projection
+  marks: ChartMark[]
+  vertices: ChartVertex[]
+  gridLines: ChartGridLine[]
+  categoryTicks: ChartCategoryTick[]
+  /** Anchor for the tooltip, in user units. `null` when nothing is active. */
+  tooltipAt: { x: number; y: number } | null
+  tooltipRows: ChartTooltipRow[]
+}
+```
+
+##### `ChartGridLine` from `@llui/components/chart`
+
+```typescript
+export interface ChartGridLine {
+  value: number
+  label: string
+  d: string
+  x: number
+  y: number
+  anchor: 'start' | 'middle' | 'end'
+  baseline: 'auto' | 'middle' | 'hanging'
+}
+```
+
+##### `ChartInit` from `@llui/components/chart`
+
+```typescript
+export interface ChartInit {
+  series: readonly ChartSeries[]
+  rows?: readonly ChartRow[]
+  coord?: ChartCoord
+  label?: string
+  description?: string
+  width?: number
+  height?: number
+  padding?: Partial<ChartPadding>
+  min?: number
+  max?: number
+  tickCount?: number
+  stacked?: boolean
+  innerRadius?: number
+  horizontal?: boolean
+}
+```
+
+##### `ChartMark` from `@llui/components/chart`
+
+A drawn mark: one series, one path.
+
+```typescript
+export interface ChartMark {
+  seriesKey: string
+  label: string
+  mark: MarkType
+  /** The SVG path `d`. */
+  d: string
+  /** Row index, for a `bar`/wedge — `null` for a whole-series line or area. */
+  index: number | null
+  active: boolean
+  dimmed: boolean
+}
+```
+
+##### `ChartPadding` from `@llui/components/chart`
+
+```typescript
+export interface ChartPadding {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+```
+
+##### `ChartParts` from `@llui/components/chart`
+
+```typescript
+export interface ChartParts {
+  root: {
+    'data-scope': 'chart'
+    'data-part': 'root'
+    // Spelled out rather than aliased: `scripts/test/registry-attrs.test.ts`
+    // reads part-bag VALUES syntactically, and an imported alias reads as an
+    // open type it declines to give a verdict on.
+    'data-coord': Signal<'cartesian' | 'polar'>
+    'data-active': Signal<'' | undefined>
+  }
+  /**
+   * The `<svg>`. `role="img"` with a name and description is what a screen
+   * reader announces; the real data path is {@link ChartParts.table}, because
+   * AT support for the WAI-ARIA graphics roles is still thin enough that a
+   * chart relying on them alone is unreadable.
+   *
+   * `tabindex="0"` makes the plot itself the keyboard target: arrows walk the
+   * rows, Home/End jump to the ends, Escape clears. There is no
+   * `aria-activedescendant` — it is not valid on `role="img"`, and the tooltip
+   * live region is what actually announces the cursor.
+   */
+  svg: {
+    'data-scope': 'chart'
+    'data-part': 'svg'
+    role: 'img'
+    'aria-labelledby': string
+    viewBox: Signal<string>
+    tabindex: 0
+    onKeyDown: (e: KeyboardEvent) => void
+    onPointerMove: (e: PointerEvent) => void
+    onPointerLeave: (e: PointerEvent) => void
+    onBlur: (e: FocusEvent) => void
+  }
+  title: { id: string; 'data-scope': 'chart'; 'data-part': 'title' }
+  desc: { id: string; 'data-scope': 'chart'; 'data-part': 'desc' }
+  /** The visually-hidden `<table>` fallback. Render it with the rows below. */
+  table: {
+    'data-scope': 'chart'
+    'data-part': 'table'
+    'aria-label': Signal<string>
+  }
+  /** Tooltip ATTRIBUTES — spreadable, with its own reactive `hidden`. */
+  tooltip: {
+    'data-scope': 'chart'
+    'data-part': 'tooltip'
+    role: 'status'
+    'aria-live': 'polite'
+    hidden: Signal<boolean>
+    style: Signal<string>
+  }
+  /** A `<g>` stacking layer. Static — spread it on each layer group. */
+  layer: { 'data-scope': 'chart'; 'data-part': 'layer' }
+  /** A value gridline. Pass `d` from the {@link ChartGridLine}. */
+  grid: { 'data-scope': 'chart'; 'data-part': 'grid' }
+  /** An axis label — value ticks and category names. */
+  axisLabel: { 'data-scope': 'chart'; 'data-part': 'axis-label' }
+  /** Attributes for one vertex dot on a line or area series. */
+  dotProps: (vertex: ChartVertex) => {
+    'data-scope': 'chart'
+    'data-part': 'dot'
+    'data-series': string
+    'data-active': '' | undefined
+    cx: number
+    cy: number
+  }
+  legendItem: (key: string) => {
+    type: 'button'
+    'data-scope': 'chart'
+    'data-part': 'legend-item'
+    'data-series': string
+    'data-dimmed': Signal<'' | undefined>
+    'aria-pressed': Signal<boolean>
+    onClick: (e: MouseEvent) => void
+  }
+  /** Attributes for one drawn mark. Spread onto a `<path>` and pass `d`. */
+  markProps: (mark: ChartMark) => {
+    'data-scope': 'chart'
+    'data-part': 'mark'
+    'data-mark': 'line' | 'area' | 'bar'
+    'data-series': string
+    'data-active': '' | undefined
+    'data-dimmed': '' | undefined
+    d: string
+    onPointerEnter: (e: PointerEvent) => void
+  }
+  // Derived geometry, as signals the view renders with `each`.
+  marks: Signal<ChartMark[]>
+  vertices: Signal<ChartVertex[]>
+  gridLines: Signal<ChartGridLine[]>
+  categoryTicks: Signal<ChartCategoryTick[]>
+  tooltipRows: Signal<ChartTooltipRow[]>
+  activeLabel: Signal<string>
+  rows: Signal<ChartRow[]>
+  series: Signal<ChartSeries[]>
+}
+```
+
+##### `ChartRow` from `@llui/components/chart`
+
+One row of the independent axis: a category and its value per series.
+
+```typescript
+export interface ChartRow {
+  label: string
+  values: Record<string, number>
+}
+```
+
+##### `ChartSeries` from `@llui/components/chart`
+
+```typescript
+export interface ChartSeries {
+  /** Stable key. Also the `--color-<key>` variable a skin reads. */
+  key: string
+  /** Human label, used by the legend, the tooltip and the a11y table. */
+  label: string
+  mark: MarkType
+  /** Ignored by a polar projection, which supports `linear` only. */
+  curve?: Curve
+}
+```
+
+##### `ChartState` from `@llui/components/chart`
+
+```typescript
+export interface ChartState {
+  coord: ChartCoord
+  series: ChartSeries[]
+  rows: ChartRow[]
+  /** Accessible name for the whole chart. */
+  label: string
+  /** Longer description, announced with the name. */
+  description: string
+  width: number
+  height: number
+  padding: ChartPadding
+  /**
+   * Explicit value-axis bounds. UNBOUNDED-CAPABLE in the sense of `finiteBound`
+   * (#177): "derive it" is spelled by OMITTING the key, never by `undefined`,
+   * `null` or `±Infinity` — only the omission survives a JSON round trip
+   * unchanged.
+   */
+  min?: number
+  max?: number
+  tickCount: number
+  /** Stack series instead of overlaying them. */
+  stacked: boolean
+  /** Row index under the pointer or the keyboard cursor. */
+  activeIndex: number | null
+  /** Series key the legend has isolated, or `null` for all. */
+  activeSeries: string | null
+  /** Polar only: inner radius as a fraction of the outer (0 = pie, .5 = donut). */
+  innerRadius: number
+  /** Cartesian only: swap the axes for a horizontal bar chart. */
+  horizontal: boolean
+}
+```
+
+##### `ChartTooltipRow` from `@llui/components/chart`
+
+```typescript
+export interface ChartTooltipRow {
+  seriesKey: string
+  label: string
+  value: number
+}
+```
+
+##### `ChartVertex` from `@llui/components/chart`
+
+A vertex on a line or area series, for the dot layer and hit feedback.
+
+```typescript
+export interface ChartVertex {
+  seriesKey: string
+  index: number
+  x: number
+  y: number
+  active: boolean
+}
+```
+
+#### Constants
+
+##### `chart` from `@llui/components/chart`
+
+```typescript
+const chart
 ```
 
 <!-- auto-api:end -->

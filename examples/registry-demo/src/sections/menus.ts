@@ -33,7 +33,6 @@ import {
   CommandGroup,
   CommandGroupLabel,
   CommandInput,
-  CommandInputWrapper,
   CommandItem,
   CommandList,
   CommandShortcut,
@@ -391,9 +390,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       "shadcn wraps `cmdk`; this is `@llui/components/patterns/command-menu`, which filters, ranks recents to the top and emits `execute` as DATA — running it is the consumer's job. Shown inline rather than in its ⌘K dialog.",
       [
         Command({ class: 'rounded-md border' }, [
-          CommandInputWrapper([
-            CommandInput({ ...pal.combobox.input, placeholder: 'Type a command…' }),
-          ]),
+          CommandInput({ ...pal.combobox.input, placeholder: 'Type a command…' }),
           CommandList({ ...pal.combobox.content }, [
             each(state.at('palette').at('filteredGroups'), {
               key: (g: commandMenuC.CommandGroup) => g.label,

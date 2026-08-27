@@ -1,5 +1,5 @@
-import { div, input, span, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { classPart, mergeClass, splitArgs } from '@/lib/utils'
+import { div, input, span, type ElProps, type Mountable } from '@llui/dom'
+import { classPart, mergeClass } from '@/lib/utils'
 import { SearchIcon } from '@/ui/icons'
 
 /**
@@ -24,23 +24,28 @@ export const Command = classPart(
   'flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground',
 )
 const commandInputWrapperRecipe = 'flex h-9 items-center gap-2 border-b px-3'
+const commandInputRecipe =
+  'flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50'
 
-/** Renders its own search glyph, as shadcn's does. */
-export function CommandInputWrapper(
-  a0?: ElProps | readonly ChildNode[],
-  a1?: readonly ChildNode[],
-): Mountable {
-  const { props, children } = splitArgs(a0, a1)
+/**
+ * The filter field: the bordered row, its search glyph, and the `<input>` — ONE
+ * component, as shadcn's is. Spread the machine's `input` bag; `class` lands on
+ * the `<input>`, matching upstream's `className`.
+ *
+ * These used to be two exports (`CommandInputWrapper` + a bare `CommandInput`),
+ * which diverged from upstream and made the wrapper something a caller had to
+ * remember. Predictably, one of two call sites forgot: the searchable-select
+ * demo rendered a filter field with no border, no padding and no glyph, flush
+ * against the top-left of the popover. Upstream cannot be got wrong this way
+ * because upstream has nothing to forget, so this now has nothing either.
+ */
+export function CommandInput(props: ElProps = {}): Mountable {
   const { class: className, ...rest } = props
-  return div({ ...rest, class: mergeClass(commandInputWrapperRecipe, className) }, [
+  return div({ class: commandInputWrapperRecipe }, [
     SearchIcon({ class: 'size-4 shrink-0 opacity-50' }),
-    ...children,
+    input({ ...rest, class: mergeClass(commandInputRecipe, className) }),
   ])
 }
-export const CommandInput = classPart(
-  input,
-  'flex h-10 w-full rounded-md bg-transparent py-3 text-sm outline-hidden placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50',
-)
 export const CommandList = classPart(
   div,
   'max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto',

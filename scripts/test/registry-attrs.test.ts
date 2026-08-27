@@ -5,7 +5,13 @@ import path from 'node:path'
 // @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import { extractClassCandidates } from '../lib/registry-classes.mjs'
 // @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
-import { attrsInCandidate, publishedAttrs } from '../lib/registry-attrs.mjs'
+import {
+  attrsInCandidate,
+  attrValuePairsInCandidate,
+  bareAttrsInCandidate,
+  publishedAttrs,
+  publishedAttrValues,
+} from '../lib/registry-attrs.mjs'
 
 const ROOT = path.resolve(__dirname, '../..')
 const UI = path.join(ROOT, 'registry/llui/ui')
@@ -36,12 +42,16 @@ const MACHINE_OF: Record<string, readonly string[]> = {
   select: ['select', 'listbox'],
   'alert-dialog': ['alert-dialog', 'dialog'],
   field: ['field', 'fieldset', 'form'],
+  // shadcn's `form` is a react-hook-form binding; LLui's equivalent is the
+  // composed `patterns/form-field`, which is what these recipes are wired to.
+  form: ['form', 'field', 'form-field'],
   'radio-group': ['radio-group'],
   'toggle-group': ['toggle-group', 'toggle'],
   // Composite / layout-only skins: no single machine publishes their state, so
   // the union of the machines they DO drive is the contract.
   sidebar: ['collapsible'],
   carousel: ['carousel'],
+  chart: ['chart'],
   'scroll-area': ['scroll-area'],
   pagination: ['pagination'],
   'tree-view': ['tree-view'],
@@ -132,7 +142,17 @@ const ALLOWED: Record<string, Allowance> = {
   'toggle-group.ts: data-variant': { reason: 'a presentational variant the consumer sets' },
   'toggle-group.ts: data-spacing': { reason: 'a presentational variant the consumer sets' },
   'button-group.ts: data-variant': { reason: 'a presentational variant the consumer sets' },
+  'chart.ts: data-mark': {
+    reason: 'the mark KIND, published by `markProps` on the mark itself',
+  },
   'field.ts: data-error': { reason: 'the consumer marks the errored row' },
+  'form.ts: data-error': {
+    reason:
+      'upstream sets it on the LABEL from react-hook-form context; the LLui machine ' +
+      'publishes the bare `data-invalid` on the field ROOT, which the label reads through ' +
+      '`group/form-item`. Both are bound so a pasted shadcn snippet keeps working.',
+    pairedWith: 'data-invalid',
+  },
   'dropdown-menu.ts: data-inset': { reason: 'an indent flag the consumer sets on an item' },
   'context-menu.ts: data-inset': { reason: 'an indent flag the consumer sets on an item' },
   'menubar.ts: data-inset': { reason: 'an indent flag the consumer sets on an item' },
@@ -188,6 +208,63 @@ const ALLOWED: Record<string, Allowance> = {
   },
 }
 
+/**
+ * Attribute VALUES a recipe may name that its machine never publishes, with the
+ * reason. Keyed `file.ts: data-attr=value` — the same per-file scoping the name
+ * allowlist uses, and for the same reason.
+ */
+const VALUE_ALLOWED: Record<string, Allowance> = {
+  // Upstream parity, both spellings bound. shadcn writes `data-invalid="true"` /
+  // `data-disabled="true"`; every LLui machine publishes the bare attribute.
+  // `pairedWith` names the BARE spelling, so deleting the working half fails
+  // here instead of leaving only the dead upstream rule.
+  'field.ts: data-invalid=true': {
+    reason: 'shadcn spelling; the LLui machines publish the bare attribute',
+    pairedWith: 'data-invalid',
+  },
+  'field.ts: data-disabled=true': {
+    reason: 'shadcn spelling; the LLui machines publish the bare attribute',
+    pairedWith: 'data-disabled',
+  },
+
+  // react-day-picker parity, both spellings bound — see calendar.ts's own note.
+  'calendar.ts: data-selected=true': {
+    reason: 'react-day-picker spelling; `date-picker` publishes the bare attribute',
+    pairedWith: 'data-selected',
+  },
+  'calendar.ts: data-focused=true': {
+    reason: 'react-day-picker spelling; `date-picker` publishes the bare attribute',
+    pairedWith: 'data-focused',
+  },
+  'calendar.ts: data-range-start=true': {
+    reason: 'react-day-picker spelling; `date-picker` publishes the bare attribute',
+    pairedWith: 'data-range-start',
+  },
+  'calendar.ts: data-range-end=true': {
+    reason: 'react-day-picker spelling; `date-picker` publishes the bare attribute',
+    pairedWith: 'data-range-end',
+  },
+
+  'sidebar.ts: data-state=collapsed': {
+    reason:
+      "the CONSUMER flips expanded/collapsed on the sidebar root — see SidebarTrigger's note. " +
+      "The `collapsible` machine's own open/closed lives on a different element.",
+  },
+
+  // Radix renders a viewport-tracking indicator and drives it with
+  // `data-state="visible" | "hidden"`. `@llui/components/navigation-menu` has NO
+  // indicator part, so a consumer using this pair positions and drives it
+  // itself. Recorded rather than deleted because the recipes are upstream\'s and
+  // are still correct for whoever supplies the state; recorded rather than left
+  // silent because nothing in the package will ever produce it.
+  'navigation-menu.ts: data-state=visible': {
+    reason: 'consumer-driven: the LLui machine has no indicator part (see #229)',
+  },
+  'navigation-menu.ts: data-state=hidden': {
+    reason: 'consumer-driven: the LLui machine has no indicator part (see #229)',
+  },
+}
+
 async function machineAttrs(names: readonly string[]): Promise<Set<string>> {
   const out = new Set<string>()
   for (const name of names) {
@@ -195,6 +272,37 @@ async function machineAttrs(names: readonly string[]): Promise<Set<string>> {
       const file = path.join(dir, `${name}.ts`)
       if (!existsSync(file)) continue
       for (const a of publishedAttrs(file, await readFile(file, 'utf8'))) out.add(a)
+    }
+  }
+  return out
+}
+
+/**
+ * Attribute → the literal values the named machines can publish, or `null` when
+ * at least one declaration is an OPEN type this syntax-only read cannot
+ * enumerate. `null` is "no verdict", never "no values".
+ */
+async function machineAttrValues(
+  names: readonly string[],
+): Promise<Map<string, Set<string> | null>> {
+  const out = new Map<string, Set<string> | null>()
+  for (const name of names) {
+    for (const dir of [MACHINES, PATTERNS]) {
+      const file = path.join(dir, `${name}.ts`)
+      if (!existsSync(file)) continue
+      const found: Map<string, Set<string> | null> = publishedAttrValues(
+        file,
+        await readFile(file, 'utf8'),
+      )
+      for (const [attr, values] of found) {
+        if (!out.has(attr)) {
+          out.set(attr, values === null ? null : new Set(values))
+          continue
+        }
+        const prev = out.get(attr)!
+        if (prev === null || values === null) out.set(attr, null)
+        else for (const v of values) prev.add(v)
+      }
     }
   }
   return out
@@ -246,6 +354,85 @@ describe('registry recipes only style attributes their machine publishes', () =>
       problems,
       'These recipes style an attribute their machine does not publish, so the rule ' +
         'can never match. Fix the spelling, or add it to ALLOWED with a reason:\n' +
+        problems.join('\n'),
+    ).toEqual([])
+  })
+
+  /**
+   * The VALUE half of the same bug class. A recipe can name the right attribute
+   * and still match nothing, because upstream and LLui spell the same boolean
+   * state differently: shadcn writes `data-invalid="true"`, and every boolean
+   * `data-*` in `@llui/components` is published BARE (`'' | undefined`) — the
+   * package-wide convention, used by roughly forty machines.
+   *
+   * `field.ts` shipped THREE such rules and the name-level check above was green
+   * on all of them: the `Field` root's `data-[invalid=true]:text-destructive`,
+   * and `group-data-[disabled=true]/field:opacity-50` on both `FieldLabel` and
+   * `FieldTitle`. An invalid field never turned red and a disabled one never
+   * dimmed, against a machine that was publishing the state correctly the whole
+   * time.
+   *
+   * Same one-direction rule as the name check, and the same silence where there
+   * is no verdict: an attribute whose declared type is OPEN (a `string`, an
+   * imported alias) is skipped rather than guessed at.
+   */
+  it('reports no recipe attribute VALUE its machine never emits', async () => {
+    const files = (await readdir(UI)).filter((f) => f.endsWith('.ts'))
+    const problems: string[] = []
+    for (const file of files) {
+      const slug = file.slice(0, -3)
+      const names = MACHINE_OF[slug] ?? [slug]
+      if (names.length === 0) continue
+      const published = await machineAttrValues(names)
+      if (published.size === 0) continue
+      const full = path.join(UI, file)
+      const candidates: string[] = extractClassCandidates(full, await readFile(full, 'utf8'))
+      const bare = new Set(candidates.flatMap((c) => bareAttrsInCandidate(c) as string[]))
+      const pairs = new Set(candidates.flatMap((c) => attrValuePairsInCandidate(c) as string[]))
+      for (const pair of [...pairs].sort()) {
+        const eq = pair.indexOf('=')
+        const attr = pair.slice(0, eq)
+        const value = pair.slice(eq + 1)
+        // `data-part` / `data-scope` name a PART, not a state, and a registry
+        // component legitimately declares parts of its own that no machine has
+        // (`select-value`, `sidebar-menu-action`). Checking their values would
+        // report the convention working as designed.
+        if (attr === 'data-part' || attr === 'data-scope') continue
+        // A NAME-level allowance already says this attribute is not machine
+        // state in this file, so its value is not the machine's to answer for.
+        if (ALLOWED[`${file}: ${attr}`] !== undefined || ALLOWED[`*: ${attr}`] !== undefined)
+          continue
+        const values = published.get(attr)
+        // Not published at all → the NAME check owns it. Open type → no verdict.
+        if (values === undefined || values === null) continue
+        if (values.has(value)) continue
+        const allowance = VALUE_ALLOWED[`${file}: ${pair}`]
+        if (allowance !== undefined) {
+          const paired = allowance.pairedWith
+          // Paired against the BARE spelling set, never the name set: the dead
+          // bracketed form contributes its own name, so a name-level pairing
+          // would be satisfied by the very rule it is meant to justify.
+          if (paired === undefined || bare.has(paired) || pairs.has(paired)) continue
+          problems.push(
+            `  ${file}: ${pair} is allowed ONLY alongside ${paired}, which this file no longer ` +
+              `references — the upstream spelling is now the only one, and it matches nothing`,
+          )
+          continue
+        }
+        const emitted =
+          values.size === 0
+            ? '(absent only)'
+            : [...values].map((v) => (v === '' ? '"" (bare)' : `"${v}"`)).join(', ')
+        problems.push(
+          `  ${file}: styles \`${attr}=${value}\` but ${names.join('/')} emits ${emitted}`,
+        )
+      }
+    }
+    expect(
+      problems,
+      'These recipes style a VALUE their machine never publishes, so the rule can never ' +
+        'match. Bind the LLui spelling too (see registry/README.md), or add it to ' +
+        'VALUE_ALLOWED with a reason:\n' +
         problems.join('\n'),
     ).toEqual([])
   })

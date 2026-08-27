@@ -274,6 +274,8 @@ export {
   polygon,
   ellipse,
   svgText,
+  svgTitle,
+  svgDesc,
   each,
   eachDirect,
   eachArm,
@@ -287,6 +289,7 @@ export {
   type Reactive,
   type AttrValue,
   type ElProps,
+  type ElementHelper,
   type SignalViewBag,
   type SignalComponentSpec,
 } from './authoring.js'
