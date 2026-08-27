@@ -2,7 +2,7 @@ import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@ll
 import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
-import { createOverlay } from '../utils/overlay-engine.js'
+import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
 import { isTypeaheadKey } from '../utils/typeahead.js'
 import {
   init as comboboxInit,
@@ -604,6 +604,17 @@ export function connect(
 }
 
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   *
+   * Every `overlay()` in `components/` takes this; the pattern overlays were
+   * missed when it was added, so a utility-styled consumer had no way to give
+   * this popup a stacking context at all.
+   */
+  positionerClass?: string
   state: Signal<SearchableSelectState>
   send: Send<SearchableSelectMsg>
   parts: SearchableSelectParts
@@ -638,7 +649,7 @@ export function overlay(opts: OverlayOptions): Mountable {
     state: opts.state,
     transition: opts.transition,
     host: resolvePortalTarget(opts.target ?? 'body'),
-    positioner: opts.parts.positioner,
+    positioner: positionerProps(opts.parts.positioner, opts.positionerClass),
     content: opts.content,
     contentId: opts.parts.content.id,
     relationships: {

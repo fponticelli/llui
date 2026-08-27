@@ -3,6 +3,7 @@ import { init, update, connect } from '../../src/patterns/searchable-select'
 import type {
   SearchableSelectState,
   SearchableSelectMsg,
+  OverlayOptions,
 } from '../../src/patterns/searchable-select'
 import { rootSignal, read } from '../_signal'
 
@@ -192,4 +193,27 @@ describe('searchableSelect connect parts', () => {
     const picked = init({ items: ['Apple', 'Banana'], value: ['Apple'] })
     expect(read(item.item['aria-selected'], picked)).toBe(true)
   })
+
+  /**
+   * The positioner is the one node in an overlay's tree the CONSUMER does not
+   * build — `createOverlay` emits it — so `positionerClass` is the only way to
+   * put the floating layer's `z-index` on it.
+   *
+   * Every `overlay()` under `components/` takes one. This pattern was missed
+   * when they were added, which left a utility-styled consumer no way to give
+   * this popup a stacking context at all; it is invisible while the opt-in
+   * baseline stylesheet is doing the work, because that targets
+   * `[data-part='positioner']` directly.
+   */
+  it('overlay accepts a positionerClass', () => {
+    expect(overlayAcceptsPositionerClass()).toBe(true)
+  })
 })
+
+/** Type-level assertion: `OverlayOptions` must admit `positionerClass`. A
+ * runtime check cannot see an optional property that is never set, so the
+ * compiler is the oracle — this fails to BUILD if the option is removed. */
+function overlayAcceptsPositionerClass(): boolean {
+  const opts: Pick<OverlayOptions, 'positionerClass'> = { positionerClass: 'z-popover' }
+  return opts.positionerClass === 'z-popover'
+}

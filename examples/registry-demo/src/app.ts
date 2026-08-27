@@ -20,6 +20,7 @@ import * as data from './sections/data'
 import * as advanced from './sections/advanced'
 import * as menus from './sections/menus'
 import * as media from './sections/media'
+import * as patterns from './sections/patterns'
 import { groupHeading } from './sections/shared'
 
 interface State {
@@ -32,6 +33,7 @@ interface State {
   advanced: advanced.State
   menus: menus.State
   media: media.State
+  patterns: patterns.State
 }
 
 type Msg =
@@ -44,6 +46,7 @@ type Msg =
   | { type: 'advanced'; msg: advanced.Msg }
   | { type: 'menus'; msg: menus.Msg }
   | { type: 'media'; msg: media.Msg }
+  | { type: 'patterns'; msg: patterns.Msg }
 
 export const App = component<State, Msg, never>({
   name: 'RegistryDemo',
@@ -58,6 +61,7 @@ export const App = component<State, Msg, never>({
       advanced: advanced.init()[0],
       menus: menus.init()[0],
       media: media.init()[0],
+      patterns: patterns.init()[0],
     },
     [],
   ],
@@ -81,6 +85,8 @@ export const App = component<State, Msg, never>({
         return [{ ...state, menus: menus.update(state.menus, msg.msg)[0] }, []]
       case 'media':
         return [{ ...state, media: media.update(state.media, msg.msg)[0] }, []]
+      case 'patterns':
+        return [{ ...state, patterns: patterns.update(state.patterns, msg.msg)[0] }, []]
     }
   },
   view: ({ state, send }): readonly Mountable[] => [
@@ -108,6 +114,9 @@ export const App = component<State, Msg, never>({
 
       groupHeading('Media, dates & toasts'),
       ...media.view(state.at('media'), (msg) => send({ type: 'media', msg })),
+
+      groupHeading('Composed patterns'),
+      ...patterns.view(state.at('patterns'), (msg) => send({ type: 'patterns', msg })),
 
       groupHeading('Overlays'),
       ...overlays.view(state.at('overlays'), (msg) => send({ type: 'overlays', msg })),
