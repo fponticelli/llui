@@ -516,6 +516,12 @@ re-projects from the same series and the same data:
 | `mark: 'bar'`  | a bar            | a wedge (rose / donut) |
 | gridlines      | horizontal rules | rings, or a radar web  |
 
+`horizontal` is the other projection flag, and it means the same thing in both
+systems: the independent axis moves off its default screen axis. Cartesian, that
+turns a column chart on its side. Polar, it moves the categories off the angle
+and onto the radius — concentric rings whose arc length is the magnitude, which
+is a radial bar chart.
+
 Your view never asks which one it has. Everything the coordinate system touches
 lives in `utils/projection.ts`, behind a `Projection` interface with two
 implementations.
@@ -615,6 +621,88 @@ tells you what is supported.
 **Unstacked bar series sit side by side, not on top of each other.** Overlaying
 them hides the shorter series and reads as a stacked chart — the picture would
 not merely omit data, it would misstate it. `setStacked` is the other layout.
+
+### Pie and donut: there is no `pie` mark
+
+A pie is a bar whose magnitude has moved from the value axis onto the
+_independent_ one. `domain` picks which:
+
+| `domain`  | The independent axis             | Magnitude is           |
+| --------- | -------------------------------- | ---------------------- |
+| `'value'` | one equal slot per category      | `v` — a bar's height   |
+| `'share'` | a slot proportional to the value | `u` — a slice's extent |
+
+```ts
+chartC.init({
+  series: [{ key: 'visitors', label: 'Visitors', mark: 'bar' }],
+  rows: [
+    { label: 'Chrome', values: { visitors: 275 } },
+    { label: 'Safari', values: { visitors: 200 } },
+  ],
+  domain: 'share',
+  coord: 'polar',
+  innerRadius: 0.5, // 0 is a pie, 0.5 a donut
+})
+```
+
+One series, many rows — the slices are the rows, which is how a pie is actually
+shaped. Because it is a domain rather than a mark type, `coord` still
+re-projects **one** dataset: flip it to `'cartesian'` and the same state is a
+single full-width 100%-share bar, with the segment widths matching the wedge
+angles exactly.
+
+Three things it declines, each for the same reason polar declines `monotone`:
+
+- **No padding between slices.** The slot _is_ the datum, so a gap would make
+  every slice misstate its share and a full turn stop being 100%. Separate them
+  with a stroke in the skin, which is what shadcn's own pie does.
+- **A negative value takes no arc.** A share of a negative is undefined, and
+  both silent readings are wrong: using the magnitude draws a slice for a number
+  nobody measured, and letting it subtract pushes the total past 1.
+- **`line` and `area` are not drawn.** An axis whose spacing already encodes the
+  magnitude would place every point at a position meaning something else.
+
+There are no value gridlines under `'share'` — the magnitude is the spacing, so
+an iso-magnitude ring would say nothing about the data. `tooltipRows` carries a
+`share` alongside each `value` (and `null` under `'value'`), which is what a pie
+tooltip shows as a percentage.
+
+## 8. Icons
+
+`llui add icons` gives you the glyphs shadcn/ui bakes into its own components —
+`SelectTrigger`'s chevron, `Checkbox`'s tick, `DialogClose`'s ✕ — plus a way to
+name any other one.
+
+```ts
+import { CheckIcon, icon } from '@/ui/icons'
+
+CheckIcon({ class: 'size-4' })
+icon('lucide:star')({ class: 'size-5' })
+icon('simple-icons:github')() // any Iconify set, by prefix
+```
+
+Glyphs are fetched from the [Iconify](https://iconify.design) HTTP API by
+`prefix:name`, batched into **one request per prefix per tick**. What you get in
+the DOM is a real `<svg>` — not an `<img>` and not the `iconify-icon` web
+component, either of which would slip past the `[&_svg:not([class*='size-'])]:size-4`
+hook every recipe uses to size its icons.
+
+A glyph carries **no size of its own**. That is deliberate: the recipe sizes it,
+and passing `class: 'size-3'` lets you override that. Colour comes from
+`currentColor`, so it inherits from whatever it sits in.
+
+Two consequences worth planning for:
+
+- **Icons are async.** An SSR render emits the sized, empty `<svg>` and the
+  glyph arrives after hydration. The box is sized up front, so nothing reflows.
+- **They need the network.** A CSP that does not allow `api.iconify.design`, or
+  an offline user, gets the empty box and one console warning. Point
+  `iconConfig.api` at a self-hosted Iconify to remove the third-party
+  dependency — the path shape is identical.
+
+The API response is third-party markup and is never assigned to `innerHTML`:
+every node is rebuilt from an element and attribute allowlist, so a `<script>`,
+an `onload` or an `href` in the response is dropped with its subtree.
 
 ## Gotchas
 

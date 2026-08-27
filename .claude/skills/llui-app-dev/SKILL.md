@@ -142,6 +142,8 @@ and throwing the result away registers nothing.
 - **Tell:** `onMount(() => …)` on its own line, its result unused; a helper called but not spread into the returned array.
 - **Fix:** place it: `view: () => [ onMount(() => setupHotkeys()), div(...) ]`.
 
+**And its `root` argument is the BUILD's root container, not the element the call sits inside.** Mounts are collected per build (a view, a `branch`/`show` arm, an `each` row), so an `onMount` written inside `svg({…}, [ … ])` is handed the component's mount container. Both mistakes are silent: an `instanceof` guard on it makes the callback do nothing at all, and a `querySelector` written as if `root` were the local element still finds the first match across the whole build — correct until a second instance of the component is on the page. Query for an id or attribute of your own instead. See `references/core-authoring.md`.
+
 ### 3. Ungatable list → O(n) re-evaluation of every row on every state change
 
 In an `each`/`virtualEach`, if a row reads component state via `state.map(...)` or the

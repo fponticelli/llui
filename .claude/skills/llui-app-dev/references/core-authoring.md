@@ -128,6 +128,37 @@ default rather than throwing.
 returns a function, that's the cleanup (run on unmount/dispose). **The returned `Mountable`
 must be placed in the view array** or nothing registers.
 
+**`root` is the BUILD's root container, NOT the element the call sits inside.** Mounts are
+collected per build — a component's view, a `branch`/`show` arm, an `each` row — and every
+callback in one build gets that build's container. So an `onMount` written inside
+`svg({…}, [ … ])` receives the component's mount container, not the `<svg>`.
+
+Both ways of getting this wrong fail silently, which is what makes it worth knowing:
+
+- a type guard on the argument (`if (!(root instanceof SVGElement)) return`) makes the
+  callback do **nothing** — no error, no warning, and the marker comment sits correctly in
+  the DOM;
+- a `root.querySelector('[data-part="…"]')` written as if `root` were the local element
+  still **finds something** — the first match in document order across the whole build — so
+  it works until a second instance of the component exists on the page, then quietly drives
+  the wrong one.
+
+Reach for the element you want deliberately: give it an id or an attribute of your own and
+query for that.
+
+```ts
+view: () => [
+  onMount((root) => {
+    const el = root.querySelector('#my-panel')       // NOT `root` itself
+    if (!(el instanceof HTMLElement)) return
+    const ro = new ResizeObserver(() => measure(el))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }),
+  div({ id: 'my-panel' }, [...]),
+]
+```
+
 ```ts
 view: ({ send }) => [
   onMount(() => {
