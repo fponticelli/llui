@@ -6,12 +6,15 @@ import {
   bandCenter,
   bandExtent,
   nearestBand,
+  nearestShare,
   normalize,
+  shareExtents,
   ticks as niceTicks,
   valueDomain,
   type Band,
   type Domain,
   type Sample,
+  type ShareSlice,
 } from '../utils/scale.js'
 import { projectionFor, type ChartCoord, type Frame, type Projection } from '../utils/projection.js'
 import type { Curve } from '../utils/path.js'
@@ -55,6 +58,25 @@ import type { Curve } from '../utils/path.js'
 export type { ChartCoord }
 export type MarkType = 'line' | 'area' | 'bar'
 
+/**
+ * How the INDEPENDENT axis is allocated — and therefore which of a chart's two
+ * normalized coordinates carries the magnitude.
+ *
+ * `value` gives every category an equal slot and reads magnitude off `v`: a
+ * column, a line, a radar spoke. `share` allocates each category a slot in
+ * PROPORTION to its value and lets `v` span the whole depth, so the magnitude
+ * has moved onto `u`.
+ *
+ * That one move is the whole of a pie chart, which is why neither a `'pie'`
+ * mark type nor a second projection exists here. Under `coord: 'polar'` a
+ * share-allocated bar IS a pie or donut wedge; under `coord: 'cartesian'` the
+ * SAME state is a single full-width 100%-share bar, which is the honest
+ * cartesian reading of the same numbers. Switching `coord` still re-projects
+ * one dataset rather than swapping charts — see
+ * `docs/adr/0003-charts-project-rather-than-branch.md`.
+ */
+export type ChartDomain = 'value' | 'share'
+
 export interface ChartSeries {
   /** Stable key. Also the `--color-<key>` variable a skin reads. */
   key: string
@@ -80,6 +102,18 @@ export interface ChartPadding {
 
 export interface ChartState {
   coord: ChartCoord
+  /**
+   * Equal slots per category (`value`), or slots proportional to the value
+   * (`share`). See {@link ChartDomain}; `share` + `coord: 'polar'` is a pie.
+   *
+   * Under `share` only `bar` series are drawn: a line or an area along an axis
+   * whose spacing already encodes the magnitude would plot each point at a
+   * position that means something other than where it sits, so they are
+   * DECLINED rather than approximated — the same call `polarProjection` makes
+   * about `monotone`. `stacked` is ignored for the same reason, each category
+   * being its own slice already.
+   */
+  domain: ChartDomain
   series: ChartSeries[]
   rows: ChartRow[]
   /** Accessible name for the whole chart. */
@@ -113,6 +147,8 @@ export interface ChartState {
 export type ChartMsg =
   /** @intent("Switch between cartesian and polar projection") */
   | { type: 'setCoord'; coord: ChartCoord }
+  /** @intent("Allocate the independent axis by equal slots or by share of the total") */
+  | { type: 'setDomain'; domain: ChartDomain }
   /** @intent("Set the row under the cursor, or clear it with null") */
   | { type: 'setActive'; index: number | null }
   /** @intent("Move the keyboard cursor along the rows by delta, wrapping") */
@@ -142,6 +178,7 @@ export interface ChartInit {
   series: readonly ChartSeries[]
   rows?: readonly ChartRow[]
   coord?: ChartCoord
+  domain?: ChartDomain
   label?: string
   description?: string
   width?: number
@@ -160,6 +197,7 @@ const DEFAULT_PADDING: ChartPadding = { top: 12, right: 12, bottom: 28, left: 44
 export function init(opts: ChartInit): ChartState {
   const state: ChartState = {
     coord: opts.coord ?? 'cartesian',
+    domain: opts.domain ?? 'value',
     series: opts.series.map((s) => ({ ...s })),
     rows: (opts.rows ?? []).map((r) => ({ label: r.label, values: { ...r.values } })),
     label: opts.label ?? 'Chart',
@@ -207,6 +245,8 @@ export function update(state: ChartState, msg: ChartMsg): [ChartState, never[]] 
   switch (msg.type) {
     case 'setCoord':
       return state.coord === msg.coord ? [state, []] : [{ ...state, coord: msg.coord }, []]
+    case 'setDomain':
+      return state.domain === msg.domain ? [state, []] : [{ ...state, domain: msg.domain }, []]
     case 'setActive': {
       if (msg.index === null) {
         return state.activeIndex === null ? [state, []] : [{ ...state, activeIndex: null }, []]
@@ -321,12 +361,30 @@ export interface ChartTooltipRow {
   seriesKey: string
   label: string
   value: number
+  /**
+   * The row's fraction of its series' total under a share domain — what a pie
+   * tooltip shows as a percentage — and `null` under a value domain, where a
+   * share of an axis that may cross zero is not defined.
+   */
+  share: number | null
 }
 
 export interface ChartGeometry {
   frame: Frame
   domain: Domain
   band: Band
+  /**
+   * The proportional allocation of the independent axis under
+   * `ChartState.domain === 'share'`, and `null` otherwise. It is the axis
+   * itself, not a decoration: the pointer hit test reads it instead of `band`.
+   *
+   * With more than one bar series each ring gets its OWN allocation from its
+   * own values — that is what makes a nested donut's rings each proportional —
+   * so a single `u` names different rows on different rings and the pointer
+   * has to follow one of them. It follows the FIRST bar series, which is the
+   * whole story for the single-series pie that is the common case.
+   */
+  slices: ShareSlice[] | null
   projection: Projection
   marks: ChartMark[]
   vertices: ChartVertex[]
@@ -359,7 +417,11 @@ function frameOf(state: ChartState): Frame {
 }
 
 function bandOf(state: ChartState): Band {
-  const hasBars = state.series.some((s) => s.mark === 'bar')
+  // A share axis carries the magnitude in its own spacing, so its slots may not
+  // be padded — see `shareExtents`. `band` is still built (category ticks and
+  // the tooltip anchor read it when there is nothing to allocate), but with the
+  // gaps off so a fallback can never restate the data.
+  const hasBars = state.domain === 'value' && state.series.some((s) => s.mark === 'bar')
   return {
     count: state.rows.length,
     // A line's samples sit at band CENTRES, so padding only changes where the
@@ -430,6 +492,19 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
     spokes: Math.max(3, state.rows.length),
   })
 
+  // Under a share domain every bar series allocates the axis from its OWN row
+  // values, so each ring of a nested donut is proportional to itself. The
+  // pointer follows the first of them — see `ChartGeometry.slices`.
+  const shareOf = new Map<string, ShareSlice[]>()
+  if (state.domain === 'share') {
+    for (const s of state.series) {
+      if (s.mark !== 'bar') continue
+      shareOf.set(s.key, shareExtents(state.rows.map((row) => seriesValue(row, s.key))))
+    }
+  }
+  const shareKeys = [...shareOf.keys()]
+  const slices = shareKeys.length > 0 ? shareOf.get(shareKeys[0]!)! : null
+
   const zeroV = normalize(0, domain)
   const marks: ChartMark[] = []
   const vertices: ChartVertex[] = []
@@ -444,6 +519,37 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
   for (const s of state.series) {
     const dimmed = state.activeSeries !== null && s.key !== state.activeSeries
     const pairs = offsets.get(s.key)!
+
+    const mySlices = shareOf.get(s.key)
+    if (state.domain === 'share') {
+      // A line or an area along an axis whose SPACING already states the
+      // magnitude would put every point at a position meaning something other
+      // than where it sits. Declined, not approximated.
+      if (mySlices === undefined) continue
+      // Each bar series owns a depth slot, so two of them are concentric rings
+      // rather than one drawn over the other. One series fills the whole depth,
+      // which is the plain pie.
+      const ring = Math.max(0, shareKeys.indexOf(s.key))
+      const v0 = ring / shareKeys.length
+      const v1 = (ring + 1) / shareKeys.length
+      for (let i = 0; i < state.rows.length; i++) {
+        const slice = mySlices[i]
+        // A zero-share row has no wedge. Emitting an empty band would put a
+        // degenerate path in the DOM and a hit target on nothing.
+        if (slice === undefined || slice.share <= 0) continue
+        marks.push({
+          seriesKey: s.key,
+          label: s.label,
+          mark: 'bar',
+          d: projection.band(slice.start, slice.end, v0, v1),
+          index: i,
+          active: state.activeIndex === i,
+          dimmed,
+        })
+      }
+      continue
+    }
+
     if (s.mark === 'bar') {
       // The slot stays reserved when a series is hidden, so isolating one from
       // the legend moves nothing.
@@ -496,25 +602,44 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
     }
   }
 
-  const gridLines: ChartGridLine[] = niceTicks(domain.min, domain.max, state.tickCount).map(
-    (value) => {
-      const v = normalize(value, domain)
-      const at = projection.valueTick(v)
-      return {
-        value,
-        label: formatTick(value),
-        d: projection.gridline(v),
-        x: at.x,
-        y: at.y,
-        anchor: at.anchor,
-        baseline: at.baseline,
-      }
-    },
-  )
+  // A share axis HAS no value axis — the magnitude is the spacing, so an
+  // iso-magnitude ring would be a line of constant depth, which states nothing
+  // about the data. Emitting them anyway is how a pie ends up with concentric
+  // rings across it that a reader tries to interpret.
+  const gridLines: ChartGridLine[] =
+    state.domain === 'share'
+      ? []
+      : niceTicks(domain.min, domain.max, state.tickCount).map((value) => {
+          const v = normalize(value, domain)
+          const at = projection.valueTick(v)
+          return {
+            value,
+            label: formatTick(value),
+            d: projection.gridline(v),
+            x: at.x,
+            y: at.y,
+            anchor: at.anchor,
+            baseline: at.baseline,
+          }
+        })
 
-  const categoryTicks: ChartCategoryTick[] = state.rows.map((row, i) => {
-    const at = projection.tick(bandCenter(i, band))
-    return {
+  // A category label belongs at the middle of whatever the category actually
+  // occupies — an equal slot, or its own slice. A zero-share row occupies
+  // nothing, so it gets no label rather than one stacked on the seam with
+  // every other empty row's.
+  const categoryTicks: ChartCategoryTick[] = []
+  for (let i = 0; i < state.rows.length; i++) {
+    const row = state.rows[i]!
+    let u: number
+    if (slices !== null) {
+      const slice = slices[i]
+      if (slice === undefined || slice.share <= 0) continue
+      u = (slice.start + slice.end) / 2
+    } else {
+      u = bandCenter(i, band)
+    }
+    const at = projection.tick(u)
+    categoryTicks.push({
       index: i,
       label: row.label,
       x: at.x,
@@ -522,37 +647,55 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
       anchor: at.anchor,
       baseline: at.baseline,
       active: state.activeIndex === i,
-    }
-  })
+    })
+  }
 
   const activeRow = state.activeIndex !== null ? state.rows[state.activeIndex] : undefined
   const tooltipRows: ChartTooltipRow[] =
     activeRow === undefined
       ? []
-      : visible.map((s) => ({
-          seriesKey: s.key,
-          label: s.label,
-          value: seriesValue(activeRow, s.key),
-        }))
+      : visible.map((s) => {
+          // Each series' own allocation, so a nested donut reports the share
+          // the ring under the pointer is actually drawing.
+          const own = shareOf.get(s.key)
+          const slice = state.activeIndex !== null ? own?.[state.activeIndex] : undefined
+          return {
+            seriesKey: s.key,
+            label: s.label,
+            value: seriesValue(activeRow, s.key),
+            share: slice === undefined ? null : slice.share,
+          }
+        })
 
   let tooltipAt: { x: number; y: number } | null = null
   if (state.activeIndex !== null && activeRow !== undefined) {
-    const u = bandCenter(state.activeIndex, band)
-    // Anchor at the TALLEST visible value in the row, so the tooltip never sits
-    // under the mark it describes.
-    let bestV = zeroV
-    for (const s of visible) {
-      const [, top] = offsets.get(s.key)![state.activeIndex] ?? [0, 0]
-      bestV = Math.max(bestV, normalize(top, domain))
+    if (slices !== null) {
+      // Mid-slice, mid-depth: the wedge's own centre. There is no "tallest
+      // value" to clear here — every slice spans the full depth.
+      const slice = slices[state.activeIndex]
+      if (slice !== undefined && slice.share > 0) {
+        const p = projection.point((slice.start + slice.end) / 2, 0.5)
+        tooltipAt = { x: p.x, y: p.y }
+      }
+    } else {
+      const u = bandCenter(state.activeIndex, band)
+      // Anchor at the TALLEST visible value in the row, so the tooltip never
+      // sits under the mark it describes.
+      let bestV = zeroV
+      for (const s of visible) {
+        const [, top] = offsets.get(s.key)![state.activeIndex] ?? [0, 0]
+        bestV = Math.max(bestV, normalize(top, domain))
+      }
+      const p = projection.point(u, bestV)
+      tooltipAt = { x: p.x, y: p.y }
     }
-    const p = projection.point(u, bestV)
-    tooltipAt = { x: p.x, y: p.y }
   }
 
   return {
     frame,
     domain,
     band,
+    slices,
     projection,
     marks,
     vertices,
@@ -586,6 +729,7 @@ export interface ChartParts {
     // reads part-bag VALUES syntactically, and an imported alias reads as an
     // open type it declines to give a verdict on.
     'data-coord': Signal<'cartesian' | 'polar'>
+    'data-domain': Signal<'value' | 'share'>
     'data-active': Signal<'' | undefined>
   }
   /**
@@ -704,7 +848,10 @@ export function connect(
     const geo = geometry(s)
     const u = geo.projection.locate(x, y)
     if (u === null) return null
-    return nearestBand(u, geo.band)
+    // A share axis tiles with no gaps, so the slice CONTAINING the pointer is
+    // exact. Falling back to nearest-centre here would hand a thin wedge's own
+    // interior to the wide one beside it.
+    return geo.slices !== null ? nearestShare(u, geo.slices) : nearestBand(u, geo.band)
   }
 
   const onKeyDown = (e: KeyboardEvent): void => {
@@ -749,6 +896,7 @@ export function connect(
       'data-scope': 'chart',
       'data-part': 'root',
       'data-coord': state.map((s) => s.coord),
+      'data-domain': state.map((s) => s.domain),
       'data-active': state.map((s) => (s.activeIndex !== null ? '' : undefined)),
     },
     svg: {

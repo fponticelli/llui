@@ -437,6 +437,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | Field          | Type             |
 | -------------- | ---------------- |
 | `coord`        | `ChartCoord`     |
+| `domain`       | `ChartDomain`    |
 | `series`       | `ChartSeries[]`  |
 | `rows`         | `ChartRow[]`     |
 | `label`        | `string`         |
@@ -453,9 +454,9 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `innerRadius`  | `number`         |
 | `horizontal`   | `boolean`        |
 
-**Messages:** `setCoord`, `setActive`, `moveActive`, `firstActive`, `lastActive`, `setActiveSeries`, `setRows`, `setMin`, `setMax`, `setStacked`, `setSize`, `setInnerRadius`, `setHorizontal`
+**Messages:** `setCoord`, `setDomain`, `setActive`, `moveActive`, `firstActive`, `lastActive`, `setActiveSeries`, `setRows`, `setMin`, `setMax`, `setStacked`, `setSize`, `setInnerRadius`, `setHorizontal`
 
-**Init options:** `series: readonly ChartSeries[], rows?: readonly ChartRow[], coord?: ChartCoord, label?: string, description?: string, width?: number, height?: number, padding?: Partial<ChartPadding>, min?: number, max?: number, tickCount?: number, stacked?: boolean, innerRadius?: number, horizontal?: boolean`
+**Init options:** `series: readonly ChartSeries[], rows?: readonly ChartRow[], coord?: ChartCoord, domain?: ChartDomain, label?: string, description?: string, width?: number, height?: number, padding?: Partial<ChartPadding>, min?: number, max?: number, tickCount?: number, stacked?: boolean, innerRadius?: number, horizontal?: boolean`
 
 **Connect options:** `ChartConnectOptions`
 
@@ -3367,6 +3368,8 @@ export type ChartCoord = 'cartesian' | 'polar'
 export type ChartMsg =
   /** @intent("Switch between cartesian and polar projection") */
   | { type: 'setCoord'; coord: ChartCoord }
+  /** @intent("Allocate the independent axis by equal slots or by share of the total") */
+  | { type: 'setDomain'; domain: ChartDomain }
   /** @intent("Set the row under the cursor, or clear it with null") */
   | { type: 'setActive'; index: number | null }
   /** @intent("Move the keyboard cursor along the rows by delta, wrapping") */
@@ -6147,6 +6150,18 @@ export interface ChartGeometry {
   frame: Frame
   domain: Domain
   band: Band
+  /**
+   * The proportional allocation of the independent axis under
+   * `ChartState.domain === 'share'`, and `null` otherwise. It is the axis
+   * itself, not a decoration: the pointer hit test reads it instead of `band`.
+   *
+   * With more than one bar series each ring gets its OWN allocation from its
+   * own values — that is what makes a nested donut's rings each proportional —
+   * so a single `u` names different rows on different rings and the pointer
+   * has to follow one of them. It follows the FIRST bar series, which is the
+   * whole story for the single-series pie that is the common case.
+   */
+  slices: ShareSlice[] | null
   projection: Projection
   marks: ChartMark[]
   vertices: ChartVertex[]
@@ -6179,6 +6194,7 @@ export interface ChartInit {
   series: readonly ChartSeries[]
   rows?: readonly ChartRow[]
   coord?: ChartCoord
+  domain?: ChartDomain
   label?: string
   description?: string
   width?: number
@@ -6233,6 +6249,7 @@ export interface ChartParts {
     // reads part-bag VALUES syntactically, and an imported alias reads as an
     // open type it declines to give a verdict on.
     'data-coord': Signal<'cartesian' | 'polar'>
+    'data-domain': Signal<'value' | 'share'>
     'data-active': Signal<'' | undefined>
   }
   /**
@@ -6352,6 +6369,18 @@ export interface ChartSeries {
 ```typescript
 export interface ChartState {
   coord: ChartCoord
+  /**
+   * Equal slots per category (`value`), or slots proportional to the value
+   * (`share`). See {@link ChartDomain}; `share` + `coord: 'polar'` is a pie.
+   *
+   * Under `share` only `bar` series are drawn: a line or an area along an axis
+   * whose spacing already encodes the magnitude would plot each point at a
+   * position that means something other than where it sits, so they are
+   * DECLINED rather than approximated — the same call `polarProjection` makes
+   * about `monotone`. `stacked` is ignored for the same reason, each category
+   * being its own slice already.
+   */
+  domain: ChartDomain
   series: ChartSeries[]
   rows: ChartRow[]
   /** Accessible name for the whole chart. */
@@ -6390,6 +6419,12 @@ export interface ChartTooltipRow {
   seriesKey: string
   label: string
   value: number
+  /**
+   * The row's fraction of its series' total under a share domain — what a pie
+   * tooltip shows as a percentage — and `null` under a value domain, where a
+   * share of an axis that may cross zero is not defined.
+   */
+  share: number | null
 }
 ```
 
@@ -9803,6 +9838,19 @@ export interface PolarOptions {
   grid?: 'ring' | 'web'
   /** How many spokes a `web` gridline has. Ignored for `ring`. */
   spokes?: number
+  /**
+   * Swap the axes, exactly as {@link CartesianOptions.horizontal} does: the
+   * INDEPENDENT axis moves off the angle and onto the RADIUS, so each category
+   * becomes its own concentric ring and magnitude is read as arc length. That
+   * is a radial bar chart, and it is the polar reading of the same flag that
+   * turns a column chart on its side — one field, the same meaning in both
+   * coordinate systems, so a consumer flipping `coord` keeps whatever
+   * orientation they asked for.
+   *
+   * The independent axis is then the radius, which is NOT a loop, so the
+   * projection reports `closed: false` however wide the sweep is.
+   */
+  horizontal?: boolean
 }
 ```
 
@@ -14630,6 +14678,19 @@ export interface PolarOptions {
   grid?: 'ring' | 'web'
   /** How many spokes a `web` gridline has. Ignored for `ring`. */
   spokes?: number
+  /**
+   * Swap the axes, exactly as {@link CartesianOptions.horizontal} does: the
+   * INDEPENDENT axis moves off the angle and onto the RADIUS, so each category
+   * becomes its own concentric ring and magnitude is read as arc length. That
+   * is a radial bar chart, and it is the polar reading of the same flag that
+   * turns a column chart on its side — one field, the same meaning in both
+   * coordinate systems, so a consumer flipping `coord` keeps whatever
+   * orientation they asked for.
+   *
+   * The independent axis is then the radius, which is NOT a loop, so the
+   * projection reports `closed: false` however wide the sweep is.
+   */
+  horizontal?: boolean
 }
 ```
 
@@ -16899,6 +16960,19 @@ export interface PolarOptions {
   grid?: 'ring' | 'web'
   /** How many spokes a `web` gridline has. Ignored for `ring`. */
   spokes?: number
+  /**
+   * Swap the axes, exactly as {@link CartesianOptions.horizontal} does: the
+   * INDEPENDENT axis moves off the angle and onto the RADIUS, so each category
+   * becomes its own concentric ring and magnitude is read as arc length. That
+   * is a radial bar chart, and it is the polar reading of the same flag that
+   * turns a column chart on its side — one field, the same meaning in both
+   * coordinate systems, so a consumer flipping `coord` keeps whatever
+   * orientation they asked for.
+   *
+   * The independent axis is then the radius, which is NOT a loop, so the
+   * projection reports `closed: false` however wide the sweep is.
+   */
+  horizontal?: boolean
 }
 ```
 
@@ -18147,6 +18221,19 @@ export interface PolarOptions {
   grid?: 'ring' | 'web'
   /** How many spokes a `web` gridline has. Ignored for `ring`. */
   spokes?: number
+  /**
+   * Swap the axes, exactly as {@link CartesianOptions.horizontal} does: the
+   * INDEPENDENT axis moves off the angle and onto the RADIUS, so each category
+   * becomes its own concentric ring and magnitude is read as arc length. That
+   * is a radial bar chart, and it is the polar reading of the same flag that
+   * turns a column chart on its side — one field, the same meaning in both
+   * coordinate systems, so a consumer flipping `coord` keeps whatever
+   * orientation they asked for.
+   *
+   * The independent axis is then the radius, which is NOT a loop, so the
+   * projection reports `closed: false` however wide the sweep is.
+   */
+  horizontal?: boolean
 }
 ```
 
@@ -18455,6 +18542,24 @@ band is closer, so a pointer never falls into a dead zone between two bars.
 function nearestBand(u: number, band: Band): number | null
 ```
 
+##### `nearestShare()` from `@llui/components/utils/scale`
+
+The slice containing a normalized position — the hit test behind hover on a
+pie.
+
+CONTAINMENT, not the nearest centre that {@link nearestBand} uses. Bands have
+gaps, so a pointer between two bars has to be given to one of them; slices
+tile the axis with no gaps, so containment is exact and nearest-centre would
+be actively wrong — a thin slice beside a wide one would lose its own
+interior to the wide one's centre.
+
+Zero-width slices are unhittable by construction. `u` outside [0, 1] and an
+axis with no positive total both answer `null`.
+
+```typescript
+function nearestShare(u: number, slices: readonly ShareSlice[]): number | null
+```
+
 ##### `niceDomain()` from `@llui/components/utils/scale`
 
 Extend `[min, max]` outward to the nearest round tick boundaries, so the axis
@@ -18475,6 +18580,45 @@ not a crash or a NaN in a path string.
 
 ```typescript
 function normalize(value: number, domain: Domain): number
+```
+
+##### `shareExtents()` from `@llui/components/utils/scale`
+
+Allocate the independent axis [0, 1] in PROPORTION to each value, instead of
+giving every category an equal slot the way {@link bandExtent} does.
+
+This is the whole of what a pie chart is. Under a polar projection each slice
+is a wedge whose angle states its share; under a cartesian one the same
+slices are the segments of a single full-width 100%-share bar. Neither the
+projection nor any mark needs to know which it is drawing — the magnitude has
+simply moved from `v` (a bar's height) to `u` (a slice's extent), which is
+why no new mark type is involved.
+
+Three rules, each a correctness statement rather than a default:
+
+- **There is NO padding, and there cannot be.** `bandExtent` takes
+  `paddingInner`/`paddingOuter` because a bar's slot is arbitrary and the
+  gaps only cost whitespace. Here the extent IS the datum: gaps would make
+  the slices sum to less than the whole, so every slice would overstate or
+  understate its share by however much padding was chosen, and a full turn
+  would no longer be 100%. Separate slices with a stroke in the skin (what
+  shadcn's own pie does), never with a gap in the scale.
+- **A NEGATIVE value takes no arc.** A share of a negative quantity is not
+  defined, and the two silent readings are both wrong: using the magnitude
+  draws a slice for a number nobody measured, and letting it subtract makes
+  the remaining slices sum past 1. Contributing zero is the only reading
+  that neither invents data nor breaks the total. Same argument as
+  `polarProjection` declining `monotone` rather than approximating it.
+- **A total of zero yields zero-width slices**, not `NaN`. No data is a
+  normal state; a `NaN` in a `u` becomes a `NaN` in a path string, and one
+  of those voids the whole path element.
+
+The final slice is closed at exactly 1 rather than at the accumulated sum, so
+float drift cannot leave a hairline wedge of background at the end of the
+axis — visible on a full-turn pie as a seam at 12 o'clock.
+
+```typescript
+function shareExtents(values: readonly number[]): ShareSlice[]
 ```
 
 ##### `tickIncrement()` from `@llui/components/utils/scale`
@@ -18550,6 +18694,21 @@ A normalized sample: position along the independent axis, and magnitude.
 export interface Sample {
   u: number
   v: number
+}
+```
+
+##### `ShareSlice` from `@llui/components/utils/scale`
+
+One slice of a proportionally-allocated independent axis.
+
+```typescript
+export interface ShareSlice {
+  /** Start of the slice in normalized u. */
+  start: number
+  /** End of the slice in normalized u. */
+  end: number
+  /** The slice's fraction of the whole — `end - start`, named for readability. */
+  share: number
 }
 ```
 
@@ -35082,12 +35241,36 @@ function update(state: ChartState, msg: ChartMsg): [ChartState, never[]]
 export type ChartCoord = 'cartesian' | 'polar'
 ```
 
+##### `ChartDomain` from `@llui/components/chart`
+
+How the INDEPENDENT axis is allocated — and therefore which of a chart's two
+normalized coordinates carries the magnitude.
+
+`value` gives every category an equal slot and reads magnitude off `v`: a
+column, a line, a radar spoke. `share` allocates each category a slot in
+PROPORTION to its value and lets `v` span the whole depth, so the magnitude
+has moved onto `u`.
+
+That one move is the whole of a pie chart, which is why neither a `'pie'`
+mark type nor a second projection exists here. Under `coord: 'polar'` a
+share-allocated bar IS a pie or donut wedge; under `coord: 'cartesian'` the
+SAME state is a single full-width 100%-share bar, which is the honest
+cartesian reading of the same numbers. Switching `coord` still re-projects
+one dataset rather than swapping charts — see
+`docs/adr/0003-charts-project-rather-than-branch.md`.
+
+```typescript
+export type ChartDomain = 'value' | 'share'
+```
+
 ##### `ChartMsg` from `@llui/components/chart`
 
 ```typescript
 export type ChartMsg =
   /** @intent("Switch between cartesian and polar projection") */
   | { type: 'setCoord'; coord: ChartCoord }
+  /** @intent("Allocate the independent axis by equal slots or by share of the total") */
+  | { type: 'setDomain'; domain: ChartDomain }
   /** @intent("Set the row under the cursor, or clear it with null") */
   | { type: 'setActive'; index: number | null }
   /** @intent("Move the keyboard cursor along the rows by delta, wrapping") */
@@ -35152,6 +35335,18 @@ export interface ChartGeometry {
   frame: Frame
   domain: Domain
   band: Band
+  /**
+   * The proportional allocation of the independent axis under
+   * `ChartState.domain === 'share'`, and `null` otherwise. It is the axis
+   * itself, not a decoration: the pointer hit test reads it instead of `band`.
+   *
+   * With more than one bar series each ring gets its OWN allocation from its
+   * own values — that is what makes a nested donut's rings each proportional —
+   * so a single `u` names different rows on different rings and the pointer
+   * has to follow one of them. It follows the FIRST bar series, which is the
+   * whole story for the single-series pie that is the common case.
+   */
+  slices: ShareSlice[] | null
   projection: Projection
   marks: ChartMark[]
   vertices: ChartVertex[]
@@ -35184,6 +35379,7 @@ export interface ChartInit {
   series: readonly ChartSeries[]
   rows?: readonly ChartRow[]
   coord?: ChartCoord
+  domain?: ChartDomain
   label?: string
   description?: string
   width?: number
@@ -35238,6 +35434,7 @@ export interface ChartParts {
     // reads part-bag VALUES syntactically, and an imported alias reads as an
     // open type it declines to give a verdict on.
     'data-coord': Signal<'cartesian' | 'polar'>
+    'data-domain': Signal<'value' | 'share'>
     'data-active': Signal<'' | undefined>
   }
   /**
@@ -35357,6 +35554,18 @@ export interface ChartSeries {
 ```typescript
 export interface ChartState {
   coord: ChartCoord
+  /**
+   * Equal slots per category (`value`), or slots proportional to the value
+   * (`share`). See {@link ChartDomain}; `share` + `coord: 'polar'` is a pie.
+   *
+   * Under `share` only `bar` series are drawn: a line or an area along an axis
+   * whose spacing already encodes the magnitude would plot each point at a
+   * position that means something other than where it sits, so they are
+   * DECLINED rather than approximated — the same call `polarProjection` makes
+   * about `monotone`. `stacked` is ignored for the same reason, each category
+   * being its own slice already.
+   */
+  domain: ChartDomain
   series: ChartSeries[]
   rows: ChartRow[]
   /** Accessible name for the whole chart. */
@@ -35395,6 +35604,12 @@ export interface ChartTooltipRow {
   seriesKey: string
   label: string
   value: number
+  /**
+   * The row's fraction of its series' total under a share domain — what a pie
+   * tooltip shows as a percentage — and `null` under a value domain, where a
+   * share of an axis that may cross zero is not defined.
+   */
+  share: number | null
 }
 ```
 

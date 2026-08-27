@@ -177,6 +177,99 @@ export function bandCenter(i: number, band: Band): number {
   return (a + b) / 2
 }
 
+// ── Share scale ───────────────────────────────────────────────────────────
+
+/** One slice of a proportionally-allocated independent axis. */
+export interface ShareSlice {
+  /** Start of the slice in normalized u. */
+  start: number
+  /** End of the slice in normalized u. */
+  end: number
+  /** The slice's fraction of the whole — `end - start`, named for readability. */
+  share: number
+}
+
+/**
+ * Allocate the independent axis [0, 1] in PROPORTION to each value, instead of
+ * giving every category an equal slot the way {@link bandExtent} does.
+ *
+ * This is the whole of what a pie chart is. Under a polar projection each slice
+ * is a wedge whose angle states its share; under a cartesian one the same
+ * slices are the segments of a single full-width 100%-share bar. Neither the
+ * projection nor any mark needs to know which it is drawing — the magnitude has
+ * simply moved from `v` (a bar's height) to `u` (a slice's extent), which is
+ * why no new mark type is involved.
+ *
+ * Three rules, each a correctness statement rather than a default:
+ *
+ *  - **There is NO padding, and there cannot be.** `bandExtent` takes
+ *    `paddingInner`/`paddingOuter` because a bar's slot is arbitrary and the
+ *    gaps only cost whitespace. Here the extent IS the datum: gaps would make
+ *    the slices sum to less than the whole, so every slice would overstate or
+ *    understate its share by however much padding was chosen, and a full turn
+ *    would no longer be 100%. Separate slices with a stroke in the skin (what
+ *    shadcn's own pie does), never with a gap in the scale.
+ *  - **A NEGATIVE value takes no arc.** A share of a negative quantity is not
+ *    defined, and the two silent readings are both wrong: using the magnitude
+ *    draws a slice for a number nobody measured, and letting it subtract makes
+ *    the remaining slices sum past 1. Contributing zero is the only reading
+ *    that neither invents data nor breaks the total. Same argument as
+ *    `polarProjection` declining `monotone` rather than approximating it.
+ *  - **A total of zero yields zero-width slices**, not `NaN`. No data is a
+ *    normal state; a `NaN` in a `u` becomes a `NaN` in a path string, and one
+ *    of those voids the whole path element.
+ *
+ * The final slice is closed at exactly 1 rather than at the accumulated sum, so
+ * float drift cannot leave a hairline wedge of background at the end of the
+ * axis — visible on a full-turn pie as a seam at 12 o'clock.
+ */
+export function shareExtents(values: readonly number[]): ShareSlice[] {
+  const weights = values.map((n) => (isFinite(n) && n > 0 ? n : 0))
+  const total = weights.reduce((a, b) => a + b, 0)
+  const out: ShareSlice[] = []
+  if (!(total > 0)) {
+    for (let i = 0; i < weights.length; i++) out.push({ start: 0, end: 0, share: 0 })
+    return out
+  }
+  let cursor = 0
+  for (let i = 0; i < weights.length; i++) {
+    const start = cursor
+    const end = i === weights.length - 1 ? 1 : cursor + weights[i]! / total
+    out.push({ start, end, share: end - start })
+    cursor = end
+  }
+  return out
+}
+
+/**
+ * The slice containing a normalized position — the hit test behind hover on a
+ * pie.
+ *
+ * CONTAINMENT, not the nearest centre that {@link nearestBand} uses. Bands have
+ * gaps, so a pointer between two bars has to be given to one of them; slices
+ * tile the axis with no gaps, so containment is exact and nearest-centre would
+ * be actively wrong — a thin slice beside a wide one would lose its own
+ * interior to the wide one's centre.
+ *
+ * Zero-width slices are unhittable by construction. `u` outside [0, 1] and an
+ * axis with no positive total both answer `null`.
+ */
+export function nearestShare(u: number, slices: readonly ShareSlice[]): number | null {
+  if (!isFinite(u)) return null
+  for (let i = 0; i < slices.length; i++) {
+    const s = slices[i]!
+    if (s.share > 0 && u >= s.start && u < s.end) return i
+  }
+  // The closing edge belongs to the last slice with any width, so a pointer
+  // exactly at u === 1 lands somewhere rather than nowhere.
+  if (u === 1) {
+    for (let i = slices.length - 1; i >= 0; i--) {
+      if (slices[i]!.share > 0) return i
+    }
+  }
+  return null
+}
+
 /**
  * The band index nearest a normalized position — the hit test behind hover and
  * pointer tracking. Returns `null` for an empty axis.

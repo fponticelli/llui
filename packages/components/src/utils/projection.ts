@@ -187,6 +187,19 @@ export interface PolarOptions {
   grid?: 'ring' | 'web'
   /** How many spokes a `web` gridline has. Ignored for `ring`. */
   spokes?: number
+  /**
+   * Swap the axes, exactly as {@link CartesianOptions.horizontal} does: the
+   * INDEPENDENT axis moves off the angle and onto the RADIUS, so each category
+   * becomes its own concentric ring and magnitude is read as arc length. That
+   * is a radial bar chart, and it is the polar reading of the same flag that
+   * turns a column chart on its side — one field, the same meaning in both
+   * coordinate systems, so a consumer flipping `coord` keeps whatever
+   * orientation they asked for.
+   *
+   * The independent axis is then the radius, which is NOT a loop, so the
+   * projection reports `closed: false` however wide the sweep is.
+   */
+  horizontal?: boolean
 }
 
 const TAU = Math.PI * 2
@@ -202,13 +215,23 @@ export function polarProjection(frame: Frame, opts: PolarOptions = {}): Projecti
   const grid = opts.grid ?? 'ring'
   const spokes = Math.max(3, Math.floor(opts.spokes ?? 6))
 
-  const angleOf = (u: number): number => startAngle + u * sweep
-  const radiusOf = (v: number): number => inner + v * (outer - inner)
-  const point = (u: number, v: number): Point => polarPoint(cx, cy, radiusOf(v), angleOf(u))
+  // `radial` swaps which normalized coordinate reaches which physical one. The
+  // two helpers below stay named for what they PRODUCE, so every use site reads
+  // the same in both orientations and only the argument changes.
+  const radial = opts.horizontal ?? false
+  const toAngle = (n: number): number => startAngle + n * sweep
+  const toRadius = (n: number): number => inner + n * (outer - inner)
+  const point = (u: number, v: number): Point =>
+    radial
+      ? polarPoint(cx, cy, toRadius(u), toAngle(v))
+      : polarPoint(cx, cy, toRadius(v), toAngle(u))
 
   const toPoints = (samples: readonly Sample[]): Point[] => samples.map((s) => point(s.u, s.v))
-  // Only a FULL turn closes. A half-donut gauge must not join its two ends.
-  const closed = Math.abs(sweep) >= TAU - 1e-9
+  // Only a FULL turn closes, and only when the ANGLE is the independent axis.
+  // A half-donut gauge must not join its two ends; nor must a radial bar chart,
+  // whose independent axis is the radius and therefore has two distinct ends
+  // however far its arcs sweep.
+  const closed = !radial && Math.abs(sweep) >= TAU - 1e-9
 
   const self: Projection = {
     kind: 'polar',
@@ -238,10 +261,22 @@ export function polarProjection(frame: Frame, opts: PolarOptions = {}): Projecti
       const innerRing = curvePath([...bottom].reverse(), resolved, true)
       return `${outerRing}${innerRing}`
     },
+    // A band is an annular sector either way; `radial` only decides which pair
+    // of arguments bounds the radius and which bounds the angle. Wedge, or ring
+    // arc — the same primitive, which is the point of the seam.
     band: (u0, u1, v0, v1) =>
-      annularSectorPath(cx, cy, radiusOf(v0), radiusOf(v1), angleOf(u0), angleOf(u1)),
+      radial
+        ? annularSectorPath(cx, cy, toRadius(u0), toRadius(u1), toAngle(v0), toAngle(v1))
+        : annularSectorPath(cx, cy, toRadius(v0), toRadius(v1), toAngle(u0), toAngle(u1)),
     gridline: (v) => {
-      const r = radiusOf(v)
+      // An iso-MAGNITUDE line. When magnitude is the angle, that is a straight
+      // SPOKE from the inner radius to the outer one — not a ring, which under
+      // this orientation is a category boundary rather than a value.
+      if (radial) {
+        const a = toAngle(v)
+        return linearPath([polarPoint(cx, cy, inner, a), polarPoint(cx, cy, outer, a)])
+      }
+      const r = toRadius(v)
       if (grid === 'ring') return circlePath(cx, cy, r)
       const vertices: Point[] = []
       for (let i = 0; i < spokes; i++) {
@@ -250,10 +285,17 @@ export function polarProjection(frame: Frame, opts: PolarOptions = {}): Projecti
       return linearPath(vertices, closed)
     },
     tick: (u) => {
+      // Category labels. With the categories on the RADIUS they are ring names,
+      // so each one sits on its own ring just before the arcs begin and reads
+      // inward — the shape every radial bar chart uses.
+      if (radial) {
+        const p = polarPoint(cx, cy, toRadius(u), startAngle)
+        return { x: p.x, y: p.y, anchor: 'end', baseline: 'middle' }
+      }
       // Labels sit just OUTSIDE the plot, and their alignment follows the
       // angle: a label at 3 o'clock reads leftwards from the chart, one at
       // 9 o'clock rightwards. Anchoring them all `middle` overlaps the marks.
-      const angle = angleOf(u)
+      const angle = toAngle(u)
       const p = polarPoint(cx, cy, outer * 1.08, angle)
       const sin = Math.sin(angle)
       const cos = Math.cos(angle)
@@ -263,18 +305,36 @@ export function polarProjection(frame: Frame, opts: PolarOptions = {}): Projecti
         Math.abs(cos) < 0.2 ? 'middle' : cos > 0 ? 'auto' : 'hanging'
       return { x: p.x, y: p.y, anchor, baseline }
     },
-    // Straight up from the centre, where a ring gridline is least crowded.
-    valueTick: (v) => ({
-      x: cx,
-      y: cy - radiusOf(v),
-      anchor: 'middle',
-      baseline: 'middle',
-    }),
+    valueTick: (v) => {
+      // Magnitude is the angle here, so a value tick belongs just outside the
+      // outermost ring at that angle, aligned the way a category tick is in the
+      // default orientation.
+      if (radial) {
+        const angle = toAngle(v)
+        const p = polarPoint(cx, cy, outer * 1.08, angle)
+        const sin = Math.sin(angle)
+        const cos = Math.cos(angle)
+        const anchor: TickPlacement['anchor'] =
+          Math.abs(sin) < 0.2 ? 'middle' : sin > 0 ? 'start' : 'end'
+        const baseline: TickPlacement['baseline'] =
+          Math.abs(cos) < 0.2 ? 'middle' : cos > 0 ? 'auto' : 'hanging'
+        return { x: p.x, y: p.y, anchor, baseline }
+      }
+      // Straight up from the centre, where a ring gridline is least crowded.
+      return { x: cx, y: cy - toRadius(v), anchor: 'middle', baseline: 'middle' }
+    },
     locate: (x, y) => {
       const dx = x - cx
       const dy = y - cy
       if (dx === 0 && dy === 0) return null
-      // `atan2(dx, -dy)` measures clockwise from 12 o'clock, matching `angleOf`.
+      if (radial) {
+        // The independent axis is the radius, so invert the distance from the
+        // centre. A span of zero (inner === outer) carries no `u` at all.
+        const span = outer - inner
+        if (span === 0) return null
+        return (Math.hypot(dx, dy) - inner) / span
+      }
+      // `atan2(dx, -dy)` measures clockwise from 12 o'clock, matching `toAngle`.
       let angle = Math.atan2(dx, -dy) - startAngle
       if (sweep === 0) return null
       // Normalize into [0, TAU) so a pointer just anticlockwise of the start

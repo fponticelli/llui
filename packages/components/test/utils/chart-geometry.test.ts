@@ -3,9 +3,11 @@ import {
   bandCenter,
   bandExtent,
   nearestBand,
+  nearestShare,
   niceDomain,
   normalize,
   denormalize,
+  shareExtents,
   ticks,
   valueDomain,
 } from '../../src/utils/scale'
@@ -167,6 +169,91 @@ describe('scale — band', () => {
   })
 })
 
+describe('scale — share', () => {
+  it('allocates the axis in proportion to value', () => {
+    const s = shareExtents([1, 1, 2])
+    expect(s.map((x) => x.share)).toEqual([0.25, 0.25, 0.5])
+    expect(s[0]).toMatchObject({ start: 0, end: 0.25 })
+    expect(s[1]).toMatchObject({ start: 0.25, end: 0.5 })
+    expect(s[2]).toMatchObject({ start: 0.5, end: 1 })
+  })
+
+  // The slices ARE the datum, so they must tile the axis exactly. A gap of any
+  // size makes every slice misstate its share and a full turn stop being 100%.
+  it('tiles [0,1] with no gaps, and closes exactly at 1', () => {
+    const s = shareExtents([3, 7, 11, 0.5])
+    expect(s[0]!.start).toBe(0)
+    for (let i = 1; i < s.length; i++) expect(s[i]!.start).toBe(s[i - 1]!.end)
+    // Exactly 1, not 0.9999999999999999 — a hairline seam at 12 o'clock.
+    expect(s[s.length - 1]!.end).toBe(1)
+  })
+
+  // These inputs are not decoration: for most value sets the cumulative sum
+  // lands on exactly 1 by luck, so a test using round numbers passes whether
+  // the final slice is clamped or not. `[310, 779, 45]` is one that genuinely
+  // accumulates to 0.9999999999999999, which on a full turn is a hairline
+  // wedge of background at 12 o'clock.
+  it.each([
+    [310, 779, 45],
+    [623, 963, 849],
+    [463, 1000, 254],
+  ])('closes at exactly 1 for values that accumulate short (%#)', (...values) => {
+    // Guard the guard: prove the naive accumulation really does drift here, so
+    // this can never quietly become a test of nothing.
+    const total = values.reduce((a, b) => a + b, 0)
+    let naive = 0
+    for (const v of values) naive += v / total
+    expect(naive).not.toBe(1)
+
+    const s = shareExtents(values)
+    expect(s[s.length - 1]!.end).toBe(1)
+  })
+
+  // A share of a negative is undefined. Taking the magnitude would draw a slice
+  // for a number nobody measured; subtracting would push the total past 1.
+  it('gives a negative or non-finite value no arc, without disturbing the rest', () => {
+    const s = shareExtents([1, -5, 1, NaN, Infinity])
+    expect(s[1]!.share).toBe(0)
+    expect(s[3]!.share).toBe(0)
+    expect(s[0]!.share).toBe(0.5)
+    expect(s[2]!.share).toBe(0.5)
+    expect(s[4]!.end).toBe(1)
+  })
+
+  it('yields zero-width slices rather than NaN when nothing is positive', () => {
+    for (const values of [[], [0, 0], [-1, -2]]) {
+      const s = shareExtents(values)
+      expect(s).toHaveLength(values.length)
+      for (const slice of s) {
+        expect(Number.isNaN(slice.start)).toBe(false)
+        expect(Number.isNaN(slice.end)).toBe(false)
+        expect(slice.share).toBe(0)
+      }
+    }
+  })
+
+  it('hit-tests by CONTAINMENT, so a thin slice keeps its own interior', () => {
+    // Nearest-CENTRE would give most of the thin slice to the wide one.
+    const s = shareExtents([1, 99])
+    expect(nearestShare(0.005, s)).toBe(0)
+    expect(nearestShare(0.005 + 1e-9, s)).toBe(0)
+    expect(nearestShare(0.02, s)).toBe(1)
+    expect(nearestShare(0.99, s)).toBe(1)
+  })
+
+  it('answers the closing edge and refuses what is outside or unhittable', () => {
+    const s = shareExtents([1, 1])
+    expect(nearestShare(0, s)).toBe(0)
+    expect(nearestShare(1, s)).toBe(1)
+    expect(nearestShare(-0.1, s)).toBeNull()
+    expect(nearestShare(1.1, s)).toBeNull()
+    expect(nearestShare(NaN, s)).toBeNull()
+    // A zero-width slice cannot be pointed at, and it must not swallow u === 1.
+    expect(nearestShare(1, shareExtents([1, 0]))).toBe(0)
+    expect(nearestShare(0.5, shareExtents([0, 0]))).toBeNull()
+  })
+})
+
 describe('path — fmt', () => {
   it('is STABLE: equal geometry yields an identical string', () => {
     // The reconciler commits on output-equality, so a path recomputed from
@@ -312,6 +399,81 @@ describe('path — polar primitives', () => {
 
   it('rectPath normalizes corner order', () => {
     expect(rectPath(10, 20, 0, 0)).toBe(rectPath(0, 0, 10, 20))
+  })
+})
+
+describe('projection — polar with the axes swapped (radial bars)', () => {
+  const F: Frame = { x: 0, y: 0, width: 200, height: 200 }
+  // cx = cy = 100, outer = 100, inner = 50 at innerRadius 0.5.
+  const radial = polarProjection(F, { horizontal: true, innerRadius: 0.5 })
+  const angular = polarProjection(F, { innerRadius: 0.5 })
+
+  // The independent axis is the RADIUS, which has two ends however far the
+  // arcs sweep. Reporting `closed` here would join the first ring to the last.
+  it('is never closed, even over a full turn', () => {
+    expect(angular.closed).toBe(true)
+    expect(radial.closed).toBe(false)
+    expect(polarProjection(F, { horizontal: true, sweep: Math.PI }).closed).toBe(false)
+  })
+
+  it('maps u to the radius and v to the angle', () => {
+    // u = 0 is the inner ring, u = 1 the outer; v = 0 is 12 o'clock.
+    expect(radial.point(0, 0)).toEqual({ x: 100, y: 50 })
+    expect(radial.point(1, 0)).toEqual({ x: 100, y: 0 })
+    // A quarter turn of magnitude puts the point at 3 o'clock on that ring.
+    const q = radial.point(1, 0.25)
+    expect(q.x).toBeCloseTo(200, 6)
+    expect(q.y).toBeCloseTo(100, 6)
+  })
+
+  // The same two arguments in the default orientation are a wedge; here they
+  // are a ring arc. Asserting they DIFFER is what proves the swap reached
+  // `band` — the identical call must not produce the identical path.
+  it('draws a band as a ring arc rather than a wedge', () => {
+    const asArc = radial.band(0, 1, 0, 0.25)
+    const asWedge = angular.band(0, 1, 0, 0.25)
+    expect(asArc).not.toBe('')
+    expect(asArc).not.toEqual(asWedge)
+    // The arc spans the full radius (50 -> 100) over a quarter turn, so it
+    // reaches 3 o'clock at x = 200; the wedge spans the full turn instead.
+    expect(asArc).toContain('200')
+  })
+
+  // An iso-magnitude line. With magnitude on the angle it is a straight SPOKE;
+  // a ring here would be a category boundary, which is a different fact.
+  it('draws a value gridline as a spoke, not a ring', () => {
+    const spoke = radial.gridline(0)
+    // Inner ring to outer ring, straight up from the centre.
+    expect(spoke).toBe('M100,50L100,0')
+    expect(angular.gridline(0)).toContain('A')
+  })
+
+  it('labels categories on their own ring and values around the rim', () => {
+    const ring = radial.tick(1)
+    expect(ring).toMatchObject({ x: 100, y: 0, anchor: 'end', baseline: 'middle' })
+    // A value a quarter turn round reads leftwards from the chart, like the
+    // default orientation's category tick at the same angle.
+    expect(radial.valueTick(0.25).anchor).toBe('start')
+  })
+
+  it('hit-tests by distance from the centre', () => {
+    expect(radial.locate(100, 100)).toBeNull()
+    // 50px from the centre is the inner ring (u = 0), 100px the outer (u = 1).
+    expect(radial.locate(150, 100)).toBeCloseTo(0, 6)
+    expect(radial.locate(200, 100)).toBeCloseTo(1, 6)
+    expect(radial.locate(175, 100)).toBeCloseTo(0.5, 6)
+  })
+
+  it('carries no u when the ring span collapses', () => {
+    const flat = polarProjection(F, { horizontal: true, innerRadius: 0.95 })
+    expect(flat.locate(100, 100)).toBeNull()
+  })
+
+  // `horizontal` has to mean the same thing in both coordinate systems, or
+  // flipping `coord` silently reorients the chart.
+  it('is reachable through projectionFor, like the cartesian flag', () => {
+    expect(projectionFor('polar', F, { horizontal: true }).closed).toBe(false)
+    expect(projectionFor('polar', F, {}).closed).toBe(true)
   })
 })
 

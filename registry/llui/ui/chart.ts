@@ -95,6 +95,14 @@ export function chartVars(config: ChartConfig): string {
  * `data-coord` rule lets a polar chart claim a square box while a cartesian one
  * keeps the wide default.
  *
+ * The `data-domain` rule is what makes a pie readable. Under a SHARE domain the
+ * wedges tile the whole circle with no gaps — they have to, or each one would
+ * misstate its share — so two adjacent slices of similar colour meet on an
+ * invisible seam. A background-coloured stroke separates them without taking
+ * any angle away from either, which is exactly what shadcn's own `<Pie>` does
+ * (`stroke` on the series). It is scoped to `share` because a column chart gets
+ * its separation from the band padding and does not want the outline.
+ *
  * The `ChartConfig` is passed as `style: chartVars(config)` rather than as a
  * prop of its own. `ElProps`'s index signature admits only attribute values and
  * handlers, so intersecting a `config?: ChartConfig` onto it collapses that key
@@ -103,7 +111,7 @@ export function chartVars(config: ChartConfig): string {
  */
 export const ChartContainer = classPart(
   div,
-  "relative flex aspect-video w-full flex-col justify-center text-xs data-[coord=polar]:aspect-square data-[coord=polar]:max-h-[420px] [&_[data-part='svg']]:outline-none [&_[data-part='grid']]:stroke-border/50 [&_[data-part='axis-label']]:fill-muted-foreground",
+  "relative flex aspect-video w-full flex-col justify-center text-xs data-[coord=polar]:aspect-square data-[coord=polar]:max-h-[420px] [&_[data-part='svg']]:outline-none [&_[data-part='grid']]:stroke-border/50 [&_[data-part='axis-label']]:fill-muted-foreground data-[domain=share]:[&_[data-part='mark']]:stroke-background data-[domain=share]:[&_[data-part='mark']]:stroke-2",
 )
 
 /** The `<svg>`. `overflow-visible` matters: polar tick labels sit OUTSIDE the
