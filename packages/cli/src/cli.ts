@@ -11,6 +11,7 @@ import {
   type Config,
 } from './config.js'
 import { loadRegistry } from './registry.js'
+import { baselineWarning, findBaselineImports } from './stylesheet-check.js'
 
 const USAGE = `llui — add registry components to an LLui app
 
@@ -93,6 +94,9 @@ async function cmdInit(cwd: string, flags: Argv['flags']): Promise<void> {
   console.log('\n(Not styles/theme.css — that is the opt-in baseline stylesheet,')
   console.log(' whose unlayered rules would override every component you add.)')
   console.log('\nThen: llui add button card')
+
+  const warning = baselineWarning(await findBaselineImports(cwd))
+  if (warning !== null) console.warn(warning)
 }
 
 async function cmdList(cwd: string, flags: Argv['flags']): Promise<void> {
@@ -124,6 +128,11 @@ async function cmdAdd(cwd: string, argv: Argv): Promise<void> {
   if (result.written.length === 0 && result.skipped.length > 0) {
     console.log('\nNothing written: every file already exists.')
   }
+
+  // The one configuration that silently breaks what we just copied. Checked
+  // AFTER writing, so the warning is the last thing on screen.
+  const warning = baselineWarning(await findBaselineImports(cwd))
+  if (warning !== null) console.warn(warning)
   if (result.dependencies.length > 0) {
     console.log(`\nInstall: ${result.dependencies.join(' ')}`)
   }

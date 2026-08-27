@@ -20,6 +20,67 @@ both, together.
 > is a machine plus a registry skin, and its source is the closest thing to a reference
 > implementation.
 
+## Choosing a styling path
+
+The machines carry no classes, so the CSS has to come from somewhere. There are two places it
+can come from, and **you pick one** — see the warning at the end of this section for why they
+cannot be combined.
+
+|                        | **Registry** (`llui add`)                           | **Baseline** (`theme.css`)                   |
+| ---------------------- | --------------------------------------------------- | -------------------------------------------- |
+| Where the CSS lives    | your repo, one file per component                   | the package, one 1748-line stylesheet        |
+| Needs Tailwind         | yes                                                 | no                                           |
+| Looks like             | shadcn/ui, verbatim                                 | LLui's own look                              |
+| To restyle a component | edit your copy                                      | override its `[data-scope][data-part]` rules |
+| To restyle everything  | override tokens in `:root`                          | override tokens in `:root`                   |
+| Upgrades               | you own the file; `llui add --overwrite` to re-pull | arrives with the package                     |
+
+Both drive the identical machines through the identical `data-*` contract. Nothing about your
+component wiring changes between them; only the source of the classes does.
+
+### When the registry is the right answer
+
+- **You want shadcn's look**, or you want to paste a shadcn theme, tutorial or screenshot and
+  have it still describe what you get. Recipes are ported verbatim — a measured 98% class-set
+  match, 38 of 45 components identical.
+- **You expect to restyle.** The copied file is yours: change a class, delete a variant, add
+  one. No override layer, no specificity fight, no waiting on the package.
+- **You are already using Tailwind.** The recipes are Tailwind utilities; without a Tailwind
+  build they produce nothing.
+
+The cost is that you own what you copied. `llui add` never overwrites, so an upstream recipe
+fix does not reach you until you re-pull it deliberately — which is the same trade shadcn makes,
+and the reason it is a distribution model rather than a dependency.
+
+### When the baseline is the right answer
+
+- **You do not want a Tailwind pipeline.** One `@import` and every component looks finished.
+  `examples/markdown-showcase` uses it for exactly this reason.
+- **You are prototyping**, or the app's look is not the point yet.
+- **You want restyling to arrive with the package** rather than being your maintenance.
+
+The cost is that you are further from the CSS. Restyling means overriding
+`[data-scope][data-part]` rules rather than editing a recipe, and the look is LLui's rather
+than something a designer will recognise.
+
+### They cannot be combined
+
+> **Import one, not both.** `theme.css` styles components with UNLAYERED
+> `[data-scope][data-part]` rules, and unlayered CSS beats `@layer utilities` — so with both
+> imported, every registry recipe silently loses to the baseline. Both stylesheets are present
+> and correct; the wrong one wins.
+>
+> This is not a specificity problem you can out-write: layer precedence ignores specificity
+> entirely. Measured, not theorised — the registry `Switch`'s thumb rendered at the baseline's
+> 20px and ignored its own `size-4` until the demo's import was narrowed.
+>
+> `llui init` and `llui add` warn when they find `theme.css` imported in your project, because
+> nothing else will.
+
+If you are on the baseline and want to move: replace the `theme.css` / `theme-dark.css` imports
+with `tokens.css` / `tokens-dark.css`, add Tailwind, then `llui add` the components you use. The
+tokens are the same in both, so your theme survives the move.
+
 ## 1. Set up
 
 ```bash

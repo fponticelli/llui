@@ -72,8 +72,10 @@ across 55 files with a green test suite. Verify a namespace by compiling it.
 ## Registry components
 
 > **New here?** [Using the components](/components) is the walkthrough — install to a
-> styled, state-wired screen, plus the customization levels and the silent traps. This page
-> is the reference behind it.
+> styled, state-wired screen, plus the customization levels and the silent traps. It opens
+> with [choosing a styling path](/components#choosing-a-styling-path): this registry, or the
+> opt-in baseline stylesheet, with the trade-offs of each and why you must import one and not
+> both. This page is the reference behind it.
 
 `@llui/cli` copies component source into your project — shadcn's distribution model,
 which fits LLui better than it fits React: the copied file is compiled by _your_

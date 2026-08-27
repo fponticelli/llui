@@ -307,3 +307,90 @@ describe('registry recipes only style attributes their machine publishes', () =>
     expect(published.has('data-active')).toBe(true)
   })
 })
+
+/**
+ * The SAME invariant, applied to the other styling path.
+ *
+ * `theme.css` is the opt-in BASELINE stylesheet — 1748 lines of
+ * `[data-scope][data-part]` rules that make components look finished without
+ * Tailwind. It keys off exactly the same `data-*` contract the registry recipes
+ * do, so it can rot in exactly the same way: a selector naming an attribute the
+ * machine never publishes is valid CSS that never matches, with no error and no
+ * warning.
+ *
+ * It had no check at all until this ran ad hoc and found one — the drawer's
+ * enter animation selected `[data-placement=…]` against a machine publishing
+ * `data-side`, so the baseline drawer slid in from nowhere. One dead rule in
+ * 1748 lines is a healthy sheet; the point of putting it in CI is that the next
+ * one is caught at the commit that writes it rather than whenever someone
+ * thinks to look.
+ */
+const THEME_CSS = path.join(ROOT, 'packages/components/src/styles/theme.css')
+
+/** scope → the `data-*` / `aria-*` names its rules select on. */
+function themeAttrsByScope(css: string): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>()
+  // Selectors are everything before each `{`; splitting on `}` gives one block
+  // per rule. Crude, and sufficient: this sheet has no nested selectors.
+  for (const block of css.split('}')) {
+    const selector = block.split('{')[0]
+    if (selector === undefined) continue
+    const scopes = [...selector.matchAll(/\[data-scope=['"]?([a-z-]+)/g)].map((m) => m[1]!)
+    if (scopes.length === 0) continue
+    const attrs = [...selector.matchAll(/\[((?:data|aria)-[a-z-]+)/g)]
+      .map((m) => m[1]!)
+      .filter((a) => a !== 'data-scope' && a !== 'data-part')
+    for (const scope of scopes) {
+      const set = out.get(scope) ?? new Set<string>()
+      attrs.forEach((a) => set.add(a))
+      out.set(scope, set)
+    }
+  }
+  return out
+}
+
+/** Baseline scopes whose rules span several machines, as the registry's own
+ * MACHINE_OF does. Anything unlisted is looked up by its own name. */
+const THEME_MACHINE_OF: Record<string, readonly string[]> = {
+  menu: ['menu', 'menu-machine'],
+  'context-menu': ['context-menu', 'menu-machine'],
+  menubar: ['menubar', 'menu', 'menu-machine'],
+}
+
+describe('the baseline stylesheet only styles attributes its machine publishes', () => {
+  it('maps every styled scope to a machine', async () => {
+    const byScope = themeAttrsByScope(await readFile(THEME_CSS, 'utf8'))
+    expect(byScope.size).toBeGreaterThan(20)
+    const unmapped = [...byScope.keys()].filter(
+      (s) =>
+        THEME_MACHINE_OF[s] === undefined &&
+        !existsSync(path.join(MACHINES, `${s}.ts`)) &&
+        !existsSync(path.join(PATTERNS, `${s}.ts`)),
+    )
+    expect(
+      unmapped,
+      `These scopes name no machine — add them to THEME_MACHINE_OF:\n  ${unmapped.join('\n  ')}`,
+    ).toEqual([])
+  })
+
+  it('reports no dead rule', async () => {
+    const byScope = themeAttrsByScope(await readFile(THEME_CSS, 'utf8'))
+    const problems: string[] = []
+    for (const [scope, attrs] of byScope) {
+      const published = await machineAttrs(THEME_MACHINE_OF[scope] ?? [scope])
+      if (published.size === 0) continue
+      for (const attr of [...attrs].sort()) {
+        if (published.has(attr) || ALLOWED[`*: ${attr}`] !== undefined) continue
+        problems.push(`  [data-scope='${scope}'] … [${attr}] — the machine never publishes it`)
+      }
+    }
+    expect(problems, 'These baseline rules can never match:\n' + problems.join('\n')).toEqual([])
+  })
+
+  it('detects a dead rule', async () => {
+    // The shape that shipped: the drawer's slide-in on `data-placement`.
+    const published = await machineAttrs(['drawer'])
+    expect(published.has('data-side')).toBe(true)
+    expect(published.has('data-placement')).toBe(false)
+  })
+})
