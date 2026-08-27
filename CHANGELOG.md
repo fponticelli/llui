@@ -7,6 +7,63 @@ description: Release history for LLui packages
 
 All notable changes to LLui packages are documented here. LLui is a pre-1.0 project — every release may include breaking changes, though we try to call them out explicitly.
 
+## 2026-08-27 — @llui/components@0.18.0
+
+**Released:** `@llui/components@0.18.0`; `@llui/dom@0.13.3`; `@llui/markdown-editor@0.8.5`; `@llui/{a2ui@0.3.4,devmode-annotate@0.4.4,devmode-annotate-editor@0.1.5}`
+
+Pie, donut and radial charts as a domain rather than a mark type; a navigation-menu indicator that actually tracks; and registry icons that name any Iconify glyph instead of inlining fifteen paths.
+
+### Breaking
+
+- **`@llui/components@0.18.0`** — `ChartState` gained a required `domain: 'value' | 'share'`. Going through `chartC.init()` is unaffected (it defaults to `'value'`); a hand-written `ChartState` literal, or a stored state rehydrated without the key, now fails to type-check or renders as a value chart.
+- **`@llui/components@0.18.0`** — `ChartTooltipRow` gained a required `share: number | null`, and `ChartGeometry` a required `slices`. Both are values the machine PRODUCES, so a consumer that only reads them needs no change; a test double or a hand-built literal does.
+- **Registry `icons`** — no longer inlines geometry. Glyphs are fetched from the Iconify HTTP API by `prefix:name`, so icons are now ASYNC and need the network. Not an npm package: the registry ships as source from llui.dev, so this reaches you the next time you run `llui add icons`.
+
+### Migration
+
+- Building a `ChartState` by hand? Add `domain: 'value'` to keep today's behaviour. Rehydrating a stored one? Feed it through `init()` or spread `{ domain: 'value', ...stored }`.
+- Re-run `llui add icons --overwrite` to take the Iconify loader. If a CSP or an air-gapped deployment makes a third-party fetch unacceptable, set `iconConfig.api` to a self-hosted Iconify — the path shape is identical. Nothing else about the call sites changed: the fifteen named exports keep their names and signatures.
+- On `@llui/components@0.18.0` and using `@llui/markdown-editor`? Take `0.8.5` too — its `@llui/components` peer range is what excludes the older pairing.
+
+### `@llui/components@0.18.0`
+
+- **Added** pie, donut, the 100%-share bar and radial charts — with no new mark type. `ChartState.domain` selects how the INDEPENDENT axis is allocated: `'value'` gives every category an equal slot and reads magnitude off `v`, `'share'` allocates a slot proportional to the value and lets `v` span the whole depth. That one substitution is the whole of a pie, which is why `coord` still re-projects ONE dataset — the same state is a donut in polar and a single full-width 100%-share bar in cartesian. New: `ChartDomain`, `ChartState.domain`, `ChartInit.domain`, the `setDomain` message, `ChartGeometry.slices`, `ChartTooltipRow.share`, and `data-domain` on the root part.
+- **Added** radial bars, with no new field at all — `polarProjection` now honours the existing `horizontal` flag, reading "the independent axis moves off its default screen axis" as "off the angle, onto the radius". One flag, the same meaning in both coordinate systems.
+- **Added** `shareExtents`, `nearestShare` and `ShareSlice` in `utils/scale`, and `PolarOptions.horizontal` in `utils/projection`. A share axis carries NO padding (the slot IS the datum, so a gap would make every slice misstate its share), a negative value takes no arc (a share of a negative is undefined), and `line`/`area` series are declined under a share domain rather than approximated — each the same call as polar declining `monotone`.
+- **Added** a `navigation-menu` `indicator` part and `watchNavMenuIndicator`, so the arrow that tracks the open top-level trigger works out of the box. The machine answers WHETHER (`data-state="visible" | "hidden"`); the watcher answers WHERE, writing `--indicator-left`/`--indicator-width` from the DOM — the same state/layout split `tabs` already uses, which keeps pixels out of JSON-serializable state.
+- **Fixed** `data-state="visible"`/`"hidden"` on the navigation-menu indicator had no producer at all, so both ported Radix animation recipes were dead CSS (#229).
+- **Improved** `watchNavMenuIndicator` and `watchTabIndicator` now document that `onMount` hands a callback the BUILD's root container, not the element the call sits inside — pass the component's own root, or a page with two of them silently drives the first one's indicator.
+
+### `@llui/dom@0.13.3`
+
+- **Fixed** `onMount`'s JSDoc said it receives "the mounted parent element". It does not: mounts are collected per BUILD — a view, a `branch`/`show` arm, an `each` row — and every callback in one gets that build's root container. Both ways of relying on the old wording fail SILENTLY: an `instanceof` guard on the argument makes the callback do nothing at all, and a `querySelector` written as if it were the local element still finds the first match across the whole build, so it works until a second instance of the component exists on the page.
+
+### `@llui/markdown-editor@0.8.5`
+
+- **Improved** republished so its `@llui/components` peer range admits `0.18.0`. No source changes.
+
+### `@llui/{a2ui@0.3.4,devmode-annotate@0.4.4,devmode-annotate-editor@0.1.5}`
+
+- **Improved** republished against `@llui/components@0.18.0`. No source changes.
+
+### Registry (served from llui.dev, not npm)
+
+- **Breaking** `icons` loads glyphs from Iconify by `prefix:name` — `icon('lucide:star')`, `icon('simple-icons:github')` — instead of inlining fifteen Lucide paths. Requests are batched to ONE per prefix per tick. The result is still a real `<svg>`, never an `<img>` or the `iconify-icon` web component, either of which would slip past the `[&_svg:not([class*='size-'])]:size-4` hook every recipe uses. The API response is third-party markup and is never assigned to `innerHTML`: every node is rebuilt from an element and attribute allowlist, so a `<script>`, an `onload` or an `href` is dropped with its subtree. A failed load is not cached, so a dropped connection retries on the next mount rather than becoming a permanent blank.
+- **Fixed** the icon wrapper imposed Lucide's `fill="none" stroke="currentColor" stroke-width="2"` on every glyph. Lucide overrides all three in its own body, so it looked harmless — and every other set inherited a 2px stroke it never asked for, rendering filled `mdi` and `simple-icons` glyphs as blobs with their counters filled in.
+- **Fixed** the radio indicator rendered as a RING instead of a dot. Iconify's body puts `fill="none"` on the element itself, and a presentation attribute beats a value inherited from the parent, so `fill-current` on the `<svg>` could not reach it. Now `[&>*]:fill-current`, with `radio-group`'s own override at `[&>*]:fill-primary`.
+- **Added** `chart` styles a share domain: `data-domain=share` strokes wedges with the background colour, since slices tile with no gaps and two adjacent similar colours otherwise meet on an invisible seam.
+- **Added** an Icons section to the registry demo, plus pie/donut/100%-bar/radial controls in the charts section.
+
+### Docs
+
+- **Added** `site/content/components.md` now covers the share domain (pie, donut, the cartesian 100%-share bar), `horizontal` as radial bars, and a new Icons section.
+- **Fixed** `docs/adr/0003-charts-project-rather-than-branch.md` recorded pie and radial as deferred; it now records the decision and why a `'pie'` mark type was rejected — it is meaningless under a cartesian projection, so it would have to force polar or draw nothing, breaking the property the ADR exists to protect.
+
+### Tooling
+
+- **Fixed** every GitHub Action moved off the Node 20 runtime (checkout v7, setup-node v7, cache v6, pnpm/action-setup v6, upload-pages-artifact v5, deploy-pages v5), clearing the deprecation warning on every run before the fallback is withdrawn.
+- **Fixed** `packages/router`'s `same-fragment.browser.test.ts` sampled its assertion one animation frame after an unrelated proxy signal, so a loaded CI runner reddened `main` on a passing router (#230). Both samples now wait for the asserted state to stop changing.
+
 ## 2026-08-27 — @llui/components@0.17.0
 
 **Released:** `@llui/components@0.17.0`; `@llui/dom@0.13.2`; `@llui/compiler@0.13.1`; `@llui/cli@0.2.0`; `@llui/{a2ui@0.3.3,devmode-annotate@0.4.3,devmode-annotate-editor@0.1.4,markdown-editor@0.8.4}`
