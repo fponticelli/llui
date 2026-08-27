@@ -71,6 +71,10 @@ across 55 files with a green test suite. Verify a namespace by compiling it.
 
 ## Registry components
 
+> **New here?** [Using the components](/components) is the walkthrough — install to a
+> styled, state-wired screen, plus the customization levels and the silent traps. This page
+> is the reference behind it.
+
 `@llui/cli` copies component source into your project — shadcn's distribution model,
 which fits LLui better than it fits React: the copied file is compiled by _your_
 `@llui/vite-plugin`, so it gets view lowering, the compile-time lint rules, and the

@@ -115,3 +115,53 @@ state, errors, and submission. For **async** validation, thread a request id thr
 validate/result messages and drop stale results — an out-of-order resolution otherwise
 overwrites a newer one. (The `form-field` pattern does this; hand-rolled async validation
 must replicate it.)
+
+## Styling them: the registry
+
+The machines carry no classes. Most apps style them with the **registry** — shadcn/ui's
+recipes copied into the project by `@llui/cli` (`llui init`, `llui add button dialog`) and
+spread onto the part bags. The copied file is the app's own source and is expected to have
+been edited; `llui add` never overwrites without `--overwrite`.
+
+Full walkthrough: **https://llui.dev/components**. What matters in review:
+
+- **`tokens.css`, NOT `theme.css`.** `theme.css` is the opt-in BASELINE stylesheet, and its
+  `[data-scope][data-part]` rules are UNLAYERED — unlayered CSS beats `@layer utilities`, so
+  importing it alongside registry components makes every recipe lose to it. Silently: both
+  stylesheets are present and correct, and the wrong one wins. An app importing both has a bug
+  even if nothing looks obviously off yet.
+- **Style state from `data-*`, and check the machine publishes it.** Every part bag emits
+  `data-state` / `data-disabled` / `data-orientation` and friends; the branch belongs in the
+  recipe (`data-[state=open]:bg-muted`), not in a computed class. A recipe naming an attribute
+  nobody emits is valid CSS that never matches — no error, no warning. The part bag's TYPE is
+  the list. Watch the near-miss spellings: bare presence (`data-highlighted`) versus an enum
+  (`data-[state=highlighted]`), and `data-axis` versus `data-orientation`.
+- **A `class` override wins**, because the registry routes it through `tailwind-merge`. A
+  reactive class puts the conditional INSIDE the `.map` body — the compiler rejects an operator
+  applied to a Signal.
+- **`overlay()` gives you neither position nor backdrop.** Pass `positionerClass` for the
+  `fixed inset-0` and the z-index; render the backdrop yourself inside `content()`, where it
+  wants `absolute inset-0`.
+
+### Traps that look like framework bugs
+
+Each is silent, and each has cost real debugging time:
+
+- **Some machines deliberately do not track the pointer.** `slider` and `splitter` are
+  keyboard-complete but ignore the mouse until the app wires the drag, because only the view
+  knows which element's rect a percentage is measured against. Each exports the helper
+  (`valueFromPoint`, `positionFromPoint`) and expects an `onMount` attaching
+  `pointermove`/`pointerup` **to the window**. Symptom: arrow keys work, the mouse does nothing.
+- **Some parts do not hide themselves.** A radio indicator, a command palette's empty state.
+  Gate them in CSS off the parent's `data-state`, or every radio renders filled.
+- **A part bag value is not always an attribute.** `combobox`'s `liveRegion` carries `text` (a
+  child) and `form-field`'s `errorText` carries `issues` (an array). Spreading those whole emits
+  `text="…"` on an empty live region, which announces nothing. Destructure.
+- **A live region must stay MOUNTED** — toggle with `hidden`, never `show`.
+- **Do not wrap a field in a panel recipe.** `ComboboxRoot` is the `Command` palette SURFACE,
+  with `overflow-hidden`; wrapping a labelled input in it clips the input's focus ring on three
+  sides, which paints as a thick border along one edge and reads as a styling bug.
+
+When a styling report is visual, **look at the render before measuring attributes**. Reading
+`getComputedStyle` in a background tab is actively misleading — Chrome pauses transitions there
+and returns whatever value the property is stuck at.
