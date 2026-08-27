@@ -245,11 +245,14 @@ export function icon(name: string, extra?: string): (props?: ElProps) => Mountab
         // 24×24 and `paint` corrects it per icon, so nothing reflows for the
         // common case and an odd-sized glyph settles on its first paint.
         viewBox: '0 0 24 24',
-        fill: 'none',
-        stroke: 'currentColor',
-        'stroke-width': '2',
-        'stroke-linecap': 'round',
-        'stroke-linejoin': 'round',
+        // NO PAINT ON THE WRAPPER. Iconify normalizes it into the BODY —
+        // lucide's elements carry `fill="none" stroke="currentColor"
+        // stroke-width="2"`, and a filled set's carry `fill="currentColor"` and
+        // no stroke at all. Putting lucide's defaults here looks harmless
+        // because lucide overrides every one of them, and then silently ruins
+        // every other set: a filled `mdi` or `simple-icons` path inherits the
+        // 2px stroke it never asked for and renders as a blob with its
+        // counters filled in. Measured on the demo page, not reasoned about.
         ...rest,
         'data-icon': marker,
         class: mergeClass(extra ?? '', className),
@@ -286,10 +289,17 @@ export const SearchIcon = icon('lucide:search')
 /**
  * The radio dot. Lucide's `circle` is STROKED, and upstream fills it from the
  * class side (`fill-primary` on shadcn's `RadioGroupItem`) rather than swapping
- * the glyph — a CSS `fill` beats the body's `fill="none"` presentation
- * attribute, so `fill-current` is what makes it a dot.
+ * the glyph.
+ *
+ * The variant selector is load-bearing and `fill-current` alone does NOT work.
+ * With `lucide-react` the `<circle>` has no fill of its own, so a `fill-*` on
+ * the `<svg>` inherits down and fills it. Iconify's body puts `fill="none"` on
+ * the element itself, and a presentation attribute on an element beats a value
+ * INHERITED from its parent — so the class has to match the child directly.
+ * Measured: with `fill-current` the dot rendered `fill: none` and the radio
+ * showed a ring instead of a dot.
  */
-export const CircleIcon = icon('lucide:circle', 'fill-current')
+export const CircleIcon = icon('lucide:circle', '[&>*]:fill-current')
 export const GripVerticalIcon = icon('lucide:grip-vertical')
 /** The spinner arc. Pair with `animate-spin`. */
 export const LoaderIcon = icon('lucide:loader-circle')

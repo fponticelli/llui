@@ -247,11 +247,31 @@ describe('icons — the response is untrusted markup', () => {
 })
 
 describe('icons — CircleIcon is the radio dot', () => {
-  // Lucide's circle is STROKED; upstream fills it from the class side. A CSS
-  // `fill` beats the body's `fill="none"` presentation attribute, which is the
-  // whole reason this works.
-  it('carries fill-current so the stroked glyph reads as a dot', () => {
-    fetchMock.mockResolvedValue(ok(lucide({})))
-    expect(mount(CircleIcon()).getAttribute('class')).toContain('fill-current')
+  // Lucide's circle is STROKED and upstream fills it from the class side. The
+  // selector has to match the CHILD, not the <svg>: Iconify's body puts
+  // `fill="none"` on the element itself, and a presentation attribute on an
+  // element beats a value INHERITED from its parent. A plain `fill-current`
+  // therefore renders a ring, which is what shipped for one commit.
+  //
+  // jsdom applies no Tailwind here, so this cannot assert a computed colour.
+  // It asserts the two facts that make the hazard real instead — the attribute
+  // survives sanitization, and the class reaches past the <svg> — and the
+  // rendered result is checked in the browser.
+  it('targets the CHILD, because the body carries its own fill="none"', async () => {
+    fetchMock.mockResolvedValue(
+      ok(
+        lucide({
+          circle: {
+            body: '<circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/>',
+          },
+        }),
+      ),
+    )
+    const el = mount(CircleIcon())
+    // A child-targeting variant, not a bare `fill-*` on the <svg>.
+    expect(el.getAttribute('class')).toContain('[&>*]:fill-current')
+    await settle()
+    // The attribute that defeats an inherited fill is really there.
+    expect(el.querySelector('circle')!.getAttribute('fill')).toBe('none')
   })
 })

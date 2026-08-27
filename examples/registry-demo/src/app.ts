@@ -12,6 +12,7 @@
  */
 import { component, div, type Mountable } from '@llui/dom'
 import * as presentational from './sections/presentational'
+import * as icons from './sections/icons'
 import * as forms from './sections/forms'
 import * as navigation from './sections/navigation'
 import * as overlays from './sections/overlays'
@@ -26,6 +27,7 @@ import { groupHeading } from './sections/shared'
 
 interface State {
   presentational: presentational.State
+  icons: icons.State
   forms: forms.State
   navigation: navigation.State
   overlays: overlays.State
@@ -40,6 +42,7 @@ interface State {
 
 type Msg =
   | { type: 'presentational'; msg: presentational.Msg }
+  | { type: 'icons'; msg: icons.Msg }
   | { type: 'forms'; msg: forms.Msg }
   | { type: 'navigation'; msg: navigation.Msg }
   | { type: 'overlays'; msg: overlays.Msg }
@@ -56,6 +59,7 @@ export const App = component<State, Msg, never>({
   init: () => [
     {
       presentational: presentational.init()[0],
+      icons: icons.init()[0],
       forms: forms.init()[0],
       navigation: navigation.init()[0],
       overlays: overlays.init()[0],
@@ -73,6 +77,8 @@ export const App = component<State, Msg, never>({
     switch (msg.type) {
       case 'presentational':
         return [{ ...state, presentational: presentational.update(state.presentational)[0] }, []]
+      case 'icons':
+        return [{ ...state, icons: icons.update(state.icons)[0] }, []]
       case 'forms':
         return [{ ...state, forms: forms.update(state.forms, msg.msg)[0] }, []]
       case 'navigation':
@@ -99,6 +105,9 @@ export const App = component<State, Msg, never>({
     div([
       groupHeading('Presentational'),
       ...presentational.view(),
+
+      groupHeading('Icons'),
+      ...icons.view(),
 
       groupHeading('Forms'),
       ...forms.view(state.at('forms'), (msg) => send({ type: 'forms', msg })),
