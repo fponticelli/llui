@@ -19,11 +19,6 @@ permissions:
   pages: write
   id-token: write
 
-# Opt JS actions into Node 24 now — their v4 majors run on Node 20 (deprecated).
-# GitHub makes Node 24 the default 2026-06-16, after which this is a no-op.
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 concurrency:
   group: pages
   cancel-in-progress: true
@@ -37,15 +32,15 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # workflow_run checks out the default branch by default; pin to the exact
           # commit CI validated so the deploy matches what passed.
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -55,7 +50,7 @@ jobs:
       # Reuse the same turbo cache as ci.yml (shared key prefix) so the docs
       # deploy replays package builds instead of recompiling from scratch.
       - name: Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json') }}-${{ github.sha }}
@@ -89,7 +84,7 @@ jobs:
       - name: Build + bundle example apps
         run: cd site && npx tsx src/build-examples.ts
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: site/dist/client
 
@@ -101,4 +96,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

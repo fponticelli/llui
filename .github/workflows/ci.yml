@@ -10,10 +10,7 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-# Opt JS actions into Node 24 now — their v4 majors run on Node 20 (deprecated).
-# GitHub makes Node 24 the default 2026-06-16, after which this is a no-op.
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   # Turbo's background daemon and its telemetry flush both do I/O after a run
   # completes; in the CI container that post-run step hung turbo for 24 min
   # after every task had already finished (all log groups closed, but turbo
@@ -41,7 +38,7 @@ jobs:
     # minutes.
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Only this job runs inside a `container:`, and there the checkout is owned
       # by a different uid than the steps run as. actions/checkout papers over
@@ -54,9 +51,9 @@ jobs:
       # it runs directly on the runner, where the uids already match.
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -70,7 +67,7 @@ jobs:
       # entry, and restore-keys fall back to the newest compatible cache. The
       # key prefix is shared with deploy-docs.yml so both workflows reuse it.
       - name: Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json') }}-${{ github.sha }}
@@ -226,11 +223,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -238,7 +235,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Turbo cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'turbo.json') }}-${{ github.sha }}
