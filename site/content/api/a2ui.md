@@ -7,7 +7,7 @@ description: "Renderer for Google's A2UI (Agent-to-UI) protocol on the LLui sign
 
 <!-- package-version:start -->
 
-**Current package version:** `0.3.1`
+**Current package version:** `0.3.2`
 
 <!-- package-version:end -->
 

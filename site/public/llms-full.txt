@@ -1898,7 +1898,7 @@ __lluiDebug = __lluiComponents.Dashboard // switch target
 
 # @llui/dom
 
-**Current package version:** `0.13.0`
+**Current package version:** `0.13.1`
 
 Runtime for the [LLui](https://github.com/fponticelli/llui) web framework — The Elm Architecture on a compile-time-optimized **signal** runtime.
 
@@ -10849,7 +10849,7 @@ const wsSendRunner: Runner
 
 # @llui/components
 
-**Current package version:** `0.15.0`
+**Current package version:** `0.16.0`
 
 66 headless UI components for [LLui](https://github.com/fponticelli/llui). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes. Component state is JSON-serializable: numeric inputs reject non-finite runtime values, use finite-or-absent bounds, and validate positive divisors such as pagination `pageSize` and numeric crop `aspectRatio`.
 
@@ -54563,7 +54563,7 @@ class BindingMap {
 
 # @llui/devmode-annotate
 
-**Current package version:** `0.4.1`
+**Current package version:** `0.4.2`
 
 Browser-side HUD that connects the running LLui app to a shared on-disk notebook the LLM can also read and write. Floating button → click to draft a text note, or drag to draw a rectangle around the thing you want the LLM to look at → submit. The note lands as a `.md` file on disk under `<your-app>/.llui/notes/session-<id>/` with a screenshot, the URL, the route, the component path under the cursor, scope state, recent messages, dirty trace, and (opt-in) verbose runtime telemetry.
 
@@ -56364,7 +56364,7 @@ const SCREENSHOT_URL_CACHE_LIMIT
 
 # @llui/devmode-annotate-editor
 
-**Current package version:** `0.1.2`
+**Current package version:** `0.1.3`
 
 The optional Lexical-powered note surface for [`@llui/devmode-annotate`](/api/devmode-annotate). Core always provides a plain Markdown textarea; importing this package before the HUD mounts registers the existing rich editor with its floating selection toolbar and slash commands.
 
@@ -57711,7 +57711,7 @@ export interface SerializedNote {
 
 # @llui/a2ui
 
-**Current package version:** `0.3.1`
+**Current package version:** `0.3.2`
 
 Renders Google's [**A2UI**](https://a2ui.org) (Agent-to-UI) protocol on the LLui signal runtime. A2UI is a transport-agnostic JSON protocol: a local or remote agent streams declarative UI messages that reference components from a **catalog the client already trusts** — the agent never ships code. `@llui/a2ui` is a renderer for that stream, built on LLui's chunked-mask reconciler, and it reuses [`@llui/components`](/api/components) headless primitives for the interactive parts.
 
@@ -59383,7 +59383,7 @@ const defaultAllowedProtocols: readonly string[]
 
 # @llui/markdown-editor
 
-**Current package version:** `0.8.2`
+**Current package version:** `0.8.3`
 
 A WYSIWYG Markdown editor you drop into an LLui app as a single component. The user edits rich text; the editor's state holds the Markdown. It is built on [`@llui/lexical`](/api/lexical) and ships a transformer registry (GFM, callouts, …), a toolbar surface, and a set of opt-in plugins for the features beyond plain prose — links, images, tables, math, mentions, emoji, slash commands, and more.
 

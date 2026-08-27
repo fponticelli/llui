@@ -11,6 +11,102 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 **Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package that consumes `@llui/dom` declares it as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. Interaction consumers use the same peer pattern for `@llui/interactions`, preserving one document-level registry. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)
 
+## 2026-08-26 — @llui/components@0.16.0, @llui/dom@0.13.1
+
+**Released:** `@llui/components@0.16.0`; `@llui/dom@0.13.1`; `@llui/a2ui@0.3.2`; `@llui/devmode-annotate@0.4.2`; `@llui/devmode-annotate-editor@0.1.3`; `@llui/markdown-editor@0.8.3`; `@llui/cli@0.1.0`
+
+The component registry reaches shadcn/ui parity — 85 items, every headless machine with a visual
+surface skinned — and the rendering pass that got it there found eleven real defects in
+`@llui/components` and `@llui/dom`. Almost all were silent: valid CSS naming an attribute nobody
+emits, a part bag frozen at build time, an ARIA state that renders as no state at all.
+
+**`@llui/components@0.15.0` and `@llui/cli@0.1.0` were prepared on the same date but never reached
+npm** (publish auth failed). This release supersedes 0.15.0; `@llui/cli@0.1.0` ships unchanged
+alongside it.
+
+### Breaking
+
+- **`@llui/components@0.16.0`** — the menu highlight is now a bare `data-highlighted` attribute, not
+  `data-state="highlighted"`. Every other highlightable list in the package (`select`, `combobox`,
+  `listbox`, `tags-input`), the baseline stylesheet, and every registry menu recipe already used the
+  bare flag, so the enum spelling matched nothing: **dropdown, context-menu and menubar items had no
+  hover or keyboard highlight at all.** `data-state` on this machine now means only open/closed.
+
+### Migration
+
+- If you style menu items with `data-[state=highlighted]:`, change it to `data-[highlighted]:`. If
+  you use the baseline stylesheet or the registry recipes, nothing to do — they were already correct
+  and are now reached.
+
+### `@llui/dom@0.13.1`
+
+- **Fixed** `aria-*` boolean values render as the strings `"true"` / `"false"`. ARIA state
+  attributes are enumerated, not HTML booleans: `true` used to render `aria-checked=""` (invalid —
+  assistive tech reports no state) and `false` removed the attribute entirely (a `role="switch"`
+  with no `aria-checked` has no state at all). A part bag doing the natural
+  `state.map((s) => s.checked)` hit exactly this across seven component families. `null` /
+  `undefined` still remove the attribute — that is how a part bag spells "not applicable".
+
+### `@llui/components@0.16.0`
+
+- **Breaking** the menu highlight is `data-highlighted`. See top of release block.
+- **Fixed** `date-picker`'s `dayCell` returned a frozen snapshot. Every flag was a plain value read
+  off the `DayCell` passed in, and `view()` runs once — so selection, focus and range preview
+  updated in state and never reached the DOM. The bag's flags are now Signals derived from live
+  state.
+- **Fixed** `splitter` announced every separator the wrong way round. `aria-orientation` names the
+  axis of the SEPARATOR, which is the inverse of the split axis; the value was published straight
+  through.
+- **Fixed** `menubar` lost APG's cross-menu Left/Right. With a menu open, focus is on the content,
+  so the arrows never reached the bar — a keyboard user could not get from File to Edit without
+  closing File first.
+- **Fixed** `slider`'s range spanned lowest→highest value unconditionally. Correct for two thumbs, a
+  zero-width band for one, so a single-thumb slider tracked its value perfectly and drew no fill.
+- **Fixed** `combobox`'s live region only announced on `status: 'loaded'`, which only an async load
+  sets — so a combobox given its items synchronously announced nothing, ever.
+- **Added** `select`'s trigger publishes `data-placeholder` while nothing is selected, which is how
+  shadcn greys that text. Without it the placeholder rendered at full weight and read as a real
+  selection.
+- **Added** `patterns/searchable-select`'s `overlay()` accepts `positionerClass`. Every `overlay()`
+  under `components/` already took one; this pattern was missed, leaving a utility-styled consumer
+  no way to give the popup a stacking context.
+- **Fixed** the baseline stylesheet ships `tokens.css` separately from `theme.css`, so an app can
+  take the tokens without the unlayered component rules that would otherwise override every utility
+  class.
+
+### `@llui/a2ui@0.3.2`
+
+- **Fixed** the calendar builder reads day flags off the `DayCell` rather than spreading the part
+  bag, which is required now that the bag is reactive: its signals are rooted in a2ui's own surface
+  store and cannot be mounted inside an `each` row.
+
+### `@llui/devmode-annotate@0.4.2`, `@llui/devmode-annotate-editor@0.1.3`, `@llui/markdown-editor@0.8.3`
+
+- **Improved** republished so their `@llui/components` peer range admits 0.16.0. No source changes.
+
+### Registry (served from llui.dev, copied by `llui add`)
+
+- **Added** 61 → 85 items. Every `@llui/components` machine with a visual surface now has a skin,
+  plus `date-picker`, `data-table` and `drawer`. Only `chart` (#227) and `form` (#228) remain, both
+  filed as decisions rather than ports.
+- **Fixed** five recipes styled attributes their machine never publishes — dead CSS that compiles
+  cleanly. `scroll-area`'s thumb rendered at zero pixels, `carousel`'s active dot never highlighted,
+  and `calendar` had no today marker, selection fill, range or focus ring on any day.
+- **Fixed** shadcn's default props, lost in a recipe-only port. `Switch` put its entire geometry
+  behind `data-[size=default]:`, so without the attribute it rendered as a ~2px sliver with a
+  zero-size thumb — toggling correctly, looking like nothing happened.
+- **Added** `scripts/test/registry-attrs.test.ts` cross-checks every attribute a recipe styles
+  against what its machine publishes, and that every `data-[x=default]` recipe supplies that
+  attribute.
+
+### Docs
+
+- **Added** [Using the components](https://llui.dev/components) — a walkthrough from an empty app to
+  a styled, state-wired screen, with a Gotchas section for the silent traps (machines that
+  deliberately do not track the pointer, parts that do not hide themselves, a live region whose
+  `text` is a child).
+- **Fixed** `/styling` had a nav entry and a content file but no route — the link 404'd.
+
 ## 2026-08-26 — @llui/components@0.15.0, @llui/cli@0.1.0
 
 **Released:** `@llui/components@0.15.0`; `@llui/cli@0.1.0`; `@llui/a2ui@0.3.1`; `@llui/devmode-annotate@0.4.1`; `@llui/devmode-annotate-editor@0.1.2`; `@llui/markdown-editor@0.8.2`
