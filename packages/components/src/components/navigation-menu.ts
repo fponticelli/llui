@@ -458,6 +458,14 @@ export function connect(
  * `onMount` with the navigation-menu ROOT element; the returned function
  * removes the observers.
  *
+ * PASS THE NAV, NOT WHATEVER `onMount` HANDED YOU. `onMount` receives the
+ * BUILD's root container — the component's mount container, or an arm's or a
+ * row's — not the element the call sits inside. Forwarding that resolves the
+ * lookups below in document order across everything in the build, so a page
+ * with two navigation menus has both of them tracking the first one's arrow.
+ * That is #123's shape exactly, and it is invisible until there are two.
+ * Scope it yourself: give the nav an id and `root.querySelector('#…')`.
+ *
  * Sets `--indicator-left`, `--indicator-top`, `--indicator-width` and
  * `--indicator-height` on the indicator element every time a trigger's
  * `data-state` flips or the root resizes. Style the indicator with:

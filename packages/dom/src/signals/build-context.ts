@@ -351,8 +351,9 @@ export function __registerScopeVariants(variants: readonly string[]): void {
   if (ctx) registerVariants(ctx, variants)
 }
 
-/** Run the onMount callbacks collected during a build, passing the mounted
- * parent element; push their returned cleanups onto `teardowns`. */
+/** Run the onMount callbacks collected during a build, passing that BUILD's
+ * root container — not each callback's own parent element; push their returned
+ * cleanups onto `teardowns`. */
 export function runMounts(
   mounts: ReadonlyArray<(root: Element) => void | (() => void)>,
   root: Element,
@@ -364,9 +365,22 @@ export function runMounts(
   }
 }
 
-/** Register a callback to run after the surrounding view's nodes are mounted,
- * receiving the mounted parent element. Returning a function registers a
- * teardown (run on unmount / dispose). Returns a marker node for the view array. */
+/**
+ * Register a callback to run after the surrounding view's nodes are mounted.
+ *
+ * IT RECEIVES THE BUILD'S ROOT CONTAINER, NOT THE ELEMENT THE CALL SITS INSIDE.
+ * Mounts are collected per BUILD — a component's view, an arm, an `each` row —
+ * and `runMounts` passes that build's container to every callback in it. So an
+ * `onMount` written inside `svg({...}, [ … ])` is handed the component's mount
+ * container, and a callback that assumed its immediate parent silently does
+ * nothing (an `instanceof` guard fails, a `querySelector` scoped to the wrong
+ * subtree finds nothing). Reach for the element you want with a query from the
+ * root, or key it with an attribute of your own.
+ *
+ * Returning a function registers a teardown (run on unmount / dispose).
+ * Returns a marker node for the view array — it must be PLACED in the array or
+ * nothing is registered.
+ */
 export function onMount(cb: (root: Element) => void | (() => void)): Mountable {
   return mountable(() => {
     const c = requireCtx()

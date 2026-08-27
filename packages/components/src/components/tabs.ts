@@ -360,6 +360,11 @@ export function connect(
  * `onMount` with the tabs root element; the returned function removes
  * the observers.
  *
+ * PASS THE TABS ROOT, NOT WHATEVER `onMount` HANDED YOU. `onMount` receives the
+ * BUILD's root container, not the element the call sits inside, so forwarding
+ * it resolves the lookups below in document order across the whole build — and
+ * a page with two tab sets has both tracking the first one's indicator.
+ *
  * Sets `--indicator-left`, `--indicator-top`, `--indicator-width`,
  * `--indicator-height` on the indicator element every time the active
  * trigger changes or the list resizes. Style the indicator with:

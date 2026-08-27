@@ -37,7 +37,7 @@
       "name": "alert-dialog",
       "type": "registry:ui",
       "title": "Alert Dialog",
-      "description": "Skin for @llui/components/alert-dialog — a confirmation that will not dismiss on an outside click.",
+      "description": "Skin for @llui/components/alert-dialog \u2014 a confirmation that will not dismiss on an outside click.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["dialog", "utils"],
       "files": [
@@ -52,7 +52,7 @@
       "name": "angle-slider",
       "type": "registry:ui",
       "title": "Angle Slider",
-      "description": "Skin for @llui/components/angle-slider — a circular dial.",
+      "description": "Skin for @llui/components/angle-slider \u2014 a circular dial.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -82,7 +82,7 @@
       "name": "async-list",
       "type": "registry:ui",
       "title": "Async List",
-      "description": "Skin for @llui/components/async-list — infinite list with sentinel, retry and error text.",
+      "description": "Skin for @llui/components/async-list \u2014 infinite list with sentinel, retry and error text.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -172,7 +172,7 @@
       "name": "calendar",
       "type": "registry:ui",
       "title": "Calendar / Date Picker",
-      "description": "Skin for @llui/components/date-picker — month grid, presets, range states.",
+      "description": "Skin for @llui/components/date-picker \u2014 month grid, presets, range states.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -217,7 +217,7 @@
       "name": "cascade-select",
       "type": "registry:ui",
       "title": "Cascade Select",
-      "description": "Skin for @llui/components/cascade-select — chained native selects.",
+      "description": "Skin for @llui/components/cascade-select \u2014 chained native selects.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -232,7 +232,7 @@
       "name": "chart",
       "type": "registry:ui",
       "title": "Chart",
-      "description": "Skin for @llui/components/chart — shadcn's container, tooltip and legend recipes over a cartesian/polar plotting machine.",
+      "description": "Skin for @llui/components/chart \u2014 shadcn's container, tooltip and legend recipes over a cartesian/polar plotting machine.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -262,7 +262,7 @@
       "name": "clipboard",
       "type": "registry:ui",
       "title": "Clipboard",
-      "description": "Skin for @llui/components/clipboard — copy field with a live-region indicator.",
+      "description": "Skin for @llui/components/clipboard \u2014 copy field with a live-region indicator.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["input", "utils"],
       "files": [
@@ -292,7 +292,7 @@
       "name": "color-picker",
       "type": "registry:ui",
       "title": "Color Picker",
-      "description": "Skin for @llui/components/color-picker — 2D area, native range sliders and preset swatches.",
+      "description": "Skin for @llui/components/color-picker \u2014 2D area, native range sliders and preset swatches.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["input", "utils"],
       "files": [
@@ -307,7 +307,7 @@
       "name": "combobox",
       "type": "registry:ui",
       "title": "Combobox",
-      "description": "Skin for @llui/components/combobox — filtering input over an anchored list.",
+      "description": "Skin for @llui/components/combobox \u2014 filtering input over an anchored list.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["command", "select", "utils"],
       "files": [
@@ -322,7 +322,7 @@
       "name": "command",
       "type": "registry:ui",
       "title": "Command",
-      "description": "Skin for @llui/components/patterns/command-menu — the ⌘K palette.",
+      "description": "Skin for @llui/components/patterns/command-menu \u2014 the \u2318K palette.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["icons", "utils"],
       "files": [
@@ -367,7 +367,7 @@
       "name": "date-input",
       "type": "registry:ui",
       "title": "Date Input",
-      "description": "Skin for @llui/components/date-input — typed date entry with an error region.",
+      "description": "Skin for @llui/components/date-input \u2014 typed date entry with an error region.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["input", "utils"],
       "files": [
@@ -397,7 +397,7 @@
       "name": "dialog",
       "type": "registry:ui",
       "title": "Dialog",
-      "description": "Skin for @llui/components/dialog — backdrop, content, title, close, footer.",
+      "description": "Skin for @llui/components/dialog \u2014 backdrop, content, title, close, footer.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["icons", "utils"],
       "files": [
@@ -412,7 +412,7 @@
       "name": "drawer",
       "type": "registry:ui",
       "title": "Drawer",
-      "description": "vaul-style edge panel — rounded entering edge, 80vh cap, grab handle.",
+      "description": "vaul-style edge panel \u2014 rounded entering edge, 80vh cap, grab handle.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["icons", "utils"],
       "files": [
@@ -442,7 +442,7 @@
       "name": "editable",
       "type": "registry:ui",
       "title": "Editable",
-      "description": "Skin for @llui/components/editable — click-to-edit text.",
+      "description": "Skin for @llui/components/editable \u2014 click-to-edit text.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "input", "utils"],
       "files": [
@@ -472,7 +472,7 @@
       "name": "field",
       "type": "registry:ui",
       "title": "Field",
-      "description": "Skin for @llui/components/field — label, description and error wiring.",
+      "description": "Skin for @llui/components/field \u2014 label, description and error wiring.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -487,7 +487,7 @@
       "name": "file-upload",
       "type": "registry:ui",
       "title": "File Upload",
-      "description": "Skin for @llui/components/file-upload — dropzone with a file list.",
+      "description": "Skin for @llui/components/file-upload \u2014 dropzone with a file list.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -502,7 +502,7 @@
       "name": "floating-panel",
       "type": "registry:ui",
       "title": "Floating Panel",
-      "description": "Skin for @llui/components/floating-panel — draggable, resizable, minimizable surface.",
+      "description": "Skin for @llui/components/floating-panel \u2014 draggable, resizable, minimizable surface.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -517,7 +517,7 @@
       "name": "form",
       "type": "registry:ui",
       "title": "Form",
-      "description": "Skin for @llui/components/patterns/form-field — shadcn's form recipes bound to a Standard Schema reducer instead of react-hook-form.",
+      "description": "Skin for @llui/components/patterns/form-field \u2014 shadcn's form recipes bound to a Standard Schema reducer instead of react-hook-form.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils", "label", "input"],
       "files": [
@@ -547,7 +547,7 @@
       "name": "icons",
       "type": "registry:ui",
       "title": "Icons",
-      "description": "The Lucide glyphs shadcn/ui bakes into its components — chevrons, check, x, circle, search, grip, loader — inlined as LLui element helpers.",
+      "description": "Icons loaded from Iconify by `prefix:name` \u2014 the Lucide glyphs shadcn/ui bakes into its components, plus any other Iconify set. Fetched from the public API by default; point `iconConfig.api` at a self-hosted Iconify to drop the third-party dependency.",
       "dependencies": ["@llui/dom"],
       "registryDependencies": ["utils"],
       "files": [
@@ -562,7 +562,7 @@
       "name": "image-cropper",
       "type": "registry:ui",
       "title": "Image Cropper",
-      "description": "Skin for @llui/components/image-cropper — crop box with corner grips.",
+      "description": "Skin for @llui/components/image-cropper \u2014 crop box with corner grips.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -577,7 +577,7 @@
       "name": "input",
       "type": "registry:ui",
       "title": "Input",
-      "description": "Text input. The caller owns the value binding — see the controlled-input rule.",
+      "description": "Text input. The caller owns the value binding \u2014 see the controlled-input rule.",
       "dependencies": ["@llui/dom"],
       "registryDependencies": ["utils"],
       "files": [
@@ -607,7 +607,7 @@
       "name": "input-otp",
       "type": "registry:ui",
       "title": "Input OTP",
-      "description": "Skin for @llui/components/pin-input — paste-splitting and auto-advance.",
+      "description": "Skin for @llui/components/pin-input \u2014 paste-splitting and auto-advance.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -667,7 +667,7 @@
       "name": "marquee",
       "type": "registry:ui",
       "title": "Marquee",
-      "description": "Skin for @llui/components/marquee — clipped, edge-faded scrolling track.",
+      "description": "Skin for @llui/components/marquee \u2014 clipped, edge-faded scrolling track.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -697,7 +697,7 @@
       "name": "meter",
       "type": "registry:ui",
       "title": "Meter",
-      "description": "Skin for @llui/components/meter — a measurement tinted by data-state.",
+      "description": "Skin for @llui/components/meter \u2014 a measurement tinted by data-state.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -727,7 +727,7 @@
       "name": "number-input",
       "type": "registry:ui",
       "title": "Number Input",
-      "description": "Skin for @llui/components/number-input — clamping, step, press-and-hold.",
+      "description": "Skin for @llui/components/number-input \u2014 clamping, step, press-and-hold.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -757,7 +757,7 @@
       "name": "password-input",
       "type": "registry:ui",
       "title": "Password Input",
-      "description": "Skin for @llui/components/password-input — text field with a reveal toggle.",
+      "description": "Skin for @llui/components/password-input \u2014 text field with a reveal toggle.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["input", "utils"],
       "files": [
@@ -802,7 +802,7 @@
       "name": "qr-code",
       "type": "registry:ui",
       "title": "QR Code",
-      "description": "Skin for @llui/components/qr-code — rendered code with a download trigger.",
+      "description": "Skin for @llui/components/qr-code \u2014 rendered code with a download trigger.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -832,7 +832,7 @@
       "name": "rating-group",
       "type": "registry:ui",
       "title": "Rating Group",
-      "description": "Skin for @llui/components/rating-group — keyboard-navigable, half-star capable.",
+      "description": "Skin for @llui/components/rating-group \u2014 keyboard-navigable, half-star capable.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -862,7 +862,7 @@
       "name": "scroll-area",
       "type": "registry:ui",
       "title": "Scroll Area",
-      "description": "Skin for @llui/components/scroll-area — a custom scrollbar over native scrolling.",
+      "description": "Skin for @llui/components/scroll-area \u2014 a custom scrollbar over native scrolling.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -877,7 +877,7 @@
       "name": "search-field",
       "type": "registry:ui",
       "title": "Search Field",
-      "description": "Skin for @llui/components/search-field — search input with a clear affordance.",
+      "description": "Skin for @llui/components/search-field \u2014 search input with a clear affordance.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["input", "utils"],
       "files": [
@@ -922,7 +922,7 @@
       "name": "sheet",
       "type": "registry:ui",
       "title": "Sheet / Drawer",
-      "description": "Skin for @llui/components/drawer — an edge-anchored panel, side as a variant.",
+      "description": "Skin for @llui/components/drawer \u2014 an edge-anchored panel, side as a variant.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["icons", "utils"],
       "files": [
@@ -937,7 +937,7 @@
       "name": "sidebar",
       "type": "registry:ui",
       "title": "Sidebar",
-      "description": "Skin for a collapsible app sidebar — header, groups, menu, submenus, rail and inset. Presentation only; the open/closed state stays in your app.",
+      "description": "Skin for a collapsible app sidebar \u2014 header, groups, menu, submenus, rail and inset. Presentation only; the open/closed state stays in your app.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -952,7 +952,7 @@
       "name": "signature-pad",
       "type": "registry:ui",
       "title": "Signature Pad",
-      "description": "Skin for @llui/components/signature-pad — drawing surface with clear and undo.",
+      "description": "Skin for @llui/components/signature-pad \u2014 drawing surface with clear and undo.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -1012,7 +1012,7 @@
       "name": "sortable",
       "type": "registry:ui",
       "title": "Sortable",
-      "description": "Skin for @llui/components/sortable — drag-reorder list with drop feedback.",
+      "description": "Skin for @llui/components/sortable \u2014 drag-reorder list with drop feedback.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1042,7 +1042,7 @@
       "name": "steps",
       "type": "registry:ui",
       "title": "Steps",
-      "description": "Skin for @llui/components/steps — a stepper/wizard indicator.",
+      "description": "Skin for @llui/components/steps \u2014 a stepper/wizard indicator.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1057,7 +1057,7 @@
       "name": "switch",
       "type": "registry:ui",
       "title": "Switch",
-      "description": "Skin for @llui/components/switch — recipe only, state stays in the package.",
+      "description": "Skin for @llui/components/switch \u2014 recipe only, state stays in the package.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1132,7 +1132,7 @@
       "name": "theme-switch",
       "type": "registry:ui",
       "title": "Theme Switch",
-      "description": "Skin for @llui/components/theme-switch — segmented options or a single toggle.",
+      "description": "Skin for @llui/components/theme-switch \u2014 segmented options or a single toggle.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1147,7 +1147,7 @@
       "name": "time-picker",
       "type": "registry:ui",
       "title": "Time Picker",
-      "description": "Skin for @llui/components/time-picker — hour/minute spinbuttons with an AM/PM toggle.",
+      "description": "Skin for @llui/components/time-picker \u2014 hour/minute spinbuttons with an AM/PM toggle.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1162,7 +1162,7 @@
       "name": "timer",
       "type": "registry:ui",
       "title": "Timer",
-      "description": "Skin for @llui/components/timer — tabular readout with transport controls.",
+      "description": "Skin for @llui/components/timer \u2014 tabular readout with transport controls.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -1177,7 +1177,7 @@
       "name": "toc",
       "type": "registry:ui",
       "title": "Table of Contents",
-      "description": "Skin for @llui/components/toc — depth-indented outline with scroll tracking.",
+      "description": "Skin for @llui/components/toc \u2014 depth-indented outline with scroll tracking.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1222,7 +1222,7 @@
       "name": "toolbar",
       "type": "registry:ui",
       "title": "Toolbar",
-      "description": "Skin for @llui/components/toolbar — roving focus across groups.",
+      "description": "Skin for @llui/components/toolbar \u2014 roving focus across groups.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1252,7 +1252,7 @@
       "name": "tour",
       "type": "registry:ui",
       "title": "Tour",
-      "description": "Skin for @llui/components/tour — spotlight coach marks.",
+      "description": "Skin for @llui/components/tour \u2014 spotlight coach marks.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -1267,7 +1267,7 @@
       "name": "tree-view",
       "type": "registry:ui",
       "title": "Tree View",
-      "description": "Skin for @llui/components/tree-view — full role=\"tree\" keyboard nav.",
+      "description": "Skin for @llui/components/tree-view \u2014 full role=\"tree\" keyboard nav.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1282,7 +1282,7 @@
       "name": "typography",
       "type": "registry:ui",
       "title": "Typography",
-      "description": "Prose primitives — headings, paragraphs, lists, code, blockquote.",
+      "description": "Prose primitives \u2014 headings, paragraphs, lists, code, blockquote.",
       "dependencies": ["@llui/dom"],
       "registryDependencies": ["utils"],
       "files": [

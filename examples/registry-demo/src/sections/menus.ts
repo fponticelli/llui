@@ -272,16 +272,24 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'A `nav` landmark with disclosure buttons — NOT menubar/menu roles, because site navigation is not an application menu. Panels render inline, so the root sets `data-viewport="false"`.',
       [
         NavigationMenu({ 'data-viewport': 'false', class: 'w-full max-w-none justify-start' }, [
-          nav({ ...navm.root }, [
+          nav({ ...navm.root, id: 'demo-nav' }, [
             // The machine answers WHETHER the arrow shows (`indicator`'s
             // data-state); where it sits is layout, so the watcher measures the
             // open trigger and writes --indicator-left/--indicator-width onto
             // the track. The marker must be PLACED in the view array or nothing
             // is registered, and the returned disposer disconnects the
             // observers on teardown.
-            onMount((root) =>
-              root instanceof HTMLElement ? navMenuC.watchNavMenuIndicator(root) : undefined,
-            ),
+            // `onMount` hands a callback the BUILD's root container, NOT the
+            // element the call sits inside — so this is the whole demo section,
+            // not the `nav`. Handing that straight to the watcher would make it
+            // resolve `[data-part="indicator"]` in document order across
+            // everything built here, and a second navigation menu on the page
+            // would silently track the first one's arrow (#123's shape).
+            // Scope it to this nav's own id.
+            onMount((root) => {
+              const el = root.querySelector('#demo-nav')
+              return el instanceof HTMLElement ? navMenuC.watchNavMenuIndicator(el) : undefined
+            }),
             NavigationMenuList({ class: 'justify-start' }, [
               ...NAV_ITEMS.map((n) => {
                 const item = navm.item(n.id, { isBranch: true })

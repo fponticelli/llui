@@ -6,7 +6,8 @@
   "description": "LLui component registry — shadcn-style source items copied into consumer projects by `llui add`. Private: it is distributed as JSON from llui.dev, never as an npm package.",
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint llui"
+    "lint": "eslint llui",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@llui/components": "workspace:*",
@@ -14,7 +15,8 @@
     "@llui/interactions": "workspace:*",
     "clsx": "^2.1.1",
     "tailwind-merge": "^3.0.0",
+    "tw-animate-css": "^1.0.0",
     "typescript": "^6.0.0",
-    "tw-animate-css": "^1.0.0"
+    "vitest": "^4.1.2"
   }
 }

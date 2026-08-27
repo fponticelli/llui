@@ -19854,6 +19854,11 @@ indicator element so it can be animated into position. Call from
 `onMount` with the tabs root element; the returned function removes
 the observers.
 
+PASS THE TABS ROOT, NOT WHATEVER `onMount` HANDED YOU. `onMount` receives the
+BUILD's root container, not the element the call sits inside, so forwarding
+it resolves the lookups below in document order across the whole build — and
+a page with two tab sets has both tracking the first one's indicator.
+
 Sets `--indicator-left`, `--indicator-top`, `--indicator-width`,
 `--indicator-height` on the indicator element every time the active
 trigger changes or the list resizes. Style the indicator with:
@@ -29699,6 +29704,14 @@ Track the open top-level trigger and write CSS custom properties onto the
 `indicator` part so the arrow can be animated into position. Call from
 `onMount` with the navigation-menu ROOT element; the returned function
 removes the observers.
+
+PASS THE NAV, NOT WHATEVER `onMount` HANDED YOU. `onMount` receives the
+BUILD's root container — the component's mount container, or an arm's or a
+row's — not the element the call sits inside. Forwarding that resolves the
+lookups below in document order across everything in the build, so a page
+with two navigation menus has both of them tracking the first one's arrow.
+That is #123's shape exactly, and it is invisible until there are two.
+Scope it yourself: give the nav an id and `root.querySelector('#…')`.
 
 Sets `--indicator-left`, `--indicator-top`, `--indicator-width` and
 `--indicator-height` on the indicator element every time a trigger's

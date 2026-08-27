@@ -2490,9 +2490,20 @@ function noscript(body: HeadValue<string>): Mountable
 
 ### `onMount()`
 
-Register a callback to run after the surrounding view's nodes are mounted,
-receiving the mounted parent element. Returning a function registers a
-teardown (run on unmount / dispose). Returns a marker node for the view array.
+Register a callback to run after the surrounding view's nodes are mounted.
+
+IT RECEIVES THE BUILD'S ROOT CONTAINER, NOT THE ELEMENT THE CALL SITS INSIDE.
+Mounts are collected per BUILD — a component's view, an arm, an `each` row —
+and `runMounts` passes that build's container to every callback in it. So an
+`onMount` written inside `svg({...}, [ … ])` is handed the component's mount
+container, and a callback that assumed its immediate parent silently does
+nothing (an `instanceof` guard fails, a `querySelector` scoped to the wrong
+subtree finds nothing). Reach for the element you want with a query from the
+root, or key it with an attribute of your own.
+
+Returning a function registers a teardown (run on unmount / dispose).
+Returns a marker node for the view array — it must be PLACED in the array or
+nothing is registered.
 
 ```typescript
 function onMount(cb: (root: Element) => void | (() => void)): Mountable
@@ -30258,6 +30269,11 @@ indicator element so it can be animated into position. Call from
 `onMount` with the tabs root element; the returned function removes
 the observers.
 
+PASS THE TABS ROOT, NOT WHATEVER `onMount` HANDED YOU. `onMount` receives the
+BUILD's root container, not the element the call sits inside, so forwarding
+it resolves the lookups below in document order across the whole build — and
+a page with two tab sets has both tracking the first one's indicator.
+
 Sets `--indicator-left`, `--indicator-top`, `--indicator-width`,
 `--indicator-height` on the indicator element every time the active
 trigger changes or the list resizes. Style the indicator with:
@@ -39925,6 +39941,14 @@ Track the open top-level trigger and write CSS custom properties onto the
 `indicator` part so the arrow can be animated into position. Call from
 `onMount` with the navigation-menu ROOT element; the returned function
 removes the observers.
+
+PASS THE NAV, NOT WHATEVER `onMount` HANDED YOU. `onMount` receives the
+BUILD's root container — the component's mount container, or an arm's or a
+row's — not the element the call sits inside. Forwarding that resolves the
+lookups below in document order across everything in the build, so a page
+with two navigation menus has both of them tracking the first one's arrow.
+That is #123's shape exactly, and it is invisible until there are two.
+Scope it yourself: give the nav an id and `root.querySelector('#…')`.
 
 Sets `--indicator-left`, `--indicator-top`, `--indicator-width` and
 `--indicator-height` on the indicator element every time a trigger's
