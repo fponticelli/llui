@@ -7,6 +7,60 @@ description: Release history for LLui packages
 
 All notable changes to LLui packages are documented here. LLui is a pre-1.0 project — every release may include breaking changes, though we try to call them out explicitly.
 
+## 2026-08-27 — @llui/components@0.17.0
+
+**Released:** `@llui/components@0.17.0`; `@llui/dom@0.13.2`; `@llui/compiler@0.13.1`; `@llui/cli@0.2.0`; `@llui/{a2ui@0.3.3,devmode-annotate@0.4.3,devmode-annotate-editor@0.1.4,markdown-editor@0.8.4}`
+
+Charts, with one seam between cartesian and polar; a `form` registry item; and a value-level arm on the registry attribute guard that found three dead rules in `field`.
+
+### Breaking
+
+- **`@llui/components@0.17.0`** — `patterns/form-field`'s `errorText` part bag no longer carries `message` and `issues`. It was the one bag in the package a consumer could not spread: spreading it bound a Signal-of-string and a Signal-of-array as DOM attributes, so every call site had to destructure them back out first. The bag is now attributes only, plus its own reactive `hidden`; the content moved to a sibling `error` bag. `errorVisible` moved with it, to `error.visible`.
+
+### Migration
+
+- Replace `const { message, issues, ...attrs } = parts.errorText` with a plain spread of `parts.errorText`.
+- Read the text from `parts.error.message` and the list from `parts.error.issues`.
+- Replace `parts.errorVisible` with `parts.error.visible`.
+- Prefer `p({ ...parts.errorText }, [text(parts.error.message)])` over `show(parts.errorVisible, …)`. `errorText` now carries its own `hidden`, so the live region stays mounted and is registered before it has anything to say; `show` unmounts and rebuilds it on every transition.
+
+### `@llui/dom@0.13.2`
+
+- **Added** `svgTitle` and `svgDesc` element helpers. An `<svg>` carrying `role="img"` is announced through them, and without one it is an unlabelled graphic — so they are not decoration. They must be the first children of the `<svg>`: an assistive technology that does not resolve `aria-labelledby` falls back to the first `<title>` it finds.
+- **Added** the `ElementHelper` type to the public surface, so a consumer can annotate a re-exported element helper without reaching into the package's internals.
+
+### `@llui/components@0.17.0`
+
+- **Added** `@llui/components/chart` — a cartesian/polar plotting machine. `coord: 'cartesian' | 'polar'` is one state field, and switching it re-projects every mark, gridline, tick, hit test and tooltip anchor from the same series and the same data: a line becomes a radar outline, an area a filled radar polygon, a bar a wedge, a horizontal rule a ring. Grouped bars stay grouped as adjacent wedges. Line, area and bar marks; stacking; series isolation; keyboard traversal (arrows, Home/End, Escape); pointer hit testing; and derived geometry memoized on state identity. Nothing is drawn in the machine — it produces path strings, points and tick placements as data, which the view renders with ordinary SVG elements and keyed `each`.
+- **Added** `utils/scale.ts`, `utils/path.ts` and `utils/projection.ts` to the public surface: normalized scales with d3's nice-number tick algorithm, monotone-cubic and annular-sector path builders, and the `Projection` interface with its `cartesianProjection` / `polarProjection` implementations. Everything a cartesian chart and a polar one disagree about lives behind that one interface; see `docs/adr/0003-charts-project-rather-than-branch.md`. No charting library and no d3 dependency — the package keeps its single types-only runtime dependency.
+- **Improved** `patterns/form-field` is now documented as the answer to "how do I build a validated form in LLui": validation is a reducer concern, Standard Schema is the seam, and `connect` owns the id and ARIA derivation. See `docs/adr/0002-validation-is-a-reducer-concern.md` and [Using the components §5](https://llui.dev/components#5-forms).
+- **Fixed** the baseline stylesheet's drawer keyed its slide-in animation off `data-placement`, which the machine never publishes — it publishes `data-side`. Both dead rules are replaced, and top and bottom placements gained the enter animation they never had.
+- **Breaking** `errorText` no longer carries `message`/`issues`. See the top of this release block.
+
+### `@llui/compiler@0.13.1`
+
+- **Added** `svgTitle` and `svgDesc` to `SVG_ELEMENT_HELPERS`, so the argument-shape lint rules apply to them and the view transform correctly declines to lower them.
+
+### `@llui/cli@0.2.0`
+
+- **Added** `llui init` and `llui add` now warn when a project imports the opt-in baseline stylesheet (`@llui/components/styles/theme.css`) alongside registry components. The baseline's `[data-scope][data-part]` rules are UNLAYERED and therefore beat every `@layer utilities` recipe, so a registry `Switch` silently renders at the baseline's geometry and ignores its own `size-4`. Both stylesheets are correct on their own; importing both is the mistake, and nothing else in the toolchain can see it.
+
+### Registry (llui.dev/r)
+
+- **Added** `form` — shadcn/ui's `Form`, `FormItem`, `FormLabel`, `FormDescription` and `FormMessage`, bound to `@llui/components/patterns/form-field` where upstream binds react-hook-form. A substitution rather than an alias of `field`. There is deliberately no `FormControl`: upstream's is a Slot forwarding `id` / `aria-describedby` / `aria-invalid` onto its child, and `{...field.control}` already carries exactly those.
+- **Added** `chart` — upstream's `ChartConfig` → `--color-<key>` theming bridge and its tooltip and legend recipes, drawn by `@llui/components/chart` because Recharts is React-only. Includes the visually-hidden data table that makes a chart readable, which is the fallback that works today.
+- **Fixed** three rules in `field` could never match. shadcn writes `data-invalid="true"` and `data-disabled="true"`; every LLui machine publishes the bare attribute. So an invalid field never turned red and a disabled one never dimmed, against machines that were publishing the state correctly the whole time. Both spellings are now bound, as `input-otp` and `scroll-area` already do.
+- **Fixed** `CommandInput` was split into a wrapper plus a bare input where upstream ships one component, which made the wrapper something a caller had to remember. It is now one component, so a filter field cannot render without its border, padding and search glyph.
+
+### `@llui/{a2ui@0.3.3,devmode-annotate@0.4.3,devmode-annotate-editor@0.1.4,markdown-editor@0.8.4}`
+
+- **Improved** republished so their `@llui/components` peer range names `^0.17.0`. No source change — none of them uses `patterns/form-field`, so the breaking change above does not reach them. Without the republish a consumer installing the new `@llui/components` alongside any of these gets an unsatisfiable peer.
+
+### Docs
+
+- **Added** [Using the components](https://llui.dev/components) gained a Forms section and a Charts section, both written to work on either styling path.
+- **Added** two ADRs: validation as a reducer concern, and charts projecting rather than branching.
+
 **How to read this file:** entries are anchored by **release date**. Inside each release, fixes are grouped by **`@llui/<package>@<version>`** sub-sections so you always know exactly which package and version a bullet applies to. Cross-cutting changes that affect every package (like build-output fixes) live under a shared "All packages" section. Breaking changes and migration notes sit at the top of each release block because they usually cut across multiple packages.
 
 **Versioning:** packages version independently — only the ones a release actually changes get bumped, so version numbers across `@llui/*` have drifted apart and a shared number implies nothing. Larger releases often move a group together (`@llui/dom`, `@llui/vite-plugin`, `@llui/test`, `@llui/router`, `@llui/transitions`, `@llui/components`, `@llui/vike` have historically shared a version line), but that is a coincidence of scope, not a guarantee. Every package that consumes `@llui/dom` declares it as a `peerDependency` with a caret range, so a `@llui/dom` patch reaches consumers without its dependents being republished. Interaction consumers use the same peer pattern for `@llui/interactions`, preserving one document-level registry. (`@llui/eslint-plugin` was deprecated and removed — framework lint rules now live in `@llui/compiler` as compile-time errors.)

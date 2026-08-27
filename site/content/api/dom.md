@@ -7,7 +7,7 @@ description: 'Runtime API: component, mount, view, primitives, element helpers'
 
 <!-- package-version:start -->
 
-**Current package version:** `0.13.1`
+**Current package version:** `0.13.2`
 
 <!-- package-version:end -->
 

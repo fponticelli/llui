@@ -7,7 +7,7 @@ description: 'Dev-only HUD that drops annotated notes from the running app into 
 
 <!-- package-version:start -->
 
-**Current package version:** `0.4.2`
+**Current package version:** `0.4.3`
 
 <!-- package-version:end -->
 
