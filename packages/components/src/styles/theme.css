@@ -1718,12 +1718,25 @@
   animation: scale-in var(--transition-duration-normal) ease-out;
 }
 
-[data-scope='drawer'][data-part='content'][data-state='open'][data-placement='right'] {
+/* `data-side`, not `data-placement` — the drawer machine publishes the former
+   and has never published the latter, so these two rules matched nothing and the
+   baseline drawer entered with no slide at all. Found by cross-checking this
+   sheet against the machines' part-bag types, the same check
+   `scripts/test/registry-attrs.test.ts` runs over the registry recipes. */
+[data-scope='drawer'][data-part='content'][data-state='open'][data-side='right'] {
   animation: slide-in-from-right var(--transition-duration-normal) ease-out;
 }
 
-[data-scope='drawer'][data-part='content'][data-state='open'][data-placement='left'] {
+[data-scope='drawer'][data-part='content'][data-state='open'][data-side='left'] {
   animation: slide-in-from-left var(--transition-duration-normal) ease-out;
+}
+
+[data-scope='drawer'][data-part='content'][data-state='open'][data-side='top'] {
+  animation: slide-in-from-top var(--transition-duration-normal) ease-out;
+}
+
+[data-scope='drawer'][data-part='content'][data-state='open'][data-side='bottom'] {
+  animation: slide-in-from-bottom var(--transition-duration-normal) ease-out;
 }
 
 /* Popover / Tooltip / Hover Card enter */
