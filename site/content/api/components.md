@@ -30815,6 +30815,10 @@ Composes `dialog` with conventional content: title, description, cancel,
 confirm. Carries an opaque `tag` so the consumer's update handler can
 recognize which confirmation resolved.
 
+The MACHINE (init/update/openWith) is styling-agnostic and is what most
+consumers want. The bundled `view()` is a convenience for baseline-stylesheet
+users only — see the note on `ConfirmDialogViewOptions`.
+
 Usage in consumer's update:
 
 ```ts
@@ -30845,9 +30849,19 @@ export interface ConfirmDialogState {
 
 ##### `ConfirmDialogViewOptions` from `@llui/components/patterns`
 
-View the ConfirmDialog. Returns a `show`-wrapped tree that appears when
-the dialog is open, renders default content (title/description/buttons).
-Uses role="alertdialog" for destructive confirms.
+Options for the convenience view.
+
+**`view()` targets the BASELINE STYLESHEET, not the component registry.** It
+hardcodes `btn btn-secondary`, `btn btn-danger` and `confirm-dialog__actions`
+— class names that only exist in `@llui/components/styles/theme.css` — and
+`contentClass` / `destructiveClass` reach only two of them. A consumer
+styling with utilities (the registry path) imports `tokens.css` and NOT
+`theme.css`, so calling this renders unstyled buttons.
+
+That path should wire the machine directly instead: `dialogConnect` +
+`dialogOverlay` with its own parts, translating the dialog's `close` into
+`cancel`, which is all this function does minus the class names.
+`examples/registry-demo`'s patterns section is the worked example.
 
 ```typescript
 export interface ConfirmDialogViewOptions {
@@ -31237,6 +31251,17 @@ export interface SearchableSelectItemParts {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   *
+   * Every `overlay()` in `components/` takes this; the pattern overlays were
+   * missed when it was added, so a utility-styled consumer had no way to give
+   * this popup a stacking context at all.
+   */
+  positionerClass?: string
   state: Signal<SearchableSelectState>
   send: Send<SearchableSelectMsg>
   parts: SearchableSelectParts
@@ -31584,6 +31609,10 @@ Composes `dialog` with conventional content: title, description, cancel,
 confirm. Carries an opaque `tag` so the consumer's update handler can
 recognize which confirmation resolved.
 
+The MACHINE (init/update/openWith) is styling-agnostic and is what most
+consumers want. The bundled `view()` is a convenience for baseline-stylesheet
+users only — see the note on `ConfirmDialogViewOptions`.
+
 Usage in consumer's update:
 
 ```ts
@@ -31614,9 +31643,19 @@ export interface ConfirmDialogState {
 
 ##### `ConfirmDialogViewOptions` from `@llui/components/patterns/confirm-dialog`
 
-View the ConfirmDialog. Returns a `show`-wrapped tree that appears when
-the dialog is open, renders default content (title/description/buttons).
-Uses role="alertdialog" for destructive confirms.
+Options for the convenience view.
+
+**`view()` targets the BASELINE STYLESHEET, not the component registry.** It
+hardcodes `btn btn-secondary`, `btn btn-danger` and `confirm-dialog__actions`
+— class names that only exist in `@llui/components/styles/theme.css` — and
+`contentClass` / `destructiveClass` reach only two of them. A consumer
+styling with utilities (the registry path) imports `tokens.css` and NOT
+`theme.css`, so calling this renders unstyled buttons.
+
+That path should wire the machine directly instead: `dialogConnect` +
+`dialogOverlay` with its own parts, translating the dialog's `close` into
+`cancel`, which is all this function does minus the class names.
+`examples/registry-demo`'s patterns section is the worked example.
 
 ```typescript
 export interface ConfirmDialogViewOptions {
@@ -32596,6 +32635,17 @@ export interface ConnectOptions {
 
 ```typescript
 export interface OverlayOptions {
+  /**
+   * Class applied to the positioner — the floating wrapper `div` this helper
+   * builds around the content. Needed when styling with utilities rather than
+   * the opt-in baseline stylesheet: it is the element that carries the
+   * `z-index` for the floating layer.
+   *
+   * Every `overlay()` in `components/` takes this; the pattern overlays were
+   * missed when it was added, so a utility-styled consumer had no way to give
+   * this popup a stacking context at all.
+   */
+  positionerClass?: string
   state: Signal<SearchableSelectState>
   send: Send<SearchableSelectMsg>
   parts: SearchableSelectParts
