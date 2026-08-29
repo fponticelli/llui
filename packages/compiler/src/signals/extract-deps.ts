@@ -16,10 +16,14 @@
 //   - `.peek()` is a non-reactive snapshot — contributes no dependency.
 //   - anything un-rebasable coarsens to the source's deps (sound).
 //
+// WHICH `derived`/`constant` counts is decided by IMPORT PROVENANCE
+// (`HelperBindings`), never by identifier text — see `signalFactoryOf` and #238.
+//
 // See docs/proposals/signals/README.md "Dependency Analysis".
 
 import ts from 'typescript'
 import { analyzeAccessor } from './analyze-deps.js'
+import { HelperBindings } from './helper-bindings.js'
 
 const REL_ROOT = '' // the whole parameter / whole source
 
@@ -120,31 +124,79 @@ export function signalPathOf(expr: ts.Expression, roots: Roots): string | null {
   return null
 }
 
+/** The `@llui/dom` calls that PRODUCE a signal out of thin air rather than
+ * navigating an existing one: `derived(inputs, fn)` and `constant(value)`. */
+export type SignalFactory = 'derived' | 'constant'
+
+const SIGNAL_FACTORIES: ReadonlySet<string> = new Set<SignalFactory>(['derived', 'constant'])
+
+/**
+ * Which `@llui/dom` signal FACTORY `e` calls — `derived` / `constant` — or `null`
+ * when it is not one.
+ *
+ * Resolved through {@link HelperBindings}, never by bare identifier text. That is
+ * the whole point of this function existing (#238): the name test that used to sit
+ * inline in {@link isSignalExpr} matched ANY callee spelled `derived`, so a
+ * consumer's own `derived()` helper took a build-stopping `operator-on-signal`
+ * report on code that did nothing wrong — while `constant` (which the framework
+ * gained later) was not in that list at all, so `operator-on-signal` and
+ * `peek-in-slot` were silently OFF for it and `text(constant(false) ? 'y' : 'n')`
+ * compiled clean and rendered the truthy arm forever. Both directions come from
+ * asking the name instead of the import.
+ *
+ * It fails CLOSED: a name bound at module scope to anything but a `@llui/dom`
+ * export, a lexical shadow, an unresolvable/cyclic/type-only import — all resolve
+ * to `null`, i.e. "not a signal", i.e. no diagnostic. A missed lint is a missed
+ * lint; a false positive breaks a build.
+ */
+export function signalFactoryOf(e: ts.Expression, bindings: HelperBindings): SignalFactory | null {
+  if (!ts.isCallExpression(e)) return null
+  const canonical = bindings.resolveCall(e)
+  return canonical !== null && SIGNAL_FACTORIES.has(canonical) ? (canonical as SignalFactory) : null
+}
+
+/** Permissive, import-less bindings: every bare name falls back to canonical-name
+ * recognition (still shadow-aware). The `@llui/dom`-less default for callers that
+ * genuinely have no module context — an expression parsed in isolation by a unit
+ * test. Production callers thread `HelperBindings.fromSourceFile(sf)`; that is why
+ * `bindings` is a REQUIRED parameter below rather than defaulting to this. */
+export const PERMISSIVE_BINDINGS: HelperBindings = HelperBindings.empty()
+
 /**
  * Is `expr` STRUCTURALLY a signal expression (a `state`/`.at`/`.map`/`.peek`
- * chain or `derived(...)`)? Strict on shape — does NOT return true merely because
- * a signal appears somewhere inside (e.g. an event handler `() => send(state.at(
- * 'x').peek())` is NOT a signal expression). Used to distinguish reactive slots
- * from handlers/static values in the view transform.
+ * chain, or a `derived(...)`/`constant(...)` factory call)? Strict on shape — does
+ * NOT return true merely because a signal appears somewhere inside (e.g. an event
+ * handler `() => send(state.at('x').peek())` is NOT a signal expression). Used to
+ * distinguish reactive slots from handlers/static values in the view transform.
+ *
+ * `bindings` is REQUIRED and carries the file's `@llui/dom` import provenance:
+ * whether `derived`/`constant` at this site is the framework's or the consumer's
+ * own is not answerable from the identifier text, and answering it wrongly costs
+ * either a false build error or a silently unchecked slot (#238).
  */
-export function isSignalExpr(expr: ts.Expression, roots: Roots = STATE_ROOTS): boolean {
+export function isSignalExpr(
+  expr: ts.Expression,
+  bindings: HelperBindings,
+  roots: Roots = STATE_ROOTS,
+): boolean {
   const e = unwrapCasts(expr)
   if (signalPathOf(e, roots) !== null) return true
   if (ts.isCallExpression(e) && ts.isPropertyAccessExpression(e.expression)) {
     const m = e.expression.name.text
     if (m === 'map' || m === 'at' || m === 'peek')
-      return isSignalExpr(e.expression.expression, roots)
+      return isSignalExpr(e.expression.expression, bindings, roots)
   }
-  if (ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === 'derived') {
-    return true
-  }
-  return false
+  return signalFactoryOf(e, bindings) !== null
 }
 
 /**
  * The set of absolute dependency paths a signal-valued expression reads.
  */
-export function analyzeSignalExpr(rawExpr: ts.Expression, roots: Roots = STATE_ROOTS): Set<string> {
+export function analyzeSignalExpr(
+  rawExpr: ts.Expression,
+  bindings: HelperBindings,
+  roots: Roots = STATE_ROOTS,
+): Set<string> {
   const expr = unwrapCasts(rawExpr)
 
   // A bare signal or `.at()` chain used directly in a reactive slot.
@@ -165,25 +217,23 @@ export function analyzeSignalExpr(rawExpr: ts.Expression, roots: Roots = STATE_R
         if (srcPath !== null) return rebase(rel, srcPath)
         // receiver is itself derived (e.g. chained .map): the body reads the
         // receiver's output, already covered by the receiver's deps.
-        return analyzeSignalExpr(recv, roots)
+        return analyzeSignalExpr(recv, bindings, roots)
       }
       // non-literal callback (e.g. imported fn): inter-procedural narrowing is a
       // later step — coarsen to the whole source.
-      return srcPath !== null ? new Set([srcPath]) : analyzeSignalExpr(recv, roots)
+      return srcPath !== null ? new Set([srcPath]) : analyzeSignalExpr(recv, bindings, roots)
     }
 
     if (method === 'at') {
       // `.at` on a non-simple receiver (signalPathOf was null) — coarsen.
-      return analyzeSignalExpr(recv, roots)
+      return analyzeSignalExpr(recv, bindings, roots)
     }
   }
 
-  // derived([s0, s1, ...], fn)
-  if (
-    ts.isCallExpression(expr) &&
-    ts.isIdentifier(expr.expression) &&
-    expr.expression.text === 'derived'
-  ) {
+  // derived([s0, s1, ...], fn) — the framework's `derived`, by import provenance.
+  // (`constant(v)` is the other factory and is deliberately absent: it carries no
+  // dependency path at all, so it contributes nothing to rebase.)
+  if (ts.isCallExpression(expr) && signalFactoryOf(expr, bindings) === 'derived') {
     const arr = expr.arguments[0]
     const fn = expr.arguments[1]
     const out = new Set<string>()
@@ -197,7 +247,7 @@ export function analyzeSignalExpr(rawExpr: ts.Expression, roots: Roots = STATE_R
         const srcPath = signalPathOf(input, roots)
         const rel = rels[i]
         if (srcPath !== null && rel) unionInto(out, rebase(rel, srcPath))
-        else unionInto(out, analyzeSignalExpr(input, roots)) // coarsen this input
+        else unionInto(out, analyzeSignalExpr(input, bindings, roots)) // coarsen this input
       })
       return out
     }
@@ -207,7 +257,7 @@ export function analyzeSignalExpr(rawExpr: ts.Expression, roots: Roots = STATE_R
   // this is rare). Defensive: union the deps of any signal sub-expression.
   const result = new Set<string>()
   expr.forEachChild((c) => {
-    if (isExpr(c)) unionInto(result, analyzeSignalExpr(c, roots))
+    if (isExpr(c)) unionInto(result, analyzeSignalExpr(c, bindings, roots))
   })
   return result
 }

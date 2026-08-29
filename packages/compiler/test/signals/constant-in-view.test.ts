@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest'
+import { fileURLToPath } from 'node:url'
 import { lintSignalSource, transformSignalComponentSource } from '../parsed.js'
+import { parseModule } from '../../src/parse.js'
+import { collectSignalDeps } from '../../src/signals/collect-signal-deps.js'
+
+/** A REAL path, so a relative import in a fixture resolves the way it would in a
+ * consumer's tree (the provenance tests below turn on exactly that). */
+const THIS_FILE = fileURLToPath(import.meta.url)
 
 // `constant(v)` (`@llui/dom`) is a signal handle whose value never changes — the
 // `state` half of the stateless-widget pair that lets a widget whose values are
@@ -8,13 +15,16 @@ import { lintSignalSource, transformSignalComponentSource } from '../parsed.js'
 //
 // The compiler has no lowering for it and needs none: `constant(...)` carries no
 // dependency path, so there is nothing for the dep analyzer to extract and
-// nothing a mask could gate. What it MUST do is leave it alone — reject nothing,
-// and lower the siblings around it exactly as before. Both halves are pinned
-// here because a future widening of `isSignalExpr` (which already recognizes
-// `derived(` by bare identifier name) is the change that would break either one,
+// nothing a mask could gate. What it MUST do is leave it alone — reject nothing
+// on VALID usage, and lower the siblings around it exactly as before. Both halves
+// are pinned here because #238's widening of `isSignalExpr` (which now recognizes
+// `constant(` as well as `derived(`) is the change that would break either one,
 // and neither failure has a runtime symptom the dom tests could catch: a lint
 // false positive fails a consumer's build, and a bad lowering emits a producer
-// that reads `constant` out of the binding state.
+// that reads `constant` out of the binding state. They are green ACROSS that
+// widening — the DIRECT-view lowering is byte-identical before and after, which
+// is what makes the widening's one real output change (the `each` DIRECT tier,
+// pinned in the next describe) a bug fix rather than a side effect.
 
 const VIEW = `
 import { component, div, span, text, each, constant, noSend } from '@llui/dom'
@@ -58,89 +68,330 @@ describe('constant() in a direct view', () => {
   })
 })
 
-// The GAP — issue #238 — pinned as behaviour rather than left as prose, so that
-// whoever finds these two green "does NOT fire" tests and wants to delete them
-// can find out why they exist. `isSignalExpr` (`extract-deps.ts`) recognizes a
-// signal by ROOT IDENTIFIER — `state`, an `.at`/`.map`/`.peek` chain off one, or a
-// bare `derived(` call. A `constant(...)` matches none of those, so the two rules
-// that exist to catch a signal used as a VALUE do not see it. All four renders
-// below are MEASURED, not predicted:
+// A SECOND bug #238's widening closes, and the only one with a wrong RENDER out of
+// the compiler rather than a missing diagnostic.
 //
-//   text(constant(1) + 1)             -> "[object Object]1"
+// `lowerHelperEach`'s DIRECT tier builds the row imperatively — a cloned skeleton
+// plus `applyAttr` / `node.data = String(…)` for everything it decided was STATIC.
+// A `constant(...)` was not a signal expression to `isSignalExpr`, so it fell in
+// that bucket and the emitted row read (verbatim, from the HEAD transform of
+// `packages/dom/test/signals/constant.test.ts`):
+//
+//   applyAttr(_r0, "data-unit", constant('mmol/L'))
+//   _c2.data = String(constant(' · fixed'))
+//
+// Both were EVALUATED against the real runtime, not reasoned about:
+//   String(constant(' · fixed'))  -> "[object Object]"
+//   the attribute                 -> <li data-unit="[object Object]"></li>
+// `constant` returns a plain handle object with no `toString`, so a direct-tier
+// row that used one rendered `[object Object]` in every slot it appeared in —
+// clean build, clean type-check, and `@llui/dom`'s own `constant` test file is
+// exactly this shape (it passes because that suite never runs the compiler).
+//
+// Recognizing the constant makes the direct tier decline (bail
+// `each-direct: row-prop-unlowerable`, an existing reason token) and the row
+// lowers as an ARM, where the handle reaches `el`/`text` — the authoring helpers
+// that consume handles. Slower than the clone skeleton, correct instead of wrong.
+describe('constant() in an `each` row — the direct tier must not stringify the handle', () => {
+  const ROW_HELPER = `
+import { each, li, text, constant } from '@llui/dom'
+import type { Renderable, Signal } from '@llui/dom'
+
+export function rows(items: Signal<string[]>): Renderable {
+  return [
+    each(items, {
+      key: (it: string) => it,
+      render: (item) => [
+        li({ 'data-unit': constant('mmol/L') }, [text(item), text(constant(' · fixed'))]),
+      ],
+    }),
+  ]
+}
+`
+
+  it('never emits String(constant(…)) or applyAttr(…, constant(…))', () => {
+    const out = transformSignalComponentSource(ROW_HELPER, { fileName: 'rows.tsx' })
+    expect(out).not.toContain('String(constant(')
+    expect(out).not.toMatch(/applyAttr\([^)]*constant\(/)
+  })
+
+  it('hands the constant to helpers that CONSUME a handle, in both slot kinds', () => {
+    const out = transformSignalComponentSource(ROW_HELPER, { fileName: 'rows.tsx' })
+    expect(out).toContain("text(constant(' · fixed'))")
+    expect(out).toContain("'data-unit': constant('mmol/L')")
+    // The row still compiles — it drops one tier, it does not fall back to the
+    // uncompiled authoring `each`.
+    expect(out).toContain('eachArm(')
+  })
+
+  it('reports the tier drop through the existing bail channel', () => {
+    const bails: { kind: string; reason: string }[] = []
+    transformSignalComponentSource(ROW_HELPER, {
+      fileName: 'rows.tsx',
+      onLowerBail: (b) => bails.push({ kind: b.kind, reason: b.reason }),
+    })
+    expect(bails).toEqual([{ kind: 'each-direct', reason: 'row-prop-unlowerable' }])
+  })
+
+  it("does NOT drop the tier for a consumer's own constant() — provenance, in the LOWERING half", () => {
+    // Same row, but `constant` is the consumer's plain string helper. It is not a
+    // signal, so the DIRECT tier must still engage and `applyAttr` the string —
+    // which is correct code here. Without provenance in the transform's own
+    // recognition path, this row would silently lose its fast tier.
+    const out = transformSignalComponentSource(
+      [
+        "import { each, li, text } from '@llui/dom'",
+        "import type { Renderable, Signal } from '@llui/dom'",
+        'const constant = (v: string): string => v',
+        'export function rows(items: Signal<string[]>): Renderable {',
+        '  return [each(items, { key: (it: string) => it,',
+        "    render: (item) => [li({ 'data-unit': constant('mmol/L') }, [text(item)])] })]",
+        '}',
+      ].join('\n'),
+      { fileName: 'rows.tsx' },
+    )
+    expect(out).toContain('eachDirect(')
+    expect(out).not.toContain('eachArm(')
+    expect(out).toContain('applyAttr(')
+  })
+})
+
+// The LOWERING half of provenance, on `derived`, through the spelling that
+// separates it cleanly from a bare-name test: a NAMESPACE import. `dom.derived(…)`
+// has no bare callee identifier at all, so a name-matching branch cannot see it
+// while `HelperBindings.resolveCall` resolves it exactly.
+//
+// Both halves of `signalToProduce` are pinned, because they fail DIFFERENTLY and
+// only one of the two failures is loud:
+//   - `valueSrc` name-matching  -> the slot is never lowered (a lost optimization)
+//   - `analyzeSignalExpr` name-matching -> the slot IS lowered with `deps: []`,
+//     i.e. a MISSED DEPENDENCY. Per the repo's standing invariant that is the
+//     unacceptable direction: the binding's mask can never be dirty, so the text
+//     is correct at mount and permanently stale afterwards. Both numbers below are
+//     measured against the mutation, not predicted.
+describe('#238 — provenance in the lowering half (namespace `derived`)', () => {
+  const NS_VIEW = [
+    "import { component, div, text } from '@llui/dom'",
+    "import * as dom from '@llui/dom'",
+    'interface S { a: number }',
+    "type M = { type: 'noop' }",
+    'export const App = component<S, M>({',
+    "  name: 'App',",
+    '  init: () => ({ a: 1 }),',
+    '  update: (s: S) => s,',
+    "  view: ({ state }) => [div([text(dom.derived([state.at('a')], (a: number) => String(a)))])],",
+    '})',
+  ].join('\n')
+
+  it('lowers a namespace-imported derived, WITH its dependency path', () => {
+    const out = transformSignalComponentSource(NS_VIEW, { fileName: 'App.tsx' })
+    expect(out).toContain("signalText((s) => ((a: number) => String(a))(s.a), ['a'])")
+    expect(out).not.toContain('text(dom.derived(')
+  })
+
+  it('reports that path from the file-level collector too', () => {
+    // The other framing of the SAME analyzer (#92): one analysis, two drivers.
+    expect(collectSignalDeps(parseModule('App.tsx', NS_VIEW))).toEqual({
+      paths: ['a'],
+      wholeState: false,
+      views: 1,
+    })
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// #238 — a signal in a VALUE position, and WHICH `constant`/`derived` is meant.
+//
+// `isSignalExpr` used to recognize a factory call by ROOT IDENTIFIER: a bare
+// `derived(` matched, and `constant(` — added later, for the T1 stateless-widget
+// tier — matched nothing. That one test was wrong in BOTH directions at once.
+//
+// Direction A (a MISSED lint, closed by the first describe below). All four
+// renders are MEASURED, not predicted, and none of them raises a TypeScript
+// error:
+//
 //   text(constant(true) ? a : b)      -> always the truthy arm (a handle is an object)
+//   text(`${constant(1)}`)            -> "[object Object]"
 //   text(constant('') || 'FALLBACK')  -> ""      <- the nastiest: the fallback is
 //        silently swallowed (the handle is truthy, so `||` yields the HANDLE, which
 //        then renders its own empty value) and there is no `[object Object]` tell.
 //        It reads as "the data was empty", not as "you made a type error".
 //   div({ 'data-v': constant(false) ? 'YES' : 'NO' })  -> data-v="YES"   <- and the
 //        gap is not confined to text slots; an attribute slot takes it identically.
-//   text(constant('x').peek())        -> a frozen read; harmless, but unflagged
 //
-// TypeScript covers exactly two of those directions on its own (`Signal<number> +
-// 1` is TS2365, `=== 0` is TS2367). Template / ternary / logical / unary are
-// covered by NOTHING.
+// TypeScript covers exactly two directions on its own (`Signal<number> + 1` is
+// TS2365, `=== 0` is TS2367). Template / ternary / logical / unary are covered by
+// NOTHING, which is why the compiler has to be the one to say it.
 //
-// Measured fix, and why it is NOT applied here: adding `|| e.expression.text ===
-// 'constant'` to the `derived(` branch of `isSignalExpr` makes BOTH rules fire on
-// every line above, and leaves the transform output byte-identical across the
-// whole compiler suite. It is one line, and it is still not free — that branch
-// matches a BARE IDENTIFIER with no import provenance, so a consumer's own
-// `constant()` helper used in an operator would get a build-stopping false
-// positive on code that did nothing wrong. Per the repo rule ("when the two
-// directions disagree about a shape, BAIL"), widening it wants the provenance
-// check (`HelperBindings`) that the `derived(` branch also lacks — #238, with its
-// own evidence.
-describe('constant() and the value-position lint rules — the #238 gap', () => {
-  const constView = (slot: string): string =>
-    [
-      "import { component, div, text, constant } from '@llui/dom'",
-      "export const A = component({ name:'A', init: () => ({ n: 0 }), update: (s: { n: number }) => s,",
-      '  view: () => [div([text(' + slot + ')])] })',
-    ].join('\n')
+// Direction B (a FALSE POSITIVE, closed by the second describe below). The bare
+// name test matched a consumer's OWN `derived()` too — a build-stopping error on
+// code that did nothing wrong. It is not hypothetical: `derived` is an ordinary
+// English word, and this repo's own `test/fixtures/helper-bindings-unrelated.js`
+// exports one. Provenance (`HelperBindings`) answers both directions with one
+// fact, and it FAILS CLOSED: an unresolvable / cyclic / type-only import, a
+// module-scope declaration, or a lexical shadow is SILENT, never a report.
+// ─────────────────────────────────────────────────────────────────────────────
 
-  /** The same view with the expression in an ATTRIBUTE slot rather than a text slot. */
-  const constAttrView = (slot: string): string =>
-    [
-      "import { component, div, constant } from '@llui/dom'",
-      "export const A = component({ name:'A', init: () => ({ n: 0 }), update: (s: { n: number }) => s,",
-      "  view: () => [div({ 'data-v': " + slot + ' }, [])] })',
-    ].join('\n')
+/** `view: () => [div([text(<slot>)])]`, with `<imports>` on line 1. */
+const textSlotView = (imports: string, slot: string): string =>
+  [
+    imports,
+    "export const A = component({ name:'A', init: () => ({ n: 0 }), update: (s: { n: number }) => s,",
+    '  view: () => [div([text(' + slot + ')])] })',
+  ].join('\n')
 
-  const stateView = (slot: string): string =>
-    [
+/** The same view with the expression in an ATTRIBUTE slot rather than a text slot. */
+const attrSlotView = (imports: string, slot: string): string =>
+  [
+    imports,
+    "export const A = component({ name:'A', init: () => ({ n: 0 }), update: (s: { n: number }) => s,",
+    "  view: () => [div({ 'data-v': " + slot + ' }, [])] })',
+  ].join('\n')
+
+const DOM_IMPORT = "import { component, div, text, constant, derived } from '@llui/dom'"
+
+const rules = (src: string, fileName = 'A.tsx'): string[] =>
+  lintSignalSource(src, fileName).map((d) => d.rule)
+
+describe('#238 — value-position rules see a @llui/dom constant()/derived()', () => {
+  it('reports operator-on-signal on a constant in a ternary condition', () => {
+    expect(rules(textSlotView(DOM_IMPORT, "constant(false) ? 'YES' : 'NO'"))).toEqual([
+      'operator-on-signal',
+    ])
+  })
+  it('reports operator-on-signal on a constant in a template literal', () => {
+    expect(rules(textSlotView(DOM_IMPORT, '`${constant(1)}`'))).toEqual(['operator-on-signal'])
+  })
+  it('reports operator-on-signal on a constant in a `||` — the swallowed fallback', () => {
+    expect(rules(textSlotView(DOM_IMPORT, "constant('') || 'FALLBACK'"))).toEqual([
+      'operator-on-signal',
+    ])
+  })
+  it('reports in an ATTRIBUTE slot too — the gap was not text-slot-only', () => {
+    expect(rules(attrSlotView(DOM_IMPORT, "constant(false) ? 'YES' : 'NO'"))).toEqual([
+      'operator-on-signal',
+    ])
+  })
+  it('reports operator-on-signal on a constant under a unary `!`', () => {
+    // Two distinct operand positions here; only the `!` holds the handle (the
+    // ternary condition holds the boolean the `!` produced), so exactly one report.
+    expect(rules(textSlotView(DOM_IMPORT, "!constant(0) ? 'y' : 'n'"))).toEqual([
+      'operator-on-signal',
+    ])
+  })
+  it('reports peek-in-slot on a constant .peek() in a slot', () => {
+    expect(rules(textSlotView(DOM_IMPORT, "constant('x').peek()"))).toEqual(['peek-in-slot'])
+  })
+  it('reports on a constant SLICE — `.at()` on a constant is legal and still a signal', () => {
+    expect(rules(textSlotView(DOM_IMPORT, "constant({ v: 1 }).at('v') ? 'y' : 'n'"))).toEqual([
+      'operator-on-signal',
+    ])
+  })
+
+  // The same shapes for `derived` — NON-REGRESSION: these were already reported
+  // by the bare-name test, and threading provenance must not switch them off.
+  it('still reports the derived equivalents', () => {
+    const d = 'derived([constant(1)], (a: number) => a)'
+    expect(rules(textSlotView(DOM_IMPORT, `${d} ? 'y' : 'n'`))).toEqual(['operator-on-signal'])
+    expect(rules(textSlotView(DOM_IMPORT, '`${' + d + '}`'))).toEqual(['operator-on-signal'])
+    expect(rules(textSlotView(DOM_IMPORT, `${d} || 'FALLBACK'`))).toEqual(['operator-on-signal'])
+    expect(rules(attrSlotView(DOM_IMPORT, `${d} ? 'y' : 'n'`))).toEqual(['operator-on-signal'])
+    expect(rules(textSlotView(DOM_IMPORT, `${d}.peek()`))).toEqual(['peek-in-slot'])
+  })
+
+  // Provenance is about the IMPORT, not the spelling — in both spellings a
+  // consumer can legitimately use to reach the framework helper.
+  it('follows an ALIASED @llui/dom import', () => {
+    const imports = "import { component, div, text, constant as fixed } from '@llui/dom'"
+    expect(rules(textSlotView(imports, "fixed(false) ? 'y' : 'n'"))).toEqual(['operator-on-signal'])
+  })
+  it('follows a NAMESPACE @llui/dom import', () => {
+    const imports = [
       "import { component, div, text } from '@llui/dom'",
-      "export const A = component({ name:'A', init: () => ({ n: 0 }), update: (s: { n: number }) => s,",
-      '  view: ({ state }) => [div([text(' + slot + ')])] })',
+      "import * as dom from '@llui/dom'",
     ].join('\n')
-
-  it('does NOT fire operator-on-signal on a constant in a ternary', () => {
-    expect(lintSignalSource(constView('constant(true) ? "y" : "n"'), 'A.tsx')).toEqual([])
-  })
-
-  it('does NOT fire operator-on-signal on a constant in a `||` — the fallback is swallowed', () => {
-    // Renders "" (measured). The handle is truthy, so `||` yields the HANDLE and
-    // 'FALLBACK' is unreachable; nothing in the output says so.
-    expect(lintSignalSource(constView("constant('') || 'FALLBACK'"), 'A.tsx')).toEqual([])
-  })
-
-  it('does NOT fire in an ATTRIBUTE slot either — the gap is not text-slot-only', () => {
-    // Renders data-v="YES" (measured).
-    expect(lintSignalSource(constAttrView("constant(false) ? 'YES' : 'NO'"), 'A.tsx')).toEqual([])
-  })
-
-  it('does NOT fire peek-in-slot on a constant .peek() in a slot', () => {
-    expect(lintSignalSource(constView("constant('x').peek()"), 'A.tsx')).toEqual([])
-  })
-
-  it('fires on the state-rooted equivalents — the rules themselves work', () => {
+    expect(rules(textSlotView(imports, "dom.constant(false) ? 'y' : 'n'"))).toEqual([
+      'operator-on-signal',
+    ])
     expect(
-      lintSignalSource(stateView('state.at("n") ? "y" : "n"'), 'A.tsx').map((d) => d.rule),
+      rules(textSlotView(imports, "dom.derived([dom.constant(1)], (a: number) => a) ? 'y' : 'n'")),
     ).toEqual(['operator-on-signal'])
-    expect(
-      lintSignalSource(stateView('state.at("n") || "FALLBACK"'), 'A.tsx').map((d) => d.rule),
-    ).toEqual(['operator-on-signal'])
-    expect(lintSignalSource(stateView('state.at("n").peek()'), 'A.tsx').map((d) => d.rule)).toEqual(
-      ['peek-in-slot'],
-    )
+  })
+})
+
+describe("#238 — a consumer's OWN constant()/derived() is silent", () => {
+  // Every case below is written in the SHAPE the rules fire on (a factory call in
+  // a ternary condition / a `.peek()` in a slot), so a bare-name test reports it
+  // and provenance is the only thing that can keep it quiet. If any of these ever
+  // goes red, a real consumer's build broke on code that did nothing wrong.
+  //
+  // `derived` is the half that was ALREADY broken on main: the bare `derived(`
+  // branch had no provenance check, so these three shapes were build errors.
+  const CONSUMER_IMPORT = "import { component, div, text } from '@llui/dom'"
+
+  it('stays silent on a module-scope `function constant/derived` declaration', () => {
+    const imports = [
+      CONSUMER_IMPORT,
+      'function constant(v: unknown) { return v }',
+      'function derived(v: unknown) { return v }',
+    ].join('\n')
+    expect(rules(textSlotView(imports, "constant(false) ? 'y' : 'n'"))).toEqual([])
+    expect(rules(textSlotView(imports, "derived(false) ? 'y' : 'n'"))).toEqual([])
+    expect(rules(attrSlotView(imports, "constant(false) ? 'YES' : 'NO'"))).toEqual([])
+  })
+
+  it('stays silent on a module-scope `const constant/derived` binding', () => {
+    const imports = [
+      CONSUMER_IMPORT,
+      'const constant = (v: unknown) => v',
+      'const derived = (v: unknown) => v',
+    ].join('\n')
+    expect(rules(textSlotView(imports, "constant('') || 'FALLBACK'"))).toEqual([])
+    expect(rules(textSlotView(imports, "derived('') || 'FALLBACK'"))).toEqual([])
+  })
+
+  it('stays silent on an import from an UNRELATED module that exports the names', () => {
+    // Resolves to a real file whose nearest package identity is not `@llui/dom`.
+    const imports = [
+      CONSUMER_IMPORT,
+      "import { constant, derived } from '../fixtures/helper-bindings-unrelated.js'",
+    ].join('\n')
+    expect(rules(textSlotView(imports, "constant(false) ? 'y' : 'n'"), THIS_FILE)).toEqual([])
+    expect(rules(textSlotView(imports, "derived(false) ? 'y' : 'n'"), THIS_FILE)).toEqual([])
+    expect(rules(textSlotView(imports, "constant('x').peek()"), THIS_FILE)).toEqual([])
+  })
+
+  it('stays silent on an UNRESOLVABLE import — fail closed, no report', () => {
+    const imports = [
+      CONSUMER_IMPORT,
+      "import { constant, derived } from './nowhere-at-all.js'",
+    ].join('\n')
+    expect(rules(textSlotView(imports, "constant(false) ? 'y' : 'n'"), THIS_FILE)).toEqual([])
+    expect(rules(textSlotView(imports, "derived(false) ? 'y' : 'n'"), THIS_FILE)).toEqual([])
+  })
+
+  it('stays silent on a LEXICAL SHADOW of a real @llui/dom import', () => {
+    // The import IS the framework's; a nearer binding of the same name is not.
+    // `scopeIntroduces` (helper-bindings.ts) owns this — never re-derived here.
+    const shadowed = [
+      DOM_IMPORT,
+      "export const A = component({ name:'A', init: () => ({ n: 0 }), update: (s: { n: number }) => s,",
+      '  view: () => { const constant = (v: unknown) => v',
+      "               return [div([text(constant(false) ? 'y' : 'n')])] } })",
+    ].join('\n')
+    expect(rules(shadowed)).toEqual([])
+  })
+
+  it('stays silent on a TYPE-ONLY @llui/dom import — it binds no value', () => {
+    const imports = [CONSUMER_IMPORT, "import type { constant } from '@llui/dom'"].join('\n')
+    expect(rules(textSlotView(imports, "constant(false) ? 'y' : 'n'"))).toEqual([])
+  })
+
+  it('and the positive control still fires from the same fixture shape', () => {
+    // Guards against a vacuous suite: if `textSlotView` stopped producing a
+    // lintable view at all, every negative above would pass for the wrong reason.
+    expect(rules(textSlotView(DOM_IMPORT, "constant(false) ? 'y' : 'n'"))).toEqual([
+      'operator-on-signal',
+    ])
   })
 })

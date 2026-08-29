@@ -1,4 +1,5 @@
 export const component = (..._args) => undefined
+export const constant = (..._args) => undefined
 export const derived = (..._args) => undefined
 export const div = (..._args) => undefined
 export const each = (..._args) => undefined

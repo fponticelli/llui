@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
 import { signalToProduce } from '../../src/signals/lower.js'
+import { PERMISSIVE_BINDINGS } from '../../src/signals/extract-deps.js'
 
 function parse(src: string): { expr: ts.Expression; sf: ts.SourceFile } {
   const sf = ts.createSourceFile('t.ts', `const __e = (${src})`, ts.ScriptTarget.Latest, true)
@@ -20,20 +21,35 @@ function parse(src: string): { expr: ts.Expression; sf: ts.SourceFile } {
 
 function lower(src: string): { produce: string; deps: string[] } {
   const { expr, sf } = parse(src)
-  const r = signalToProduce(expr, sf)
+  const r = signalToProduce(expr, sf, PERMISSIVE_BINDINGS)
   if (r.produce === null) throw new Error(`produce bailed to null for: ${src}`)
   return { produce: r.produce, deps: r.deps.sort() }
 }
 
 function lowerRaw(src: string): { produce: string | null; deps: string[] } {
   const { expr, sf } = parse(src)
-  const r = signalToProduce(expr, sf)
+  const r = signalToProduce(expr, sf, PERMISSIVE_BINDINGS)
   return { produce: r.produce, deps: r.deps.sort() }
 }
 
 function run(produce: string, state: unknown): unknown {
   return new Function('s', `return (${produce})`)(state)
 }
+
+describe('the bindings parameter is REQUIRED, not defaulted (#238)', () => {
+  it('rejects a signalToProduce call that omits the binding set', () => {
+    // The LOWERING half of the same anti-forgetting device as
+    // `extract-deps.test.ts`. It needs its own guard: a permissive default here
+    // type-checks and passes every runtime test (measured), because no test
+    // exercises a file whose `derived`/`constant` is the consumer's own AND
+    // reaches this function — and the failure is silent, emitting a producer that
+    // applies a user function's second argument to its first's elements.
+    const { expr, sf } = parse("state.at('count')")
+    // @ts-expect-error — `bindings` has no default; pass HelperBindings.fromSourceFile(sf).
+    signalToProduce(expr, sf)
+    expect(signalToProduce(expr, sf, PERMISSIVE_BINDINGS).produce).toBe('s.count')
+  })
+})
 
 describe('signalToProduce — produce source', () => {
   it('navigates .at chains', () => {

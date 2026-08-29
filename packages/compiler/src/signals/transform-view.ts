@@ -41,7 +41,24 @@ export function setHelperBindings(b: HelperBindings | null): void {
  * null when it is not a framework helper (user binding / lexical shadow / not a
  * bare-identifier callee). */
 function resolveCallee(call: ts.CallExpression): string | null {
-  return (currentBindings ?? EMPTY_BINDINGS).resolveCall(call)
+  return ambientBindings().resolveCall(call)
+}
+/** The binding set every recognition point in this file must agree on. */
+function ambientBindings(): HelperBindings {
+  return currentBindings ?? EMPTY_BINDINGS
+}
+/**
+ * {@link isSignalExpr} under the file's ambient `@llui/dom` bindings.
+ *
+ * Signal recognition needs import provenance for exactly the reason callee
+ * recognition does — `derived`/`constant` name the framework's factories only when
+ * they were imported from `@llui/dom` (#238) — and routing both through the SAME
+ * ambient set is what makes it impossible for them to disagree about one call.
+ * Every `isSignalExpr` site in this file goes through here; none calls the
+ * imported function directly.
+ */
+function isSignal(expr: ts.Expression, roots: Roots): boolean {
+  return isSignalExpr(expr, ambientBindings(), roots)
 }
 
 // ── Emitted runtime-helper identifiers ───────────────────────────────────────
@@ -477,7 +494,7 @@ function eachRoots(itemParam: string): Roots {
  * reactive but the alias hides the path) so the row bails on it; a peeked-value local
  * (`const v = item.peek()`) is fine — it lowers to a one-time live-ctx read. */
 function isSignalHandleExpr(expr: ts.Expression, roots: Roots): boolean {
-  if (!isSignalExpr(expr, roots)) return false
+  if (!isSignal(expr, roots)) return false
   let e: ts.Expression = expr
   while (ts.isParenthesizedExpression(e)) e = e.expression
   return !(
@@ -634,7 +651,7 @@ function discriminantProp(fn: ts.Expression): string | null {
 /** Source for a `{ produce, deps }` SignalSpec from a signal expression, or null
  * when the expression can't be lowered to a value (caller keeps the slot verbatim). */
 function specSrc(expr: ts.Expression, sf: ts.SourceFile, roots: Roots): string | null {
-  const { produce, deps } = signalToProduce(expr, sf, roots)
+  const { produce, deps } = signalToProduce(expr, sf, ambientBindings(), roots)
   if (produce === null) return null
   return `{ produce: (${paramOf(roots)}) => ${produce}, deps: ${depsArr(deps)} }`
 }
@@ -781,8 +798,8 @@ export function transformNodeExpr(
       // (e.g. `const n = state.at('n'); … text(n)` in a block-body view) is opaque
       // to the static tracer — leave the call verbatim so the runtime `text`
       // helper consumes the handle. Same fall-through the props path already uses.
-      if (!isSignalExpr(arg, roots)) return node.getText(sf)
-      const { produce, deps } = signalToProduce(arg, sf, roots)
+      if (!isSignal(arg, roots)) return node.getText(sf)
+      const { produce, deps } = signalToProduce(arg, sf, ambientBindings(), roots)
       if (produce === null) return node.getText(sf) // unlowerable — runtime `text` consumes the handle
       if (collect) for (const d of deps) collect.add(d)
       return `${emitNames.signalText}((${paramOf(roots)}) => ${produce}, ${depsArr(deps)})`
@@ -793,7 +810,7 @@ export function transformNodeExpr(
       const items = node.arguments[0]
       const opts = node.arguments[1]
       const eachPos = node.getStart(sf)
-      if (items && opts && !(ts.isObjectLiteralExpression(opts) && isSignalExpr(items, roots))) {
+      if (items && opts && !(ts.isObjectLiteralExpression(opts) && isSignal(items, roots))) {
         // shape guard failed — neither lowering path runs from pass 1. (A
         // non-rooted items source may still be picked up by the pass-2 helper
         // lowering, which keeps the items handle verbatim.)
@@ -824,7 +841,7 @@ export function transformNodeExpr(
         items &&
         opts &&
         ts.isObjectLiteralExpression(opts) &&
-        isSignalExpr(items, roots) &&
+        isSignal(items, roots) &&
         !eachOptsLowerable
       ) {
         // A recognized-shape each carrying an unsupported opt (esp. `transition`)
@@ -835,7 +852,7 @@ export function transformNodeExpr(
         items &&
         opts &&
         ts.isObjectLiteralExpression(opts) &&
-        isSignalExpr(items, roots) &&
+        isSignal(items, roots) &&
         eachOptsLowerable
       ) {
         let keySrc = '(x) => x'
@@ -862,7 +879,7 @@ export function transformNodeExpr(
         // `each` reconciles when any of them change. `renderDeps` is filled by
         // whichever lowering path runs (factory bindings or the render arm).
         const emitSource = (renderDeps: ReadonlySet<string>, residue = false): string | null => {
-          const itemsLowered = signalToProduce(items, sf, roots)
+          const itemsLowered = signalToProduce(items, sf, ambientBindings(), roots)
           if (itemsLowered.produce === null) return null // items unlowerable — verbatim each
           const rowStateDeps = [...renderDeps]
             .filter((d) => d === 'state' || d.startsWith('state.'))
@@ -941,12 +958,12 @@ export function transformNodeExpr(
       const render = node.arguments[1]
       const orElse = node.arguments[2]
       const showPos = node.getStart(sf)
-      if (cond && render && !isSignalExpr(cond, roots)) {
+      if (cond && render && !isSignal(cond, roots)) {
         reportBail('show', 'cond-not-rooted-signal', showPos)
       }
-      const condSpec = cond && isSignalExpr(cond, roots) ? specSrc(cond, sf, roots) : null
-      if (cond && render && isSignalExpr(cond, roots) && condSpec !== null) {
-        const condLowered = signalToProduce(cond, sf, roots)
+      const condSpec = cond && isSignal(cond, roots) ? specSrc(cond, sf, roots) : null
+      if (cond && render && isSignal(cond, roots) && condSpec !== null) {
+        const condLowered = signalToProduce(cond, sf, ambientBindings(), roots)
         const condPath = signalPathOf(cond, roots)
         const narrowed = firstParam(render)
         const thenRoots =
@@ -995,16 +1012,16 @@ export function transformNodeExpr(
         disc !== null &&
         Boolean(arms) &&
         ts.isObjectLiteralExpression(arms!) &&
-        isSignalExpr(value!, roots)
+        isSignal(value!, roots)
       const matches2 =
         Boolean(value) &&
         Boolean(discArg) &&
         ts.isObjectLiteralExpression(discArg!) &&
-        isSignalExpr(value!, roots)
+        isSignal(value!, roots)
       if (value && discArg && !matches3 && !matches2) {
         reportBail(
           'branch',
-          isSignalExpr(value, roots) ? 'shape-not-lowerable' : 'value-not-rooted-signal',
+          isSignal(value, roots) ? 'shape-not-lowerable' : 'value-not-rooted-signal',
           branchPos,
         )
       }
@@ -1013,9 +1030,9 @@ export function transformNodeExpr(
         disc !== null &&
         arms &&
         ts.isObjectLiteralExpression(arms) &&
-        isSignalExpr(value, roots)
+        isSignal(value, roots)
       ) {
-        const valueLowered = signalToProduce(value, sf, roots)
+        const valueLowered = signalToProduce(value, sf, ambientBindings(), roots)
         const valuePath = signalPathOf(value, roots) // 'view', '' (whole), or null
         const discDep = valuePath === null ? null : valuePath === '' ? disc : `${valuePath}.${disc}`
         // value must lower to a plain value to read `.<disc>` off it; else verbatim.
@@ -1075,14 +1092,14 @@ export function transformNodeExpr(
       // 2-arg plain form: branch(stringSignal, { arm: () => [...] }) — the value
       // IS the discriminant; arms are keyed by its value, no narrowed param.
       const valueSpec2 =
-        value && ts.isObjectLiteralExpression(discArg!) && isSignalExpr(value, roots)
+        value && ts.isObjectLiteralExpression(discArg!) && isSignal(value, roots)
           ? specSrc(value, sf, roots)
           : null
       if (
         value &&
         discArg &&
         ts.isObjectLiteralExpression(discArg) &&
-        isSignalExpr(value, roots) &&
+        isSignal(value, roots) &&
         valueSpec2 !== null
       ) {
         const armsSrc: string[] = []
@@ -1108,7 +1125,9 @@ export function transformNodeExpr(
           armsSrc.push(`${p.name.getText(sf)}: ${emitArm(armBody, [])}`)
         }
         if (armsOk) {
-          if (collect) for (const d of signalToProduce(value, sf, roots).deps) collect.add(d)
+          if (collect)
+            for (const d of signalToProduce(value, sf, ambientBindings(), roots).deps)
+              collect.add(d)
           return `${emitNames.signalBranch}(${valueSpec2}, { ${armsSrc.join(', ')} })`
         }
         // unlowerable arm -> fall through to verbatim (runtime authoring branch)
@@ -1216,10 +1235,10 @@ function rewriteHandlerReads(expr: ts.Node, sf: ts.SourceFile, roots: Roots): st
       ts.isCallExpression(n) &&
       ts.isPropertyAccessExpression(n.expression) &&
       n.expression.name.text === 'peek' &&
-      isSignalExpr(n, roots)
+      isSignal(n, roots)
     ) {
       // a row-signal value read — replace `<chain>.peek()` with its lowered source.
-      const produce = signalToProduce(n, sf, roots).produce
+      const produce = signalToProduce(n, sf, ambientBindings(), roots).produce
       if (produce !== null) {
         edits.push({ start: n.getStart(sf) - base, end: n.getEnd() - base, text: produce })
         return // the receiver is consumed; don't descend into it
@@ -1395,7 +1414,7 @@ function lowerRowFactory(
         skel.push(`${parentVar}.appendChild(doc.createTextNode(${arg.getText(sf)}))`)
         return true
       }
-      if (!isSignalExpr(arg, roots)) {
+      if (!isSignal(arg, roots)) {
         // Static (non-signal) text computed from row locals / view scope — e.g.
         // `text(isDir ? '📁' : '📄')` or `text(item.peek().name)`. A placeholder text
         // node in the skeleton, its `.data` written per clone; `.peek()` reads → live
@@ -1410,7 +1429,7 @@ function lowerRowFactory(
         wire.push(`${locate(id)}.data = String(${rewriteHandlerReads(arg, sf, hRoots)})`)
         return true
       }
-      const { produce, deps } = signalToProduce(arg, sf, roots)
+      const { produce, deps } = signalToProduce(arg, sf, ambientBindings(), roots)
       if (produce === null) return bailF('row-text-unlowerable')
       if (collect) for (const d of deps) collect.add(d)
       const id = freshId()
@@ -1494,13 +1513,13 @@ function lowerRowFactory(
           )
           continue
         }
-        if (isSignalExpr(p.initializer, roots)) {
+        if (isSignal(p.initializer, roots)) {
           // Reactive prop -> a binding slot that applies the value to the located
           // (cloned) node via the runtime's `applyAttr` (so style./IDL/content-attr
           // quirks — e.g. a checkbox's `checked` IDL property — are handled identically
           // to the authoring path). Reactive IDL props are why the common
           // `input({ checked: item.at('done') })` row reaches the direct path.
-          const { produce, deps } = signalToProduce(p.initializer, sf, roots)
+          const { produce, deps } = signalToProduce(p.initializer, sf, ambientBindings(), roots)
           if (produce === null) return bail('row-prop-unlowerable')
           if (collect) for (const d of deps) collect.add(d)
           bindings.push(
@@ -1689,8 +1708,8 @@ function transformProps(
   const parts = obj.properties.map((p) => {
     if (ts.isPropertyAssignment(p)) {
       const name = p.name.getText(sf)
-      if (isSignalExpr(p.initializer, roots)) {
-        const { produce, deps } = signalToProduce(p.initializer, sf, roots)
+      if (isSignal(p.initializer, roots)) {
+        const { produce, deps } = signalToProduce(p.initializer, sf, ambientBindings(), roots)
         if (produce !== null) {
           if (collect) for (const d of deps) collect.add(d)
           return `${name}: ${emitNames.react}((${paramOf(roots)}) => ${produce}, ${depsArr(deps)})`
