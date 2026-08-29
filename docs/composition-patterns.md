@@ -344,9 +344,39 @@ read: a host update that doesn't touch `token` sends nothing. Messages come **ou
 `onHandle`'s handle. `reason` is optional — a note for the reader, never consulted at
 runtime.
 
-Islands render on the server too (build + one mount against the seed state), so they are
-not a post-hydration pop-in and are not blank without JS. One limit: the server body
-reflects `init()`/`initialState`, not the first `props` value, which arrives on mount.
+#### An island is not a valid bare `each` row root
+
+Wrap it in an element — `li([island({ def })])` — the same rule `show`/`branch`/`each`
+already carry. It bites asymmetrically, and the server half bites first, so a page that
+looks fine locally is a 500 in production:
+
+```ts
+render: () => [island({ def: Leaf })] // ✗ island as the row's only node
+render: () => [li([island({ def: Leaf })])] // ✓ the row has a stable node to key
+```
+
+On the **server** the island's body is a multi-node fragment, so `each`'s stable-row-root
+guard throws. On the **client** it is a bare anchor comment, which that guard cannot see —
+the row renders, and then corrupts on the first reorder: the anchors migrate and the
+mounted bodies stay where they were. `show`/`branch` **arms** are unaffected in both
+directions; only `each` rows.
+
+#### On the server
+
+Islands render on the server too — a build plus one mount against the seed state — so they
+are not a post-hydration pop-in and are not blank without JS.
+
+One limit, and it has a workaround: the server body reflects `init()`/`initialState`, **not**
+the first `props` value. A `props`-driven island therefore paints its default in the server
+HTML, and hydration replaces it with the prop value. A prop is a binding in the _host's_
+scope and is only resolvable once that scope reconciles, which is after the island's body
+has already been built — and inside an `each` row the row ctx it would need does not exist
+yet, so resolving it early would be wrong exactly where lists are.
+
+**So for a value the server already knows — a locale, a route param, a token — prefer
+`initialState`, which the server does bake into the HTML, over `props` for the first
+paint.** Use `props` for what changes afterwards; the two compose (`initialState` seeds,
+`onProps` keeps it current).
 
 ### What an island costs — measured, not feared
 

@@ -69,21 +69,32 @@ describe('island props/onProps', () => {
     host.dispose()
   })
 
+  // The two NO-SEND tests below read the counter BEFORE and AFTER, rather than
+  // asserting a literal. Every rendered string here carries the shared `applied`
+  // counter, so a literal couples them to the delivery BASELINE: any mutation that
+  // changes how many messages arrive at mount reddens them for a reason that has
+  // nothing to do with the property they name, and inflates every kill count in the
+  // mutation table. A before/after comparison measures "no message was sent" on its
+  // own terms, whatever the baseline is.
   it('is mask-gated: a host change that misses the prop path sends nothing', () => {
     const container = document.createElement('div')
     const host = mountSignalComponent(container, Host)
+    const before = container.querySelector('.prop')?.textContent
     host.send({ type: 'bump' })
     host.send({ type: 'bump' })
-    // Still ONE application — `applied` would climb if the binding re-committed.
-    expect(container.querySelector('.prop')?.textContent).toBe('a#1')
+    // `applied` would climb if the binding re-committed on a state change it does
+    // not read; the value half would be unchanged either way, so the counter is the
+    // discriminating part.
+    expect(container.querySelector('.prop')?.textContent).toBe(before)
     host.dispose()
   })
 
   it('does not re-send when the prop path is rewritten to an equal value', () => {
     const container = document.createElement('div')
     const host = mountSignalComponent(container, Host)
+    const before = container.querySelector('.prop')?.textContent
     host.send({ type: 'setToken', v: 'a' })
-    expect(container.querySelector('.prop')?.textContent).toBe('a#1')
+    expect(container.querySelector('.prop')?.textContent).toBe(before)
     host.dispose()
   })
 
@@ -138,6 +149,48 @@ describe('island props/onProps', () => {
     const host = mountSignalComponent(container, Rows)
     const seen = [...container.querySelectorAll('.prop')].map((n) => n.textContent)
     expect(seen).toEqual(['one#1', 'two#1'])
+    host.dispose()
+  })
+
+  it('feeds a COMPONENT-state prop named `item` / `state` from inside an each row', () => {
+    // This is the case `componentRooted` exists for, and the ONLY one that
+    // distinguishes it from the legacy dep-string inference. `isRowLocalDep` reads a
+    // dep of `item`/`state`/`index` as row-local, so an UNBRANDED prop binding on a
+    // component field literally named `item` is not rebased to `ctx.state` and its
+    // produce reads `ctx.item` — the ROW OBJECT — rendering `[object Object]`.
+    // Measured: deleting `componentRooted` from the spec turns both assertions below
+    // into `[object Object]`, and reddens nothing else in the suite. The existing
+    // row-local test covers only the direction the string inference gets right.
+    const Rows = component<
+      { rows: Array<{ id: string }>; item: string; state: string },
+      { type: 'noop' }
+    >({
+      init: () => ({ rows: [{ id: 'r1' }], item: 'FIELD-ITEM', state: 'FIELD-STATE' }),
+      update: (s) => s,
+      view: ({ state }) => [
+        each(state.at('rows'), {
+          key: (r) => r.id,
+          render: () => [
+            div({ class: 'row' }, [
+              island({
+                def: PropChild,
+                props: state.at('item'),
+                onProps: (value): PropMsg => ({ type: 'setValue', value }),
+              }),
+              island({
+                def: PropChild,
+                props: state.at('state'),
+                onProps: (value): PropMsg => ({ type: 'setValue', value }),
+              }),
+            ]),
+          ],
+        }),
+      ],
+    })
+    const container = document.createElement('div')
+    const host = mountSignalComponent(container, Rows)
+    const seen = [...container.querySelectorAll('.prop')].map((n) => n.textContent)
+    expect(seen).toEqual(['FIELD-ITEM#1', 'FIELD-STATE#1'])
     host.dispose()
   })
 

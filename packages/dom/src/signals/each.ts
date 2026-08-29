@@ -499,7 +499,8 @@ function buildSignalEach<T>(
           renderHost = b.host
         }
         // A keyed row must be one or more STABLE nodes. A structural primitive
-        // (show/branch/each) returns a DocumentFragment that empties on insertion —
+        // (show/branch/each — and an `island` under SSR, whose server body is a
+        // multi-node fragment) returns a DocumentFragment that empties on insertion —
         // as a bare row root it leaves the row with no stable handle to move or
         // remove, so reorder/removal corrupts the DOM (NotFoundError). Require it to
         // be wrapped in an element, which becomes the row's stable boundary. Checked
@@ -508,9 +509,12 @@ function buildSignalEach<T>(
         // element, and that divergent row must be caught too.
         if (created.nodes.some((nd) => nd.nodeType === 11 /* DocumentFragment */)) {
           throw new LluiFrameworkError(
-            'each: a row cannot have a `show`/`branch`/`each` as its top-level node — ' +
-              'wrap the conditional body in an element (e.g. `li([show(...)])`) so the ' +
-              'row has a stable node to key, move, and remove. ' +
+            'each: a row cannot have a `show`/`branch`/`each`/`island` as its top-level ' +
+              'node — wrap the conditional body in an element (e.g. `li([show(...)])`) so ' +
+              'the row has a stable node to key, move, and remove. ' +
+              '(An `island()` reaches this only on the SERVER, where its body renders as a ' +
+              'fragment; on the client it is a bare anchor that silently corrupts reorder ' +
+              'instead. Wrap it the same way: `li([island({ def })])`.) ' +
               `(each items deps: ${JSON.stringify(source.deps)})`,
           )
         }

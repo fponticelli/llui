@@ -25,6 +25,23 @@
 // Props come IN declaratively through `props`/`onProps` (a host signal, mapped to a
 // message) and messages come OUT through `onHandle`. Both stay TEA-honest: nothing
 // pokes the island's state.
+//
+// AN ISLAND IS NOT A VALID BARE `each` ROW ROOT — wrap it in an element
+// (`li([island({ def })])`), the same rule `show`/`branch`/`each` already carry. It
+// bites in two different ways depending on where you are, and the SERVER half bites
+// first, so a page that looks fine locally 500s in production:
+//
+//   render: () => [island({ def: Leaf })]        // island as the row's only node
+//   server  → THROWS from `each` ("a row cannot have … as its top-level node"),
+//             because the SSR body is a multi-node DocumentFragment
+//   client  → renders, then CORRUPTS on reorder: the row's only stable node is the
+//             anchor comment, so a reorder migrates the anchors and leaves the
+//             mounted bodies where they were
+//
+// The client half is not new (a bare anchor was never keyable either) and is not
+// fixed here; the server half arrived with the SSR body. Both are cured by the same
+// wrap, which is why the constraint is stated once, here, rather than patched on one
+// side. `show`/`branch` ARMS are unaffected in both directions — only `each` rows.
 
 import { requireCtx, mountable, runBuild, type BuildCtx, type Mountable } from './build-context.js'
 import { mountSignalComponent } from './component.js'
@@ -242,13 +259,17 @@ function resolveProps<S, M, E, P>(
  * CLIENT mount does not: `mountSignalComponent` runs from `runMounts`, after the
  * host build has restored `ctx` to null, so its build genuinely has no parent.
  * Server and client must agree, so the parent is synthesized to match what the
- * client gets — a fresh `headAnon` (or an anonymous `<style>` inside an island
- * takes an ordinal continuing the HOST's count on the server and its own count on
- * the client, so hydration duplicates the tag instead of adopting it), a fresh
- * descriptor registry (the island's affordances belong to the island's handle),
- * `inRow: false` (an island placed in an `each` row is NOT itself row-local — its
- * bindings read its OWN state, not the row ctx), and a `getState` reading the
- * island's seed rather than the host's state.
+ * client gets. Two of the six are real, measured divergences: `inRow` (an island in
+ * an `each` row is NOT itself row-local — its bindings read its OWN state, not the
+ * row ctx; inherited, `derived` rebases to `ctx.state` and the row renders
+ * `undefined`), and `headAnon` (an anonymous `<style>` inside an island takes an
+ * ordinal continuing the HOST's count on the server and its own count on the
+ * client, so hydration duplicates the tag instead of adopting it). `getState` is a
+ * third, latent one — `signalLazy`'s error arm would snapshot the HOST's state. The
+ * fresh descriptor registry is HYGIENE, not a divergence: `renderNodes` returns
+ * only `{ nodes, dispose }`, so nothing on the server ever reads descriptors — it is
+ * separate because the island's affordances belong to the island's own handle, not
+ * because a shared one would be observable here.
  *
  * No `llui-mount-end` sentinel is emitted beside the server body. Hydration does
  * not claim these nodes: the HOST's hydrate pass rebuilds its whole tree and swaps

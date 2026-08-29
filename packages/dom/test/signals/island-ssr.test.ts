@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from 'vitest'
-import { renderToString } from '../../src/signals/ssr'
+import { renderNodes, renderToString } from '../../src/signals/ssr'
 import { hydrateSignalApp, mountSignalComponent } from '../../src/signals/component'
 import { component, div, each, text } from '../../src/signals/authoring'
 import { createContext, provide, useContext } from '../../src/signals/context'
+import { collectHeadSink, style, HEAD_SINK } from '../../src/signals/head'
 import { onMount } from '../../src/signals/build-context'
 import { derived } from '../../src/signals/handle'
 import { signalIsland as island } from '../../src/signals/island'
@@ -159,6 +160,97 @@ describe('island under SSR', () => {
     expect(fresh.querySelectorAll('.leaf')).toHaveLength(2)
     for (const leaf of fresh.querySelectorAll('.leaf')) expect(leaf.textContent).toBe('leaf:3')
     h.dispose()
+  })
+
+  it('REJECTS a bare island as an each row root, and names island in the diagnostic', () => {
+    // The SSR body is a multi-node fragment, so an island used as a row's only node
+    // trips `each`'s stable-row-root guard — a HARD server error where the client
+    // merely renders and then corrupts on reorder (the anchors migrate, the mounted
+    // bodies do not). Pinned as a CONTRACT rather than left as an accident of the
+    // fragment return: `ssrBody` must return multiple nodes, so this is the shape
+    // authors will hit, and the wrap (`div([island(...)])`) cures both halves. Every
+    // other island test here wraps its island in an element, which is exactly why
+    // nothing caught it.
+    const Bare = component<{ rows: Array<{ id: string }> }, Inert>({
+      init: () => ({ rows: [{ id: 'a' }, { id: 'b' }] }),
+      update: (s) => s,
+      view: ({ state }) => [
+        each(state.at('rows'), {
+          key: (r) => r.id,
+          render: () => [island<LeafState, LeafMsg>({ def: Leaf })],
+        }),
+      ],
+    })
+    expect(() => renderToString(Bare, undefined, document)).toThrow(/`island`/)
+    expect(() => renderToString(Bare, undefined, document)).toThrow(
+      /wrap the conditional body in an element/,
+    )
+
+    // The wrap is the fix, in the same render — not a caveat with no remedy.
+    const Wrapped = component<{ rows: Array<{ id: string }> }, Inert>({
+      init: () => ({ rows: [{ id: 'a' }, { id: 'b' }] }),
+      update: (s) => s,
+      view: ({ state }) => [
+        each(state.at('rows'), {
+          key: (r) => r.id,
+          render: () => [div({ class: 'row' }, [island<LeafState, LeafMsg>({ def: Leaf })])],
+        }),
+      ],
+    })
+    expect(renderToString(Wrapped, undefined, document)).toContain(
+      '<div class="row"><!--island--><div class="leaf">c3</div></div>',
+    )
+  })
+
+  it('gives the island a FRESH headAnon counter, matching what the client mount gets', () => {
+    // `headAnon` is the one inherited-ctx field of the six that is server-OBSERVABLE,
+    // and the whole SSR commit rests on the synthetic parent being right — so it is
+    // pinned rather than argued. An anonymous head entry is keyed by a per-render
+    // ordinal (`style:#1`, `style:#2`, …); the client mounts the island from
+    // `runMounts`, with `ctx` already back to null, so its build ALWAYS starts a fresh
+    // counter. A server build that inherited the host's counter would number the
+    // island's entry one higher and hydration would accumulate a duplicate tag
+    // instead of adopting the server one.
+    //
+    // NOTE what this does NOT bless: with both counters fresh, a host entry and an
+    // island entry COLLIDE on `style:#1` and dedup into one. That collision is real,
+    // predates this change, and is tracked separately — this test asserts only that
+    // the server and the client agree about it, which is what the synthetic parent
+    // owns and what hydration needs.
+    const Styled = component<{ n: number }, Inert>({
+      init: () => ({ n: 0 }),
+      update: (s) => s,
+      view: () => [div({ class: 'leaf' }, []), style('.island{color:red}')],
+    })
+    const Page = component<HostState, HostMsg>({
+      init: () => ({ shell: 'shell' }),
+      update: (s) => s,
+      view: () => [style('.host{color:blue}'), island<{ n: number }, Inert>({ def: Styled })],
+    })
+
+    const serverSink = collectHeadSink()
+    const { dispose } = renderNodes(
+      Page,
+      undefined,
+      document,
+      new Map<symbol, unknown>([[HEAD_SINK.id, serverSink]]),
+    )
+    const serverKeys = [...serverSink.serialize(document).keys].sort()
+    dispose()
+
+    const clientSink = collectHeadSink()
+    const container = document.createElement('div')
+    // The head sink rides the SAME context channel the island now inherits (C2), so
+    // both host and island write into this one sink on the client too.
+    const client = mountSignalComponent(container, Page, {
+      contexts: new Map<symbol, unknown>([[HEAD_SINK.id, clientSink]]),
+    })
+    const clientKeys = [...clientSink.serialize(document).keys].sort()
+    client.dispose()
+
+    expect(serverKeys).toEqual(clientKeys)
+    // And concretely: one fresh counter per build means both anonymous styles are #1.
+    expect(serverKeys).toEqual(['style:#1'])
   })
 
   it('renders a nested island inside an island', () => {
