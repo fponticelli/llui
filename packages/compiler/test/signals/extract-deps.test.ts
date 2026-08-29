@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
-import { analyzeSignalExpr, signalPathOf, STATE_ROOTS } from '../../src/signals/extract-deps.js'
+import {
+  analyzeSignalExpr,
+  isSignalExpr,
+  signalPathOf,
+  PERMISSIVE_BINDINGS,
+  STATE_ROOTS,
+} from '../../src/signals/extract-deps.js'
 
 // Parse a single expression from source.
 function parseExpr(src: string): ts.Expression {
@@ -19,8 +25,24 @@ function parseExpr(src: string): ts.Expression {
   return found
 }
 
-const deps = (src: string): string[] => [...analyzeSignalExpr(parseExpr(src))].sort()
+const deps = (src: string): string[] =>
+  [...analyzeSignalExpr(parseExpr(src), PERMISSIVE_BINDINGS)].sort()
 const ROOTS = STATE_ROOTS
+
+describe('the bindings parameter is REQUIRED, not defaulted (#238)', () => {
+  it('rejects a call that omits the binding set', () => {
+    // A caller cannot be allowed to FORGET provenance: a permissive default would
+    // silently restore bare-name matching at any site that did not opt in, which
+    // is the exact defect #238 removes. Enforced by the TYPE, so a new call site
+    // cannot reintroduce it — the assertion is that this line does not compile.
+    // @ts-expect-error — `bindings` has no default; pass HelperBindings.fromSourceFile(sf).
+    isSignalExpr(parseExpr("state.at('a')"))
+    // @ts-expect-error — same for the dep-extraction half.
+    analyzeSignalExpr(parseExpr("state.at('a')"))
+    // The explicit form is the only spelling that compiles.
+    expect(isSignalExpr(parseExpr("state.at('a')"), PERMISSIVE_BINDINGS)).toBe(true)
+  })
+})
 
 describe('signalPathOf', () => {
   it('resolves at-chains rooted at state', () => {
@@ -82,6 +104,7 @@ describe('analyzeSignalExpr', () => {
     expect([
       ...analyzeSignalExpr(
         e,
+        PERMISSIVE_BINDINGS,
         new Map([
           ['state', { value: 's', dep: '' }],
           ['theme', { value: 'theme', dep: '' }],

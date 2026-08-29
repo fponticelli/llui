@@ -12,7 +12,14 @@
 // See docs/proposals/signals/README.md.
 
 import ts from 'typescript'
-import { analyzeSignalExpr, unwrapCasts, STATE_ROOTS, type Roots } from './extract-deps.js'
+import {
+  analyzeSignalExpr,
+  signalFactoryOf,
+  unwrapCasts,
+  STATE_ROOTS,
+  type Roots,
+} from './extract-deps.js'
+import type { HelperBindings } from './helper-bindings.js'
 
 /** A valid JS identifier usable as a `.name` member (no quoting needed). */
 const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/
@@ -40,7 +47,12 @@ function pathAccess(base: string, dotted: string): string {
  * runtime authoring helper consumes the handle: emitting the expression verbatim
  * into a produce body (the old behavior) evaluates to a Signal HANDLE, not a value.
  */
-function valueSrc(expr: ts.Expression, sf: ts.SourceFile, roots: Roots): string | null {
+function valueSrc(
+  expr: ts.Expression,
+  sf: ts.SourceFile,
+  bindings: HelperBindings,
+  roots: Roots,
+): string | null {
   const e = unwrapCasts(expr)
 
   if (ts.isIdentifier(e)) return roots.get(e.text)?.value ?? null
@@ -52,25 +64,31 @@ function valueSrc(expr: ts.Expression, sf: ts.SourceFile, roots: Roots): string 
     if (method === 'at') {
       const arg = e.arguments[0]
       if (arg && ts.isStringLiteral(arg)) {
-        const b = valueSrc(recv, sf, roots)
+        const b = valueSrc(recv, sf, bindings, roots)
         return b === null ? null : pathAccess(b, arg.text)
       }
       return null // dynamic key — bail slot to verbatim (rule error elsewhere)
     }
     if (method === 'map') {
       const fn = e.arguments[0]
-      const b = valueSrc(recv, sf, roots)
+      const b = valueSrc(recv, sf, bindings, roots)
       if (fn && b !== null) return `(${fn.getText(sf)})(${b})`
       return null
     }
-    if (method === 'peek') return valueSrc(recv, sf, roots)
+    if (method === 'peek') return valueSrc(recv, sf, bindings, roots)
   }
 
-  if (ts.isCallExpression(e) && ts.isIdentifier(e.expression) && e.expression.text === 'derived') {
+  // `derived([...], fn)` — the framework's, by IMPORT PROVENANCE. A consumer's own
+  // `derived()` used to be lowered here as if it were the framework's, applying its
+  // second argument to the first's elements; it now bails to verbatim like any
+  // other unrecognized call. `constant(v)` is the other factory and is deliberately
+  // NOT lowered: it captures by reference and the compiler has no producer for it,
+  // so the slot stays verbatim for the runtime authoring helpers to consume.
+  if (ts.isCallExpression(e) && signalFactoryOf(e, bindings) === 'derived') {
     const arr = e.arguments[0]
     const fn = e.arguments[1]
     if (arr && ts.isArrayLiteralExpression(arr) && fn) {
-      const parts = arr.elements.map((el) => valueSrc(el, sf, roots))
+      const parts = arr.elements.map((el) => valueSrc(el, sf, bindings, roots))
       if (parts.some((p) => p === null)) return null
       return `(${fn.getText(sf)})(${parts.join(', ')})`
     }
@@ -94,10 +112,11 @@ export interface Lowered {
 export function signalToProduce(
   expr: ts.Expression,
   sf: ts.SourceFile,
+  bindings: HelperBindings,
   roots: Roots = STATE_ROOTS,
 ): Lowered {
   return {
-    produce: valueSrc(expr, sf, roots),
-    deps: [...analyzeSignalExpr(expr, roots)],
+    produce: valueSrc(expr, sf, bindings, roots),
+    deps: [...analyzeSignalExpr(expr, bindings, roots)],
   }
 }

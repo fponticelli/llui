@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
 import { transformNodeExpr } from '../../src/signals/transform-view.js'
-import { isSignalExpr } from '../../src/signals/extract-deps.js'
+import { isSignalExpr, PERMISSIVE_BINDINGS } from '../../src/signals/extract-deps.js'
 
 function parse(src: string): { expr: ts.Expression; sf: ts.SourceFile } {
   const sf = ts.createSourceFile('t.ts', `const __e = (${src})`, ts.ScriptTarget.Latest, true)
@@ -24,7 +24,7 @@ const tx = (src: string): string => {
 }
 
 describe('isSignalExpr — strict shape (excludes handlers)', () => {
-  const sig = (s: string): boolean => isSignalExpr(parse(s).expr)
+  const sig = (s: string): boolean => isSignalExpr(parse(s).expr, PERMISSIVE_BINDINGS)
   it('true for signal chains', () => {
     expect(sig('state')).toBe(true)
     expect(sig("state.at('count')")).toBe(true)

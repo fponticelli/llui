@@ -74,8 +74,8 @@ export function collectSignalDeps(mod: ParsedModule): SignalDepsResult {
    * matters: `state.at('user').at('profile')` contains `state.at('user')`, and
    * counting both would report the coarse prefix alongside the precise path. */
   const collect = (node: ts.Node, roots: Roots): void => {
-    if (couldBeSignalExpr(node) && isSignalExpr(node, roots)) {
-      for (const p of analyzeSignalExpr(node, roots)) all.add(p)
+    if (couldBeSignalExpr(node) && isSignalExpr(node, bindings, roots)) {
+      for (const p of analyzeSignalExpr(node, bindings, roots)) all.add(p)
       return
     }
     // Scope-aware rooting: a name is only THE root while nothing between here and

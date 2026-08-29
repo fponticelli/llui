@@ -498,7 +498,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     ) {
       return false
     }
-    return isSignalExpr(e, roots)
+    return isSignalExpr(e, bindings, roots)
   }
 
   // ---- operator-on-signal: a Signal used as an operand ----
@@ -662,7 +662,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     ts.isCallExpression(node) &&
     ts.isPropertyAccessExpression(node.expression) &&
     node.expression.name.text === 'peek' &&
-    isSignalExpr(node.expression.expression, roots)
+    isSignalExpr(node.expression.expression, bindings, roots)
 
   // ---- element-level lint: controlled-input + a11y ----
   // Resolve an element-helper call to its tag + props object: `div({...})` /

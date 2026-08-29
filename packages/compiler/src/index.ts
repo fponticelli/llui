@@ -29,7 +29,21 @@ export {
   type AnalyzableFn,
   type DepResult,
 } from './signals/analyze-deps.js'
-export { analyzeSignalExpr, isSignalExpr, signalPathOf } from './signals/extract-deps.js'
+export {
+  analyzeSignalExpr,
+  isSignalExpr,
+  signalFactoryOf,
+  signalPathOf,
+  PERMISSIVE_BINDINGS,
+  type SignalFactory,
+} from './signals/extract-deps.js'
+// `isSignalExpr`/`analyzeSignalExpr` REQUIRE a binding set: which `derived`/
+// `constant` at a call site is the framework's is a question about the file's
+// imports, not about the identifier's spelling (#238). `HelperBindings` is
+// therefore part of the public surface — without it those two are uncallable.
+// Only the class: `isShadowed`/`scopeIntroduces` appear in no public signature,
+// and every exported name on a published package is a compatibility obligation.
+export { HelperBindings } from './signals/helper-bindings.js'
 export { collectSignalDeps, type SignalDepsResult } from './signals/collect-signal-deps.js'
 // Exported for the runtime-side drift gate: `@llui/dom`'s test suite asserts
 // these mirrors still match its own `authoring.ts` exports. The gate MUST live

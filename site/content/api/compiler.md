@@ -96,7 +96,11 @@ function analyzeAccessor(fn: AnalyzableFn): DepResult
 The set of absolute dependency paths a signal-valued expression reads.
 
 ```typescript
-function analyzeSignalExpr(rawExpr: ts.Expression, roots: Roots = STATE_ROOTS): Set<string>
+function analyzeSignalExpr(
+  rawExpr: ts.Expression,
+  bindings: HelperBindings,
+  roots: Roots = STATE_ROOTS,
+): Set<string>
 ```
 
 ### `annotationsToObjectLiteral()`
@@ -465,13 +469,22 @@ function isRichField(f: MsgField): f is MsgFieldRich
 ### `isSignalExpr()`
 
 Is `expr` STRUCTURALLY a signal expression (a `state`/`.at`/`.map`/`.peek`
-chain or `derived(...)`)? Strict on shape — does NOT return true merely because
-a signal appears somewhere inside (e.g. an event handler `() => send(state.at(
-'x').peek())` is NOT a signal expression). Used to distinguish reactive slots
-from handlers/static values in the view transform.
+chain, or a `derived(...)`/`constant(...)` factory call)? Strict on shape — does
+NOT return true merely because a signal appears somewhere inside (e.g. an event
+handler `() => send(state.at('x').peek())` is NOT a signal expression). Used to
+distinguish reactive slots from handlers/static values in the view transform.
+
+`bindings` is REQUIRED and carries the file's `@llui/dom` import provenance:
+whether `derived`/`constant` at this site is the framework's or the consumer's
+own is not answerable from the identifier text, and answering it wrongly costs
+either a false build error or a silently unchecked slot (#238).
 
 ```typescript
-function isSignalExpr(expr: ts.Expression, roots: Roots = STATE_ROOTS): boolean
+function isSignalExpr(
+  expr: ts.Expression,
+  bindings: HelperBindings,
+  roots: Roots = STATE_ROOTS,
+): boolean
 ```
 
 ### `lintAnnotationSyntaxSource()`
@@ -676,6 +689,30 @@ in their meaningful order (e.g. `viaParams` is index-ordered). 2-space indent
 
 ```typescript
 function serializeManifest(manifest: Manifest): string
+```
+
+### `signalFactoryOf()`
+
+Which `@llui/dom` signal FACTORY `e` calls — `derived` / `constant` — or `null`
+when it is not one.
+
+Resolved through {@link HelperBindings}, never by bare identifier text. That is
+the whole point of this function existing (#238): the name test that used to sit
+inline in {@link isSignalExpr} matched ANY callee spelled `derived`, so a
+consumer's own `derived()` helper took a build-stopping `operator-on-signal`
+report on code that did nothing wrong — while `constant` (which the framework
+gained later) was not in that list at all, so `operator-on-signal` and
+`peek-in-slot` were silently OFF for it and `text(constant(false) ? 'y' : 'n')`
+compiled clean and rendered the truthy arm forever. Both directions come from
+asking the name instead of the import.
+
+It fails CLOSED: a name bound at module scope to anything but a `@llui/dom`
+export, a lexical shadow, an unresolvable/cyclic/type-only import — all resolve
+to `null`, i.e. "not a signal", i.e. no diagnostic. A missed lint is a missed
+lint; a false positive breaks a build.
+
+```typescript
+function signalFactoryOf(e: ts.Expression, bindings: HelperBindings): SignalFactory | null
 ```
 
 ### `signalPathOf()`
@@ -1122,6 +1159,15 @@ export type SchemaHashInput = {
   // (Record<string, MessageAnnotations>) or a cross-file-resolved equivalent.
   msgAnnotations: Record<string, unknown> | null | undefined
 }
+```
+
+### `SignalFactory`
+
+The `@llui/dom` calls that PRODUCE a signal out of thin air rather than
+navigating an existing one: `derived(inputs, fn)` and `constant(value)`.
+
+```typescript
+export type SignalFactory = 'derived' | 'constant'
 ```
 
 ### `StateType`
@@ -1850,6 +1896,27 @@ export interface SubstitutionResult {
 }
 ```
 
+## Classes
+
+### `HelperBindings`
+
+```typescript
+class HelperBindings {
+  moduleScope: ReadonlyMap<string, string | null>
+  namespaces: ReadonlyMap<string, NamespaceBinding>
+  exportResolver: DomExportResolver | null
+  constructor(
+    m: ReadonlyMap<string, string | null>,
+    namespaces: ReadonlyMap<string, NamespaceBinding>,
+    exportResolver: DomExportResolver | null,
+  )
+  empty(): HelperBindings
+  fromSourceFile(sf: ts.SourceFile): HelperBindings
+  resolve(id: ts.Identifier): string | null
+  resolveCall(call: ts.CallExpression): string | null
+}
+```
+
 ## Constants
 
 ### `ALL_ELEMENT_HELPERS`
@@ -1953,6 +2020,18 @@ shapes could not express. Consumers reject other majors via `compilerVersion`.
 
 ```typescript
 const MANIFEST_SCHEMA_VERSION
+```
+
+### `PERMISSIVE_BINDINGS`
+
+Permissive, import-less bindings: every bare name falls back to canonical-name
+recognition (still shadow-aware). The `@llui/dom`-less default for callers that
+genuinely have no module context — an expression parsed in isolation by a unit
+test. Production callers thread `HelperBindings.fromSourceFile(sf)`; that is why
+`bindings` is a REQUIRED parameter below rather than defaulting to this.
+
+```typescript
+const PERMISSIVE_BINDINGS: HelperBindings
 ```
 
 ### `SVG_ELEMENT_HELPERS`
