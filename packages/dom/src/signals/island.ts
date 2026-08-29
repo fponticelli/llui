@@ -26,23 +26,35 @@
 // message) and messages come OUT through `onHandle`. Both stay TEA-honest: nothing
 // pokes the island's state.
 //
-// AN ISLAND IS NOT A VALID BARE `each` ROW ROOT — wrap it in an element
-// (`li([island({ def })])`), the same rule `show`/`branch`/`each` already carry. It
-// bites in two different ways depending on where you are, and the SERVER half bites
-// first, so a page that looks fine locally 500s in production:
+// AN ISLAND IS NOT A VALID `each` ROW ROOT — wrap it in an element
+// (`li([island({ def })])`), the same rule `show`/`branch`/`each` already carry. Both
+// sides now REJECT it, through different halves of the same guard (#239):
 //
 //   render: () => [island({ def: Leaf })]        // island as the row's only node
-//   server  → THROWS from `each` ("a row cannot have … as its top-level node"),
-//             because the SSR body is a multi-node DocumentFragment
-//   client  → renders, then CORRUPTS on reorder: the row's only stable node is the
-//             anchor comment, so a reorder migrates the anchors and leaves the
-//             mounted bodies where they were
+//   server  → THROWS from `each`, because the SSR body is a multi-node
+//             DocumentFragment and the `nodeType` check sees it
+//   client  → THROWS from `each` too, because the anchor is marked in `row-root.ts`
 //
-// The client half is not new (a bare anchor was never keyable either) and is not
-// fixed here — it is tracked as #239; the server half arrived with the SSR body.
-// Both are cured by the same wrap, which is why the constraint is stated once, here,
-// rather than patched on one side. `show`/`branch` ARMS are unaffected in both
-// directions — only `each` rows.
+// The client half used to render happily and then CORRUPT on the first reorder — the
+// row's only node was the anchor comment, so a reorder migrated the anchors and left
+// the mounted bodies where they were, with a suite that never reorders staying green.
+// That asymmetry (a page fine locally, a 500 in production) is what #239 closed. The
+// rule is not restricted to a BARE root either: the mounted body sits outside the
+// row's node list however many siblings the anchor has, so
+// `[div(…), island({ def })]` is rejected identically.
+//
+// `show`/`branch` ARMS are unaffected in both directions — only `each` rows — and so
+// is `virtualEach`, whose rows each live in their own wrapper element that travels
+// with the row.
+//
+// ONE QUALIFICATION on "both sides reject it": the client half rests on a
+// MODULE-SCOPED `WeakSet` (`row-root.ts`), so it fails OPEN under the two-copies-of-
+// `@llui/dom` packaging landmine — an anchor marked by copy A is invisible to `each`
+// in copy B, and the row silently corrupts on reorder as it did before #239. That is
+// the same failure mode `provide()`'s module-scoped context already has, and it is
+// identical to pre-change behaviour rather than a regression, so the fix is the
+// packaging rule (`@llui/dom` is a peerDependency, never a dependency), not a second
+// marking mechanism. The SERVER half is structural (`nodeType`) and holds regardless.
 
 import {
   __childHeadNamespace,
@@ -57,6 +69,7 @@ import {
 import { mountSignalComponent } from './component.js'
 import type { SignalComponentDef, SignalComponentHandle } from './component.js'
 import { mergeContexts } from './context.js'
+import { markUnstableRowRoot } from './row-root.js'
 import { buildAndPublishScope } from './scope-build.js'
 import { normalizeUpdateResult } from './tea-driver.js'
 import { isSignalHandle, pathHandle } from './handle.js'
@@ -124,7 +137,13 @@ export function signalIsland<S, M, E = never, P = never>(spec: IslandSpec<S, M, 
 
 function buildSignalIsland<S, M, E = never, P = never>(spec: IslandSpec<S, M, E, P>): Node {
   const c = requireCtx()
-  const anchor = c.doc.createComment('island')
+  // MARKED: on the client this bare anchor IS the whole return value, and the
+  // instance mounts as its SIBLINGS — so as an `each` row's top-level node it
+  // leaves the row with nothing to move, and a reorder migrates the anchors while
+  // the mounted bodies stay put (#239). The comment is a stable node, so nothing
+  // else can tell `each` that. On the SERVER the body is a multi-node fragment and
+  // the `nodeType` check already catches it; marking here covers both.
+  const anchor = markUnstableRowRoot(c.doc.createComment('island'))
   // SNAPSHOT the placing build's context map HERE, at placement — exactly as every
   // other structural primitive does (`show`/`branch`/`each`/`lazy` thread theirs
   // into the arm/row builds that happen later). It cannot be read from inside the

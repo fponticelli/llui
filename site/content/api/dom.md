@@ -981,6 +981,11 @@ loaded component is mounted via `mountSignalComponent({ anchor, mode:'append' })
 an `llui-mount-end` sentinel; its handle owns that region's update loop and
 dispose). If the loader rejects, `error(err)` is swapped in (or nothing).
 
+The loaded component is an ISOLATED instance, so it inherits nothing implicitly:
+the contexts its ancestors provided reach it only through the snapshot this
+primitive takes at PLACEMENT (`opts.contexts` merged over it) — see the note at
+that line. Its anonymous head entries take a namespace allocated at the same point.
+
 If the surrounding build is torn down before the loader settles, a cancelled
 flag skips the deferred mount; any already-mounted child handle is disposed.
 The flag is re-checked AFTER the deferred mount too, so a teardown raised from
@@ -2676,6 +2681,11 @@ export interface SignalLazyOptions<LS = unknown, LM = unknown, LE = unknown> {
   error?: (err: Error) => Renderable
   /** seed state for the loaded component, overriding its `init()` result */
   initialState?: LS
+  /** EXTRA context values for the loaded component's build, merged OVER the ones
+   * inherited from the placing build (provide/useContext). A key present in both is
+   * taken from here; every other ancestor-provided value still reaches the instance.
+   * Same shape and same semantics as `island`'s `contexts`. */
+  contexts?: ReadonlyMap<symbol, unknown>
 }
 ```
 

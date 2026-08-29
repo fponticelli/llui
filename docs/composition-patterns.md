@@ -369,24 +369,34 @@ returns — long before a `lazy` loader settles. Reading the map at mount time f
 ancestor provider at all, and the failure is **silent**: a component that renders fine in
 default English, and head entries that vanish from an SSR collector instead of erroring.
 
-#### An island is not a valid bare `each` row root
+#### An island is not a valid `each` row root
 
 Wrap it in an element — `li([island({ def })])` — the same rule `show`/`branch`/`each`
-already carry. It bites asymmetrically, and the server half bites first, so a page that
-looks fine locally is a 500 in production:
+already carry. Both the server and the client reject it:
 
 ```ts
 render: () => [island({ def: Leaf })] // ✗ island as the row's only node
+render: () => [div({}, []), island({ def: Leaf })] // ✗ still wrong — see below
 render: () => [li([island({ def: Leaf })])] // ✓ the row has a stable node to key
 ```
 
-On the **server** the island's body is a multi-node fragment, so `each`'s stable-row-root
-guard throws. On the **client** it is a bare anchor comment, which that guard cannot see —
-the row renders, and then corrupts on the first reorder: the anchors migrate and the
-mounted bodies stay where they were. That client half predates islands (a bare anchor was
-never keyable either) and is tracked as [#239](https://github.com/fponticelli/llui/issues/239);
-the wrap cures both halves today. `show`/`branch` **arms** are unaffected in both
-directions; only `each` rows.
+An island returns an **anchor comment** and mounts its real body as the anchor's
+_siblings_, so the body is not part of the node list `each` moves and removes. The rule is
+therefore not about being _bare_: the body sits outside the row however many siblings the
+anchor has.
+
+On the **server** the island's body is a multi-node fragment, which `each`'s stable-row-root
+guard has always caught by `nodeType`. On the **client** the anchor is a perfectly stable
+node, so that guard could not see it — the row rendered, and then corrupted on the first
+reorder, the anchors migrating while the mounted bodies stayed put. A suite that never
+reorders stayed green on the client while the same source 500'd on the server;
+[#239](https://github.com/fponticelli/llui/issues/239) closed that by marking the anchor,
+so the two sides now fail identically and immediately, with a diagnostic that names the
+anchor mechanism rather than a conditional you did not write. `lazy()` carries the same
+constraint for the same reason.
+
+`show`/`branch` **arms** are unaffected in both directions; only `each` rows. So is
+`virtualEach`, whose rows each live in their own wrapper element that travels with the row.
 
 #### On the server
 

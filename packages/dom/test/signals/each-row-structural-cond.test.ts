@@ -299,7 +299,7 @@ describe('a bare structural primitive as a row root is a clear authoring error',
           ),
         ],
       }),
-    ).toThrow(/wrap the conditional body in an element/)
+    ).toThrow(/Wrap it in an element so the row has a stable boundary/)
   })
 
   it('catches a bare-fragment root on a LATER data-conditional row, not just the first (finding 15)', () => {
@@ -336,7 +336,7 @@ describe('a bare structural primitive as a row root is a clear authoring error',
           ),
         ],
       }),
-    ).toThrow(/wrap the conditional body in an element/)
+    ).toThrow(/Wrap it in an element so the row has a stable boundary/)
   })
 
   it('the same content wrapped in an element mounts fine', () => {

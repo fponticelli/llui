@@ -29,6 +29,7 @@ import { RowStateGate } from './row-state-gate.js'
 import { EMPTY_ROW_NODES, EMPTY_ROW_TEARDOWNS, EMPTY_ROW_MOUNTS, type RowCtx } from './row.js'
 import type { TransitionOptions } from '../types.js'
 import { LluiFrameworkError } from './framework-error.js'
+import { isUnstableRowRoot } from './row-root.js'
 
 export type { RowCtx } from './row.js'
 
@@ -498,23 +499,49 @@ function buildSignalEach<T>(
           created.mounts = b.mounts
           renderHost = b.host
         }
-        // A keyed row must be one or more STABLE nodes. A structural primitive
-        // (show/branch/each — and an `island` under SSR, whose server body is a
-        // multi-node fragment) returns a DocumentFragment that empties on insertion —
-        // as a bare row root it leaves the row with no stable handle to move or
-        // remove, so reorder/removal corrupts the DOM (NotFoundError). Require it to
-        // be wrapped in an element, which becomes the row's stable boundary. Checked
-        // for EVERY created row, not just the first: a data-conditional render can
-        // make a LATER row's root a bare fragment even when the first row was an
-        // element, and that divergent row must be caught too.
-        if (created.nodes.some((nd) => nd.nodeType === 11 /* DocumentFragment */)) {
+        // A keyed row must be one or more STABLE nodes — the reconciler moves and
+        // removes a row by exactly the node list its build returned, so every node
+        // the row owns has to BE in that list. Two shapes break that, and they are
+        // reported separately because the fixes read the same but the reasons do
+        // not — an author who wrote no conditional must not be sent hunting for one
+        // (#239). Checked for EVERY created row, not just the first: a
+        // data-conditional render can make a LATER row's root unstable even when the
+        // first row was an element, and that divergent row must be caught too.
+        //
+        //   FRAGMENT — `show`/`branch`/`each` return a `DocumentFragment`, which
+        //   EMPTIES on insertion, leaving the row holding a husk; reorder/removal
+        //   then throws `NotFoundError`. An isolated instance lands here too on the
+        //   side where its return happens to be a fragment: an `island()` on the
+        //   SERVER (its rendered body) and a `lazy()` on the CLIENT (anchor +
+        //   fallback + end sentinel). BOTH must be named in this branch's text —
+        //   naming only `show`/`branch`/`each` is #239's question-2 complaint
+        //   verbatim, one primitive over.
+        //
+        //   ANCHOR — the same two primitives on their OTHER side: `island()` on the
+        //   client, `lazy()` on the server. They return a bare anchor COMMENT and
+        //   mount their real body as its SIBLINGS. The comment is a perfectly stable
+        //   node, so only the `row-root.ts` marker can tell us; without the check the
+        //   row renders fine and then corrupts on the first reorder, the anchors
+        //   migrating while the bodies stay put. That is the worst ordering there is
+        //   — a suite that never reorders stays green — and the other side already
+        //   threw on the same code, so this makes the two fail alike.
+        const fragmentRoot = created.nodes.some((nd) => nd.nodeType === 11)
+        const anchorRoot = !fragmentRoot && created.nodes.some(isUnstableRowRoot)
+        if (fragmentRoot || anchorRoot) {
           throw new LluiFrameworkError(
-            'each: a row cannot have a `show`/`branch`/`each`/`island` as its top-level ' +
-              'node — wrap the conditional body in an element (e.g. `li([show(...)])`) so ' +
-              'the row has a stable node to key, move, and remove. ' +
-              '(An `island()` reaches this only on the SERVER, where its body renders as a ' +
-              'fragment; on the client it is a bare anchor that silently corrupts reorder ' +
-              'instead. Wrap it the same way: `li([island({ def })])`.) ' +
+            (fragmentRoot
+              ? 'each: a row cannot have a `show`/`branch`/`each` as one of its top-level ' +
+                'nodes — those build a DocumentFragment, which empties on insertion and ' +
+                'leaves the row with no stable node to key, move and remove. ' +
+                '(An `island()` reaches this branch on the SERVER, and a `lazy()` on the ' +
+                'CLIENT, where the body renders as a fragment — each takes the anchor ' +
+                'branch on its other side.) '
+              : 'each: a row cannot have an `island()` or a `lazy()` as one of its ' +
+                'top-level nodes — those return an anchor comment and mount their real ' +
+                'body as its SIBLINGS, so the body is not part of the row: a reorder ' +
+                'migrates the anchor and leaves the mounted body behind. ') +
+              'Wrap it in an element so the row has a stable boundary — ' +
+              '`li([show(...)])`, `li([island({ def })])`, `li([lazy({ loader, fallback })])`. ' +
               `(each items deps: ${JSON.stringify(source.deps)})`,
           )
         }

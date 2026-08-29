@@ -14,6 +14,7 @@ import {
 import { mountSignalComponent } from './component.js'
 import type { SignalComponentDef, SignalComponentHandle } from './component.js'
 import { mergeContexts } from './context.js'
+import { markUnstableRowRoot } from './row-root.js'
 import { ArmController } from './arm-controller.js'
 import type { Renderable } from './element.js'
 
@@ -65,7 +66,13 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
 ): Node {
   const c = requireCtx()
   const doc = c.doc
-  const anchor = doc.createComment('lazy')
+  // MARKED for the same reason as `island`'s (#239), with the two sides swapped:
+  // on the CLIENT this anchor ships inside a fragment (anchor + fallback + end
+  // sentinel), which `each`'s `nodeType` check already rejects; on the SERVER it is
+  // returned BARE, and the loaded instance would mount as its siblings on the
+  // client. Marking it makes the two sides fail identically instead of the server
+  // rendering a row the client then refuses.
+  const anchor = markUnstableRowRoot(doc.createComment('lazy'))
 
   // ALLOCATE the anonymous-head namespace HERE, at placement, and BEFORE the SSR bail
   // below. `lazy` mounts an ISOLATED instance exactly as `island` does, so it had the

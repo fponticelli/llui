@@ -356,7 +356,7 @@ describe('#165 part 3 — a throwing binding at MOUNT is contained to itself', (
           ]),
         ],
       }),
-    ).toThrow(/wrap the conditional body in an element/)
+    ).toThrow(/Wrap it in an element so the row has a stable boundary/)
   })
 
   it('leaves UPDATE unguarded — the asymmetry is deliberate', () => {
