@@ -100,6 +100,87 @@ export function rowHandle<T>(get: () => unknown, base: string): SignalHandle<T> 
 
 const EMPTY_SEGS: readonly string[] = []
 
+/** The dependency list of a handle that reads NOTHING from the binding state.
+ * Shared: `bindingMask([])` is the empty mask, which `intersects` can never
+ * match, so every constant handle wants the same (never-mutated) array. */
+const NO_DEPS: readonly string[] = []
+
+// Implementation notes (deliberately NOT in the JSDoc below — that block is
+// republished verbatim to the public API page on llui.dev, so it must not name
+// internal modules or fields):
+//
+//   · Why a purpose-built carrier. `pathHandle`'s `produce` resolves its path
+//     against the BINDING'S state, never against a captured value, so the obvious
+//     user-land hack `pathHandle(() => ({ v }), 'v')` resolves `v` against the
+//     component state and renders EMPTY — silently, while `peek()` still reports
+//     the right value. A constant has to IGNORE the state argument; nothing else
+//     here does. Pinned by the first test in `test/signals/constant.test.ts`.
+//   · Why `deps: []` is "once at mount, never on update". `SignalScopeImpl.mount`
+//     runs every binding unconditionally; `update` gates each through
+//     `intersects(mask, dirty)`, and `bindingMask([])` intersects nothing. Same
+//     mechanism as `foreign.ts`'s boot binding.
+//   · Why `rowLocal: false` and not `true`. Both are inert: it only selects
+//     between two rebase branches in `row-rebase.ts`, and `rebaseRowSpec` wrapping
+//     this `produce` to read `ctx.state` changes nothing when `produce` ignores its
+//     argument and `deps.map(...)` over `[]` is `[]`. `false` is chosen because it
+//     is what every non-row handle carries; the choice is not observable through
+//     any public seam (mutation-verified).
+/**
+ * A signal whose value never changes.
+ *
+ * A library component takes a `Signal` for its state and a `Send` for its
+ * messages, which assumes that state lives in an ancestor component. For a
+ * widget whose values are fixed for the life of the node — a rendered lab
+ * result, a static badge, a sparkline over data that has already arrived — that
+ * forces a state slice and a message variant into an ancestor's `State`/`Msg`
+ * per instance, for values that never move. `constant(v)` is the state half of
+ * the stateless pair; {@link noSend} is the dispatcher half:
+ *
+ * ```typescript
+ * const p = meter.connect(constant({ value: 42, min: 0, max: 200 }), noSend, {})
+ * ```
+ *
+ * A constant declares no dependency paths, so its binding is evaluated once when
+ * it mounts and is skipped by every later update: it cannot go stale, and it
+ * costs nothing per reconcile. It composes wherever a signal does — element
+ * props, `text`, `derived`, an `each` items source, and inside an `each` row.
+ *
+ * `.at()` stays available, because a constant has a real path structure:
+ * `constant(patient).at('name')` slices the captured value and yields another
+ * constant. `.map()` behaves as on any signal, so `.at()` after it is a compile
+ * error — slice before mapping.
+ *
+ * The value is captured BY REFERENCE, and the two read paths diverge if you
+ * mutate it afterwards: `.at(path)` resolves eagerly and therefore SNAPSHOTS the
+ * value as it was when `.at()` was called, while `peek()` always reads through to
+ * the live object. Pass a value you do not intend to mutate.
+ *
+ * For a widget whose state CHANGES this is the wrong tool — give it a reducer.
+ */
+export function constant<T>(value: T): Signal<T> {
+  const produce = (): T => value
+  const peek = (): T => value
+  const h: SignalHandle<T> = {
+    [SIGNAL]: true,
+    produce,
+    deps: NO_DEPS,
+    rowLocal: false,
+    peek,
+    // A slice of a constant is a constant: resolve the path against the captured
+    // value now, and hand back a handle that ignores the binding state just the
+    // same. Segments are split per `.at()` call (once per handle, not per read),
+    // mirroring `pathHandle`'s pre-split.
+    at: ((path: string) => constant(resolveSegments(value, path.split('.')))) as Signal<T>['at'],
+    // Reuse the shared derived carrier so a mapped constant gets the identical
+    // input-identity memo, `.map()` chaining and throwing `.at()` every other
+    // derived handle has. The input is reference-stable, so `fn` runs once for
+    // `produce` however many bindings read it.
+    map: (<U>(fn: (v: T) => U) =>
+      mapHandle<T, U>({ peek, produce }, fn, NO_DEPS, false)) as Signal<T>['map'],
+  }
+  return h
+}
+
 /** Assemble a derived (mapped/combined) handle object from a peek/produce pair.
  * Pure carrier construction — the input-identity memo lives in the `produce`
  * passed in (built by {@link mapHandle} / {@link combineSignals}), so this just

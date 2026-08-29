@@ -13,7 +13,13 @@ export type { Signal, LiveSignal, ValidPath, PathValue } from './types.js'
 // Construct a runtime signal handle from a live value getter — for tests and
 // advanced foreign/composition cases that build signals outside a component bag.
 // `derived` (combine N signals) is a handle constructor, so it lives here too.
-export { derived, pathHandle, isSignalHandle, type SignalHandle } from './handle.js'
+// `constant` (a signal whose value never changes) is a handle constructor too — it
+// is the `state` half of the stateless-widget pair (`noSend` is the other half),
+// letting a widget whose values are FIXED for the life of the node satisfy a
+// `connect(state, send, opts)` contract without hoisting a state slice into an
+// ancestor's State. See #235's "Note on the state model"; #231 is the general
+// ladder this sits at the bottom of, and is answered by `island()`, not by this.
+export { derived, constant, pathHandle, isSignalHandle, type SignalHandle } from './handle.js'
 // `rowHandle` — the compiled each-arm prelude helper: when a row param leaks into
 // a verbatim helper call inside an otherwise-compiled arm, the emission binds it
 // to a REAL runtime handle (`const item = rowHandle(getCtx, 'item')`) reading the
@@ -285,6 +291,7 @@ export {
   lazy,
   virtualEach,
   mapSend,
+  noSend,
   type Send,
   type Reactive,
   type AttrValue,
