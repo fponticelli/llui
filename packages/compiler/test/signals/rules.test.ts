@@ -2268,7 +2268,14 @@ describe('tag-send-drift (issue #118)', () => {
 })
 
 describe('imperative-dom-mutation (issue #231)', () => {
-  const IMPORT = "import { div, span, button, el, foreign, island, subApp } from '@llui/dom'\n"
+  // `subApp` is NOT on the `@llui/dom` barrel — it ships only from the
+  // `@llui/dom/escape-hatch` subpath (`packages/dom/package.json`). The first
+  // cut of this fixture imported it from the barrel, which proved the bail for
+  // an import no consumer can write. `island` IS a barrel export (it is
+  // `signalIsland as island` in `packages/dom/src/signals/index.ts`).
+  const IMPORT =
+    "import { div, span, button, el, foreign, island, tagSend } from '@llui/dom'\n" +
+    "import { subApp } from '@llui/dom/escape-hatch'\n"
   const src = (body: string): string => IMPORT + body
   const R = 'imperative-dom-mutation'
 
@@ -2422,6 +2429,77 @@ describe('imperative-dom-mutation (issue #231)', () => {
     ).toContain(R)
   })
 
+  // ── R2: the incident body in every spelling the rule can read ────────────
+  // An inline-only rule fired on ONE of the four spellings #231's own body can
+  // be written in, and the two it missed are the two most idiomatic here. The
+  // identical defect must not be a build error or not depending on whether the
+  // author inlined the arrow.
+  const INCIDENT = "{ e.currentTarget.classList.add('copied') }"
+
+  it('SPELLING 1/4 — an inline arrow', () => {
+    expect(rules(src(`export const a = button({ onClick: (e) => ${INCIDENT} }, [])`))).toContain(R)
+  })
+
+  it('SPELLING 2/4 — a module-scope `const` handler referenced by name', () => {
+    expect(
+      rules(
+        src(
+          [
+            `const handleClick = (e) => ${INCIDENT}`,
+            'export const a = button({ onClick: handleClick }, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).toContain(R)
+  })
+
+  it('SPELLING 2/4 — also a `function` declaration', () => {
+    expect(
+      rules(
+        src(
+          [
+            `function handleClick(e) ${INCIDENT}`,
+            'export const a = button({ onClick: handleClick }, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).toContain(R)
+  })
+
+  it('SPELLING 3/4 — wrapped in `tagSend`, the house idiom (~220 call sites)', () => {
+    expect(
+      rules(
+        src(
+          `export const a = button({ onClick: tagSend(send, ['copy'], (e) => ${INCIDENT}) }, [])`,
+        ),
+      ),
+    ).toContain(R)
+  })
+
+  it('SPELLING 3/4 — a `tagSend` whose handler is itself a name (they compose)', () => {
+    expect(
+      rules(
+        src(
+          [
+            `const handleClick = (e) => ${INCIDENT}`,
+            "export const a = button({ onClick: tagSend(send, ['copy'], handleClick) }, [])",
+          ].join('\n'),
+        ),
+      ),
+    ).toContain(R)
+  })
+
+  it('reports a named handler ONCE even when two elements install it', () => {
+    const twice = src(
+      [
+        `const handleClick = (e) => ${INCIDENT}`,
+        'export const a = button({ onClick: handleClick }, [])',
+        'export const b = div({ onClick: handleClick }, [])',
+      ].join('\n'),
+    )
+    expect(lint(twice).filter((d) => d.rule === R)).toHaveLength(1)
+  })
+
   // ── negative: the load-bearing half ──────────────────────────────────────
   // Each of these is code that must keep compiling; a false positive here is a
   // build broken for a consumer who did nothing wrong.
@@ -2496,6 +2574,101 @@ describe('imperative-dom-mutation (issue #231)', () => {
         ),
       ),
     ).not.toContain(R)
+  })
+
+  // Name resolution refuses every binding that might not be the function
+  // actually installed. Each of these WOULD be reported if the guard were
+  // dropped, so they are the false-positive edge of R2's widening.
+  it('does NOT resolve a `let` handler, a reassigned one, or a shadowed name', () => {
+    expect(
+      rules(
+        neg(
+          [
+            `let handleClick = (e) => ${INCIDENT}`,
+            'export const a = button({ onClick: handleClick }, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+    expect(
+      rules(
+        neg(
+          [
+            `function handleClick(e) ${INCIDENT}`,
+            'handleClick = other',
+            'export const a = button({ onClick: handleClick }, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+    expect(
+      rules(
+        neg(
+          [
+            `const handleClick = (e) => ${INCIDENT}`,
+            'export function panel() {',
+            '  const handleClick = noop',
+            '  return button({ onClick: handleClick }, [])',
+            '}',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+  })
+
+  // ── R4: a path OUT of the view's subtree is not the view's node ──────────
+  // Both of these were false positives, and both are live idioms. Reaching the
+  // document through `ownerDocument` / `e.view` is the MORE defensive spelling
+  // (iframes, portals, jsdom, multi-document SSR), and
+  // `@llui/interactions/src/remove-scroll.ts` does the same thing with the
+  // global `document` — so the rule was punishing the careful spelling of an
+  // idiom it cannot see in its ordinary one.
+  it('does NOT flag a theme toggle or a scroll lock reached via the document', () => {
+    expect(
+      rules(
+        neg(
+          [
+            'export const a = button({',
+            '  onClick: (e) => {',
+            "    e.currentTarget.ownerDocument.documentElement.style.setProperty('--theme', 'dark')",
+            '  },',
+            '}, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+    expect(
+      rules(
+        neg(
+          "export const a = div({ onPointerDown: (e) => { e.view.document.body.style.overflow = 'hidden' } }, [])",
+        ),
+      ),
+    ).not.toContain(R)
+    // …and the same escape through a `const` alias, since aliases extend only
+    // from an initializer that is itself rooted.
+    expect(
+      rules(
+        neg(
+          [
+            'export const a = div({',
+            '  onClick: (e) => {',
+            '    const doc = e.target.ownerDocument',
+            "    doc.body.classList.add('locked')",
+            '  },',
+            '}, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+    // The narrowing is a NAMED list, not "anything two hops out": an ancestor
+    // the view really does own is still reported.
+    expect(
+      rules(
+        src(
+          "export const a = div({ onClick: (e) => { e.target.parentElement.textContent = 'x' } }, [])",
+        ),
+      ),
+    ).toContain(R)
   })
 
   it('does NOT flag inside a foreign() body', () => {
@@ -2587,6 +2760,12 @@ describe('imperative-dom-mutation (issue #231)', () => {
     ).not.toContain(R)
   })
 
+  // NOTE ON COVERAGE: the `addEventListener` half of this test is enforced
+  // STRUCTURALLY — `elementEventHandlers` requires an object-literal props bag,
+  // and `btn.addEventListener('click', fn)` has a string literal in that
+  // position — so no mutation in the table reddens it. It is listed as
+  // structurally enforced rather than mutation-covered, so it is not read as
+  // evidence it does not carry.
   it('does NOT flag imperative DOM code outside an element-helper handler', () => {
     // A plain addEventListener on a node the view never built is ordinary DOM
     // code — the whole @llui/interactions / devmode-annotate surface. The module
@@ -2616,13 +2795,41 @@ describe('imperative-dom-mutation (issue #231)', () => {
     ).not.toContain(R)
   })
 
-  it('does NOT flag a non-inline handler, a spread props bag, or a computed key', () => {
-    expect(rules(neg('export const a = div({ onClick: handleClick }, [])'))).not.toContain(R)
+  // ── KNOWN BLIND SPOTS — absence of coverage, not a false-positive guard ───
+  // These are NOT "code that must keep compiling". They are shapes the rule
+  // cannot read, and each is a real #231 defect going unreported. They live in
+  // their own labelled block so nobody reads them as evidence of completeness.
+  //
+  // The two RECOVERABLE spellings — a named handler and a `tagSend` wrapper —
+  // used to be here too. An inline-only rule fired on ONE of the four spellings
+  // the incident body can be written in, and `tagSend` alone has ~220 call sites
+  // in this repo, so the verdict turned on whether the author inlined the arrow.
+  // Both are resolved; see the positives above.
+  it('BLIND SPOT: an opaque props bag is not read', () => {
+    // `props` may be mutated between construction and use, so resolving the
+    // object literal would not prove what the element is actually given.
     expect(rules(neg('export const a = div(props, [])'))).not.toContain(R)
+  })
+
+  it('BLIND SPOT: a computed prop key is not read', () => {
+    // `[key]` may evaluate to 'onClick' — or to anything else.
     expect(
       rules(
         neg(
           "export const a = div({ onClick: f, [key]: (e) => { e.target.textContent = 'x' } }, [])",
+        ),
+      ),
+    ).not.toContain(R)
+  })
+
+  it('BLIND SPOT: an IMPORTED handler is not read', () => {
+    expect(
+      rules(
+        neg(
+          [
+            "import { handleClick } from './handlers'",
+            'export const a = div({ onClick: handleClick }, [])',
+          ].join('\n'),
         ),
       ),
     ).not.toContain(R)
@@ -2668,9 +2875,9 @@ describe('imperative-dom-mutation (issue #231)', () => {
     expect(msg).toContain('#231')
   })
 
-  // The incident's own code lived in a `CopyButton` view HELPER — a module that
-  // builds elements but contains no `component(` call — so the non-component
-  // entry point is the one that would have caught it.
+  // A view helper builds elements but commonly carries no `component(` call, so
+  // the plugin routes it down the non-component branch — which is why the rule
+  // needs its own entry point there.
   it('fires through the non-component entry point', () => {
     const bad = src("export const a = div({ onClick: (e) => { e.target.textContent = 'x' } }, [])")
     expect(lintImperativeDomSource(bad, 'copy-button.ts').map((d) => d.rule)).toContain(R)

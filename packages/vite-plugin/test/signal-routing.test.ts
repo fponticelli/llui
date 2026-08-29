@@ -370,10 +370,13 @@ describe('vite-plugin — signal component routing', () => {
   })
 
   // ── imperative-dom-mutation on NON-component modules (issue #231) ───────
-  // The incident's own code was a `CopyButton` view HELPER: a module that
-  // builds elements with `@llui/dom` helpers and contains no `component(` call,
-  // so it takes this branch. Wiring the rule only into `lintSignalSource` would
-  // have left the reported shape uncovered.
+  // A view HELPER is a plain function returning `Mountable` that builds elements
+  // with `@llui/dom` helpers, and it commonly lives in a module with no
+  // `component(` call — so it takes THIS branch. Wiring the rule only into
+  // `lintSignalSource` would cover reconciler-owned nodes built inside a
+  // `component()` literal and not the identical ones built one function out.
+  // (#231 prints its FIX, not its incident module, so this is argued
+  // structurally rather than from the consumer's file.)
   const IMPERATIVE_HELPER = [
     "import { button, span } from '@llui/dom'",
     'export const CopyButton = (label) =>',

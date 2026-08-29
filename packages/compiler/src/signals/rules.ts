@@ -87,7 +87,7 @@ import ts from 'typescript'
 import { isSignalExpr, singleRoot, unwrapCasts, STATE_ROOTS, type Roots } from './extract-deps.js'
 import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edits.js'
 import { ELEMENT_HELPERS as ELEMENT_TAGS, ALL_ELEMENT_HELPERS } from './element-helpers.js'
-import { HelperBindings, bindingNames, scopeIntroduces } from './helper-bindings.js'
+import { HelperBindings, bindingNames, isShadowed, scopeIntroduces } from './helper-bindings.js'
 import { ANNOTATION_TAGS, scanAnnotationCalls } from '../annotation-args.js'
 import type { ParsedModule } from '../parse.js'
 
@@ -1911,6 +1911,15 @@ const ATTRIBUTE_METHODS: ReadonlySet<string> = new Set([
  * The whole call subtree is skipped rather than just the `mount` body: an
  * options bag for these is imperative wiring throughout, and erring toward
  * silence is the correct direction for a non-bypassable build error.
+ *
+ * WHERE EACH NAME COMES FROM, because a reader checking this list against an
+ * older `@llui/dom` will conclude one of them is a dead end: `island` is a
+ * BARREL export (`signalIsland as island` in `packages/dom/src/signals/index.ts`),
+ * added when `subApp` was promoted out of the escape hatch; `subApp` survives as
+ * the deprecated alias and ships ONLY from the `@llui/dom/escape-hatch` subpath.
+ * `HelperBindings` resolves both — any `@llui/dom/*` specifier is DOM-provenance
+ * — so the bail holds for either import, and the tests import each from the
+ * subpath it actually has.
  */
 const IMPERATIVE_SEAMS: ReadonlySet<string> = new Set(['foreign', 'island', 'subApp'])
 
@@ -1987,16 +1996,48 @@ function accessOwner(node: ts.Node, names: ReadonlySet<string>): ts.Expression |
  * It NEVER descends a `.name` — an identifier is a root only where it is READ,
  * and a member name is not a read of a binding.
  *
- * The accepted over-approximation is the other end of the chain: a property path
- * can leave the view's subtree (`e.target.ownerDocument.body.textContent = ''`)
- * and would still be reported. That is pathological rather than idiomatic, it is
- * reachable through plain properties whether or not calls are traversed, and the
- * write is still one the author should not be making from a view handler.
+ * A path through {@link DOCUMENT_ESCAPE_MEMBERS} is NOT rooted, however deep the
+ * chain: those members leave the reconciler's subtree entirely, and the write
+ * lands on the document or the window. That is not a hypothetical narrowing —
+ * both of these are live idioms and both were false positives before it:
+ *
+ * ```ts
+ * onClick: (e) => e.currentTarget.ownerDocument.documentElement
+ *   .style.setProperty('--theme', 'dark')   // a theme toggle
+ * onPointerDown: (e) => { e.view.document.body.style.overflow = 'hidden' } // scroll lock
+ * ```
+ *
+ * Reaching the document through `ownerDocument` / `e.view` is the MORE defensive
+ * spelling (iframes, portals, jsdom, multi-document SSR), and
+ * `@llui/interactions/src/remove-scroll.ts` does the same thing with the global
+ * `document` — so the rule was punishing the careful spelling of an idiom it
+ * cannot see in its ordinary one.
+ *
+ * The list is generous on purpose: an omission is a FALSE POSITIVE (a build
+ * broken for a consumer who did nothing wrong), while an extra entry is only a
+ * missed lint. `parentNode`/`parentElement`/`closest` are deliberately NOT here
+ * — they stay inside the document tree the view was built into, and excluding
+ * them would switch the rule off for an ancestor the view really does own.
  */
+const DOCUMENT_ESCAPE_MEMBERS: ReadonlySet<string> = new Set([
+  'ownerDocument',
+  'document',
+  'defaultView',
+  'view',
+  'window',
+  'top',
+  'parent',
+  'frames',
+  'opener',
+  'getRootNode',
+])
+
 function rootedInLive(expr: ts.Expression, live: ReadonlySet<string>): boolean {
   let e = unwrapCasts(expr)
   for (;;) {
     if (ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e)) {
+      const member = staticMemberName(e)
+      if (member !== null && DOCUMENT_ESCAPE_MEMBERS.has(member)) return false
       e = unwrapCasts(e.expression)
       continue
     }
@@ -2079,19 +2120,25 @@ function mutationSite(node: ts.Node, live: ReadonlySet<string>): MutationSite | 
  *   1. the write is inside an `on<Upper>` prop of a call that
  *      {@link HelperBindings} resolves to a `@llui/dom` ELEMENT helper. That
  *      call IS the reconciler boundary: the node the handler receives was built
- *      by a binding-owning scope. Note this is deliberately NOT "inside a
- *      `component()` view" — #231's own code lived in a `CopyButton` view HELPER
- *      with no `component(` call in the module, which that scoping would miss —
- *      and it is not "any handler", because a bare `addEventListener` on a node
- *      the view never built is ordinary DOM code.
- *   2. the handler is an INLINE arrow/function expression. A named handler
- *      (`onClick: handleClick`) is one call away and unreadable here; a missed
- *      lint, not a violation.
+ *      by a binding-owning scope, whoever wrapped that call. It is deliberately
+ *      NOT "inside a `component()` view", and the argument is structural rather
+ *      than anecdotal: a view HELPER is a plain function returning `Mountable`,
+ *      it builds elements with these same helpers, and the vite plugin routes it
+ *      down the NON-component branch (no `component(` call in the module) — so a
+ *      `component`-scoped rule would silently cover only some of the code that
+ *      builds reconciler-owned nodes, split by where the author happened to put
+ *      the function. Which shape #231's consumer module actually had is not
+ *      recoverable from the issue (it prints the FIX, not the incident), so it
+ *      is not offered as evidence. Equally it is not "any handler": a bare
+ *      `addEventListener` on a node the view never built is ordinary DOM code.
+ *   2. the handler resolves to a function this rule can read — inline, wrapped
+ *      in `tagSend`, or a module-scope name. See {@link elementEventHandlers}
+ *      for why all three, and what stays unreadable.
  *   3. the mutated node is ROOTED at one of that handler's own parameters, or at
  *      a `const` alias of one ({@link handlerRoots}). `e.currentTarget`,
  *      `e.target`, `const el = e.currentTarget` — the reconciler-owned tree.
- *      A module-scope element, `document.body`, a node from a ref the view never
- *      built: not rooted, not reported.
+ *      A module-scope element, `document.body`, anything reached through
+ *      {@link DOCUMENT_ESCAPE_MEMBERS}: not rooted, not reported.
  *
  * BAIL LIST: `foreign()`, `island()` and `subApp()` are imperative by design and
  * are skipped whole ({@link IMPERATIVE_SEAMS}). They are also the fix the
@@ -2099,6 +2146,15 @@ function mutationSite(node: ts.Node, live: ReadonlySet<string>): MutationSite | 
  *
  * WHY WRITES ONLY: reading the same members is idiomatic and frequent. The
  * read/write split, not an allowlist, is what keeps this off valid code.
+ *
+ * WHAT THIS RULE DOES NOT CLOSE, stated so the bug class is not read as solved:
+ * the same hazard exists wherever view-built nodes are written imperatively,
+ * and only the `on*`-prop route is covered. `@llui/components`'s own
+ * `tabs.watchTabIndicator` and `navigationMenu.watchNavMenuIndicator` write
+ * `indicator.style.setProperty('--indicator-left', …)` on view-built nodes from
+ * an `onMount` watcher — identical in kind, zero coverage here, and deliberately
+ * NOT widened to: an `onMount` body is the sanctioned place to touch a live
+ * node, so attributing writes there would report the framework's own idiom.
  *
  * When the shape is unreadable, BAIL — an unreported mutation is a missed lint;
  * a false positive is a build broken for a consumer who did nothing wrong.
@@ -2171,7 +2227,14 @@ function imperativeDomDiagnostics(sf: ts.SourceFile, bindings: HelperBindings): 
     node.forEachChild((c) => scan(c, cur))
   }
 
-  const checkHandler = (fn: ts.ArrowFunction | ts.FunctionExpression): void => {
+  // A named handler reached from two element calls is ONE function; scanning it
+  // per reference would emit the same diagnostic at the same span twice.
+  const scanned = new Set<ts.Node>()
+  const checkHandler = (fn: HandlerFn): void => {
+    if (scanned.has(fn)) return
+    scanned.add(fn)
+    const body = fn.body
+    if (body === undefined) return // an overload signature has none
     const roots = handlerRoots(fn)
     if (roots.size === 0) return
     // The parameter LIST is code too: a default runs on every call. Walking it
@@ -2185,13 +2248,16 @@ function imperativeDomDiagnostics(sf: ts.SourceFile, bindings: HelperBindings): 
       if (!ts.isIdentifier(p.name)) scan(p.name, roots)
       if (p.initializer !== undefined) scan(p.initializer, roots)
     }
-    scan(fn.body, roots)
+    scan(body, roots)
   }
 
+  const moduleHandlers = moduleHandlerLookup(sf)
   const walk = (node: ts.Node): void => {
     if (isSeam(node)) return
     if (ts.isCallExpression(node)) {
-      for (const handler of elementEventHandlers(node, bindings)) checkHandler(handler)
+      for (const handler of elementEventHandlers(node, bindings, moduleHandlers)) {
+        checkHandler(handler)
+      }
     }
     node.forEachChild(walk)
   }
@@ -2200,10 +2266,15 @@ function imperativeDomDiagnostics(sf: ts.SourceFile, bindings: HelperBindings): 
   return out
 }
 
+/** The three function forms a resolved handler can take. A `FunctionDeclaration`
+ * joins the two expression forms because a module-scope `function handleClick(e)
+ * {…}` is one of the spellings {@link moduleHandlerLookup} resolves. */
+type HandlerFn = ts.ArrowFunction | ts.FunctionExpression | ts.FunctionDeclaration
+
 /** The handler's own parameter names, destructured ones included: an
  * `({ currentTarget }: MouseEvent) => …` handler roots at `currentTarget`
  * exactly as `(e) => …` roots at `e`. */
-function handlerRoots(fn: ts.ArrowFunction | ts.FunctionExpression): ReadonlySet<string> {
+function handlerRoots(fn: HandlerFn): ReadonlySet<string> {
   return new Set(fn.parameters.flatMap((p) => bindingNames(p.name)))
 }
 
@@ -2227,7 +2298,9 @@ function withConstAliases(block: ts.Block, live: ReadonlySet<string>): ReadonlyS
   return out ?? live
 }
 
-/** The INLINE `on<Upper>` handlers in an element-helper call's props object.
+/**
+ * The `on<Upper>` handlers bound by an element-helper call, resolved through
+ * the THREE spellings the handler can take.
  *
  * The props object is argument 0 for a tag helper (`div({…}, […])`) and
  * argument 1 for `el('div', {…}, […])`. `ALL_ELEMENT_HELPERS` rather than the
@@ -2235,12 +2308,36 @@ function withConstAliases(block: ts.Block, live: ReadonlySet<string>): ReadonlyS
  * same call forms and bind handlers the same way — the same reason
  * `empty-props` uses it.
  *
- * A non-literal props object (`div(props, …)`), a spread, a non-inline handler
- * and a handler under a computed key are all unreadable and yield nothing. */
+ * WHY THREE, and not just the inline arrow: measured against #231's own
+ * incident body, an inline-only rule fired on ONE of the four spellings it can
+ * be written in. The two recoverable misses are the two most idiomatic here —
+ * `tagSend` alone has ~220 call sites and is the house idiom for handlers on
+ * library controls — and a rule whose verdict turns on whether the author
+ * inlined the arrow teaches "name your handler", not "don't mutate the DOM".
+ *
+ *   1. INLINE — `onClick: (e) => …`.
+ *   2. `tagSend(send, ['x'], handler)` — the third argument IS the handler
+ *      installed on the element, identified by the same import-provenance
+ *      resolution `tag-send-drift` uses. Its handler may itself be a name, so
+ *      the two compose.
+ *   3. A NAME — `onClick: handleClick` — resolved by {@link moduleHandlerLookup}
+ *      to a module-scope `const handleClick = (e) => …` or
+ *      `function handleClick(e) {…}`. Sound because the resolution is
+ *      shadow-aware ({@link isShadowed}) and refuses any name the module
+ *      assigns to.
+ *
+ * The remaining blind spots yield nothing, and each is a genuine bail rather
+ * than an oversight: an OPAQUE props bag (`div(props, …)`, where the object may
+ * be mutated between construction and use), a COMPUTED key (`{ [k]: … }`, whose
+ * value decides whether it is a handler at all), an IMPORTED handler (another
+ * module's tree is not in hand), and a method or property reference
+ * (`this.onClick`). A missed lint, never a broken build.
+ */
 function elementEventHandlers(
   call: ts.CallExpression,
   bindings: HelperBindings,
-): Array<ts.ArrowFunction | ts.FunctionExpression> {
+  moduleHandlers: ModuleHandlerLookup,
+): HandlerFn[] {
   const canon = bindings.resolveCall(call)
   if (canon === null) return []
   let props: ts.Expression | undefined
@@ -2251,16 +2348,93 @@ function elementEventHandlers(
     props = call.arguments[1]
   } else return []
   if (!props || !ts.isObjectLiteralExpression(props)) return []
-  const out: Array<ts.ArrowFunction | ts.FunctionExpression> = []
+  const out: HandlerFn[] = []
   for (const p of props.properties) {
     if (!ts.isPropertyAssignment(p)) continue
     const name = p.name
     const key = ts.isIdentifier(name) ? name.text : ts.isStringLiteralLike(name) ? name.text : null
     if (key === null || !/^on[A-Z]/.test(key)) continue
-    const fn = unwrapCasts(p.initializer)
-    if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) out.push(fn)
+    const fn = resolveHandlerExpression(p.initializer, bindings, moduleHandlers)
+    if (fn !== null) out.push(fn)
   }
   return out
+}
+
+/** One handler expression → the function body that runs when the event fires,
+ * unwrapping a `tagSend` wrapper and resolving a module-scope name. Recurses at
+ * most through one `tagSend` layer plus one name, which is every composition
+ * that occurs; a deeper nesting simply yields null. */
+function resolveHandlerExpression(
+  expr: ts.Expression,
+  bindings: HelperBindings,
+  moduleHandlers: ModuleHandlerLookup,
+): HandlerFn | null {
+  const e = unwrapCasts(expr)
+  if (ts.isArrowFunction(e) || ts.isFunctionExpression(e)) return e
+  if (ts.isIdentifier(e)) return moduleHandlers(e)
+  if (ts.isCallExpression(e) && bindings.resolveCall(e) === 'tagSend' && e.arguments.length === 3) {
+    const handler = e.arguments[2]
+    return handler === undefined
+      ? null
+      : resolveHandlerExpression(handler, bindings, moduleHandlers)
+  }
+  return null
+}
+
+/** Resolve an identifier in handler position to the module-scope function it
+ * names, or null. */
+type ModuleHandlerLookup = (id: ts.Identifier) => HandlerFn | null
+
+/**
+ * Build the per-file lookup behind spelling 3 above.
+ *
+ * A name resolves only when all three hold, and each closes a way the
+ * resolution could name a function that is not the one installed:
+ *
+ *   • it is declared at MODULE scope as `const <name> = <arrow|function expr>`
+ *     or `function <name>(…) {…}` — a `let`/`var` binding is refused outright,
+ *     for the same reason `withConstAliases` refuses one;
+ *   • the module never ASSIGNS to the name. `const` makes that impossible, but
+ *     a `function` declaration creates a mutable binding, so `handleClick =
+ *     other` is legal and would make the resolved body the wrong one. The scan
+ *     is file-wide and syntactic, and it fails closed;
+ *   • the use site is not SHADOWED by an inner binding of the same name
+ *     ({@link isShadowed} — the shared predicate, not a hand-rolled walk).
+ *
+ * Anything else — an import, a property access, an overload signature with no
+ * body — is not resolvable and yields null.
+ */
+function moduleHandlerLookup(sf: ts.SourceFile): ModuleHandlerLookup {
+  const declared = new Map<string, HandlerFn>()
+  for (const st of sf.statements) {
+    if (ts.isFunctionDeclaration(st) && st.name && st.body) {
+      declared.set(st.name.text, st)
+    } else if (ts.isVariableStatement(st)) {
+      if ((st.declarationList.flags & ts.NodeFlags.Const) === 0) continue
+      for (const d of st.declarationList.declarations) {
+        if (!ts.isIdentifier(d.name) || d.initializer === undefined) continue
+        const init = unwrapCasts(d.initializer)
+        if (ts.isArrowFunction(init) || ts.isFunctionExpression(init))
+          declared.set(d.name.text, init)
+      }
+    }
+  }
+  const assigned = new Set<string>()
+  if (declared.size > 0) {
+    const scanAssignments = (n: ts.Node): void => {
+      if (ts.isBinaryExpression(n) && isAssignmentOperator(n.operatorToken.kind)) {
+        const lhs = unwrapCasts(n.left)
+        if (ts.isIdentifier(lhs)) assigned.add(lhs.text)
+      }
+      n.forEachChild(scanAssignments)
+    }
+    scanAssignments(sf)
+  }
+  return (id) => {
+    const fn = declared.get(id.text)
+    if (fn === undefined || assigned.has(id.text)) return null
+    return isShadowed(id) ? null : fn
+  }
 }
 
 /** A lint diagnostic with source position resolved (1-based line, 0-based col). */
@@ -2328,11 +2502,13 @@ export function lintTagSendSource(mod: ParsedModule): SignalLintMessage[] {
 /**
  * Run ONLY `imperative-dom-mutation` over a module that is not a signal
  * component — the third companion to {@link lintAnnotationSyntaxSource} and
- * {@link lintTagSendSource}, and needed for the same reason, only more sharply:
- * #231's own imperative `textContent` write lived in a `CopyButton` VIEW HELPER,
- * a module that builds elements with `@llui/dom` helpers and contains no
- * `component(` call at all, so `lintSignalSource` never sees it. Covering only
- * direct component views would have missed the incident this rule is named for.
+ * {@link lintTagSendSource}, and needed for the same reason: a view HELPER is a
+ * plain function returning `Mountable`, it builds elements with `@llui/dom`
+ * helpers, and it commonly lives in a module with no `component(` call at all —
+ * which the plugin routes down its non-component branch, where
+ * `lintSignalSource` never runs. Without this entry point the rule would cover
+ * the reconciler-owned nodes built inside a `component()` literal and not the
+ * identical ones built one function out.
  *
  * Same pre-check discipline: {@link mentionsImperativeDom} runs against
  * `mod.text` BEFORE the module is parsed, so a module missing either half of the
