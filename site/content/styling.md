@@ -52,29 +52,49 @@ writes), `[data-theme='dark']` (what `@llui/components/theme-switch` writes), an
 
 `applyTheme()` publishes the user's **preference**, so `'system'` REMOVES `data-theme`
 rather than resolving `prefers-color-scheme` in JS and pinning the answer — that is the
-state the media query exists to answer, and pinning it costs a flash of the wrong palette
-on first paint. Two consequences for your own overrides:
+state the media query exists to answer, it keeps `watchSystemTheme` off the critical path,
+and it is the only spelling SSR can render.
 
-- **An override written only under `.dark` / `[data-theme='dark']` is dead on a dark OS
-  when the preference is `'system'`.** Every base token flips (the media block in
-  `tokens-dark.css` matches an absent attribute) and yours does not, so the page goes dark
-  and keeps your light brand colour. Give such a block a twin under the same guard the
-  stylesheet uses:
+### Overriding a base token on a dark OS
 
-  ```css
-  .dark,
-  [data-theme='dark'] {
+**On a dark OS, `tokens-dark.css`'s media block outranks your override on SPECIFICITY and
+replaces your token with the library default — for every preference, and regardless of
+source order.** Its guard is `:root:not([data-theme='light']):not(.light)`, which is
+**(0,3,0)**; a `.dark` or `[data-theme='dark']` block is **(0,1,0)**. So on a dark OS with
+the preference set to `'dark'`, the attribute is present, your selector matches, and it
+still loses. Under `'system'` your selector additionally matches nothing at all, since
+there is no attribute to match.
+
+That is measured in real Chromium and tracked as [#241](https://github.com/fponticelli/llui/issues/241) —
+it is a property of the shipped stylesheet, not of any particular preference, and it
+predates `applyTheme` taking a full `Theme`.
+
+Until #241 lands, give such a block a twin under the same guard the stylesheet uses. It
+carries the same (0,3,0) and, imported after, wins on source order; it also matches in
+both of the failing cells, because the guard is true whenever the attribute is absent or
+`'dark'`:
+
+```css
+.dark,
+[data-theme='dark'] {
+  --primary: oklch(0.7 0.15 258);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not(.light) {
     --primary: oklch(0.7 0.15 258);
   }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme='light']):not(.light) {
-      --primary: oklch(0.7 0.15 258);
-    }
-  }
-  ```
+}
+```
 
-- The derived `color-mix()` tokens above need no such twin — they re-resolve from
-  `--foreground` in whichever block wins.
+Two riders:
+
+- **A shadcn theme generator's output scopes everything under `.dark` alone, and nothing in
+  `@llui/components` ever writes that class** — `applyTheme` writes `data-theme` only. So
+  pasting generator output verbatim gives you a block that never matches in _any_ cell.
+  That is [#242](https://github.com/fponticelli/llui/issues/242); add `[data-theme='dark']`
+  to the selector, plus the twin above.
+- The derived `color-mix()` tokens need no twin — they re-resolve from `--foreground` in
+  whichever block wins.
 
 > **Tailwind v4 is required.** The colour tokens are mapped into Tailwind's `--color-*`
 > namespace with `@theme inline`, and the radius/shadow/duration/z-index scales come

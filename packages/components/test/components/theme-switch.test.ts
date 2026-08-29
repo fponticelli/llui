@@ -198,7 +198,7 @@ describe('applyTheme pairs with the selectors tokens-dark.css actually ships', (
 
   it("'system' falls into the media branch, so the OS answers it", () => {
     // Matching the media guard means: dark when the OS is dark, and the
-    // `:root` light default when it is not. No JS resolve, no flash.
+    // `:root` light default when it is not — with no JS resolve.
     expect(stateOf('system')).toEqual({ media: true, explicit: false })
   })
 
@@ -210,6 +210,31 @@ describe('applyTheme pairs with the selectors tokens-dark.css actually ships', (
     // This is the cell that would break if the guard were written
     // `:root:not([data-theme])` instead: a light preference on a dark OS.
     expect(stateOf('light')).toEqual({ media: false, explicit: false })
+  })
+
+  /**
+   * #241, pinned here because it is the fact the docs beside `applyTheme` now
+   * assert and a reader will otherwise assume `'system'` caused it. The media
+   * guard is (0,3,0) and a consumer's override selector is (0,1,0), so on a dark
+   * OS the LIBRARY block wins for every preference — including `'dark'`, where
+   * the consumer's selector matches perfectly well and still loses. This is not a
+   * regression from #233 and the fix is #241's, not this function's; the
+   * assertion exists so that landing #241 (`:where()`) fails here and forces the
+   * prose above to be re-read.
+   */
+  it('the media guard OUTRANKS a consumer override on specificity (#241)', () => {
+    // (0,3,0): `:root` + `:not([attr])` + `:not(.class)`, since `:not()` takes
+    // the specificity of its argument.
+    expect(mediaSelector).toBe(":root:not([data-theme='light']):not(.light)")
+    // The guard is true whenever the attribute is ABSENT or 'dark' — i.e. in both
+    // of the cells a consumer would write a dark override for.
+    applyTheme('dark')
+    expect(document.documentElement.matches(mediaSelector as string)).toBe(true)
+    applyTheme('system')
+    expect(document.documentElement.matches(mediaSelector as string)).toBe(true)
+    // If it is ever wrapped in `:where()` the guard drops to (0,0,0) and this
+    // fails — which is the point.
+    expect(mediaSelector).not.toContain(':where(')
   })
 })
 

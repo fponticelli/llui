@@ -74,7 +74,11 @@ export async function copyToClipboard(value: string): Promise<void> {
     await navigator.clipboard.writeText(value)
     return
   }
-  // Fallback: ephemeral textarea
+  // Fallback: ephemeral textarea. This path is what runs in an INSECURE CONTEXT,
+  // where `navigator.clipboard` is undefined — one of the three refusal cases the
+  // contract above names — so discarding `execCommand`'s boolean here resolves on a
+  // refused write and re-opens #232 one branch down: the consumer dispatches
+  // `copied` and the live region announces a copy that did not happen.
   const textarea = document.createElement('textarea')
   textarea.value = value
   textarea.style.position = 'fixed'
@@ -82,7 +86,9 @@ export async function copyToClipboard(value: string): Promise<void> {
   document.body.appendChild(textarea)
   textarea.select()
   try {
-    document.execCommand('copy')
+    if (!document.execCommand('copy')) {
+      throw new Error('clipboard write refused')
+    }
   } finally {
     document.body.removeChild(textarea)
   }

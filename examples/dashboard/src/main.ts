@@ -133,7 +133,7 @@ const Dashboard = component<State, Msg, Effect>({
       // The PREFERENCE, not a resolved value: `applyTheme` removes `data-theme`
       // for 'system', and this page's own `@media (prefers-color-scheme: light)
       // { :root:not([data-theme='dark']) }` block in index.html answers that
-      // case in CSS — no JS resolve, no flash (#233).
+      // case in CSS — so no JS resolve and no `watchSystemTheme` (#233).
       themeSwitch.applyTheme(effect.theme)
     }
   },

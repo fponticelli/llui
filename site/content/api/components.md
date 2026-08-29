@@ -1959,13 +1959,30 @@ follows the OS in CSS, and `data-theme="light"` opts a subtree back out of
 the media query.
 
 This takes a {@link Theme}, not a {@link ResolvedTheme}, deliberately (#233).
-Resolving `'system'` in JS and pinning the answer is strictly worse than
-leaving it to CSS: first paint uses the media query and JS then writes an
-attribute that may disagree (a flash of the wrong palette), `watchSystemTheme`
-becomes mandatory to track OS changes CSS would have followed for free, and
-SSR has no correct attribute to render. Use `resolveTheme()` only when you
-genuinely need the resolved value IN JS — canvas theming, a
-`<meta name="theme-color">` — never merely to honour the OS setting.
+Three costs to resolving `'system'` in JS and pinning the answer, none of
+which the CSS route pays:
+
+- `watchSystemTheme` becomes MANDATORY to track OS changes the media query
+  would have followed for free;
+- SSR has no correct attribute to render, since the server cannot know the
+  client's `prefers-color-scheme`;
+- the attribute stops naming the PREFERENCE. `data-theme="dark"` then means
+  either "the user chose dark" or "the user chose system and the OS is dark",
+  and nothing on the page can tell them apart.
+
+It does NOT cost a first-paint flash — a claim worth not repeating, because it
+is false and easy to check: `resolveTheme('system')` reads the same media
+query the first paint used, so the attribute it writes agrees with what is
+already on screen.
+
+Use `resolveTheme()` only when you genuinely need the resolved value IN JS —
+canvas theming, a `<meta name="theme-color">` — never merely to honour the OS
+setting.
+
+NOTE, unrelated to this function: on a dark OS the media guard quoted above is
+specificity (0,3,0) and outranks a consumer's `.dark` / `[data-theme='dark']`
+override (0,1,0) for EVERY preference — see #241 — and nothing here ever
+writes the `.dark` class that guard advertises (#242).
 
 ```typescript
 function applyTheme(theme: Theme): void
@@ -5042,7 +5059,8 @@ State machine tracks the user's explicit preference (`light`, `dark`, or
 `data-theme` for an explicit choice and REMOVING it for `'system'`, which is
 the state `tokens-dark.css`'s `prefers-color-scheme` block answers in pure
 CSS. Do not resolve `'system'` in JS just to honour the OS setting: that
-costs a flash of the wrong palette and makes `watchSystemTheme` mandatory.
+makes `watchSystemTheme` mandatory, gives SSR nothing correct to render, and
+overwrites the preference with its answer.
 
 Typically wired via `onMount` or in app init:
 
@@ -32072,13 +32090,30 @@ follows the OS in CSS, and `data-theme="light"` opts a subtree back out of
 the media query.
 
 This takes a {@link Theme}, not a {@link ResolvedTheme}, deliberately (#233).
-Resolving `'system'` in JS and pinning the answer is strictly worse than
-leaving it to CSS: first paint uses the media query and JS then writes an
-attribute that may disagree (a flash of the wrong palette), `watchSystemTheme`
-becomes mandatory to track OS changes CSS would have followed for free, and
-SSR has no correct attribute to render. Use `resolveTheme()` only when you
-genuinely need the resolved value IN JS — canvas theming, a
-`<meta name="theme-color">` — never merely to honour the OS setting.
+Three costs to resolving `'system'` in JS and pinning the answer, none of
+which the CSS route pays:
+
+- `watchSystemTheme` becomes MANDATORY to track OS changes the media query
+  would have followed for free;
+- SSR has no correct attribute to render, since the server cannot know the
+  client's `prefers-color-scheme`;
+- the attribute stops naming the PREFERENCE. `data-theme="dark"` then means
+  either "the user chose dark" or "the user chose system and the OS is dark",
+  and nothing on the page can tell them apart.
+
+It does NOT cost a first-paint flash — a claim worth not repeating, because it
+is false and easy to check: `resolveTheme('system')` reads the same media
+query the first paint used, so the attribute it writes agrees with what is
+already on screen.
+
+Use `resolveTheme()` only when you genuinely need the resolved value IN JS —
+canvas theming, a `<meta name="theme-color">` — never merely to honour the OS
+setting.
+
+NOTE, unrelated to this function: on a dark OS the media guard quoted above is
+specificity (0,3,0) and outranks a consumer's `.dark` / `[data-theme='dark']`
+override (0,1,0) for EVERY preference — see #241 — and nothing here ever
+writes the `.dark` class that guard advertises (#242).
 
 ```typescript
 function applyTheme(theme: Theme): void
@@ -32143,7 +32178,8 @@ State machine tracks the user's explicit preference (`light`, `dark`, or
 `data-theme` for an explicit choice and REMOVING it for `'system'`, which is
 the state `tokens-dark.css`'s `prefers-color-scheme` block answers in pure
 CSS. Do not resolve `'system'` in JS just to honour the OS setting: that
-costs a flash of the wrong palette and makes `watchSystemTheme` mandatory.
+makes `watchSystemTheme` mandatory, gives SSR nothing correct to render, and
+overwrites the preference with its answer.
 
 Typically wired via `onMount` or in app init:
 

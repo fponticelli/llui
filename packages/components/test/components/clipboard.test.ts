@@ -50,9 +50,15 @@ describe('clipboard reducer', () => {
 describe('clipboard write outcome drives the copied flag (#232)', () => {
   const realClipboard = Object.getOwnPropertyDescriptor(globalThis.navigator, 'clipboard')
 
+  const realExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+
   afterEach(() => {
     if (realClipboard) Object.defineProperty(globalThis.navigator, 'clipboard', realClipboard)
     else delete (globalThis.navigator as { clipboard?: unknown }).clipboard
+    // jsdom ships no `execCommand`, so the fallback tests install one. Leaving it
+    // behind would let a later test take the fallback branch by accident.
+    if (realExecCommand) Object.defineProperty(document, 'execCommand', realExecCommand)
+    else delete (document as { execCommand?: unknown }).execCommand
   })
 
   function stubClipboard(writeText: (v: string) => Promise<void>): void {
@@ -99,6 +105,56 @@ describe('clipboard write outcome drives the copied flag (#232)', () => {
   it('copyToClipboard REJECTS when the write is refused, so the failure is observable', async () => {
     stubClipboard(() => Promise.reject(new Error('NotAllowedError')))
     await expect(copyToClipboard('x')).rejects.toThrow('NotAllowedError')
+  })
+
+  /**
+   * The INSECURE-CONTEXT branch. `navigator.clipboard` is undefined there — one of
+   * the three refusal cases the contract names — so `copyToClipboard` takes its
+   * `execCommand` fallback. That path used to DISCARD the boolean and resolve on a
+   * refused write, which re-opens #232 one branch down: the consumer dispatches
+   * `copied` from a resolved promise and the live region announces a copy that did
+   * not happen. The reducer fix alone does not reach this.
+   */
+  describe('the execCommand fallback (insecure context)', () => {
+    function insecureContext(execCommand: () => boolean): void {
+      delete (globalThis.navigator as { clipboard?: unknown }).clipboard
+      ;(document as unknown as { execCommand: unknown }).execCommand = execCommand
+    }
+
+    it('REJECTS when execCommand reports the copy was refused', async () => {
+      insecureContext(() => false)
+      await expect(copyToClipboard('secret')).rejects.toThrow('clipboard write refused')
+    })
+
+    it('resolves when execCommand reports success', async () => {
+      insecureContext(() => true)
+      await expect(copyToClipboard('secret')).resolves.toBeUndefined()
+    })
+
+    it('removes the scratch textarea on BOTH outcomes', async () => {
+      insecureContext(() => true)
+      await copyToClipboard('ok')
+      expect(document.querySelectorAll('textarea')).toHaveLength(0)
+      insecureContext(() => false)
+      await copyToClipboard('refused').catch(() => {})
+      expect(document.querySelectorAll('textarea')).toHaveLength(0)
+    })
+
+    it('a refused fallback write leaves copied false through the documented wiring', async () => {
+      insecureContext(() => false)
+      let state = init({ value: 'secret-token' })
+      const send = (msg: ClipboardMsg): void => {
+        ;[state] = update(state, msg)
+      }
+      connect(signalOf(state), send).trigger.onClick(new MouseEvent('click'))
+      await copyToClipboard(state.value).then(
+        () => send({ type: 'copied' }),
+        () => {},
+      )
+      expect(state.copied).toBe(false)
+      const parts = connect(rootSignal(), vi.fn())
+      expect(read(parts.indicator['data-copied'], state)).toBeUndefined()
+    })
   })
 })
 

@@ -25,13 +25,19 @@
 }
 
 /*
- * The SAME override for the no-attribute case, under the guard `tokens-dark.css`
- * uses verbatim. `applyTheme('system')` REMOVES `data-theme` (#233) and lets the
- * media query answer, so an override written only against `.dark` /
- * `[data-theme='dark']` silently keeps its LIGHT value on a dark OS: every base
- * token flips and the brand colour does not. Any block a theme generator emits
- * under `.dark` needs this twin, which is exactly why `theme.css`'s derived
- * `color-mix()` tokens do not — they re-resolve from `--foreground` for free.
+ * The SAME override again, under the guard `tokens-dark.css` uses verbatim.
+ *
+ * Not a `'system'` story and nothing to do with `applyTheme`: that guard,
+ * `:root:not([data-theme='light']):not(.light)`, is specificity (0,3,0) while the
+ * block above is (0,1,0). On a DARK OS the library's block therefore outranks this
+ * override for EVERY preference and regardless of source order, and the token that
+ * wins is shadcn's default dark `--primary`, not the brand colour — measured, and
+ * tracked as #241. Under `'system'` the block above additionally matches nothing at
+ * all, since there is no attribute to match.
+ *
+ * This twin carries the same (0,3,0), is imported later, and its guard is true in
+ * both failing cells (attribute absent OR 'dark'). `theme.css`'s derived
+ * `color-mix()` tokens need no twin — they re-resolve from `--foreground` for free.
  */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']):not(.light) {
