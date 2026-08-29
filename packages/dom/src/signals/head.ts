@@ -22,6 +22,13 @@
 // explicit provider); otherwise the client falls back to one sink PER DOCUMENT
 // (the resource being coordinated is the single shared `document.head`), never a
 // cross-document module global.
+//
+// An ANONYMOUS entry (`style`/`script` with no `id`/`src`, a `meta` with no identity
+// attr, `noscript`) has nothing to dedup on and is keyed by ORDINAL. That ordinal is
+// namespaced per OWNING INSTANCE (`build-context.ts:HeadAnonScope`), because every
+// instance mounted in its own pass numbers from 1 and several of them share one sink:
+// unnamespaced, a host's first anonymous `<style>` and its `island`'s minted `style:#1`
+// twice and one silently overwrote the other (#240).
 
 import {
   currentDoc,
@@ -484,7 +491,7 @@ function metaKey(attrs: MetaAttrs): string {
   const httpEquiv = staticStr(attrs.httpEquiv)
   if (httpEquiv !== undefined) return `meta:http-equiv=${httpEquiv}`
   if ('charset' in attrs) return 'meta:charset'
-  return `meta:#${__nextHeadAnon()}` // no static identity → no dedup (per-render ordinal)
+  return `meta:#${__nextHeadAnon()}` // no static identity → no dedup (per-instance ordinal)
 }
 
 /** Add a `<meta>` tag. Dedups by `name`/`property`/`httpEquiv`/`charset`. */
@@ -548,7 +555,9 @@ export function base(attrs: BaseAttrs): Mountable {
 
 /** Attributes accepted by {@link style} / {@link script}. A static `id` keys the
  * tag for dedup + SSR-hydration adoption; without one the tag is anonymous (no
- * dedup, keyed by stable construction order). */
+ * dedup, keyed by construction order WITHIN the instance that owns it — a mounted
+ * `island` or adapter-mounted layer numbers in its own namespace, so its Nth
+ * anonymous tag cannot collide with its host's Nth). */
 export interface StyleAttrs {
   id?: string
   media?: HeadValue<string>
@@ -573,7 +582,8 @@ export interface ScriptAttrs {
 }
 
 /** Add a `<script>` (external via `src`, or inline via `body`). Dedups by static
- * `id` or `src`; otherwise anonymous (keyed by stable construction order). */
+ * `id` or `src`; otherwise anonymous (keyed by construction order within the owning
+ * instance — see {@link StyleAttrs}). */
 export function script(attrs: ScriptAttrs = {}, body?: HeadValue<string>): Mountable {
   const id = staticStr(attrs.id)
   const src = staticStr(attrs.src)

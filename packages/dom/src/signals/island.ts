@@ -44,7 +44,16 @@
 // rather than patched on one side. `show`/`branch` ARMS are unaffected in both
 // directions — only `each` rows.
 
-import { requireCtx, mountable, runBuild, type BuildCtx, type Mountable } from './build-context.js'
+import {
+  __childHeadNamespace,
+  headAnonScope,
+  requireCtx,
+  mountable,
+  runBuild,
+  type BuildCtx,
+  type HeadAnonScope,
+  type Mountable,
+} from './build-context.js'
 import { mountSignalComponent } from './component.js'
 import type { SignalComponentDef, SignalComponentHandle } from './component.js'
 import { buildAndPublishScope } from './scope-build.js'
@@ -127,11 +136,20 @@ function buildSignalIsland<S, M, E = never, P = never>(spec: IslandSpec<S, M, E,
   // through which `@llui/components` routes all i18n: every component mounted this
   // way fell back to default English, with no error and no warning.
   const contexts = mergeContexts(c.contexts, spec.contexts)
+  // ALLOCATE the anonymous-head namespace HERE, at placement, for the same reason the
+  // context map is snapshotted here: this is the one point in the sequence the server
+  // render and the client mount agree on. An anonymous head entry is keyed by an
+  // ordinal, and an isolated instance restarts that count — so a fresh counter alone
+  // made the island's first `<style>` and the host's mint ONE key, and one silently
+  // overwrote the other (#240). The namespace is positional (`i1`, `i2`, … within the
+  // placing instance, nesting as `i1/i2`), and both sides reach this line in document
+  // order, so the two key sets still match tag for tag.
+  const headNamespace = __childHeadNamespace(c.headAnon)
   const props = resolveProps(spec)
   // The mount LIFECYCLE is a client-DOM concern, so the instance is not *mounted* on
   // the server — but it is still RENDERED there (see `ssrBody`), so an island is not
   // a post-hydration pop-in and is not absent without JS.
-  if (c.ssr) return ssrBody(spec, c, anchor, contexts)
+  if (c.ssr) return ssrBody(spec, c, anchor, contexts, headAnonScope(headNamespace))
 
   let handle: SignalComponentHandle<S, M> | null = null
   // The prop binding commits during the host's FIRST reconcile, which runs before
@@ -170,7 +188,9 @@ function buildSignalIsland<S, M, E = never, P = never>(spec: IslandSpec<S, M, E,
     handle = mountSignalComponent<S, M, E>(
       { anchor: anchor as Comment, mode: 'append' },
       spec.def,
-      'initialState' in spec ? { initialState: spec.initialState, contexts } : { contexts },
+      'initialState' in spec
+        ? { initialState: spec.initialState, contexts, headNamespace }
+        : { contexts, headNamespace },
     )
     spec.onHandle?.(handle)
     deliver()
@@ -265,7 +285,11 @@ function resolveProps<S, M, E, P>(
  * row ctx; inherited, `derived` rebases to `ctx.state` and the row renders
  * `undefined`), and `headAnon` (an anonymous `<style>` inside an island takes an
  * ordinal continuing the HOST's count on the server and its own count on the
- * client, so hydration duplicates the tag instead of adopting it). `getState` is a
+ * client, so hydration duplicates the tag instead of adopting it). Note the
+ * `headAnon` passed in is NOT a bare fresh counter — two fresh counters agreed with
+ * each other and still collided with the host on one key (#240); it is the
+ * NAMESPACED scope the caller allocated at placement, so the island's ordinals are
+ * both distinct from the host's and identical on the two sides. `getState` is a
  * third, latent one — `signalLazy`'s error arm would snapshot the HOST's state. The
  * fresh descriptor registry is HYGIENE, not a divergence: `renderNodes` returns
  * only `{ nodes, dispose }`, so nothing on the server ever reads descriptors — it is
@@ -284,6 +308,7 @@ function ssrBody<S, M, E, P>(
   c: BuildCtx,
   anchor: Comment,
   contexts: ReadonlyMap<symbol, unknown>,
+  headAnon: HeadAnonScope,
 ): Node {
   const [seed] = normalizeUpdateResult<S, E>(spec.def.init())
   // Presence check, not `??` — see the mount path: a legitimately falsy/null seed
@@ -306,7 +331,7 @@ function ssrBody<S, M, E, P>(
     contexts,
     inRow: false,
     descriptors: new Map(),
-    headAnon: { n: 0 },
+    headAnon,
     ssr: true,
     getState: () => state,
   }

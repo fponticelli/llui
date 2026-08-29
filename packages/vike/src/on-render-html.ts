@@ -9,6 +9,7 @@ import {
   buildChainData,
   isDevBuild,
   seedStateFor,
+  headNamespaceFor,
   type AnyLayer,
   type LayoutChain,
   type LayoutOption,
@@ -316,7 +317,17 @@ export function _renderChain(
       // the slot reach here.
       const seedState = seedStateFor(def, layerData)
       seedStates.push(seedState)
-      const { nodes, dispose } = renderNodes(def, seedState, env, currentSlotContexts)
+      // Each layer is its own build, so each restarts the anonymous-head ordinal;
+      // the per-layer namespace is what keeps a layout's and its page's anonymous
+      // `<style>` from minting one key (#240). Derived from the INDEX so the client
+      // mount below derives the identical value.
+      const { nodes, dispose } = renderNodes(
+        def,
+        seedState,
+        env,
+        currentSlotContexts,
+        headNamespaceFor(i),
+      )
       disposers.push(dispose)
 
       if (i === 0) {

@@ -550,7 +550,14 @@ function hydrateSignalApp<S, M, E = never>(
   target: Element | MountTarget,
   def: SignalComponentDef<S, M, E>,
   serverState: S,
-  options?: { runInitEffects?: boolean; contexts?: ReadonlyMap<symbol, unknown> },
+  options?: {
+    runInitEffects?: boolean
+    contexts?: ReadonlyMap<symbol, unknown>
+    /** See {@link MountSignalOptions.headNamespace} — an adapter hydrating several
+     * instances into one document must namespace each one's anonymous head keys,
+     * exactly as its server render did. */
+    headNamespace?: string
+  },
 ): SignalComponentHandle<S, M>
 ```
 
@@ -689,6 +696,7 @@ function mountSignal(
   modeOrSeed?: 'append' | 'replace' | ReadonlyMap<symbol, unknown>,
   seedContexts?: ReadonlyMap<symbol, unknown>,
   getState?: () => unknown,
+  headNamespace?: string,
 ): SignalMount
 ```
 
@@ -833,6 +841,7 @@ function renderNodes<S, M, E>(
   initialState: S | undefined,
   env: ServerDoc,
   contexts?: ReadonlyMap<symbol, unknown>,
+  headNamespace?: string,
 ): { nodes: readonly Node[]; dispose: () => void }
 ```
 
@@ -866,7 +875,8 @@ function rowHandle<T>(get: () => unknown, base: string): SignalHandle<T>
 ### `script()`
 
 Add a `<script>` (external via `src`, or inline via `body`). Dedups by static
-`id` or `src`; otherwise anonymous (keyed by stable construction order).
+`id` or `src`; otherwise anonymous (keyed by construction order within the owning
+instance — see {@link StyleAttrs}).
 
 ```typescript
 function script(attrs: ScriptAttrs = {}, body?: HeadValue<string>): Mountable
@@ -2378,6 +2388,17 @@ export interface MountSignalOptions<S> {
    * `seedContexts`). `@llui/vike` replays a layout's in-scope contexts here so a
    * nested page reads providers that live above its slot in a SEPARATE build. */
   contexts?: ReadonlyMap<symbol, unknown>
+  /** Namespace for this instance's ANONYMOUS head keys (see `HeadAnonScope`).
+   * An anonymous `style`/`script`/`meta`/`noscript` has nothing to dedup on, so it
+   * is keyed by ordinal — and every instance mounted in its own pass numbers from
+   * 1, so without a namespace two of them writing into ONE document/head sink
+   * collide and one silently overwrites the other (#240). `island` allocates one
+   * per instance automatically; an ADAPTER that mounts several instances into one
+   * document (`@llui/vike`'s layout chain) must give each layer its own, and must
+   * derive it the same way on the server and on the client — the layer's index in
+   * the chain, never a mount-order counter — or hydration stops adopting the
+   * server's tags. Empty/absent ⇒ the unprefixed root namespace. */
+  headNamespace?: string
   /** Commit scheduling. `'sync'` (the default) commits the DOM + notifies
    * subscribers inside every top-level `send` — the synchronous contract.
    * `'raf'` is the OPT-IN streaming/burst fast path: reducers and effects
@@ -2720,7 +2741,9 @@ export interface StateDiff {
 
 Attributes accepted by {@link style} / {@link script}. A static `id` keys the
 tag for dedup + SSR-hydration adoption; without one the tag is anonymous (no
-dedup, keyed by stable construction order).
+dedup, keyed by construction order WITHIN the instance that owns it — a mounted
+`island` or adapter-mounted layer numbers in its own namespace, so its Nth
+anonymous tag cannot collide with its host's Nth).
 
 ```typescript
 export interface StyleAttrs {

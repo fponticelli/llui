@@ -158,6 +158,17 @@ export interface MountSignalOptions<S> {
    * `seedContexts`). `@llui/vike` replays a layout's in-scope contexts here so a
    * nested page reads providers that live above its slot in a SEPARATE build. */
   contexts?: ReadonlyMap<symbol, unknown>
+  /** Namespace for this instance's ANONYMOUS head keys (see `HeadAnonScope`).
+   * An anonymous `style`/`script`/`meta`/`noscript` has nothing to dedup on, so it
+   * is keyed by ordinal — and every instance mounted in its own pass numbers from
+   * 1, so without a namespace two of them writing into ONE document/head sink
+   * collide and one silently overwrites the other (#240). `island` allocates one
+   * per instance automatically; an ADAPTER that mounts several instances into one
+   * document (`@llui/vike`'s layout chain) must give each layer its own, and must
+   * derive it the same way on the server and on the client — the layer's index in
+   * the chain, never a mount-order counter — or hydration stops adopting the
+   * server's tags. Empty/absent ⇒ the unprefixed root namespace. */
+  headNamespace?: string
   /** Commit scheduling. `'sync'` (the default) commits the DOM + notifies
    * subscribers inside every top-level `send` — the synchronous contract.
    * `'raf'` is the OPT-IN streaming/burst fast path: reducers and effects
@@ -442,6 +453,7 @@ export function mountSignalComponent<S, M, E = never>(
       opts?.contexts,
       undefined,
       () => teaDriver.getState(),
+      opts?.headNamespace,
     )
   })
   // onMount callbacks ran synchronously inside mountSignal above, before `mount`
@@ -556,10 +568,18 @@ export function hydrateSignalApp<S, M, E = never>(
   target: Element | MountTarget,
   def: SignalComponentDef<S, M, E>,
   serverState: S,
-  options?: { runInitEffects?: boolean; contexts?: ReadonlyMap<symbol, unknown> },
+  options?: {
+    runInitEffects?: boolean
+    contexts?: ReadonlyMap<symbol, unknown>
+    /** See {@link MountSignalOptions.headNamespace} — an adapter hydrating several
+     * instances into one document must namespace each one's anonymous head keys,
+     * exactly as its server render did. */
+    headNamespace?: string
+  },
 ): SignalComponentHandle<S, M> {
   return mountSignalComponent(target, def, {
     hydrate: { serverState, runInitEffects: options?.runInitEffects },
     contexts: options?.contexts,
+    headNamespace: options?.headNamespace,
   })
 }
