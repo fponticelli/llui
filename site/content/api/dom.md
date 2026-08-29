@@ -61,6 +61,33 @@ mountApp(document.getElementById('app')!, Counter)
 
 Element helpers (`div`, `button`, …) and structural primitives (`each`, `show`, `branch`, …) are **module imports**, not bag members. Combine multiple signals with `derived([a, b], (av, bv) => …)`.
 
+### A widget with no state of its own
+
+A `Signal` does not have to come from a component's state. `constant(value)`
+builds one whose value never changes, and `noSend` is a no-op dispatcher — the
+pair that lets a **stateless** widget satisfy a library's
+`connect(state, send, opts)` contract without hoisting a state slice and a
+message envelope into an ancestor component for a value that never moves:
+
+```typescript
+import { constant, noSend, div, span, text } from '@llui/dom'
+import { meter } from '@llui/components'
+
+// No slice in `State`, no variant in `Msg`.
+const p = meter.connect(constant({ value: 42, min: 0, max: 200 }), noSend, { label: 'Sodium' })
+const gauge = div({ ...p.root }, [span({ ...p.label }, [text(p.valueText)])])
+```
+
+`constant` declares NO dependency paths, so its binding is evaluated once at
+mount and gated out of every update — it can never go stale, and it costs
+nothing per reconcile. `.at()` stays available (a constant has a real path
+structure: `constant(patient).at('name')`); `.map()` behaves as it does on any
+signal, so `.at()` after it is a compile error.
+
+This is only for values fixed at build time. A widget whose state _changes_ still
+needs a reducer — hoist a slice, or embed a self-contained TEA island with
+`foreign()` + `mountApp()`.
+
 ## Mountable — everything you build is a lazy description
 
 Every authoring helper (`el`/`div`/`text`/`each`/`show`/`branch`/`unsafeHtml`/`lazy`/`virtualEach`/`foreign`/`portal`/`provide`) returns a **`Mountable`** — a recipe materialized into live DOM at the point it is _placed_ (as an element child, or in a view / arm / row return). Consequences:
@@ -81,6 +108,8 @@ Every authoring helper (`el`/`div`/`text`/`each`/`show`/`branch`/`unsafeHtml`/`l
 | `mountSignalComponent(target, def, opts?)`   | Lower-level mount — container or `{ anchor }` target, optional hydrate  |
 | `hydrateSignalApp(target, def, serverState)` | Hydrate server-rendered HTML                                            |
 | `derived(sigs, fn)`                          | Combine N signals into one derived signal                               |
+| `constant(value)`                            | A signal whose value never changes (stateless widgets)                  |
+| `noSend`                                     | A no-op `Send` — the dispatcher half of a stateless widget              |
 | `pathHandle` / `isSignalHandle`              | Construct / detect a runtime signal handle                              |
 | `tagSend(handler, variants)`                 | Tag an event handler with the msg variants it can send (agent protocol) |
 
@@ -267,6 +296,43 @@ Msg/Effect union at the call site instead of at the first failed dispatch.
 function component<S, M extends { type: string }, E extends { type: string } = never>(
   spec: SignalComponentSpec<S, M, E>,
 ): SignalComponentDef<S, M, E>
+```
+
+### `constant()`
+
+A signal whose value never changes.
+
+A library component takes a `Signal` for its state and a `Send` for its
+messages, which assumes that state lives in an ancestor component. For a
+widget whose values are fixed for the life of the node — a rendered lab
+result, a static badge, a sparkline over data that has already arrived — that
+forces a state slice and a message variant into an ancestor's `State`/`Msg`
+per instance, for values that never move. `constant(v)` is the state half of
+the stateless pair; {@link noSend} is the dispatcher half:
+
+```typescript
+const p = meter.connect(constant({ value: 42, min: 0, max: 200 }), noSend, {})
+```
+
+A constant declares no dependency paths, so its binding is evaluated once when
+it mounts and is skipped by every later update: it cannot go stale, and it
+costs nothing per reconcile. It composes wherever a signal does — element
+props, `text`, `derived`, an `each` items source, and inside an `each` row.
+
+`.at()` stays available, because a constant has a real path structure:
+`constant(patient).at('name')` slices the captured value and yields another
+constant. `.map()` behaves as on any signal, so `.at()` after it is a compile
+error — slice before mapping.
+
+The value is captured BY REFERENCE, and the two read paths diverge if you
+mutate it afterwards: `.at(path)` resolves eagerly and therefore SNAPSHOTS the
+value as it was when `.at()` was called, while `peek()` always reads through to
+the live object. Pass a value you do not intend to mutate.
+
+For a widget whose state CHANGES this is the wrong tool — give it a reducer.
+
+```typescript
+function constant<T>(value: T): Signal<T>
 ```
 
 ### `createContext()`
@@ -3122,6 +3188,27 @@ const main
 
 ```typescript
 const nav
+```
+
+### `noSend`
+
+A dispatcher that discards every message — the `send` half of a stateless
+widget, to pair with `constant()` for the `state` half.
+
+A library component's `connect(state, send, opts)` requires a `Send<M>` even
+when the widget can emit nothing, so without a shared no-op every caller
+writes its own and re-derives the variance question below.
+
+Its parameter type is `unknown`, and `never` would be wrong. `Send<M>` is a
+function type, so under `strictFunctionTypes` its parameter is contravariant:
+a value fits `Send<M>` only if `M` is assignable to ITS parameter.
+`Send<unknown>` satisfies that for every `M`; `Send<never>` satisfies it for
+none — the intuitive "accepts no messages" spelling is exactly backwards for a
+value that has to fit every message type. Its partner is {@link constant},
+which supplies the `state` argument the same call needs.
+
+```typescript
+const noSend: Send<unknown>
 ```
 
 ### `ol`

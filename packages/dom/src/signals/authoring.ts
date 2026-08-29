@@ -46,6 +46,24 @@ export function mapSend<Outer, Inner>(
   return (msg) => send(wrap(msg))
 }
 
+/**
+ * A dispatcher that discards every message — the `send` half of a stateless
+ * widget, to pair with `constant()` for the `state` half.
+ *
+ * A library component's `connect(state, send, opts)` requires a `Send<M>` even
+ * when the widget can emit nothing, so without a shared no-op every caller
+ * writes its own and re-derives the variance question below.
+ *
+ * Its parameter type is `unknown`, and `never` would be wrong. `Send<M>` is a
+ * function type, so under `strictFunctionTypes` its parameter is contravariant:
+ * a value fits `Send<M>` only if `M` is assignable to ITS parameter.
+ * `Send<unknown>` satisfies that for every `M`; `Send<never>` satisfies it for
+ * none — the intuitive "accepts no messages" spelling is exactly backwards for a
+ * value that has to fit every message type. Its partner is {@link constant},
+ * which supplies the `state` argument the same call needs.
+ */
+export const noSend: Send<unknown> = () => {}
+
 /** A reactive value in a slot: a signal of T, or a plain T. */
 export type Reactive<T> = Signal<T> | T
 
