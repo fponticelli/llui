@@ -24,6 +24,7 @@ import * as timeInputs from './sections/time-inputs'
 import * as content from './sections/content'
 import * as surfaces from './sections/surfaces'
 import * as canvas from './sections/canvas'
+import * as charts from './sections/charts'
 
 type State = {
   overlays: overlays.State
@@ -34,6 +35,7 @@ type State = {
   content: content.State
   surfaces: surfaces.State
   canvas: canvas.State
+  charts: charts.State
 }
 
 type Msg =
@@ -45,6 +47,7 @@ type Msg =
   | { type: 'content'; msg: content.Msg }
   | { type: 'surfaces'; msg: surfaces.Msg }
   | { type: 'canvas'; msg: canvas.Msg }
+  | { type: 'charts'; msg: charts.Msg }
 
 // Only the sections whose components emit effects participate here. Each section
 // owns its own effect handler (`onEffect`); the root wraps the raw effect with
@@ -72,6 +75,7 @@ export const App = component<State, Msg, Effect>({
         content: content.init()[0],
         surfaces: surfaces.init()[0],
         canvas: canvas.init()[0],
+        charts: charts.init()[0],
       },
       [
         ...overlaysFx.map((effect) => ({ type: 'overlays' as const, effect })),
@@ -120,6 +124,10 @@ export const App = component<State, Msg, Effect>({
         const [s] = canvas.update(state.canvas, msg.msg)
         return [{ ...state, canvas: s }, []]
       }
+      case 'charts': {
+        const [s] = charts.update(state.charts, msg.msg)
+        return [{ ...state, charts: s }, []]
+      }
     }
   },
   onEffect: (effect, { send, state }) => {
@@ -158,6 +166,7 @@ export const App = component<State, Msg, Effect>({
       div(content.view(state.at('content'), (m) => send({ type: 'content', msg: m }))),
       div(surfaces.view(state.at('surfaces'), (m) => send({ type: 'surfaces', msg: m }))),
       div(canvas.view(state.at('canvas'), (m) => send({ type: 'canvas', msg: m }))),
+      div(charts.view(state.at('charts'), (m) => send({ type: 'charts', msg: m }))),
     ]),
   ],
 })

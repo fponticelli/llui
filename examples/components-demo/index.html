@@ -6,15 +6,23 @@
     <title>LLui Components Demo</title>
     <link rel="stylesheet" href="/src/main.css" />
   </head>
-  <body class="bg-surface-muted text-text">
+  <!--
+    `bg-surface-muted` / `text-text` / `text-text-muted` used to sit on these two
+    elements and compiled to NO CSS — the same dead-token family as `bg-surface-2`,
+    still here because `scripts/test/tailwind-classes.test.ts` reads `.ts` sources
+    and never opens this file (issue #251). The tokens below are the ones the
+    theme defines.
+  -->
+  <body class="bg-background text-foreground">
     <div class="mx-auto max-w-5xl p-6">
       <header class="mb-4">
         <h1 class="text-3xl font-bold">LLui Components</h1>
-        <p class="mt-1 text-text-muted">
+        <p class="mt-1 text-muted-foreground">
           Headless components styled with the
           <span class="font-mono text-sm">@llui/components/styles</span>
-          theme layer. Eight sections compose as
-          <span class="font-mono text-sm">child()</span> boundaries under a single root app.
+          theme layer. Nine sections compose as modules over one update loop — the signal surface
+          has a single update cycle per mounted component, so there is no
+          <span class="font-mono text-sm">child()</span> boundary between them.
         </p>
       </header>
       <div id="app"></div>
