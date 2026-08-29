@@ -28,8 +28,16 @@
  * (background, card, popover, primary, secondary, muted, accent, destructive)
  * plus `--border`, `--input`, `--ring`, `--chart-1..5`, `--sidebar-*` and a
  * single `--radius` that derives the rest of the scale. Any shadcn/ui theme —
- * including the output of the community theme generators — can be pasted over
- * the `:root` / `.dark` blocks verbatim.
+ * including the output of the community theme generators — pastes over the
+ * `:root` block verbatim.
+ *
+ * Its DARK half needs one edit, and this is the honest version of a claim this
+ * header used to make without it: generator output scopes everything under
+ * `.dark` alone, and nothing in `@llui/components` writes that class (#242), so
+ * add `[data-theme='dark']` to the selector. If you support the `'system'`
+ * preference, add a twin block under `tokens-dark.css`'s media guard too — that
+ * cell has no attribute and no class for any consumer selector to match, and no
+ * specificity change can alter that. See `site/content/styling.md`.
  *
  * Derived tokens (`--*-hover`, `--*-active`, `--accent-strong`,
  * `--primary-soft-foreground`, `--border-hover`) are LLui additions: the

@@ -30,7 +30,10 @@ foreground variables, one `--radius` that derives the rest of the scale, oklch v
 ```
 
 A shadcn/ui theme — including the output of the community theme generators — pastes
-over the `:root` / `.dark` blocks verbatim. Overriding a base token is all you need:
+over the `:root` block verbatim. **Its dark half needs one edit**: generator output scopes
+everything under `.dark` alone, and nothing in `@llui/components` writes that class, so add
+`[data-theme='dark']` to the selector. See [dark-mode overrides](#overriding-a-base-token-in-dark-mode).
+Overriding a base token is all you need:
 
 ```css
 :root {
@@ -46,33 +49,31 @@ stylesheet needs. Each is a `color-mix()` toward `--foreground`, so the same exp
 darkens on a light theme and lightens on a dark one — **do not restate them in a dark
 block**, and do not define them at all unless you want a different mix.
 
-Dark mode activates three ways, all at once: a `.dark` class (what shadcn tooling
-writes), `[data-theme='dark']` (what `@llui/components/theme-switch` writes), and
-`prefers-color-scheme`. `[data-theme='light']` or `.light` opts a subtree out.
+Dark mode activates three ways, all at once: `[data-theme='dark']` (what
+`@llui/components/theme-switch` writes — **the only one this package ever writes**), a
+`.dark` class (the shadcn/ui convention, supported for consumers whose own tooling sets it —
+`next-themes`, an SSR-rendered class), and `prefers-color-scheme`. `[data-theme='light']` or
+`.light` opts a subtree out.
 
 `applyTheme()` publishes the user's **preference**, so `'system'` REMOVES `data-theme`
 rather than resolving `prefers-color-scheme` in JS and pinning the answer — that is the
 state the media query exists to answer, it keeps `watchSystemTheme` off the critical path,
-and it is the only spelling SSR can render.
+and it is the only spelling SSR can render. It deliberately writes **no `.dark` class**
+([#242](https://github.com/fponticelli/llui/issues/242)): `.dark` names a _resolved_ theme,
+so maintaining it would reintroduce that JS resolve, and a class that goes stale when the OS
+flips does not merely fail to help — it suppresses the media query that was correct with no
+JS at all. Measured with the preference on `'system'` throughout:
 
-### Overriding a base token on a dark OS
+| class on `<html>` | OS light         | OS dark           |
+| ----------------- | ---------------- | ----------------- |
+| _(none)_          | light ✓          | dark ✓            |
+| `.dark` (stale)   | **dark — wrong** | dark ✓            |
+| `.light` (stale)  | light ✓          | **light — wrong** |
 
-**On a dark OS, `tokens-dark.css`'s media block outranks your override on SPECIFICITY and
-replaces your token with the library default — for every preference, and regardless of
-source order.** Its guard is `:root:not([data-theme='light']):not(.light)`, which is
-**(0,3,0)**; a `.dark` or `[data-theme='dark']` block is **(0,1,0)**. So on a dark OS with
-the preference set to `'dark'`, the attribute is present, your selector matches, and it
-still loses. Under `'system'` your selector additionally matches nothing at all, since
-there is no attribute to match.
+### Overriding a base token in dark mode
 
-That is measured in real Chromium and tracked as [#241](https://github.com/fponticelli/llui/issues/241) —
-it is a property of the shipped stylesheet, not of any particular preference, and it
-predates `applyTheme` taking a full `Theme`.
-
-Until #241 lands, give such a block a twin under the same guard the stylesheet uses. It
-carries the same (0,3,0) and, imported after, wins on source order; it also matches in
-both of the failing cells, because the guard is true whenever the attribute is absent or
-`'dark'`:
+Write your dark override under **both** selectors, and add a twin under the media guard if
+you support the `'system'` preference:
 
 ```css
 .dark,
@@ -80,21 +81,34 @@ both of the failing cells, because the guard is true whenever the attribute is a
   --primary: oklch(0.7 0.15 258);
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']):not(.light) {
+  :root:where(:not([data-theme='light'])):where(:not(.light)) {
     --primary: oklch(0.7 0.15 258);
   }
 }
 ```
 
-Two riders:
+Why each half is needed, measured in real Chromium across all six (preference × OS) cells:
 
-- **A shadcn theme generator's output scopes everything under `.dark` alone, and nothing in
-  `@llui/components` ever writes that class** — `applyTheme` writes `data-theme` only. So
-  pasting generator output verbatim gives you a block that never matches in _any_ cell.
-  That is [#242](https://github.com/fponticelli/llui/issues/242); add `[data-theme='dark']`
-  to the selector, plus the twin above.
+- **`[data-theme='dark']` is what the theme switch writes.** A generator's `.dark`-only
+  block matches nothing unless your own code sets that class
+  ([#242](https://github.com/fponticelli/llui/issues/242)). One find-and-replace.
+- **The twin covers `'system'` on a dark OS.** There the preference writes no attribute and
+  this package writes no class, so there is nothing for your selector to match at all —
+  no specificity change can repair that cell. The twin's guard is true whenever the
+  attribute is absent or `'dark'`, so it covers it.
 - The derived `color-mix()` tokens need no twin — they re-resolve from `--foreground` in
   whichever block wins.
+
+> **Fixed in the shipped stylesheet:** the media guard used to be
+> `:root:not([data-theme='light']):not(.light)` — specificity **(0,3,0)** — which outranked
+> every consumer override of a base token on a dark OS, _including_ `[data-theme='dark']`
+> under an explicit `'dark'` preference, where the selector matches perfectly well and still
+> lost. It is now `:root:where(:not(…)):where(:not(…))`, which is **(0,1,0)**: it ties with
+> `:root`, `.dark` and `[data-theme='dark']`, so a block imported after this stylesheet wins
+> on source order ([#241](https://github.com/fponticelli/llui/issues/241)). Note the
+> consequence, if you were relying on the old behaviour: a plain `:root` override now leaks
+> into dark mode consistently, where before it leaked on a light OS and was overruled on a
+> dark one. Override a surface token in the dark block too, not in `:root` alone.
 
 > **Tailwind v4 is required.** The colour tokens are mapped into Tailwind's `--color-*`
 > namespace with `@theme inline`, and the radius/shadow/duration/z-index scales come
