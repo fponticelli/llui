@@ -39,7 +39,25 @@
     --accent: oklch(0.371 0 0);
     --accent-foreground: oklch(0.985 0 0);
     --destructive: oklch(0.704 0.191 22.216);
-    --destructive-foreground: oklch(0.985 0 0);
+    /* Dark flips a pair's FOREGROUND exactly when its surface crosses the
+     * light/dark divide. That is the rule, not "every foreground inverts":
+     * `--sidebar-primary` goes near-black -> saturated blue but STAYS dark
+     * (relative luminance 0.104), so keeping its near-white foreground is
+     * correct at 6.546:1 and must not be "fixed".
+     *
+     * `--destructive` does cross — 0.577 -> 0.704, the same lightening every
+     * inverted surface gets — and its foreground used to stay at
+     * `oklch(0.985 0 0)`, leaving near-white on a light red: rgb(250,250,250)
+     * on rgb(255,100,103) is 2.767:1, failing AA text (4.5) and even the 3:1
+     * non-text floor. This value restores 6.207:1, and with it all ten
+     * surface/foreground pairs in this contract clear AA in dark mode (lowest
+     * is `--muted` at 5.857:1).
+     *
+     * Upstream cannot settle the value: shadcn's own destructive button reads
+     * no foreground token at all (`text-white` plus `dark:bg-destructive/60`;
+     * see `registry/llui/ui/button.ts`), so the token is vestigial there and
+     * only this file's own pairing convention applies. */
+    --destructive-foreground: oklch(0.205 0 0);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
     --ring: oklch(0.556 0 0);
@@ -83,7 +101,10 @@
   --accent: oklch(0.371 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
+  /* See the note in the `prefers-color-scheme` block above: `--destructive`
+   * crosses the light/dark divide, so its foreground must cross too, or a
+   * filled destructive renders near-white on light red at 2.767:1. */
+  --destructive-foreground: oklch(0.205 0 0);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);

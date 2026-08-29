@@ -598,17 +598,17 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           stepItem(2, 'Review'),
         ]),
         div({ class: 'mt-3 flex gap-2' }, [
-          button({ ...st.prevTrigger, class: 'btn btn-secondary text-xs' }, [text('Back')]),
-          button({ ...st.nextTrigger, class: 'btn btn-primary text-xs' }, [text('Next')]),
+          button({ ...st.prevTrigger, class: 'btn btn-secondary btn-sm' }, [text('Back')]),
+          button({ ...st.nextTrigger, class: 'btn btn-primary btn-sm' }, [text('Next')]),
         ]),
       ]),
       card('Carousel', [
         div({ ...cr.root }, [
           div({ ...cr.viewport }, renderSlides()),
           div({ class: 'flex items-center justify-center gap-2' }, [
-            button({ ...cr.prevTrigger, class: 'btn btn-secondary text-xs' }, [text('‹')]),
+            button({ ...cr.prevTrigger, class: 'btn btn-secondary btn-sm' }, [text('‹')]),
             div({ ...cr.indicatorGroup }, renderIndicators()),
-            button({ ...cr.nextTrigger, class: 'btn btn-secondary text-xs' }, [text('›')]),
+            button({ ...cr.nextTrigger, class: 'btn btn-secondary btn-sm' }, [text('›')]),
           ]),
         ]),
       ]),
@@ -724,7 +724,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ]),
           button(
             {
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
               onClick: () => send({ type: 'table', msg: { type: 'clearSelection' } }),
             },
             [text('Clear')],
@@ -773,7 +773,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           button(
             {
               ...dt.pagination.prevTrigger,
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
             },
             [text('‹ Prev')],
           ),
@@ -790,7 +790,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           button(
             {
               ...dt.pagination.nextTrigger,
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
             },
             [text('Next ›')],
           ),

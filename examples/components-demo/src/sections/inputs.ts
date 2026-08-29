@@ -314,7 +314,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const progressBtn = (txt: string, v: number | null): Mountable =>
     button(
       {
-        class: 'btn btn-secondary text-xs',
+        class: 'btn btn-secondary btn-sm',
         onClick: () => send({ type: 'progress', msg: { type: 'setValue', value: v } }),
       },
       [text(txt)],
@@ -323,7 +323,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const meterBtn = (txt: string, v: number): Mountable =>
     button(
       {
-        class: 'btn btn-secondary text-xs',
+        class: 'btn btn-secondary btn-sm',
         onClick: () => send({ type: 'meter', msg: { type: 'setValue', value: v } }),
       },
       [text(txt)],
@@ -417,7 +417,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'mt-3 flex gap-2' }, [
           button(
             {
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
               onClick: () =>
                 send({ type: 'checkbox', msg: { type: 'setChecked', checked: 'indeterminate' } }),
             },
@@ -558,7 +558,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       card('Search Field', [
         div({ ...sf.root, class: 'flex items-center gap-2' }, [
           input({ ...sf.input, placeholder: 'Search…', 'aria-label': 'Search', class: 'input' }),
-          button({ ...sf.clearTrigger, class: 'btn btn-secondary text-xs' }, [text('×')]),
+          button({ ...sf.clearTrigger, class: 'btn btn-secondary btn-sm' }, [text('×')]),
         ]),
         div({ class: 'mt-2 text-sm text-muted-foreground' }, [
           text('Query: '),
@@ -583,7 +583,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'mt-3 flex gap-2' }, [
           button(
             {
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
               onClick: () =>
                 send({
                   type: 'field',
@@ -613,7 +613,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'mt-3 flex items-center gap-2' }, [
           button(
             {
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
               onClick: () =>
                 send({
                   type: 'fieldset',

@@ -1505,17 +1505,94 @@
 
 /* ─── Buttons ─── */
 
+/*
+ * Control heights for `.btn` / `.btn-sm`, and NOTHING else. They live here
+ * rather than in `tokens.css` because these two rules are their only readers:
+ * every other baseline control sizes itself with a literal (`pin-input` 2.75rem,
+ * `steps` trigger 2rem, …), and `tokens.css` is the file you import when you are
+ * NOT using this stylesheet.
+ *
+ * State the lever accurately: raising `--control-h` to 2.75rem gets you the 44px
+ * WCAG 2.5.5 (AAA) / iOS HIG touch target ON BUTTONS. It does not resize the rest
+ * of the baseline, and an app that needs the target everywhere still has controls
+ * to fix by hand.
+ *
+ * The 2.25rem default is shadcn's `h-9`, the 2rem its `h-8`. Upstream's default
+ * button does NOT meet 2.5.5 either, so matching it is deliberate parity — a
+ * silent divergence would make every shadcn screenshot stop describing what you
+ * get. WCAG 2.5.8 (the AA rule, WCAG 2.2) asks 24px, which both defaults clear.
+ */
+:root {
+  --control-h: 2.25rem;
+  --control-h-sm: 2rem;
+}
+
+/*
+ * `.btn` plus ONE variant — `.btn-primary`, `.btn-secondary`, `.btn-ghost`,
+ * `.btn-danger`, `.btn-danger-ghost` — optionally with the `.btn-sm` size.
+ *
+ * BREAKING: the size modifier is `.btn-sm` and no longer `.btn.text-xs`.
+ * `text-xs` is also a real Tailwind utility in `@layer utilities`, and these
+ * rules are unlayered, so the pair silently outranked it and one spelling meant
+ * two different things. Migrating is not cosmetic — `btn text-xs` used to render
+ * 30px tall at 12px with `0.375rem 0.75rem` padding, and now renders 39px at 14px
+ * with `0.5rem 1rem`, because BOTH the font-size and the padding came from the
+ * removed rule. The utility cannot restore either on a `.btn`: unlayered wins,
+ * which is the same reason `btn p-6` keeps the recipe's padding.
+ *
+ * Also user-visible: each variant's hover is now
+ * `:hover:not(:disabled):not([aria-disabled='true'])`, taking the selector from
+ * (0,2,0) to (0,4,0). A downstream `.btn-primary:hover { … }` override that used
+ * to win now loses and needs matching specificity.
+ *
+ * The border sits on the BASE and is transparent, so every variant has identical
+ * box metrics — a bordered `.btn-secondary` was 39px beside a 37px `.btn-primary`
+ * in every row that mixed them (`patterns/confirm-dialog.ts` among others).
+ *
+ * NOT the same thing as the registry's `Button` (`registry/llui/ui/button.ts`),
+ * and the two paths are not interchangeable. No registry file emits a `btn`
+ * class and `registry-demo` imports `tokens.css`, so they cannot collide — but
+ * they differ: the registry port tops out at `lg: h-10` (40px) and has no
+ * destructive-ghost variant (compose `ghost` with `text-destructive` at the call
+ * site, as upstream does), while it styles only `disabled:` where these rules
+ * also honour `aria-disabled`.
+ */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: var(--spacing-2);
+  min-height: var(--control-h);
   border-radius: var(--radius-md);
   padding: var(--spacing-2) var(--spacing-4);
   font-size: 0.875rem;
   font-weight: 500;
   cursor: pointer;
-  border: 0;
-  transition: background-color var(--transition-duration-fast);
+  border: 1px solid transparent;
+  transition:
+    background-color var(--transition-duration-fast),
+    border-color var(--transition-duration-fast),
+    color var(--transition-duration-fast);
+}
+
+/*
+ * Disabled. `tokens.css`'s base layer re-adds `cursor: pointer` for
+ * `button:not(:disabled)` because Tailwind v4 dropped preflight's rule; this is
+ * the other half of that same thought, and without it a disabled button here was
+ * pixel-identical to a live one.
+ *
+ * `[aria-disabled='true']` is covered alongside `:disabled` because a part bag on
+ * a non-native control publishes the ARIA spelling (enumerated `"true"`/`"false"`,
+ * never bare) and `:disabled` cannot match it.
+ *
+ * Every hover below is gated on the same pair rather than switched off with
+ * shadcn's `pointer-events: none`, because that would also suppress the
+ * `not-allowed` cursor this file already uses on every other disabled part.
+ */
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-primary {
@@ -1523,32 +1600,71 @@
   color: var(--primary-foreground);
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled):not([aria-disabled='true']) {
   background: var(--primary-hover);
 }
 
 .btn-secondary {
-  border: 1px solid var(--border);
+  border-color: var(--border);
   background: var(--card);
   color: var(--foreground);
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled):not([aria-disabled='true']) {
   background: var(--accent);
+}
+
+/*
+ * Ghost — the quiet variant for toolbar affordances and per-row table actions,
+ * where a column of bordered `.btn-secondary`s reads as noise. shadcn's `ghost`
+ * verbatim: no surface and no border of its own, `--accent` on hover with the
+ * paired foreground. It deliberately does NOT dim its resting label — a ghost is
+ * quiet because it has no surface, not because its text is faded.
+ */
+.btn-ghost {
+  background: transparent;
+  color: var(--foreground);
+}
+
+.btn-ghost:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 
 .btn-danger {
   background: var(--destructive);
-  color: var(--primary-foreground);
+  color: var(--destructive-foreground);
 }
 
-.btn-danger:hover {
+.btn-danger:hover:not(:disabled):not([aria-disabled='true']) {
   background: var(--destructive-hover);
 }
 
-.btn.text-xs {
+/*
+ * Quiet destructive — a Delete offered per row, where a column of filled
+ * `.btn-danger`s dominates the page and destroys the hierarchy. Reserve
+ * `.btn-danger` for THE confirming button in a confirm dialog.
+ *
+ * NOT an outlined destructive: shadcn ships no such variant, and inventing one
+ * is what the styling contract forbids. Upstream's idiom for this exact job is
+ * `DropdownMenuItem variant="destructive"` — destructive-tinted text over a
+ * `destructive/10` hover — and that is what this ports. The mix matches what
+ * Tailwind v4 emits for a `/10` alpha, so it tracks `--destructive` in both
+ * themes and needs no token of its own.
+ */
+.btn-danger-ghost {
+  background: transparent;
+  color: var(--destructive);
+}
+
+.btn-danger-ghost:hover:not(:disabled):not([aria-disabled='true']) {
+  background: color-mix(in oklab, var(--destructive) 10%, transparent);
+}
+
+.btn-sm {
+  min-height: var(--control-h-sm);
+  padding: 0.375rem var(--spacing-3);
   font-size: 0.75rem;
-  padding: 0.375rem 0.75rem;
 }
 
 /* ─── Confirm Dialog (pattern) ─── */

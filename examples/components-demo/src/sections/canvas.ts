@@ -226,8 +226,8 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             ],
           ),
           div({ class: 'flex items-center gap-2' }, [
-            button({ ...sp.undoTrigger, class: 'btn btn-secondary text-xs' }, [text('Undo')]),
-            button({ ...sp.clearTrigger, class: 'btn btn-secondary text-xs' }, [text('Clear')]),
+            button({ ...sp.undoTrigger, class: 'btn btn-secondary btn-sm' }, [text('Undo')]),
+            button({ ...sp.clearTrigger, class: 'btn btn-secondary btn-sm' }, [text('Clear')]),
             span({ class: 'text-xs text-muted-foreground ml-auto' }, [
               text(
                 state

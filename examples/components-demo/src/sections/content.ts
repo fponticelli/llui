@@ -173,9 +173,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ...part,
         class: state
           .at('themeSwitch')
-          .map((t) =>
-            t.theme === theme ? 'btn text-xs btn-primary' : 'btn text-xs btn-secondary',
-          ),
+          .map((t) => (t.theme === theme ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-secondary')),
         onClick: (e: MouseEvent) => {
           part.onClick(e)
           themeSwitch.applyTheme(theme)
@@ -193,7 +191,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         class: state
           .at('cascade')
           .map((c) =>
-            c.values[1] === code ? 'btn text-xs btn-primary' : 'btn text-xs btn-secondary',
+            c.values[1] === code ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-secondary',
           ),
         onClick: () =>
           send({ type: 'cascade', msg: { type: 'setValue', levelIndex: 1, value: code } }),
@@ -242,14 +240,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'mt-2 flex gap-2' }, [
           button(
             {
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
               onClick: () => send({ type: 'toc', msg: { type: 'setActive', id: 'intro' } }),
             },
             [text('Activate intro')],
           ),
           button(
             {
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
               onClick: () => send({ type: 'toc', msg: { type: 'setActive', id: 'api' } }),
             },
             [text('Activate API')],
@@ -271,7 +269,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 class: state
                   .at('cascade')
                   .map((c) =>
-                    c.values[0] === 'US' ? 'btn text-xs btn-primary' : 'btn text-xs btn-secondary',
+                    c.values[0] === 'US' ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-secondary',
                   ),
                 onClick: () =>
                   send({ type: 'cascade', msg: { type: 'setValue', levelIndex: 0, value: 'US' } }),
@@ -283,7 +281,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 class: state
                   .at('cascade')
                   .map((c) =>
-                    c.values[0] === 'IT' ? 'btn text-xs btn-primary' : 'btn text-xs btn-secondary',
+                    c.values[0] === 'IT' ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-secondary',
                   ),
                 onClick: () =>
                   send({ type: 'cascade', msg: { type: 'setValue', levelIndex: 0, value: 'IT' } }),
@@ -325,7 +323,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             ),
           ]),
           div({ class: 'flex gap-2' }, [
-            button({ ...cs.clearTrigger, class: 'btn btn-secondary text-xs' }, [text('Clear')]),
+            button({ ...cs.clearTrigger, class: 'btn btn-secondary btn-sm' }, [text('Clear')]),
           ]),
         ]),
       ]),
@@ -341,7 +339,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             button(
               {
                 ...al.loadMoreTrigger,
-                class: 'btn btn-primary text-xs',
+                class: 'btn btn-primary btn-sm',
                 onClick: () => send({ type: 'loadPage' }),
               },
               [
@@ -362,7 +360,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'flex items-center gap-3' }, [
           button(
             {
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
               onClick: () => send({ type: 'presence', msg: { type: 'toggle' } }),
             },
             [text(state.at('presence').map((p) => (presence.isVisible(p) ? 'Hide' : 'Show')))],
