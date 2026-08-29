@@ -547,7 +547,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           text('Disk usage: '),
           text(mt.valueText),
           text(' — '),
-          text(state.at('meter').map((m) => meter.thresholdState(m))),
+          text(state.at('meter').map((m) => meter.toneAt(m))),
         ]),
         div({ class: 'mt-3 flex gap-2' }, [
           meterBtn('30%', 30),

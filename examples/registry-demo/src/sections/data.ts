@@ -1,4 +1,13 @@
-import { div, each, text, type Mountable, type Send, type Signal } from '@llui/dom'
+import {
+  constant,
+  div,
+  each,
+  noSend,
+  text,
+  type Mountable,
+  type Send,
+  type Signal,
+} from '@llui/dom'
 import * as progressC from '@llui/components/progress'
 import * as meterC from '@llui/components/meter'
 import * as ratingGroup from '@llui/components/rating-group'
@@ -9,7 +18,14 @@ import * as stepsC from '@llui/components/steps'
 import { Badge } from '../components/ui/badge'
 import { Avatar, AvatarFallback } from '../components/ui/avatar'
 import { Progress, ProgressRange, ProgressTrack } from '../components/ui/progress'
-import { Meter, MeterRange, MeterTrack } from '../components/ui/meter'
+import {
+  Meter,
+  MeterBand,
+  MeterLabel,
+  MeterMarker,
+  MeterRange,
+  MeterTrack,
+} from '../components/ui/meter'
 import { RatingGroup, RatingGroupItem } from '../components/ui/rating-group'
 import {
   Breadcrumb,
@@ -120,6 +136,18 @@ const ROWS: readonly RegistryRow[] = [
   { item: 'chart', kind: 'presentational', status: 'planned' },
 ]
 
+/** A thyroid panel: three bands of unequal width, over 0–8 mIU/L. */
+const TSH = meterC.init({
+  value: 2.1,
+  min: 0,
+  max: 8,
+  bands: [
+    { id: 'low', to: 0.4, tone: 'critical', label: 'low' },
+    { id: 'ref', from: 0.4, to: 4, tone: 'optimal', label: 'optimal' },
+    { id: 'high', from: 4, tone: 'critical', label: 'high' },
+  ],
+})
+
 export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[] {
   const status = state.at('tableStatus')
   // `progress` and `meter` are READ-ONLY: their `connect` takes a `send` and
@@ -128,6 +156,13 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const noop = (): void => undefined
   const progress = progressC.connect(state.at('progress'), noop)
   const storage = meterC.connect(state.at('storage'), noop)
+  // A reference range (#235). The reading is fixed for the life of the node, so
+  // it needs no slice in `State` at all — `constant()` + `noSend` drive the same
+  // `connect`, and the banded track is drawn from the derived layout.
+  const tsh = meterC.connect(constant(TSH), noSend, {
+    label: 'TSH',
+    format: (v) => `${v} mIU/L`,
+  })
   const rating = ratingGroup.connect(state.at('rating'), (m) => send({ type: 'rating', msg: m }))
   const avatar = avatarC.connect(state.at('avatar'), (m) => send({ type: 'avatar', msg: m }))
   const crumbs = breadcrumbs.connect(state.at('crumbs'), (m) => send({ type: 'crumbs', msg: m }))
@@ -241,6 +276,22 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
         div({ class: 'w-64' }, [
           Meter({ ...storage.root }, [
             MeterTrack({ ...storage.track }, [MeterRange({ ...storage.range })]),
+          ]),
+        ]),
+      ]),
+      row('Meter (reference range)', [
+        div({ class: 'w-64' }, [
+          Meter({ ...tsh.root }, [
+            MeterTrack({ ...tsh.track }, [
+              each(tsh.bands, {
+                key: (b: meterC.MeterBandGeometry) => b.id,
+                render: (b: Signal<meterC.MeterBandGeometry>) => [
+                  MeterBand({ ...tsh.bandProps(b) }),
+                ],
+              }),
+              MeterMarker({ ...tsh.marker }),
+            ]),
+            MeterLabel({ ...tsh.label }, [text(tsh.valueText)]),
           ]),
         ]),
       ]),
