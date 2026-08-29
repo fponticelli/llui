@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFile } from 'node:fs/promises'
+import ts from 'typescript'
 import path from 'node:path'
 // @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import { extractClassCandidates } from '../lib/registry-classes.mjs'
@@ -301,6 +302,50 @@ describe('value-hued chip contrast', () => {
     const slots = new Set(CHIP_HUES)
     // A corpus wide enough to exercise the modulo, not a spot check.
     for (let i = 0; i < 5000; i++) expect(slots.has(chipHue(`category-${i}`))).toBe(true)
+  })
+
+  it('the registry chip publishes no `data-scope`, so the baseline rules cannot reach it', async () => {
+    // `theme.css` styles this component at `[data-scope='chip'][data-part='chip']`,
+    // and those baseline rules are UNLAYERED — they beat every `@layer utilities`
+    // class the recipe emits. The two do not collide only because the baseline
+    // selector needs BOTH attributes and the registry chip emits only
+    // `data-part`. That is incidental: every other registry component picks up
+    // `data-scope` at runtime from a `connect()` part bag, and the chip is
+    // exempt purely because it has no machine.
+    //
+    // So this pins the absence. Neither existing guard would see the collision
+    // — the classes still compile and the attribute is still published — and it
+    // is the Switch-thumb shape: correct CSS present for both, one silently
+    // losing. A future `chipConnect()` fails HERE, next to the reason.
+    // Parsed, not grepped. The first cut was `/data-scope/.test(source)` and it
+    // failed on the PROSE — the paragraph above in chip.ts names the attribute
+    // four times. A needle that occurs somewhere other than the code under test
+    // is this repo's #158 trap one layer out, and here it fires in the
+    // false-POSITIVE direction, which at least is loud; the same shape written
+    // as an allowlist would have been silent.
+    const source = await readFile(RECIPE, 'utf8')
+    const sf = ts.createSourceFile(RECIPE, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+    const published: string[] = []
+    const walk = (node: ts.Node): void => {
+      if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.name)) {
+        if (node.name.text.startsWith('data-scope')) published.push(node.name.text)
+      }
+      ts.forEachChild(node, walk)
+    }
+    walk(sf)
+    expect(
+      published,
+      'chip.ts must not publish `data-scope`: the unlayered baseline rules in ' +
+        'theme.css would then override every recipe class on the same element.',
+    ).toEqual([])
+    // Vacuity guard: the walk must be able to see the attribute it DOES publish.
+    const parts: string[] = []
+    const walkParts = (node: ts.Node): void => {
+      if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.name)) parts.push(node.name.text)
+      ts.forEachChild(node, walkParts)
+    }
+    walkParts(sf)
+    expect(parts).toContain('data-part')
   })
 
   it('the reserved `crit` arc actually contains `--destructive`, in both themes', async () => {

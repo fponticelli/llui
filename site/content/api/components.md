@@ -35429,6 +35429,10 @@ LENGTH over the unreserved hues and centred in their slots. Even spacing by
 arc length is what makes the minimum separation a guarantee — skipping a
 reserved band only ever ADDS degrees between two neighbours.
 
+"Centred in their slots" is centring in the concatenated ARC space and carries
+no promise about distance to a reserved edge: 131.5 lands 0.5 degrees off
+`ok`'s edge. See the reserved-hues note at the top of this file.
+
 ```typescript
 const CHIP_HUES: readonly number[]
 ```

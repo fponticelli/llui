@@ -12,6 +12,24 @@
 // probe in a hidden tab reports whatever a frozen transition left behind, and a
 // `cssRules` scan that does not descend into `@layer` / `@supports` reports live
 // rules as absent. Both have produced confident wrong answers in this repo.
+//
+// Three browser probes for this ONE component each returned a clean, plausible,
+// wrong table, which is why the measurement lives here in Node instead:
+//
+//   1. `getComputedStyle(el).color` is NOT normalised to sRGB — Chromium returns
+//      `oklab(...)` / `oklch(...)` verbatim. Parsed as if the components were
+//      0-255 channels, every ratio came out ~1.00.
+//   2. `ctx.fillStyle` ROUND-TRIPS `oklch()`, so reading it back is not a way
+//      out. Only painting and reading the pixel (`fillRect` + `getImageData`)
+//      rasterises; it matches this file exactly on in-gamut colours and to two
+//      8-bit levels near the edge, where Chrome clips and CSS Color 4 gamut-maps.
+//   3. The nastiest one: the registry recipe carries `transition-[color,box-shadow]`,
+//      which transitions `color` but NOT `background-color`. In a hidden tab the
+//      ink stayed frozen at its light-theme value while the fill jumped to its
+//      dark-theme value, and the two happened to be identical — a clean 1.000:1
+//      for every dark chip. That does not read as a broken probe; it reads as a
+//      finding. KILL TRANSITIONS OUTRIGHT (`*{transition:none!important}`) before
+//      any colour read. Never reason about which properties a rule transitions.
 
 const cbrt = Math.cbrt
 

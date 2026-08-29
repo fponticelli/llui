@@ -130,9 +130,13 @@
    * matches the chip.
    *
    * `--chip-mix` is one percentage for BOTH ends because `--background` and
-   * `--foreground` swap between themes: at 40% the light fill and the dark ink
-   * are the same colour, and vice versa. That is the same trick the derived
-   * tokens above use, and it is why the chip needs no dark override.
+   * `--foreground` swap between themes: at 40% the light ink and the dark fill
+   * are EXACTLY the same colour (OKLab L 0.359 either way), and the light fill
+   * and the dark ink are very nearly so — 0.872 against 0.863, because
+   * `--foreground` is 0.985 rather than a true white. That 0.009 asymmetry is
+   * small but it is not nothing: it is precisely why dark measures below light
+   * at every hue (6.90–7.32 against 7.10–7.54). Same trick as the derived
+   * tokens above, and why the chip needs no dark override.
    *
    * `--chip-hue` is a DEFAULT (an unreserved slot), so a chip rendered without a
    * value still paints instead of resolving to an invalid `oklch()`.

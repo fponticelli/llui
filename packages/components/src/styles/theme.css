@@ -586,9 +586,13 @@
  *
  * No `.dark` override, for the same reason the derived tokens above need none:
  * `--background` and `--foreground` swap between themes, and `--chip-mix` is
- * one percentage for both ends, so the light fill and the dark ink are the same
- * colour. Measured across all 360 hues in both themes: 7.04:1–7.54:1, versus
- * 4.30:1–9.85:1 (17 hues under AA) for the same idea expressed in HSL.
+ * one percentage for both ends, so the light ink and the dark fill come out
+ * EXACTLY equal (OKLab L 0.359) and the other pair very nearly so — light fill
+ * L 0.872 against dark ink L 0.863, since `--foreground` is 0.985 and not a
+ * true white. That is why dark measures below light at every hue. Across all
+ * 360 hues in both themes: 7.04:1–7.54:1 by CSS Color 4 gamut mapping,
+ * 6.90:1–7.54:1 as Chrome rasterises it — versus 4.30:1–9.85:1, with 17 hues
+ * under AA, for the same idea expressed in HSL.
  */
 [data-scope='chip'][data-part='chip'] {
   display: inline-flex;

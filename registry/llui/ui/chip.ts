@@ -34,14 +34,38 @@ import { mergeClass, splitArgs } from '@/lib/utils'
  * Mixing toward `var(--background)` / `var(--foreground)` — rather than shipping
  * a `.dark` override — is the package's derived-token idiom: `--foreground` is
  * near-black in light and near-white in dark, so the same expression darkens or
- * lightens by itself. With `--chip-mix` at 40% the two ends swap exactly, so a
- * chip's light fill is its own dark ink.
+ * lightens by itself. With `--chip-mix` at 40% the two ends VERY NEARLY swap:
+ * the light ink and the dark fill are exactly equal (OKLab L 0.359), but the
+ * light fill is L 0.872 against the dark ink's 0.863, because `--foreground` is
+ * 0.985 rather than a true white. Not a rounding detail — that 0.009 is why
+ * dark measures below light at every hue.
  *
  * The declarations must live HERE, in a rule that matches the chip, and not as a
  * `--chip-fill` token: a custom property's `var()` references are substituted at
  * the computed-value time of the element that DECLARES it, so a `--chip-fill` on
  * `:root` would bake in `:root`'s `--chip-hue` and every chip on the page would
  * inherit the same colour.
+ *
+ * ## Why this does not collide with the baseline stylesheet — incidentally
+ *
+ * `theme.css` styles the same component at `[data-scope='chip'][data-part='chip']`,
+ * and those baseline rules are UNLAYERED, so they beat every `@layer utilities`
+ * class here. An app importing `theme.css` alongside this file would get the
+ * baseline's geometry with these recipes silently overridden — the shape of the
+ * Switch-thumb incident, where a control rendered at the baseline's size and
+ * ignored its own `size-4` with correct CSS present for both.
+ *
+ * It does not happen here, and the reason is worth being precise about because
+ * it is LUCK rather than design: the baseline selector needs `data-scope` AND
+ * `data-part`, and this element emits only `data-part`. Every OTHER registry
+ * component acquires `data-scope` at runtime from a `connect()` part bag — the
+ * chip is exempt only because it has no machine to spread.
+ *
+ * So: **adding a `chipConnect()` that publishes `data-scope="chip"` switches the
+ * collision on**, and neither the class guard (the classes still compile) nor
+ * the attribute guard (the attribute is still published) would see it.
+ * `scripts/test/chip-contrast.test.ts` pins the absence, so that change fails a
+ * test with this paragraph attached rather than shipping.
  *
  * Note what Tailwind emits for a `color-mix()` arbitrary value: the declaration
  * is duplicated, once bare and once inside `@supports (color: color-mix(in lab,

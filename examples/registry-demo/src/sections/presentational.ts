@@ -138,7 +138,7 @@ export function view(): readonly Mountable[] {
       ),
       p({ class: 'text-muted-foreground text-xs' }, [
         text(
-          `Every hue in both themes measures at least 6.90:1 against its own ink as this browser rasterises it — the HSL form of the same idea drops to 4.30:1 at hue 60. "lab" is ${chipHue('lab')}°.`,
+          `Every hue in both themes measures at least 6.89:1 against its own ink as this browser rasterises it (6.896 at slot 188.5° in dark, the worst of the 24) — the HSL form of the same idea drops to 4.30:1 at hue 60. "lab" is ${chipHue('lab')}°.`,
         ),
       ]),
     ]),

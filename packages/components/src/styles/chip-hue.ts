@@ -56,6 +56,17 @@
  * both inside `crit`). The other two encode what a reader infers from a traffic
  * light, which is the thing being protected against.
  *
+ * The exclusion is LITERAL, and one slot has no room to spare: **131.5 sits
+ * 0.5 degrees outside `ok`'s lower edge at 132**. Slots are centred in the
+ * CONCATENATED arc space, which says nothing about their distance to a band
+ * edge, so "centred in their slots" must not be read as "with margin" — that
+ * slot has none. Rendered it is olive rather than green (the fill's chroma
+ * after the mix is only ~0.06, so a hue near the yellow-green boundary does not
+ * read as the status colour), which is why it is documented rather than moved:
+ * widening the band or nudging the slot would change every published hue, and
+ * `CHIP_HUES` is a wire format. If the bands are ever revisited, give the
+ * placement an edge margin at the same time.
+ *
  * The chart scale is NOT reserved, and that is a considered answer rather than
  * an omission. `--chart-1..5` carry no fixed meaning — `--chart-3` is "the third
  * series", not "bad" — so a chip sharing a chart hue asserts nothing. It is also
@@ -171,6 +182,10 @@ function hueAtArcPosition(pos: number): number {
  * LENGTH over the unreserved hues and centred in their slots. Even spacing by
  * arc length is what makes the minimum separation a guarantee — skipping a
  * reserved band only ever ADDS degrees between two neighbours.
+ *
+ * "Centred in their slots" is centring in the concatenated ARC space and carries
+ * no promise about distance to a reserved edge: 131.5 lands 0.5 degrees off
+ * `ok`'s edge. See the reserved-hues note at the top of this file.
  */
 export const CHIP_HUES: readonly number[] = Object.freeze(
   Array.from({ length: CHIP_HUE_SLOT_COUNT }, (_, i) =>
