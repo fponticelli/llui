@@ -460,13 +460,14 @@ export function trimLeadingOutliers(
 ): { points: SparklinePoint[]; trimmed: number } {
   const all = [...points]
   if (trim === null) return { points: all, trimmed: 0 }
-  // The `2` is belt-and-braces and is REDUNDANT today, which a mutation
-  // proved rather than a reader spotting it: with two points left the "rest"
-  // gaps are empty, so the median is 0 and the zero-median guard below breaks
-  // the walk regardless of the floor. It is kept because that guard is about
-  // a different property, and a future change to it must not silently make a
-  // one-point "trend" reachable — but do not expect a mutation of this line
-  // to redden anything (see the mutation table: M17 is an equivalent mutant).
+  // The `2` is LOAD-BEARING and its job is the ONE-point series, not the
+  // two-point one. With `floor <= 1` and a single reading, `all.length - cut >
+  // floor` holds at cut 0 and the loop below dereferences `all[cut + 1]`,
+  // which does not exist — a TypeError out of a pure geometry function. Two
+  // points are already covered by the zero-median break (their trailing-gap
+  // list is empty), which is why a three-point fixture does NOT exercise this
+  // clamp and a one-point one does. `floor: 0` is reachable: `finiteBound(0)`
+  // is `0`, so `init({ trim: { floor: 0 } })` normalizes to exactly that.
   const floor = Math.max(2, Math.trunc(finiteBound(trim.floor) ?? DEFAULT_TRIM.floor))
   const factor = finiteBound(trim.factor) ?? DEFAULT_TRIM.factor
   // A factor of 1 or less calls every gap disproportionate and would walk the
@@ -783,9 +784,16 @@ export function geometry(state: SparklineState): SparklineGeometry {
   return geometryOf(state)
 }
 
-/** The drawn point nearest a position in user units — the pointer hit test.
- *  Nearest-x, because dots are a run along the axis with no extents to
- *  contain a pointer. */
+/**
+ * The drawn point nearest a position in user units — the pointer hit test.
+ * Nearest-x, because dots are a run along the axis with no extents to contain
+ * a pointer.
+ *
+ * A TIE goes to the EARLIER point (`<`, not `<=`). Ties are not hypothetical —
+ * two readings can share an instant, which is why a dot's key carries its index
+ * — and either rule is defensible; what is not defensible is leaving it
+ * unstated, since a silent flip changes which reading a tooltip reports.
+ */
 export function locateIndex(geo: SparklineGeometry, x: number): number | null {
   if (geo.dots.length === 0 || !isFinite(x)) return null
   let best = 0

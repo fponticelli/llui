@@ -869,6 +869,136 @@
   color: var(--muted-foreground);
 }
 
+/* ─── Sparkline ───
+ *
+ * An SVG part with NO rules is worse than an unstyled div: a `<path>` defaults
+ * to `fill: black; stroke: none`, so an unskinned trend line renders as a solid
+ * black blob rather than as nothing. Every drawn part below therefore states
+ * both, and the line states `fill: none` first.
+ */
+
+[data-scope='sparkline'][data-part='root'] {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+[data-scope='sparkline'][data-part='svg'] {
+  display: block;
+  overflow: visible;
+  outline: none;
+}
+
+[data-scope='sparkline'][data-part='svg']:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+[data-scope='sparkline'][data-part='band'] {
+  fill: var(--primary);
+  opacity: 0.12;
+  stroke: none;
+}
+
+[data-scope='sparkline'][data-part='grid'] {
+  fill: none;
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+/* The right edge. Dashed so it reads as a boundary rather than as a reading,
+ * and only visible once the series is actually behind it — a rule drawn under
+ * the last point would claim staleness the data does not have. */
+[data-scope='sparkline'][data-part='now'] {
+  fill: none;
+  stroke: var(--border-hover);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  opacity: 0;
+}
+
+[data-scope='sparkline'][data-part='now'][data-stale] {
+  opacity: 1;
+}
+
+[data-scope='sparkline'][data-part='line'] {
+  fill: none;
+  stroke: var(--primary);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The base radius is an ATTRIBUTE the view passes, not a rule here. CSS
+ * geometry properties (`r`/`cx`/`cy`) are SVG2 and reached Firefox only
+ * recently; a presentation attribute has the lowest priority, so where CSS `r`
+ * works the `[data-last]` rule below still wins, and where it does not the dot
+ * keeps the attribute's radius instead of collapsing to zero. */
+[data-scope='sparkline'][data-part='dot'] {
+  fill: var(--primary);
+  stroke: none;
+}
+
+[data-scope='sparkline'][data-part='dot'][data-tone='none'] {
+  fill: var(--muted-foreground);
+}
+
+/* Out of band. Both sides take the destructive colour — the state is "outside
+ * the reference", and there is no token that means "too low" as opposed to
+ * "too high". The two are still told apart, by FILL rather than by hue: the
+ * low side is hollow. Inventing a second semantic colour would be asserting a
+ * direction the theme never declared. */
+[data-scope='sparkline'][data-part='dot'][data-tone='above'] {
+  fill: var(--destructive);
+}
+
+[data-scope='sparkline'][data-part='dot'][data-tone='below'] {
+  fill: var(--background);
+  stroke: var(--destructive);
+  stroke-width: 1;
+}
+
+[data-scope='sparkline'][data-part='dot'][data-last] {
+  r: 2.5;
+}
+
+/* The granularity track. `data-grain` is free-form by design, so the baseline
+ * styles the band and leaves the per-grain distinction to the consumer. */
+[data-scope='sparkline'][data-part='span'] {
+  fill: var(--muted-foreground);
+  opacity: 0.35;
+  stroke: none;
+}
+
+[data-scope='sparkline'][data-part='table'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border-width: 0;
+}
+
+[data-scope='sparkline'][data-part='tooltip'] {
+  position: absolute;
+  z-index: var(--z-index-tooltip);
+  transform: translate(-50%, calc(-100% - 6px));
+  pointer-events: none;
+  white-space: nowrap;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  padding: 0.125rem 0.375rem;
+  font-size: 0.75rem;
+  line-height: 1rem;
+  box-shadow: var(--shadow-md);
+}
+
 /* ─── Slider ─── */
 
 [data-scope='slider'][data-part='control'] {

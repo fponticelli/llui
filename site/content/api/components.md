@@ -2147,6 +2147,12 @@ How many boundaries of `step` fall inside `[start, end]` — WITHOUT building
 them. Constant time at every rung, which is what lets the ladder reject a
 finer unit for a century-long span for free.
 
+One informational edge, in the safe direction: within a month of the extremes
+of the representable range (year ±271821), flooring to a period start falls
+outside what a `Date` can hold and {@link utcAt} answers `NaN`, so the count
+is 0 and {@link calendarTicks} draws no gridlines. It neither hangs nor
+throws; the axis is simply unlabelled at the end of time.
+
 ```typescript
 function countCalendarTicks(
   start: number,
@@ -14144,6 +14150,12 @@ How many boundaries of `step` fall inside `[start, end]` — WITHOUT building
 them. Constant time at every rung, which is what lets the ladder reject a
 finer unit for a century-long span for free.
 
+One informational edge, in the safe direction: within a month of the extremes
+of the representable range (year ±271821), flooring to a period start falls
+outside what a `Date` can hold and {@link utcAt} answers `NaN`, so the count
+is 0 and {@link calendarTicks} draws no gridlines. It neither hangs nor
+throws; the axis is simply unlabelled at the end of time.
+
 ```typescript
 function countCalendarTicks(
   start: number,
@@ -15881,6 +15893,12 @@ How many boundaries of `step` fall inside `[start, end]` — WITHOUT building
 them. Constant time at every rung, which is what lets the ladder reject a
 finer unit for a century-long span for free.
 
+One informational edge, in the safe direction: within a month of the extremes
+of the representable range (year ±271821), flooring to a period start falls
+outside what a `Date` can hold and {@link utcAt} answers `NaN`, so the count
+is 0 and {@link calendarTicks} draws no gridlines. It neither hangs nor
+throws; the axis is simply unlabelled at the end of time.
+
 ```typescript
 function countCalendarTicks(
   start: number,
@@ -16691,6 +16709,12 @@ function clampToStep(value: number, grid: NumericGrid): number
 How many boundaries of `step` fall inside `[start, end]` — WITHOUT building
 them. Constant time at every rung, which is what lets the ladder reject a
 finer unit for a century-long span for free.
+
+One informational edge, in the safe direction: within a month of the extremes
+of the representable range (year ±271821), flooring to a period start falls
+outside what a `Date` can hold and {@link utcAt} answers `NaN`, so the count
+is 0 and {@link calendarTicks} draws no gridlines. It neither hangs nor
+throws; the axis is simply unlabelled at the end of time.
 
 ```typescript
 function countCalendarTicks(
@@ -33632,8 +33656,13 @@ function isoDay(at: number, opts: CalendarOptions = {}): string
 ##### `locateIndex()` from `@llui/components/sparkline`
 
 The drawn point nearest a position in user units — the pointer hit test.
-Nearest-x, because dots are a run along the axis with no extents to
-contain a pointer.
+Nearest-x, because dots are a run along the axis with no extents to contain
+a pointer.
+
+A TIE goes to the EARLIER point (`<`, not `<=`). Ties are not hypothetical —
+two readings can share an instant, which is why a dot's key carries its index
+— and either rule is defensible; what is not defensible is leaving it
+unstated, since a silent flip changes which reading a tooltip reports.
 
 ```typescript
 function locateIndex(geo: SparklineGeometry, x: number): number | null

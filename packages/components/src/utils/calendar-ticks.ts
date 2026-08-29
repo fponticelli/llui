@@ -239,6 +239,12 @@ function stepCeil(at: number, step: CalendarStep, opts: CalendarOptions): number
  * How many boundaries of `step` fall inside `[start, end]` — WITHOUT building
  * them. Constant time at every rung, which is what lets the ladder reject a
  * finer unit for a century-long span for free.
+ *
+ * One informational edge, in the safe direction: within a month of the extremes
+ * of the representable range (year ±271821), flooring to a period start falls
+ * outside what a `Date` can hold and {@link utcAt} answers `NaN`, so the count
+ * is 0 and {@link calendarTicks} draws no gridlines. It neither hangs nor
+ * throws; the axis is simply unlabelled at the end of time.
  */
 export function countCalendarTicks(
   start: number,

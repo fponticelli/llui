@@ -1,5 +1,6 @@
-import { each, g, text, type Mountable, type Send, type Signal } from '@llui/dom'
+import { constant, each, g, noSend, text, type Mountable, type Send, type Signal } from '@llui/dom'
 import * as chartC from '@llui/components/chart'
+import * as sparklineC from '@llui/components/sparkline'
 import {
   ChartAxisLabel,
   ChartContainer,
@@ -28,6 +29,28 @@ import {
   chartVars,
   type ChartConfig,
 } from '../components/ui/chart'
+import {
+  Sparkline,
+  SparklineBand,
+  SparklineDesc,
+  SparklineDot,
+  SparklineGrid,
+  SparklineLayer,
+  SparklineLine,
+  SparklineNow,
+  SparklineSpan,
+  SparklineSvg,
+  SparklineTable,
+  SparklineTableBody,
+  SparklineTableCell,
+  SparklineTableHead,
+  SparklineTableHeader,
+  SparklineTableRow,
+  SparklineTitle,
+  SparklineTooltip,
+  SparklineTooltipDate,
+  SparklineTooltipValue,
+} from '../components/ui/sparkline'
 import { Button } from '../components/ui/button'
 import { row, section } from './shared'
 
@@ -65,16 +88,78 @@ const ROWS: chartC.ChartRow[] = [
   { label: 'Jun', values: { desktop: 214, mobile: 140 } },
 ]
 
+// ── Sparkline ─────────────────────────────────────────────────────────────
+//
+// Fixed timestamps, never `Date.now()`: the geometry is a pure function of
+// state, so a demo that seeded "now" from the clock would render differently
+// on the server than in the browser and rewrite every gridline on hydration.
+
+/** 14 readings, 2026-02-03 to 2026-08-11 — the issue's own example series. */
+const READINGS: sparklineC.SparklinePoint[] = [
+  { at: Date.UTC(2026, 1, 3), value: 128, grain: 'spot' },
+  { at: Date.UTC(2026, 1, 17), value: 124, grain: 'spot' },
+  { at: Date.UTC(2026, 2, 2), value: 119, grain: 'spot' },
+  { at: Date.UTC(2026, 2, 19), value: 121, grain: 'spot' },
+  { at: Date.UTC(2026, 3, 6), value: 116, grain: 'session' },
+  { at: Date.UTC(2026, 3, 21), value: 112, grain: 'session' },
+  { at: Date.UTC(2026, 4, 4), value: 108, grain: 'session' },
+  { at: Date.UTC(2026, 4, 18), value: 111, grain: 'session' },
+  { at: Date.UTC(2026, 5, 1), value: 105, grain: 'daily' },
+  { at: Date.UTC(2026, 5, 15), value: 98, grain: 'daily' },
+  { at: Date.UTC(2026, 5, 29), value: 96, grain: 'daily' },
+  { at: Date.UTC(2026, 6, 13), value: 92, grain: 'daily' },
+  { at: Date.UTC(2026, 6, 27), value: 88, grain: 'daily' },
+  { at: Date.UTC(2026, 7, 11), value: 94, grain: 'daily' },
+]
+
+/** The right edge sits five weeks past the last reading, so the series
+ *  visibly trails off instead of looking current. */
+const SPARK_NOW = Date.UTC(2026, 8, 15)
+
+/** The same series with one ancient reading in front of it — what the
+ *  leading-outlier trim exists for. */
+const STRANDED: sparklineC.SparklinePoint[] = [
+  { at: Date.UTC(2023, 4, 9), value: 141 },
+  ...READINGS,
+]
+
+const SPARK_BOX = { width: 240, height: 56, padding: { top: 6, right: 6, bottom: 12, left: 6 } }
+
+/** High bound ONLY: everything below 120 is acceptable, and no reading can be
+ *  called low. A stateless T1 widget — `connect(constant(v), noSend, …)`. */
+const SPARK_HIGH_ONLY = sparklineC.init({
+  ...SPARK_BOX,
+  points: READINGS,
+  band: { high: 120 },
+  now: SPARK_NOW,
+})
+
+/** The untrimmed and trimmed readings of the SAME stranded series, side by
+ *  side. Trimming is opt-in precisely because it discards data. */
+const SPARK_UNTRIMMED = sparklineC.init({
+  ...SPARK_BOX,
+  points: STRANDED,
+  band: { low: 90, high: 120 },
+})
+const SPARK_TRIMMED = sparklineC.init({
+  ...SPARK_BOX,
+  points: STRANDED,
+  band: { low: 90, high: 120 },
+  trim: true,
+})
+
 export interface State {
   bars: chartC.ChartState
   trend: chartC.ChartState
   share: chartC.ChartState
+  spark: sparklineC.SparklineState
 }
 
 export type Msg =
   | { type: 'bars'; msg: chartC.ChartMsg }
   | { type: 'trend'; msg: chartC.ChartMsg }
   | { type: 'share'; msg: chartC.ChartMsg }
+  | { type: 'spark'; msg: sparklineC.SparklineMsg }
 
 export const init = (): [State, never[]] => [
   {
@@ -113,6 +198,12 @@ export const init = (): [State, never[]] => [
       width: 420,
       height: 420,
     }),
+    spark: sparklineC.init({
+      ...SPARK_BOX,
+      points: READINGS,
+      band: { low: 90, high: 120 },
+      now: SPARK_NOW,
+    }),
   },
   [],
 ]
@@ -125,6 +216,8 @@ export function update(state: State, msg: Msg): [State, never[]] {
       return [{ ...state, trend: chartC.update(state.trend, msg.msg)[0] }, []]
     case 'share':
       return [{ ...state, share: chartC.update(state.share, msg.msg)[0] }, []]
+    case 'spark':
+      return [{ ...state, spark: sparklineC.update(state.spark, msg.msg)[0] }, []]
   }
 }
 
@@ -373,10 +466,99 @@ const shareOptions = (): PlotOptions => ({
   ],
 })
 
+/**
+ * One sparkline. The SAME renderer serves the interactive slice and the two
+ * stateless ones — `connect(constant(v), noSend, …)` is the T1 tier, so a
+ * widget whose values are fixed for the life of the node needs no hoisted
+ * state and no dispatcher.
+ *
+ * Layer order is the whole reason `parts.layer` exists: band, then grid, then
+ * the granularity track, then the "now" edge, then the line, then the dots.
+ * An SVG has no z-index — document order IS the stacking.
+ */
+function spark(
+  state: Signal<sparklineC.SparklineState>,
+  send: Send<sparklineC.SparklineMsg>,
+  id: string,
+  label: string,
+  description: string,
+): Mountable {
+  const parts = sparklineC.connect(state, send, { id })
+  return Sparkline({ ...parts.root }, [
+    SparklineSvg({ ...parts.svg, class: 'h-14 w-60' }, [
+      // FIRST children of the <svg>: this is what `aria-labelledby` points at.
+      SparklineTitle({ ...parts.title }, [text(label)]),
+      SparklineDesc({ ...parts.desc }, [text(description)]),
+
+      SparklineBand({ ...parts.band }),
+      SparklineLayer({ ...parts.layer }, [
+        each(parts.ticks, {
+          key: (t: sparklineC.SparklineTick) => t.key,
+          render: (t: Signal<sparklineC.SparklineTick>) => [
+            SparklineGrid({ ...parts.tickProps(t) }),
+          ],
+        }),
+      ]),
+      SparklineLayer({ ...parts.layer }, [
+        each(parts.spans, {
+          key: (sp: sparklineC.SparklineSpan) => sp.key,
+          render: (sp: Signal<sparklineC.SparklineSpan>) => [
+            SparklineSpan({ ...parts.spanProps(sp) }),
+          ],
+        }),
+      ]),
+      SparklineNow({ ...parts.now }),
+      SparklineLine({ ...parts.line }),
+      SparklineLayer({ ...parts.layer }, [
+        each(parts.dots, {
+          key: (d: sparklineC.SparklineDot) => d.key,
+          render: (d: Signal<sparklineC.SparklineDot>) => [SparklineDot({ ...parts.dotProps(d) })],
+        }),
+      ]),
+    ]),
+
+    // Positioned against the CONTAINER in viewBox percentages, so it tracks its
+    // dot at any CSS size without a second measurement.
+    SparklineTooltip({ ...parts.tooltip }, [
+      SparklineTooltipValue([
+        text(parts.activeDot.map((d) => (d === null ? '' : String(d.value)))),
+      ]),
+      SparklineTooltipDate([
+        text(parts.activeDot.map((d) => (d === null ? '' : sparklineC.isoDay(d.at)))),
+      ]),
+    ]),
+
+    // The real screen-reader path. `role="img"` names the trend; this is what
+    // makes its NUMBERS readable.
+    SparklineTable({ ...parts.table }, [
+      SparklineTableHead([
+        SparklineTableRow([
+          SparklineTableHeader([text('Date')]),
+          SparklineTableHeader([text('Value')]),
+          SparklineTableHeader([text('Against band')]),
+        ]),
+      ]),
+      SparklineTableBody([
+        each(parts.rows, {
+          key: (r: sparklineC.SparklineRow) => `${r.at}`,
+          render: (r: Signal<sparklineC.SparklineRow>) => [
+            SparklineTableRow([
+              SparklineTableCell([text(r.at('day'))]),
+              SparklineTableCell([text(r.map((v) => String(v.value)))]),
+              SparklineTableCell([text(r.at('tone'))]),
+            ]),
+          ],
+        }),
+      ]),
+    ]),
+  ])
+}
+
 export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[] {
   const barsSend = (m: chartC.ChartMsg): void => send({ type: 'bars', msg: m })
   const trendSend = (m: chartC.ChartMsg): void => send({ type: 'trend', msg: m })
   const shareSend = (m: chartC.ChartMsg): void => send({ type: 'share', msg: m })
+  const sparkSend = (m: sparklineC.SparklineMsg): void => send({ type: 'spark', msg: m })
 
   const coordRow = (slice: Signal<chartC.ChartState>, to: Send<chartC.ChartMsg>): Mountable =>
     row('Projection', [
@@ -515,6 +697,46 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
               },
             },
             [text('Radial bars')],
+          ),
+        ]),
+      ],
+    ),
+    section(
+      'Sparkline',
+      'A cell-sized trend, and a pure function rather than a machine: `sparklineGeometry(points, opts)` needs no signal, no dispatcher and no mount, so fifty of them in a table cost fifty calls. `init`/`update`/`connect` sit beside it and add exactly one fact — which point the cursor is on. Gridlines land on real calendar boundaries (the ladder coarsens hour → day → week → month → quarter → year from the span), the shaded band reads three ways from one or both bounds, each dot is classified against it, and the dashed right edge is "now" — so a series five weeks stale visibly trails off instead of looking current. Hover it, or Tab to it and use the arrow keys.',
+      [
+        row('Both bounds — hover or arrow-key it', [
+          spark(
+            state.at('spark'),
+            sparkSend,
+            'demo-spark',
+            'Readings against 90-120',
+            'Fourteen readings from 2026-02-03 to 2026-08-11, five weeks stale.',
+          ),
+        ]),
+        row('High bound only — nothing can be called low (stateless: constant + noSend)', [
+          spark(
+            constant(SPARK_HIGH_ONLY),
+            noSend,
+            'demo-spark-high',
+            'Readings against a 120 ceiling',
+            'A high bound alone shades everything below it.',
+          ),
+        ]),
+        row('Leading-outlier trim: off (default), then on', [
+          spark(
+            constant(SPARK_UNTRIMMED),
+            noSend,
+            'demo-spark-untrimmed',
+            'One 2023 reading squashing the rest',
+            'Trimming is off by default: a chart that silently drops a reading is worse than a squashed one.',
+          ),
+          spark(
+            constant(SPARK_TRIMMED),
+            noSend,
+            'demo-spark-trimmed',
+            'The same series, leading outlier trimmed',
+            'The first gap is more than four times the median of the rest, so the 2023 reading goes.',
           ),
         ]),
       ],

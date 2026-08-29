@@ -345,11 +345,8 @@ describe('sparkline — leading-outlier trimming is opt-in and bounded', () => {
   })
 
   it('never leaves fewer than 2 points, whatever floor it is handed', () => {
-    // The OBSERVABLE invariant, stated as such: a mutation of the
-    // `Math.max(2, …)` guard survives this, because with two points left the
-    // trailing gaps are empty and the zero-median break already stops the
-    // walk. Asserting the guard directly would be asserting an implementation
-    // detail that nothing can reach.
+    // `floor: 0` is REACHABLE, not hypothetical: `finiteBound(0)` is `0`, so
+    // `init({ trim: { floor: 0 } })` normalizes to exactly this.
     const runaway = [
       { at: T0, value: 1 },
       { at: T0 + 3000 * DAY, value: 2 },
@@ -357,6 +354,17 @@ describe('sparkline — leading-outlier trimming is opt-in and bounded', () => {
     ]
     expect(trimLeadingOutliers(runaway, { factor: 1.5, floor: 0 }).points.length).toBe(2)
     expect(trimLeadingOutliers(runaway, { factor: 1.5, floor: -99 }).points.length).toBe(2)
+    // ONE point is the case the `Math.max(2, …)` clamp actually exists for, and
+    // the three-point case above does NOT reach it — there the zero-median
+    // break stops the walk first. With `floor <= 1` and a single reading,
+    // `all.length - cut > floor` holds at cut 0 and the walk dereferences
+    // `all[1]`, which is not there.
+    expect(trimLeadingOutliers([{ at: T0, value: 1 }], { factor: 4, floor: 0 }).points.length).toBe(
+      1,
+    )
+    expect(trimLeadingOutliers([{ at: T0, value: 1 }], { factor: 4, floor: -1 }).trimmed).toBe(0)
+    // …and through the public seam, where the throw would reach a consumer.
+    expect(geo(pts([42]), { trim: { factor: 4, floor: 0 } }).dots).toHaveLength(1)
   })
 
   it('turns OFF for a factor of 1 or less rather than calling every gap outlying', () => {
@@ -573,6 +581,19 @@ describe('sparkline — locateIndex', () => {
     expect(locateIndex(g, 24)).toBe(0)
     expect(locateIndex(g, 26)).toBe(1)
     expect(locateIndex(g, 999)).toBe(2)
+  })
+
+  it('breaks a TIE toward the earlier point', () => {
+    // Two readings at the same instant land on the same x. Either rule is
+    // defensible; leaving it unpinned is not, because a silent flip changes
+    // which reading the tooltip reports and nothing else would notice.
+    const g = geo([
+      { at: T0, value: 10 },
+      { at: T0 + DAY, value: 20 },
+      { at: T0 + DAY, value: 30 },
+    ])
+    expect(g.dots[1]!.x).toBe(g.dots[2]!.x)
+    expect(locateIndex(g, g.dots[1]!.x)).toBe(1)
   })
 
   it('answers null with nothing to hit, and for a non-finite position', () => {
@@ -883,6 +904,7 @@ describe('sparkline — connect part bag', () => {
       'lastActive',
       'setActive',
     ])
+    expect(variants(parts.svg.onPointerMove)).toEqual(['setActive'])
     expect(variants(parts.svg.onPointerLeave)).toEqual(['setActive'])
     expect(variants(parts.svg.onBlur)).toEqual(['setActive'])
   })
