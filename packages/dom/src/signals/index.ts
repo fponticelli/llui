@@ -293,3 +293,12 @@ export {
   type SignalViewBag,
   type SignalComponentSpec,
 } from './authoring.js'
+
+// ── Islands (T2: private, transient widget state) ───────────────────
+// `island({ def })` mounts a component instance with its own update loop, mask
+// scope and DOM region — the middle rung of the widget-state ladder, between
+// `connect(constant(v), noSend, opts)` (no state after build) and
+// `connect(state.at('x'), send)` (state the app owns). Props go in declaratively
+// via `props`/`onProps`; messages come out via `onHandle`. It is NOT an escape
+// hatch: see `island.ts`'s header for where it sits and what it measures.
+export { signalIsland as island, type IslandSpec, type IslandPropsSource } from './island.js'

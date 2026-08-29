@@ -5,11 +5,11 @@ import { component, div, each, text } from '../../src/signals/authoring'
 import { createContext, provide, useContext } from '../../src/signals/context'
 import { onMount } from '../../src/signals/build-context'
 import { derived } from '../../src/signals/handle'
-import { subApp } from '../../src/signals/escape-hatch'
-import type { Renderable } from '../../src/signals/element'
+import { signalIsland as island } from '../../src/signals/island'
+import type { Mountable } from '../../src/signals/build-context'
 import type { SignalComponentHandle } from '../../src/signals/component'
 
-// An isolated instance used to bail on `c.ssr` and emit a bare `<!--subApp-->`, so
+// An island used to bail on `c.ssr` and emit a bare anchor comment, so
 // its whole subtree was missing from the server HTML: a post-hydration pop-in, and
 // nothing at all without JS. It now renders a real body — a build plus one mount
 // against the seed state, with no update loop, no effects and no mount lifecycle.
@@ -33,27 +33,27 @@ interface HostState {
 type HostMsg = { type: 'noop' }
 
 /** A host whose view is a shell div plus whatever island `body` places. */
-function hostWith(body: () => Renderable) {
+function hostWith(body: () => Mountable) {
   return component<HostState, HostMsg>({
     name: 'Host',
     init: () => ({ shell: 'shell' }),
     update: (s) => s,
-    view: ({ state }) => [div({ class: 'shell' }, [text(state.at('shell'))]), ...body()],
+    view: ({ state }) => [div({ class: 'shell' }, [text(state.at('shell'))]), body()],
   })
 }
 
 type Inert = { type: 'noop' }
 
-describe('subApp under SSR', () => {
+describe('island under SSR', () => {
   it('renders the isolated view into the server HTML (not just an anchor)', () => {
-    const Host = hostWith(() => subApp<LeafState, LeafMsg>({ reason: 'test: ssr body', def: Leaf }))
+    const Host = hostWith(() => island<LeafState, LeafMsg>({ reason: 'test: ssr body', def: Leaf }))
     const html = renderToString(Host, undefined, document)
-    expect(html).toBe('<div class="shell">shell</div><!--subApp--><div class="leaf">c3</div>')
+    expect(html).toBe('<div class="shell">shell</div><!--island--><div class="leaf">c3</div>')
   })
 
   it('bakes the seed state in, including an explicit initialState', () => {
     const Host = hostWith(() =>
-      subApp<LeafState, LeafMsg>({
+      island<LeafState, LeafMsg>({
         reason: 'test: ssr seed',
         def: Leaf,
         initialState: { count: 41, label: 'seeded' },
@@ -74,7 +74,7 @@ describe('subApp under SSR', () => {
       update: (s) => s,
       view: () => [
         provide(Theme, 'PROVIDED', () => [
-          ...subApp<{ n: number }, Inert>({ reason: 'test: ssr ctx', def: Themed }),
+          island<{ n: number }, Inert>({ reason: 'test: ssr ctx', def: Themed }),
         ]),
       ],
     })
@@ -91,7 +91,7 @@ describe('subApp under SSR', () => {
       view: () => [div({ class: 'mounty' }, []), onMount(ran)],
     })
     const Host = hostWith(() =>
-      subApp<{ n: number }, Inert>({ reason: 'test: ssr onMount', def: Mounty }),
+      island<{ n: number }, Inert>({ reason: 'test: ssr onMount', def: Mounty }),
     )
     const html = renderToString(Host, undefined, document)
     expect(ran).not.toHaveBeenCalled()
@@ -107,7 +107,7 @@ describe('subApp under SSR', () => {
       onEffect,
     })
     const Host = hostWith(() =>
-      subApp<{ n: number }, Inert, { type: 'boot' }>({
+      island<{ n: number }, Inert, { type: 'boot' }>({
         reason: 'test: ssr effects',
         def: Effectful,
       }),
@@ -143,15 +143,15 @@ describe('subApp under SSR', () => {
           render: (row) => [
             div({ class: 'row' }, [
               text(row.at('id')),
-              ...subApp<LeafState, LeafMsg>({ reason: 'test: island in a row', def: DerivedLeaf }),
+              island<LeafState, LeafMsg>({ reason: 'test: island in a row', def: DerivedLeaf }),
             ]),
           ],
         }),
       ],
     })
     const html = renderToString(Rows, undefined, document)
-    expect(html).toContain('<div class="row">a<!--subApp--><div class="leaf">leaf:3</div></div>')
-    expect(html).toContain('<div class="row">b<!--subApp--><div class="leaf">leaf:3</div></div>')
+    expect(html).toContain('<div class="row">a<!--island--><div class="leaf">leaf:3</div></div>')
+    expect(html).toContain('<div class="row">b<!--island--><div class="leaf">leaf:3</div></div>')
 
     // And it is exactly what the client produces.
     const fresh = document.createElement('div')
@@ -172,21 +172,21 @@ describe('subApp under SSR', () => {
       update: (s) => s,
       view: () => [
         div({ class: 'outer' }, []),
-        ...subApp<{ n: number }, Inert>({ reason: 'test: nested', def: Inner }),
+        island<{ n: number }, Inert>({ reason: 'test: nested', def: Inner }),
       ],
     })
-    const Host = hostWith(() => subApp<{ n: number }, Inert>({ reason: 'test: outer', def: Outer }))
+    const Host = hostWith(() => island<{ n: number }, Inert>({ reason: 'test: outer', def: Outer }))
     const html = renderToString(Host, undefined, document)
     expect(html).toContain('<div class="outer">')
     expect(html).toContain('<div class="inner">in</div>')
   })
 })
 
-describe('subApp SSR to hydration', () => {
+describe('island SSR to hydration', () => {
   it('hydrates to exactly the fresh-client DOM, with one live instance', () => {
     let handle: SignalComponentHandle<LeafState, LeafMsg> | null = null
     const Host = hostWith(() =>
-      subApp<LeafState, LeafMsg>({
+      island<LeafState, LeafMsg>({
         reason: 'test: hydrate',
         def: Leaf,
         onHandle: (h) => {

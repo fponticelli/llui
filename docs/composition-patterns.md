@@ -16,13 +16,14 @@ paths its signal reads.
 
 ## TL;DR — pick the pattern by shape
 
-| Helper shape                                  | Pattern                           | Composition surface                                                                 |
-| --------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------- |
-| Renders a slice of state                      | **1 — sliced signal**             | Helper takes `Signal<Slice>`; caller passes `state.at('slice')`                     |
-| Renders a list of rows                        | **2 — `each` over a sliced list** | Helper takes `Signal<Row[]>`; per-row `item` signal feeds the cell bindings         |
-| Renders a single derived value                | **3 — derived signal**            | Helper takes `Signal<T>`; caller passes `state.map(fn)` or a `.at()` slice          |
-| Layout chrome (header, sidebar, dialog frame) | **4 — child slots**               | Helper takes `children: ChildNode[]`; caller fills slots with its own bindings      |
-| Library component with its own state machine  | **5 — `connect()` + delegation**  | Component exports `init`/`update`/`connect`; parent owns the slice, routes messages |
+| Helper shape                                  | Pattern                           | Composition surface                                                                       |
+| --------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------- |
+| Renders a slice of state                      | **1 — sliced signal**             | Helper takes `Signal<Slice>`; caller passes `state.at('slice')`                           |
+| Renders a list of rows                        | **2 — `each` over a sliced list** | Helper takes `Signal<Row[]>`; per-row `item` signal feeds the cell bindings               |
+| Renders a single derived value                | **3 — derived signal**            | Helper takes `Signal<T>`; caller passes `state.map(fn)` or a `.at()` slice                |
+| Layout chrome (header, sidebar, dialog frame) | **4 — child slots**               | Helper takes `children: ChildNode[]`; caller fills slots with its own bindings            |
+| Library component with its own state machine  | **5 — `connect()` + delegation**  | Component exports `init`/`update`/`connect`; parent owns the slice, routes messages       |
+| Widget whose state nobody else reads          | **`island()` (T2)**               | Own update loop + mask scope; props in via `props`/`onProps`, messages out via `onHandle` |
 
 ---
 
@@ -193,9 +194,9 @@ headerView({
 The header is no longer a state-generic component — it's a chrome layout that accepts
 content. Each page's call site fills the slots with bindings for its own state shape.
 
-If the chrome itself has local UI state (`isOpen`, `expanded`), model it as a slice the
-host owns and pass the sliced signal in (Pattern 1), or — for genuine isolation — use a
-full `subApp()` boundary.
+If the chrome itself has local UI state (`isOpen`, `expanded`), decide by who else needs to
+read it: if a sibling, the URL, or an undo stack does, model it as a slice the host owns and
+pass the sliced signal in (Pattern 1); if nobody does, mount it as an `island()` (T2 below).
 
 > **Structural primitives are lazy descriptions — capture and reuse freely.** `each`/`show`/
 > `branch`/`unsafeHtml`/`lazy`/`virtualEach`/`foreign`/`portal` return a `Mountable`: a recipe
@@ -297,18 +298,82 @@ depends only on what it uses, keep derives returning primitives or stable refere
 
 ---
 
-## When to reach for `subApp()`
+## Where a widget's state lives — the three tiers
 
-For genuine isolation — embedding an independent app whose lifetime is distinct from the
-host's, a library bundle shipping its own complete TEA loop, or an independent effect
-lifecycle — use a full `subApp()` boundary (imported from `@llui/dom/escape-hatch`; its
-own scope tree and update loop; `lazy()` loads one asynchronously over the same
-machinery). It takes the component under `def` and a required `reason` string documenting
-why the isolation is warranted; drive it via the `onHandle` handle (the sub-app shares no
-state with the host). It returns a `Mountable`, so place it directly in the view array:
-`subApp({ reason: 'third-party 60fps layer', def: MyWidget })`.
+Every widget's state sits on one of three rungs, and picking the wrong one is the most
+common structural mistake in an LLui app. The cliff to avoid is landing T1 and T2 widgets
+on T3, which is how a page ends up with thirteen state slices for thirteen copy buttons —
+and then with an imperative `textContent` workaround written behind the reconciler's back.
 
-Use it sparingly. A sub-app boundary is a region the unified reactivity model can't see
-across. The chunked-mask reactivity scales precisely with the number of paths read, not
-with state depth, so a large flat state shared through sliced signals is fine — reach for
-view functions first.
+| Tier                                                         | Example                           | Mechanism                            |
+| ------------------------------------------------------------ | --------------------------------- | ------------------------------------ |
+| **T1 static** — no state after build                         | meter, sparkline, chip, badge     | `connect(constant(v), noSend, opts)` |
+| **T2 local** — private and transient                         | copy button, disclosure, tooltip  | `island({ def })`                    |
+| **T3 hoisted** — app-level: URL, undo, persistence, siblings | dialog, tabs, form, router-driven | `connect(state.at('x'), send)`       |
+
+**Move UP a rung the moment the state stops being private.** If it has to survive a route
+change, appear in a URL, be undoable, be persisted, or be read by a sibling, it belongs in
+the host's State (T3). An island's state is unreachable from the host except through
+`onHandle`, which is a feature until it isn't.
+
+### T2 — `island()`
+
+`island({ def })` (from `@llui/dom`) mounts a component instance with its own update loop,
+mask scope and DOM region. It is **not** registered as a child scope, so the host's
+reconciler never walks it — host state changes don't invalidate it and vice versa. It is
+disposed with the host, and `lazy()` loads one asynchronously over the same machinery.
+
+```ts
+island({ def: CopyButton })
+```
+
+Props go **in** declaratively, and each change becomes a message rather than a poke at the
+island's state — so the island's reducer stays the single writer and devtools shows where
+the value came from:
+
+```ts
+island({
+  def: Clipboard,
+  props: state.at('token'),
+  onProps: (value) => ({ type: 'setValue', value }),
+})
+```
+
+`props` is a real binding in the host's scope, so it is mask-gated like any other reactive
+read: a host update that doesn't touch `token` sends nothing. Messages come **out** through
+`onHandle`'s handle. `reason` is optional — a note for the reader, never consulted at
+runtime.
+
+Islands render on the server too (build + one mount against the seed state), so they are
+not a post-hydration pop-in and are not blank without JS. One limit: the server body
+reflects `init()`/`initialState`, not the first `props` value, which arrives on mount.
+
+### What an island costs — measured, not feared
+
+At N=500 leaves in jsdom (absolute numbers inflated by the environment; the ratio is the
+signal):
+
+|               | mount   | 50 host updates |
+| ------------- | ------- | --------------- |
+| inline widget | 22.0 ms | 2.19 ms         |
+| island        | 53.3 ms | **1.14 ms**     |
+
+Islands cost **~2.4x at mount** and are **~2x cheaper on update**, because an island is not
+a child scope so the host reconciler never walks it. That is mount cost traded for update
+isolation: a good trade for many leaves under a host whose state churns, the wrong one for
+a handful of leaves under a host that never updates. It is not a reason to avoid the tier —
+it is the number to decide with.
+
+The other cost is not measured in milliseconds: an island is a region the unified
+reactivity model cannot see across. Its state does not appear in the host's state snapshot,
+so devtools time-travel, `@llui/test` replay and the agent protocol see it as a separate
+component. That is the right shape for state nobody else owns, and the wrong shape for
+anything on the T3 list above.
+
+### The deprecated `subApp()`
+
+`subApp()` at `@llui/dom/escape-hatch` is the same primitive under its old name, kept as a
+deprecated alias. It required a `reason` and was framed as an escape hatch for third-party
+60fps layers — correct friction there, wrong for the thirteenth copy button. New code
+writes `island()`; `subApp()` returns a `Renderable` array, so drop the spread when you
+migrate.

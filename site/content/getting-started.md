@@ -238,11 +238,18 @@ parent owns the slice, delegates to the component's pure `update`, and routes it
 through the parent's own `Msg` union (`send({ type: 'dialog', msg })`). See the
 [Composition patterns guide](/cookbook#library-components-connect--delegated-update).
 
-For embedding a genuinely independent app (third-party bundled widget, an independent
-effect lifecycle), the escape hatch is `subApp()` from `@llui/dom/escape-hatch` (or `lazy()`
-to load one asynchronously). `subApp()` requires a `reason` documenting why the separate
-TEA loop is warranted. Don't reach for it to "isolate a complex component" — the
-chunked-mask reactivity gates each binding precisely regardless of nesting depth.
+When a widget's state is nobody else's business — a copy button's "copied!" flash, a
+disclosure's open flag — give it its own update loop with `island({ def })` instead of a
+thirteenth slice on the host's State. Props go in declaratively (`props` + `onProps`, where
+each change becomes a message) and messages come out through `onHandle`; `lazy()` loads one
+asynchronously over the same machinery. Hoist to the host's State the moment the value has
+to survive a route change, appear in a URL, be undoable, or be read by a sibling. The
+[three state tiers](/composition-patterns) spell out the choice, with the measured cost of
+each. (`subApp()` at `@llui/dom/escape-hatch` is the deprecated old name for `island()`.)
+
+Don't reach for an island to "isolate a complex component" — the chunked-mask reactivity
+gates each binding precisely regardless of nesting depth, so a view function over a sliced
+signal is still the default.
 
 ### SSR
 

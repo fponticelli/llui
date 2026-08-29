@@ -5,7 +5,7 @@ import {
   el,
   signalShow,
   signalBranch,
-  signalSubApp,
+  signalIsland,
   onMount,
 } from '../../src/signals/dom'
 import type { SignalComponentDef } from '../../src/signals/component'
@@ -78,7 +78,7 @@ describe('onMount (signal) — SSR', () => {
     expect(html).toContain('class="roller"')
   })
 
-  it('does NOT mount a subApp inside an SSR-open arm (its child onMount would crash)', () => {
+  it('does NOT MOUNT an island inside an SSR-open arm (its onMount would crash)', () => {
     let childOnMountRan = false
     let childMounted = false
     const child: SignalComponentDef<{ n: number }, never> = {
@@ -96,7 +96,7 @@ describe('onMount (signal) — SSR', () => {
       update: (s) => s,
       view: () => [
         signalShow({ produce: (s) => (s as { open: boolean }).open, deps: ['open'] }, () => [
-          signalSubApp({
+          signalIsland({
             reason: 'isolated client-only widget',
             def: child,
             onHandle: () => {
@@ -109,7 +109,10 @@ describe('onMount (signal) — SSR', () => {
     const html = renderToString(def, { open: true }, document)
     expect(childMounted).toBe(false)
     expect(childOnMountRan).toBe(false)
-    expect(html).toContain('<!--subApp-->') // anchor still serialized
+    expect(html).toContain('<!--island-->') // anchor still serialized
+    // The island IS rendered on the server (its body is built and mounted once to
+    // bake values in) — what stays client-only is the mount LIFECYCLE above.
+    expect(html).toContain('<em>child</em>')
   })
 
   it('still emits the onMount marker comment so the serialized tree is stable', () => {

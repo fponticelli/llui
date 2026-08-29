@@ -429,11 +429,18 @@ parent owns the slice, delegates to the component's pure `update`, and routes it
 through the parent's own `Msg` union (`send({ type: 'dialog', msg })`). See the
 [Composition patterns guide](/cookbook#library-components-connect--delegated-update).
 
-For embedding a genuinely independent app (third-party bundled widget, an independent
-effect lifecycle), the escape hatch is `subApp()` from `@llui/dom/escape-hatch` (or `lazy()`
-to load one asynchronously). `subApp()` requires a `reason` documenting why the separate
-TEA loop is warranted. Don't reach for it to "isolate a complex component" — the
-chunked-mask reactivity gates each binding precisely regardless of nesting depth.
+When a widget's state is nobody else's business — a copy button's "copied!" flash, a
+disclosure's open flag — give it its own update loop with `island({ def })` instead of a
+thirteenth slice on the host's State. Props go in declaratively (`props` + `onProps`, where
+each change becomes a message) and messages come out through `onHandle`; `lazy()` loads one
+asynchronously over the same machinery. Hoist to the host's State the moment the value has
+to survive a route change, appear in a URL, be undoable, or be read by a sibling. The
+[three state tiers](/composition-patterns) spell out the choice, with the measured cost of
+each. (`subApp()` at `@llui/dom/escape-hatch` is the deprecated old name for `island()`.)
+
+Don't reach for an island to "isolate a complex component" — the chunked-mask reactivity
+gates each binding precisely regardless of nesting depth, so a view function over a sliced
+signal is still the default.
 
 ### SSR
 
@@ -2355,6 +2362,22 @@ Brand check — see this module's header for why it is not `instanceof`.
 function isFrameworkError(err: unknown): boolean
 ```
 
+### `island()`
+
+Mount a component instance with its own local state at this point in the view: its
+own update loop, mask scope and DOM region. It is NOT registered as a child scope,
+so the host's reconciler never walks it — host state changes don't invalidate it
+and vice versa. Mounted after the anchor attaches, disposed when the host unmounts.
+
+Feed props in with `props` + `onProps` (declarative, mask-gated, and each change
+becomes a message); read messages out through `onHandle`'s handle.
+
+See the module header for where this sits on the state ladder and what it costs.
+
+```typescript
+function island<S, M, E = never, P = never>(spec: IslandSpec<S, M, E, P>): Mountable
+```
+
 ### `isMountable()`
 
 ```typescript
@@ -3041,6 +3064,17 @@ mount and on every change). Mirrors how `foreign` accepts handles-or-values.
 
 ```typescript
 export type HeadValue<T> = T | Signal<T>
+```
+
+### `IslandPropsSource`
+
+A declared reactive input to an island: a host `Signal` (the normal spelling —
+`state.at('token')`, `state.map(...)`, `derived(...)`), or the `{ produce, deps }`
+pair a `Signal` erases to. Same shape `foreign`'s declared `state` inputs take, so
+the dependency paths are visible to the analyzer either way.
+
+```typescript
+export type IslandPropsSource<P> = Signal<P> | SignalSpec<P>
 ```
 
 ### `MountTarget`
@@ -3801,6 +3835,46 @@ export interface HydrationDivergence {
   kind: 'attribute' | 'text' | 'structural'
   server: unknown
   client: unknown
+}
+```
+
+### `IslandSpec`
+
+Spec for {@link signalIsland} — a component instance with its own local state.
+
+```typescript
+export interface IslandSpec<S, M, E = never, P = never> {
+  /** The component to mount. */
+  def: SignalComponentDef<S, M, E>
+  /** OPTIONAL note on why this widget owns its state instead of the host. Documents
+   * intent at the call site; never consulted at runtime. It was mandatory while this
+   * was `subApp`, which is correct friction for a third-party 60fps layer and wrong
+   * for the thirteenth copy button. */
+  reason?: string
+  /** Seed state, overriding `def.init()`'s state (init still runs for effects). For
+   * a value that CHANGES, declare `props`/`onProps` instead — this is read once. */
+  initialState?: S
+  /** EXTRA context values for the isolated build, merged OVER the ones inherited
+   * from the placing build (provide/useContext). A key present in both is taken
+   * from here; every other ancestor-provided value still reaches the instance. */
+  contexts?: ReadonlyMap<symbol, unknown>
+  /** A host signal whose value is fed in as PROPS. It is read through a real binding
+   * in the host's scope, so it is mask-gated like any other reactive read and its
+   * dependency paths are the signal's own. Requires {@link IslandSpec.onProps}. */
+  props?: IslandPropsSource<P>
+  /** Map a prop value to the message that applies it. THE PROP CHANGE BECOMES A
+   * MESSAGE — it is not a poke at the island's state — so the island's reducer stays
+   * the single writer, its devtools log shows where the value came from, and the
+   * `props` channel is nothing but sugar over the `onHandle` dance it replaces.
+   *
+   * Called once at mount with the initial value (the island's `init()` supplies the
+   * defaults; the first prop arrives immediately after) and then on every change the
+   * host's output-equality lets through. Requires {@link IslandSpec.props}. */
+  onProps?: (value: P) => M
+  /** Receive the mounted handle (send/subscribe/dispose) — the channel for messages
+   * OUT, and for imperative drives that do not fit the `props` channel. The island
+   * shares no state with the host. Not called under SSR (nothing is mounted there). */
+  onHandle?: (handle: SignalComponentHandle<S, M>) => void
 }
 ```
 
@@ -5878,39 +5952,28 @@ function __clientOnlyStub(name: string): SignalComponentDef<object, never, never
 
 ##### `subApp()` from `@llui/dom/escape-hatch`
 
-Mount an isolated sub-application at this point in the view. Returns the anchor
-node(s) to splice into the surrounding view array (`...subApp({ … })`). Drive
-the instance — push props in, bubble messages out — via `onHandle`'s handle;
-the sub-app shares no state with the host. Disposed automatically when the host
-unmounts.
+Mount an isolated component instance at this point in the view. Returns the
+anchor node(s) to splice into the surrounding view array (`...subApp({ … })`).
+
+@deprecated Use `island()` from `@llui/dom` — the same primitive, on the main
+barrel, with `reason` optional and a declarative `props`/`onProps` channel.
+`island()` returns a single `Mountable`, so drop the spread: `island({ def })`.
 
 ```typescript
 function subApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Renderable
 ```
 
-#### Interfaces
+#### Types
 
 ##### `SubAppSpec` from `@llui/dom/escape-hatch`
 
-Spec for {@link signalSubApp} — an isolated child component boundary.
+Spec for the deprecated {@link subApp}: {@link IslandSpec} with `reason`
+required, as this entry point has always required it.
+
+@deprecated Use `IslandSpec` with `island()` from `@llui/dom`.
 
 ```typescript
-export interface SubAppSpec<S, M, E = never> {
-  /** Why a separate update loop / mask scope is warranted (third-party UI, a
-   * long-lived loop with no reactive props, a 60fps layer). Documents intent at
-   * the call site; not consulted at runtime. */
-  reason: string
-  /** The component to mount in isolation. */
-  def: SignalComponentDef<S, M, E>
-  /** Seed state, overriding `def.init()`'s state (init still runs for effects).
-   * The bridge for "props in": the host pushes fresh data via the handle's `send`. */
-  initialState?: S
-  /** Context values to replay into the isolated build (provide/useContext). */
-  contexts?: ReadonlyMap<symbol, unknown>
-  /** Receive the mounted handle (send/subscribe/dispose) — the channel for pushing
-   * props in and bubbling messages out, since the sub-app shares no state with the host. */
-  onHandle?: (handle: SignalComponentHandle<S, M>) => void
-}
+export type SubAppSpec<S, M, E = never> = IslandSpec<S, M, E> & { reason: string }
 ```
 
 ---

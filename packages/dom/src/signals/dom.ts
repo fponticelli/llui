@@ -19,7 +19,7 @@
 //  - row / row-state-gate : shared RowCtx + sentinels; the state-fanout gate
 //  - each          : the keyed-each family (LIS reconciler)
 //  - arm-controller: the one mounted-arm machine shared by show/branch/lazy
-//  - show-branch / unsafe-html / sub-app / foreign / lazy / virtual-each : primitives
+//  - show-branch / unsafe-html / island / foreign / lazy / virtual-each : primitives
 //  - dom-region    : removeBetween + cross-env HTML parse
 //  - mount         : mount targets + renderSignalTree/mountSignal
 
@@ -34,7 +34,7 @@ export * from './each.js' // also re-exports RowCtx (from ./row.js)
 export * from './arm-controller.js'
 export * from './show-branch.js'
 export * from './unsafe-html.js'
-export * from './sub-app.js'
+export * from './island.js'
 export * from './foreign.js'
 export * from './lazy.js'
 export * from './virtual-each.js'

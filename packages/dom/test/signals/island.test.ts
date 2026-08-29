@@ -2,13 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
 import { component, div, show, text } from '../../src/signals/authoring'
 import { createContext, provide, useContext } from '../../src/signals/context'
-import { subApp } from '../../src/signals/escape-hatch'
+import { signalIsland as island } from '../../src/signals/island'
 import type { SignalComponentHandle } from '../../src/signals/component'
 
-// `subApp` mounts an ISOLATED component instance inside a parent's view: its own
-// update loop + mask scope, own DOM region at an anchor. Parent state changes do
-// NOT touch it; it is driven via its own handle (send/subscribe). Disposing the
-// parent disposes the sub-app.
+// `island` mounts a component instance with its OWN local state inside a host's
+// view: its own update loop + mask scope, own DOM region at an anchor. Host state
+// changes do NOT touch it; it is driven by its own handle (send/subscribe) and by
+// the declared `props`/`onProps` channel. Disposing the host disposes the island.
 
 interface ChildState {
   count: number
@@ -26,7 +26,7 @@ interface ParentState {
 }
 type ParentMsg = { type: 'rename'; v: string }
 
-describe('subApp', () => {
+describe('island', () => {
   it('mounts an isolated instance driven by its own handle, disposed with the parent', () => {
     const container = document.createElement('div')
     let childHandle: SignalComponentHandle<ChildState, ChildMsg> | null = null
@@ -37,7 +37,7 @@ describe('subApp', () => {
       update: (s, m) => (m.type === 'rename' ? { label: m.v } : s),
       view: ({ state }) => [
         div({ class: 'label' }, [text(state.at('label'))]),
-        ...subApp<ChildState, ChildMsg>({
+        island<ChildState, ChildMsg>({
           reason: 'test: isolated child loop',
           def: Child,
           onHandle: (h) => {
@@ -62,7 +62,7 @@ describe('subApp', () => {
     expect(container.querySelector('.label')?.textContent).toBe('p2')
     expect(container.querySelector('.child')?.textContent).toBe('c1')
 
-    // Disposing the parent tears down the sub-app's DOM region.
+    // Disposing the parent tears down the island's DOM region.
     parent.dispose()
     expect(container.querySelector('.child')).toBeNull()
   })
@@ -73,7 +73,7 @@ describe('subApp', () => {
       init: () => ({ label: 'p' }),
       update: (s) => s,
       view: () => [
-        ...subApp<ChildState, ChildMsg>({
+        island<ChildState, ChildMsg>({
           reason: 'test: seeded child',
           def: Child,
           initialState: { count: 7 },
@@ -86,13 +86,13 @@ describe('subApp', () => {
   })
 })
 
-// ── Context inheritance (#231 / C2) ─────────────────────────────────
+// ── Context inheritance (#231) ──────────────────────────────────────
 //
-// An isolated instance builds under a FRESH `runBuild` with no parent build on the
-// stack, so the only way an ancestor `provide()` reaches it is the snapshot the
-// primitive takes at PLACEMENT. Forwarding only the caller's explicit `contexts`
-// dropped every inherited value silently — the failure `@llui/components` hits
-// through `ComponentLocaleContext`.
+// An island builds under a FRESH `runBuild` with no parent build on the stack, so
+// the only way an ancestor `provide()` reaches it is the snapshot the primitive
+// takes at PLACEMENT. Forwarding only the caller's explicit `contexts` dropped
+// every inherited value silently — the failure `@llui/components` hits through
+// `ComponentLocaleContext`.
 
 const Theme = createContext('DEFAULT', 'theme')
 const Locale = createContext('en', 'locale')
@@ -109,7 +109,7 @@ const Leaf = component<{ n: number }, { type: 'noop' }>({
   ],
 })
 
-describe('subApp context inheritance', () => {
+describe('island context inheritance', () => {
   it('inherits the context values provided by the placing build', () => {
     const container = document.createElement('div')
     const Host = component<ParentState, ParentMsg>({
@@ -117,7 +117,7 @@ describe('subApp context inheritance', () => {
       update: (s) => s,
       view: () => [
         provide(Theme, 'PROVIDED', () => [
-          ...subApp<{ n: number }, { type: 'noop' }>({
+          island<{ n: number }, { type: 'noop' }>({
             reason: 'test: context inheritance',
             def: Leaf,
           }),
@@ -141,7 +141,7 @@ describe('subApp context inheritance', () => {
       view: () => [
         provide(Theme, 'PROVIDED', () => [
           provide(Locale, 'fr', () => [
-            ...subApp<{ n: number }, { type: 'noop' }>({
+            island<{ n: number }, { type: 'noop' }>({
               reason: 'test: explicit contexts merge',
               def: Leaf,
               contexts: explicit,
@@ -165,7 +165,7 @@ describe('subApp context inheritance', () => {
       view: ({ state }) => [
         provide(Theme, 'ARM', () => [
           show(state.at('open'), () => [
-            ...subApp<{ n: number }, { type: 'noop' }>({
+            island<{ n: number }, { type: 'noop' }>({
               reason: 'test: arm-placed island',
               def: Leaf,
             }),

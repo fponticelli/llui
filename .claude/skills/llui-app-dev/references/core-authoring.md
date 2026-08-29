@@ -205,10 +205,21 @@ const sendDialog = mapSend<Msg, dialog.DialogMsg>(send, (msg) => ({
 }))
 ```
 
-For the rare genuinely independent TEA loop, use `subApp()` from
-`@llui/dom/escape-hatch`. It requires a `reason`, shares no state with its host, and is
-driven through `onHandle`. There is no `child()` API. Prefer sliced-signal view functions
-unless independent lifetime/effects are the actual requirement.
+Widget state sits on one of three rungs, and picking the wrong one is the common
+structural mistake: **T1 static** (no state after build) is `connect(constant(v), noSend,
+opts)`; **T2 local** (private, transient — a copy button's flash, a disclosure's open
+flag) is `island({ def })` from `@llui/dom`; **T3 hoisted** (URL, undo, persistence, or a
+sibling reads it) is `connect(state.at('x'), send)`. Landing T1 and T2 widgets on T3 is
+what produces thirteen state slices for thirteen leaf widgets.
+
+`island()` mounts a component with its own update loop, mask scope and DOM region; it is
+not a child scope, so the host reconciler never walks it. Props go in declaratively —
+`props: state.at('token')` + `onProps: (v) => ({ type: 'setValue', value: v })`, where the
+change becomes a MESSAGE, not a state poke — and messages come out through `onHandle`.
+`reason` is optional documentation. Measured at N=500 leaves: ~2.4x mount cost, ~2x
+cheaper per host update. There is no `child()` API, and `subApp()` at
+`@llui/dom/escape-hatch` is the deprecated old name for `island()`. A sliced-signal view
+function is still the default; reach for an island when the state is genuinely private.
 
 ## View-less TEA programs
 

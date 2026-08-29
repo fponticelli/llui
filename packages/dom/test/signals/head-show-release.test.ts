@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
 import { component } from '../../src/signals/authoring'
-import { signalShow, signalBranch, signalSubApp } from '../../src/signals/dom'
+import { signalShow, signalBranch, signalIsland } from '../../src/signals/dom'
 import { meta, link, script, title } from '../../src/signals/head'
 
 const headEl = (): HTMLHeadElement => document.head
@@ -95,7 +95,7 @@ describe('head: show()/branch() release of hydration-adopted (SSR) entries', () 
     h.dispose()
   })
 
-  it('removes an adopted entry inside a subApp page on page-slot swap', () => {
+  it('removes an adopted entry inside an island page on page-slot swap', () => {
     seedSsr('meta', 'meta:name=home-only', { name: 'home-only', content: 'yes' })
     const HomeSeo = component<{ x: number }, { type: 'noop' }>({
       name: 'HomeSeo',
@@ -110,7 +110,7 @@ describe('head: show()/branch() release of hydration-adopted (SSR) entries', () 
       update: (s, m) => (m.type === 'nav' ? { path: m.path } : s),
       view: () => [
         signalShow({ produce: (s) => (s as S).path === '/', deps: ['path'] }, () => [
-          signalSubApp({ reason: 'test: isolated page', def: HomeSeo }),
+          signalIsland({ reason: 'test: isolated page', def: HomeSeo }),
         ]),
       ],
     })
