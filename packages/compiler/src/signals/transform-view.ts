@@ -566,6 +566,309 @@ function referencesNonRootSignal(expr: ts.Node, roots: Roots): boolean {
   return found
 }
 
+/**
+ * Ambient globals a static row slot legitimately reaches for. None of them can
+ * be a `Signal` handle — but only while the module has not rebound the name, so
+ * every lookup is gated on {@link moduleDeclaredNames} first. The list is
+ * deliberately short: an omission costs an optimization, an extra entry costs a
+ * wrong render, so it stays on the side that only forgoes the tier.
+ */
+const AMBIENT_PLAIN_GLOBALS: ReadonlySet<string> = new Set([
+  'Array',
+  'Boolean',
+  'Date',
+  'Infinity',
+  'Intl',
+  'JSON',
+  'Map',
+  'Math',
+  'NaN',
+  'Number',
+  'Object',
+  'RegExp',
+  'Set',
+  'String',
+  'Symbol',
+  'console',
+  'decodeURI',
+  'decodeURIComponent',
+  'document',
+  'encodeURI',
+  'encodeURIComponent',
+  'globalThis',
+  'isFinite',
+  'isNaN',
+  'parseFloat',
+  'parseInt',
+  'undefined',
+  'window',
+])
+
+/**
+ * How many times the module puts each name in a DECLARATION position — anywhere,
+ * at any nesting depth. Two consumers, and the direction of each is what fixes
+ * the shape of this function:
+ *
+ *  - {@link firstOpaqueFreeIdentifier} consults it to WITHDRAW the ambient-global
+ *    allowance. A name it MISSES is a name wrongly TRUSTED, i.e. a miscompile.
+ *  - {@link resolvesToPlainValue} requires a count of exactly 1 before it will
+ *    resolve a name to a declaration. A name it OVER-counts merely fails closed.
+ *
+ * Both directions therefore want the COARSEST answer that is still a
+ * declaration count, which is why this must not be a hand-enumerated list of
+ * node kinds. It was one, and it immediately lost `ModuleDeclaration` and
+ * `ImportEqualsDeclaration`: `namespace Math { export const PI = constant(3) }`
+ * rebinds `Math` at module scope, was not counted, kept the ambient-global
+ * allowance, and emitted `applyAttr(_r0, "data-p", Math.PI)` — #244 still open
+ * in the exact shape the fix claims to close, with a `const Math = …` test
+ * passing beside it. The lesson generalizes past those two kinds: a kind list in
+ * a trust-WITHDRAWAL position is unsound by construction and goes stale every
+ * time TypeScript adds a declaration form.
+ *
+ * So the test is STRUCTURAL, on the generic `.name` slot — the same predicate
+ * `firstOpaqueFreeIdentifier` uses to recognize a name position — plus binding
+ * patterns, which reach their identifiers through `BindingElement.name`. That
+ * covers every declaration kind at once, including ones not yet invented. It
+ * over-approximates (an object-literal key or a member name counts too), and
+ * that is the safe direction for both consumers above.
+ *
+ * A `ShorthandPropertyAssignment` is excluded: `{ Math }` is a READ of `Math`,
+ * not a rebinding of it.
+ *
+ * The two consumers are given SEPARATE views, because they really do ask
+ * different questions and one answer is wrong for one of them. A function or
+ * class EXPRESSION's own name (`const f = function f() {}`) is a real
+ * rebinding inside its own subtree — so it must WITHDRAW trust — but it names
+ * the very value the enclosing `const` holds, so it is not a COMPETING
+ * declaration and must not make that `const` ambiguous. Collapsing the two
+ * views made `const replacement = function replacement() {}` count twice and
+ * silently dropped the tier for every row reading it.
+ *
+ * Memoized per tree; nothing is hung off a node (parse.ts's second invariant).
+ */
+interface ModuleNames {
+  /** Competing DECLARATION count per name — `resolvesToPlainValue` requires 1. */
+  readonly counts: ReadonlyMap<string, number>
+  /** Every name the module rebinds anywhere, self-names included — the set the
+   * ambient-global allowance is withdrawn against. A superset of `counts`. */
+  readonly rebound: ReadonlySet<string>
+}
+const MODULE_DECLARED = new WeakMap<ts.SourceFile, ModuleNames>()
+function moduleDeclaredNames(sf: ts.SourceFile): ModuleNames {
+  const cached = MODULE_DECLARED.get(sf)
+  if (cached) return cached
+  const counts = new Map<string, number>()
+  const rebound = new Set<string>()
+  const visit = (n: ts.Node): void => {
+    if (ts.isIdentifier(n)) {
+      const p = n.parent
+      if (
+        p !== undefined &&
+        !ts.isShorthandPropertyAssignment(p) &&
+        (p as { name?: ts.Node }).name === n
+      ) {
+        rebound.add(n.text)
+        if (!ts.isFunctionExpression(p) && !ts.isClassExpression(p)) {
+          counts.set(n.text, (counts.get(n.text) ?? 0) + 1)
+        }
+      }
+      return
+    }
+    n.forEachChild(visit)
+  }
+  visit(sf)
+  const result: ModuleNames = { counts, rebound }
+  MODULE_DECLARED.set(sf, result)
+  return result
+}
+
+/** Is `expr` provably NOT a `Signal` handle from its syntax alone? Literals, the
+ * aggregate literals, and function/class values — never a call, never a member
+ * read, never an identifier (which is the whole point of #244). Template spans
+ * and array/object members are checked too, so `\`\${SEP}x\`` inherits the
+ * verdict of `SEP`. */
+function isProvablyPlainInitializer(
+  expr: ts.Expression,
+  sf: ts.SourceFile,
+  seen: Set<string>,
+): boolean {
+  const e = unwrapPlainCasts(expr)
+  // A function or class is a value the runtime can never hand to `applyAttr` as
+  // a handle. It matters as a CALLEE — a same-file `const fmt = (v) => …` is the
+  // ordinary way a row's formatting helper is written.
+  if (ts.isArrowFunction(e) || ts.isFunctionExpression(e) || ts.isClassExpression(e)) return true
+  if (
+    ts.isStringLiteralLike(e) ||
+    ts.isNumericLiteral(e) ||
+    ts.isBigIntLiteral(e) ||
+    ts.isRegularExpressionLiteral(e) ||
+    e.kind === ts.SyntaxKind.TrueKeyword ||
+    e.kind === ts.SyntaxKind.FalseKeyword ||
+    e.kind === ts.SyntaxKind.NullKeyword
+  ) {
+    return true
+  }
+  const plain = (x: ts.Expression): boolean => isProvablyPlainInitializer(x, sf, seen)
+  if (ts.isTemplateExpression(e)) return e.templateSpans.every((sp) => plain(sp.expression))
+  if (ts.isArrayLiteralExpression(e)) {
+    return e.elements.every((el) => !ts.isSpreadElement(el) && plain(el))
+  }
+  if (ts.isObjectLiteralExpression(e)) {
+    return e.properties.every((p) => ts.isPropertyAssignment(p) && plain(p.initializer))
+  }
+  // Every operator here yields either a primitive or ONE of its operands, so
+  // two plain operands make a plain result. `const STYLE_ROW = '…' + '…'` is the
+  // shape that motivated this (a real in-repo row style); `const N = -1` and
+  // `const B = A` are the other two the literal-only version missed. Assignment
+  // forms are excluded — a `const` initializer that assigns is exotic, and
+  // failing closed there costs only the tier.
+  if (ts.isBinaryExpression(e)) {
+    const op = e.operatorToken.kind
+    if (op >= ts.SyntaxKind.FirstAssignment && op <= ts.SyntaxKind.LastAssignment) return false
+    return plain(e.left) && plain(e.right)
+  }
+  if (ts.isPrefixUnaryExpression(e)) return plain(e.operand)
+  if (ts.isConditionalExpression(e)) return plain(e.whenTrue) && plain(e.whenFalse)
+  // A name bound to another provably-plain `const`. `seen` closes the cycle a
+  // pair of mutually-referring declarations would otherwise open.
+  if (ts.isIdentifier(e)) return resolvesToPlainValue(e.text, sf, seen)
+  return false
+}
+
+/** Strip the erased wrappers a declaration's initializer is commonly written
+ * with (`as const`, `satisfies`, parentheses, `!`) — the same unwrap discipline
+ * the dep analyzer applies, restated locally because this module must not depend
+ * on the analyzer's own root machinery. */
+function unwrapPlainCasts(expr: ts.Expression): ts.Expression {
+  let e = expr
+  for (;;) {
+    if (ts.isParenthesizedExpression(e)) e = e.expression
+    else if (ts.isAsExpression(e) || ts.isSatisfiesExpression(e)) e = e.expression
+    else if (ts.isNonNullExpression(e)) e = e.expression
+    else if (ts.isTypeAssertionExpression(e)) e = e.expression
+    else return e
+  }
+}
+
+/** Does the file bind `name` exactly once, to a `const` whose initializer is
+ * provably a plain value? Deliberately NOT scope resolution: a second binding of
+ * the same spelling anywhere in the file (a shadowing local, a second module) is
+ * unresolvable without a checker, so the answer is no. A `let`/`var` is refused
+ * for the reason `imperative-dom-mutation` refuses one — it can be reassigned
+ * between the declaration and the read. */
+function resolvesToPlainValue(name: string, sf: ts.SourceFile, seen: Set<string>): boolean {
+  if (seen.has(name)) return false // a reference cycle proves nothing
+  seen.add(name)
+  if ((moduleDeclaredNames(sf).counts.get(name) ?? 0) !== 1) return false
+  const found: ts.VariableDeclaration[] = []
+  const visit = (n: ts.Node): void => {
+    if (found.length > 0) return
+    if (ts.isVariableDeclaration(n) && ts.isIdentifier(n.name) && n.name.text === name) {
+      found.push(n)
+      return
+    }
+    n.forEachChild(visit)
+  }
+  visit(sf)
+  const d = found[0]
+  if (d === undefined || d.initializer === undefined) return false
+  const list = d.parent
+  if (!ts.isVariableDeclarationList(list)) return false
+  if ((list.flags & ts.NodeFlags.Const) === 0) return false
+  return isProvablyPlainInitializer(d.initializer, sf, seen)
+}
+
+/**
+ * The first FREE identifier `expr` READS that the row factory did not introduce
+ * and that is not provably a plain value — or null when there is none.
+ *
+ * This is #244's guard. The direct tier emits a static slot as
+ * `String(<expr>)` / `applyAttr(node, name, <expr>)`, which is correct only when
+ * `<expr>` is not a `Signal` handle. Provenance (#238) answers that for an
+ * expression naming a factory CALL; it cannot answer it for a bare identifier,
+ * because the binding's type is the only evidence and the string-edit transform
+ * has no `ts.Program`. So the identifier is treated as OPAQUE unless the row
+ * bound it (`item`/`index`/`state`, a row local), the slot expression itself
+ * bound it (an arrow param inside a `.map`), it is an ambient global the module
+ * has not rebound, or the file binds it exactly once to a literal.
+ *
+ * The safe direction is the ARM tier — a lost optimization against a silently
+ * wrong render — so every unknown answer bails.
+ *
+ * SCOPE, stated as a limit rather than implied: the check is on identifiers
+ * whose OWN value can reach the slot. The CALLEE SUBTREE of a call is exempt —
+ * what reaches the slot there is the call's RETURN, so `text(fmt(x))` and
+ * `text(unit.peek())` keep the tier (`.peek()` is the sanctioned one-shot read,
+ * and the perf hint recommends it). That leaves a call that RETURNS a handle
+ * (`text(makeUnit())`) uncovered, exactly as it was before #244: provenance
+ * already answers it for the framework's own `derived`/`constant`, and no other
+ * instance has been demonstrated. Closing it needs a checker.
+ */
+function firstOpaqueFreeIdentifier(
+  expr: ts.Node,
+  known: ReadonlySet<string>,
+  sf: ts.SourceFile,
+): string | null {
+  let found: string | null = null
+  /** Is `id` inside the callee subtree of an enclosing call — `fmt` in
+   * `fmt(x)`, `unit` in `unit.peek()`, `a` in `a.b.c()` — up to `expr`? */
+  const inCalleePosition = (id: ts.Identifier): boolean => {
+    let cur: ts.Node = id
+    let p: ts.Node | undefined = cur.parent
+    while (p && cur !== expr) {
+      if (
+        (ts.isCallExpression(p) || ts.isNewExpression(p) || ts.isTaggedTemplateExpression(p)) &&
+        (ts.isTaggedTemplateExpression(p) ? p.tag : p.expression) === cur
+      ) {
+        return true
+      }
+      if (!ts.isPropertyAccessExpression(p) && !ts.isElementAccessExpression(p)) return false
+      if (p.expression !== cur) return false
+      cur = p
+      p = cur.parent
+    }
+    return false
+  }
+  const boundLocally = (id: ts.Identifier): boolean => {
+    let n: ts.Node | undefined = id.parent
+    while (n && n !== expr.parent) {
+      if (scopeIntroduces(n, id.text)) return true
+      n = n.parent
+    }
+    return false
+  }
+  const visit = (n: ts.Node): void => {
+    if (found !== null) return
+    if (ts.isIdentifier(n)) {
+      const p = n.parent
+      // NAME positions are not reads (#92's first discipline): a member name, a
+      // non-computed property key, a class member's name, a binding name, a
+      // qualified-name right-hand side. Testing the generic `.name` slot covers
+      // every declaration kind at once — including the ones a hand-listed set
+      // forgets (a class `PropertyDeclaration` was exactly that miss) — and a
+      // COMPUTED key is unaffected, since its identifier's parent is the
+      // `ComputedPropertyName`, not the member. The one name-position identifier
+      // that IS a read is an object-literal SHORTHAND, excluded here.
+      if (!ts.isShorthandPropertyAssignment(p) && (p as { name?: ts.Node }).name === n) return
+      if (ts.isQualifiedName(p) && p.right === n) return
+      if (ts.isBindingElement(p) && p.propertyName === n) return
+      const name = n.text
+      if (known.has(name)) return
+      if (boundLocally(n)) return
+      if (inCalleePosition(n)) return
+      if (!moduleDeclaredNames(sf).rebound.has(name) && AMBIENT_PLAIN_GLOBALS.has(name)) return
+      if (resolvesToPlainValue(name, sf, new Set())) return
+      found = name
+      return
+    }
+    // A TYPE position carries no runtime value, so it cannot deliver a handle.
+    if (ts.isTypeNode(n) || ts.isTypeParameterDeclaration(n)) return
+    n.forEachChild(visit)
+  }
+  visit(expr)
+  return found
+}
+
 // ELEMENT_HELPERS is imported from ./element-helpers.js (shared with rules.ts).
 
 /** Single-quote a string with proper escaping. A dep path segment / attr key can
@@ -1319,6 +1622,21 @@ function lowerRowFactory(
   const depsConstBySrc = new Map<string, string>()
   const produceConstBySrc = new Map<string, string>()
   const rowLocalNames: string[] = []
+  // #244: the names a STATIC slot may read and still be emitted as
+  // `String(<expr>)` / `applyAttr(…, <expr>)`. Seeded with everything the row
+  // factory itself binds — the roots (`item`, `state`), the index param, and
+  // (as they are admitted) the row locals. Anything else in a static slot is a
+  // free identifier from an enclosing scope, whose TYPE is the only evidence of
+  // whether it is a `Signal` handle; see `firstOpaqueFreeIdentifier`.
+  const rowKnownNames = new Set<string>(roots.keys())
+  if (indexParam !== null) rowKnownNames.add(indexParam)
+  // Name RESOLUTION goes to the ORIGINAL module, never to the synthetic file a
+  // helper inlining parsed: the lowered factory is spliced back into `sfIn`, so
+  // that is where a surviving free identifier actually resolves. (The scope walk
+  // inside the expression still uses the expression's own ancestors, which are
+  // the synthetic file's when one is in play.)
+  const opaqueIn = (expr: ts.Node): string | null =>
+    firstOpaqueFreeIdentifier(expr, rowKnownNames, sfIn)
   const hoistDeps = (deps: readonly string[]): string => {
     const src = depsArr(deps)
     let name = depsConstBySrc.get(src)
@@ -1387,7 +1705,15 @@ function lowerRowFactory(
         return bail('row-local-destructured-or-uninitialized')
       }
       if (isSignalHandleExpr(d.initializer, roots)) return bail('row-local-signal-alias') // handle alias — opaque
+      // #244: a local is the third route a free handle takes into a static slot,
+      // and the one a slot-only guard misses — `const u = unit` makes `u` a name
+      // the factory DID introduce, so the later `text(u)` sees a known
+      // identifier and the taint launders through. Check the INITIALIZER before
+      // admitting the name.
+      const opaqueLocal = opaqueIn(d.initializer)
+      if (opaqueLocal !== null) return bail(`row-slot-free-identifier:${opaqueLocal}`)
       rowLocalNames.push(d.name.text)
+      rowKnownNames.add(d.name.text)
       wire.push(`const ${d.name.text} = ${rewriteHandlerReads(d.initializer, sf, hRoots)}`)
     }
   }
@@ -1422,6 +1748,10 @@ function lowerRowFactory(
         // arg is a signal → the reactive path below.) Bail if it reads a non-root
         // signal handle (e.g. a helper param) reactively — that must stay reactive.
         if (referencesNonRootSignal(arg, roots)) return bailF('row-text-reads-nonroot-signal')
+        // #244: the same handle one binding form over — a BARE identifier the
+        // row did not introduce. `String(<handle>)` renders `[object Object]`.
+        const opaqueText = opaqueIn(arg)
+        if (opaqueText !== null) return bailF(`row-slot-free-identifier:${opaqueText}`)
         const id = freshId()
         nodePath.set(id, { root, path })
         skel.push(`const _n${id} = doc.createTextNode('')`)
@@ -1540,6 +1870,10 @@ function lowerRowFactory(
         } else if (referencesNonRootSignal(init, roots)) {
           return bail('row-prop-reads-nonroot-signal') // a non-root handle read reactively
         } else {
+          // #244: a free identifier the row did not introduce — possibly a
+          // handle, which `applyAttr` would write as `[object Object]`.
+          const opaqueAttr = opaqueIn(init)
+          if (opaqueAttr !== null) return bail(`row-slot-free-identifier:${opaqueAttr}`)
           // Static (non-signal) value computed from row locals / view scope — apply
           // once PER CLONE via `applyAttr` on the located node (`.peek()` reads → live
           // ctx; a leaked handle is caught by the final guard). style./IDL names bailed.

@@ -38,6 +38,8 @@ const REASON_HINTS: Record<string, string> = {
   'row-text-empty': 'a `text()` call has no argument',
   'row-handler-not-inline-fn':
     'an event handler is not an inline arrow/function (e.g. `tagSend(...)`) — it needs the authoring path',
+  'row-slot-free-identifier':
+    'a static text/attr slot reads a name bound outside the row (a view-helper param, a captured const) whose value the compiler cannot prove is not a `Signal` — pass the value in through the row (`item`/`state`), or read it with `.peek()` in a block-body row `const`',
   'row-local-signal-alias':
     "a row local binds a signal HANDLE (`const d = item.at('x')`) — read it inline or `.peek()` it instead",
   'row-local-destructured-or-uninitialized': 'a row local is destructured or has no initializer',
@@ -75,6 +77,7 @@ const REASON_PRECEDENCE: readonly string[] = [
   'destructured-param',
   'render-decl-destructured',
   'row-local-signal-alias',
+  'row-slot-free-identifier',
   'row-handler-not-inline-fn',
   'row-prop-spread-or-shorthand',
   'row-prop-static-idl-or-style',
