@@ -13,7 +13,7 @@ registry/
 
 ## Two kinds of item
 
-- **Presentational** — `button`, `card`, `input`, `textarea`, `label`, `badge`,
+- **Presentational** — `button`, `card`, `input`, `textarea`, `label`, `badge`, `chip`,
   `separator`, `skeleton`, `alert`, `table`. Element helpers with a class recipe. No
   state, no `update`, no scope.
 - **Skins** — `switch`, `tabs`, `accordion`, `dialog`, `popover`, `tooltip`. The right
@@ -32,6 +32,12 @@ so in its own header: **`form`** is upstream's five recipes re-bound to
 **`chart`** carries upstream's `ChartConfig` → `--color-<key>` bridge and its
 tooltip/legend recipes, but draws with `@llui/components/chart` because Recharts
 is React-only.
+
+**`chip` has no upstream counterpart** and is excluded from that 45 rather than
+counted as a miss. It is `badge`'s geometry with its colour derived from its
+value (`chipHue` in `@llui/components/styles`), which shadcn has no equivalent
+of — see `llui/ui/chip.ts` for why the two colour declarations live in the recipe
+and not in a `--chip-fill` token.
 
 What remains is not approximation. It is, in order of size:
 

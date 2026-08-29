@@ -103,6 +103,45 @@
    * tint in BOTH themes. */
   --primary-soft-foreground: color-mix(in oklab, var(--primary) 70%, var(--foreground));
 
+  /*
+   * ─── Value-hued categorical chips ───
+   *
+   * A chip's colour is DERIVED from its value: `chipHue(value)` (from
+   * `@llui/components/styles`) hashes the string to a hue and the consumer sets
+   * it as `--chip-hue` on the element. Lightness, chroma and the mix ratio are
+   * fixed here, which is what makes ONE contrast measurement cover every
+   * category — see `registry/llui/ui/chip.ts` for the two expressions that read
+   * them, and `scripts/test/chip-contrast.test.ts`, which sweeps all 360 hues in
+   * both themes against the values below and fails under 4.5:1.
+   *
+   * OKLCH, not HSL, and that is the whole reason the guarantee holds. HSL's `L`
+   * is a channel average rather than a perceived lightness, so `hsl(H 55% 30%)`
+   * on `hsl(H 58% 91%)` — the obvious formulation — swings from 4.30:1 at H=60
+   * to 9.85:1 at H=240 and drops BELOW AA at 17 hues. In OKLab the same sweep
+   * spans 7.04:1–7.54:1 (6.90:1–7.50:1 as Chrome actually rasterises it, which
+   * clips out-of-gamut chroma instead of gamut-mapping it). So: AA everywhere
+   * with more than 1.5x margin, and at the AAA line rather than safely past it.
+   *
+   * There is deliberately NO `--chip-fill` / `--chip-ink` token here, and it is
+   * not an omission: a custom property's `var()` references are substituted at
+   * the computed-value time of the element that DECLARES it, so a `--chip-fill`
+   * defined on `:root` would bake in `:root`'s `--chip-hue` and every chip would
+   * inherit the same colour. The colour expressions have to live in a rule that
+   * matches the chip.
+   *
+   * `--chip-mix` is one percentage for BOTH ends because `--background` and
+   * `--foreground` swap between themes: at 40% the light fill and the dark ink
+   * are the same colour, and vice versa. That is the same trick the derived
+   * tokens above use, and it is why the chip needs no dark override.
+   *
+   * `--chip-hue` is a DEFAULT (an unreserved slot), so a chip rendered without a
+   * value still paints instead of resolving to an invalid `oklch()`.
+   */
+  --chip-lightness: 0.68;
+  --chip-chroma: 0.2;
+  --chip-mix: 40%;
+  --chip-hue: 230.5;
+
   /* Spacing steps used by the baseline rules below. Deliberately NOT in `@theme`:
    * every value equals Tailwind's own numeric scale (`--spacing` × n), so adding
    * them as NAMED spacing entries would duplicate the scale for no gain. */

@@ -259,6 +259,21 @@
       ]
     },
     {
+      "name": "chip",
+      "type": "registry:ui",
+      "title": "Chip",
+      "description": "Categorical chip whose colour is hashed from its value — no colour map, status hues reserved.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/chip.ts",
+          "type": "registry:ui",
+          "target": "chip.ts"
+        }
+      ]
+    },
+    {
       "name": "clipboard",
       "type": "registry:ui",
       "title": "Clipboard",

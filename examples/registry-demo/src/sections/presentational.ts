@@ -1,7 +1,9 @@
-import { div, span, text, type Mountable } from '@llui/dom'
+import { div, p, span, text, type Mountable } from '@llui/dom'
 import { Button } from '../components/ui/button'
 import { ButtonGroup, ButtonGroupSeparator, ButtonGroupText } from '../components/ui/button-group'
 import { Badge } from '../components/ui/badge'
+import { Chip } from '../components/ui/chip'
+import { CHIP_HUES, RESERVED_HUE_ARCS, chipHue, chipHueAt } from '@llui/components/styles'
 import { Kbd, KbdGroup } from '../components/ui/kbd'
 import { Spinner } from '../components/ui/spinner'
 import { Alert, AlertDescription, AlertTitle } from '../components/ui/alert'
@@ -32,6 +34,21 @@ import {
   TypographyP,
 } from '../components/ui/typography'
 import { row, section } from './shared'
+
+/** The shape of thing a value-hued chip labels: a category set the server owns,
+ * that nobody wants to keep a colour map for. */
+const CATEGORIES = [
+  'lab',
+  'visit',
+  'imaging',
+  'note',
+  'vitals',
+  'medication',
+  'referral',
+  'discharge',
+  'allergy',
+  'procedure',
+]
 
 export type State = Record<string, never>
 export type Msg = { type: 'noop' }
@@ -91,6 +108,38 @@ export function view(): readonly Mountable[] {
         Spinner(),
         Spinner({ class: 'size-6 text-primary' }),
         Button({ variant: 'outline', disabled: true }, [Spinner(), text('Saving…')]),
+      ]),
+    ]),
+
+    section('Chip', 'Categorical colour derived from the value — no colour map to maintain.', [
+      row(
+        'Hashed from the value',
+        CATEGORIES.map((value) => Chip({ value })),
+      ),
+      row(
+        'Same value, same colour — every time, everywhere',
+        ['lab', 'lab', 'visit', 'lab', 'visit'].map((value) => Chip({ value })),
+      ),
+      row(
+        `The whole scale (${CHIP_HUES.length} slots, 21° apart)`,
+        CHIP_HUES.map((hue) => Chip({ hue }, [text(String(hue))])),
+      ),
+      row('Reserved: no chip can land on a status hue', [
+        ...RESERVED_HUE_ARCS.map((arc) =>
+          Chip({ hue: arc.center, class: 'opacity-60 line-through' }, [
+            text(`${arc.name} ${arc.center}°`),
+          ]),
+        ),
+        Badge({ variant: 'destructive' }, [text('critical')]),
+      ]),
+      row(
+        'chipHueAt(i) — the sequential form, for a legend past --chart-5',
+        Array.from({ length: 8 }, (_, i) => Chip({ hue: chipHueAt(i) }, [text(`series ${i + 1}`)])),
+      ),
+      p({ class: 'text-muted-foreground text-xs' }, [
+        text(
+          `Every hue in both themes measures at least 6.90:1 against its own ink as this browser rasterises it — the HSL form of the same idea drops to 4.30:1 at hue 60. "lab" is ${chipHue('lab')}°.`,
+        ),
       ]),
     ]),
 

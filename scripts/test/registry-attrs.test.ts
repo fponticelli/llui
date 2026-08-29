@@ -68,6 +68,9 @@ const MACHINE_OF: Record<string, readonly string[]> = {
   item: [],
   alert: [],
   badge: [],
+  // Presentational, like `badge`: a chip's colour is a pure function of its
+  // value plus one custom property, so there is no machine and no state.
+  chip: [],
   button: [],
   input: [],
   label: [],
