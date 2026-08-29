@@ -105,8 +105,10 @@ describe('#240 — a client navigation mounts a SUFFIX, and the survivors keep t
     // mount order (`i - startAt`, i.e. "the first layer I am mounting") renumbers the
     // incoming page to the ROOT namespace, where it lands on the key the surviving
     // layout's `<style>` already owns and overwrites its content — the layout loses its
-    // stylesheet on every navigation, with both tags still present and correctly marked.
-    // ASSERT THE CONTENT: the key set alone is identical under that mutation.
+    // stylesheet on every navigation. ASSERT THE CONTENT: a key-only assertion happens
+    // to fail here too (the collision leaves one element where there were two), but the
+    // content is what NAMES the failure — "the layout is now showing the page's
+    // stylesheet" — rather than merely detecting that something moved.
     const render = createOnRenderClient({ Layout })
 
     await render({ Page: PageA, isHydration: false })

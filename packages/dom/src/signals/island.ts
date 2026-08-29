@@ -141,9 +141,10 @@ function buildSignalIsland<S, M, E = never, P = never>(spec: IslandSpec<S, M, E,
   // render and the client mount agree on. An anonymous head entry is keyed by an
   // ordinal, and an isolated instance restarts that count — so a fresh counter alone
   // made the island's first `<style>` and the host's mint ONE key, and one silently
-  // overwrote the other (#240). The namespace is positional (`i1`, `i2`, … within the
-  // placing instance, nesting as `i1/i2`), and both sides reach this line in document
-  // order, so the two key sets still match tag for tag.
+  // overwrote the other (#240). The namespace is positional (`~1`, `~2`, … within the
+  // placing instance, nesting as `~1/~2`), and both sides reach this line in document
+  // order, so the two key sets still match tag for tag. The `~` marker is reserved: it
+  // is what keeps these out of the space a caller's `headNamespace` can name.
   const headNamespace = __childHeadNamespace(c.headAnon)
   const props = resolveProps(spec)
   // The mount LIFECYCLE is a client-DOM concern, so the instance is not *mounted* on

@@ -353,11 +353,16 @@ describe('#240 — anonymous head keys are namespaced per owning instance', () =
     // `style` with an `id`) is SUPPOSED to stack — a nested page overriding its
     // layout's title is the feature. Only an anonymous key, whose two writers are two
     // different tags that an ordinal happened to name alike, is a defect.
+    // The `id` deliberately CONTAINS a `#`. Anonymity is the key's SHAPE
+    // (`<tag>:#<ordinal>`), not the presence of a `#` anywhere in it — an `id` is
+    // caller-supplied, so `style:id=a#b` reads as anonymous to a substring test and gets
+    // reported for stacking exactly as it is supposed to. A plain `id: 'theme'` cannot
+    // reach that path, which is why this fixture does not use one.
     const Titled = component<{ n: number }, Inert>({
       name: 'Titled',
       init: () => ({ n: 0 }),
       update: (s) => s,
-      view: () => [style('/* KEYED */', { id: 'theme' })],
+      view: () => [style('/* KEYED */', { id: 'theme' }), style('/* HASHED */', { id: 'a#b' })],
     })
     const sink = collectHeadSink()
     const contexts = new Map<symbol, unknown>([[HEAD_SINK.id, sink]])
@@ -366,6 +371,8 @@ describe('#240 — anonymous head keys are namespaced per owning instance', () =
       const a = renderNodes(Titled, undefined, document, contexts)
       const b = renderNodes(Titled, undefined, document, contexts)
       expect(warn).not.toHaveBeenCalled()
+      // …and the keys really were the named ones, so the silence is not vacuous.
+      expect([...sink.serialize(document).keys].sort()).toEqual(['style:id=a#b', 'style:id=theme'])
       a.dispose()
       b.dispose()
     } finally {
@@ -403,10 +410,14 @@ describe('#240 — anonymous head keys are namespaced per owning instance', () =
 
     // THE ONE RESIDUAL, pinned rather than claimed closed: a bare `~<n>` IS what an
     // island directly under a root is handed, so it is accepted and a caller who writes
-    // it lands in that island's key space. It cannot be rejected without giving the
-    // runtime's own allocation a separate channel, and `~1` is not a name anyone writes
-    // by accident — unlike `i1`, which is why the marker is `~` and not `i`. The
-    // dev-mode warning above is what reports it if it ever happens.
+    // it lands in that island's key space. It is NOT unclosable — the runtime's own
+    // allocation is routed through the same PUBLIC `headNamespace` string, and giving it
+    // an internal channel instead (a second internal parameter, or a `trusted` flag on
+    // the already-internal `headAnonScope`) would let the public path reject every `~`
+    // outright, with no exported type and no change to the key format. It is left open
+    // as a judgement about cost: `~1` is not a name anyone writes by accident — unlike
+    // `i1`, which is why the marker is `~` and not `i` — and the dev-mode warning above
+    // reports it if it ever happens.
     const smuggled = mount('~1')()
     smuggled.dispose()
   })

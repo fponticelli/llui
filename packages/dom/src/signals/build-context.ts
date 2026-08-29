@@ -454,7 +454,10 @@ let anonHeadFallback = 0
  * at 1 — an `island`'s first anonymous `<style>` and its host's minted one key and
  * one silently overwrote the other (#240). The ordinal is therefore namespaced by
  * the instance that owns it: the root mints `1`, `2`, …; the first island placed in
- * that build mints `i1/1`, `i1/2`, …; an island inside THAT one mints `i1/i1/1`.
+ * that build mints `~1/1`, `~1/2`, …; an island inside THAT one mints `~1/~1/1`.
+ * The `~` marker is RESERVED to the runtime's own allocation (see
+ * {@link AUTO_SEGMENT}), which is what makes a caller's `headNamespace` — validated to
+ * contain no `~` and no `/` — unable to name any of these.
  *
  * The namespace is allocated at PLACEMENT — inside the placing build, in document
  * order — which is the one moment the server render and the client mount agree on
@@ -464,8 +467,9 @@ let anonHeadFallback = 0
  * rests on.
  */
 export interface HeadAnonScope {
-  /** Prefix identifying the owning instance: `''` for a root mount, `i1/` for the
-   * first island placed in its build, `i1/i2/` for that island's second island.
+  /** Prefix identifying the owning instance: `''` for a root mount, `~1/` for the
+   * first island placed in its build, `~1/~2/` for that island's second island, and
+   * `admin/` for a caller-named root (whose own islands then nest as `admin/~1/`).
    * Non-empty values always end in the `/` separator, so two sibling namespaces
    * can never run together into one ambiguous key (`app` + `1` vs `app1`). */
   readonly path: string

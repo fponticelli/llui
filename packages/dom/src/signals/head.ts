@@ -113,11 +113,18 @@ const topOf = <T>(a: readonly T[]): T | undefined => a[a.length - 1]
  * document and names NEITHER still gets the silent overwrite — and nothing can namespace
  * that pair automatically without breaking hydration parity. So it is reported instead.
  *
- * Deliberately narrow: only anonymous keys (`#`), only when a writer is ALREADY live, so
- * an arm that unmounts and remounts (its writer released in between) stays silent. */
+ * Deliberately narrow: only anonymous keys, only when a writer is ALREADY live, so an
+ * arm that unmounts and remounts (its writer released in between) stays silent.
+ * ANONYMITY IS THE KEY'S SHAPE, not the presence of a `#` anywhere in it: an anonymous
+ * key is `<tag>:#<ordinal>` and a NAMED one is `<tag>:id=<value>` / `meta:name=<value>`,
+ * whose value is caller-supplied and may itself contain a `#` (`style:id=a#b`) — a
+ * substring test reports those, and a named entry stacking is the documented feature,
+ * not a defect. */
+const ANON_KEY = /^[a-z]+:#/
+
 function warnAnonCollision(key: string, live: number): void {
   if (import.meta.env?.DEV !== true) return
-  if (live === 0 || !key.includes('#')) return
+  if (live === 0 || !ANON_KEY.test(key)) return
   console.warn(
     `[llui] head: the anonymous entry "${key}" was claimed while ${live} other writer(s) ` +
       `still hold it, so one of them will be silently overwritten. An anonymous ` +
