@@ -7,6 +7,32 @@ description: Release history for LLui packages
 
 All notable changes to LLui packages are documented here. LLui is a pre-1.0 project — every release may include breaking changes, though we try to call them out explicitly.
 
+## Unreleased — @llui/components (next minor)
+
+### Breaking
+
+- **`@llui/components` `clipboard`** — the `copy` message no longer sets `copied`. It used to fall through to `copied` in the reducer, so `connect()`'s own trigger — which dispatches `copy` — claimed success unconditionally: a `navigator.clipboard.writeText` refused for permission, an insecure context or browser policy still flipped the button to "Copied!" and had `indicator` (an `aria-live="polite"` region) ANNOUNCE it, telling the user their token was on the clipboard when it was not (#232). `copy` is now a request that returns the state unchanged, and `copied` is the only message that sets the flag.
+
+### Migration
+
+- Relying on the optimistic flip? The feedback now needs the resolved write to dispatch `copied`, or it never appears — the opposite failure, and just as silent. Dispatch from the promise's resolved branch only, and dispatch NOTHING on rejection (a `reset` after a failed write announces the success and then retracts it):
+
+  ```ts
+  copyToClipboard(value).then(
+    () => send({ type: 'copied' }),
+    () => {},
+  )
+  ```
+
+### `@llui/components`
+
+- **Fixed** `clipboard`'s `copy` set `copied` before the write resolved, so a denied copy announced success through the live region (#232). Its doc comment already described the corrected contract — "the consumer dispatches `copied` or `reset` based on the result" — which the shipped reducer and `connect()` handler did not implement; code and docs now agree.
+- **Fixed** `clipboard`'s `connect({ onCopy })` was invoked with `''` instead of the value to write. Nothing in the repo used it, but it is the seam for performing the write from the trigger, which the fix above makes load-bearing — a consumer taking it would have copied an empty string.
+
+### Examples
+
+- **Fixed** `components-demo`'s clipboard section performed the optimistic flip in its own reducer. It now dispatches `copied` from the resolved write and nothing at all from a rejected one.
+
 ## 2026-08-27 — @llui/components@0.18.0
 
 **Released:** `@llui/components@0.18.0`; `@llui/dom@0.13.3`; `@llui/markdown-editor@0.8.5`; `@llui/{a2ui@0.3.4,devmode-annotate@0.4.4,devmode-annotate-editor@0.1.5}`

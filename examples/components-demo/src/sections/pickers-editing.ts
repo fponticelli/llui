@@ -56,22 +56,30 @@ export const update = mergeHandlers<State, Msg, Effect>(
   composeModules<State, Msg, Effect>(children),
   (state, msg) => {
     if (msg.type !== 'copyText') return null
-    // Optimistically flip the clipboard component to its "Copied!" state; the
-    // actual clipboard write + delayed reset run in `onEffect`.
-    const [cb] = clipboard.update(state.clipboard, { type: 'copy' })
-    return [{ ...state, clipboard: cb }, [{ type: 'copyToClipboard', value: msg.value }]]
+    // NOT an optimistic flip: the write can be refused (permission, insecure
+    // context) and the clipboard's `indicator` is an aria-live region, so only
+    // a RESOLVED write may claim success (#232). The reducer just asks.
+    return [state, [{ type: 'copyToClipboard', value: msg.value }]]
   },
 )
 
 /**
  * Route this section's effects. `copyToClipboard` performs the async clipboard
- * write and schedules the "Copied!" reset. `setTimeout` here is legitimate — an
- * effect handler is the impure boundary; the reducer stays pure.
+ * write; only its RESOLVED branch dispatches `copied` and schedules the reset.
+ * A refused write dispatches nothing, so the button keeps saying "Copy" and the
+ * live region stays silent rather than announcing a copy that never happened.
+ * `setTimeout` here is legitimate — an effect handler is the impure boundary;
+ * the reducer stays pure.
  */
 export function onEffect(effect: Effect, send: Send<Msg>): void {
   if (effect.type !== 'copyToClipboard') return
-  void copyToClipboard(effect.value).catch(() => {})
-  setTimeout(() => send({ type: 'clipboard', msg: { type: 'reset' } }), 2000)
+  void copyToClipboard(effect.value).then(
+    () => {
+      send({ type: 'clipboard', msg: { type: 'copied' } })
+      setTimeout(() => send({ type: 'clipboard', msg: { type: 'reset' } }), 2000)
+    },
+    () => {},
+  )
 }
 
 function todayIsoString(): string {
