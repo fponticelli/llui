@@ -358,7 +358,9 @@ render: () => [li([island({ def: Leaf })])] // ✓ the row has a stable node to 
 On the **server** the island's body is a multi-node fragment, so `each`'s stable-row-root
 guard throws. On the **client** it is a bare anchor comment, which that guard cannot see —
 the row renders, and then corrupts on the first reorder: the anchors migrate and the
-mounted bodies stay where they were. `show`/`branch` **arms** are unaffected in both
+mounted bodies stay where they were. That client half predates islands (a bare anchor was
+never keyable either) and is tracked as [#239](https://github.com/fponticelli/llui/issues/239);
+the wrap cures both halves today. `show`/`branch` **arms** are unaffected in both
 directions; only `each` rows.
 
 #### On the server

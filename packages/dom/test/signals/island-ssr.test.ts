@@ -214,7 +214,7 @@ describe('island under SSR', () => {
     //
     // NOTE what this does NOT bless: with both counters fresh, a host entry and an
     // island entry COLLIDE on `style:#1` and dedup into one. That collision is real,
-    // predates this change, and is tracked separately — this test asserts only that
+    // predates this change, and is tracked as #240 — this test asserts only that
     // the server and the client agree about it, which is what the synthetic parent
     // owns and what hydration needs.
     const Styled = component<{ n: number }, Inert>({

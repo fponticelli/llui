@@ -39,9 +39,10 @@
 //             mounted bodies where they were
 //
 // The client half is not new (a bare anchor was never keyable either) and is not
-// fixed here; the server half arrived with the SSR body. Both are cured by the same
-// wrap, which is why the constraint is stated once, here, rather than patched on one
-// side. `show`/`branch` ARMS are unaffected in both directions — only `each` rows.
+// fixed here — it is tracked as #239; the server half arrived with the SSR body.
+// Both are cured by the same wrap, which is why the constraint is stated once, here,
+// rather than patched on one side. `show`/`branch` ARMS are unaffected in both
+// directions — only `each` rows.
 
 import { requireCtx, mountable, runBuild, type BuildCtx, type Mountable } from './build-context.js'
 import { mountSignalComponent } from './component.js'
