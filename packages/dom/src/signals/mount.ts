@@ -7,7 +7,13 @@
 // / portal / focus work see attached nodes (except SSR, which mounts detached
 // purely to bake initial values into the serialized HTML).
 
-import { runBuild, runMounts, type SignalDoc } from './build-context.js'
+import {
+  headAnonScope,
+  runBuild,
+  runMounts,
+  type HeadAnonScope,
+  type SignalDoc,
+} from './build-context.js'
 import type { SignalScope } from './runtime.js'
 import type { Renderable } from './element.js'
 import { buildAndPublishScope } from './scope-build.js'
@@ -57,6 +63,11 @@ export function mountSignal(
   // `mountSignalComponent` so async-mounting primitives (signalLazy's error arm)
   // can snapshot current state; absent for raw `mountSignal` fragment mounts.
   getState?: () => unknown,
+  // Namespace for this instance's ANONYMOUS head keys — see
+  // `MountSignalOptions.headNamespace`, which `mountSignalComponent` forwards here.
+  // An `island` allocates one per instance at placement; an adapter mounting several
+  // instances into one document names each. Absent ⇒ the unprefixed root namespace.
+  headNamespace?: string,
 ): SignalMount {
   // Back-compat positional form: mountSignal(container, initial, build, mode).
   const t: MountTarget =
@@ -66,11 +77,12 @@ export function mountSignal(
         ? target
         : { container: target as Element, mode: (modeOrSeed as 'append' | 'replace') ?? 'append' }
   const seed = modeOrSeed instanceof Map ? modeOrSeed : seedContexts
+  const headAnon = headNamespace === undefined ? undefined : headAnonScope(headNamespace)
 
   if ('anchor' in t) {
     const anchor = t.anchor
     const doc = anchor.ownerDocument as unknown as SignalDoc
-    const built = renderSignalTree(doc, build, seed, false, getState)
+    const built = renderSignalTree(doc, build, seed, false, getState, headAnon)
     const parent = anchor.parentNode
     if (!parent)
       throw new LluiFrameworkError('mountSignal: anchor comment is not attached to a parent')
@@ -115,7 +127,7 @@ export function mountSignal(
   }
 
   const container = t.container
-  const built = renderSignalTree(container.ownerDocument, build, seed, false, getState)
+  const built = renderSignalTree(container.ownerDocument, build, seed, false, getState, headAnon)
   if (t.mode === 'replace') container.replaceChildren(...built.nodes)
   else for (const n of built.nodes) container.appendChild(n)
 
@@ -160,6 +172,9 @@ export function renderSignalTree(
   ssr = false,
   // Live component-state getter (see `BuildCtx.getState`), threaded to the root build.
   getState?: () => unknown,
+  // Anonymous-head-key namespace for the instance being built (see `HeadAnonScope`).
+  // Absent ⇒ the unprefixed root namespace.
+  headAnon?: HeadAnonScope,
 ): {
   nodes: readonly Node[]
   scope: SignalScope
@@ -168,7 +183,7 @@ export function renderSignalTree(
   mounts: Array<(root: Element) => void | (() => void)>
   getDescriptors: () => Array<{ variant: string }>
 } {
-  const built = runBuild(doc, build, undefined, seedContexts, false, ssr, getState)
+  const built = runBuild(doc, build, undefined, seedContexts, false, ssr, getState, headAnon)
   const scope = buildAndPublishScope(built)
   return {
     nodes: built.nodes,

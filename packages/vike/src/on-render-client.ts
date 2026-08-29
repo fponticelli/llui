@@ -10,6 +10,7 @@ import {
   isDevBuild,
   seedFor,
   seedStateFor,
+  headNamespaceFor,
   verifyManifest,
   type AnyLayer,
   type HydrationManifest,
@@ -557,6 +558,10 @@ function mountChain(
       handle = hydrateSignalApp(target, def, layerState, {
         runInitEffects: opts.runInitEffectsOnHydrate,
         contexts,
+        // Same per-layer anonymous-head namespace the server render used (#240) —
+        // both sides read it off the layer's chain INDEX, so hydration adopts the
+        // server's tags instead of minting a colliding key set.
+        headNamespace: headNamespaceFor(i),
       })
     } else {
       // Only pass `initialState` when a data slice is actually present. The
@@ -564,10 +569,13 @@ function mountChain(
       // literal `initialState: undefined` would override init() with `undefined`
       // rather than falling back to it. A `null`/`0`/`''` data slice is a
       // legitimate seed and IS forwarded (see seedFor's `=== undefined` check).
+      const headNamespace = headNamespaceFor(i)
       handle = mountSignalComponent(
         target,
         def,
-        seedFor(layerData) === undefined ? { contexts } : { initialState: layerData, contexts },
+        seedFor(layerData) === undefined
+          ? { contexts, headNamespace }
+          : { initialState: layerData, contexts, headNamespace },
       )
     }
 

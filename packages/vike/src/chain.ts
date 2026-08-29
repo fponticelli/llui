@@ -117,6 +117,28 @@ export function seedFor(data: unknown): unknown | undefined {
 }
 
 /**
+ * The head namespace for chain layer `index` — the value both the server render
+ * (`renderNodes`) and the client mount/hydrate (`mountSignalComponent` /
+ * `hydrateSignalApp`) pass, from this ONE definition so the two cannot drift.
+ *
+ * Every layer is its own build, so each restarts the ordinal that keys ANONYMOUS
+ * head entries (a `style()`/`script()` with no static identity). Without a
+ * namespace a layout's first anonymous `<style>` and its page's mint the same key
+ * and one silently overwrites the other — #240, measured across a three-layer
+ * chain, which collapsed to a single tag. The outermost layer keeps the unprefixed
+ * root namespace, so a chain of ONE produces exactly the keys a plain
+ * `mountApp`/`renderToString` of that page does.
+ *
+ * It is derived from the layer's INDEX, never from mount order or a counter: the
+ * client mounts a suffix of the chain on navigation (`_mountChainSuffix`'s
+ * `startAt`), and a counter would then renumber the surviving layers and stop
+ * matching what the server emitted.
+ */
+export function headNamespaceFor(index: number): string | undefined {
+  return index === 0 ? undefined : `L${index}`
+}
+
+/**
  * Resolve a layer's concrete seed STATE (never `undefined`): the data slice when
  * present, otherwise the state `init()` produces. Used by the client hydrate path
  * — `hydrateSignalApp` needs an explicit `serverState`, and since the server ran

@@ -202,21 +202,21 @@ describe('island under SSR', () => {
     )
   })
 
-  it('gives the island a FRESH headAnon counter, matching what the client mount gets', () => {
+  it('gives the island its OWN head namespace, matching what the client mount gets', () => {
     // `headAnon` is the one inherited-ctx field of the six that is server-OBSERVABLE,
     // and the whole SSR commit rests on the synthetic parent being right — so it is
-    // pinned rather than argued. An anonymous head entry is keyed by a per-render
-    // ordinal (`style:#1`, `style:#2`, …); the client mounts the island from
-    // `runMounts`, with `ctx` already back to null, so its build ALWAYS starts a fresh
-    // counter. A server build that inherited the host's counter would number the
-    // island's entry one higher and hydration would accumulate a duplicate tag
-    // instead of adopting the server one.
+    // pinned rather than argued. An anonymous head entry is keyed by an ordinal
+    // (`style:#1`, `style:#2`, …); the client mounts the island from `runMounts`, with
+    // `ctx` already back to null, so its build never continues the host's numbering. A
+    // server build that inherited the host's counter would number the island's entry
+    // one higher and hydration would accumulate a duplicate tag instead of adopting
+    // the server one.
     //
-    // NOTE what this does NOT bless: with both counters fresh, a host entry and an
-    // island entry COLLIDE on `style:#1` and dedup into one. That collision is real,
-    // predates this change, and is tracked as #240 — this test asserts only that
-    // the server and the client agree about it, which is what the synthetic parent
-    // owns and what hydration needs.
+    // The ordinal is NAMESPACED per owning instance (#240), so this asserts BOTH
+    // halves: the two sides agree key-for-key, AND nothing is overwritten — the host's
+    // `style:#1` and the island's `style:#~1/1` are distinct entries that both survive
+    // the collection. Two fresh-but-UNNAMESPACED counters gave the two entries ONE key
+    // and dedup silently kept a single tag, which was consistent and wrong.
     const Styled = component<{ n: number }, Inert>({
       init: () => ({ n: 0 }),
       update: (s) => s,
@@ -235,7 +235,8 @@ describe('island under SSR', () => {
       document,
       new Map<symbol, unknown>([[HEAD_SINK.id, serverSink]]),
     )
-    const serverKeys = [...serverSink.serialize(document).keys].sort()
+    const serverOut = serverSink.serialize(document)
+    const serverKeys = [...serverOut.keys].sort()
     dispose()
 
     const clientSink = collectHeadSink()
@@ -245,12 +246,18 @@ describe('island under SSR', () => {
     const client = mountSignalComponent(container, Page, {
       contexts: new Map<symbol, unknown>([[HEAD_SINK.id, clientSink]]),
     })
-    const clientKeys = [...clientSink.serialize(document).keys].sort()
+    const clientOut = clientSink.serialize(document)
+    const clientKeys = [...clientOut.keys].sort()
     client.dispose()
 
     expect(serverKeys).toEqual(clientKeys)
-    // And concretely: one fresh counter per build means both anonymous styles are #1.
-    expect(serverKeys).toEqual(['style:#1'])
+    // And concretely: the host keeps the unprefixed namespace, the island gets its own.
+    expect(serverKeys).toEqual(['style:#1', 'style:#~1/1'])
+    // Neither entry was overwritten by the other — the half a shared ordinal loses.
+    for (const head of [serverOut.head, clientOut.head]) {
+      expect(head).toContain('.host{color:blue}')
+      expect(head).toContain('.island{color:red}')
+    }
   })
 
   it('renders a nested island inside an island', () => {

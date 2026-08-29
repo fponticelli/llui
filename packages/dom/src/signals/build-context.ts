@@ -101,14 +101,15 @@ export interface BuildCtx {
    * so `each`/`show`/`branch` registrations and their teardowns all affect the
    * one registry the handle's `getBindingDescriptors` reads. */
   descriptors: Map<string, number>
-  /** Per-render ordinal source for ANONYMOUS head entries (a `style`/`script`/
-   * `meta`/… with no static identity). SHARED by reference across the whole render
-   * (root + every nested build), so the Nth anonymous head entry gets the same
-   * ordinal on the server render AND the client hydrate of the same view — which
-   * is what lets hydration ADOPT the server tag by its `data-llui-head` key instead
-   * of accumulating a duplicate. A module-global counter drifted across renders in
-   * one process and broke that match. */
-  headAnon: { n: number }
+  /** Ordinal source for ANONYMOUS head entries (a `style`/`script`/`meta`/… with no
+   * static identity), NAMESPACED per owning instance — see {@link HeadAnonScope}.
+   * SHARED by reference across every nested build of ONE instance (root + arms +
+   * rows), so the Nth anonymous head entry gets the same ordinal on the server
+   * render AND the client hydrate of the same view — which is what lets hydration
+   * ADOPT the server tag by its `data-llui-head` key instead of accumulating a
+   * duplicate. A module-global counter drifted across renders in one process and
+   * broke that match. */
+  headAnon: HeadAnonScope
   /** True when this build is part of a server render (`renderNodes`/`renderToString`).
    * Inherited into every nested build (each rows, show/branch arms). The mount
    * lifecycle is a client-DOM concern, so `onMount` skips REGISTERING its callback
@@ -273,6 +274,12 @@ export function runBuild(
   // Live component-state getter, seeded by the ROOT build (`mountSignal`) and
   // inherited into every nested build so async-mounting primitives can snapshot it.
   rootGetState?: () => unknown,
+  // Anonymous-head-key namespace for this build's OWNING INSTANCE (see
+  // `HeadAnonScope`). Only a ROOT build seeds it — an isolated instance (`island`,
+  // or an adapter mounting a nested layer in its own pass) passes the scope it was
+  // allocated at placement; nested arm/row builds inherit their parent's. With none,
+  // a root build gets the unprefixed namespace.
+  rootHeadAnon?: HeadAnonScope,
 ): {
   nodes: readonly Node[]
   specs: BindingSpec[]
@@ -301,9 +308,10 @@ export function runBuild(
   const inRow = forceInRow || parent?.inRow || false
   // Inherit SSR from the parent build; the root build seeds it from `rootSsr`.
   const ssr = parent?.ssr ?? rootSsr
-  // Share the per-render anon-head ordinal by reference (root seeds a fresh {n:0}),
-  // so head anon keys are stable across a server render and its client hydrate.
-  const headAnon = parent?.headAnon ?? { n: 0 }
+  // Share the OWNING INSTANCE's anon-head ordinal by reference (a root build seeds a
+  // fresh scope, namespaced when the caller was handed one at placement), so head
+  // anon keys are stable across a server render and its client hydrate.
+  const headAnon = parent?.headAnon ?? rootHeadAnon ?? rootHeadAnonScope()
   // Inherit the state getter from the parent build; the root build seeds it.
   const getState = parent?.getState ?? rootGetState
   ctx = {
@@ -433,13 +441,111 @@ export function __inRowBuild(): boolean {
 
 // Module fallback for anon-head ordinals requested OUTSIDE a build (a head helper
 // called eagerly, no live render context). Best-effort only — such usage can't be
-// hydration-matched anyway; the in-build path (the norm) uses the per-render box.
+// hydration-matched anyway; the in-build path (the norm) uses the owning instance's
+// namespaced scope, so the fallback is also the ONE path that can still collide.
 let anonHeadFallback = 0
 
-/** Next ordinal for an ANONYMOUS head entry, from the CURRENT render's shared
- * counter (see `BuildCtx.headAnon`). Stable across a server render and its client
- * hydrate of the same view, so anon `<style>`/`<script>`/… keys match and
- * hydration adopts rather than duplicating. Public for the head module. */
-export function __nextHeadAnon(): number {
-  return ctx ? ++ctx.headAnon.n : ++anonHeadFallback
+/**
+ * Ordinal source for ANONYMOUS head entries, scoped to ONE owning instance.
+ *
+ * An anonymous entry (`style('…')` with no `id`, `script`, a `meta` with no
+ * identity attr, `noscript`) has nothing to dedup on, so it is keyed by ordinal.
+ * That ordinal used to be per BUILD, which made every ISOLATED instance start again
+ * at 1 — an `island`'s first anonymous `<style>` and its host's minted one key and
+ * one silently overwrote the other (#240). The ordinal is therefore namespaced by
+ * the instance that owns it: the root mints `1`, `2`, …; the first island placed in
+ * that build mints `~1/1`, `~1/2`, …; an island inside THAT one mints `~1/~1/1`.
+ * The `~` marker is RESERVED to the runtime's own allocation (see
+ * {@link AUTO_SEGMENT}), which is what makes a caller's `headNamespace` — validated to
+ * contain no `~` and no `/` — unable to name any of these.
+ *
+ * The namespace is allocated at PLACEMENT — inside the placing build, in document
+ * order — which is the one moment the server render and the client mount agree on
+ * (the client mounts an island from `runMounts`, long after the host build has
+ * finished, so nothing later in the sequence lines up). That is what keeps the two
+ * sides producing the same key set, which hydration's `data-llui-head` adoption
+ * rests on.
+ */
+export interface HeadAnonScope {
+  /** Prefix identifying the owning instance: `''` for a root mount, `~1/` for the
+   * first island placed in its build, `~1/~2/` for that island's second island, and
+   * `admin/` for a caller-named root (whose own islands then nest as `admin/~1/`).
+   * Non-empty values always end in the `/` separator, so two sibling namespaces
+   * can never run together into one ambiguous key (`app` + `1` vs `app1`). */
+  readonly path: string
+  /** Ordinal source for the anonymous head entries THIS instance mints. */
+  n: number
+  /** Ordinal source for the isolated child instances placed in this build. */
+  children: number
+}
+
+/** A segment the RUNTIME allocated (`__childHeadNamespace`). The `~` marker is what
+ * keeps the auto-allocated namespaces and the caller-supplied ones in DISJOINT spaces:
+ * a caller may not write `~`, so no `headNamespace` can name an island's namespace, and
+ * `headNamespace: 'i1'` — which an `i`-prefixed auto scheme would have claimed — is just
+ * an ordinary name. */
+const AUTO_SEGMENT = /^~[1-9][0-9]*$/
+
+/** The unprefixed root namespace: `style:#1`, `style:#2`, … — what a lone `mountApp`
+ * or `renderToString` uses, and the only scope whose path is empty. */
+export function rootHeadAnonScope(): HeadAnonScope {
+  return { path: '', n: 0, children: 0 }
+}
+
+/**
+ * A fresh scope under `namespace` (no trailing separator) — the adapter seam. An
+ * adapter that mounts several instances into ONE document (`@llui/vike`'s layout chain,
+ * two `mountApp` roots on one page) gives each a distinct one so their anonymous entries
+ * cannot collide.
+ *
+ * The namespace is VALIDATED rather than taken on trust, because this is the documented
+ * cure for #240 and a cure with its own silent failure mode is not one. Three
+ * rejections, each a way to land back on somebody else's key:
+ *   - `''` — the empty namespace IS the root namespace, so "I named my second root"
+ *     would be a no-op that reads as a fix.
+ *   - a `~` segment that is not the runtime's own `~<n>` — the marker is reserved, so a
+ *     caller cannot name an island's namespace.
+ *   - a `/` whose following segments are not runtime-allocated: `'app/~1'` is a scope
+ *     the runtime itself builds under a caller-named root, while `'app/i1'` is a caller
+ *     reaching into a nesting level it does not own.
+ *
+ * A caller who deliberately spells the runtime's own allocation (`'app/~1'`) is not
+ * stopped — that is a duplicate name like any other, and it is what the dev-mode
+ * anonymous-collision warning in `head.ts` reports.
+ */
+export function headAnonScope(namespace: string): HeadAnonScope {
+  const segments = namespace.split('/')
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]!
+    const bad =
+      seg === '' ||
+      (i > 0 && !AUTO_SEGMENT.test(seg)) ||
+      (seg.includes('~') && !AUTO_SEGMENT.test(seg))
+    if (bad) {
+      throw new LluiFrameworkError(
+        `headNamespace ${JSON.stringify(namespace)} is not a valid head namespace. ` +
+          `Use a single non-empty name with no "/" and no "~" (e.g. 'admin'); "~" and ` +
+          `the nesting separator "/" are reserved for the namespaces island/lazy ` +
+          `allocate. Omit headNamespace entirely for the unprefixed root namespace.`,
+      )
+    }
+  }
+  return { path: `${namespace}/`, n: 0, children: 0 }
+}
+
+/** Allocate the namespace for an ISOLATED CHILD instance placed in `parent`'s
+ * build (an `island`, a `lazy`). Mutates `parent.children`, so call it exactly once per
+ * placement, at placement — the ordinal is positional and both the server render
+ * and the client mount must reach it in the same order. The `~` marker keeps what this
+ * mints out of the space a caller's `headNamespace` can name (see {@link AUTO_SEGMENT}). */
+export function __childHeadNamespace(parent: HeadAnonScope): string {
+  return `${parent.path}~${++parent.children}`
+}
+
+/** Next key suffix for an ANONYMOUS head entry, from the CURRENT instance's
+ * namespaced counter (see {@link HeadAnonScope}). Stable across a server render
+ * and its client hydrate of the same view, so anon `<style>`/`<script>`/… keys
+ * match and hydration adopts rather than duplicating. Public for the head module. */
+export function __nextHeadAnon(): string {
+  return ctx ? `${ctx.headAnon.path}${++ctx.headAnon.n}` : String(++anonHeadFallback)
 }

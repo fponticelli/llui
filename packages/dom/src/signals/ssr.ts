@@ -8,7 +8,7 @@
 // paint / SEO; the client owns reconciliation from there.
 
 import { renderSignalTree } from './mount.js'
-import type { SignalDoc } from './build-context.js'
+import { headAnonScope, type SignalDoc } from './build-context.js'
 import { pathHandle } from './handle.js'
 import type { SignalComponentDef } from './component.js'
 import { normalizeUpdateResult } from './tea-driver.js'
@@ -156,6 +156,12 @@ export function renderNodes<S, M, E>(
   // `renderSignalTree`). `@llui/vike` replays a layout's in-scope contexts here
   // so a nested page renders against providers that live above its slot.
   contexts?: ReadonlyMap<symbol, unknown>,
+  // Namespace for this instance's ANONYMOUS head keys (see `HeadAnonScope`). An
+  // adapter that renders several instances into ONE head collector (`@llui/vike`'s
+  // layout chain) must give each its own, derived identically to the client mount's
+  // `headNamespace` — the layer's index, never a render-order counter — or the two
+  // sides mint different keys and hydration stops adopting the server's tags.
+  headNamespace?: string,
 ): { nodes: readonly Node[]; dispose: () => void } {
   const [seed] = normalizeInit(def, initialState)
   const handle = pathHandle<S>(() => seed, '')
@@ -168,6 +174,8 @@ export function renderNodes<S, M, E>(
     () => def.view({ state: handle, send: noopSend, batch: noopBatch }),
     contexts,
     true, // ssr: skip the mount lifecycle (onMount) at every depth — see BuildCtx.ssr
+    undefined,
+    headNamespace === undefined ? undefined : headAnonScope(headNamespace),
   )
   // Mount on the detached tree to bake initial values into the serialized HTML.
   // The `ssr` flag above means onMount callbacks are never registered (a DOM-less
@@ -191,8 +199,15 @@ export function renderToString<S, M, E>(
   def: SignalComponentDef<S, M, E>,
   initialState: S | undefined,
   env: ServerDoc,
+  // Adapter seed: context values to expose at the root of this build (see `renderNodes`).
+  contexts?: ReadonlyMap<symbol, unknown>,
+  // Namespace for this instance's ANONYMOUS head keys (see `renderNodes`). Only
+  // meaningful alongside a seeded `HEAD_SINK` — a lone `renderToString` collects no
+  // head at all — but it is here so this entry point is not the one adapter surface
+  // that cannot namespace its instances.
+  headNamespace?: string,
 ): string {
-  const { nodes, dispose } = renderNodes(def, initialState, env)
+  const { nodes, dispose } = renderNodes(def, initialState, env, contexts, headNamespace)
   try {
     return serializeNodes(nodes)
   } finally {

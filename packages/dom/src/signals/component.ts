@@ -158,6 +158,20 @@ export interface MountSignalOptions<S> {
    * `seedContexts`). `@llui/vike` replays a layout's in-scope contexts here so a
    * nested page reads providers that live above its slot in a SEPARATE build. */
   contexts?: ReadonlyMap<symbol, unknown>
+  /** Namespace for this instance's ANONYMOUS head keys (see `HeadAnonScope`).
+   * An anonymous `style`/`script`/`meta`/`noscript` has nothing to dedup on, so it
+   * is keyed by ordinal — and every instance mounted in its own pass numbers from
+   * 1, so without a namespace two of them writing into ONE document/head sink
+   * collide and one silently overwrites the other (#240). `island` and `lazy` each
+   * allocate one per instance automatically; an ADAPTER that mounts several instances into one
+   * document (`@llui/vike`'s layout chain) must give each layer its own, and must
+   * derive it the same way on the server and on the client — the layer's index in
+   * the chain, never a mount-order counter — or hydration stops adopting the
+   * server's tags. Absent ⇒ the unprefixed root namespace; an EMPTY string is
+   * rejected rather than silently meaning the same thing, as are `/` and `~` (the
+   * separator and marker reserved for what island/lazy allocate) — see
+   * `build-context.ts:headAnonScope`. */
+  headNamespace?: string
   /** Commit scheduling. `'sync'` (the default) commits the DOM + notifies
    * subscribers inside every top-level `send` — the synchronous contract.
    * `'raf'` is the OPT-IN streaming/burst fast path: reducers and effects
@@ -442,6 +456,7 @@ export function mountSignalComponent<S, M, E = never>(
       opts?.contexts,
       undefined,
       () => teaDriver.getState(),
+      opts?.headNamespace,
     )
   })
   // onMount callbacks ran synchronously inside mountSignal above, before `mount`
@@ -556,10 +571,17 @@ export function hydrateSignalApp<S, M, E = never>(
   target: Element | MountTarget,
   def: SignalComponentDef<S, M, E>,
   serverState: S,
-  options?: { runInitEffects?: boolean; contexts?: ReadonlyMap<symbol, unknown> },
+  // DERIVED from `MountSignalOptions`, never restated: this forwards straight into
+  // `mountSignalComponent`, so a field described in two places is a field whose two
+  // descriptions drift. `runInitEffects` is the one option that is not a passthrough —
+  // it lands inside the `hydrate` bag this function builds.
+  options?: Pick<MountSignalOptions<S>, 'contexts' | 'headNamespace'> & {
+    runInitEffects?: boolean
+  },
 ): SignalComponentHandle<S, M> {
   return mountSignalComponent(target, def, {
     hydrate: { serverState, runInitEffects: options?.runInitEffects },
     contexts: options?.contexts,
+    headNamespace: options?.headNamespace,
   })
 }

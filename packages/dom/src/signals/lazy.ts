@@ -4,7 +4,13 @@
 // the anchor-mount infra. If the loader rejects, `error(err)` is swapped in — reusing
 // the shared {@link ArmController} for that one-shot error arm.
 
-import { requireCtx, mountable, materialize, type Mountable } from './build-context.js'
+import {
+  __childHeadNamespace,
+  requireCtx,
+  mountable,
+  materialize,
+  type Mountable,
+} from './build-context.js'
 import { mountSignalComponent } from './component.js'
 import type { SignalComponentDef, SignalComponentHandle } from './component.js'
 import { ArmController } from './arm-controller.js'
@@ -49,6 +55,22 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
   const c = requireCtx()
   const doc = c.doc
   const anchor = doc.createComment('lazy')
+
+  // ALLOCATE the anonymous-head namespace HERE, at placement, and BEFORE the SSR bail
+  // below. `lazy` mounts an ISOLATED instance exactly as `island` does, so it had the
+  // same #240 collision: unnamespaced, the loaded component's first anonymous `<style>`
+  // minted `style:#1` and the host's entry was silently overwritten. Two halves, and
+  // the ordering of this line against the `c.ssr` return is the second one: the server
+  // renders NOTHING for a lazy, but the ordinal is POSITIONAL, so a server that skipped
+  // the allocation would number every later island one lower than the client does and
+  // hydration would adopt the wrong tag. Allocating unconditionally costs one unused
+  // ordinal on the server and keeps the two sides in step.
+  //
+  // NOTE the other half of this primitive's isolation is still missing: unlike `island`
+  // (#231), `lazy` forwards NO `contexts` to the loaded component, so it loses every
+  // ancestor-provided value — including the HEAD_SINK an SSR/coordinated render seeds.
+  // Older and independent; tracked as #243, deliberately not fixed here.
+  const headNamespace = __childHeadNamespace(c.headAnon)
 
   // SSR: the async loader can't settle within a synchronous server render, and
   // mounting the loaded (client) component is a client-DOM concern — mirror
@@ -111,7 +133,9 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
     const handle = mountSignalComponent<LS, LM, LE>(
       { anchor: anchor as Comment, mode: 'append' },
       def,
-      opts.initialState !== undefined ? { initialState: opts.initialState } : undefined,
+      opts.initialState !== undefined
+        ? { initialState: opts.initialState, headNamespace }
+        : { headNamespace },
     )
     if (cancelled) {
       // The host was disposed during the mount above — dispose the child here
