@@ -199,8 +199,15 @@ export function renderToString<S, M, E>(
   def: SignalComponentDef<S, M, E>,
   initialState: S | undefined,
   env: ServerDoc,
+  // Adapter seed: context values to expose at the root of this build (see `renderNodes`).
+  contexts?: ReadonlyMap<symbol, unknown>,
+  // Namespace for this instance's ANONYMOUS head keys (see `renderNodes`). Only
+  // meaningful alongside a seeded `HEAD_SINK` — a lone `renderToString` collects no
+  // head at all — but it is here so this entry point is not the one adapter surface
+  // that cannot namespace its instances.
+  headNamespace?: string,
 ): string {
-  const { nodes, dispose } = renderNodes(def, initialState, env)
+  const { nodes, dispose } = renderNodes(def, initialState, env, contexts, headNamespace)
   try {
     return serializeNodes(nodes)
   } finally {

@@ -550,13 +550,8 @@ function hydrateSignalApp<S, M, E = never>(
   target: Element | MountTarget,
   def: SignalComponentDef<S, M, E>,
   serverState: S,
-  options?: {
+  options?: Pick<MountSignalOptions<S>, 'contexts' | 'headNamespace'> & {
     runInitEffects?: boolean
-    contexts?: ReadonlyMap<symbol, unknown>
-    /** See {@link MountSignalOptions.headNamespace} — an adapter hydrating several
-     * instances into one document must namespace each one's anonymous head keys,
-     * exactly as its server render did. */
-    headNamespace?: string
   },
 ): SignalComponentHandle<S, M>
 ```
@@ -856,6 +851,8 @@ function renderToString<S, M, E>(
   def: SignalComponentDef<S, M, E>,
   initialState: S | undefined,
   env: ServerDoc,
+  contexts?: ReadonlyMap<symbol, unknown>,
+  headNamespace?: string,
 ): string
 ```
 
@@ -2392,12 +2389,15 @@ export interface MountSignalOptions<S> {
    * An anonymous `style`/`script`/`meta`/`noscript` has nothing to dedup on, so it
    * is keyed by ordinal — and every instance mounted in its own pass numbers from
    * 1, so without a namespace two of them writing into ONE document/head sink
-   * collide and one silently overwrites the other (#240). `island` allocates one
-   * per instance automatically; an ADAPTER that mounts several instances into one
+   * collide and one silently overwrites the other (#240). `island` and `lazy` each
+   * allocate one per instance automatically; an ADAPTER that mounts several instances into one
    * document (`@llui/vike`'s layout chain) must give each layer its own, and must
    * derive it the same way on the server and on the client — the layer's index in
    * the chain, never a mount-order counter — or hydration stops adopting the
-   * server's tags. Empty/absent ⇒ the unprefixed root namespace. */
+   * server's tags. Absent ⇒ the unprefixed root namespace; an EMPTY string is
+   * rejected rather than silently meaning the same thing, as are `/` and `~` (the
+   * separator and marker reserved for what island/lazy allocate) — see
+   * `build-context.ts:headAnonScope`. */
   headNamespace?: string
   /** Commit scheduling. `'sync'` (the default) commits the DOM + notifies
    * subscribers inside every top-level `send` — the synchronous contract.

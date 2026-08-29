@@ -100,6 +100,35 @@ interface Writer {
 
 const topOf = <T>(a: readonly T[]): T | undefined => a[a.length - 1]
 
+/** Warn (dev only) when an ANONYMOUS key is claimed while another writer is still live
+ * on it. Every named entry is SUPPOSED to stack — a nested page's `title`/`meta`
+ * deliberately overrides its layout's, and that is the documented last-writer-wins
+ * behaviour. An anonymous one carries no identity at all: two writers on `style:#1`
+ * are two DIFFERENT stylesheets that a positional ordinal happened to name the same,
+ * and the loser vanishes with no error anywhere (#240).
+ *
+ * This is the other half of the fix, on the items-seam precedent: namespacing removes
+ * the collision for every instance the runtime allocates for (`island`, `lazy`) and for
+ * every adapter that names its instances, but a caller who mounts two roots into one
+ * document and names NEITHER still gets the silent overwrite — and nothing can namespace
+ * that pair automatically without breaking hydration parity. So it is reported instead.
+ *
+ * Deliberately narrow: only anonymous keys (`#`), only when a writer is ALREADY live, so
+ * an arm that unmounts and remounts (its writer released in between) stays silent. */
+function warnAnonCollision(key: string, live: number): void {
+  if (import.meta.env?.DEV !== true) return
+  if (live === 0 || !key.includes('#')) return
+  console.warn(
+    `[llui] head: the anonymous entry "${key}" was claimed while ${live} other writer(s) ` +
+      `still hold it, so one of them will be silently overwritten. An anonymous ` +
+      `style/script/meta has no identity to dedup on and is keyed by ORDINAL, which ` +
+      `restarts in every separately-mounted instance. Give the entry a static \`id\` ` +
+      `(dedup is then intended), or name the instance: \`mountApp(el, def, ` +
+      `{ headNamespace: 'admin' })\` / \`renderNodes(def, state, env, contexts, 'admin')\`. ` +
+      `(island/lazy and @llui/vike's layers namespace themselves.)`,
+  )
+}
+
 function composeTitle(title: string | undefined, template: string | undefined): string | undefined {
   // A template only applies when a title is set (React-Helmet semantics): no
   // title → the <title> is unmanaged regardless of any template.
@@ -248,6 +277,7 @@ export function domHeadSink(doc: SignalDoc): HeadSink {
         case 'element': {
           let stack = elementWriters.get(key)
           if (!stack) elementWriters.set(key, (stack = []))
+          warnAnonCollision(key, stack.length)
           const apply = (): void => {
             const top = topOf(stack!)!
             writeEl(ensureEl(key, target.tag), top.attrs, top.text)
@@ -327,6 +357,7 @@ export function collectHeadSink(): CollectHeadSink {
       if (target.kind === 'titleTemplate') return makeController(templateWriters)
       let slot = slots.get(key)
       if (!slot) slots.set(key, (slot = { target, writers: [] }))
+      warnAnonCollision(key, slot.writers.length)
       return makeController(slot.writers)
     },
     serialize(doc) {

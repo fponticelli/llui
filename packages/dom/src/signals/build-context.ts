@@ -311,7 +311,7 @@ export function runBuild(
   // Share the OWNING INSTANCE's anon-head ordinal by reference (a root build seeds a
   // fresh scope, namespaced when the caller was handed one at placement), so head
   // anon keys are stable across a server render and its client hydrate.
-  const headAnon = parent?.headAnon ?? rootHeadAnon ?? headAnonScope()
+  const headAnon = parent?.headAnon ?? rootHeadAnon ?? rootHeadAnonScope()
   // Inherit the state getter from the parent build; the root build seeds it.
   const getState = parent?.getState ?? rootGetState
   ctx = {
@@ -475,21 +475,67 @@ export interface HeadAnonScope {
   children: number
 }
 
-/** A fresh scope for a root mount/render. `namespace` (no trailing separator) is
- * the adapter seam: an adapter that mounts several instances into ONE document —
- * `@llui/vike`'s layout chain, where each layer is its own build — gives each a
- * distinct one so their anonymous entries cannot collide. Empty ⇒ the unprefixed
- * root namespace (`style:#1`, …), which is what a lone `mountApp` uses. */
-export function headAnonScope(namespace = ''): HeadAnonScope {
-  return { path: namespace === '' ? '' : `${namespace}/`, n: 0, children: 0 }
+/** A segment the RUNTIME allocated (`__childHeadNamespace`). The `~` marker is what
+ * keeps the auto-allocated namespaces and the caller-supplied ones in DISJOINT spaces:
+ * a caller may not write `~`, so no `headNamespace` can name an island's namespace, and
+ * `headNamespace: 'i1'` — which an `i`-prefixed auto scheme would have claimed — is just
+ * an ordinary name. */
+const AUTO_SEGMENT = /^~[1-9][0-9]*$/
+
+/** The unprefixed root namespace: `style:#1`, `style:#2`, … — what a lone `mountApp`
+ * or `renderToString` uses, and the only scope whose path is empty. */
+export function rootHeadAnonScope(): HeadAnonScope {
+  return { path: '', n: 0, children: 0 }
+}
+
+/**
+ * A fresh scope under `namespace` (no trailing separator) — the adapter seam. An
+ * adapter that mounts several instances into ONE document (`@llui/vike`'s layout chain,
+ * two `mountApp` roots on one page) gives each a distinct one so their anonymous entries
+ * cannot collide.
+ *
+ * The namespace is VALIDATED rather than taken on trust, because this is the documented
+ * cure for #240 and a cure with its own silent failure mode is not one. Three
+ * rejections, each a way to land back on somebody else's key:
+ *   - `''` — the empty namespace IS the root namespace, so "I named my second root"
+ *     would be a no-op that reads as a fix.
+ *   - a `~` segment that is not the runtime's own `~<n>` — the marker is reserved, so a
+ *     caller cannot name an island's namespace.
+ *   - a `/` whose following segments are not runtime-allocated: `'app/~1'` is a scope
+ *     the runtime itself builds under a caller-named root, while `'app/i1'` is a caller
+ *     reaching into a nesting level it does not own.
+ *
+ * A caller who deliberately spells the runtime's own allocation (`'app/~1'`) is not
+ * stopped — that is a duplicate name like any other, and it is what the dev-mode
+ * anonymous-collision warning in `head.ts` reports.
+ */
+export function headAnonScope(namespace: string): HeadAnonScope {
+  const segments = namespace.split('/')
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i]!
+    const bad =
+      seg === '' ||
+      (i > 0 && !AUTO_SEGMENT.test(seg)) ||
+      (seg.includes('~') && !AUTO_SEGMENT.test(seg))
+    if (bad) {
+      throw new LluiFrameworkError(
+        `headNamespace ${JSON.stringify(namespace)} is not a valid head namespace. ` +
+          `Use a single non-empty name with no "/" and no "~" (e.g. 'admin'); "~" and ` +
+          `the nesting separator "/" are reserved for the namespaces island/lazy ` +
+          `allocate. Omit headNamespace entirely for the unprefixed root namespace.`,
+      )
+    }
+  }
+  return { path: `${namespace}/`, n: 0, children: 0 }
 }
 
 /** Allocate the namespace for an ISOLATED CHILD instance placed in `parent`'s
- * build (an `island`). Mutates `parent.children`, so call it exactly once per
+ * build (an `island`, a `lazy`). Mutates `parent.children`, so call it exactly once per
  * placement, at placement — the ordinal is positional and both the server render
- * and the client mount must reach it in the same order. */
+ * and the client mount must reach it in the same order. The `~` marker keeps what this
+ * mints out of the space a caller's `headNamespace` can name (see {@link AUTO_SEGMENT}). */
 export function __childHeadNamespace(parent: HeadAnonScope): string {
-  return `${parent.path}i${++parent.children}`
+  return `${parent.path}~${++parent.children}`
 }
 
 /** Next key suffix for an ANONYMOUS head entry, from the CURRENT instance's

@@ -214,7 +214,7 @@ describe('island under SSR', () => {
     //
     // The ordinal is NAMESPACED per owning instance (#240), so this asserts BOTH
     // halves: the two sides agree key-for-key, AND nothing is overwritten — the host's
-    // `style:#1` and the island's `style:#i1/1` are distinct entries that both survive
+    // `style:#1` and the island's `style:#~1/1` are distinct entries that both survive
     // the collection. Two fresh-but-UNNAMESPACED counters gave the two entries ONE key
     // and dedup silently kept a single tag, which was consistent and wrong.
     const Styled = component<{ n: number }, Inert>({
@@ -252,7 +252,7 @@ describe('island under SSR', () => {
 
     expect(serverKeys).toEqual(clientKeys)
     // And concretely: the host keeps the unprefixed namespace, the island gets its own.
-    expect(serverKeys).toEqual(['style:#1', 'style:#i1/1'])
+    expect(serverKeys).toEqual(['style:#1', 'style:#~1/1'])
     // Neither entry was overwritten by the other — the half a shared ordinal loses.
     for (const head of [serverOut.head, clientOut.head]) {
       expect(head).toContain('.host{color:blue}')
