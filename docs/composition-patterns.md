@@ -344,6 +344,31 @@ read: a host update that doesn't touch `token` sends nothing. Messages come **ou
 `onHandle`'s handle. `reason` is optional — a note for the reader, never consulted at
 runtime.
 
+#### Contexts still reach an isolated instance
+
+`provide()` flows into an island and into a `lazy()`-loaded component, even though neither
+is a child scope. Both snapshot the placing build's context map **at placement** and hand it
+to the instance, so `useContext` inside the loaded component reads what its ancestors
+provided — `@llui/components`' `LocaleContext`, an SSR `HEAD_SINK`, your own contexts alike.
+
+```ts
+provide(LocaleContext, it, () => [
+  island({ def: CopyButton }), // reads `it`
+  lazy({ loader: () => import('./Stats'), fallback: () => [text('…')] }), // reads `it` too
+])
+```
+
+Both also take an optional `contexts` map of **extra** values, merged _over_ the inherited
+ones — a key you name wins, every other ancestor-provided value still arrives.
+
+Placement is the only correct moment to snapshot, and it is why this needed fixing twice
+([#231](https://github.com/fponticelli/llui/issues/231) for `island`,
+[#243](https://github.com/fponticelli/llui/issues/243) for `lazy`): `provide` is
+immutable-by-swap, so it restores the parent map as soon as its synchronous `render()`
+returns — long before a `lazy` loader settles. Reading the map at mount time finds no
+ancestor provider at all, and the failure is **silent**: a component that renders fine in
+default English, and head entries that vanish from an SSR collector instead of erroring.
+
 #### An island is not a valid bare `each` row root
 
 Wrap it in an element — `li([island({ def })])` — the same rule `show`/`branch`/`each`

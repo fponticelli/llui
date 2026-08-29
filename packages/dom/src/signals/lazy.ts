@@ -13,6 +13,7 @@ import {
 } from './build-context.js'
 import { mountSignalComponent } from './component.js'
 import type { SignalComponentDef, SignalComponentHandle } from './component.js'
+import { mergeContexts } from './context.js'
 import { ArmController } from './arm-controller.js'
 import type { Renderable } from './element.js'
 
@@ -27,6 +28,11 @@ export interface SignalLazyOptions<LS = unknown, LM = unknown, LE = unknown> {
   error?: (err: Error) => Renderable
   /** seed state for the loaded component, overriding its `init()` result */
   initialState?: LS
+  /** EXTRA context values for the loaded component's build, merged OVER the ones
+   * inherited from the placing build (provide/useContext). A key present in both is
+   * taken from here; every other ancestor-provided value still reaches the instance.
+   * Same shape and same semantics as `island`'s `contexts`. */
+  contexts?: ReadonlyMap<symbol, unknown>
 }
 
 /**
@@ -37,6 +43,11 @@ export interface SignalLazyOptions<LS = unknown, LM = unknown, LE = unknown> {
  * — reusing the anchor-mount infra (nodes inserted after the anchor, bracketed by
  * an `llui-mount-end` sentinel; its handle owns that region's update loop and
  * dispose). If the loader rejects, `error(err)` is swapped in (or nothing).
+ *
+ * The loaded component is an ISOLATED instance, so it inherits nothing implicitly:
+ * the contexts its ancestors provided reach it only through the snapshot this
+ * primitive takes at PLACEMENT (`opts.contexts` merged over it) — see the note at
+ * that line. Its anonymous head entries take a namespace allocated at the same point.
  *
  * If the surrounding build is torn down before the loader settles, a cancelled
  * flag skips the deferred mount; any already-mounted child handle is disposed.
@@ -65,11 +76,6 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
   // the allocation would number every later island one lower than the client does and
   // hydration would adopt the wrong tag. Allocating unconditionally costs one unused
   // ordinal on the server and keeps the two sides in step.
-  //
-  // NOTE the other half of this primitive's isolation is still missing: unlike `island`
-  // (#231), `lazy` forwards NO `contexts` to the loaded component, so it loses every
-  // ancestor-provided value — including the HEAD_SINK an SSR/coordinated render seeds.
-  // Older and independent; tracked as #243, deliberately not fixed here.
   const headNamespace = __childHeadNamespace(c.headAnon)
 
   // SSR: the async loader can't settle within a synchronous server render, and
@@ -79,6 +85,25 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
   // DOM-less env. The client mount/hydrate pass (atomic-swap rebuild) runs the
   // loader and paints fallback → component.
   if (c.ssr) return anchor
+
+  // SNAPSHOT the placing build's context map HERE, at placement — exactly as `island`
+  // does (#231). `lazy` forwarded NO contexts at all, so the loaded component lost every
+  // ancestor-provided value, silently (#243). Placement is the only correct point: the
+  // mount below is DEFERRED to a promise continuation, and `provide` is
+  // immutable-by-swap — it restores the PARENT map reference when its synchronous
+  // `render()` returns, so a read taken inside `onLoaded` sees no ancestor `provide` at
+  // all. The loaded component also builds under a fresh `runBuild` with no parent build
+  // on the stack, so nothing inherits it implicitly either. Two measured consequences of
+  // the miss, both silent: every `@llui/components` widget mounted through `lazy` fell
+  // back to default English (all of its i18n routes through `ComponentLocaleContext`),
+  // and an `id`-keyed head entry from a lazy child resolved `HEAD_SINK` to `null` and
+  // never reached an SSR/coordinated collector at all.
+  //
+  // The ERROR arm deliberately keeps `c.contexts` rather than this map: `opts.error(e)`
+  // is HOST view code built as an arm in the host's own scope, not the isolated
+  // instance, so the caller's `contexts` (documented as extras FOR the loaded component)
+  // must not leak into it. Its `c.contexts` read is itself a placement snapshot.
+  const contexts = mergeContexts(c.contexts, opts.contexts)
 
   // Build the fallback in the CURRENT build so its bindings join the surrounding
   // scope and stay reactive. Bracket it with an end sentinel so the region can be
@@ -134,8 +159,8 @@ function buildSignalLazy<LS = unknown, LM = unknown, LE = unknown>(
       { anchor: anchor as Comment, mode: 'append' },
       def,
       opts.initialState !== undefined
-        ? { initialState: opts.initialState, headNamespace }
-        : { headNamespace },
+        ? { initialState: opts.initialState, contexts, headNamespace }
+        : { contexts, headNamespace },
     )
     if (cancelled) {
       // The host was disposed during the mount above — dispose the child here

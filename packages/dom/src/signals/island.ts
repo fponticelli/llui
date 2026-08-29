@@ -56,6 +56,7 @@ import {
 } from './build-context.js'
 import { mountSignalComponent } from './component.js'
 import type { SignalComponentDef, SignalComponentHandle } from './component.js'
+import { mergeContexts } from './context.js'
 import { buildAndPublishScope } from './scope-build.js'
 import { normalizeUpdateResult } from './tea-driver.js'
 import { isSignalHandle, pathHandle } from './handle.js'
@@ -352,18 +353,4 @@ function ssrBody<S, M, E, P>(
   frag.appendChild(anchor)
   for (const n of built.nodes) frag.appendChild(n)
   return frag
-}
-
-/** Context values for an isolated build: the placing build's map with the caller's
- * explicit entries laid OVER it. Returns one side by reference when the other
- * contributes nothing, so the common case (no explicit map) allocates nothing. */
-function mergeContexts(
-  inherited: ReadonlyMap<symbol, unknown>,
-  explicit: ReadonlyMap<symbol, unknown> | undefined,
-): ReadonlyMap<symbol, unknown> {
-  if (!explicit || explicit.size === 0) return inherited
-  if (inherited.size === 0) return explicit
-  const merged = new Map(inherited)
-  for (const [k, v] of explicit) merged.set(k, v)
-  return merged
 }

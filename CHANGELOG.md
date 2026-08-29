@@ -7,6 +7,13 @@ description: Release history for LLui packages
 
 All notable changes to LLui packages are documented here. LLui is a pre-1.0 project — every release may include breaking changes, though we try to call them out explicitly.
 
+## Unreleased — @llui/dom (next minor)
+
+### `@llui/dom`
+
+- **Fixed** `lazy()` forwarded no `contexts` to the component it loads, so every ancestor `provide()` was lost — silently ([#243](https://github.com/fponticelli/llui/issues/243)). This is [#231](https://github.com/fponticelli/llui/issues/231)'s defect one primitive over: a `lazy` mounts an ISOLATED instance, which builds under a fresh `runBuild` with no parent build on the stack, so the only way a provided value reaches it is a snapshot the primitive takes itself. Two measured consequences, neither of which errors or warns: `@llui/components` routes all of its i18n through `LocaleContext`, so any component mounted through `lazy()` fell back to default English; and under a seeded `HEAD_SINK` the loaded component resolved the sink to `null`, so an `id`-keyed `style({ id: … })` from a lazy child never reached the collector at all. The snapshot is taken at **placement**, not at mount time — `provide` is immutable-by-swap and has restored the parent map long before a loader promise settles.
+- **Added** `lazy({ contexts })` — extra context values for the loaded component, merged OVER the inherited ones, matching `island`'s option of the same name. A key named here wins; every other ancestor-provided value still arrives.
+
 ## Unreleased — @llui/components (next minor)
 
 ### Breaking
