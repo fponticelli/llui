@@ -7,6 +7,7 @@ import { presence } from '@llui/components/presence'
 import { qrCode } from '@llui/components/qr-code'
 import { inView } from '@llui/components/in-view'
 import { themeSwitch, type Theme } from '@llui/components/theme-switch'
+import { CHIP_HUES, RESERVED_HUE_ARCS, chipHue } from '@llui/components/styles'
 import { encode as uqrEncode } from 'uqr'
 import { sectionGroup, card } from '../shared/ui'
 import {
@@ -17,6 +18,19 @@ import {
 } from '../shared/modules'
 
 type Item = { id: number; label: string }
+
+/** The shape of thing a value-hued chip labels: a category set the server owns,
+ * that nobody wants to keep a colour map for. */
+const CHIP_CATEGORIES = [
+  'lab',
+  'visit',
+  'imaging',
+  'note',
+  'vitals',
+  'medication',
+  'referral',
+  'discharge',
+]
 
 const children = {
   toc,
@@ -205,6 +219,58 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     inViewMount,
     themeMount,
     sectionGroup('Content + data', [
+      // The baseline half of `chipHue()`. No machine, no part bag: a chip is a
+      // pure function of its value plus ONE custom property, and
+      // `[data-scope='chip'][data-part='chip']` in theme.css does the rest. The
+      // registry skin (`llui add chip`) is the same contract under Tailwind.
+      card('Value-hued chips', [
+        p({ class: 'text-xs text-muted-foreground mb-2' }, [
+          text(
+            'Colour derived from the value — no colour map. Same string, same colour, everywhere.',
+          ),
+        ]),
+        div(
+          { class: 'flex flex-wrap items-center gap-2' },
+          CHIP_CATEGORIES.map((value) =>
+            span(
+              {
+                'data-scope': 'chip',
+                'data-part': 'chip',
+                'style.--chip-hue': String(chipHue(value)),
+              },
+              [text(value)],
+            ),
+          ),
+        ),
+        p({ class: 'text-xs text-muted-foreground mt-3 mb-2' }, [
+          text('The whole scale: 12 slots, 21° apart, with the status hues withheld.'),
+        ]),
+        div(
+          { class: 'flex flex-wrap items-center gap-2' },
+          CHIP_HUES.map((hue) =>
+            span({ 'data-scope': 'chip', 'data-part': 'chip', 'style.--chip-hue': String(hue) }, [
+              text(String(hue)),
+            ]),
+          ),
+        ),
+        p({ class: 'text-xs text-muted-foreground mt-3 mb-2' }, [
+          text('Reserved — a hashed chip can never land on one of these:'),
+        ]),
+        div(
+          { class: 'flex flex-wrap items-center gap-2' },
+          RESERVED_HUE_ARCS.map((arc) =>
+            span(
+              {
+                'data-scope': 'chip',
+                'data-part': 'chip',
+                'style.--chip-hue': String(arc.center),
+                class: 'line-through opacity-60',
+              },
+              [text(`${arc.name} ${arc.center}°`)],
+            ),
+          ),
+        ),
+      ]),
       card('Table of Contents', [
         div({ ...tc.root }, [
           ul(

@@ -166,6 +166,30 @@ async function chipExpressions(): Promise<{ fill: string; ink: string }> {
   return { fill: pick('bg-['), ink: pick('text-[') }
 }
 
+/**
+ * The BASELINE stylesheet's copy of the same two expressions.
+ *
+ * There are two consumers of this contract, not one: the registry recipe under
+ * Tailwind, and `theme.css`'s `[data-scope='chip']` rule for an app with no
+ * Tailwind build. Two copies of a colour formula drift, and the drift is exactly
+ * the invisible kind — both render, both look plausible, and only one is the one
+ * that was measured. So this reads the baseline block and the tests below sweep
+ * it AND assert it agrees with the recipe hue for hue.
+ */
+async function baselineExpressions(): Promise<{ fill: string; ink: string }> {
+  const css = await readFile(path.join(STYLES, 'theme.css'), 'utf8')
+  const block = /\[data-scope='chip'\]\[data-part='chip'\]\s*\{([^}]*(?:\([^)]*\)[^}]*)*)\}/.exec(
+    css,
+  )
+  expect(block, "theme.css must carry a [data-scope='chip'][data-part='chip'] rule").not.toBeNull()
+  const read = (prop: string): string => {
+    const m = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 's').exec(block![1]!)
+    expect(m, `the baseline chip rule must declare \`${prop}\``).not.toBeNull()
+    return m![1]!.replace(/\s+/g, ' ').trim()
+  }
+  return { fill: read('background'), ink: read('color') }
+}
+
 async function themeVars(): Promise<{ light: Map<string, string>; dark: Map<string, string> }> {
   const [light, darkOnly] = await Promise.all([
     readFile(path.join(STYLES, 'tokens.css'), 'utf8').then(readTokens),
@@ -185,8 +209,11 @@ function ratioAt(hue: number, vars: Map<string, string>, fill: string, ink: stri
 }
 
 describe('value-hued chip contrast', () => {
-  it('clears AA at every hue in both themes', async () => {
-    const { fill, ink } = await chipExpressions()
+  it.each([
+    ['registry recipe', chipExpressions],
+    ['baseline stylesheet', baselineExpressions],
+  ])('%s clears AA at every hue in both themes', async (_name, load) => {
+    const { fill, ink } = await load()
     const { light, dark } = await themeVars()
     const failures: string[] = []
     const report: Record<string, { min: number; max: number; worstHue: number }> = {}
@@ -226,6 +253,28 @@ describe('value-hued chip contrast', () => {
     // chroma where CSS Color 4 gamut-maps it. The honest claim is AA with 1.5x
     // margin; this bound is a tripwire on the model, not the product claim.
     expect(Math.min(report.light!.min, report.dark!.min)).toBeGreaterThan(7)
+  })
+
+  it('the two skins are the same colour at every hue', async () => {
+    // The registry recipe and the baseline stylesheet are two hand-written
+    // copies of one formula. Equal at 360 hues in both themes is the only
+    // statement that keeps them from drifting apart, and the drift would be
+    // silent: both would still render, and only one would be the one measured.
+    const recipe = await chipExpressions()
+    const baseline = await baselineExpressions()
+    const { light, dark } = await themeVars()
+    for (const vars of [light, dark]) {
+      for (let hue = 0; hue < 360; hue++) {
+        const withHue = new Map(vars)
+        withHue.set('--chip-hue', String(hue))
+        for (const key of ['fill', 'ink'] as const) {
+          expect(
+            evalColor(baseline[key], withHue),
+            `baseline ${key} differs from the recipe at hue ${hue}`,
+          ).toEqual(evalColor(recipe[key], withHue))
+        }
+      }
+    }
   })
 
   it('reports the HSL formulation this replaced as failing — the sweep can fail', async () => {

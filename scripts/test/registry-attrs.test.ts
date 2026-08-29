@@ -529,6 +529,12 @@ function themeAttrsByScope(css: string): Map<string, Set<string>> {
 /** Baseline scopes whose rules span several machines, as the registry's own
  * MACHINE_OF does. Anything unlisted is looked up by its own name. */
 const THEME_MACHINE_OF: Record<string, readonly string[]> = {
+  // `chip` is the one baseline scope with no machine and no pattern: its colour
+  // is a pure function (`chipHue`) plus one custom property, so there is no
+  // state to publish. It styles no `data-*` beyond `data-part`, so the dead-rule
+  // arm below has nothing to check — but the mapping must exist or the vacuity
+  // check reports it as an unmapped scope.
+  chip: [],
   menu: ['menu', 'menu-machine'],
   'context-menu': ['context-menu', 'menu-machine'],
   menubar: ['menubar', 'menu', 'menu-machine'],
