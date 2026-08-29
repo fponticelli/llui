@@ -8,20 +8,30 @@
  * `--primary-hover` / `--primary-active` are `color-mix()` expressions over it,
  * so they follow automatically and must NOT be restated here.
  *
- * `--destructive-foreground` is set alongside `--destructive` because the pair is
- * the contract: a surface token and the colour that stays legible on it.
+ * A `:root` override LEAKS INTO DARK MODE, so a surface token overridden here
+ * must be overridden in the dark block too. `:root` and `[data-theme='dark']`
+ * have equal specificity and this block is declared after the import, so a
+ * `:root` value beats `tokens-dark.css` in BOTH themes. Every pair below is
+ * therefore stated twice, dark surfaces going LIGHT the way the shipped tokens
+ * do — leaving `--destructive` at its light value pinned a dark red under dark
+ * mode's near-black destructive foreground: 3.759:1, below AA.
+ *
+ * The FOREGROUND half is the same trap in reverse. Do not pin one in `:root`
+ * alone: this palette's near-white `oklch(0.99 0 0)` forced into dark mode over
+ * the lighter red measures 2.819:1 (2.767:1 with the shipped tokens). Override
+ * a foreground only in the same block as its surface.
  */
 :root {
   --primary: oklch(0.55 0.21 258);
   --primary-foreground: oklch(0.99 0 0);
   --destructive: oklch(0.58 0.22 27);
-  --destructive-foreground: oklch(0.99 0 0);
 }
 
 .dark,
 [data-theme='dark'] {
   --primary: oklch(0.7 0.15 258);
   --primary-foreground: oklch(0.2 0.02 258);
+  --destructive: oklch(0.7 0.19 27);
 }
 
 /* Demo-specific layout */

@@ -88,9 +88,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             },
             [text(state.at('timer').map((t) => timer.formatMs(timer.display(t), 'mm:ss.S')))],
           ),
-          button({ ...tm.startTrigger, class: 'btn btn-primary text-xs' }, [text('Start')]),
-          button({ ...tm.pauseTrigger, class: 'btn btn-secondary text-xs' }, [text('Pause')]),
-          button({ ...tm.resetTrigger, class: 'btn btn-secondary text-xs' }, [text('Reset')]),
+          button({ ...tm.startTrigger, class: 'btn btn-primary btn-sm' }, [text('Start')]),
+          button({ ...tm.pauseTrigger, class: 'btn btn-secondary btn-sm' }, [text('Pause')]),
+          button({ ...tm.resetTrigger, class: 'btn btn-secondary btn-sm' }, [text('Reset')]),
         ]),
       ]),
       card('Angle Slider', [

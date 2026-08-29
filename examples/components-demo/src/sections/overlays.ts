@@ -536,7 +536,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 p({ class: 'mt-1 text-xs text-muted-foreground' }, [
                   text('LLui gives each binding a chunked mask of the state paths it reads.'),
                 ]),
-                button({ ...po.closeTrigger, class: 'btn btn-secondary mt-3 text-xs' }, [
+                button({ ...po.closeTrigger, class: 'btn btn-secondary mt-3 btn-sm' }, [
                   text('Got it'),
                 ]),
               ],
@@ -732,7 +732,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'flex gap-2' }, [
           button(
             {
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
               onClick: () =>
                 showToast('info', 'For your information', 'This is an informational message.'),
             },
@@ -740,14 +740,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ),
           button(
             {
-              class: 'btn btn-primary text-xs',
+              class: 'btn btn-primary btn-sm',
               onClick: () => showToast('success', 'Saved!', 'Your changes have been saved.'),
             },
             [text('Success')],
           ),
           button(
             {
-              class: 'btn btn-danger text-xs',
+              class: 'btn btn-danger btn-sm',
               onClick: () => showToast('error', 'Something went wrong', 'Please try again later.'),
             },
             [text('Error')],

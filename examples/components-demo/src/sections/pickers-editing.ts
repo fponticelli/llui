@@ -306,7 +306,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           button(
             {
               ...cb.trigger,
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
               onClick: (e: MouseEvent) => {
                 const root = (e.currentTarget as HTMLElement).closest(
                   '[data-scope="clipboard"][data-part="root"]',

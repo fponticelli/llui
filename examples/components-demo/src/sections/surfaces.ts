@@ -124,6 +124,20 @@ export const init = (): [State, never[]] => [
 
 export const update = mergeHandlers<State, Msg, never>(composeModules<State, Msg, never>(children))
 
+/**
+ * One row of the button card's per-row action list — a quiet neutral action and
+ * a quiet destructive one, which is how shadcn's own tables offer a Delete.
+ */
+function rowAction(name: string): Mountable {
+  return div({ class: 'flex items-center justify-between gap-2 px-3 py-2' }, [
+    span({ class: 'text-sm' }, [text(name)]),
+    div({ class: 'flex items-center gap-1' }, [
+      button({ type: 'button', class: 'btn btn-ghost btn-sm' }, [text('Rename')]),
+      button({ type: 'button', class: 'btn btn-danger-ghost btn-sm' }, [text('Delete')]),
+    ]),
+  ])
+}
+
 export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const tr = tour.connect(state.at('tour'), (m) => send({ type: 'tour', msg: m }), {
     id: 'tour-demo',
@@ -301,7 +315,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'flex gap-2' }, [
           button(
             {
-              class: 'btn btn-primary text-xs',
+              class: 'btn btn-primary btn-sm',
               onClick: () => send({ type: 'tour', msg: { type: 'start' } }),
             },
             [text('Start tour')],
@@ -329,10 +343,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                   }),
                 ),
               ]),
-              button({ ...tr.prevTrigger, class: 'btn btn-secondary text-xs ml-auto' }, [
+              button({ ...tr.prevTrigger, class: 'btn btn-secondary btn-sm ml-auto' }, [
                 text('Prev'),
               ]),
-              button({ ...tr.nextTrigger, class: 'btn btn-primary text-xs' }, [
+              button({ ...tr.nextTrigger, class: 'btn btn-primary btn-sm' }, [
                 text(state.at('tour').map((t) => (tour.isLast(t) ? 'Finish' : 'Next'))),
               ]),
             ]),
@@ -343,7 +357,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'flex gap-2 mb-2' }, [
           button(
             {
-              class: 'btn btn-primary text-xs',
+              class: 'btn btn-primary btn-sm',
               onClick: () => send({ type: 'panel', msg: { type: 'open' } }),
             },
             [text('Open panel')],
@@ -553,7 +567,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'mt-3 flex gap-2' }, [
           button(
             {
-              class: 'btn btn-secondary text-xs',
+              class: 'btn btn-secondary btn-sm',
               onClick: () => send({ type: 'breadcrumbs', msg: { type: 'collapse' } }),
             },
             [text('Collapse')],
@@ -568,6 +582,36 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'mt-3 text-xs text-muted-foreground' }, [
           text('Open menu: '),
           text(state.at('menubar').map((s) => s.open ?? '(none)')),
+        ]),
+      ]),
+      /*
+       * The baseline stylesheet's `.btn` recipe, in full. Not a component — it is
+       * the plain-CSS button `theme.css` ships for app chrome, and it is here so
+       * `scripts/test/tailwind-classes.test.ts` compiles every one of these class
+       * names against the demo's own entry CSS. A variant that names a rule the
+       * theme does not define is dead CSS the type-check cannot see.
+       */
+      card('Buttons (baseline recipe)', [
+        div({ class: 'flex flex-wrap items-center gap-2' }, [
+          button({ type: 'button', class: 'btn btn-primary' }, [text('Primary')]),
+          button({ type: 'button', class: 'btn btn-secondary' }, [text('Secondary')]),
+          button({ type: 'button', class: 'btn btn-ghost' }, [text('Ghost')]),
+          button({ type: 'button', class: 'btn btn-danger' }, [text('Delete account')]),
+          button({ type: 'button', class: 'btn btn-primary btn-sm' }, [text('Small')]),
+          button({ type: 'button', class: 'btn btn-primary', disabled: '' }, [text('Disabled')]),
+          button({ type: 'button', class: 'btn btn-secondary', 'aria-disabled': 'true' }, [
+            text('aria-disabled'),
+          ]),
+        ]),
+        /*
+         * The row-action case the filled `.btn-danger` above is wrong for: a
+         * column of filled red buttons dominates the page and destroys the
+         * visual hierarchy, so a per-row destructive is quiet and the filled one
+         * is reserved for THE confirming button in a confirm dialog.
+         */
+        div({ class: 'mt-4 divide-y divide-border rounded-md border border-border' }, [
+          rowAction('config.yaml'),
+          rowAction('secrets.env'),
         ]),
       ]),
       card('Toolbar', [
