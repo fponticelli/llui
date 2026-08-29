@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
-import { component, div, text } from '../../src/signals/authoring'
+import { component, div, show, text } from '../../src/signals/authoring'
+import { createContext, provide, useContext } from '../../src/signals/context'
 import { subApp } from '../../src/signals/escape-hatch'
 import type { SignalComponentHandle } from '../../src/signals/component'
 
@@ -82,5 +83,98 @@ describe('subApp', () => {
     const parent = mountSignalComponent(container, Parent)
     expect(container.querySelector('.child')?.textContent).toBe('c7')
     parent.dispose()
+  })
+})
+
+// ── Context inheritance (#231 / C2) ─────────────────────────────────
+//
+// An isolated instance builds under a FRESH `runBuild` with no parent build on the
+// stack, so the only way an ancestor `provide()` reaches it is the snapshot the
+// primitive takes at PLACEMENT. Forwarding only the caller's explicit `contexts`
+// dropped every inherited value silently — the failure `@llui/components` hits
+// through `ComponentLocaleContext`.
+
+const Theme = createContext('DEFAULT', 'theme')
+const Locale = createContext('en', 'locale')
+const Density = createContext('comfy', 'density')
+
+const Leaf = component<{ n: number }, { type: 'noop' }>({
+  name: 'Leaf',
+  init: () => ({ n: 0 }),
+  update: (s) => s,
+  view: () => [
+    div({ class: 'leaf' }, [
+      text(`${useContext(Theme)}/${useContext(Locale)}/${useContext(Density)}`),
+    ]),
+  ],
+})
+
+describe('subApp context inheritance', () => {
+  it('inherits the context values provided by the placing build', () => {
+    const container = document.createElement('div')
+    const Host = component<ParentState, ParentMsg>({
+      init: () => ({ label: 'p' }),
+      update: (s) => s,
+      view: () => [
+        provide(Theme, 'PROVIDED', () => [
+          ...subApp<{ n: number }, { type: 'noop' }>({
+            reason: 'test: context inheritance',
+            def: Leaf,
+          }),
+        ]),
+      ],
+    })
+    const host = mountSignalComponent(container, Host)
+    expect(container.querySelector('.leaf')?.textContent).toBe('PROVIDED/en/comfy')
+    host.dispose()
+  })
+
+  it('merges an explicit contexts map OVER the inherited one (never replacing it)', () => {
+    const container = document.createElement('div')
+    const explicit = new Map<symbol, unknown>([
+      [Locale.id, 'it'], // overrides the inherited value
+      [Density.id, 'compact'], // adds one no ancestor provided
+    ])
+    const Host = component<ParentState, ParentMsg>({
+      init: () => ({ label: 'p' }),
+      update: (s) => s,
+      view: () => [
+        provide(Theme, 'PROVIDED', () => [
+          provide(Locale, 'fr', () => [
+            ...subApp<{ n: number }, { type: 'noop' }>({
+              reason: 'test: explicit contexts merge',
+              def: Leaf,
+              contexts: explicit,
+            }),
+          ]),
+        ]),
+      ],
+    })
+    const host = mountSignalComponent(container, Host)
+    // Theme survives (inherited, not named explicitly) — a REPLACE would lose it.
+    // Locale is the explicit value, not the inherited 'fr'. Density is added.
+    expect(container.querySelector('.leaf')?.textContent).toBe('PROVIDED/it/compact')
+    host.dispose()
+  })
+
+  it('inherits through a structural arm that placed the instance', () => {
+    const container = document.createElement('div')
+    const Host = component<{ open: boolean }, { type: 'noop' }>({
+      init: () => ({ open: true }),
+      update: (s) => s,
+      view: ({ state }) => [
+        provide(Theme, 'ARM', () => [
+          show(state.at('open'), () => [
+            ...subApp<{ n: number }, { type: 'noop' }>({
+              reason: 'test: arm-placed island',
+              def: Leaf,
+            }),
+          ]),
+        ]),
+      ],
+    })
+    const host = mountSignalComponent(container, Host)
+    expect(container.querySelector('.leaf')?.textContent).toBe('ARM/en/comfy')
+    host.dispose()
   })
 })
