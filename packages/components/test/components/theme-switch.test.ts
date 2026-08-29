@@ -142,8 +142,8 @@ describe('applyTheme', () => {
 
   it('does NOT consult matchMedia — system is answered by CSS, not by a JS resolve', () => {
     // The whole point of #233: honouring the OS setting must not require
-    // reading `prefers-color-scheme` in JS, which is what forced the flash and
-    // made `watchSystemTheme` mandatory.
+    // reading `prefers-color-scheme` in JS, which is what made
+    // `watchSystemTheme` mandatory and left SSR nothing correct to render.
     const spy = vi.fn(() => {
       throw new Error('applyTheme must not read matchMedia')
     })
@@ -223,6 +223,16 @@ describe('applyTheme pairs with the selectors tokens-dark.css actually ships', (
    * prose above to be re-read.
    */
   it('the media guard OUTRANKS a consumer override on specificity (#241)', () => {
+    // FIRST, so its message is what a reader sees when #241 lands. Wrapping the
+    // two `:not()`s in `:where()` drops the guard to (0,1,0) — enough for a
+    // consumer block to win on source order, which IS #241's fix. (Wrapping
+    // `:root` itself would give (0,0,0), which loses to `tokens.css`'s own
+    // `:root` and breaks dark mode outright — that is the broken variant, not
+    // the fix.) Either way this assertion fails, on purpose.
+    expect(
+      mediaSelector,
+      'If #241 has landed, re-read the specificity prose in applyTheme + styling.md before updating this',
+    ).not.toContain(':where(')
     // (0,3,0): `:root` + `:not([attr])` + `:not(.class)`, since `:not()` takes
     // the specificity of its argument.
     expect(mediaSelector).toBe(":root:not([data-theme='light']):not(.light)")
@@ -232,9 +242,6 @@ describe('applyTheme pairs with the selectors tokens-dark.css actually ships', (
     expect(document.documentElement.matches(mediaSelector as string)).toBe(true)
     applyTheme('system')
     expect(document.documentElement.matches(mediaSelector as string)).toBe(true)
-    // If it is ever wrapped in `:where()` the guard drops to (0,0,0) and this
-    // fails — which is the point.
-    expect(mediaSelector).not.toContain(':where(')
   })
 })
 
