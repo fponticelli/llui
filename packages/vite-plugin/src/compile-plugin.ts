@@ -4,6 +4,7 @@ import {
   applyLintFixes,
   createModuleCache,
   lintAnnotationSyntaxSource,
+  lintImperativeDomSource,
   lintSignalSource,
   lintTagSendSource,
   transformSignalComponentSourceWithMap,
@@ -192,6 +193,10 @@ export function createCompilePlugin(state: LluiPluginState) {
       const annotationMessages = [
         ...lintAnnotationSyntaxSource(module),
         ...lintTagSendSource(module),
+        // A view HELPER module builds elements with `@llui/dom` helpers and
+        // carries no `component(` call, so it takes this branch — and that is
+        // exactly where #231's imperative `textContent` write lived.
+        ...lintImperativeDomSource(module),
       ].sort((left, right) => left.start - right.start)
       if (annotationMessages.length > 0) {
         const rel = relative(state.crossFileRoot ?? process.cwd(), id)

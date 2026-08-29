@@ -44,6 +44,7 @@ export {
   lintSignalSource,
   lintAnnotationSyntaxSource,
   lintTagSendSource,
+  lintImperativeDomSource,
   applyLintFixes,
   type SignalLintMessage,
   type SignalDiagnostic,

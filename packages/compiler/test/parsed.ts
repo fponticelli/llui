@@ -21,6 +21,7 @@ import {
   lintSignalSource as lintModule,
   lintAnnotationSyntaxSource as lintAnnotationSyntaxModule,
   lintTagSendSource as lintTagSendModule,
+  lintImperativeDomSource as lintImperativeDomModule,
   type SignalLintMessage,
 } from '../src/signals/rules.js'
 
@@ -52,4 +53,8 @@ export function lintAnnotationSyntaxSource(source: string, fileName = 'm.ts'): S
 
 export function lintTagSendSource(source: string, fileName = 'm.ts'): SignalLintMessage[] {
   return lintTagSendModule(parseModule(fileName, source))
+}
+
+export function lintImperativeDomSource(source: string, fileName = 'm.ts'): SignalLintMessage[] {
+  return lintImperativeDomModule(parseModule(fileName, source))
 }

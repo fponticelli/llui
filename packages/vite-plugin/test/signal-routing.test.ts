@@ -368,4 +368,58 @@ describe('vite-plugin — signal component routing', () => {
     await expect(transform.call(ctx, good, '/tmp/connect.ts')).resolves.toBeUndefined()
     expect(error).not.toHaveBeenCalled()
   })
+
+  // ── imperative-dom-mutation on NON-component modules (issue #231) ───────
+  // The incident's own code was a `CopyButton` view HELPER: a module that
+  // builds elements with `@llui/dom` helpers and contains no `component(` call,
+  // so it takes this branch. Wiring the rule only into `lintSignalSource` would
+  // have left the reported shape uncovered.
+  const IMPERATIVE_HELPER = [
+    "import { button, span } from '@llui/dom'",
+    'export const CopyButton = (label) =>',
+    '  button({',
+    '    onClick: (e) => {',
+    '      const btn = e.currentTarget',
+    "      btn.querySelector('.label').textContent = 'Copied!'",
+    '    },',
+    "  }, [span({ class: 'label' }, [])])",
+  ].join('\n')
+
+  it('halts the build for an imperative DOM write in a module with no component()', async () => {
+    const errorMessages: unknown[] = []
+    const error = vi.fn((e: unknown) => {
+      errorMessages.push(e)
+      throw new Error('this.error')
+    })
+    const ctx = {
+      warn: vi.fn(),
+      error,
+      resolve: vi.fn(async () => null),
+    } as unknown as ThisParameterType<Extract<Plugin['transform'], (...a: never) => unknown>>
+    const transform = llui().transform as (this: unknown, c: string, i: string) => unknown
+    await expect(transform.call(ctx, IMPERATIVE_HELPER, '/tmp/copy-button.ts')).rejects.toThrow(
+      'this.error',
+    )
+    const msg = (errorMessages[0] as { message: string }).message
+    expect(msg).toContain('imperative-dom-mutation')
+    expect(msg).toContain('textContent')
+  })
+
+  it('leaves the reactive rewrite of the same helper alone', async () => {
+    const good = IMPERATIVE_HELPER.replace(
+      "      const btn = e.currentTarget\n      btn.querySelector('.label').textContent = 'Copied!'",
+      "      send({ type: 'copy' })",
+    )
+    const error = vi.fn(() => {
+      throw new Error('this.error')
+    })
+    const ctx = {
+      warn: vi.fn(),
+      error,
+      resolve: vi.fn(async () => null),
+    } as unknown as ThisParameterType<Extract<Plugin['transform'], (...a: never) => unknown>>
+    const transform = llui().transform as (this: unknown, c: string, i: string) => unknown
+    await expect(transform.call(ctx, good, '/tmp/copy-button.ts')).resolves.toBeUndefined()
+    expect(error).not.toHaveBeenCalled()
+  })
 })

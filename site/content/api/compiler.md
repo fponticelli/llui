@@ -490,6 +490,24 @@ what keeps this affordable on every module in the project.
 function lintAnnotationSyntaxSource(mod: ParsedModule): SignalLintMessage[]
 ```
 
+### `lintImperativeDomSource()`
+
+Run ONLY `imperative-dom-mutation` over a module that is not a signal
+component — the third companion to {@link lintAnnotationSyntaxSource} and
+{@link lintTagSendSource}, and needed for the same reason, only more sharply:
+#231's own imperative `textContent` write lived in a `CopyButton` VIEW HELPER,
+a module that builds elements with `@llui/dom` helpers and contains no
+`component(` call at all, so `lintSignalSource` never sees it. Covering only
+direct component views would have missed the incident this rule is named for.
+
+Same pre-check discipline: {@link mentionsImperativeDom} runs against
+`mod.text` BEFORE the module is parsed, so a module missing either half of the
+shape costs two regexes and nothing else.
+
+```typescript
+function lintImperativeDomSource(mod: ParsedModule): SignalLintMessage[]
+```
+
 ### `lintSignalSource()`
 
 Run the signal lint rules over an already-parsed module, returning diagnostics

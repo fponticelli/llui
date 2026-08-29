@@ -69,6 +69,16 @@
 //                       to tell an LLM which Msg variants a control can emit, so
 //                       a drifted tag is a string that LIES to a model — silent
 //                       at runtime, like #89 and #92 (issue #118).
+//   imperative-dom-mutation — a write to a DOM mutation sink (`textContent` /
+//                       `innerHTML` / `classList` / `style` / `setAttribute`) on
+//                       a node reached from an event-handler PARAMETER, inside
+//                       an element helper's `on*` prop. `view()` runs once and
+//                       builds bindings; a node "no binding depends on" is still
+//                       owned by the scope that built it and may be moved,
+//                       reused or torn down by a structural primitive, at which
+//                       point the write is silently lost or lands on the wrong
+//                       node (issue #231). Bails inside `foreign`/`island`/
+//                       `subApp`, which are imperative by design.
 //
 // Each diagnostic has a message, a source position (start offset + length), and —
 // for the rename-style rules above — a `fix` (see {@link LintFix}/{@link applyLintFixes}).
@@ -1162,6 +1172,9 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   // drift walk is a full extra pass over the tree on every keystroke-save.
   // `sf.text` is already in hand here — no parse, one substring search.
   if (sf.text.includes('tagSend')) diags.push(...tagSendDriftDiagnostics(sf, bindings))
+  // Same discipline again: the walk is skipped outright unless the text carries
+  // both halves of the shape (an `on<Upper>` prop name and a mutation sink).
+  if (mentionsImperativeDom(sf.text)) diags.push(...imperativeDomDiagnostics(sf, bindings))
   return diags
 }
 
@@ -1857,6 +1870,399 @@ function literalMsgType(arg: ts.Expression | undefined): string | null {
   return found
 }
 
+// ---------------------------------------------------------------------------
+// imperative-dom-mutation
+// ---------------------------------------------------------------------------
+
+/** Property WRITES that replace what a node renders. Each is a DOM-only name, so
+ * a write to one on a node the view built is unambiguous — `outerHTML` is in the
+ * same family as `innerHTML`, and `className` is `classList` spelled as a
+ * property. */
+const PROPERTY_SINKS: ReadonlySet<string> = new Set([
+  'textContent',
+  'innerHTML',
+  'innerText',
+  'outerHTML',
+  'className',
+])
+/** Namespaces whose OWN property writes are element mutations: `el.style.color`
+ * and `el.dataset.state` are `setAttribute` by another spelling. */
+const NAMESPACE_SINKS: ReadonlySet<string> = new Set(['style', 'dataset'])
+/** `classList` mutators. `contains`/`item`/`values` are READS and stay out.
+ * The RECEIVER must be spelled `classList` — `add`/`remove`/`toggle` are far too
+ * generic to attribute on their own (`e.dataTransfer.items.add(f)` is not a
+ * class mutation), so {@link CLASS_LIST_OWNER} is what makes this readable. */
+const CLASS_LIST_METHODS: ReadonlySet<string> = new Set(['add', 'remove', 'toggle', 'replace'])
+const CLASS_LIST_OWNER: ReadonlySet<string> = new Set(['classList'])
+/** `CSSStyleDeclaration` mutators. `getPropertyValue` is a read and stays out. */
+const STYLE_METHODS: ReadonlySet<string> = new Set(['setProperty', 'removeProperty'])
+const STYLE_OWNER: ReadonlySet<string> = new Set(['style'])
+/** Attribute mutators. `getAttribute`/`hasAttribute` are reads and stay out. */
+const ATTRIBUTE_METHODS: ReadonlySet<string> = new Set([
+  'setAttribute',
+  'removeAttribute',
+  'toggleAttribute',
+])
+/**
+ * The primitives whose bodies are imperative BY DESIGN, and inside which this
+ * rule reports nothing. `foreign` is the third-party seam (`@llui/dom`); `island`
+ * / `subApp` mount an isolated TEA instance whose own view owns its nodes — the
+ * two answers the diagnostic itself points at, so it must not fire on either.
+ * The whole call subtree is skipped rather than just the `mount` body: an
+ * options bag for these is imperative wiring throughout, and erring toward
+ * silence is the correct direction for a non-bypassable build error.
+ */
+const IMPERATIVE_SEAMS: ReadonlySet<string> = new Set(['foreign', 'island', 'subApp'])
+
+/**
+ * The sink spellings, DERIVED from the sets above rather than restated — a
+ * hand-written copy is exactly the kind of drift that silently switches a rule
+ * off (a sink added to a set but not to the gate would never be reported, with
+ * a green suite behind it).
+ *
+ * A NAMESPACE sink is `\.`-prefixed because it is only ever reached through
+ * `X.<ns>`, and the bare words `style` / `dataset` are far too common in props
+ * to gate on. `setProperty`/`removeProperty` and the `classList` methods need no
+ * entry of their own: neither is reachable without its owner spelling, which is
+ * already here.
+ */
+const IMPERATIVE_DOM_SINK_PRECHECK = new RegExp(
+  [
+    ...PROPERTY_SINKS,
+    ...CLASS_LIST_OWNER,
+    ...ATTRIBUTE_METHODS,
+    ...[...NAMESPACE_SINKS].map((n) => `\\.${n}\\b`),
+  ].join('|'),
+)
+
+/**
+ * Cheap text gate (#93): the shape needs BOTH an `on<Upper>` prop name and one
+ * of the sink spellings, so a file carrying only one of them never pays for the
+ * walk — and, at the exported entry point, is never parsed at all.
+ */
+function mentionsImperativeDom(text: string): boolean {
+  return /\bon[A-Z]/.test(text) && IMPERATIVE_DOM_SINK_PRECHECK.test(text)
+}
+
+/** True for `=` and every compound assignment (`+=`, `??=`, …). */
+function isAssignmentOperator(kind: ts.SyntaxKind): boolean {
+  return kind >= ts.SyntaxKind.FirstAssignment && kind <= ts.SyntaxKind.LastAssignment
+}
+
+/** The static member name a property/element access reads, or null when it is
+ * computed (`el[k]`) — a computed sink is unreadable, not a violation. */
+function staticMemberName(node: ts.Node): string | null {
+  if (ts.isPropertyAccessExpression(node)) return node.name.text
+  if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression)) {
+    return node.argumentExpression.text
+  }
+  return null
+}
+
+/** The OBJECT half of a property/element access (`el` in `el.textContent`). */
+function memberObject(node: ts.Node): ts.Expression | null {
+  return ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node)
+    ? node.expression
+    : null
+}
+
+/** The receiver of an `X.<name>` access when the access names exactly one of
+ * `names` (`accessOwner(el.style, {'style'}) === el`), else null. */
+function accessOwner(node: ts.Node, names: ReadonlySet<string>): ts.Expression | null {
+  const member = staticMemberName(node)
+  if (member === null || !names.has(member)) return null
+  return memberObject(node)
+}
+
+/**
+ * Is `expr` rooted at one of the names in `live` — i.e. does its base identifier
+ * denote a handler parameter (or a `const` alias of one)?
+ *
+ * The walk descends the OBJECT half of every access and the CALLEE of every
+ * call, so `e.currentTarget.querySelector('.label')` is rooted at `e`. Calls are
+ * traversed deliberately: `btn.querySelector('.label').textContent = 'Copied!'`
+ * is #231's own shape, and stopping at the call would switch the rule off for
+ * the incident it exists to catch.
+ *
+ * It NEVER descends a `.name` — an identifier is a root only where it is READ,
+ * and a member name is not a read of a binding.
+ *
+ * The accepted over-approximation is the other end of the chain: a property path
+ * can leave the view's subtree (`e.target.ownerDocument.body.textContent = ''`)
+ * and would still be reported. That is pathological rather than idiomatic, it is
+ * reachable through plain properties whether or not calls are traversed, and the
+ * write is still one the author should not be making from a view handler.
+ */
+function rootedInLive(expr: ts.Expression, live: ReadonlySet<string>): boolean {
+  let e = unwrapCasts(expr)
+  for (;;) {
+    if (ts.isPropertyAccessExpression(e) || ts.isElementAccessExpression(e)) {
+      e = unwrapCasts(e.expression)
+      continue
+    }
+    if (ts.isCallExpression(e)) {
+      e = unwrapCasts(e.expression)
+      continue
+    }
+    break
+  }
+  return ts.isIdentifier(e) && live.has(e.text)
+}
+
+/** One mutation site: the node to point at, already known to be rooted in a live
+ * handler-parameter name. */
+interface MutationSite {
+  node: ts.Node
+}
+
+/**
+ * The DOM mutation `node` performs on a node rooted in `live`, or null.
+ *
+ * Only WRITES count. A read of the very same member is idiomatic and common —
+ * `const tex = (e.target as HTMLElement).textContent ?? ''` appears three times
+ * in `@llui/markdown-editor`'s plugins — so the read/write split is what keeps
+ * the rule off valid code, not an allowlist.
+ */
+function mutationSite(node: ts.Node, live: ReadonlySet<string>): MutationSite | null {
+  if (ts.isBinaryExpression(node) && isAssignmentOperator(node.operatorToken.kind)) {
+    const lhs = unwrapCasts(node.left)
+    // `el.style.color = …` / `el.style.cssText = …` / `el.dataset.state = …`
+    const namespaced = memberObject(lhs)
+    if (namespaced !== null) {
+      const owner = accessOwner(unwrapCasts(namespaced), NAMESPACE_SINKS)
+      if (owner !== null && rootedInLive(owner, live)) return { node: lhs }
+    }
+    // `el.textContent = …` / `el['innerHTML'] = …`
+    const member = staticMemberName(lhs)
+    const object = memberObject(lhs)
+    if (member !== null && object !== null && PROPERTY_SINKS.has(member)) {
+      if (rootedInLive(object, live)) return { node: lhs }
+    }
+    return null
+  }
+  if (ts.isCallExpression(node)) {
+    const callee = unwrapCasts(node.expression)
+    const method = staticMemberName(callee)
+    const receiver = memberObject(callee)
+    if (method === null || receiver === null) return null
+    const recv = unwrapCasts(receiver)
+    if (CLASS_LIST_METHODS.has(method)) {
+      const owner = accessOwner(recv, CLASS_LIST_OWNER)
+      if (owner !== null && rootedInLive(owner, live)) return { node: callee }
+    }
+    if (STYLE_METHODS.has(method)) {
+      const owner = accessOwner(recv, STYLE_OWNER)
+      if (owner !== null && rootedInLive(owner, live)) return { node: callee }
+    }
+    if (ATTRIBUTE_METHODS.has(method) && rootedInLive(recv, live)) return { node: callee }
+  }
+  return null
+}
+
+/**
+ * ---- imperative-dom-mutation: a DOM write behind the reconciler's back ----
+ *
+ * `view()` runs EXACTLY ONCE and builds a static graph of reactive bindings —
+ * there is no re-render. A consumer app reasoned from that to the opposite
+ * conclusion (#231): "the label is a STATIC node, no signal binding depends on
+ * it, so the reconciler never rewrites it and swapping its `textContent` from
+ * the click handler is safe." It is not. The node is still owned by the scope
+ * that built it, and a structural primitive (`show`/`branch`/`each`) may move,
+ * reuse or tear it down at any later commit — at which point the imperative
+ * write is silently lost, or lands on a recycled row that now means something
+ * else. The app also lost its `aria-live` announcement in the process. No
+ * runtime error, no test failure: the same silent class as #89 and #92, which is
+ * why it has to be a build error rather than a doc paragraph.
+ *
+ * SCOPE — three conditions, all syntactic, all narrow:
+ *
+ *   1. the write is inside an `on<Upper>` prop of a call that
+ *      {@link HelperBindings} resolves to a `@llui/dom` ELEMENT helper. That
+ *      call IS the reconciler boundary: the node the handler receives was built
+ *      by a binding-owning scope. Note this is deliberately NOT "inside a
+ *      `component()` view" — #231's own code lived in a `CopyButton` view HELPER
+ *      with no `component(` call in the module, which that scoping would miss —
+ *      and it is not "any handler", because a bare `addEventListener` on a node
+ *      the view never built is ordinary DOM code.
+ *   2. the handler is an INLINE arrow/function expression. A named handler
+ *      (`onClick: handleClick`) is one call away and unreadable here; a missed
+ *      lint, not a violation.
+ *   3. the mutated node is ROOTED at one of that handler's own parameters, or at
+ *      a `const` alias of one ({@link handlerRoots}). `e.currentTarget`,
+ *      `e.target`, `const el = e.currentTarget` — the reconciler-owned tree.
+ *      A module-scope element, `document.body`, a node from a ref the view never
+ *      built: not rooted, not reported.
+ *
+ * BAIL LIST: `foreign()`, `island()` and `subApp()` are imperative by design and
+ * are skipped whole ({@link IMPERATIVE_SEAMS}). They are also the fix the
+ * message names, so firing inside them would be self-contradictory.
+ *
+ * WHY WRITES ONLY: reading the same members is idiomatic and frequent. The
+ * read/write split, not an allowlist, is what keeps this off valid code.
+ *
+ * When the shape is unreadable, BAIL — an unreported mutation is a missed lint;
+ * a false positive is a build broken for a consumer who did nothing wrong.
+ */
+function imperativeDomDiagnostics(sf: ts.SourceFile, bindings: HelperBindings): SignalDiagnostic[] {
+  const out: SignalDiagnostic[] = []
+  const snippet = (n: ts.Node): string => {
+    const t = n.getText(sf).replace(/\s+/g, ' ').trim()
+    return t.length > 48 ? `${t.slice(0, 47)}…` : t
+  }
+  const report = (site: MutationSite): void => {
+    const snip = snippet(site.node)
+    out.push({
+      rule: 'imperative-dom-mutation',
+      message:
+        `\`${snip}\` mutates the DOM directly from an event handler, behind the reconciler's ` +
+        'back. `view()` runs ONCE and builds bindings — there is no re-render — so a node no ' +
+        'binding depends on is NOT safe to write to: the scope that built it may move, reuse or ' +
+        'tear it down on any later commit (`show`/`branch`/`each` reconcile whole regions), and ' +
+        'this write is then silently lost or applied to the wrong node (issue #231). Bind the ' +
+        'value reactively instead — `text(sig)` for content, a reactive `class:` / `style:` / ' +
+        '`data-*` prop for the rest — and if the value is transient widget-local state, mount ' +
+        'the widget as an `island({ def })` so its own TEA instance owns these nodes. A ' +
+        'genuinely third-party or imperative surface belongs in `foreign()`; this rule reports ' +
+        'nothing inside `foreign()`, `island()` or `subApp()`.',
+      start: site.node.getStart(sf),
+      length: site.node.getWidth(sf),
+    })
+  }
+
+  const isSeam = (node: ts.Node): boolean => {
+    if (!ts.isCallExpression(node)) return false
+    const canon = bindings.resolveCall(node)
+    return canon !== null && IMPERATIVE_SEAMS.has(canon)
+  }
+
+  /**
+   * Walk a handler under the set of names that currently denote a node the
+   * handler received.
+   *
+   * SHADOWING is pruned with {@link scopeIntroduces} — the repo's one shadowing
+   * predicate — never re-derived here. `items.forEach((e) => …)` inside a
+   * handler whose own parameter is also `e` rebinds the name to something else,
+   * and attributing its writes to the handler's node would report a mutation of
+   * a node this handler never touched.
+   *
+   * ALIASES are extended only through `const`, and only from an initializer
+   * already rooted in a live name: `const el = e.currentTarget` is the shape the
+   * incident used, and without it the rule would catch almost nothing real. A
+   * `let`/`var` is excluded because it can be reassigned to an unrelated node
+   * between the declaration and the write, which this analysis cannot see.
+   * Aliases are added AFTER the shadowing prune, so a block that re-declares a
+   * live name drops it first and only re-adds it if the new binding is itself
+   * handler-rooted.
+   */
+  const scan = (node: ts.Node, live: ReadonlySet<string>): void => {
+    if (isSeam(node)) return
+    let cur = live
+    const shadowed = [...live].filter((n) => scopeIntroduces(node, n))
+    if (shadowed.length > 0) {
+      const m = new Set(live)
+      for (const n of shadowed) m.delete(n)
+      cur = m
+    }
+    if (ts.isBlock(node)) cur = withConstAliases(node, cur)
+    if (cur.size > 0) {
+      const site = mutationSite(node, cur)
+      if (site !== null) report(site)
+    }
+    node.forEachChild((c) => scan(c, cur))
+  }
+
+  const checkHandler = (fn: ts.ArrowFunction | ts.FunctionExpression): void => {
+    const roots = handlerRoots(fn)
+    if (roots.size === 0) return
+    // The parameter LIST is code too: a default runs on every call. Walking it
+    // costs nothing and keeps this walk from repeating the defect that surfaced
+    // four times in `tag-send-drift` (body-only → parameter list → parameter
+    // initializers → pattern defaults). Defaults evaluate in the parameter
+    // scope, where the parameters are already bound, so they take the same root
+    // set as the body. A plain identifier `p.name` is skipped: it IS the
+    // binding, and a name in declaration position is never a read.
+    for (const p of fn.parameters) {
+      if (!ts.isIdentifier(p.name)) scan(p.name, roots)
+      if (p.initializer !== undefined) scan(p.initializer, roots)
+    }
+    scan(fn.body, roots)
+  }
+
+  const walk = (node: ts.Node): void => {
+    if (isSeam(node)) return
+    if (ts.isCallExpression(node)) {
+      for (const handler of elementEventHandlers(node, bindings)) checkHandler(handler)
+    }
+    node.forEachChild(walk)
+  }
+  walk(sf)
+  out.sort((a, b) => a.start - b.start)
+  return out
+}
+
+/** The handler's own parameter names, destructured ones included: an
+ * `({ currentTarget }: MouseEvent) => …` handler roots at `currentTarget`
+ * exactly as `(e) => …` roots at `e`. */
+function handlerRoots(fn: ts.ArrowFunction | ts.FunctionExpression): ReadonlySet<string> {
+  return new Set(fn.parameters.flatMap((p) => bindingNames(p.name)))
+}
+
+/** `live` plus every `const` name in this block whose initializer is rooted in
+ * `live`. Declarations are read in order, so `const el = e.currentTarget; const
+ * label = el.firstChild` extends in one pass. */
+function withConstAliases(block: ts.Block, live: ReadonlySet<string>): ReadonlySet<string> {
+  let out: Set<string> | null = null
+  for (const st of block.statements) {
+    if (!ts.isVariableStatement(st)) continue
+    if ((st.declarationList.flags & ts.NodeFlags.Const) === 0) continue
+    for (const d of st.declarationList.declarations) {
+      if (d.initializer === undefined) continue
+      if (!rootedInLive(d.initializer, out ?? live)) continue
+      const names = bindingNames(d.name)
+      if (names.length === 0) continue
+      out ??= new Set(live)
+      for (const n of names) out.add(n)
+    }
+  }
+  return out ?? live
+}
+
+/** The INLINE `on<Upper>` handlers in an element-helper call's props object.
+ *
+ * The props object is argument 0 for a tag helper (`div({…}, […])`) and
+ * argument 1 for `el('div', {…}, […])`. `ALL_ELEMENT_HELPERS` rather than the
+ * lowering-only `ELEMENT_HELPERS`, because the namespaced SVG helpers take the
+ * same call forms and bind handlers the same way — the same reason
+ * `empty-props` uses it.
+ *
+ * A non-literal props object (`div(props, …)`), a spread, a non-inline handler
+ * and a handler under a computed key are all unreadable and yield nothing. */
+function elementEventHandlers(
+  call: ts.CallExpression,
+  bindings: HelperBindings,
+): Array<ts.ArrowFunction | ts.FunctionExpression> {
+  const canon = bindings.resolveCall(call)
+  if (canon === null) return []
+  let props: ts.Expression | undefined
+  if (ALL_ELEMENT_HELPERS.has(canon)) props = call.arguments[0]
+  else if (canon === 'el') {
+    const tag = call.arguments[0]
+    if (!tag || !ts.isStringLiteralLike(tag)) return []
+    props = call.arguments[1]
+  } else return []
+  if (!props || !ts.isObjectLiteralExpression(props)) return []
+  const out: Array<ts.ArrowFunction | ts.FunctionExpression> = []
+  for (const p of props.properties) {
+    if (!ts.isPropertyAssignment(p)) continue
+    const name = p.name
+    const key = ts.isIdentifier(name) ? name.text : ts.isStringLiteralLike(name) ? name.text : null
+    if (key === null || !/^on[A-Z]/.test(key)) continue
+    const fn = unwrapCasts(p.initializer)
+    if (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn)) out.push(fn)
+  }
+  return out
+}
+
 /** A lint diagnostic with source position resolved (1-based line, 0-based col). */
 export interface SignalLintMessage {
   rule: string
@@ -1917,6 +2323,25 @@ export function lintTagSendSource(mod: ParsedModule): SignalLintMessage[] {
   if (!mod.text.includes('tagSend')) return []
   const sf = mod.sourceFile()
   return resolvePositions(sf, tagSendDriftDiagnostics(sf, HelperBindings.fromSourceFile(sf)))
+}
+
+/**
+ * Run ONLY `imperative-dom-mutation` over a module that is not a signal
+ * component — the third companion to {@link lintAnnotationSyntaxSource} and
+ * {@link lintTagSendSource}, and needed for the same reason, only more sharply:
+ * #231's own imperative `textContent` write lived in a `CopyButton` VIEW HELPER,
+ * a module that builds elements with `@llui/dom` helpers and contains no
+ * `component(` call at all, so `lintSignalSource` never sees it. Covering only
+ * direct component views would have missed the incident this rule is named for.
+ *
+ * Same pre-check discipline: {@link mentionsImperativeDom} runs against
+ * `mod.text` BEFORE the module is parsed, so a module missing either half of the
+ * shape costs two regexes and nothing else.
+ */
+export function lintImperativeDomSource(mod: ParsedModule): SignalLintMessage[] {
+  if (!mentionsImperativeDom(mod.text)) return []
+  const sf = mod.sourceFile()
+  return resolvePositions(sf, imperativeDomDiagnostics(sf, HelperBindings.fromSourceFile(sf)))
 }
 
 function resolvePositions(
