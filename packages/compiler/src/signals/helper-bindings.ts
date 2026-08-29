@@ -319,8 +319,15 @@ export function scopeIntroduces(node: ts.Node, name: string): boolean {
 
 /** Is `id` shadowed by an inner binding of its own name somewhere between its use
  * site and (exclusive) the module scope? Walks the ancestor chain — `.parent`
- * pointers must be set on the source file (createSourceFile setParentNodes). */
-function isShadowed(id: ts.Identifier): boolean {
+ * pointers must be set on the source file (createSourceFile setParentNodes).
+ *
+ * Exported for the same reason {@link scopeIntroduces} is: any walker that
+ * resolves an identifier to a MODULE-SCOPE declaration owes this check, and
+ * re-deriving the ancestor walk per walker is how the cases at the end of
+ * `scopeIntroduces`'s list get forgotten. `imperative-dom-mutation` uses it to
+ * decide whether `onClick: handleClick` really names the module's
+ * `const handleClick = …`. */
+export function isShadowed(id: ts.Identifier): boolean {
   const name = id.text
   let node: ts.Node | undefined = id.parent
   while (node && !ts.isSourceFile(node)) {

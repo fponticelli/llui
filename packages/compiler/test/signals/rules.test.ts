@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
 import { lintSignals, applyLintFixes, type SignalDiagnostic } from '../../src/signals/rules.js'
-import { lintSignalSource, lintTagSendSource } from '../parsed.js'
+import { lintSignalSource, lintTagSendSource, lintImperativeDomSource } from '../parsed.js'
 
 function lint(src: string): SignalDiagnostic[] {
   const sf = ts.createSourceFile('t.ts', src, ts.ScriptTarget.Latest, true)
@@ -2264,5 +2264,629 @@ describe('tag-send-drift (issue #118)', () => {
     expect(lintTagSendSource(clean, 'connect.ts')).toEqual([])
     // …and a module that never mentions the helper is skipped before parsing.
     expect(lintTagSendSource('export const n = 1', 'plain.ts')).toEqual([])
+  })
+})
+
+describe('imperative-dom-mutation (issue #231)', () => {
+  // `subApp` is NOT on the `@llui/dom` barrel — it ships only from the
+  // `@llui/dom/escape-hatch` subpath (`packages/dom/package.json`). The first
+  // cut of this fixture imported it from the barrel, which proved the bail for
+  // an import no consumer can write. `island` IS a barrel export (it is
+  // `signalIsland as island` in `packages/dom/src/signals/index.ts`).
+  const IMPORT =
+    "import { div, span, button, el, foreign, island, tagSend } from '@llui/dom'\n" +
+    "import { subApp } from '@llui/dom/escape-hatch'\n"
+  const src = (body: string): string => IMPORT + body
+  const R = 'imperative-dom-mutation'
+
+  // ── positive: the incident's own shape ───────────────────────────────────
+  // #231's consumer app reasoned "the label is a STATIC node, no signal binding
+  // depends on it, so the reconciler never rewrites it" and mutated
+  // `textContent` + `classList` from a click handler. Both halves must fire.
+  it('flags the #231 shape: textContent + classList written from a click handler', () => {
+    const bad = src(
+      [
+        'export const copy = button({',
+        '  onClick: (e) => {',
+        '    const btn = e.currentTarget as HTMLElement',
+        "    btn.querySelector('.label')!.textContent = 'Copied!'",
+        "    btn.classList.add('copied')",
+        '  },',
+        '}, [])',
+      ].join('\n'),
+    )
+    expect(rules(bad)).toContain(R)
+    expect(lint(bad).filter((d) => d.rule === R)).toHaveLength(2)
+  })
+
+  it('flags a direct write on the handler parameter itself', () => {
+    expect(
+      rules(src("export const a = div({ onClick: (e) => { e.target.textContent = 'x' } }, [])")),
+    ).toContain(R)
+  })
+
+  it('flags every property sink', () => {
+    for (const sink of ['textContent', 'innerHTML', 'innerText', 'outerHTML', 'className']) {
+      expect(
+        rules(src(`export const a = div({ onClick: (e) => { e.target.${sink} = 'x' } }, [])`)),
+      ).toContain(R)
+    }
+  })
+
+  it('flags a `dataset` write (setAttribute by another spelling)', () => {
+    expect(
+      rules(src("export const a = div({ onClick: (e) => { e.target.dataset.state = 'on' } }, [])")),
+    ).toContain(R)
+  })
+
+  // The handler's PARAMETER LIST is code too: a default runs on every call. The
+  // sibling walk in `tag-send-drift` had this defect four times over, each round
+  // one position further in, so it is pinned here from the start.
+  it('flags a mutation written in a parameter DEFAULT', () => {
+    expect(
+      rules(
+        src("export const a = div({ onClick: (e, _x = (e.target.textContent = 'x')) => {} }, [])"),
+      ),
+    ).toContain(R)
+  })
+
+  it('flags a compound assignment, not just `=`', () => {
+    expect(
+      rules(src("export const a = div({ onInput: (e) => { e.target.textContent += 'x' } }, [])")),
+    ).toContain(R)
+  })
+
+  it('flags a computed string sink', () => {
+    expect(
+      rules(src('export const a = div({ onClick: (e) => { e.target["innerHTML"] = "x" } }, [])')),
+    ).toContain(R)
+  })
+
+  it('flags every classList mutator, and a style write in three spellings', () => {
+    for (const m of ['add', 'remove', 'toggle', 'replace']) {
+      expect(
+        rules(
+          src(`export const a = div({ onClick: (e) => { e.target.classList.${m}('x') } }, [])`),
+        ),
+      ).toContain(R)
+    }
+    expect(
+      rules(src("export const a = div({ onClick: (e) => { e.target.style.color = 'red' } }, [])")),
+    ).toContain(R)
+    expect(
+      rules(
+        src(
+          "export const a = div({ onClick: (e) => { e.target.style.setProperty('--x','1') } }, [])",
+        ),
+      ),
+    ).toContain(R)
+    expect(
+      rules(
+        src("export const a = div({ onClick: (e) => { e.target.style['color'] = 'red' } }, [])"),
+      ),
+    ).toContain(R)
+  })
+
+  it('flags setAttribute / removeAttribute / toggleAttribute', () => {
+    for (const m of ['setAttribute', 'removeAttribute', 'toggleAttribute']) {
+      expect(
+        rules(
+          src(
+            `export const a = div({ onClick: (e) => { e.currentTarget.${m}('data-x','1') } }, [])`,
+          ),
+        ),
+      ).toContain(R)
+    }
+  })
+
+  it('follows a `const` alias chain rooted at the parameter', () => {
+    expect(
+      rules(
+        src(
+          [
+            'export const a = div({',
+            '  onClick: (e) => {',
+            '    const host = e.currentTarget as HTMLElement',
+            '    const label = host.firstElementChild!',
+            "    label.textContent = 'x'",
+            '  },',
+            '}, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).toContain(R)
+  })
+
+  it('roots at a DESTRUCTURED handler parameter', () => {
+    expect(
+      rules(
+        src(
+          "export const a = div({ onClick: ({ currentTarget }) => { currentTarget.textContent = 'x' } }, [])",
+        ),
+      ),
+    ).toContain(R)
+  })
+
+  it('covers `el("div", { … })` and the namespaced SVG helpers', () => {
+    expect(
+      rules(src("export const a = el('div', { onClick: (e) => { e.target.textContent = 'x' } })")),
+    ).toContain(R)
+    expect(
+      rules(
+        "import { circle } from '@llui/dom'\n" +
+          "export const a = circle({ onClick: (e) => { e.target.classList.add('on') } })",
+      ),
+    ).toContain(R)
+  })
+
+  it('fires inside a component view too', () => {
+    expect(
+      rules(
+        "import { component, div } from '@llui/dom'\n" +
+          'export const C = component({ name: "c", init: () => ({}), update: (s) => [s], ' +
+          "view: ({ state }) => [div({ onClick: (e) => { e.target.textContent = 'x' } }, [])] })",
+      ),
+    ).toContain(R)
+  })
+
+  // ── R2: the incident body in every spelling the rule can read ────────────
+  // An inline-only rule fired on ONE of the four spellings #231's own body can
+  // be written in, and the two it missed are the two most idiomatic here. The
+  // identical defect must not be a build error or not depending on whether the
+  // author inlined the arrow.
+  const INCIDENT = "{ e.currentTarget.classList.add('copied') }"
+
+  it('SPELLING 1/4 — an inline arrow', () => {
+    expect(rules(src(`export const a = button({ onClick: (e) => ${INCIDENT} }, [])`))).toContain(R)
+  })
+
+  it('SPELLING 2/4 — a module-scope `const` handler referenced by name', () => {
+    expect(
+      rules(
+        src(
+          [
+            `const handleClick = (e) => ${INCIDENT}`,
+            'export const a = button({ onClick: handleClick }, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).toContain(R)
+  })
+
+  it('SPELLING 2/4 — also a `function` declaration', () => {
+    expect(
+      rules(
+        src(
+          [
+            `function handleClick(e) ${INCIDENT}`,
+            'export const a = button({ onClick: handleClick }, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).toContain(R)
+  })
+
+  it('SPELLING 3/4 — wrapped in `tagSend`, the house idiom (~220 call sites)', () => {
+    expect(
+      rules(
+        src(
+          `export const a = button({ onClick: tagSend(send, ['copy'], (e) => ${INCIDENT}) }, [])`,
+        ),
+      ),
+    ).toContain(R)
+  })
+
+  it('SPELLING 3/4 — a `tagSend` whose handler is itself a name (they compose)', () => {
+    expect(
+      rules(
+        src(
+          [
+            `const handleClick = (e) => ${INCIDENT}`,
+            "export const a = button({ onClick: tagSend(send, ['copy'], handleClick) }, [])",
+          ].join('\n'),
+        ),
+      ),
+    ).toContain(R)
+  })
+
+  it('reports a named handler ONCE even when two elements install it', () => {
+    const twice = src(
+      [
+        `const handleClick = (e) => ${INCIDENT}`,
+        'export const a = button({ onClick: handleClick }, [])',
+        'export const b = div({ onClick: handleClick }, [])',
+      ].join('\n'),
+    )
+    expect(lint(twice).filter((d) => d.rule === R)).toHaveLength(1)
+  })
+
+  // ── negative: the load-bearing half ──────────────────────────────────────
+  // Each of these is code that must keep compiling; a false positive here is a
+  // build broken for a consumer who did nothing wrong.
+  //
+  // The rule is gated on a cheap text pre-check (an `on<Upper>` name AND a sink
+  // spelling) that runs BEFORE anything is parsed, so a negative fixture missing
+  // either token is green because the walk never ran — the wrong reason. FIVE of
+  // these were, and a faithful mutation of the guard each one names left them
+  // green. `neg()` appends both tokens in a COMMENT: the fixture reaches the
+  // walk without a second construct whose own behaviour could mask the guard
+  // under test. (The pre-check has its own coverage: the property-sink loop and
+  // the entry-point test below.)
+  const neg = (body: string): string =>
+    `${src(body)}\n// pre-check tokens, in a comment: onClick / textContent\n`
+
+  it('the pre-check trailer used by the negative fixtures is itself silent', () => {
+    expect(rules(neg('export const a = div({}, [])'))).not.toContain(R)
+  })
+
+  it('does NOT flag a READ of the same members', () => {
+    // Verbatim shape from @llui/markdown-editor's math/callout/mermaid plugins.
+    expect(
+      rules(
+        src(
+          [
+            'export const a = span({',
+            '  onBlur: (e: FocusEvent) => {',
+            "    const tex = (e.target as HTMLElement).textContent ?? ''",
+            '    use(tex)',
+            '  },',
+            '}, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+    expect(
+      rules(
+        neg(
+          "export const a = div({ onClick: (e) => { if (e.target.classList.contains('x')) f() } }, [])",
+        ),
+      ),
+    ).not.toContain(R)
+    expect(
+      rules(
+        neg("export const a = div({ onClick: (e) => { f(e.target.getAttribute('data-x')) } }, [])"),
+      ),
+    ).not.toContain(R)
+    expect(
+      rules(
+        neg(
+          "export const a = div({ onClick: (e) => { f(e.target.style.getPropertyValue('--x')) } }, [])",
+        ),
+      ),
+    ).not.toContain(R)
+  })
+
+  // The handler takes a PARAMETER in both cases: with none, the rule returns
+  // before scanning and the fixture would prove nothing about rooting.
+  it('does NOT flag a node that is not rooted at a handler parameter', () => {
+    expect(
+      rules(
+        neg("export const a = div({ onClick: (e) => { document.body.textContent = 'x' } }, [])"),
+      ),
+    ).not.toContain(R)
+    expect(
+      rules(
+        neg(
+          [
+            "const cached = document.getElementById('x')!",
+            "export const a = div({ onClick: (e) => { cached.classList.add('y') } }, [])",
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+  })
+
+  // Name resolution refuses every binding that might not be the function
+  // actually installed. Each of these WOULD be reported if the guard were
+  // dropped, so they are the false-positive edge of R2's widening.
+  it('does NOT resolve a `let` handler, a reassigned one, or a shadowed name', () => {
+    expect(
+      rules(
+        neg(
+          [
+            `let handleClick = (e) => ${INCIDENT}`,
+            'export const a = button({ onClick: handleClick }, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+    expect(
+      rules(
+        neg(
+          [
+            `function handleClick(e) ${INCIDENT}`,
+            'handleClick = other',
+            'export const a = button({ onClick: handleClick }, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+    expect(
+      rules(
+        neg(
+          [
+            `const handleClick = (e) => ${INCIDENT}`,
+            'export function panel() {',
+            '  const handleClick = noop',
+            '  return button({ onClick: handleClick }, [])',
+            '}',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+  })
+
+  // ── R4: a path OUT of the view's subtree is not the view's node ──────────
+  // Both of these were false positives, and both are live idioms. Reaching the
+  // document through `ownerDocument` / `e.view` is the MORE defensive spelling
+  // (iframes, portals, jsdom, multi-document SSR), and
+  // `@llui/interactions/src/remove-scroll.ts` does the same thing with the
+  // global `document` — so the rule was punishing the careful spelling of an
+  // idiom it cannot see in its ordinary one.
+  it('does NOT flag a theme toggle or a scroll lock reached via the document', () => {
+    expect(
+      rules(
+        neg(
+          [
+            'export const a = button({',
+            '  onClick: (e) => {',
+            "    e.currentTarget.ownerDocument.documentElement.style.setProperty('--theme', 'dark')",
+            '  },',
+            '}, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+    expect(
+      rules(
+        neg(
+          "export const a = div({ onPointerDown: (e) => { e.view.document.body.style.overflow = 'hidden' } }, [])",
+        ),
+      ),
+    ).not.toContain(R)
+    // …and the same escape through a `const` alias, since aliases extend only
+    // from an initializer that is itself rooted.
+    expect(
+      rules(
+        neg(
+          [
+            'export const a = div({',
+            '  onClick: (e) => {',
+            '    const doc = e.target.ownerDocument',
+            "    doc.body.classList.add('locked')",
+            '  },',
+            '}, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+    // The narrowing is a NAMED list, not "anything two hops out": an ancestor
+    // the view really does own is still reported.
+    expect(
+      rules(
+        src(
+          "export const a = div({ onClick: (e) => { e.target.parentElement.textContent = 'x' } }, [])",
+        ),
+      ),
+    ).toContain(R)
+  })
+
+  it('does NOT flag inside a foreign() body', () => {
+    expect(
+      rules(
+        neg(
+          [
+            'export const a = foreign({',
+            "  tag: 'div',",
+            '  mount: ({ el: host }) => {',
+            "    host.innerHTML = '<b>third party</b>'",
+            "    host.classList.add('mounted')",
+            "    host.setAttribute('data-ready', '')",
+            "    return span({ onClick: (e) => { e.target.textContent = 'x' } }, [])",
+            '  },',
+            '})',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+  })
+
+  it('does NOT flag inside an island() / subApp() mount body', () => {
+    for (const seam of ['island', 'subApp']) {
+      expect(
+        rules(
+          neg(
+            [
+              `export const a = ${seam}({`,
+              '  def: Leaf,',
+              "  onHandle: (h) => { h.el.textContent = 'x'; h.el.classList.add('y') },",
+              "  slot: div({ onClick: (e) => { e.target.innerHTML = 'x' } }, []),",
+              '})',
+            ].join('\n'),
+          ),
+        ),
+      ).not.toContain(R)
+    }
+  })
+
+  it('does NOT flag a SHADOWED parameter name', () => {
+    // The inner `e` is a list item, not the event — attributing its writes to
+    // the handler would report a mutation of a node it never touched.
+    expect(
+      rules(
+        neg(
+          [
+            'export const a = div({',
+            '  onClick: (e) => {',
+            "    items.forEach((e) => { e.textContent = 'x' })",
+            '  },',
+            '}, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+    // …and a block-local `const` of the same name is shed the same way.
+    expect(
+      rules(
+        neg(
+          [
+            'export const a = div({',
+            '  onClick: (e) => {',
+            '    { const e = makeDetachedNode()',
+            "      e.textContent = 'x' }",
+            '  },',
+            '}, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+  })
+
+  it('does NOT flag a `let` alias (it can be reassigned out from under us)', () => {
+    expect(
+      rules(
+        neg(
+          [
+            'export const a = div({',
+            '  onClick: (e) => {',
+            '    let node = e.currentTarget as HTMLElement',
+            '    node = document.body',
+            "    node.textContent = 'x'",
+            '  },',
+            '}, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+  })
+
+  // NOTE ON COVERAGE: the `addEventListener` half of this test is enforced
+  // STRUCTURALLY — `elementEventHandlers` requires an object-literal props bag,
+  // and `btn.addEventListener('click', fn)` has a string literal in that
+  // position — so no mutation in the table reddens it. It is listed as
+  // structurally enforced rather than mutation-covered, so it is not read as
+  // evidence it does not carry.
+  it('does NOT flag imperative DOM code outside an element-helper handler', () => {
+    // A plain addEventListener on a node the view never built is ordinary DOM
+    // code — the whole @llui/interactions / devmode-annotate surface. The module
+    // also builds a real element, so the walk genuinely runs over both.
+    expect(
+      rules(
+        src(
+          [
+            'export function wire(btn: HTMLElement): void {',
+            "  btn.addEventListener('click', (e) => {",
+            "    (e.currentTarget as HTMLElement).classList.toggle('on')",
+            '  })',
+            '}',
+            'export const panel = div({ onClick: () => f() }, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+    // …and a non-helper function that merely shares an element-helper's name.
+    expect(
+      rules(
+        [
+          'function div(o: { onClick: (e: MouseEvent) => void }) { return o }',
+          "export const a = div({ onClick: (e) => { (e.target as HTMLElement).textContent = 'x' } })",
+        ].join('\n'),
+      ),
+    ).not.toContain(R)
+  })
+
+  // ── KNOWN BLIND SPOTS — absence of coverage, not a false-positive guard ───
+  // These are NOT "code that must keep compiling". They are shapes the rule
+  // cannot read, and each is a real #231 defect going unreported. They live in
+  // their own labelled block so nobody reads them as evidence of completeness.
+  //
+  // The two RECOVERABLE spellings — a named handler and a `tagSend` wrapper —
+  // used to be here too. An inline-only rule fired on ONE of the four spellings
+  // the incident body can be written in, and `tagSend` alone has ~220 call sites
+  // in this repo, so the verdict turned on whether the author inlined the arrow.
+  // Both are resolved; see the positives above.
+  it('BLIND SPOT: an opaque props bag is not read', () => {
+    // `props` may be mutated between construction and use, so resolving the
+    // object literal would not prove what the element is actually given.
+    expect(rules(neg('export const a = div(props, [])'))).not.toContain(R)
+  })
+
+  it('BLIND SPOT: a computed prop key is not read', () => {
+    // `[key]` may evaluate to 'onClick' — or to anything else.
+    expect(
+      rules(
+        neg(
+          "export const a = div({ onClick: f, [key]: (e) => { e.target.textContent = 'x' } }, [])",
+        ),
+      ),
+    ).not.toContain(R)
+  })
+
+  it('BLIND SPOT: an IMPORTED handler is not read', () => {
+    expect(
+      rules(
+        neg(
+          [
+            "import { handleClick } from './handlers'",
+            'export const a = div({ onClick: handleClick }, [])',
+          ].join('\n'),
+        ),
+      ),
+    ).not.toContain(R)
+  })
+
+  it('does NOT flag a non-handler prop that happens to hold a function', () => {
+    expect(
+      rules(neg("export const a = div({ onClick: f, ref: (e) => { e.textContent = 'x' } }, [])")),
+    ).not.toContain(R)
+  })
+
+  it('does NOT flag writes to non-sink members', () => {
+    expect(
+      rules(neg('export const a = div({ onClick: (e) => { e.currentTarget.scrollTop = 0 } }, [])')),
+    ).not.toContain(R)
+    expect(
+      rules(neg('export const a = div({ onInput: (e) => { e.target.value = "" } }, [])')),
+    ).not.toContain(R)
+  })
+
+  // `add` / `remove` / `toggle` are far too generic to attribute on their own —
+  // the RECEIVER must be spelled `classList` (and `setProperty`'s must be
+  // `style`), or a `DataTransferItemList.add` would read as a class mutation.
+  it('does NOT flag a generic `add`/`setProperty` on some other namespace', () => {
+    expect(
+      rules(neg('export const a = div({ onDrop: (e) => { e.dataTransfer.items.add(f) } }, [])')),
+    ).not.toContain(R)
+    expect(
+      rules(
+        neg("export const a = div({ onClick: (e) => { e.detail.bag.setProperty('a',1) } }, [])"),
+      ),
+    ).not.toContain(R)
+  })
+
+  it('the message quotes the offending expression AND names both fixes', () => {
+    const msg = messageFor(
+      src("export const a = div({ onClick: (e) => { e.target.textContent = 'x' } }, [])"),
+      R,
+    )
+    expect(msg).toContain('e.target.textContent')
+    expect(msg).toContain('island(')
+    expect(msg).toContain('foreign()')
+    expect(msg).toContain('#231')
+  })
+
+  // A view helper builds elements but commonly carries no `component(` call, so
+  // the plugin routes it down the non-component branch — which is why the rule
+  // needs its own entry point there.
+  it('fires through the non-component entry point', () => {
+    const bad = src("export const a = div({ onClick: (e) => { e.target.textContent = 'x' } }, [])")
+    expect(lintImperativeDomSource(bad, 'copy-button.ts').map((d) => d.rule)).toContain(R)
+    const good = src("export const a = div({ onClick: (e) => { send({ type: 'copy' }) } }, [])")
+    expect(lintImperativeDomSource(good, 'copy-button.ts')).toEqual([])
+    // A module missing either half of the shape is skipped before parsing.
+    expect(lintImperativeDomSource('export const n = 1', 'plain.ts')).toEqual([])
+    expect(
+      lintImperativeDomSource('export const n = document.body.textContent', 'plain.ts'),
+    ).toEqual([])
   })
 })

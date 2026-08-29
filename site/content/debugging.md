@@ -167,8 +167,8 @@ What it catches: the signal lint rules — `peek-in-slot`,
 `operator-on-signal`, `pure-derive-body`, `no-node-construction-in-body`,
 `controlled-input`, `at-after-map` / `prefer-at-over-map`,
 `exhaustive-update`, `async-update`, `event-handler-casing`, `attr-name`,
-`empty-props`, `agent-annotation-syntax`, `tag-send-drift`, and the
-shared `convention` checks.
+`empty-props`, `agent-annotation-syntax`, `tag-send-drift`,
+`imperative-dom-mutation`, and the shared `convention` checks.
 
 ## Troubleshooting: `llui-mcp doctor`
 
@@ -199,7 +199,8 @@ cross-file / agent / convention checks. They cover reactivity misuse
 `no-node-construction-in-body`), controlled inputs, exhaustive `update()`,
 async `update()`, event-handler casing, attribute naming, malformed agent
 annotations (`agent-annotation-syntax`), `tagSend` variant lists that
-disagree with their handler (`tag-send-drift`), and more.
+disagree with their handler (`tag-send-drift`), DOM mutated imperatively
+from a view's own event handler (`imperative-dom-mutation`), and more.
 
 There is nothing to configure: the rules fire automatically through
 [`@llui/vite-plugin`](/api/vite-plugin), which surfaces them via

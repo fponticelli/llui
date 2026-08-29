@@ -490,6 +490,26 @@ what keeps this affordable on every module in the project.
 function lintAnnotationSyntaxSource(mod: ParsedModule): SignalLintMessage[]
 ```
 
+### `lintImperativeDomSource()`
+
+Run ONLY `imperative-dom-mutation` over a module that is not a signal
+component — the third companion to {@link lintAnnotationSyntaxSource} and
+{@link lintTagSendSource}, and needed for the same reason: a view HELPER is a
+plain function returning `Mountable`, it builds elements with `@llui/dom`
+helpers, and it commonly lives in a module with no `component(` call at all —
+which the plugin routes down its non-component branch, where
+`lintSignalSource` never runs. Without this entry point the rule would cover
+the reconciler-owned nodes built inside a `component()` literal and not the
+identical ones built one function out.
+
+Same pre-check discipline: {@link mentionsImperativeDom} runs against
+`mod.text` BEFORE the module is parsed, so a module missing either half of the
+shape costs two regexes and nothing else.
+
+```typescript
+function lintImperativeDomSource(mod: ParsedModule): SignalLintMessage[]
+```
+
 ### `lintSignalSource()`
 
 Run the signal lint rules over an already-parsed module, returning diagnostics
