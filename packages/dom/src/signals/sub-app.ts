@@ -4,9 +4,12 @@
 // genuine lifecycle isolation (third-party UI, a 60fps layer). Everyday
 // decomposition uses plain view-helper functions over `Signal<T>` slices instead.
 
-import { requireCtx, mountable, type Mountable } from './build-context.js'
+import { requireCtx, mountable, runBuild, type BuildCtx, type Mountable } from './build-context.js'
 import { mountSignalComponent } from './component.js'
 import type { SignalComponentDef, SignalComponentHandle } from './component.js'
+import { buildAndPublishScope } from './scope-build.js'
+import { normalizeUpdateResult } from './tea-driver.js'
+import { pathHandle } from './handle.js'
 
 /** Spec for {@link signalSubApp} — an isolated child component boundary. */
 export interface SubAppSpec<S, M, E = never> {
@@ -59,11 +62,10 @@ function buildSignalSubApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Node {
   // through which `@llui/components` routes all i18n: every component mounted this
   // way fell back to default English, with no error and no warning.
   const contexts = mergeContexts(c.contexts, spec.contexts)
-  // Like `onMount`, the isolated child is mounted via the mount lifecycle, which
-  // is a client-DOM concern: skip it under SSR (the child would mount with its own
-  // fresh — non-SSR — build and crash on any browser-global in its `onMount`). The
-  // anchor still serializes; the client mount/hydrate pass brings the child up.
-  if (c.ssr) return anchor
+  // The mount LIFECYCLE is a client-DOM concern, so the isolated instance is not
+  // *mounted* on the server — but it is still RENDERED there (see `ssrBody`), so an
+  // island is not a post-hydration pop-in and is not absent without JS.
+  if (c.ssr) return ssrBody(spec, c, anchor, contexts)
   c.mounts.push(() => {
     // Anchor is attached now; mount the isolated instance as siblings after it.
     // Presence check mirrors mountSignalComponent: only forward `initialState`
@@ -78,6 +80,91 @@ function buildSignalSubApp<S, M, E = never>(spec: SubAppSpec<S, M, E>): Node {
     return () => handle.dispose()
   })
   return anchor
+}
+
+/**
+ * Render the isolated instance's view on the SERVER: build it, then mount ONCE
+ * against the seed state to bake initial values in, and splice the nodes in after
+ * the anchor. Build-then-mount-once is exactly `renderNodes`' shape for a nested
+ * def, and `scope.mount(state)` on a detached tree is the same "bake the values,
+ * never update" step it takes.
+ *
+ * There is no update loop, no effect dispatch (`init()`'s effects are DISCARDED —
+ * the server does not run them) and no mount lifecycle: nothing calls `runMounts`,
+ * and the build carries `ssr: true`, so `onMount` emits its marker and registers
+ * nothing at every depth. A nested `subApp` inside this view reads that same flag
+ * and renders its own body the same way.
+ *
+ * ISOLATION IS THE POINT, AND IT COSTS THE SYNTHETIC PARENT BELOW. `runBuild`
+ * falls back to the build ON THE STACK when given no `inherit`, and this runs
+ * DURING the host's build — so "pass no parent" is not available, and the obvious
+ * spelling (`renderSignalTree`, which passes `inherit: undefined`) silently
+ * inherits the host's ctx wholesale. Every field it would inherit is one the
+ * CLIENT mount does not: `mountSignalComponent` runs from `runMounts`, after the
+ * host build has restored `ctx` to null, so its build genuinely has no parent.
+ * Server and client must agree, so the parent is synthesized to match what the
+ * client gets — a fresh `headAnon` (or an anonymous `<style>` inside an island
+ * takes an ordinal continuing the HOST's count on the server and its own count on
+ * the client, so hydration duplicates the tag instead of adopting it), a fresh
+ * descriptor registry (the island's affordances belong to the island's handle),
+ * `inRow: false` (an island placed in an `each` row is NOT itself row-local — its
+ * bindings read its OWN state, not the row ctx), and a `getState` reading the
+ * island's seed rather than the host's state.
+ *
+ * No `llui-mount-end` sentinel is emitted beside the server body. Hydration does
+ * not claim these nodes: the HOST's hydrate pass rebuilds its whole tree and swaps
+ * it in atomically (`replaceChildren`, or the anchor path's region wipe), so the
+ * server body is discarded wholesale and the real instance mounts against a fresh
+ * anchor with no siblings. Both sides start from `init()`, so they agree by
+ * construction; there is no per-island claim step to keep in sync.
+ */
+function ssrBody<S, M, E>(
+  spec: SubAppSpec<S, M, E>,
+  c: BuildCtx,
+  anchor: Comment,
+  contexts: ReadonlyMap<symbol, unknown>,
+): Node {
+  const [seed] = normalizeUpdateResult<S, E>(spec.def.init())
+  // Presence check, not `??` — see the mount path: a legitimately falsy/null seed
+  // must not be silently discarded in favour of `init()`'s state.
+  const state = 'initialState' in spec ? (spec.initialState as S) : seed
+  const handle = pathHandle<S>(() => state, '')
+  const noopSend = (): void => {}
+  // Sends are inert on the server, so `batch` is just its body — matching `renderNodes`.
+  const noopBatch = (fn: () => void): void => fn()
+  // The synthetic parent: what a client mount's build would inherit from, which is
+  // nothing but the contexts the caller replays. Its own collecting fields are
+  // unused (`runBuild` reads only contexts/descriptors/inRow/ssr/headAnon/getState
+  // off a parent) but are given real values rather than casts.
+  const isolated: BuildCtx = {
+    specs: [],
+    doc: c.doc,
+    host: { scope: null },
+    teardowns: [],
+    mounts: [],
+    contexts,
+    inRow: false,
+    descriptors: new Map(),
+    headAnon: { n: 0 },
+    ssr: true,
+    getState: () => state,
+  }
+  const built = runBuild(
+    c.doc,
+    () => spec.def.view({ state: handle, send: noopSend, batch: noopBatch }),
+    isolated,
+  )
+  buildAndPublishScope(built).mount(state)
+  // The instance has no handle to dispose (it was never mounted), but its BUILD
+  // collected teardowns; run them when the host build is disposed, as `renderNodes`
+  // does at the end of a server render.
+  c.teardowns.push(() => {
+    for (const t of built.teardowns.splice(0)) t()
+  })
+  const frag = c.doc.createDocumentFragment()
+  frag.appendChild(anchor)
+  for (const n of built.nodes) frag.appendChild(n)
+  return frag
 }
 
 /** Context values for an isolated build: the placing build's map with the caller's
