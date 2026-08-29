@@ -239,7 +239,7 @@ Supported on: editable, number-input, tags-input, pin-input, file-upload.
 
 ## Component Reference
 
-All 67 components follow the same pattern:
+All 68 components follow the same pattern:
 
 ```typescript
 import { componentName } from '@llui/components/component-name'
@@ -1444,6 +1444,38 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 ---
 
+### Sparkline
+
+**State** (`SparklineState`):
+
+| Field         | Type                     |
+| ------------- | ------------------------ |
+| `points`      | `SparklinePoint[]`       |
+| `band`        | `SparklineBand`          |
+| `now`         | `number`                 |
+| `min`         | `number`                 |
+| `max`         | `number`                 |
+| `width`       | `number`                 |
+| `height`      | `number`                 |
+| `padding`     | `SparklinePadding`       |
+| `curve`       | `Curve`                  |
+| `trim`        | `SparklineTrim \| null`  |
+| `track`       | `SparklineTrack \| null` |
+| `calendar`    | `SparklineCalendar`      |
+| `activeIndex` | `number \| null`         |
+
+**Messages:** `setActive`, `moveActive`, `firstActive`, `lastActive`, `setPoints`, `setNow`, `setBand`, `setSize`
+
+**Init options:** `points?: readonly SparklinePoint[], band?: SparklineBand, now?: number, min?: number, max?: number, width?: number, height?: number, padding?: Partial<SparklinePadding>, curve?: Curve, trim?: boolean | Partial<SparklineTrim>, track?: SparklineTrack | null, calendar?: Partial<SparklineCalendar>`
+
+**Connect options:** `SparklineConnectOptions`
+
+**Parts:** `root`, `svg`, `title`, `desc`, `table`, `band`, `line`, `now`, `layer`, `tickProps`, `dotProps`, `spanProps`, `tooltip`, `ticks`, `dots`, `spans`, `rows`, `activeDot`, `label`, `summary`
+
+**Utilities:** `geometry()`, `sparklineGeometry()`, `createSparklineGeometry()`, `locateIndex()`, `trimLeadingOutliers()`, `sparklineLabel()`, `isoDay()`
+
+---
+
 ### Splitter
 
 **State** (`SplitterState`):
@@ -1886,6 +1918,14 @@ The component summaries above optimize for everyday authoring. This appendix is 
 
 #### Functions
 
+##### `addUnits()` from `@llui/components`
+
+Advance an instant by `n` whole units, in the offset's calendar.
+
+```typescript
+function addUnits(at: number, unit: CalendarUnit, n: number, opts: CalendarOptions = {}): number
+```
+
 ##### `allFiniteNumbers()` from `@llui/components`
 
 Whether every number nested in one atomic runtime payload is usable.
@@ -2028,10 +2068,38 @@ The [start, end] extent of band `i` in normalized u.
 function bandExtent(i: number, band: Band): [number, number]
 ```
 
+##### `calendarTicks()` from `@llui/components`
+
+Calendar boundaries inside `[start, end]`, ascending.
+
+An EMPTY array for a non-finite or reversed range, and for a request that
+would exceed {@link MAX_CALENDAR_TICKS} — a chart with no data is a normal
+state, and a truncated axis is a lie.
+
+```typescript
+function calendarTicks(start: number, end: number, opts: CalendarStepOptions = {}): CalendarTick[]
+```
+
 ##### `cartesianProjection()` from `@llui/components`
 
 ```typescript
 function cartesianProjection(frame: Frame, opts: CartesianOptions = {}): Projection
+```
+
+##### `chooseCalendarStep()` from `@llui/components`
+
+The finest rung whose boundaries fit inside `maxTicks`.
+
+A FORCED `unit` is honoured as given (stride 1), except on `year`, where the
+stride still grows to fit — "yearly" over four centuries has to mean
+something, and 400 gridlines is not it.
+
+```typescript
+function chooseCalendarStep(
+  start: number,
+  end: number,
+  opts: CalendarStepOptions = {},
+): CalendarStep
 ```
 
 ##### `circlePath()` from `@llui/components`
@@ -2071,6 +2139,21 @@ It is always FINITE too — the clamp rejects a non-finite input first (#152).
 
 ```typescript
 function clampToStep(value: number, grid: NumericGrid): number
+```
+
+##### `countCalendarTicks()` from `@llui/components`
+
+How many boundaries of `step` fall inside `[start, end]` — WITHOUT building
+them. Constant time at every rung, which is what lets the ladder reject a
+finer unit for a century-long span for free.
+
+```typescript
+function countCalendarTicks(
+  start: number,
+  end: number,
+  step: CalendarStep,
+  opts: CalendarOptions = {},
+): number
 ```
 
 ##### `curvePath()` from `@llui/components`
@@ -2237,6 +2320,14 @@ The second argument is the direction source:
 
 ```typescript
 export declare function flipArrow(key: string, source: Element | null | TextDirection): string
+```
+
+##### `floorToUnit()` from `@llui/components`
+
+Floor an instant to the start of its `unit`, in the offset's calendar.
+
+```typescript
+function floorToUnit(at: number, unit: CalendarUnit, opts: CalendarOptions = {}): number
 ```
 
 ##### `fmt()` from `@llui/components`
@@ -3325,6 +3416,14 @@ export type BreadcrumbsMsg =
   | { type: 'expand' }
   /** @intent("Collapse the trail back to its truncated form") */
   | { type: 'collapse' }
+```
+
+##### `CalendarUnit` from `@llui/components`
+
+Rungs of the ladder, finest first.
+
+```typescript
+export type CalendarUnit = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'
 ```
 
 ##### `CarouselEffect` from `@llui/components`
@@ -4864,6 +4963,40 @@ by index, robust to virtualization.
 export type SortDirection = 'asc' | 'desc'
 ```
 
+##### `SparklineBandKind` from `@llui/components`
+
+```typescript
+export type SparklineBandKind = 'between' | 'below' | 'above'
+```
+
+##### `SparklineMsg` from `@llui/components`
+
+```typescript
+export type SparklineMsg =
+  /** @intent("Set the point under the cursor, or clear it with null") */
+  | { type: 'setActive'; index: number | null }
+  /** @intent("Move the cursor along the points by delta, clamping at the ends") */
+  | { type: 'moveActive'; delta: number }
+  /** @intent("Move the cursor to the first point") */
+  | { type: 'firstActive' }
+  /** @intent("Move the cursor to the last point") */
+  | { type: 'lastActive' }
+  /** @intent("Replace the plotted points") */
+  | { type: 'setPoints'; points: SparklinePoint[] }
+  /** @intent("Set the instant the right edge denotes, or derive it with null") */
+  | { type: 'setNow'; at: number | null }
+  /** @intent("Set the reference band; null on a side leaves it unbounded") */
+  | { type: 'setBand'; low: number | null; high: number | null }
+  /** @intent("Set the viewBox size in user units") */
+  | { type: 'setSize'; width: number; height: number }
+```
+
+##### `SparklineTone` from `@llui/components`
+
+```typescript
+export type SparklineTone = 'below' | 'in' | 'above' | 'none'
+```
+
 ##### `SplitterMsg` from `@llui/components`
 
 ```typescript
@@ -5929,6 +6062,55 @@ export interface BreadcrumbsState {
   items: BreadcrumbItem[]
   maxVisible: number | null
   expanded: boolean
+}
+```
+
+##### `CalendarOptions` from `@llui/components`
+
+```typescript
+export interface CalendarOptions {
+  /**
+   * Minutes east of UTC that boundaries are measured in. Default 0 (UTC). A
+   * FIXED offset — see the module note; `-300` is US Eastern standard time and
+   * stays at −5 across a DST transition rather than following it.
+   */
+  offsetMinutes?: number
+  /** First day of the week for the `week` rung: 0 = Sunday … 6 = Saturday.
+   *  Default 1 (Monday), matching ISO 8601. */
+  weekStartsOn?: number
+}
+```
+
+##### `CalendarStep` from `@llui/components`
+
+A chosen rung, plus how many of it each boundary advances. `stride` is
+always 1 except on `year`.
+
+```typescript
+export interface CalendarStep {
+  unit: CalendarUnit
+  stride: number
+}
+```
+
+##### `CalendarStepOptions` from `@llui/components`
+
+```typescript
+export interface CalendarStepOptions extends CalendarOptions {
+  /** Upper bound on the number of boundaries. Default 6. */
+  maxTicks?: number
+  /** Force a rung instead of choosing one from the span. */
+  unit?: CalendarUnit
+}
+```
+
+##### `CalendarTick` from `@llui/components`
+
+```typescript
+export interface CalendarTick {
+  /** The boundary instant, in epoch milliseconds. */
+  at: number
+  unit: CalendarUnit
 }
 ```
 
@@ -8972,6 +9154,9 @@ export interface Locale {
   qrCode: { label: string; download: string }
   signaturePad: { label: string; clear: string; undo: string }
   sortable: { handle: string }
+  /** The composed accessible name of a sparkline. `from`/`to` arrive as
+   *  `YYYY-MM-DD` in the sparkline's own calendar offset. */
+  sparkline: { empty: string; range: (count: number, from: string, to: string) => string }
   steps: { label: string }
   tagsInput: { input: string; remove: string; clear: string }
   timePicker: { label: string; hours: string; minutes: string; period: string }
@@ -11060,6 +11245,485 @@ export interface SortableState {
 }
 ```
 
+##### `SparklineBand` from `@llui/components`
+
+A reference band. Both bounds are UNBOUNDED-CAPABLE in the sense of
+`finiteBound` (#177): "no bound on this side" is spelled by OMITTING the key,
+never by `undefined`, `null` or `±Infinity` — only the omission survives a
+JSON round trip key-for-key, and this lives in state.
+
+The three readings are not a convenience, they are the whole point: both
+bounds shade BETWEEN them, a high alone shades everything BELOW it, and a low
+alone shades everything ABOVE it. "Acceptable is under 140" and "acceptable
+is between 90 and 120" are different statements and must not both come out as
+a stripe.
+
+```typescript
+export interface SparklineBand {
+  low?: number
+  high?: number
+}
+```
+
+##### `SparklineBandGeometry` from `@llui/components`
+
+```typescript
+export interface SparklineBandGeometry {
+  kind: SparklineBandKind
+  low: number | null
+  high: number | null
+  d: string
+}
+```
+
+##### `SparklineCalendar` from `@llui/components`
+
+The serializable subset of {@link CalendarStepOptions} this state carries.
+
+```typescript
+export interface SparklineCalendar {
+  offsetMinutes: number
+  weekStartsOn: number
+  maxTicks: number
+  /** Force a rung instead of choosing one from the span. */
+  unit?: CalendarUnit
+}
+```
+
+##### `SparklineConnectOptions` from `@llui/components`
+
+```typescript
+export interface SparklineConnectOptions {
+  /** Base id; the title and description ids derive from it. */
+  id: string
+  /** Override the composed accessible name entirely. */
+  label?: string
+  /** Longer description, announced with the name. Defaults to empty. */
+  description?: string
+}
+```
+
+##### `SparklineDot` from `@llui/components`
+
+```typescript
+export interface SparklineDot {
+  index: number
+  at: number
+  value: number
+  x: number
+  y: number
+  tone: SparklineTone
+  /** True for the most recent drawn point — the reading the row is about. */
+  last: boolean
+  /** True for the point under the cursor. Follows `chart`: the cursor is part
+   *  of the derived picture, so one signal per row carries everything a dot
+   *  renders from and nothing has to combine two signals at the call site. */
+  active: boolean
+  key: string
+}
+```
+
+##### `SparklineGeometry` from `@llui/components`
+
+```typescript
+export interface SparklineGeometry {
+  frame: Frame
+  time: Domain
+  value: Domain
+  /** The points actually drawn: finite, sorted, and after trimming. */
+  points: SparklinePoint[]
+  trimmed: number
+  /** The trend line. Empty string when there is nothing to draw. */
+  path: string
+  band: SparklineBandGeometry | null
+  ticks: SparklineTick[]
+  dots: SparklineDot[]
+  spans: SparklineSpan[]
+  now: SparklineNow
+  summary: SparklineSummary
+  /** Built-in English composition of {@link summary}. `connect` replaces it
+   *  with the locale's phrasing. */
+  label: string
+  rows: SparklineRow[]
+}
+```
+
+##### `SparklineGeometryOptions` from `@llui/components`
+
+```typescript
+export interface SparklineGeometryOptions {
+  band?: SparklineBand
+  now?: number
+  min?: number
+  max?: number
+  width?: number
+  height?: number
+  padding?: Partial<SparklinePadding>
+  curve?: Curve
+  trim?: SparklineTrim | null
+  track?: SparklineTrack | null
+  calendar?: Partial<SparklineCalendar>
+  /** Which drawn point the cursor is on. Indexes the DRAWN list — after
+   *  non-finite samples are dropped and after trimming — so it is the same
+   *  index `locateIndex` returns. */
+  activeIndex?: number | null
+}
+```
+
+##### `SparklineInit` from `@llui/components`
+
+```typescript
+export interface SparklineInit {
+  points?: readonly SparklinePoint[]
+  band?: SparklineBand
+  now?: number
+  min?: number
+  max?: number
+  width?: number
+  height?: number
+  padding?: Partial<SparklinePadding>
+  curve?: Curve
+  /** `true` for the documented defaults, an object to tune them, absent for
+   *  OFF — trimming discards data, so it is never on by accident. */
+  trim?: boolean | Partial<SparklineTrim>
+  track?: SparklineTrack | null
+  calendar?: Partial<SparklineCalendar>
+}
+```
+
+##### `SparklineNow` from `@llui/components`
+
+```typescript
+export interface SparklineNow {
+  at: number
+  x: number
+  d: string
+  /** True when the right edge is later than the last reading — the series
+   *  trails off. */
+  stale: boolean
+}
+```
+
+##### `SparklinePadding` from `@llui/components`
+
+```typescript
+export interface SparklinePadding {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+```
+
+##### `SparklineParts` from `@llui/components`
+
+```typescript
+export interface SparklineParts {
+  root: {
+    'data-scope': 'sparkline'
+    'data-part': 'root'
+    'data-stale': Signal<'' | undefined>
+    'data-active': Signal<'' | undefined>
+  }
+  /**
+   * The `<svg>`. `role="img"` named through its own `<title>`/`<desc>`; the
+   * numbers live in {@link SparklineParts.table}, because an SVG polyline is
+   * otherwise silent and the WAI-ARIA graphics roles are not carried well
+   * enough to be the only route to the data.
+   */
+  svg: {
+    'data-scope': 'sparkline'
+    'data-part': 'svg'
+    role: 'img'
+    'aria-labelledby': string
+    viewBox: Signal<string>
+    tabindex: 0
+    onKeyDown: (e: KeyboardEvent) => void
+    onPointerMove: (e: PointerEvent) => void
+    onPointerLeave: (e: PointerEvent) => void
+    onBlur: (e: FocusEvent) => void
+  }
+  title: { id: string; 'data-scope': 'sparkline'; 'data-part': 'title' }
+  desc: { id: string; 'data-scope': 'sparkline'; 'data-part': 'desc' }
+  /** The visually-hidden `<table>` fallback. Render it with {@link rows}. */
+  table: {
+    'data-scope': 'sparkline'
+    'data-part': 'table'
+    'aria-label': Signal<string>
+  }
+  /** The reference band. Stays MOUNTED and hides itself, so a band appearing or
+   *  disappearing does not rebuild the layer. */
+  band: {
+    'data-scope': 'sparkline'
+    'data-part': 'band'
+    'data-band': Signal<'between' | 'below' | 'above' | undefined>
+    d: Signal<string>
+    hidden: Signal<boolean>
+  }
+  line: { 'data-scope': 'sparkline'; 'data-part': 'line'; d: Signal<string> }
+  /** The right edge. `data-stale` is set when it is later than the last
+   *  reading. */
+  now: {
+    'data-scope': 'sparkline'
+    'data-part': 'now'
+    'data-stale': Signal<'' | undefined>
+    d: Signal<string>
+  }
+  /** A `<g>` stacking layer. Static — spread it on each layer group. */
+  layer: { 'data-scope': 'sparkline'; 'data-part': 'layer' }
+  /**
+   * Per-row attribute bags. Each takes the ROW SIGNAL an `each` hands its
+   * render function, not a snapshot value, and every geometry-derived
+   * attribute comes back as a Signal.
+   *
+   * That is not decoration. A keyed `each` REUSES a row whose key is unchanged,
+   * so a dot whose key is `index:instant` survives a change of time domain —
+   * and a static `cx` read at build time would then be frozen at the position
+   * the point had under the OLD domain, with the key giving no hint that
+   * anything moved. Taking the row signal is what makes the reuse safe.
+   */
+  tickProps: (tick: Signal<SparklineTick>) => {
+    'data-scope': 'sparkline'
+    'data-part': 'grid'
+    'data-unit': Signal<'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'>
+    d: Signal<string>
+  }
+  dotProps: (dot: Signal<SparklineDot>) => {
+    'data-scope': 'sparkline'
+    'data-part': 'dot'
+    'data-tone': Signal<'below' | 'in' | 'above' | 'none'>
+    'data-last': Signal<'' | undefined>
+    'data-active': Signal<'' | undefined>
+    cx: Signal<number>
+    cy: Signal<number>
+  }
+  spanProps: (span: Signal<SparklineSpan>) => {
+    'data-scope': 'sparkline'
+    'data-part': 'span'
+    'data-grain': Signal<string>
+    d: Signal<string>
+  }
+  /** Tooltip ATTRIBUTES — spreadable, with its own reactive `hidden`. */
+  tooltip: {
+    'data-scope': 'sparkline'
+    'data-part': 'tooltip'
+    role: 'status'
+    'aria-live': 'polite'
+    hidden: Signal<boolean>
+    style: Signal<string>
+  }
+  ticks: Signal<SparklineTick[]>
+  dots: Signal<SparklineDot[]>
+  spans: Signal<SparklineSpan[]>
+  rows: Signal<SparklineRow[]>
+  /** The dot under the cursor, or `null`. */
+  activeDot: Signal<SparklineDot | null>
+  /** The composed accessible name — the locale's phrasing of
+   *  {@link SparklineGeometry.summary}, or `opts.label` when given. */
+  label: Signal<string>
+  summary: Signal<SparklineSummary>
+}
+```
+
+##### `SparklinePoint` from `@llui/components`
+
+Sparkline — "this value, over time, against a reference band", at the size of
+a table cell.
+
+# Why this is not `chart`
+
+`chart` is a plotting machine: `ChartState`, a projection seam, a legend, a
+keyboard cursor over CATEGORIES, and numeric-nice value ticks. A sparkline is
+a **pure function of its points** — dozens appear in one table, and the only
+interaction any of them has is a hover readout. So the load-bearing export
+here is {@link sparklineGeometry}, which takes points and options and returns
+path strings; it needs no signal, no `send`, no mount and no state.
+
+`init`/`update`/`connect` exist BESIDE it, not instead of it, and add exactly
+one fact: which point the cursor is on. A consumer rendering fifty trends in
+a table calls the pure function fifty times and pays for nothing else; one
+that wants a tooltip opts into the machine for that column. The stateless
+middle ground works too — `connect(constant(state), noSend, { id })` gives
+the full part bag with the cursor pinned wherever the state says.
+
+# What it reuses
+
+The geometry is `utils/scale.ts` + `utils/path.ts` + `utils/projection.ts`,
+the same three files `chart` is built from, so every coordinate goes through
+`fmt` and a path recomputed from unchanged data is BYTE-IDENTICAL — the
+reconciler commits on output-equality, and a sparkline in a table is exactly
+the place where a spuriously-changing path string costs the most.
+
+Two things it does NOT reuse, each for a stated reason:
+
+- **`valueDomain`**, because it always includes zero. That is right for a
+  bar, whose LENGTH states the magnitude and therefore lies if the baseline
+  is not zero; it is wrong for a trend line, where the shape is the message.
+  A series reading 118–142 against a 90–120 band has to fill the box, not
+  sit as a flat smear across the top of a 0–142 axis.
+- **`ticks`/`niceDomain`**, because they are NUMERIC. See
+  `utils/calendar-ticks.ts`: rounding an epoch to a nice number never lands
+  on the 1st of March.
+
+There is no `coord` and no polar projection. A sparkline is inline text
+furniture; a round one is a different picture, and `chart` already draws it.
+
+```typescript
+export interface SparklinePoint {
+  /** Instant, in epoch milliseconds. */
+  at: number
+  value: number
+  /**
+   * Sampling resolution of this reading — "spot", "session", "daily", whatever
+   * the domain calls it. Free-form and never interpreted: consecutive points
+   * sharing a tag become one segment of the granularity track, so a line whose
+   * sampling changes SAYS so instead of implying uniform data.
+   */
+  grain?: string
+}
+```
+
+##### `SparklineRow` from `@llui/components`
+
+One row of the visually-hidden `<table>` fallback.
+
+```typescript
+export interface SparklineRow {
+  at: number
+  /** `YYYY-MM-DD` in the configured offset's calendar. Locale-neutral by
+   *  design: the table is a data fallback, not a formatted report. */
+  day: string
+  value: number
+  tone: SparklineTone
+  grain: string | null
+}
+```
+
+##### `SparklineSpan` from `@llui/components`
+
+```typescript
+export interface SparklineSpan {
+  grain: string
+  /** First and last instant the segment covers. */
+  from: number
+  to: number
+  x0: number
+  x1: number
+  d: string
+  key: string
+}
+```
+
+##### `SparklineState` from `@llui/components`
+
+```typescript
+export interface SparklineState {
+  points: SparklinePoint[]
+  /** Omit a side to leave it unbounded — see {@link SparklineBand}. */
+  band: SparklineBand
+  /**
+   * The instant the RIGHT EDGE denotes. A stale series then visibly trails off
+   * instead of looking current, which is the difference between "the last
+   * reading was fine" and "the last reading was fine, eight months ago".
+   *
+   * UNBOUNDED-CAPABLE: omit it and the edge is the last reading's own instant.
+   * It is deliberately NOT defaulted to `Date.now()` anywhere in this module —
+   * geometry has to be a pure function of state or an SSR render and the first
+   * client render disagree, and `Date.now()` would additionally make the path
+   * string change on every recomputation, which is the one thing `fmt` exists
+   * to prevent. A consumer that wants "now" puts a clock in its own state.
+   */
+  now?: number
+  /** Value-axis bounds. UNBOUNDED-CAPABLE (#177): omit to derive. */
+  min?: number
+  max?: number
+  width: number
+  height: number
+  padding: SparklinePadding
+  curve: Curve
+  /** `null` = no trimming. See {@link SparklineTrim}. */
+  trim: SparklineTrim | null
+  /** `null` = no granularity track. */
+  track: SparklineTrack | null
+  /** Fixed offset from UTC that calendar boundaries are measured in, and the
+   *  ladder's ceiling. See `utils/calendar-ticks.ts` on why it is an offset and
+   *  not a zone. */
+  calendar: SparklineCalendar
+  /** Index of the point under the pointer or keyboard cursor. */
+  activeIndex: number | null
+}
+```
+
+##### `SparklineSummary` from `@llui/components`
+
+The facts a label is composed from. Separated from the label itself so the
+same numbers can be phrased by the locale in `connect` and by the built-in
+English template in the pure path.
+
+```typescript
+export interface SparklineSummary {
+  count: number
+  /** `YYYY-MM-DD` of the first and last drawn reading; empty strings when there
+   *  is no data. */
+  from: string
+  to: string
+  trimmed: number
+  stale: boolean
+}
+```
+
+##### `SparklineTick` from `@llui/components`
+
+```typescript
+export interface SparklineTick {
+  at: number
+  unit: CalendarUnit
+  x: number
+  /** The vertical gridline, in user units. */
+  d: string
+  /** Stable key for a keyed `each`. */
+  key: string
+}
+```
+
+##### `SparklineTrack` from `@llui/components`
+
+The granularity track: a thin bar under the plot, in the bottom padding.
+
+```typescript
+export interface SparklineTrack {
+  height: number
+  /** Distance between the bottom of the plot frame and the top of the track. */
+  gap: number
+}
+```
+
+##### `SparklineTrim` from `@llui/components`
+
+Leading-outlier trimming. A HEURISTIC that DISCARDS REAL DATA, so it is off
+unless asked for: `trim: null` is the default, and a chart that silently
+drops a reading is worse than a squashed one.
+
+The rule: while more than `floor` points remain, compare the FIRST gap
+against the MEDIAN of the gaps after it, and drop the leading point when the
+first gap is more than `factor` times that median. Median rather than mean so
+a second ancient reading cannot inflate the yardstick it is being measured
+against; `factor > 1` is required, and a median of zero (every remaining
+reading at the same instant) stops the walk rather than eating the series.
+
+`trimmed` in the geometry reports how many points went, so a consumer can say
+so on the page.
+
+```typescript
+export interface SparklineTrim {
+  /** How many times the median gap the leading gap must exceed. Default 4. */
+  factor: number
+  /** Never trim below this many points. Default 3, floored at 2 — one point is
+   *  not a trend and cannot be drawn as a line. */
+  floor: number
+}
+```
+
 ##### `SplitterInit` from `@llui/components`
 
 ```typescript
@@ -13007,6 +13671,18 @@ const LocaleContext: Context<Locale>
 const marquee
 ```
 
+##### `MAX_CALENDAR_TICKS` from `@llui/components`
+
+A hard ceiling on the boundaries one call will produce. Reached only by
+FORCING a fine unit across an enormous span; the automatic ladder can never
+exceed `maxTicks`. Over the ceiling the answer is an EMPTY array — no
+gridlines — rather than a truncated one, because a truncated axis silently
+claims the data ends where the array does.
+
+```typescript
+const MAX_CALENDAR_TICKS
+```
+
 ##### `menu` from `@llui/components`
 
 ```typescript
@@ -13131,6 +13807,12 @@ const slider
 
 ```typescript
 const sortable
+```
+
+##### `sparkline` from `@llui/components`
+
+```typescript
+const sparkline
 ```
 
 ##### `splitter` from `@llui/components`
@@ -13283,6 +13965,14 @@ const TYPEAHEAD_TIMEOUT_MS
 
 #### Functions
 
+##### `addUnits()` from `@llui/components/utils`
+
+Advance an instant by `n` whole units, in the offset's calendar.
+
+```typescript
+function addUnits(at: number, unit: CalendarUnit, n: number, opts: CalendarOptions = {}): number
+```
+
 ##### `allFiniteNumbers()` from `@llui/components/utils`
 
 Whether every number nested in one atomic runtime payload is usable.
@@ -13375,10 +14065,38 @@ The [start, end] extent of band `i` in normalized u.
 function bandExtent(i: number, band: Band): [number, number]
 ```
 
+##### `calendarTicks()` from `@llui/components/utils`
+
+Calendar boundaries inside `[start, end]`, ascending.
+
+An EMPTY array for a non-finite or reversed range, and for a request that
+would exceed {@link MAX_CALENDAR_TICKS} — a chart with no data is a normal
+state, and a truncated axis is a lie.
+
+```typescript
+function calendarTicks(start: number, end: number, opts: CalendarStepOptions = {}): CalendarTick[]
+```
+
 ##### `cartesianProjection()` from `@llui/components/utils`
 
 ```typescript
 function cartesianProjection(frame: Frame, opts: CartesianOptions = {}): Projection
+```
+
+##### `chooseCalendarStep()` from `@llui/components/utils`
+
+The finest rung whose boundaries fit inside `maxTicks`.
+
+A FORCED `unit` is honoured as given (stride 1), except on `year`, where the
+stride still grows to fit — "yearly" over four centuries has to mean
+something, and 400 gridlines is not it.
+
+```typescript
+function chooseCalendarStep(
+  start: number,
+  end: number,
+  opts: CalendarStepOptions = {},
+): CalendarStep
 ```
 
 ##### `circlePath()` from `@llui/components/utils`
@@ -13418,6 +14136,21 @@ It is always FINITE too — the clamp rejects a non-finite input first (#152).
 
 ```typescript
 function clampToStep(value: number, grid: NumericGrid): number
+```
+
+##### `countCalendarTicks()` from `@llui/components/utils`
+
+How many boundaries of `step` fall inside `[start, end]` — WITHOUT building
+them. Constant time at every rung, which is what lets the ladder reject a
+finer unit for a century-long span for free.
+
+```typescript
+function countCalendarTicks(
+  start: number,
+  end: number,
+  step: CalendarStep,
+  opts: CalendarOptions = {},
+): number
 ```
 
 ##### `curvePath()` from `@llui/components/utils`
@@ -13584,6 +14317,14 @@ The second argument is the direction source:
 
 ```typescript
 export declare function flipArrow(key: string, source: Element | null | TextDirection): string
+```
+
+##### `floorToUnit()` from `@llui/components/utils`
+
+Floor an instant to the start of its `unit`, in the offset's calendar.
+
+```typescript
+function floorToUnit(at: number, unit: CalendarUnit, opts: CalendarOptions = {}): number
 ```
 
 ##### `fmt()` from `@llui/components/utils`
@@ -14303,6 +15044,14 @@ export declare function watchInteractOutside(opts: InteractOutsideOptions): () =
 
 #### Types
 
+##### `CalendarUnit` from `@llui/components/utils`
+
+Rungs of the ladder, finest first.
+
+```typescript
+export type CalendarUnit = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'
+```
+
 ##### `Curve` from `@llui/components/utils`
 
 How a run of points is joined.
@@ -14480,6 +15229,55 @@ export interface Band {
   paddingInner: number
   /** Gap before the first and after the last band, as a fraction of a slot. */
   paddingOuter: number
+}
+```
+
+##### `CalendarOptions` from `@llui/components/utils`
+
+```typescript
+export interface CalendarOptions {
+  /**
+   * Minutes east of UTC that boundaries are measured in. Default 0 (UTC). A
+   * FIXED offset — see the module note; `-300` is US Eastern standard time and
+   * stays at −5 across a DST transition rather than following it.
+   */
+  offsetMinutes?: number
+  /** First day of the week for the `week` rung: 0 = Sunday … 6 = Saturday.
+   *  Default 1 (Monday), matching ISO 8601. */
+  weekStartsOn?: number
+}
+```
+
+##### `CalendarStep` from `@llui/components/utils`
+
+A chosen rung, plus how many of it each boundary advances. `stride` is
+always 1 except on `year`.
+
+```typescript
+export interface CalendarStep {
+  unit: CalendarUnit
+  stride: number
+}
+```
+
+##### `CalendarStepOptions` from `@llui/components/utils`
+
+```typescript
+export interface CalendarStepOptions extends CalendarOptions {
+  /** Upper bound on the number of boundaries. Default 6. */
+  maxTicks?: number
+  /** Force a rung instead of choosing one from the span. */
+  unit?: CalendarUnit
+}
+```
+
+##### `CalendarTick` from `@llui/components/utils`
+
+```typescript
+export interface CalendarTick {
+  /** The boundary instant, in epoch milliseconds. */
+  at: number
+  unit: CalendarUnit
 }
 ```
 
@@ -14910,6 +15708,18 @@ Every aspect — the default for a registration that names none.
 const ALL_NESTED_LAYER_ASPECTS: readonly NestedLayerAspect[]
 ```
 
+##### `MAX_CALENDAR_TICKS` from `@llui/components/utils`
+
+A hard ceiling on the boundaries one call will produce. Reached only by
+FORCING a fine unit across an enormous span; the automatic ladder can never
+exceed `maxTicks`. Over the ceiling the answer is an EMPTY array — no
+gridlines — rather than a truncated one, because a truncated axis silently
+claims the data ends where the array does.
+
+```typescript
+const MAX_CALENDAR_TICKS
+```
+
 ##### `TYPEAHEAD_TIMEOUT_MS` from `@llui/components/utils`
 
 Typeahead search — accumulates keystrokes into a query while the user
@@ -15023,6 +15833,144 @@ TWO KNOWN LIMITS of the live-region exemption, both deliberate:
 
 ```typescript
 export declare function setAriaHiddenOutside(target: Element): () => void
+```
+
+### `@llui/components/utils/calendar-ticks`
+
+#### Functions
+
+##### `addUnits()` from `@llui/components/utils/calendar-ticks`
+
+Advance an instant by `n` whole units, in the offset's calendar.
+
+```typescript
+function addUnits(at: number, unit: CalendarUnit, n: number, opts: CalendarOptions = {}): number
+```
+
+##### `calendarTicks()` from `@llui/components/utils/calendar-ticks`
+
+Calendar boundaries inside `[start, end]`, ascending.
+
+An EMPTY array for a non-finite or reversed range, and for a request that
+would exceed {@link MAX_CALENDAR_TICKS} — a chart with no data is a normal
+state, and a truncated axis is a lie.
+
+```typescript
+function calendarTicks(start: number, end: number, opts: CalendarStepOptions = {}): CalendarTick[]
+```
+
+##### `chooseCalendarStep()` from `@llui/components/utils/calendar-ticks`
+
+The finest rung whose boundaries fit inside `maxTicks`.
+
+A FORCED `unit` is honoured as given (stride 1), except on `year`, where the
+stride still grows to fit — "yearly" over four centuries has to mean
+something, and 400 gridlines is not it.
+
+```typescript
+function chooseCalendarStep(
+  start: number,
+  end: number,
+  opts: CalendarStepOptions = {},
+): CalendarStep
+```
+
+##### `countCalendarTicks()` from `@llui/components/utils/calendar-ticks`
+
+How many boundaries of `step` fall inside `[start, end]` — WITHOUT building
+them. Constant time at every rung, which is what lets the ladder reject a
+finer unit for a century-long span for free.
+
+```typescript
+function countCalendarTicks(
+  start: number,
+  end: number,
+  step: CalendarStep,
+  opts: CalendarOptions = {},
+): number
+```
+
+##### `floorToUnit()` from `@llui/components/utils/calendar-ticks`
+
+Floor an instant to the start of its `unit`, in the offset's calendar.
+
+```typescript
+function floorToUnit(at: number, unit: CalendarUnit, opts: CalendarOptions = {}): number
+```
+
+#### Types
+
+##### `CalendarUnit` from `@llui/components/utils/calendar-ticks`
+
+Rungs of the ladder, finest first.
+
+```typescript
+export type CalendarUnit = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'
+```
+
+#### Interfaces
+
+##### `CalendarOptions` from `@llui/components/utils/calendar-ticks`
+
+```typescript
+export interface CalendarOptions {
+  /**
+   * Minutes east of UTC that boundaries are measured in. Default 0 (UTC). A
+   * FIXED offset — see the module note; `-300` is US Eastern standard time and
+   * stays at −5 across a DST transition rather than following it.
+   */
+  offsetMinutes?: number
+  /** First day of the week for the `week` rung: 0 = Sunday … 6 = Saturday.
+   *  Default 1 (Monday), matching ISO 8601. */
+  weekStartsOn?: number
+}
+```
+
+##### `CalendarStep` from `@llui/components/utils/calendar-ticks`
+
+A chosen rung, plus how many of it each boundary advances. `stride` is
+always 1 except on `year`.
+
+```typescript
+export interface CalendarStep {
+  unit: CalendarUnit
+  stride: number
+}
+```
+
+##### `CalendarStepOptions` from `@llui/components/utils/calendar-ticks`
+
+```typescript
+export interface CalendarStepOptions extends CalendarOptions {
+  /** Upper bound on the number of boundaries. Default 6. */
+  maxTicks?: number
+  /** Force a rung instead of choosing one from the span. */
+  unit?: CalendarUnit
+}
+```
+
+##### `CalendarTick` from `@llui/components/utils/calendar-ticks`
+
+```typescript
+export interface CalendarTick {
+  /** The boundary instant, in epoch milliseconds. */
+  at: number
+  unit: CalendarUnit
+}
+```
+
+#### Constants
+
+##### `MAX_CALENDAR_TICKS` from `@llui/components/utils/calendar-ticks`
+
+A hard ceiling on the boundaries one call will produce. Reached only by
+FORCING a fine unit across an enormous span; the automatic ladder can never
+exceed `maxTicks`. Over the ceiling the answer is an EMPTY array — no
+gridlines — rather than a truncated one, because a truncated axis silently
+claims the data ends where the array does.
+
+```typescript
+const MAX_CALENDAR_TICKS
 ```
 
 ### `@llui/components/utils/date`
@@ -15565,6 +16513,14 @@ export declare function isFocusable(el: Element): boolean
 
 #### Functions
 
+##### `addUnits()` from `@llui/components/utils/index`
+
+Advance an instant by `n` whole units, in the offset's calendar.
+
+```typescript
+function addUnits(at: number, unit: CalendarUnit, n: number, opts: CalendarOptions = {}): number
+```
+
 ##### `allFiniteNumbers()` from `@llui/components/utils/index`
 
 Whether every number nested in one atomic runtime payload is usable.
@@ -15657,10 +16613,38 @@ The [start, end] extent of band `i` in normalized u.
 function bandExtent(i: number, band: Band): [number, number]
 ```
 
+##### `calendarTicks()` from `@llui/components/utils/index`
+
+Calendar boundaries inside `[start, end]`, ascending.
+
+An EMPTY array for a non-finite or reversed range, and for a request that
+would exceed {@link MAX_CALENDAR_TICKS} — a chart with no data is a normal
+state, and a truncated axis is a lie.
+
+```typescript
+function calendarTicks(start: number, end: number, opts: CalendarStepOptions = {}): CalendarTick[]
+```
+
 ##### `cartesianProjection()` from `@llui/components/utils/index`
 
 ```typescript
 function cartesianProjection(frame: Frame, opts: CartesianOptions = {}): Projection
+```
+
+##### `chooseCalendarStep()` from `@llui/components/utils/index`
+
+The finest rung whose boundaries fit inside `maxTicks`.
+
+A FORCED `unit` is honoured as given (stride 1), except on `year`, where the
+stride still grows to fit — "yearly" over four centuries has to mean
+something, and 400 gridlines is not it.
+
+```typescript
+function chooseCalendarStep(
+  start: number,
+  end: number,
+  opts: CalendarStepOptions = {},
+): CalendarStep
 ```
 
 ##### `circlePath()` from `@llui/components/utils/index`
@@ -15700,6 +16684,21 @@ It is always FINITE too — the clamp rejects a non-finite input first (#152).
 
 ```typescript
 function clampToStep(value: number, grid: NumericGrid): number
+```
+
+##### `countCalendarTicks()` from `@llui/components/utils/index`
+
+How many boundaries of `step` fall inside `[start, end]` — WITHOUT building
+them. Constant time at every rung, which is what lets the ladder reject a
+finer unit for a century-long span for free.
+
+```typescript
+function countCalendarTicks(
+  start: number,
+  end: number,
+  step: CalendarStep,
+  opts: CalendarOptions = {},
+): number
 ```
 
 ##### `curvePath()` from `@llui/components/utils/index`
@@ -15866,6 +16865,14 @@ The second argument is the direction source:
 
 ```typescript
 export declare function flipArrow(key: string, source: Element | null | TextDirection): string
+```
+
+##### `floorToUnit()` from `@llui/components/utils/index`
+
+Floor an instant to the start of its `unit`, in the offset's calendar.
+
+```typescript
+function floorToUnit(at: number, unit: CalendarUnit, opts: CalendarOptions = {}): number
 ```
 
 ##### `fmt()` from `@llui/components/utils/index`
@@ -16585,6 +17592,14 @@ export declare function watchInteractOutside(opts: InteractOutsideOptions): () =
 
 #### Types
 
+##### `CalendarUnit` from `@llui/components/utils/index`
+
+Rungs of the ladder, finest first.
+
+```typescript
+export type CalendarUnit = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'
+```
+
 ##### `Curve` from `@llui/components/utils/index`
 
 How a run of points is joined.
@@ -16762,6 +17777,55 @@ export interface Band {
   paddingInner: number
   /** Gap before the first and after the last band, as a fraction of a slot. */
   paddingOuter: number
+}
+```
+
+##### `CalendarOptions` from `@llui/components/utils/index`
+
+```typescript
+export interface CalendarOptions {
+  /**
+   * Minutes east of UTC that boundaries are measured in. Default 0 (UTC). A
+   * FIXED offset — see the module note; `-300` is US Eastern standard time and
+   * stays at −5 across a DST transition rather than following it.
+   */
+  offsetMinutes?: number
+  /** First day of the week for the `week` rung: 0 = Sunday … 6 = Saturday.
+   *  Default 1 (Monday), matching ISO 8601. */
+  weekStartsOn?: number
+}
+```
+
+##### `CalendarStep` from `@llui/components/utils/index`
+
+A chosen rung, plus how many of it each boundary advances. `stride` is
+always 1 except on `year`.
+
+```typescript
+export interface CalendarStep {
+  unit: CalendarUnit
+  stride: number
+}
+```
+
+##### `CalendarStepOptions` from `@llui/components/utils/index`
+
+```typescript
+export interface CalendarStepOptions extends CalendarOptions {
+  /** Upper bound on the number of boundaries. Default 6. */
+  maxTicks?: number
+  /** Force a rung instead of choosing one from the span. */
+  unit?: CalendarUnit
+}
+```
+
+##### `CalendarTick` from `@llui/components/utils/index`
+
+```typescript
+export interface CalendarTick {
+  /** The boundary instant, in epoch milliseconds. */
+  at: number
+  unit: CalendarUnit
 }
 ```
 
@@ -17190,6 +18254,18 @@ Every aspect — the default for a registration that names none.
 
 ```typescript
 const ALL_NESTED_LAYER_ASPECTS: readonly NestedLayerAspect[]
+```
+
+##### `MAX_CALENDAR_TICKS` from `@llui/components/utils/index`
+
+A hard ceiling on the boundaries one call will produce. Reached only by
+FORCING a fine unit across an enormous span; the automatic ladder can never
+exceed `maxTicks`. Over the ceiling the answer is an EMPTY array — no
+gridlines — rather than a truncated one, because a truncated axis silently
+claims the data ends where the array does.
+
+```typescript
+const MAX_CALENDAR_TICKS
 ```
 
 ##### `TYPEAHEAD_TIMEOUT_MS` from `@llui/components/utils/index`
@@ -32502,6 +33578,633 @@ export interface SortableState {
 
 ```typescript
 const sortable
+```
+
+### `@llui/components/sparkline`
+
+#### Functions
+
+##### `connect()` from `@llui/components/sparkline`
+
+```typescript
+function connect(
+  state: Signal<SparklineState>,
+  send: Send<SparklineMsg>,
+  opts: SparklineConnectOptions,
+): SparklineParts
+```
+
+##### `createSparklineGeometry()` from `@llui/components/sparkline`
+
+A memoized {@link sparklineGeometry}, one cell per instance.
+
+Hold it in a closure, never at module scope: a table of fifty sparklines
+sharing one cell would evict on every call and the memo would never hit —
+the same rule `utils/derive.ts` states for per-item derivations.
+
+```typescript
+function createSparklineGeometry(): (state: SparklineState) => SparklineGeometry
+```
+
+##### `geometry()` from `@llui/components/sparkline`
+
+Derived geometry for a state. Exported so a consumer can measure or test a
+sparkline without mounting one.
+
+```typescript
+function geometry(state: SparklineState): SparklineGeometry
+```
+
+##### `init()` from `@llui/components/sparkline`
+
+```typescript
+function init(opts: SparklineInit = {}): SparklineState
+```
+
+##### `isoDay()` from `@llui/components/sparkline`
+
+`YYYY-MM-DD` for an instant, in the given fixed offset's calendar.
+
+```typescript
+function isoDay(at: number, opts: CalendarOptions = {}): string
+```
+
+##### `locateIndex()` from `@llui/components/sparkline`
+
+The drawn point nearest a position in user units — the pointer hit test.
+Nearest-x, because dots are a run along the axis with no extents to
+contain a pointer.
+
+```typescript
+function locateIndex(geo: SparklineGeometry, x: number): number | null
+```
+
+##### `sparklineGeometry()` from `@llui/components/sparkline`
+
+The whole picture, as data. A PURE function: same inputs, same output, and
+the same output on a server as in a browser.
+
+```typescript
+function sparklineGeometry(
+  points: readonly SparklinePoint[],
+  opts: SparklineGeometryOptions = {},
+): SparklineGeometry
+```
+
+##### `sparklineLabel()` from `@llui/components/sparkline`
+
+Phrasing for a {@link SparklineSummary}. The strings are injected so the
+locale can supply them in `connect` and the pure path can default to
+English without a second template.
+
+```typescript
+function sparklineLabel(
+  summary: SparklineSummary,
+  strings: { empty: string; range: (count: number, from: string, to: string) => string },
+): string
+```
+
+##### `trimLeadingOutliers()` from `@llui/components/sparkline`
+
+Drop leading points separated from the rest by a disproportionate gap. See
+{@link SparklineTrim} for the rule and for why this is opt-in.
+
+```typescript
+function trimLeadingOutliers(
+  points: readonly SparklinePoint[],
+  trim: SparklineTrim | null,
+): { points: SparklinePoint[]; trimmed: number }
+```
+
+##### `update()` from `@llui/components/sparkline`
+
+```typescript
+function update(state: SparklineState, msg: SparklineMsg): [SparklineState, never[]]
+```
+
+#### Types
+
+##### `SparklineBandKind` from `@llui/components/sparkline`
+
+```typescript
+export type SparklineBandKind = 'between' | 'below' | 'above'
+```
+
+##### `SparklineMsg` from `@llui/components/sparkline`
+
+```typescript
+export type SparklineMsg =
+  /** @intent("Set the point under the cursor, or clear it with null") */
+  | { type: 'setActive'; index: number | null }
+  /** @intent("Move the cursor along the points by delta, clamping at the ends") */
+  | { type: 'moveActive'; delta: number }
+  /** @intent("Move the cursor to the first point") */
+  | { type: 'firstActive' }
+  /** @intent("Move the cursor to the last point") */
+  | { type: 'lastActive' }
+  /** @intent("Replace the plotted points") */
+  | { type: 'setPoints'; points: SparklinePoint[] }
+  /** @intent("Set the instant the right edge denotes, or derive it with null") */
+  | { type: 'setNow'; at: number | null }
+  /** @intent("Set the reference band; null on a side leaves it unbounded") */
+  | { type: 'setBand'; low: number | null; high: number | null }
+  /** @intent("Set the viewBox size in user units") */
+  | { type: 'setSize'; width: number; height: number }
+```
+
+##### `SparklineTone` from `@llui/components/sparkline`
+
+```typescript
+export type SparklineTone = 'below' | 'in' | 'above' | 'none'
+```
+
+#### Interfaces
+
+##### `SparklineBand` from `@llui/components/sparkline`
+
+A reference band. Both bounds are UNBOUNDED-CAPABLE in the sense of
+`finiteBound` (#177): "no bound on this side" is spelled by OMITTING the key,
+never by `undefined`, `null` or `±Infinity` — only the omission survives a
+JSON round trip key-for-key, and this lives in state.
+
+The three readings are not a convenience, they are the whole point: both
+bounds shade BETWEEN them, a high alone shades everything BELOW it, and a low
+alone shades everything ABOVE it. "Acceptable is under 140" and "acceptable
+is between 90 and 120" are different statements and must not both come out as
+a stripe.
+
+```typescript
+export interface SparklineBand {
+  low?: number
+  high?: number
+}
+```
+
+##### `SparklineBandGeometry` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklineBandGeometry {
+  kind: SparklineBandKind
+  low: number | null
+  high: number | null
+  d: string
+}
+```
+
+##### `SparklineCalendar` from `@llui/components/sparkline`
+
+The serializable subset of {@link CalendarStepOptions} this state carries.
+
+```typescript
+export interface SparklineCalendar {
+  offsetMinutes: number
+  weekStartsOn: number
+  maxTicks: number
+  /** Force a rung instead of choosing one from the span. */
+  unit?: CalendarUnit
+}
+```
+
+##### `SparklineConnectOptions` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklineConnectOptions {
+  /** Base id; the title and description ids derive from it. */
+  id: string
+  /** Override the composed accessible name entirely. */
+  label?: string
+  /** Longer description, announced with the name. Defaults to empty. */
+  description?: string
+}
+```
+
+##### `SparklineDot` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklineDot {
+  index: number
+  at: number
+  value: number
+  x: number
+  y: number
+  tone: SparklineTone
+  /** True for the most recent drawn point — the reading the row is about. */
+  last: boolean
+  /** True for the point under the cursor. Follows `chart`: the cursor is part
+   *  of the derived picture, so one signal per row carries everything a dot
+   *  renders from and nothing has to combine two signals at the call site. */
+  active: boolean
+  key: string
+}
+```
+
+##### `SparklineGeometry` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklineGeometry {
+  frame: Frame
+  time: Domain
+  value: Domain
+  /** The points actually drawn: finite, sorted, and after trimming. */
+  points: SparklinePoint[]
+  trimmed: number
+  /** The trend line. Empty string when there is nothing to draw. */
+  path: string
+  band: SparklineBandGeometry | null
+  ticks: SparklineTick[]
+  dots: SparklineDot[]
+  spans: SparklineSpan[]
+  now: SparklineNow
+  summary: SparklineSummary
+  /** Built-in English composition of {@link summary}. `connect` replaces it
+   *  with the locale's phrasing. */
+  label: string
+  rows: SparklineRow[]
+}
+```
+
+##### `SparklineGeometryOptions` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklineGeometryOptions {
+  band?: SparklineBand
+  now?: number
+  min?: number
+  max?: number
+  width?: number
+  height?: number
+  padding?: Partial<SparklinePadding>
+  curve?: Curve
+  trim?: SparklineTrim | null
+  track?: SparklineTrack | null
+  calendar?: Partial<SparklineCalendar>
+  /** Which drawn point the cursor is on. Indexes the DRAWN list — after
+   *  non-finite samples are dropped and after trimming — so it is the same
+   *  index `locateIndex` returns. */
+  activeIndex?: number | null
+}
+```
+
+##### `SparklineInit` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklineInit {
+  points?: readonly SparklinePoint[]
+  band?: SparklineBand
+  now?: number
+  min?: number
+  max?: number
+  width?: number
+  height?: number
+  padding?: Partial<SparklinePadding>
+  curve?: Curve
+  /** `true` for the documented defaults, an object to tune them, absent for
+   *  OFF — trimming discards data, so it is never on by accident. */
+  trim?: boolean | Partial<SparklineTrim>
+  track?: SparklineTrack | null
+  calendar?: Partial<SparklineCalendar>
+}
+```
+
+##### `SparklineNow` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklineNow {
+  at: number
+  x: number
+  d: string
+  /** True when the right edge is later than the last reading — the series
+   *  trails off. */
+  stale: boolean
+}
+```
+
+##### `SparklinePadding` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklinePadding {
+  top: number
+  right: number
+  bottom: number
+  left: number
+}
+```
+
+##### `SparklineParts` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklineParts {
+  root: {
+    'data-scope': 'sparkline'
+    'data-part': 'root'
+    'data-stale': Signal<'' | undefined>
+    'data-active': Signal<'' | undefined>
+  }
+  /**
+   * The `<svg>`. `role="img"` named through its own `<title>`/`<desc>`; the
+   * numbers live in {@link SparklineParts.table}, because an SVG polyline is
+   * otherwise silent and the WAI-ARIA graphics roles are not carried well
+   * enough to be the only route to the data.
+   */
+  svg: {
+    'data-scope': 'sparkline'
+    'data-part': 'svg'
+    role: 'img'
+    'aria-labelledby': string
+    viewBox: Signal<string>
+    tabindex: 0
+    onKeyDown: (e: KeyboardEvent) => void
+    onPointerMove: (e: PointerEvent) => void
+    onPointerLeave: (e: PointerEvent) => void
+    onBlur: (e: FocusEvent) => void
+  }
+  title: { id: string; 'data-scope': 'sparkline'; 'data-part': 'title' }
+  desc: { id: string; 'data-scope': 'sparkline'; 'data-part': 'desc' }
+  /** The visually-hidden `<table>` fallback. Render it with {@link rows}. */
+  table: {
+    'data-scope': 'sparkline'
+    'data-part': 'table'
+    'aria-label': Signal<string>
+  }
+  /** The reference band. Stays MOUNTED and hides itself, so a band appearing or
+   *  disappearing does not rebuild the layer. */
+  band: {
+    'data-scope': 'sparkline'
+    'data-part': 'band'
+    'data-band': Signal<'between' | 'below' | 'above' | undefined>
+    d: Signal<string>
+    hidden: Signal<boolean>
+  }
+  line: { 'data-scope': 'sparkline'; 'data-part': 'line'; d: Signal<string> }
+  /** The right edge. `data-stale` is set when it is later than the last
+   *  reading. */
+  now: {
+    'data-scope': 'sparkline'
+    'data-part': 'now'
+    'data-stale': Signal<'' | undefined>
+    d: Signal<string>
+  }
+  /** A `<g>` stacking layer. Static — spread it on each layer group. */
+  layer: { 'data-scope': 'sparkline'; 'data-part': 'layer' }
+  /**
+   * Per-row attribute bags. Each takes the ROW SIGNAL an `each` hands its
+   * render function, not a snapshot value, and every geometry-derived
+   * attribute comes back as a Signal.
+   *
+   * That is not decoration. A keyed `each` REUSES a row whose key is unchanged,
+   * so a dot whose key is `index:instant` survives a change of time domain —
+   * and a static `cx` read at build time would then be frozen at the position
+   * the point had under the OLD domain, with the key giving no hint that
+   * anything moved. Taking the row signal is what makes the reuse safe.
+   */
+  tickProps: (tick: Signal<SparklineTick>) => {
+    'data-scope': 'sparkline'
+    'data-part': 'grid'
+    'data-unit': Signal<'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'>
+    d: Signal<string>
+  }
+  dotProps: (dot: Signal<SparklineDot>) => {
+    'data-scope': 'sparkline'
+    'data-part': 'dot'
+    'data-tone': Signal<'below' | 'in' | 'above' | 'none'>
+    'data-last': Signal<'' | undefined>
+    'data-active': Signal<'' | undefined>
+    cx: Signal<number>
+    cy: Signal<number>
+  }
+  spanProps: (span: Signal<SparklineSpan>) => {
+    'data-scope': 'sparkline'
+    'data-part': 'span'
+    'data-grain': Signal<string>
+    d: Signal<string>
+  }
+  /** Tooltip ATTRIBUTES — spreadable, with its own reactive `hidden`. */
+  tooltip: {
+    'data-scope': 'sparkline'
+    'data-part': 'tooltip'
+    role: 'status'
+    'aria-live': 'polite'
+    hidden: Signal<boolean>
+    style: Signal<string>
+  }
+  ticks: Signal<SparklineTick[]>
+  dots: Signal<SparklineDot[]>
+  spans: Signal<SparklineSpan[]>
+  rows: Signal<SparklineRow[]>
+  /** The dot under the cursor, or `null`. */
+  activeDot: Signal<SparklineDot | null>
+  /** The composed accessible name — the locale's phrasing of
+   *  {@link SparklineGeometry.summary}, or `opts.label` when given. */
+  label: Signal<string>
+  summary: Signal<SparklineSummary>
+}
+```
+
+##### `SparklinePoint` from `@llui/components/sparkline`
+
+Sparkline — "this value, over time, against a reference band", at the size of
+a table cell.
+
+# Why this is not `chart`
+
+`chart` is a plotting machine: `ChartState`, a projection seam, a legend, a
+keyboard cursor over CATEGORIES, and numeric-nice value ticks. A sparkline is
+a **pure function of its points** — dozens appear in one table, and the only
+interaction any of them has is a hover readout. So the load-bearing export
+here is {@link sparklineGeometry}, which takes points and options and returns
+path strings; it needs no signal, no `send`, no mount and no state.
+
+`init`/`update`/`connect` exist BESIDE it, not instead of it, and add exactly
+one fact: which point the cursor is on. A consumer rendering fifty trends in
+a table calls the pure function fifty times and pays for nothing else; one
+that wants a tooltip opts into the machine for that column. The stateless
+middle ground works too — `connect(constant(state), noSend, { id })` gives
+the full part bag with the cursor pinned wherever the state says.
+
+# What it reuses
+
+The geometry is `utils/scale.ts` + `utils/path.ts` + `utils/projection.ts`,
+the same three files `chart` is built from, so every coordinate goes through
+`fmt` and a path recomputed from unchanged data is BYTE-IDENTICAL — the
+reconciler commits on output-equality, and a sparkline in a table is exactly
+the place where a spuriously-changing path string costs the most.
+
+Two things it does NOT reuse, each for a stated reason:
+
+- **`valueDomain`**, because it always includes zero. That is right for a
+  bar, whose LENGTH states the magnitude and therefore lies if the baseline
+  is not zero; it is wrong for a trend line, where the shape is the message.
+  A series reading 118–142 against a 90–120 band has to fill the box, not
+  sit as a flat smear across the top of a 0–142 axis.
+- **`ticks`/`niceDomain`**, because they are NUMERIC. See
+  `utils/calendar-ticks.ts`: rounding an epoch to a nice number never lands
+  on the 1st of March.
+
+There is no `coord` and no polar projection. A sparkline is inline text
+furniture; a round one is a different picture, and `chart` already draws it.
+
+```typescript
+export interface SparklinePoint {
+  /** Instant, in epoch milliseconds. */
+  at: number
+  value: number
+  /**
+   * Sampling resolution of this reading — "spot", "session", "daily", whatever
+   * the domain calls it. Free-form and never interpreted: consecutive points
+   * sharing a tag become one segment of the granularity track, so a line whose
+   * sampling changes SAYS so instead of implying uniform data.
+   */
+  grain?: string
+}
+```
+
+##### `SparklineRow` from `@llui/components/sparkline`
+
+One row of the visually-hidden `<table>` fallback.
+
+```typescript
+export interface SparklineRow {
+  at: number
+  /** `YYYY-MM-DD` in the configured offset's calendar. Locale-neutral by
+   *  design: the table is a data fallback, not a formatted report. */
+  day: string
+  value: number
+  tone: SparklineTone
+  grain: string | null
+}
+```
+
+##### `SparklineSpan` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklineSpan {
+  grain: string
+  /** First and last instant the segment covers. */
+  from: number
+  to: number
+  x0: number
+  x1: number
+  d: string
+  key: string
+}
+```
+
+##### `SparklineState` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklineState {
+  points: SparklinePoint[]
+  /** Omit a side to leave it unbounded — see {@link SparklineBand}. */
+  band: SparklineBand
+  /**
+   * The instant the RIGHT EDGE denotes. A stale series then visibly trails off
+   * instead of looking current, which is the difference between "the last
+   * reading was fine" and "the last reading was fine, eight months ago".
+   *
+   * UNBOUNDED-CAPABLE: omit it and the edge is the last reading's own instant.
+   * It is deliberately NOT defaulted to `Date.now()` anywhere in this module —
+   * geometry has to be a pure function of state or an SSR render and the first
+   * client render disagree, and `Date.now()` would additionally make the path
+   * string change on every recomputation, which is the one thing `fmt` exists
+   * to prevent. A consumer that wants "now" puts a clock in its own state.
+   */
+  now?: number
+  /** Value-axis bounds. UNBOUNDED-CAPABLE (#177): omit to derive. */
+  min?: number
+  max?: number
+  width: number
+  height: number
+  padding: SparklinePadding
+  curve: Curve
+  /** `null` = no trimming. See {@link SparklineTrim}. */
+  trim: SparklineTrim | null
+  /** `null` = no granularity track. */
+  track: SparklineTrack | null
+  /** Fixed offset from UTC that calendar boundaries are measured in, and the
+   *  ladder's ceiling. See `utils/calendar-ticks.ts` on why it is an offset and
+   *  not a zone. */
+  calendar: SparklineCalendar
+  /** Index of the point under the pointer or keyboard cursor. */
+  activeIndex: number | null
+}
+```
+
+##### `SparklineSummary` from `@llui/components/sparkline`
+
+The facts a label is composed from. Separated from the label itself so the
+same numbers can be phrased by the locale in `connect` and by the built-in
+English template in the pure path.
+
+```typescript
+export interface SparklineSummary {
+  count: number
+  /** `YYYY-MM-DD` of the first and last drawn reading; empty strings when there
+   *  is no data. */
+  from: string
+  to: string
+  trimmed: number
+  stale: boolean
+}
+```
+
+##### `SparklineTick` from `@llui/components/sparkline`
+
+```typescript
+export interface SparklineTick {
+  at: number
+  unit: CalendarUnit
+  x: number
+  /** The vertical gridline, in user units. */
+  d: string
+  /** Stable key for a keyed `each`. */
+  key: string
+}
+```
+
+##### `SparklineTrack` from `@llui/components/sparkline`
+
+The granularity track: a thin bar under the plot, in the bottom padding.
+
+```typescript
+export interface SparklineTrack {
+  height: number
+  /** Distance between the bottom of the plot frame and the top of the track. */
+  gap: number
+}
+```
+
+##### `SparklineTrim` from `@llui/components/sparkline`
+
+Leading-outlier trimming. A HEURISTIC that DISCARDS REAL DATA, so it is off
+unless asked for: `trim: null` is the default, and a chart that silently
+drops a reading is worse than a squashed one.
+
+The rule: while more than `floor` points remain, compare the FIRST gap
+against the MEDIAN of the gaps after it, and drop the leading point when the
+first gap is more than `factor` times that median. Median rather than mean so
+a second ancient reading cannot inflate the yardstick it is being measured
+against; `factor > 1` is required, and a median of zero (every remaining
+reading at the same instant) stops the walk rather than eating the series.
+
+`trimmed` in the geometry reports how many points went, so a consumer can say
+so on the page.
+
+```typescript
+export interface SparklineTrim {
+  /** How many times the median gap the leading gap must exceed. Default 4. */
+  factor: number
+  /** Never trim below this many points. Default 3, floored at 2 — one point is
+   *  not a trend and cannot be drawn as a line. */
+  floor: number
+}
+```
+
+#### Constants
+
+##### `sparkline` from `@llui/components/sparkline`
+
+```typescript
+const sparkline
 ```
 
 ### `@llui/components/form`

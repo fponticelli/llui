@@ -42,6 +42,9 @@ export interface Locale {
   qrCode: { label: string; download: string }
   signaturePad: { label: string; clear: string; undo: string }
   sortable: { handle: string }
+  /** The composed accessible name of a sparkline. `from`/`to` arrive as
+   *  `YYYY-MM-DD` in the sparkline's own calendar offset. */
+  sparkline: { empty: string; range: (count: number, from: string, to: string) => string }
   steps: { label: string }
   tagsInput: { input: string; remove: string; clear: string }
   timePicker: { label: string; hours: string; minutes: string; period: string }

@@ -56,6 +56,7 @@ export { qrCode } from './qr-code.js'
 export { inView } from './in-view.js'
 export { form } from './form.js'
 export { sortable } from './sortable.js'
+export { sparkline } from './sparkline.js'
 export { themeSwitch } from './theme-switch.js'
 export { field } from './field.js'
 export { fieldset } from './fieldset.js'
@@ -87,6 +88,30 @@ export {
 
 export type { FormState, FormMsg, FormStatus, FormParts, ValidateResult } from './form.js'
 export type { SortableState, SortableMsg, SortableParts, DragState } from './sortable.js'
+export type {
+  SparklineState,
+  SparklineMsg,
+  SparklineInit,
+  SparklineParts,
+  SparklineConnectOptions,
+  SparklinePoint,
+  SparklineBand,
+  SparklineBandGeometry,
+  SparklineBandKind,
+  SparklineCalendar,
+  SparklineDot,
+  SparklineGeometry,
+  SparklineGeometryOptions,
+  SparklineNow,
+  SparklinePadding,
+  SparklineRow,
+  SparklineSpan,
+  SparklineSummary,
+  SparklineTick,
+  SparklineTone,
+  SparklineTrack,
+  SparklineTrim,
+} from './sparkline.js'
 export type {
   ThemeSwitchState,
   ThemeSwitchMsg,

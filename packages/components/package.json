@@ -281,6 +281,10 @@
       "types": "./dist/components/sortable.d.ts",
       "import": "./dist/components/sortable.js"
     },
+    "./sparkline": {
+      "types": "./dist/components/sparkline.d.ts",
+      "import": "./dist/components/sparkline.js"
+    },
     "./form": {
       "types": "./dist/components/form.d.ts",
       "import": "./dist/components/form.js"
