@@ -153,21 +153,19 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     return inView.createObserver(box, (m) => send({ type: 'inView', msg: m }), { threshold: 0.6 })
   })
 
-  // theme-switch: apply the resolved theme to <html> on mount, and keep
-  // following the OS when the preference is 'system'. Clicks also apply
-  // immediately (see the option buttons below) so the data-theme on <html>
-  // tracks the control without needing a state subscription in the view.
+  // theme-switch: publish the PREFERENCE on <html> at mount. `applyTheme`
+  // removes `data-theme` for 'system', which is the state `tokens-dark.css`
+  // answers with its `prefers-color-scheme` block — so following the OS needs
+  // no JS resolve and no `watchSystemTheme` here (#233). Clicks apply
+  // immediately (see the option buttons below) so the attribute tracks the
+  // control without needing a state subscription in the view.
   const themeMount = onMount(() => {
-    const themeSig = state.at('themeSwitch').at('theme')
-    themeSwitch.applyTheme(themeSwitch.resolveTheme(themeSig.peek()))
-    return themeSwitch.watchSystemTheme((resolved) => {
-      if (themeSig.peek() === 'system') themeSwitch.applyTheme(resolved)
-    })
+    themeSwitch.applyTheme(state.at('themeSwitch').at('theme').peek())
   })
 
   // A theme option button: reuses the part bag for a11y (role/aria-pressed/
-  // data-theme) but overrides onClick to BOTH send the message and apply the
-  // resolved theme to <html> right away (direct calls are fine in handlers).
+  // data-theme) but overrides onClick to BOTH send the message and publish the
+  // preference on <html> right away (direct calls are fine in handlers).
   const themeOption = (theme: Theme, label: string): Mountable => {
     const part = tw.option(theme)
     return button(
@@ -180,7 +178,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ),
         onClick: (e: MouseEvent) => {
           part.onClick(e)
-          themeSwitch.applyTheme(themeSwitch.resolveTheme(theme))
+          themeSwitch.applyTheme(theme)
         },
       },
       [text(label)],

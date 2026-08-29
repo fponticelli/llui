@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { init, update, connect, resolveTheme, applyTheme } from '../../src/components/theme-switch'
 import type { ThemeSwitchState, Theme } from '../../src/components/theme-switch'
@@ -80,8 +82,24 @@ describe('resolveTheme', () => {
   })
 })
 
+/**
+ * #233: `applyTheme` used to take a RESOLVED theme and always write the
+ * attribute, so a consumer on `'system'` had to resolve in JS and pin an
+ * answer. It takes the full `Theme` and publishes the PREFERENCE: the
+ * attribute for an explicit choice, and its ABSENCE for `'system'` — which is
+ * the state `tokens-dark.css`'s `prefers-color-scheme` block already answers:
+ *
+ *   @media (prefers-color-scheme: dark) {
+ *     :root:not([data-theme='light']):not(.light) { … }
+ *   }
+ *   .dark, [data-theme='dark'] { … }
+ */
 describe('applyTheme', () => {
   beforeEach(() => {
+    document.documentElement.removeAttribute('data-theme')
+  })
+
+  afterEach(() => {
     document.documentElement.removeAttribute('data-theme')
   })
 
@@ -93,6 +111,105 @@ describe('applyTheme', () => {
   it('sets data-theme="light" on html when theme is light', () => {
     applyTheme('light')
     expect(document.documentElement.dataset.theme).toBe('light')
+  })
+
+  it('REMOVES a previously-set data-theme when theme is system', () => {
+    // Not merely "does not add one": a control starts on light or dark far more
+    // often than it starts on system, so the transition INTO system is the case
+    // that matters. Leaving a stale `data-theme="dark"` behind pins the palette
+    // against the OS with the state machine reading 'system'.
+    applyTheme('dark')
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(true)
+    applyTheme('system')
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false)
+    expect(document.documentElement.dataset.theme).toBeUndefined()
+  })
+
+  it('adds no data-theme when system is applied to a clean document', () => {
+    applyTheme('system')
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false)
+  })
+
+  it('round-trips all three preferences', () => {
+    const attr = (): string | null => document.documentElement.getAttribute('data-theme')
+    const seen: Array<string | null> = []
+    for (const t of ['light', 'dark', 'system', 'dark', 'light', 'system'] as Theme[]) {
+      applyTheme(t)
+      seen.push(attr())
+    }
+    expect(seen).toEqual(['light', 'dark', null, 'dark', 'light', null])
+  })
+
+  it('does NOT consult matchMedia — system is answered by CSS, not by a JS resolve', () => {
+    // The whole point of #233: honouring the OS setting must not require
+    // reading `prefers-color-scheme` in JS, which is what forced the flash and
+    // made `watchSystemTheme` mandatory.
+    const spy = vi.fn(() => {
+      throw new Error('applyTheme must not read matchMedia')
+    })
+    const original = Object.getOwnPropertyDescriptor(window, 'matchMedia')
+    Object.defineProperty(window, 'matchMedia', { value: spy, configurable: true })
+    try {
+      applyTheme('system')
+      applyTheme('dark')
+      applyTheme('light')
+    } finally {
+      if (original) Object.defineProperty(window, 'matchMedia', original)
+      else delete (window as { matchMedia?: unknown }).matchMedia
+    }
+    expect(spy).not.toHaveBeenCalled()
+  })
+})
+
+/**
+ * `applyTheme`'s contract is only half the fix — the other half lives in CSS,
+ * and the two are one fact stated in two files. If the dark stylesheet ever
+ * stops answering the absent-attribute case, `'system'` silently pins light on
+ * a dark OS with nothing failing: the class of bug `registry-attrs.test.ts`
+ * exists to catch, one layer down. So read the SELECTORS out of the shipped
+ * stylesheet and run them against a real element in each of the three states.
+ */
+describe('applyTheme pairs with the selectors tokens-dark.css actually ships', () => {
+  const css = readFileSync(resolve(import.meta.dirname, '../../src/styles/tokens-dark.css'), 'utf8')
+
+  /** The guard inside `@media (prefers-color-scheme: dark)` — the branch an
+   * absent `data-theme` is meant to fall into. */
+  const mediaSelector = css.match(/@media \(prefers-color-scheme: dark\) \{\s*([^{]+?)\s*\{/)?.[1]
+  /** The explicit-dark selector list outside any media query. */
+  const explicitSelector = css.match(/\n(\.dark,\n\[data-theme='dark'\]) \{/)?.[1]
+
+  it('ships both selectors (a rename here is a silent theme break)', () => {
+    expect(mediaSelector).toBe(":root:not([data-theme='light']):not(.light)")
+    expect(explicitSelector).toBe(".dark,\n[data-theme='dark']")
+  })
+
+  function stateOf(theme: Theme): { media: boolean; explicit: boolean } {
+    applyTheme(theme)
+    const html = document.documentElement
+    return {
+      media: html.matches(mediaSelector as string),
+      explicit: html.matches((explicitSelector as string).replace(/\n/g, ' ')),
+    }
+  }
+
+  afterEach(() => {
+    document.documentElement.removeAttribute('data-theme')
+  })
+
+  it("'system' falls into the media branch, so the OS answers it", () => {
+    // Matching the media guard means: dark when the OS is dark, and the
+    // `:root` light default when it is not. No JS resolve, no flash.
+    expect(stateOf('system')).toEqual({ media: true, explicit: false })
+  })
+
+  it("'dark' matches the explicit block in BOTH OS settings", () => {
+    expect(stateOf('dark')).toEqual({ media: true, explicit: true })
+  })
+
+  it("'light' is excluded from the media branch, so it opts OUT of a dark OS", () => {
+    // This is the cell that would break if the guard were written
+    // `:root:not([data-theme])` instead: a light preference on a dark OS.
+    expect(stateOf('light')).toEqual({ media: false, explicit: false })
   })
 })
 

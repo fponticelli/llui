@@ -24,6 +24,22 @@
   --primary-foreground: oklch(0.2 0.02 258);
 }
 
+/*
+ * The SAME override for the no-attribute case, under the guard `tokens-dark.css`
+ * uses verbatim. `applyTheme('system')` REMOVES `data-theme` (#233) and lets the
+ * media query answer, so an override written only against `.dark` /
+ * `[data-theme='dark']` silently keeps its LIGHT value on a dark OS: every base
+ * token flips and the brand colour does not. Any block a theme generator emits
+ * under `.dark` needs this twin, which is exactly why `theme.css`'s derived
+ * `color-mix()` tokens do not — they re-resolve from `--foreground` for free.
+ */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not(.light) {
+    --primary: oklch(0.7 0.15 258);
+    --primary-foreground: oklch(0.2 0.02 258);
+  }
+}
+
 /* Demo-specific layout */
 .demo-section {
   border-radius: var(--radius-lg);

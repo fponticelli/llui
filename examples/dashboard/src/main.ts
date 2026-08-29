@@ -130,7 +130,11 @@ const Dashboard = component<State, Msg, Effect>({
   },
   onEffect: (effect) => {
     if (effect.type === 'applyTheme') {
-      themeSwitch.applyTheme(themeSwitch.resolveTheme(effect.theme))
+      // The PREFERENCE, not a resolved value: `applyTheme` removes `data-theme`
+      // for 'system', and this page's own `@media (prefers-color-scheme: light)
+      // { :root:not([data-theme='dark']) }` block in index.html answers that
+      // case in CSS — no JS resolve, no flash (#233).
+      themeSwitch.applyTheme(effect.theme)
     }
   },
   view: ({ state, send }) => {

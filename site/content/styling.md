@@ -50,6 +50,32 @@ Dark mode activates three ways, all at once: a `.dark` class (what shadcn toolin
 writes), `[data-theme='dark']` (what `@llui/components/theme-switch` writes), and
 `prefers-color-scheme`. `[data-theme='light']` or `.light` opts a subtree out.
 
+`applyTheme()` publishes the user's **preference**, so `'system'` REMOVES `data-theme`
+rather than resolving `prefers-color-scheme` in JS and pinning the answer — that is the
+state the media query exists to answer, and pinning it costs a flash of the wrong palette
+on first paint. Two consequences for your own overrides:
+
+- **An override written only under `.dark` / `[data-theme='dark']` is dead on a dark OS
+  when the preference is `'system'`.** Every base token flips (the media block in
+  `tokens-dark.css` matches an absent attribute) and yours does not, so the page goes dark
+  and keeps your light brand colour. Give such a block a twin under the same guard the
+  stylesheet uses:
+
+  ```css
+  .dark,
+  [data-theme='dark'] {
+    --primary: oklch(0.7 0.15 258);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']):not(.light) {
+      --primary: oklch(0.7 0.15 258);
+    }
+  }
+  ```
+
+- The derived `color-mix()` tokens above need no such twin — they re-resolve from
+  `--foreground` in whichever block wins.
+
 > **Tailwind v4 is required.** The colour tokens are mapped into Tailwind's `--color-*`
 > namespace with `@theme inline`, and the radius/shadow/duration/z-index scales come
 > from a plain `@theme`. Without a Tailwind v4 pipeline those scales emit nothing.

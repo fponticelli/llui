@@ -11,10 +11,12 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 ### Breaking
 
+- **`@llui/components` `theme-switch`** — `applyTheme` now takes the full `Theme` (`'light' | 'dark' | 'system'`) instead of a `ResolvedTheme`, and REMOVES `data-theme` for `'system'` instead of always writing the attribute (#233). A caller passing a resolved value still type-checks and behaves identically, so nothing breaks silently; what changes is that `applyTheme(resolveTheme(pref))` is no longer the right call.
 - **`@llui/components` `clipboard`** — the `copy` message no longer sets `copied`. It used to fall through to `copied` in the reducer, so `connect()`'s own trigger — which dispatches `copy` — claimed success unconditionally: a `navigator.clipboard.writeText` refused for permission, an insecure context or browser policy still flipped the button to "Copied!" and had `indicator` (an `aria-live="polite"` region) ANNOUNCE it, telling the user their token was on the clipboard when it was not (#232). `copy` is now a request that returns the state unchanged, and `copied` is the only message that sets the flag.
 
 ### Migration
 
+- Calling `applyTheme(resolveTheme(pref))`? Drop the resolve and pass the preference: `applyTheme(pref)`. That removes the attribute for `'system'`, which is the state `tokens-dark.css` already answers in CSS — so the flash on first paint goes away and `watchSystemTheme` is no longer needed to follow the OS. **Check your own theme overrides while you are there:** a block written only under `.dark` / `[data-theme='dark']` stops applying once `'system'` leaves the attribute off, so it needs a twin under `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']):not(.light) { … } }`. `components-demo` had exactly that gap. The derived `color-mix()` tokens need no twin.
 - Relying on the optimistic flip? The feedback now needs the resolved write to dispatch `copied`, or it never appears — the opposite failure, and just as silent. Dispatch from the promise's resolved branch only, and dispatch NOTHING on rejection (a `reset` after a failed write announces the success and then retracts it):
 
   ```ts
@@ -26,12 +28,18 @@ All notable changes to LLui packages are documented here. LLui is a pre-1.0 proj
 
 ### `@llui/components`
 
+- **Fixed** `theme-switch`'s `applyTheme` could not express `'system'` (#233). It accepted only a RESOLVED theme and always wrote `data-theme`, so honouring the OS setting forced a `matchMedia` read and a pinned value in JS — strictly worse than doing nothing, because `tokens-dark.css` answers that case with `@media (prefers-color-scheme: dark) { :root:not([data-theme='light']):not(.light) }` and the attribute absent. Pinning cost a flash of the wrong palette on first paint, made `watchSystemTheme` mandatory to track OS changes CSS follows for free, and left SSR with no correct attribute to render. `resolveTheme`/`watchSystemTheme` are unchanged and stay for consumers who need the resolved value IN JS (canvas theming, `<meta name="theme-color">`) — they are simply off the critical path now. `connect()` needed no change.
 - **Fixed** `clipboard`'s `copy` set `copied` before the write resolved, so a denied copy announced success through the live region (#232). Its doc comment already described the corrected contract — "the consumer dispatches `copied` or `reset` based on the result" — which the shipped reducer and `connect()` handler did not implement; code and docs now agree.
 - **Fixed** `clipboard`'s `connect({ onCopy })` was invoked with `''` instead of the value to write. Nothing in the repo used it, but it is the seam for performing the write from the trigger, which the fix above makes load-bearing — a consumer taking it would have copied an empty string.
 
 ### Examples
 
 - **Fixed** `components-demo`'s clipboard section performed the optimistic flip in its own reducer. It now dispatches `copied` from the resolved write and nothing at all from a rejected one.
+- **Fixed** `components-demo`'s brand override defined `--primary` only under `.dark, [data-theme='dark']`. Once `'system'` leaves the attribute off, every base token flips on a dark OS and that override did not — the page went dark and kept its light brand colour. It now carries the twin block under the media query. `dashboard` needed no CSS change: its stylesheet is dark-first and already answers the no-attribute case.
+
+### Docs
+
+- **Added** `site/content/styling.md` documents that `applyTheme` publishes the PREFERENCE (so `'system'` removes the attribute) and that a theme override written only under `.dark` / `[data-theme='dark']` needs a `prefers-color-scheme` twin.
 
 ## 2026-08-27 — @llui/components@0.18.0
 
