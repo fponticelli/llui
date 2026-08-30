@@ -631,11 +631,18 @@ export function checkPackage(pkgDir) {
   // flags (they're examples, not production code).
   //
   // The files live under the PACKAGE's own `node_modules/.cache`, not the
-  // workspace root's, so `@llui/*` resolves the way it does for a consumer
+  // workspace root's, so every import resolves the way it does for a consumer
   // of that package: its declared deps and peers through
   // `packages/<pkg>/node_modules`, and the package ITSELF through the
-  // self-name reference its `exports` map provides. From the root cache the
-  // same imports resolved nowhere — measured at 105 of 298 errors.
+  // self-name reference its `exports` map provides. That was worth 105 of the
+  // first 298 errors, all `@llui/*`; the link farm below now covers that half,
+  // so what the LOCATION still carries on its own is the package's THIRD-PARTY
+  // dependencies — measured by moving it back to the root cache against the
+  // final code: 54 errors, `vike/server` x24, `mdast` x9, `lexical` x6,
+  // `@lexical/markdown` x6, `yjs`, `loro-crdt`, `@lexical/headless` x3 each.
+  // `scripts/test/readme-examples.test.ts` CANNOT see this — its fixtures are
+  // bare temp directories with no dependencies to resolve — so that mutation
+  // survives the suite and is answered by this measurement instead.
   const tsconfigPath = join(tmpDir, `${pkgName}-tsconfig.json`)
   writeFileSync(
     tsconfigPath,
