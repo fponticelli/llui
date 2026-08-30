@@ -105,7 +105,10 @@
 // the emitted `.d.ts` was well-bound and quietly missing an export). Keep the
 // tag unspelled instead.
 //
-// Both shapes are gated by `scripts/check-dist.mjs` (`pnpm check:dist`).
+// Both shapes are gated by `scripts/check-dist.mjs` (`pnpm check:dist`), but by
+// DIFFERENT arms: the source arm catches either placement, while the dist arm
+// catches only the free-name half, for the luck reason above. That guard is a
+// BINDING check, not a type check — see `scripts/lib/dist-type-bindings.mjs`.
 
 import {
   isDOMUnmanaged,

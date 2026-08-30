@@ -4,6 +4,7 @@ import { join } from 'node:path'
 // @ts-expect-error - .mjs helper without types (every scripts/lib consumer does this)
 import {
   INTERNAL_TAG,
+  MIN_TAG_MENTIONS,
   freeTypeNames,
   globalTypeNames,
   misplacedInternalTags,
@@ -71,8 +72,18 @@ describe('dist arm: every referenced type name is bound', () => {
     expect(free("import * as NS from 'x'\nexport interface P { a: NS.Deep.Thing }\n")).toEqual([])
   })
 
-  it('needs nothing bound for an inline import type', () => {
+  // KNOWN LIMIT, not a feature. An inline import type binds nothing, so this arm
+  // has nothing to check and says nothing — including when the SPECIFIER does not
+  // resolve, which is the commonest way a published `.d.ts` breaks a consumer
+  // after an unbound name. `@llui/vite-plugin` ships exactly that today
+  // (`import("rolldown").TransformPluginContext` x6, unresolvable under Bundler,
+  // NodeNext and Node10 alike), and this arm is green on it. The
+  // `examples/markdown-editor` type-check that originally surfaced #253 DID catch
+  // that class, so this guard is NOT a superset of the canary it replaced.
+  // Closing it means resolving specifiers; tracked as #257.
+  it('says nothing about an inline import type, resolvable or not (KNOWN LIMIT)', () => {
     expect(free("export interface P { a: import('lexical').LexicalNode }\n")).toEqual([])
+    expect(free("export interface P { a: import('no-such-module-anywhere').Nope }\n")).toEqual([])
   })
 
   it('checks heritage clauses, not just member types', () => {
@@ -178,7 +189,11 @@ describe('the repo corpus', () => {
     // have found files that genuinely spell the tag — otherwise a scan that
     // stopped matching would report a clean sheet.
     expect(scanned).toBeGreaterThan(50)
-    expect(mentioning).toBeGreaterThanOrEqual(4)
+    // Imported, not hardcoded: this is the SAME floor `check-dist.mjs` applies to
+    // its pre-filter, and the constant's contract is that both consumers move
+    // together. Hardcoding it here lets the gate be raised while this silently
+    // keeps the old number.
+    expect(mentioning).toBeGreaterThanOrEqual(MIN_TAG_MENTIONS)
     expect(problems).toEqual([])
   })
 })

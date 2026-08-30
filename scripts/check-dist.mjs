@@ -25,9 +25,10 @@
 //      file in a `stripInternal` package mentions the internal JSDoc tag as
 //      prose. Two arms of one guard (#253) — see
 //      `scripts/lib/dist-type-bindings.mjs` for why one cannot replace the
-//      other, and why the dist arm is structural rather than a `tsc` run
-//      (a `tsc` run is green under this repo's `skipLibCheck: true` and
-//      verifies nothing).
+//      other, and for what this arm does NOT cover: it is a BINDING check, so
+//      it does not resolve module specifiers, and the wider
+//      `skipLibCheck: false` sweep it declines to be finds two live defects it
+//      cannot (#257). A green run here is not "the published types compile".
 //
 // Imports are found by PARSING with the TypeScript compiler, not by regex: this
 // repo's own compiler sources quote `export { X } from './y'` inside comments
@@ -44,6 +45,7 @@ import { join, dirname, relative, normalize } from 'node:path'
 import { createRequire } from 'node:module'
 import {
   INTERNAL_TAG,
+  MIN_TAG_MENTIONS,
   freeTypeNames,
   globalTypeNames,
   misplacedInternalTags,
@@ -174,10 +176,12 @@ for (const pkgDir of stripInternalPackages(repoRoot)) {
     tagsJudged++
     for (const t of misplacedInternalTags(repoRoot, file, text)) {
       problems.push(
-        `${relative(repoRoot, file)}:${t.line}: the internal JSDoc tag appears as ${
+        `${relative(repoRoot, file)}:${t.line}: the internal tag is spelled in ${
           t.kind === 'line-comment' ? 'a // comment' : 'JSDoc prose'
-        }, not as an annotation — stripInternal will DELETE the next declaration ` +
-          `from the emitted .d.ts (#253). Reword so the tag is not spelled: ${t.text}`,
+        }. stripInternal reads EVERY leading comment range, so this DELETES the ` +
+          `next declaration from the emitted .d.ts whether it was meant as an ` +
+          `annotation or not (#253). House style: a real annotation is a JSDoc tag ` +
+          `at the start of its line; anything else must not spell it: ${t.text}`,
       )
     }
   }
@@ -221,9 +225,18 @@ else {
       `dist type bindings: judged only ${dtsFiles} .d.ts / ${refsJudged} type references — far below the expected corpus. The walk found nothing to check.`,
     )
 }
+// Vacuity, BOTH halves. `sourceFiles` counts files WALKED and cannot see the
+// pre-filter below going wrong; `tagsJudged` counts files actually handed to the
+// analyzer, which is the number that goes to zero when it does. Measured with
+// #253 restored in source and the pre-filter broken: exit 0, with
+// "0 of 109 source files scanned" printed on a GREEN line.
 if (sourceFiles < 50)
   problems.push(
     `stripInternal source scan: judged only ${sourceFiles} source files across ${stripInternalPackages(repoRoot).length} stripInternal package(s) — the walk found nothing to check.`,
+  )
+if (tagsJudged < MIN_TAG_MENTIONS)
+  problems.push(
+    `stripInternal source scan: only ${tagsJudged} of ${sourceFiles} source files reached the analyzer (expected at least ${MIN_TAG_MENTIONS}) — the pre-filter is dropping everything, so this arm is judging nothing.`,
   )
 
 if (problems.length) {

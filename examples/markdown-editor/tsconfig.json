@@ -5,19 +5,33 @@
     "moduleResolution": "bundler",
     "strict": true,
     "esModuleInterop": true,
-    // Matches the root tsconfig (which every package inherits) and the other
-    // standalone example, vike-layout. Without it this example type-checks
-    // @llui/markdown-editor's emitted .d.ts, where `MarkdownListNode.$config`
-    // reports TS2416: that divergence from `ListNode` is DELIBERATE — it is the
-    // off-contract `extends` that #129 depends on, and it carries the package's
-    // one `@ts-expect-error` in SOURCE, which does not survive into the .d.ts.
-    // Nothing here can or should "fix" it.
+    // Matches the root tsconfig (which every package inherits) and vike-layout.
+    // Three of the twelve examples stand alone rather than extending the root:
+    // this one, vike-layout (which sets skipLibCheck itself) and github-explorer
+    // (which does NOT — see the canary note below).
     //
-    // This example used to be the one workspace that saw another package's
-    // emitted .d.ts, and that is how #253 was found. That canary is now a
-    // deliberate one: `pnpm check:dist` asserts every type name in every
-    // publishable package's .d.ts is bound, across all 25 packages rather than
-    // only what this example happens to import.
+    // Measured: without this, `tsc -p` here reports SIX errors, none of them
+    // about this example's own code.
+    //   1 x TS2416 — @llui/markdown-editor's `MarkdownListNode.$config`. That
+    //     divergence from `ListNode` is DELIBERATE: it is the off-contract
+    //     `extends` #129 depends on, and its `@ts-expect-error` lives in SOURCE
+    //     and does not survive into the emitted `.d.ts`. Nothing here can fix it.
+    //   5 x TS2687/TS2717 — `ImportMeta.env` conflicts between vite/client (pulled
+    //     in by src/vite-env.d.ts, which we need for the CSS side-effect imports)
+    //     and the `declare global { interface ImportMeta }` blocks that SIX files
+    //     across FIVE workspace packages ship (dom, markdown-editor, markdown x2,
+    //     devmode-annotate, interactions). The errors name vite's own
+    //     importMeta.d.ts plus dom and markdown-editor.
+    //
+    // CANARY NOTE: this example used to be the one workspace that type-checked
+    // another package's emitted `.d.ts`, and that is how #253 was found. Setting
+    // this gives that up HERE, so it is replaced by a deliberate guard —
+    // `pnpm check:dist` asserts every type name in every publishable package's
+    // `.d.ts` is bound, across all 25 packages instead of only what this example
+    // imports. Be precise about the trade: that guard does NOT resolve module
+    // specifiers, so the `import("rolldown")` class it cannot see is genuinely
+    // lost here (#257). github-explorer still runs without skipLibCheck and is a weaker
+    // surviving canary (it imports far less).
     "skipLibCheck": true,
     // In the CONFIG, not only via the CLI flag (#251). `tsc -p` against a config
     // without it writes .js/.d.ts next to the sources, and Vite then resolves

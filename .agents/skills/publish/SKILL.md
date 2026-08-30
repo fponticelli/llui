@@ -415,9 +415,19 @@ the tarball:
    COMMENT contains that tag, and TypeScript's test for it is a raw substring
    search that cannot tell an annotation from the paragraph beside it — an
    80-line `//` module header did it in `@llui/lexical`, deleting the whole
-   `import` below it and shipping five unbound names. Nothing in-repo caught it:
-   every workspace inherits `skipLibCheck: true`, so no package type-checks
-   another's emitted `.d.ts`. See `scripts/lib/dist-type-bindings.mjs`.
+   `import` below it and shipping five unbound names. ALMOST nothing in-repo
+   could see it: every workspace inherits `skipLibCheck: true`, so no package
+   type-checks another's emitted `.d.ts`. The exception is how it WAS found —
+   `examples/markdown-editor` stood alone and did not inherit it (and
+   `examples/github-explorer` still does not). That example now sets
+   `skipLibCheck: true` itself, for reasons written in its tsconfig, so the
+   canary is deliberate rather than accidental.
+
+   **Read this as a BINDING check, not a type check.** It does not resolve
+   module SPECIFIERS, so an unresolvable `import('x').Y` is outside it by
+   construction — two published `.d.ts` that a `skipLibCheck: false` consumer
+   cannot compile are open as #257. A green run here does NOT mean the published
+   types compile. See `scripts/lib/dist-type-bindings.mjs`.
 
 It parses with the TypeScript compiler rather than grepping, because this repo's
 own compiler sources quote `export { X } from './y'` inside comments and a text

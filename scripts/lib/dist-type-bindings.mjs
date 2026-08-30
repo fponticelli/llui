@@ -42,26 +42,56 @@
 // redundant, and the source arm is the one that makes the second direction
 // unconditional.
 //
-// WHY THE DIST ARM IS STRUCTURAL AND NOT A `tsc` RUN
-// --------------------------------------------------
-// A regression test that merely runs `tsc` over `dist` is GREEN under this
-// repo's default `skipLibCheck: true` and verifies nothing. Setting
-// `skipLibCheck: false` does work — measured over all 25 publishable packages it
-// finds exactly this bug (10 x TS2304 in one file) — but it costs **37 s** of
-// program construction and drags in five diagnostics that are not about
-// binding at all and would each need an allowlist entry: three `@types/node`
-// globals, plus `markdown-editor`'s `MarkdownListNode.$config`, whose divergence
-// from `ListNode` is DELIBERATE and documented (it carries the package's one
-// `@ts-expect-error`, which does not survive into the `.d.ts`).
+// WHAT THE DIST ARM IS, AND WHAT IT IS NOT
+// ----------------------------------------
+// It is a BINDING check, not a type check, and the difference is not academic —
+// read the limits below before treating a green run as "the published types
+// compile".
 //
-// The structural check answers the narrower question actually at stake — is
-// every type name this file references BOUND — in **1.2 s** over the same 558
-// files / 3919 type references, with zero allowlist entries. Globals come from
-// a real `ts` program over the lib files (~4.6 s, one program, `getSymbolsInScope`),
-// never a hand-written list, so `HTMLElement`/`Buffer`/`Record` are known
-// because TypeScript says so.
+// A regression test that merely runs `tsc` over `dist` is GREEN under this
+// repo's default `skipLibCheck: true` and verifies nothing, so that is not the
+// alternative. The real alternative is ONE program over all 557 `.d.ts` with
+// `skipLibCheck: false`, and it is neither as slow nor as noisy as an earlier
+// version of this comment claimed. Measured on a quiet machine, three samples,
+// identical results under `types: ['node']`, `types: []` and no `types` field:
+// **4.9-6.9 s and ELEVEN diagnostics**, of which eight are in our OWN published
+// output:
+//
+//   6 x TS2307  packages/vite-plugin/dist/{compile-plugin,hud-plugin}.d.ts
+//               Cannot find module 'rolldown'. An inferred plugin-hook `this`
+//               type leaked an undeclared transitive dep; `rolldown` exists only
+//               inside vite's own pnpm dir and is UNRESOLVABLE from vite-plugin
+//               under Bundler, NodeNext and Node10 alike. A real shipped defect,
+//               same family as #253. Tracked as #257.
+//   1 x TS2882  packages/devmode-annotate-editor/dist/index.d.ts — a side-effect
+//               CSS import with no module declaration. Also consumer-facing.
+//   1 x TS2416  packages/markdown-editor/dist/nodes/list.d.ts — the DELIBERATE
+//               `MarkdownListNode` divergence #129 depends on, whose
+//               `@ts-expect-error` does not survive into the `.d.ts`.
+//   3 x TS2304/7010/7051  inside loro-crdt's own shipped `.d.ts` — third-party,
+//               not ours to fix, and exactly what `skipLibCheck` exists for.
+//
+// So the semantic sweep is NOT "noise plus one documented exception": it finds
+// two live defects this arm cannot. It is not the gate today only because it is
+// RED on those two, and adopting it means either fixing them first or carrying a
+// four-entry allowlist. That is the right follow-up, in that order — not a
+// reason to call this arm a superset of it.
+//
+// This arm answers the narrower question #253 actually needed — is every type
+// name this file references BOUND — over the same corpus in ~0.23 s of sweep
+// plus ~0.73 s for the globals program (`check:dist` wall: 1.6-1.7 s), with zero
+// allowlist entries. Globals come from a real `ts` program over the lib files
+// (`getSymbolsInScope`), never a hand-written list, so `HTMLElement` / `Buffer` /
+// `Record` are known because TypeScript says so.
 //
 // KNOWN LIMITS, stated rather than implied:
+//   - **It does not resolve module specifiers.** An `import('x').Y` needs
+//     nothing BOUND, so it is skipped — which means an unresolvable specifier
+//     (the `rolldown` case above, and the commonest way a `.d.ts` breaks a
+//     consumer after an unbound name) is OUTSIDE this arm by construction. The
+//     `examples/markdown-editor` type-check that originally surfaced #253 DID
+//     catch that class; this arm is not a superset of it. Widening it means
+//     module resolution, and is gated on the two live defects above (#257).
 //   - Bindings are collected FLAT (every binder anywhere in the file lands in
 //     one set), so the arm cannot see a name that is bound in some inner scope
 //     but free at the point of use. That is the UNDER-report direction, chosen
@@ -203,12 +233,31 @@ export function freeTypeNames(root, fileName, text, globals) {
 export const INTERNAL_TAG = '@' + 'internal'
 
 /**
- * SOURCE ARM. Occurrences of the tag that `stripInternal` will act on but that
- * are NOT a JSDoc annotation on the declaration below them — i.e. prose.
+ * Floor for how many source files must MENTION the tag before either consumer
+ * gives a verdict. The gate pre-filters on the substring for speed, and that
+ * pre-filter is a silent-disable path: break it and the arm scans nothing while
+ * printing a GREEN line (measured with #253 restored — `0 of 109 source files`,
+ * exit 0). A floor on files WALKED cannot see that, because the walk is fine; it
+ * is the JUDGING that stopped. Six occurrences exist across four files today.
+ */
+export const MIN_TAG_MENTIONS = 4
+
+/**
+ * SOURCE ARM. Occurrences of the tag that are not written the way this repo
+ * writes a real annotation.
  *
- * Legitimate: inside a `/** … *\/` block, as the first token of its line
- * (after the opening `/**` or a leading `*`). That is how all six genuine
- * annotations in this repo are written.
+ * BE PRECISE ABOUT WHAT THIS IS: `// @internal` on its own line IS a working
+ * TypeScript annotation — verified, it strips the declaration below it just as
+ * a JSDoc block would, because `hasInternalAnnotation` reads EVERY leading
+ * comment range and does not care about the comment's shape. So this arm is a
+ * HOUSE-STYLE rule, not a claim about what tsc will do: requiring the JSDoc
+ * spelling is what makes "annotation" and "prose" distinguishable at all, and
+ * an annotation that cannot be told apart from the paragraph above it is how
+ * #253 happened. Blast radius of the style rule today is zero — all six genuine
+ * annotations in the repo are already JSDoc.
+ *
+ * Legitimate: inside a JSDoc block, as the first token of its line (after the
+ * opening marker or a leading `*`).
  *
  * Reported: any occurrence in a `//` line comment (#253's shape, and the shape
  * the "move the header below the imports" fix would leave behind), and any
@@ -263,12 +312,4 @@ export function stripInternalPackages(root) {
     if (/"stripInternal"\s*:\s*true/.test(readFileSync(cfg, 'utf8'))) out.push(d)
   }
   return out
-}
-
-/** Publishable package dirs (no `private: true`). */
-export function publishablePackages(root) {
-  return readdirSync(join(root, 'packages')).filter((d) => {
-    const p = join(root, 'packages', d, 'package.json')
-    return existsSync(p) && !JSON.parse(readFileSync(p, 'utf8')).private
-  })
 }
