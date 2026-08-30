@@ -8,10 +8,11 @@
   </head>
   <!--
     `bg-surface-muted` / `text-text` / `text-text-muted` used to sit on these two
-    elements and compiled to NO CSS — the same dead-token family as `bg-surface-2`,
-    still here because `scripts/test/tailwind-classes.test.ts` reads `.ts` sources
-    and never opens this file (issue #251). The tokens below are the ones the
-    theme defines.
+    elements and compiled to NO CSS — the same dead-token family as `bg-surface-2`.
+    They survived because `scripts/test/tailwind-classes.test.ts` read `.ts`
+    sources only and never opened this file (issue #251). It does now: the
+    `class="…"` attributes below are compiled with the real Tailwind build
+    alongside the demo's TypeScript recipes.
   -->
   <body class="bg-background text-foreground">
     <div class="mx-auto max-w-5xl p-6">

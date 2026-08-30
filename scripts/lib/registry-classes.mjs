@@ -26,6 +26,13 @@
 // Anything a future recipe helper introduces is invisible here BY DESIGN — an
 // unread position is a missed check, never a false failure, and adding the
 // position is a one-line change next to its name.
+//
+// `extractHtmlClassCandidates` is the same question asked of an app's HTML entry
+// point, which is the ONE file every demo has and which nothing read until #251:
+// `examples/components-demo/index.html` carried `bg-surface-muted` / `text-text`
+// / `text-text-muted` on `<body>` and `<p>`, all of the dead `bg-surface-2`
+// token family, all compiling to no CSS, and no check in the repo opened the
+// file.
 import ts from 'typescript'
 
 const CLASS_CALLS = new Set(['cn', 'mergeClass', 'classPart', 'classPartWithDefaults'])
@@ -182,6 +189,55 @@ export function extractClassCandidates(fileName, source) {
 
 function scriptKind(fileName) {
   return fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
+}
+
+/**
+ * The class candidates an HTML entry point emits.
+ *
+ * Deliberate in the same way `extractClassCandidates` is: the ONLY position read
+ * is a QUOTED `class` attribute value on a tag. HTML has no equivalent of the
+ * `'button'`/`'horizontal'` false-positive problem for that position — a
+ * `class="…"` attribute is unambiguously a class list — but two regions of an
+ * HTML file are text that merely LOOKS like markup, and reading them would fail
+ * a build for the wrong reason:
+ *
+ *   • a COMMENT. `components-demo/index.html` carries one naming the dead tokens
+ *     this extractor exists to catch; a comment showing example markup would
+ *     otherwise contribute every class in it.
+ *   • the body of a `<script>` or `<style>`. A string `class="x"` inside inline
+ *     JS is not markup.
+ *
+ * Both are blanked (length-preserving is unnecessary — nothing here reports
+ * offsets) before the attribute scan.
+ *
+ * UNQUOTED values (`class=foo`) are deliberately NOT read, and neither is an
+ * uppercase `CLASS=` (also legal HTML). Both are absent from every entry point
+ * in this repo, and the pattern that would match an unquoted value also matches
+ * enough non-attribute text to be a false-failure risk.
+ *
+ * "Unread positions cost a missed check, not a broken build" is the policy, and
+ * it is TRUE OF THE POSITIONS ABOVE but is not a total guarantee about this
+ * function — state it exactly, because a claim of totality is the thing a later
+ * reader would rely on. Two pathological inputs, neither present in this repo,
+ * DO contribute classes that are not markup: a class list nested inside a
+ * single-quoted attribute value (`<div title='x class="nested"'>`), and text
+ * following an UNCLOSED `<script>`, whose body the strip cannot delimit. Both
+ * would be a false failure rather than a missed check.
+ *
+ * @returns {string[]} whitespace-split class candidates, deduped and sorted.
+ */
+export function extractHtmlClassCandidates(_fileName, source) {
+  const markup = source
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
+
+  const out = new Set()
+  for (const m of markup.matchAll(/\sclass\s*=\s*("([^"]*)"|'([^']*)')/g)) {
+    const value = m[2] ?? m[3] ?? ''
+    for (const t of value.split(/\s+/)) if (t !== '') out.add(t)
+  }
+  return [...out].sort()
 }
 
 /**

@@ -180,7 +180,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     const rows = each(
       state.at('datePicker').map((dpState) => weekRows(monthGrid(dpState))),
       {
-        key: (row) => row[0].iso,
+        // `weekRows` returns `DayCell[][]`, so the first cell is not typed as
+        // present. A week from `monthGrid` always has seven, but the key has to
+        // be total: an empty row keys as '' rather than throwing mid-reconcile.
+        key: (row) => row[0]?.iso ?? '',
         render: (item) => {
           const week = item.peek()
           return [

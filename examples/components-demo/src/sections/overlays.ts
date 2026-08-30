@@ -3,7 +3,7 @@ import type { Send, Signal, Renderable } from '@llui/dom'
 import { popover } from '@llui/components/popover'
 import { tooltip } from '@llui/components/tooltip'
 import { hoverCard } from '@llui/components/hover-card'
-import { menu } from '@llui/components/menu'
+import { menu, type MenuItem } from '@llui/components/menu'
 import { contextMenu } from '@llui/components/context-menu'
 import { select } from '@llui/components/select'
 import { combobox } from '@llui/components/combobox'
@@ -60,6 +60,37 @@ const FRUITS = [
   'Strawberry',
   'Watermelon',
 ]
+
+// Menu item trees. These are the machine's own `MenuNode`s, not bare labels:
+// `navigable`/`findItem`/`nextNav` read `.value` and `.kind` off every entry, so
+// a list of strings gave the machine nothing to navigate — measured on the
+// rendered page, `aria-activedescendant` stayed null and no item ever took
+// `data-highlighted`, through any number of arrow presses.
+//
+// Fixing the shape restores the STATE half only. The highlight is not yet
+// VISIBLE here: `theme.css` styles menu and context-menu items with
+// `[data-state='highlighted']` while the machine publishes a bare
+// `data-highlighted` (the spelling `select`/`combobox` already use), so the
+// rule matches nothing and the highlighted item computes a transparent
+// background. That is #248, fixed on its own branch; the two changes are
+// independent and the highlight appears when both land.
+//
+// Declared once and used by BOTH `init` and the view so the two cannot drift.
+const MENU_ITEMS: MenuItem[] = [
+  { value: 'Edit', kind: 'action' },
+  { value: 'Duplicate', kind: 'action' },
+  { value: 'Archive', kind: 'action' },
+  { value: 'Delete', kind: 'action' },
+]
+const CONTEXT_MENU_ITEMS: MenuItem[] = [
+  { value: 'Cut', kind: 'action' },
+  { value: 'Copy', kind: 'action' },
+  { value: 'Paste', kind: 'action' },
+  { value: 'Delete', kind: 'action' },
+]
+
+// Select options, shared by `init` and the view for the same reason.
+const COLORS = ['Red', 'Green', 'Blue', 'Purple', 'Orange']
 
 // Command palette commands. JSON-serializable: execution is surfaced as an
 // `execute` effect keyed by `id`, handled in `onEffect` below.
@@ -123,9 +154,9 @@ export const init = (): [State, Effect[]] => [
     popover: popover.init({ open: false }),
     tooltip: tooltip.init({ open: false }),
     hoverCard: hoverCard.init({ open: false }),
-    menu: menu.init({ items: ['Edit', 'Duplicate', 'Archive', 'Delete'], open: false }),
-    contextMenu: contextMenu.init({ items: ['Cut', 'Copy', 'Paste', 'Delete'] }),
-    select: select.init({ items: ['Red', 'Green', 'Blue', 'Purple', 'Orange'], value: ['Blue'] }),
+    menu: menu.init({ items: MENU_ITEMS, open: false }),
+    contextMenu: contextMenu.init({ items: CONTEXT_MENU_ITEMS }),
+    select: select.init({ items: COLORS, value: ['Blue'] }),
     combobox: combobox.init({ items: FRUITS }),
     drawer: drawer.init({ open: false }),
     dialog: dialog.init({ open: false }),
@@ -269,13 +300,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const hotkeyMount = onMount(() => watchHotkey((m) => send({ type: 'commandMenu', msg: m })))
 
   const selectItems = (): Renderable =>
-    ['Red', 'Green', 'Blue', 'Purple', 'Orange'].map((v, i) =>
-      div({ ...se.item(v, i).item }, [text(v)]),
-    )
+    COLORS.map((v, i) => div({ ...se.item(v, i).item }, [text(v)]))
   const menuItems = (): Renderable =>
-    ['Edit', 'Duplicate', 'Archive', 'Delete'].map((v) => div({ ...me.item(v).item }, [text(v)]))
+    MENU_ITEMS.map((it) => div({ ...me.item(it.value).item }, [text(it.value)]))
   const ctxMenuItems = (): Renderable =>
-    ['Cut', 'Copy', 'Paste', 'Delete'].map((v) => div({ ...cm.item(v).item }, [text(v)]))
+    CONTEXT_MENU_ITEMS.map((it) => div({ ...cm.item(it.value).item }, [text(it.value)]))
 
   const toastRegion = div({ ...toastParts.region }, [
     each(state.at('toast.toasts'), {
