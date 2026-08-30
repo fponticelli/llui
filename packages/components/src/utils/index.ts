@@ -81,6 +81,24 @@ export {
   annularSectorPath,
 } from './path.js'
 export type { Point, Curve } from './path.js'
+// Calendar ticks: the TIME-axis counterpart of `scale.ts`'s numeric `ticks`.
+// Public for the same reason — measuring or testing a time axis should not
+// require mounting anything.
+export {
+  MAX_CALENDAR_TICKS,
+  addUnits,
+  calendarTicks,
+  chooseCalendarStep,
+  countCalendarTicks,
+  floorToUnit,
+} from './calendar-ticks.js'
+export type {
+  CalendarOptions,
+  CalendarStep,
+  CalendarStepOptions,
+  CalendarTick,
+  CalendarUnit,
+} from './calendar-ticks.js'
 export { cartesianProjection, polarProjection, projectionFor } from './projection.js'
 export type {
   Projection,

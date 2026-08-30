@@ -22,6 +22,7 @@ import { enProgress } from './locale/progress.js'
 import { enQrCode } from './locale/qr-code.js'
 import { enSignaturePad } from './locale/signature-pad.js'
 import { enSortable } from './locale/sortable.js'
+import { enSparkline } from './locale/sparkline.js'
 import { enSteps } from './locale/steps.js'
 import { enTagsInput } from './locale/tags-input.js'
 import { enTimePicker } from './locale/time-picker.js'
@@ -57,6 +58,7 @@ export const en: Locale = {
   qrCode: enQrCode,
   signaturePad: enSignaturePad,
   sortable: enSortable,
+  sparkline: enSparkline,
   steps: enSteps,
   tagsInput: enTagsInput,
   timePicker: enTimePicker,

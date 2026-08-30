@@ -52,6 +52,7 @@ const MACHINE_OF: Record<string, readonly string[]> = {
   sidebar: ['collapsible'],
   carousel: ['carousel'],
   chart: ['chart'],
+  sparkline: ['sparkline'],
   'scroll-area': ['scroll-area'],
   pagination: ['pagination'],
   'tree-view': ['tree-view'],

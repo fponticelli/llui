@@ -17,6 +17,12 @@ import {
   li,
   each,
   onMount,
+  circle,
+  constant,
+  g,
+  noSend,
+  svgDesc,
+  svgTitle,
 } from '@llui/dom'
 import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { tabs } from '@llui/components/tabs'
@@ -30,6 +36,15 @@ import { treeView } from '@llui/components/tree-view'
 import { listbox } from '@llui/components/listbox'
 import { table } from '@llui/components/table'
 import { sortable } from '@llui/components/sortable'
+import { sparkline } from '@llui/components/sparkline'
+import type {
+  SparklineDot,
+  SparklineMsg,
+  SparklineRow,
+  SparklineSpan,
+  SparklineState,
+  SparklineTick,
+} from '@llui/components/sparkline'
 import { dataTable } from '@llui/components/patterns/data-table'
 import type { DataTableEffect, DataTableMsg } from '@llui/components/patterns/data-table'
 import { sectionGroup, card } from '../shared/ui'
@@ -101,6 +116,41 @@ const dtById = new Map(dtData.map((p) => [p.id, p]))
 
 const DT_PAGE_SIZE = 5
 
+// ── Sparkline demo data ───────────────────────────────────────────────────
+//
+// Fixed timestamps, never `Date.now()`: sparkline geometry is a pure function
+// of state, so a clock-seeded demo would render differently on the server than
+// in the browser.
+const READINGS = [
+  { at: Date.UTC(2026, 1, 3), value: 128, grain: 'spot' },
+  { at: Date.UTC(2026, 1, 17), value: 124, grain: 'spot' },
+  { at: Date.UTC(2026, 2, 2), value: 119, grain: 'spot' },
+  { at: Date.UTC(2026, 2, 19), value: 121, grain: 'spot' },
+  { at: Date.UTC(2026, 3, 6), value: 116, grain: 'session' },
+  { at: Date.UTC(2026, 3, 21), value: 112, grain: 'session' },
+  { at: Date.UTC(2026, 4, 4), value: 108, grain: 'session' },
+  { at: Date.UTC(2026, 4, 18), value: 111, grain: 'session' },
+  { at: Date.UTC(2026, 5, 1), value: 105, grain: 'daily' },
+  { at: Date.UTC(2026, 5, 15), value: 98, grain: 'daily' },
+  { at: Date.UTC(2026, 5, 29), value: 96, grain: 'daily' },
+  { at: Date.UTC(2026, 6, 13), value: 92, grain: 'daily' },
+  { at: Date.UTC(2026, 6, 27), value: 88, grain: 'daily' },
+  { at: Date.UTC(2026, 7, 11), value: 94, grain: 'daily' },
+]
+
+const SPARK_BOX = { width: 240, height: 56, padding: { top: 6, right: 6, bottom: 12, left: 6 } }
+/** Five weeks past the last reading, so the series visibly trails off. */
+const SPARK_NOW = Date.UTC(2026, 8, 15)
+
+/** A stateless T1 widget: fixed for the life of the node, so it needs neither a
+ *  hoisted state slice nor a dispatcher. */
+const SPARK_HIGH_ONLY: SparklineState = sparkline.init({
+  ...SPARK_BOX,
+  points: READINGS,
+  band: { high: 120 },
+  now: SPARK_NOW,
+})
+
 const children = {
   tabs,
   accordion,
@@ -113,6 +163,7 @@ const children = {
   listbox,
   table,
   sortable,
+  sparkline,
   dataTable,
 } as const
 
@@ -153,6 +204,12 @@ export const init = (): [State, Effect[]] => [
       selectionMode: 'multiple',
     }),
     sortable: sortable.init(),
+    sparkline: sparkline.init({
+      ...SPARK_BOX,
+      points: READINGS,
+      band: { low: 90, high: 120 },
+      now: SPARK_NOW,
+    }),
     dataTable: dataTable.init({
       columns: tableColumns,
       selectionMode: 'multiple',
@@ -216,6 +273,78 @@ export function onEffect(effect: Effect, send: Send<Msg>): void {
 
   const loaded: DataTableMsg = { type: 'pageLoaded', queryId, rows: ids, total }
   send({ type: 'dataTable', msg: loaded })
+}
+
+/**
+ * A sparkline rendered against the BASELINE stylesheet — no Tailwind, no
+ * registry skin, just the `data-scope`/`data-part` attributes the machine
+ * publishes and the `[data-scope='sparkline']` rules in `theme.css`.
+ *
+ * Layer order is the stacking order: an SVG has no z-index, so band, grid,
+ * granularity track, "now" edge, line and dots go in exactly that sequence.
+ */
+function sparklineView(
+  slice: Signal<SparklineState>,
+  send: Send<SparklineMsg>,
+  id: string,
+  label: string,
+  description: string,
+): Mountable {
+  const sp = sparkline.connect(slice, send, { id })
+  return div({ ...sp.root }, [
+    svg({ ...sp.svg, class: 'sparkline-svg' }, [
+      // FIRST children of the <svg>: this is what `aria-labelledby` points at.
+      svgTitle({ ...sp.title }, [text(label)]),
+      svgDesc({ ...sp.desc }, [text(description)]),
+
+      path({ ...sp.band }),
+      g({ ...sp.layer }, [
+        each(sp.ticks, {
+          key: (t: SparklineTick) => t.key,
+          render: (t: Signal<SparklineTick>) => [path({ ...sp.tickProps(t) })],
+        }),
+      ]),
+      g({ ...sp.layer }, [
+        each(sp.spans, {
+          key: (x: SparklineSpan) => x.key,
+          render: (x: Signal<SparklineSpan>) => [path({ ...sp.spanProps(x) })],
+        }),
+      ]),
+      path({ ...sp.now }),
+      path({ ...sp.line }),
+      g({ ...sp.layer }, [
+        each(sp.dots, {
+          key: (d: SparklineDot) => d.key,
+          render: (d: Signal<SparklineDot>) => [circle({ ...sp.dotProps(d), r: 2 })],
+        }),
+      ]),
+    ]),
+
+    div({ ...sp.tooltip }, [
+      text(sp.activeDot.map((d) => (d === null ? '' : String(d.value)))),
+      span({ class: 'ml-1 text-muted-foreground' }, [
+        text(sp.activeDot.map((d) => (d === null ? '' : sparkline.isoDay(d.at)))),
+      ]),
+    ]),
+
+    // The real screen-reader path: `role="img"` names the trend, this makes its
+    // NUMBERS readable.
+    tableEl({ ...sp.table }, [
+      thead([tr([th([text('Date')]), th([text('Value')]), th([text('Against band')])])]),
+      tbody([
+        each(sp.rows, {
+          key: (r: SparklineRow) => `${r.at}`,
+          render: (r: Signal<SparklineRow>) => [
+            tr([
+              td([text(r.at('day'))]),
+              td([text(r.map((v) => String(v.value)))]),
+              td([text(r.at('tone'))]),
+            ]),
+          ],
+        }),
+      ]),
+    ]),
+  ])
 }
 
 export function view(state: Signal<State>, send: Send<Msg>): Renderable {
@@ -798,6 +927,40 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             text('Selected: '),
             text(state.at('dataTable.table.selection').map((sel) => String(sel.length))),
           ]),
+        ]),
+      ]),
+    ]),
+    sectionGroup('Trends', [
+      card('Sparkline (reference band, calendar ticks)', [
+        div({ class: 'flex flex-col gap-4' }, [
+          span({ class: 'text-sm text-muted-foreground' }, [
+            text(
+              'A cell-sized trend against a reference band. Gridlines land on real calendar ' +
+                'boundaries, each dot is classified against the band, and the dashed right edge ' +
+                'is "now" — so a stale series trails off. Hover it, or Tab to it and use the ' +
+                'arrow keys.',
+            ),
+          ]),
+          sparklineView(
+            state.at('sparkline'),
+            (m) => send({ type: 'sparkline', msg: m }),
+            'demo-sparkline',
+            'Readings against 90-120',
+            'Fourteen readings from 2026-02-03 to 2026-08-11, five weeks stale.',
+          ),
+          span({ class: 'text-sm text-muted-foreground' }, [
+            text(
+              'A high bound alone shades everything BELOW it, and no reading can be called ' +
+                'low. Stateless — connect(constant(v), noSend, …), no hoisted slice.',
+            ),
+          ]),
+          sparklineView(
+            constant(SPARK_HIGH_ONLY),
+            noSend,
+            'demo-sparkline-high',
+            'Readings against a 120 ceiling',
+            'A high bound alone shades everything below it.',
+          ),
         ]),
       ]),
     ]),

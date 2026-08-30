@@ -1024,6 +1024,21 @@
       ]
     },
     {
+      "name": "sparkline",
+      "type": "registry:ui",
+      "title": "Sparkline",
+      "description": "Skin for @llui/components/sparkline — a cell-sized time-series trend against a reference band, with calendar gridlines.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/sparkline.ts",
+          "type": "registry:ui",
+          "target": "sparkline.ts"
+        }
+      ]
+    },
+    {
       "name": "spinner",
       "type": "registry:ui",
       "title": "Spinner",
