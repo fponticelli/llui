@@ -139,7 +139,11 @@ import { randomBytes, createHash } from 'node:crypto'
  * @property {(message: string) => void} [onWait] Called once when the first wait starts.
  */
 
-/** Default liveness probe: signal 0 tests for existence without delivering anything. */
+/**
+ * Default liveness probe: signal 0 tests for existence without delivering anything.
+ * @param {number} pid
+ * @returns {boolean}
+ */
 export function pidIsAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false
   try {
@@ -151,10 +155,26 @@ export function pidIsAlive(pid) {
   }
 }
 
+/**
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 /**
  * @typedef {{ kind: 'absent' } | { kind: 'present', raw: string, record: LockRecord | null }} LockSnapshot
+ */
+
+/**
+ * The slice of `AcquireOptions` the break path needs: a clock, a liveness probe
+ * and the breaker-token TTL. Named rather than inlined because `breakAndTake`
+ * and `reapAbandonedBreaker` must agree on it exactly — the second is handed the
+ * first's `ctx` verbatim.
+ *
+ * @typedef {object} BreakContext
+ * @property {() => number} now
+ * @property {(pid: number) => boolean} isAlive
+ * @property {number} breakerTtlMs
  */
 
 /**
@@ -252,7 +272,9 @@ export function lockIsStale(record, ctx) {
  *
  * @param {string} lockPath
  * @param {string} expectedRaw  The exact bytes the caller judged.
+ * @param {string} myRaw        Our own record, swapped in over the victim's.
  * @param {string} token        Ours, only to name the private path uniquely.
+ * @param {BreakContext} ctx
  * @returns {boolean} true when the intended victim was removed.
  */
 function breakAndTake(lockPath, expectedRaw, myRaw, token, ctx) {
@@ -332,6 +354,10 @@ function breakAndTake(lockPath, expectedRaw, myRaw, token, ctx) {
  * count: `nlink` says how many names an inode has, which several concurrent
  * probes make meaningless. Device is compared as well as inode number, since
  * inode numbers are only unique within a filesystem.
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
  */
 export function sameInode(a, b) {
   try {
@@ -351,13 +377,17 @@ export function sameInode(a, b) {
  * breakers — which step 4 above already makes safe. Being conservative here, by
  * contrast, would let one crashed breaker wedge every future break of that
  * victim.
+ * @param {string} breaker
+ * @param {BreakContext} ctx
  * @returns {boolean} true when the caller may retry the election.
  */
 function reapAbandonedBreaker(breaker, ctx) {
   try {
-    const held = JSON.parse(readFileSync(breaker, 'utf8'))
-    const age = ctx.now() - (typeof held.at === 'number' ? held.at : 0)
-    const ownerGone = typeof held.pid === 'number' && !ctx.isAlive(held.pid)
+    const held = /** @type {Record<string, unknown>} */ (JSON.parse(readFileSync(breaker, 'utf8')))
+    const at = held['at']
+    const pid = held['pid']
+    const age = ctx.now() - (typeof at === 'number' ? at : 0)
+    const ownerGone = typeof pid === 'number' && !ctx.isAlive(pid)
     if (!ownerGone && age < ctx.breakerTtlMs) return false
   } catch {
     // Unreadable: treat as abandoned.

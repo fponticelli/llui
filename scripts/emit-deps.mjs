@@ -46,9 +46,32 @@ if (!existsSync(srcRoot)) {
 const tsconfigPath =
   [join(pkgDir, 'tsconfig.build.json'), join(pkgDir, 'tsconfig.json')].find(existsSync) ?? undefined
 
+// `ts.sys` alone is NOT a `ParseConfigFileHost`: it has no
+// `onUnRecoverableConfigFileDiagnostic`, which TypeScript calls (unconditionally)
+// for a config it cannot even begin to read. Passing `ts.sys` therefore turned
+// that case into a `TypeError` on an undefined member instead of the intended
+// diagnostic; the host below reports it and exits 1 the way every other failure
+// path here does.
+/** @type {import('typescript').ParseConfigFileHost} */
+const configHost = {
+  useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
+  readDirectory: (rootDir, extensions, excludes, includes, depth) =>
+    ts.sys.readDirectory(rootDir, extensions, excludes, includes, depth),
+  fileExists: (path) => ts.sys.fileExists(path),
+  readFile: (path) => ts.sys.readFile(path),
+  getCurrentDirectory: () => ts.sys.getCurrentDirectory(),
+  onUnRecoverableConfigFileDiagnostic: (diagnostic) => {
+    console.error(
+      `emit-deps: ${ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')} (${tsconfigPath})`,
+    )
+    process.exit(1)
+  },
+}
+
+/** @type {import('typescript').Program} */
 let program
 if (tsconfigPath) {
-  const parsed = ts.getParsedCommandLineOfConfigFile(tsconfigPath, {}, ts.sys) // eslint-disable-line
+  const parsed = ts.getParsedCommandLineOfConfigFile(tsconfigPath, {}, configHost)
   if (!parsed) {
     console.error(`emit-deps: could not parse ${tsconfigPath}`)
     process.exit(1)

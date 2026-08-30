@@ -36,6 +36,9 @@ export const THEME_ONLY = [
  * plain class as dead. Compiling the entry the app actually ships means a class
  * counts as live if ANY rule defines it — utility or hand-written — which is
  * exactly the question being asked.
+ *
+ * @param {string} cssFile an ABSOLUTE path to the app's entry stylesheet
+ * @returns {string} a CSS entry to hand to `compileCandidates`
  */
 export const appEntry = (cssFile) => `@import "${cssFile}";`
 
@@ -61,6 +64,9 @@ const WORKSPACE_CSS = /^@llui\/([a-z-]+)\/(.+)$/
  * legitimately publish nothing under it: `tw-animate-css` exports exactly
  * `{ ".": { "style": "./dist/tw-animate.css" } }`. Resolving its `package.json`
  * and reading the condition directly is what Tailwind's own loader does.
+ *
+ * @param {string} id a bare package specifier, e.g. `tw-animate-css`
+ * @returns {string} an absolute path to that package's CSS entry
  */
 function resolvePackageCss(id) {
   // Read the manifest off disk rather than through `import.meta.resolve`: a
@@ -71,8 +77,20 @@ function resolvePackageCss(id) {
   // repo's own install, so the workspace root's `node_modules` is the honest
   // place to look — a bundler would resolve the `style` condition instead.
   const dir = path.join(ROOT, 'node_modules', id)
+  /**
+   * Only the three fields a CSS entry can come from. Narrower than a real
+   * manifest on purpose: anything else here would be read without being
+   * declared, and `JSON.parse` hands back `any`.
+   *
+   * @type {{
+   *   exports?: { '.'?: { style?: string } | string },
+   *   style?: string,
+   *   main?: string,
+   * }}
+   */
   const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))
-  const entry = pkg.exports?.['.']?.style ?? pkg.style ?? pkg.main
+  const dot = pkg.exports?.['.']
+  const entry = (typeof dot === 'object' ? dot?.style : undefined) ?? pkg.style ?? pkg.main
   if (entry === undefined) throw new Error(`No CSS entry for "${id}"`)
   return path.resolve(dir, entry)
 }
@@ -83,15 +101,28 @@ function resolvePackageCss(id) {
  * discovers its inputs by walking imports from each app entry; a second,
  * lookalike resolver there would answer "does this entry reach the tokens?"
  * against different rules than the compile that then measures it.
+ *
+ * @param {string} id the `@import` specifier as written
+ * @param {string} base the directory the importing stylesheet lives in
+ * @returns {string} an absolute path
  */
 export function resolveCssId(id, base) {
   if (id.startsWith('.') || path.isAbsolute(id)) return path.resolve(base, id)
   const workspace = WORKSPACE_CSS.exec(id)
-  if (workspace) return path.join(ROOT, 'packages', workspace[1], 'src', workspace[2])
+  if (workspace) {
+    const [, pkg, rest] = workspace
+    if (pkg === undefined || rest === undefined) throw new Error(`unreadable @llui/* id: ${id}`)
+    return path.join(ROOT, 'packages', pkg, 'src', rest)
+  }
   if (id === 'tailwindcss') return fileURLToPath(import.meta.resolve('tailwindcss/index.css'))
   return resolvePackageCss(id)
 }
 
+/**
+ * @param {string} id
+ * @param {string} base
+ * @returns {Promise<{ path: string, base: string, content: string }>}
+ */
 async function loadStylesheet(id, base) {
   const file = resolveCssId(id, base)
   return { path: file, base: path.dirname(file), content: await readFile(file, 'utf8') }
@@ -114,7 +145,11 @@ export async function compileCandidates(candidates, input = THEME_ONLY) {
 
 /** Tailwind escapes every non-`[A-Za-z0-9_-]` character in a generated selector.
  * The same escaping is what a hand-written rule in an app stylesheet needs, so
- * one function serves both inputs above. */
+ * one function serves both inputs above.
+ *
+ * @param {string} candidate a class name as written in source
+ * @returns {string} the escaped class SELECTOR, `.` included
+ */
 export function selectorFor(candidate) {
   let out = ''
   for (const ch of candidate) out += /[A-Za-z0-9_-]/.test(ch) ? ch : `\\${ch}`
@@ -124,16 +159,31 @@ export function selectorFor(candidate) {
 /** `group/<name>` and `peer/<name>` are MARKER classes: Tailwind emits no rule
  * for them, because their only job is to be referenced by a
  * `group-…/<name>:` or `peer-…/<name>:` variant on a descendant. (Bare `group`
- * and `peer` DO emit a rule, so they are not markers.) */
+ * and `peer` DO emit a rule, so they are not markers.)
+ *
+ * @param {string} candidate
+ * @returns {string | null} the `<name>`, or `null` if this is not a marker
+ */
 export function markerName(candidate) {
   const m = /^(group|peer)\/([A-Za-z0-9_-]+)$/.exec(candidate)
-  return m === null ? null : m[2]
+  // Group 2 is unconditional in that pattern, so `?? null` only ever answers
+  // for a non-match — it does not widen the "is this a marker" question.
+  return m?.[2] ?? null
 }
 
-/** The `<name>` a `group-…/<name>:` or `peer-…/<name>:` variant references. */
+/**
+ * The `<name>` a `group-…/<name>:` or `peer-…/<name>:` variant references.
+ *
+ * @param {string} candidate
+ * @returns {string[]} every referenced `<name>`, in source order
+ */
 export function markerReferences(candidate) {
+  /** @type {string[]} */
   const out = []
-  for (const m of candidate.matchAll(/\b(?:group|peer)-[^\s:]*?\/([A-Za-z0-9_-]+):/g))
-    out.push(m[1])
+  for (const m of candidate.matchAll(/\b(?:group|peer)-[^\s:]*?\/([A-Za-z0-9_-]+):/g)) {
+    // As above: the single capture group is unconditional on a match.
+    const name = m[1]
+    if (name !== undefined) out.push(name)
+  }
   return out
 }

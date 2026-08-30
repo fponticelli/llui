@@ -37,7 +37,11 @@ const GENERATED_PATHS = [
 
 const strict = process.argv.includes('--strict')
 
-/** Paths under `pathspecs` that differ from HEAD, tracked or not. */
+/**
+ * Paths under `pathspecs` that differ from HEAD, tracked or not.
+ * @param {readonly string[]} pathspecs
+ * @returns {string[]}
+ */
 function changed(pathspecs) {
   const tracked = execFileSync('git', ['diff', '--name-only', '--', ...pathspecs], {
     encoding: 'utf8',

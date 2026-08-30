@@ -14,14 +14,35 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SOURCE = path.join(ROOT, 'registry', 'registry.json')
 const OUT = path.join(ROOT, 'site', 'public', 'r')
 
+/**
+ * One entry in a registry item's `files` array. The registry format is a
+ * deliberate SUBSET of shadcn's `registry-item.json` and unknown keys are
+ * carried through verbatim, so the shape is open.
+ * @typedef {{ path: string, content?: string } & Record<string, unknown>} RegistryFile
+ */
+
+/**
+ * One registry item (a component and the files `llui add` copies for it).
+ * @typedef {{ name: string, files: RegistryFile[] } & Record<string, unknown>} RegistryItem
+ */
+
+/**
+ * `registry/registry.json` — the index plus every item.
+ * @typedef {{ items: RegistryItem[] } & Record<string, unknown>} Registry
+ */
+
+/** @type {Registry} */
 const registry = JSON.parse(await readFile(SOURCE, 'utf8'))
 
 await rm(OUT, { recursive: true, force: true })
 await mkdir(OUT, { recursive: true })
 
-const index = { ...registry, items: [] }
+/** @type {RegistryItem[]} */
+const indexItems = []
+const index = { ...registry, items: indexItems }
 
 for (const item of registry.items) {
+  /** @type {RegistryFile[]} */
   const files = []
   for (const file of item.files) {
     files.push({ ...file, content: await readFile(path.join(ROOT, file.path), 'utf8') })

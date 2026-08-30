@@ -37,7 +37,11 @@ import ts from 'typescript'
 
 const CLASS_CALLS = new Set(['cn', 'mergeClass', 'classPart', 'classPartWithDefaults'])
 
-/** @returns {string[]} whitespace-split class candidates, deduped. */
+/**
+ * @param {string} fileName
+ * @param {string} source
+ * @returns {string[]} whitespace-split class candidates, deduped.
+ */
 export function extractClassCandidates(fileName, source) {
   const sf = ts.createSourceFile(
     fileName,
@@ -46,6 +50,7 @@ export function extractClassCandidates(fileName, source) {
     true,
     scriptKind(fileName),
   )
+  /** @type {string[]} */
   const strings = []
 
   // Index module-level `const X = { … }` so a `createVariants({ variants })`
@@ -54,6 +59,7 @@ export function extractClassCandidates(fileName, source) {
   // both are, and every one of their variant classes was going unchecked while
   // the file still reported plenty of candidates from its base recipe — a silent
   // hole, not an obvious one.
+  /** @type {Map<string, ts.ObjectLiteralExpression>} */
   const objectConsts = new Map()
   for (const stmt of sf.statements) {
     if (!ts.isVariableStatement(stmt)) continue
@@ -68,7 +74,11 @@ export function extractClassCandidates(fileName, source) {
     }
   }
 
-  /** Resolve to an object literal, following a module-level const by name. */
+  /** Resolve to an object literal, following a module-level const by name.
+   *
+   * @param {ts.Node | undefined} node
+   * @returns {ts.ObjectLiteralExpression | undefined}
+   */
   const asObject = (node) => {
     if (node === undefined) return undefined
     if (ts.isObjectLiteralExpression(node)) return node
@@ -82,6 +92,10 @@ export function extractClassCandidates(fileName, source) {
   // around it is still real class text and is still checked. A recipe whose
   // whole class list is interpolated is therefore unchecked — prefer
   // `createVariants` for a conditional recipe, which IS read in full.
+  /**
+   * @param {ts.Node | undefined} node
+   * @returns {void}
+   */
   const pushString = (node) => {
     if (node === undefined) return
     if (ts.isStringLiteral(node)) strings.push(node.text)
@@ -92,6 +106,10 @@ export function extractClassCandidates(fileName, source) {
     }
   }
 
+  /**
+   * @param {ts.Node | undefined} maybe
+   * @returns {void}
+   */
   const readVariantsObject = (maybe) => {
     const obj = asObject(maybe)
     if (obj === undefined) return
@@ -104,6 +122,10 @@ export function extractClassCandidates(fileName, source) {
     }
   }
 
+  /**
+   * @param {ts.Node | undefined} arg
+   * @returns {void}
+   */
   const readCreateVariants = (arg) => {
     const config = asObject(arg)
     if (config === undefined) return
@@ -122,14 +144,18 @@ export function extractClassCandidates(fileName, source) {
         for (const entry of prop.initializer.elements) {
           if (!ts.isObjectLiteralExpression(entry)) continue
           for (const p of entry.properties) {
-            const n = ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) ? p.name.text : null
-            if (n === 'class') pushString(p.initializer)
+            if (!ts.isPropertyAssignment(p) || !ts.isIdentifier(p.name)) continue
+            if (p.name.text === 'class') pushString(p.initializer)
           }
         }
       }
     }
   }
 
+  /**
+   * @param {ts.Node} node
+   * @returns {void}
+   */
   const walk = (node) => {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
       const callee = node.expression.text
@@ -182,11 +208,16 @@ export function extractClassCandidates(fileName, source) {
   }
   walk(sf)
 
+  /** @type {Set<string>} */
   const out = new Set()
   for (const s of strings) for (const t of s.split(/\s+/)) if (t !== '') out.add(t)
   return [...out].sort()
 }
 
+/**
+ * @param {string} fileName
+ * @returns {ts.ScriptKind}
+ */
 function scriptKind(fileName) {
   return fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
 }
@@ -224,6 +255,8 @@ function scriptKind(fileName) {
  * following an UNCLOSED `<script>`, whose body the strip cannot delimit. Both
  * would be a false failure rather than a missed check.
  *
+ * @param {string} _fileName
+ * @param {string} source
  * @returns {string[]} whitespace-split class candidates, deduped and sorted.
  */
 export function extractHtmlClassCandidates(_fileName, source) {
@@ -232,6 +265,7 @@ export function extractHtmlClassCandidates(_fileName, source) {
     .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, ' ')
     .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, ' ')
 
+  /** @type {Set<string>} */
   const out = new Set()
   for (const m of markup.matchAll(/\sclass\s*=\s*("([^"]*)"|'([^']*)')/g)) {
     const value = m[2] ?? m[3] ?? ''
@@ -252,6 +286,10 @@ export function extractHtmlClassCandidates(_fileName, source) {
  * guarding the moment a real recipe becomes unreadable. So this checks the
  * shape: every statement is an import or an `export … from`, and no recipe
  * builder is named anywhere in the file.
+ *
+ * @param {string} fileName
+ * @param {string} source
+ * @returns {boolean}
  */
 export function isPureReExport(fileName, source) {
   const sf = ts.createSourceFile(
@@ -275,6 +313,10 @@ export function isPureReExport(fileName, source) {
   // the extractor simply failed to read them — exactly what the guard is for.
   const named = new Set([...CLASS_CALLS, 'createVariants', 'createVariantsPart'])
   let buildsRecipes = false
+  /**
+   * @param {ts.Node} n
+   * @returns {void}
+   */
   const walk = (n) => {
     if (ts.isIdentifier(n) && named.has(n.text)) buildsRecipes = true
     ts.forEachChild(n, walk)

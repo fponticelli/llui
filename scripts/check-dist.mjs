@@ -35,18 +35,58 @@ import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
 import { join, dirname, relative, normalize } from 'node:path'
 import { createRequire } from 'node:module'
 
+/** @type {typeof import('typescript')} */
 const ts = createRequire(import.meta.url)('typescript')
 
-/** Publishable package dirs (no `private: true`), or the ones named on argv. */
+/**
+ * The subset of a package manifest this check reads.
+ * @typedef {object} PackageManifest
+ * @property {boolean} [private]
+ * @property {string[]} [files]
+ */
+
+/**
+ * The subset of a sourcemap this check reads.
+ * @typedef {object} SourceMap
+ * @property {string[]} [sources]
+ */
+
+/**
+ * The first path segment of a relative path. `split` always yields at least one
+ * element, so the throw is unreachable — it is here because
+ * `noUncheckedIndexedAccess` cannot know that, and a silent `undefined` would
+ * make `shipped.has(...)` answer for a path nobody looked at.
+ * @param {string} p
+ * @returns {string}
+ */
+function firstSegment(p) {
+  const first = p.split('/')[0]
+  if (first === undefined) throw new Error(`check-dist: cannot split path "${p}"`)
+  return first
+}
+
+/**
+ * Publishable package dirs (no `private: true`), or the ones named on argv.
+ * @returns {string[]}
+ */
 function targets() {
   const named = process.argv.slice(2).filter((a) => !a.startsWith('-'))
   if (named.length) return named
   return readdirSync('packages').filter((d) => {
     const p = `packages/${d}/package.json`
-    return existsSync(p) && !JSON.parse(readFileSync(p, 'utf8')).private
+    if (!existsSync(p)) return false
+    /** @type {PackageManifest} */
+    const manifest = JSON.parse(readFileSync(p, 'utf8'))
+    return !manifest.private
   })
 }
 
+/**
+ * Every file under `dir`, recursively.
+ * @param {string} dir
+ * @param {string[]} [out]
+ * @returns {string[]}
+ */
 function walk(dir, out = []) {
   for (const e of readdirSync(dir)) {
     const f = join(dir, e)
@@ -58,24 +98,33 @@ function walk(dir, out = []) {
 
 /** Relative module specifiers this file really imports/exports from — static,
  * `export … from`, and dynamic `import()`. Comments and unrelated strings are
- * not reachable from these nodes, so they cannot produce a false hit. */
+ * not reachable from these nodes, so they cannot produce a false hit.
+ * @param {string} file
+ * @param {string} text
+ * @returns {string[]}
+ */
 function relativeSpecifiers(file, text) {
   const sf = ts.createSourceFile(file, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.JS)
+  /** @type {string[]} */
   const out = []
+  /** @param {import('typescript').Node | undefined} node */
   const add = (node) => {
     if (node && ts.isStringLiteral(node) && node.text.startsWith('.')) out.push(node.text)
   }
-  ;(function visit(node) {
+  /** @param {import('typescript').Node} node */
+  const visit = (node) => {
     if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) add(node.moduleSpecifier)
     else if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword)
       add(node.arguments[0])
     else if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument))
       add(node.argument.literal)
     ts.forEachChild(node, visit)
-  })(sf)
+  }
+  visit(sf)
   return out
 }
 
+/** @type {string[]} */
 const problems = []
 
 for (const pkgDir of targets()) {
@@ -85,10 +134,11 @@ for (const pkgDir of targets()) {
     problems.push(`${pkgDir}: no dist/ — build before running this check`)
     continue
   }
+  /** @type {PackageManifest} */
   const pkg = JSON.parse(readFileSync(`${root}/package.json`, 'utf8'))
   // Top-level names in `files` decide what ships. A map source outside them is
   // dangling in the tarball even though it resolves here in the workspace.
-  const shipped = new Set((pkg.files ?? []).map((f) => f.replace(/^\.\//, '').split('/')[0]))
+  const shipped = new Set((pkg.files ?? []).map((f) => firstSegment(f.replace(/^\.\//, ''))))
 
   for (const file of walk(dist)) {
     if (file.endsWith('.js')) {
@@ -96,6 +146,7 @@ for (const pkgDir of targets()) {
         if (!spec.endsWith('.js')) problems.push(`${file}: extensionless import "${spec}"`)
       }
     } else if (file.endsWith('.map')) {
+      /** @type {SourceMap} */
       const map = JSON.parse(readFileSync(file, 'utf8'))
       for (const s of map.sources ?? []) {
         const abs = normalize(join(dirname(file), s))
@@ -106,9 +157,9 @@ for (const pkgDir of targets()) {
           )
         } else if (pkgRelative.startsWith('..')) {
           problems.push(`${file}: source "${s}" escapes the package root`)
-        } else if (!shipped.has(pkgRelative.split('/')[0])) {
+        } else if (!shipped.has(firstSegment(pkgRelative))) {
           problems.push(
-            `${file}: source "${s}" is not shipped — "${pkgRelative.split('/')[0]}" missing from package.json "files" (${[...shipped].join(', ')})`,
+            `${file}: source "${s}" is not shipped — "${firstSegment(pkgRelative)}" missing from package.json "files" (${[...shipped].join(', ')})`,
           )
         }
       }

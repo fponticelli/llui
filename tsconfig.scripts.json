@@ -1,0 +1,28 @@
+{
+  // Type-checks the repo's own tooling (#252). `turbo check` runs PER PACKAGE
+  // and the root is not a workspace member, so before this config nothing
+  // checked `scripts/` at all: `tsconfig.benchmarks.json` names an explicit
+  // `files` list that reached 26 of the 62 files here, and the guards the repo
+  // leans on hardest (dead CSS, wrong `data-*`, failing contrast) sat outside
+  // every gate.
+  //
+  // `checkJs` is ON so the `.mjs` helpers are checked from the INSIDE as well
+  // as across the import boundary. Without it TypeScript still infers a shape
+  // for them, but that shape is mostly implicit `any` — a drift then surfaces
+  // as a runtime `undefined` inside an assertion, and an assertion against
+  // `undefined` can silently pass.
+  //
+  // The include globs are rooted at `scripts/`, so they cannot reach
+  // `.claude/worktrees/`, which is gitignored and holds a full checkout of
+  // every concurrent agent lane. `scripts/test/scripts-typecheck-coverage.test.ts`
+  // pins the covered SET, enumerating via `git ls-files` rather than a
+  // filesystem walk for the same reason.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["scripts/**/*.ts", "scripts/**/*.mjs"]
+}

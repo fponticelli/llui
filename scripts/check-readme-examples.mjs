@@ -37,14 +37,56 @@ const TMP_DIR = join(ROOT, 'node_modules', '.cache', 'llui-readme-check')
 const FENCE_RE = /```(?:ts|tsx|typescript)\b[^\n]*\n([\s\S]*?)```/g
 
 /**
+ * The result of type-checking one package's README snippets.
+ * @typedef {object} CheckResult
+ * @property {boolean} ok
+ * @property {string} diagnostics
+ */
+
+/**
+ * The trailing path segment of a package directory.
+ * @param {string} pkgDir
+ * @returns {string}
+ */
+function packageNameOf(pkgDir) {
+  const name = pkgDir.split('/').slice(-1)[0]
+  if (name === undefined) throw new Error(`check-readme-examples: no name in "${pkgDir}"`)
+  return name
+}
+
+/**
+ * The output `execSync` hangs off the error it throws. The caught value is
+ * `unknown` — a spawn failure throws an error carrying neither stream — so read
+ * both defensively rather than assuming the shape.
+ * @param {unknown} err
+ * @returns {string}
+ */
+function execOutput(err) {
+  if (typeof err !== 'object' || err === null) return ''
+  const stdout = 'stdout' in err ? err.stdout : undefined
+  const stderr = 'stderr' in err ? err.stderr : undefined
+  const text = (/** @type {unknown} */ value) =>
+    value === null || value === undefined ? '' : String(value)
+  return text(stdout) + text(stderr)
+}
+
+/**
  * Extract every TS/TSX block from a README. Returns the block bodies
  * after applying skip rules.
+ * @param {string} source
+ * @returns {string[]}
  */
 function extractBlocks(source) {
+  /** @type {string[]} */
   const blocks = []
+  /** @type {RegExpExecArray | null} */
   let match
   while ((match = FENCE_RE.exec(source)) !== null) {
     const body = match[1]
+    // The fence pattern has exactly one capture group and it always
+    // participates, so this cannot fire — it exists so a future edit to
+    // FENCE_RE that loses the group fails loudly instead of skipping blocks.
+    if (body === undefined) throw new Error('check-readme-examples: fence matched with no body')
     // Skip blocks tagged with `// @doc-skip` in the first 3 lines.
     const head = body.split('\n').slice(0, 3).join('\n')
     if (/\/\/\s*@doc-skip\b/.test(head)) continue
@@ -56,8 +98,11 @@ function extractBlocks(source) {
 /**
  * For one package, write a synthetic .ts file containing every README
  * block and run `tsc --noEmit`. Returns `{ ok, diagnostics }`.
+ * @param {string} pkgDir
+ * @returns {CheckResult}
  */
 function checkPackage(pkgDir) {
+  const pkgName = packageNameOf(pkgDir)
   const readmePath = join(pkgDir, 'README.md')
   if (!existsSync(readmePath)) return { ok: true, diagnostics: '' }
 
@@ -68,11 +113,12 @@ function checkPackage(pkgDir) {
   // collide across snippets. The collected `import` statements at the
   // top of each block are hoisted to the file head — TS doesn't
   // accept imports inside functions — by string-extraction.
+  /** @type {Set<string>} */
   const allImports = new Set()
+  /** @type {string[]} */
   const wrappedBodies = []
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i]
-    const importLines = []
+  for (const [i, block] of blocks.entries()) {
+    /** @type {string[]} */
     const bodyLines = []
     for (const line of block.split('\n')) {
       // Hoist `import ... from '...'` and `import '...'` lines
@@ -93,7 +139,7 @@ function checkPackage(pkgDir) {
 
   const synthetic =
     '// AUTO-GENERATED — do not edit. Source: packages/' +
-    pkgDir.split('/').slice(-1)[0] +
+    pkgName +
     '/README.md\n' +
     '// @ts-nocheck — disabled per-line where snippets reference values\n' +
     "// the type checker can't see (mock APIs, runtime stubs). The\n" +
@@ -104,7 +150,6 @@ function checkPackage(pkgDir) {
 
   // Write to per-package cache file.
   if (!existsSync(TMP_DIR)) mkdirSync(TMP_DIR, { recursive: true })
-  const pkgName = pkgDir.split('/').slice(-1)[0]
   const outPath = join(TMP_DIR, `${pkgName}-readme.ts`)
   writeFileSync(outPath, synthetic)
 
@@ -152,8 +197,7 @@ function checkPackage(pkgDir) {
     execSync(`"${tscBin}" -p "${tsconfigPath}"`, { cwd: ROOT, stdio: 'pipe' })
     return { ok: true, diagnostics: '' }
   } catch (e) {
-    const out = (e.stdout?.toString() ?? '') + (e.stderr?.toString() ?? '')
-    return { ok: false, diagnostics: out }
+    return { ok: false, diagnostics: execOutput(e) }
   }
 }
 
