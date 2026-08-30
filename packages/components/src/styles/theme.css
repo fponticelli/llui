@@ -1166,7 +1166,7 @@
   background: var(--accent);
 }
 
-[data-scope='menu'][data-part='item'][data-state='highlighted'] {
+[data-scope='menu'][data-part='item'][data-highlighted=''] {
   background: color-mix(in srgb, var(--primary) 15%, transparent);
   color: var(--primary-soft-foreground);
 }
@@ -1194,7 +1194,7 @@
   background: var(--accent);
 }
 
-[data-scope='context-menu'][data-part='item'][data-state='highlighted'] {
+[data-scope='context-menu'][data-part='item'][data-highlighted=''] {
   background: color-mix(in srgb, var(--primary) 15%, transparent);
   color: var(--primary-soft-foreground);
 }
