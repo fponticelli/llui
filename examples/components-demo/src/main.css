@@ -37,22 +37,37 @@
 /*
  * The SAME override again, under the guard `tokens-dark.css` uses verbatim.
  *
- * Not a `'system'` story and nothing to do with `applyTheme`: that guard,
- * `:root:not([data-theme='light']):not(.light)`, is specificity (0,3,0) while the
- * block above is (0,1,0). On a DARK OS the library's block therefore outranks this
- * override for EVERY preference and regardless of source order, and the token that
- * wins is shadcn's default dark `--primary`, not the brand colour — measured, and
- * tracked as #241. Under `'system'` the block above additionally matches nothing at
- * all, since there is no attribute to match.
+ * ONE cell needs this, and it is not the one #241 was about. `applyTheme`
+ * publishes the PREFERENCE, so `'system'` writes no `data-theme` at all, and this
+ * package deliberately writes no `.dark` class either (#242) — so on a dark OS
+ * under `'system'` the block above matches NOTHING. No specificity change can
+ * repair that; only a rule under the same media guard can. This twin's guard is
+ * true whenever the attribute is absent or `'dark'`, so it covers it.
  *
- * This twin carries the same (0,3,0), is imported later, and its guard is true in
- * both failing cells (attribute absent OR 'dark'). `theme.css`'s derived
- * `color-mix()` tokens need no twin — they re-resolve from `--foreground` for free.
+ * The guard is now `:root:where(:not(…)):where(:not(…))` — (0,1,0), not the
+ * (0,3,0) it used to be (#241). Before that fix this twin was load-bearing for
+ * the `'dark'` preference too: the library block outranked the (0,1,0) block
+ * above on a dark OS and replaced the brand colour with shadcn's default dark
+ * `--primary`, regardless of source order.
+ *
+ * `--destructive` IS listed here, and lowering the guard is exactly why it has
+ * to be. It is overridden in `:root` above, and while the guard was (0,3,0) the
+ * library's own dark `--destructive` outranked that `:root` value in this cell —
+ * so the pair resolved dark-on-dark correctly by accident. At (0,1,0) the `:root`
+ * value wins, which pins the LIGHT red under the library's dark near-black
+ * `--destructive-foreground`. Measured in Chromium: 6.207:1 before, **3.750:1**
+ * without this line (below the 4.5 AA floor), 6.199:1 with it. That is the same
+ * trap the `:root` comment above describes, arriving through the one cell that
+ * used to be immune.
+ *
+ * `theme.css`'s derived `color-mix()` tokens need no twin — they re-resolve from
+ * `--foreground` for free.
  */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']):not(.light) {
+  :root:where(:not([data-theme='light'])):where(:not(.light)) {
     --primary: oklch(0.7 0.15 258);
     --primary-foreground: oklch(0.2 0.02 258);
+    --destructive: oklch(0.7 0.19 27);
   }
 }
 

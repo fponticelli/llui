@@ -90,7 +90,7 @@ describe('resolveTheme', () => {
  * the state `tokens-dark.css`'s `prefers-color-scheme` block already answers:
  *
  *   @media (prefers-color-scheme: dark) {
- *     :root:not([data-theme='light']):not(.light) { … }
+ *     :root:where(:not([data-theme='light'])):where(:not(.light)) { … }
  *   }
  *   .dark, [data-theme='dark'] { … }
  */
@@ -170,16 +170,23 @@ describe('applyTheme', () => {
  * stylesheet and run them against a real element in each of the three states.
  */
 describe('applyTheme pairs with the selectors tokens-dark.css actually ships', () => {
-  const css = readFileSync(resolve(import.meta.dirname, '../../src/styles/tokens-dark.css'), 'utf8')
+  const css = readFileSync(
+    resolve(import.meta.dirname, '../../src/styles/tokens-dark.css'),
+    'utf8',
+    // Both blocks carry prose ABOUT their own selectors, so a match run over the
+    // raw text captures the comment as part of the selector.
+  ).replace(/\/\*[\s\S]*?\*\//g, '')
 
   /** The guard inside `@media (prefers-color-scheme: dark)` — the branch an
    * absent `data-theme` is meant to fall into. */
-  const mediaSelector = css.match(/@media \(prefers-color-scheme: dark\) \{\s*([^{]+?)\s*\{/)?.[1]
+  const mediaSelector = css
+    .match(/@media \(prefers-color-scheme: dark\) \{\s*([^{}]+?)\s*\{/)?.[1]
+    ?.trim()
   /** The explicit-dark selector list outside any media query. */
   const explicitSelector = css.match(/\n(\.dark,\n\[data-theme='dark'\]) \{/)?.[1]
 
   it('ships both selectors (a rename here is a silent theme break)', () => {
-    expect(mediaSelector).toBe(":root:not([data-theme='light']):not(.light)")
+    expect(mediaSelector).toBe(":root:where(:not([data-theme='light'])):where(:not(.light))")
     expect(explicitSelector).toBe(".dark,\n[data-theme='dark']")
   })
 
@@ -213,35 +220,54 @@ describe('applyTheme pairs with the selectors tokens-dark.css actually ships', (
   })
 
   /**
-   * #241, pinned here because it is the fact the docs beside `applyTheme` now
-   * assert and a reader will otherwise assume `'system'` caused it. The media
-   * guard is (0,3,0) and a consumer's override selector is (0,1,0), so on a dark
-   * OS the LIBRARY block wins for every preference — including `'dark'`, where
-   * the consumer's selector matches perfectly well and still loses. This is not a
-   * regression from #233 and the fix is #241's, not this function's; the
-   * assertion exists so that landing #241 (`:where()`) fails here and forces the
-   * prose above to be re-read.
+   * #241 LANDED, and this assertion replaces the forward guard that used to sit
+   * here demanding the guard NOT contain `:where(`. That guard did its job: it
+   * failed on the change and forced the specificity prose in `applyTheme` and
+   * `site/content/styling.md` to be re-read and rewritten.
+   *
+   * What is pinned now is the property, not the spelling. The guard is `:where()`
+   * -wrapped so it is (0,1,0) rather than (0,3,0) — enough for a consumer block
+   * imported after this stylesheet to win on source order, and still enough to
+   * beat `tokens.css`'s own `:root`. Wrapping `:root` itself would be (0,0,0),
+   * which loses to that `:root` and breaks dark mode outright — the broken
+   * variant, not the fix.
+   *
+   * The specificity arithmetic lives in `test/styles/token-cascade.test.ts` and
+   * the real cascade is measured against Chromium in
+   * `test/styles/token-cascade.browser.test.ts`. This case keeps only the half
+   * that belongs to `applyTheme`: whichever preference is published, the guard
+   * still MATCHES in both cells a consumer writes a dark override for.
    */
-  it('the media guard OUTRANKS a consumer override on specificity (#241)', () => {
-    // FIRST, so its message is what a reader sees when #241 lands. Wrapping the
-    // two `:not()`s in `:where()` drops the guard to (0,1,0) — enough for a
-    // consumer block to win on source order, which IS #241's fix. (Wrapping
-    // `:root` itself would give (0,0,0), which loses to `tokens.css`'s own
-    // `:root` and breaks dark mode outright — that is the broken variant, not
-    // the fix.) Either way this assertion fails, on purpose.
-    expect(
-      mediaSelector,
-      'If #241 has landed, re-read the specificity prose in applyTheme + styling.md before updating this',
-    ).not.toContain(':where(')
-    // (0,3,0): `:root` + `:not([attr])` + `:not(.class)`, since `:not()` takes
-    // the specificity of its argument.
-    expect(mediaSelector).toBe(":root:not([data-theme='light']):not(.light)")
+  it('the media guard matches wherever a dark override applies, at (0,1,0) (#241)', () => {
+    expect(mediaSelector).toContain(':where(')
+    // Not `:where(:root)` — that is the (0,0,0) variant that breaks dark mode.
+    expect(mediaSelector).toMatch(/^:root:where\(/)
     // The guard is true whenever the attribute is ABSENT or 'dark' — i.e. in both
     // of the cells a consumer would write a dark override for.
     applyTheme('dark')
     expect(document.documentElement.matches(mediaSelector as string)).toBe(true)
     applyTheme('system')
     expect(document.documentElement.matches(mediaSelector as string)).toBe(true)
+  })
+
+  /**
+   * #242 — the decision, pinned where a reader of `applyTheme` will find it.
+   * `.dark` names a RESOLVED theme, so maintaining it here would mean resolving
+   * `prefers-color-scheme` in JS for `'system'`; the class then goes stale on an
+   * OS flip and SUPPRESSES the media query that was correct with no JS at all.
+   * See the doc comment on `applyTheme` for the measured matrix.
+   */
+  it('writes no .dark / .light class, in any preference (#242)', () => {
+    const html = document.documentElement
+    html.className = 'app-shell'
+    for (const theme of ['light', 'dark', 'system'] as Theme[]) {
+      applyTheme(theme)
+      expect(html.classList.contains('dark'), `${theme} added .dark`).toBe(false)
+      expect(html.classList.contains('light'), `${theme} added .light`).toBe(false)
+    }
+    // And it touches no class the consumer put there.
+    expect(html.className).toBe('app-shell')
+    html.className = ''
   })
 })
 

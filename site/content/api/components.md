@@ -1986,7 +1986,7 @@ Removing it is not "doing nothing" — it is how `'system'` is spelled, and
 
 ```css
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']):not(.light) { … }   // absent  -> follow OS
+  :root:where(:not([data-theme='light'])):where(:not(.light)) { … }  // absent -> OS
 }
 .dark,
 [data-theme='dark'] { … }                             // "dark"   -> dark
@@ -2017,10 +2017,34 @@ Use `resolveTheme()` only when you genuinely need the resolved value IN JS —
 canvas theming, a `<meta name="theme-color">` — never merely to honour the OS
 setting.
 
-NOTE, unrelated to this function: on a dark OS the media guard quoted above is
-specificity (0,3,0) and outranks a consumer's `.dark` / `[data-theme='dark']`
-override (0,1,0) for EVERY preference — see #241 — and nothing here ever
-writes the `.dark` class that guard advertises (#242).
+THIS FUNCTION DELIBERATELY WRITES NO `.dark` CLASS (#242), and that is the
+decision, not an omission. `tokens-dark.css` still ships a `.dark` selector for
+consumers whose own tooling writes it (next-themes, an SSR-rendered class), but
+maintaining it HERE was rejected on measurement: `.dark` names a RESOLVED
+theme, so a `'system'` preference would have to resolve `prefers-color-scheme`
+in JS, and the class then goes stale the moment the OS flips. A stale class
+does not merely fail to help — it SUPPRESSES the media query that is correct
+with no JS at all. Measured in Chromium against the shipped stylesheets, with
+the preference on `'system'` throughout:
+
+```text
+  os=light class=(none) -> LIGHT ok        os=dark class=(none) -> DARK  ok
+  os=light class=dark   -> DARK  !!WRONG!! os=dark class=dark   -> DARK  ok
+  os=light class=light  -> LIGHT ok        os=dark class=light  -> LIGHT !!WRONG!!
+```
+
+So the class buys one cell (a consumer's `.dark`-scoped override under
+`'system'` on a dark OS) at the price of making `watchSystemTheme` mandatory,
+leaving SSR a class it cannot render, and turning a zero-JS-correct cell into
+one that is wrong until JS runs. The supported answer for that cell is a CSS
+twin block under the media guard — see `site/content/styling.md`.
+
+The media guard quoted above is `:where()`-wrapped so it is specificity
+(0,1,0), not (0,3,0) (#241). At (0,3,0) it outranked EVERY consumer override of
+a base token on a dark OS, including `[data-theme='dark']` under an explicit
+`'dark'` preference, where the consumer's selector matches and still lost. Do
+not "simplify" the `:where()`s away, and do not wrap `:root` itself — that is
+(0,0,0) and loses to `tokens.css`'s own `:root`, breaking dark mode outright.
 
 ```typescript
 function applyTheme(theme: Theme): void
@@ -33351,7 +33375,7 @@ Removing it is not "doing nothing" — it is how `'system'` is spelled, and
 
 ```css
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']):not(.light) { … }   // absent  -> follow OS
+  :root:where(:not([data-theme='light'])):where(:not(.light)) { … }  // absent -> OS
 }
 .dark,
 [data-theme='dark'] { … }                             // "dark"   -> dark
@@ -33382,10 +33406,34 @@ Use `resolveTheme()` only when you genuinely need the resolved value IN JS —
 canvas theming, a `<meta name="theme-color">` — never merely to honour the OS
 setting.
 
-NOTE, unrelated to this function: on a dark OS the media guard quoted above is
-specificity (0,3,0) and outranks a consumer's `.dark` / `[data-theme='dark']`
-override (0,1,0) for EVERY preference — see #241 — and nothing here ever
-writes the `.dark` class that guard advertises (#242).
+THIS FUNCTION DELIBERATELY WRITES NO `.dark` CLASS (#242), and that is the
+decision, not an omission. `tokens-dark.css` still ships a `.dark` selector for
+consumers whose own tooling writes it (next-themes, an SSR-rendered class), but
+maintaining it HERE was rejected on measurement: `.dark` names a RESOLVED
+theme, so a `'system'` preference would have to resolve `prefers-color-scheme`
+in JS, and the class then goes stale the moment the OS flips. A stale class
+does not merely fail to help — it SUPPRESSES the media query that is correct
+with no JS at all. Measured in Chromium against the shipped stylesheets, with
+the preference on `'system'` throughout:
+
+```text
+  os=light class=(none) -> LIGHT ok        os=dark class=(none) -> DARK  ok
+  os=light class=dark   -> DARK  !!WRONG!! os=dark class=dark   -> DARK  ok
+  os=light class=light  -> LIGHT ok        os=dark class=light  -> LIGHT !!WRONG!!
+```
+
+So the class buys one cell (a consumer's `.dark`-scoped override under
+`'system'` on a dark OS) at the price of making `watchSystemTheme` mandatory,
+leaving SSR a class it cannot render, and turning a zero-JS-correct cell into
+one that is wrong until JS runs. The supported answer for that cell is a CSS
+twin block under the media guard — see `site/content/styling.md`.
+
+The media guard quoted above is `:where()`-wrapped so it is specificity
+(0,1,0), not (0,3,0) (#241). At (0,3,0) it outranked EVERY consumer override of
+a base token on a dark OS, including `[data-theme='dark']` under an explicit
+`'dark'` preference, where the consumer's selector matches and still lost. Do
+not "simplify" the `:where()`s away, and do not wrap `:root` itself — that is
+(0,0,0) and loses to `tokens.css`'s own `:root`, breaking dark mode outright.
 
 ```typescript
 function applyTheme(theme: Theme): void

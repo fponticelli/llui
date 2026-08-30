@@ -32,7 +32,7 @@ cannot be combined.
 | Needs Tailwind         | yes                                                 | no                                           |
 | Looks like             | shadcn/ui, verbatim                                 | LLui's own look                              |
 | To restyle a component | edit your copy                                      | override its `[data-scope][data-part]` rules |
-| To restyle everything  | override tokens in `:root`                          | override tokens in `:root`                   |
+| To restyle everything  | override tokens in `:root` (+ dark, see Retheme)    | override tokens in `:root` (+ dark)          |
 | Upgrades               | you own the file; `llui add --overwrite` to re-pull | arrives with the package                     |
 
 Both drive the identical machines through the identical `data-*` contract. Nothing about your
@@ -471,8 +471,10 @@ below reach every rule in the sheet.
 
 **Both paths share this.** `tokens.css` defines shadcn's token names (`--background`,
 `--primary`, `--primary-foreground`, `--radius`, …) in `:root`, and `theme.css` imports the
-same file — so **any shadcn theme generator's output pastes in verbatim**, and a theme you
-build survives a move between the two paths:
+same file — so a shadcn theme generator's **`:root` half pastes in verbatim**, and a theme you
+build survives a move between the two paths. The dark half needs one find-and-replace: this
+package never writes the `.dark` class, so scope your dark overrides to
+`[data-theme='dark']` and repeat them under the media query.
 
 ```css
 @import '@llui/components/styles/tokens.css';
@@ -481,15 +483,36 @@ build survives a move between the two paths:
   --primary: oklch(0.55 0.2 265);
   --radius: 0.75rem;
 }
+
+/* Overriding a SURFACE token? Override it, AND ITS PAIRED FOREGROUND, in all
+   three places. A `:root`-only surface override is paired with the LIBRARY's
+   dark foreground on a dark OS, which is how a legible pair becomes an
+   illegible one. Check the contrast of each pair you override. */
+[data-theme='dark'] {
+  --primary: <your dark surface>;
+  --primary-foreground: <its paired ink>;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']):not(.light) {
+    --primary: <your dark surface>;
+    --primary-foreground: <its paired ink>;
+  }
+}
 ```
+
+The media twin is not optional: under the `'system'` preference no attribute is set, so a
+`[data-theme='dark']` block matches nothing. See
+[Styling → overriding a base token on a dark OS](/styling) for the full six-cell matrix.
 
 Derived interaction tokens (`--primary-hover`, `--accent-strong`, `--border-hover`) are
 `color-mix()` expressions toward `--foreground`, so they follow a base token automatically
 and darken in light mode while lightening in dark. Do not restate them per theme.
 
-Dark mode activates on `.dark`, `[data-theme='dark']` **and** `prefers-color-scheme` — the
-first is what shadcn tooling writes, the second is what `@llui/components/theme-switch`
-writes.
+Dark mode activates on `[data-theme='dark']`, `.dark` **and** `prefers-color-scheme`. The
+first is what `@llui/components/theme-switch` writes and is the supported spelling; `.dark`
+is honoured for consumers who set that class themselves, but **nothing in this package ever
+writes it** — `applyTheme` manages `data-theme` only, and removes it entirely for `'system'`
+so the media query answers.
 
 ## 7. Charts
 

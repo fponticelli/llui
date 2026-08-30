@@ -8,10 +8,15 @@
  *
  * THREE activation mechanisms, all supported at once, because the ecosystems
  * disagree and a consumer should not have to pick one to use both halves:
- *   - `.dark` on any ancestor — the shadcn/ui convention, and what a shadcn theme
- *     generator emits. Also what `next-themes`-style toggles write.
- *   - `[data-theme='dark']` — LLui's own convention (`@llui/components/theme-switch`
- *     writes it). `[data-theme='light']` force-opts a subtree OUT.
+ *   - `[data-theme='dark']` — LLui's own convention, and THE ONLY ONE THIS
+ *     PACKAGE WRITES. `applyTheme()` publishes the user's preference on `<html>`;
+ *     `[data-theme='light']` force-opts a subtree OUT.
+ *   - `.dark` on any ancestor — the shadcn/ui convention, which `next-themes`-style
+ *     toggles and shadcn theme generators use. Supported for consumers who set
+ *     that class THEMSELVES; nothing in `@llui/components` ever adds it, and it
+ *     deliberately never will (#242 — see `applyTheme`'s doc comment for the
+ *     measured reason: a resolved class goes stale on an OS flip and then
+ *     SUPPRESSES the media query below, which is correct with no JS at all).
  *   - `prefers-color-scheme: dark` — the no-JS default, suppressed by an explicit
  *     `[data-theme='light']` or `.light`.
  *
@@ -22,7 +27,28 @@
  */
 
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']):not(.light) {
+  /* The `:not()`s are wrapped in `:where()` so this guard is specificity (0,1,0),
+   * NOT the (0,3,0) it reads as (`:not()` takes its argument's specificity, and
+   * two of them stack). At (0,3,0) this block OUTRANKED every consumer override
+   * of a base token on a dark OS — including `[data-theme='dark']`, which matches
+   * perfectly well and still lost — so a shadcn theme's brand colour was silently
+   * replaced by the default below, regardless of source order (#241, measured in
+   * Chromium across all six preference x OS cells).
+   *
+   * At (0,1,0) it ties with `:root`, `.dark` and `[data-theme='dark']` and source
+   * order decides, which is what a consumer importing this file and then writing
+   * their own block expects.
+   *
+   * DO NOT wrap `:root` itself. `:where(:root):where(…)` is (0,0,0), which then
+   * loses to `tokens.css`'s own `:root` and breaks dark mode outright — measured,
+   * and it is the variant this file's history names as if it were the fix.
+   *
+   * This repairs the cells where the consumer's selector MATCHES. It cannot
+   * repair a `'system'` preference on a dark OS, where no attribute and no class
+   * are present and the consumer's `.dark` / `[data-theme='dark']` block matches
+   * nothing at all; for that cell a consumer needs a twin block under this exact
+   * guard. See `site/content/styling.md`. */
+  :root:where(:not([data-theme='light'])):where(:not(.light)) {
     color-scheme: dark;
     --background: oklch(0.145 0 0);
     --foreground: oklch(0.985 0 0);
@@ -83,6 +109,10 @@
   }
 }
 
+/* (0,1,0), and after the media block above, so an explicit preference beats the
+ * OS. `[data-theme='dark']` is what `applyTheme()` writes; `.dark` is here only
+ * for consumers whose own tooling writes that class (next-themes, a shadcn theme
+ * generator's markup, an SSR-rendered class) — this package never adds it. */
 .dark,
 [data-theme='dark'] {
   color-scheme: dark;
