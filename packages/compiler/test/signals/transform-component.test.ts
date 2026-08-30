@@ -1192,19 +1192,27 @@ describe('transformSignalComponentSource', () => {
       expect(out).toMatch(/deps: \[.*''.*\]/) // whole-state residue dep
     })
 
+    // The 4th arg is the component-state paths the rows read, so the fixture has
+    // to be an each the component state is genuinely IN SCOPE for. Pass 2 reaches
+    // one when pass 1 declined the whole view — here because the view returns a
+    // single Mountable rather than an array — and `state` then really is the bag's.
+    // (It must NOT be a free-standing view helper with a parameter named `state`:
+    // that is #247, and the helper's own signal is not the component state.)
     it('helper eachDirect emission carries its collected state deps (4th arg)', () => {
       const src = [
-        "import { ul, li, text, each, type Signal } from '@llui/dom'",
-        'export function rows(items: Signal<readonly { id: number; label: string }[]>, state: Signal<{ mode: string }>) {',
-        '  return [ul([each(items, {',
+        "import { ul, li, text, each, component } from '@llui/dom'",
+        'const C = component({',
+        '  init: () => ({ items: [] as { id: number; label: string }[], mode: "en" }),',
+        '  update: (s) => s,',
+        '  view: ({ state }) => ul([each(state.at("items"), {',
         '    key: (r) => r.id,',
         '    render: (item) => [li([text(item.at("label")), text(state.at("mode"))])],',
-        '  })])]',
-        '}',
+        '  })]),',
+        '})',
       ].join('\n')
       const out = transformSignalComponentSource(src)
       assertParses(out)
-      expect(out).toMatch(/eachDirect\(items, .*, \['mode'\]\)/s)
+      expect(out).toMatch(/eachDirect\(state\.at\("items"\), .*, \['mode'\]\)/s)
     })
 
     it('helper eachDirect with NO state reads passes an empty deps array (precise)', () => {
