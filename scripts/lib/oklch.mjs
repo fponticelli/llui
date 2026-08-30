@@ -133,6 +133,16 @@ const decode = (u) => (u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 
 /** Round-trip through 8-bit sRGB, the way a display actually shows it. */
 export const quantize = (lin) => lin.map((u) => decode(Math.round(encode(u) * 255) / 255))
 
+/**
+ * An 8-bit sRGB triple (what `getImageData` hands back) -> linear sRGB, the
+ * input `contrast` above takes. This is the seam `scripts/test/token-contrast.test.ts`
+ * needs: that guard resolves colours by PAINTING them in Chromium and reading
+ * the pixel back, because CSS Color 4 syntaxes round-trip verbatim through
+ * `getComputedStyle()` and through `canvas.fillStyle` — so the only safe
+ * crossing from "what the browser resolved" to "a number" is a rasterised byte.
+ */
+export const srgb8ToLinear = ([r, g, b]) => [decode(r / 255), decode(g / 255), decode(b / 255)]
+
 export const hex = (lin) =>
   '#' +
   lin
