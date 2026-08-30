@@ -66,20 +66,36 @@ export const DEFAULTS = Object.freeze({
   minSample: 5,
 })
 
-/** Median of a numeric array. Returns 0 for an empty one. */
+/**
+ * Median of a numeric array. Returns 0 for an empty one.
+ *
+ * The `?? 0` fallbacks are the shape `noUncheckedIndexedAccess` asks for and
+ * never a reachable branch: the array is non-empty past the guard above, and
+ * `mid` / `mid - 1` are both in range once the parity has been decided.
+ *
+ * @param {readonly number[]} values
+ * @returns {number}
+ */
 export function median(values) {
   if (values.length === 0) return 0
   const sorted = [...values].sort((a, b) => a - b)
   const mid = sorted.length >> 1
-  return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+  const upper = sorted[mid] ?? 0
+  if (sorted.length % 2 === 1) return upper
+  return ((sorted[mid - 1] ?? 0) + upper) / 2
 }
 
-/** Nearest-rank percentile (0–1). Returns 0 for an empty array. */
+/**
+ * Nearest-rank percentile (0–1). Returns 0 for an empty array.
+ * @param {readonly number[]} values
+ * @param {number} q
+ * @returns {number}
+ */
 export function percentile(values, q) {
   if (values.length === 0) return 0
   const sorted = [...values].sort((a, b) => a - b)
   const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(q * sorted.length) - 1))
-  return sorted[index]
+  return sorted[index] ?? 0
 }
 
 /**
@@ -116,14 +132,14 @@ export function aggregateDurations(reports, repoRoot) {
   }
   // Round to 0.1 ms: the baseline is a committed artifact and full float noise
   // would make every re-record a large diff for no information.
-  for (const key of Object.keys(totals)) totals[key] = Math.round(totals[key] * 10) / 10
+  for (const [key, total] of Object.entries(totals)) totals[key] = Math.round(total * 10) / 10
   return totals
 }
 
 /**
  * @typedef {object} CompareOptions
  * @property {number} [factor]  How much slower than baseline (after de-scaling)
- *   counts as a regression. Default 3.
+ *   counts as a regression. Default 4, CALIBRATED (not guessed) — see below.
  * @property {number} [scaleFloorMs] Only files at least this costly on BOTH
  *   sides take part in estimating the run's scale and spread. Small files are
  *   dominated by fixed overheads that do not track load, so their ratios are
@@ -175,9 +191,19 @@ export function compareDurations(baseline, current, options = {}) {
   // The scale estimator uses only files big enough for their ratio to mean
   // something. A 0.4 ms file reading 1.2 ms is a 3x ratio made of timer
   // granularity, and a few hundred of those would dominate the median.
-  const scaleSample = common
-    .filter((file) => baseline[file] >= scaleFloorMs && current[file] >= scaleFloorMs)
-    .map((file) => current[file] / baseline[file])
+  /** @type {number[]} */
+  const scaleSample = []
+  for (const file of common) {
+    const baselineMs = baseline[file]
+    const currentMs = current[file]
+    // `common` is exactly the intersection, so neither can be missing; the guard
+    // is what `noUncheckedIndexedAccess` asks for, and skipping matches what the
+    // comparisons below would have done with an absent value anyway.
+    if (baselineMs === undefined || currentMs === undefined) continue
+    if (baselineMs >= scaleFloorMs && currentMs >= scaleFloorMs) {
+      scaleSample.push(currentMs / baselineMs)
+    }
+  }
   const scale = scaleSample.length > 0 ? median(scaleSample) : 1
 
   // THE NOISE GUARD, and the reason this can be a CI gate at all. De-scaling
@@ -290,6 +316,7 @@ export function compareDurations(baseline, current, options = {}) {
   for (const file of common) {
     const baselineMs = baseline[file]
     const currentMs = current[file]
+    if (baselineMs === undefined || currentMs === undefined) continue
     const normalizedMs = currentMs / scale
     const growthMs = normalizedMs - baselineMs
     // A file can only ever be reported if a `factor`-fold growth would clear the
@@ -326,7 +353,19 @@ export function compareDurations(baseline, current, options = {}) {
   }
 }
 
-/** Human-readable rendering of a comparison, used by the CLI and by its test. */
+/**
+ * Human-readable rendering of a comparison, used by the CLI and by its test.
+ *
+ * The options parameter is TYPED rather than left to inference: the destructured
+ * defaults come from a FROZEN object, so without this the parameter infers the
+ * literal types `{ factor?: 4, minDeltaMs?: 400, … }` and every caller passing
+ * the settings it actually ran at — which is the whole point of the header this
+ * prints — is a type error.
+ *
+ * @param {DurationComparison} comparison
+ * @param {CompareOptions} [options]
+ * @returns {string}
+ */
 export function formatComparison(
   comparison,
   {

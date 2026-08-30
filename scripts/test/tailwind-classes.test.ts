@@ -2,13 +2,11 @@ import { describe, it, expect } from 'vitest'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-// @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import {
   extractClassCandidates,
   extractHtmlClassCandidates,
   isPureReExport,
 } from '../lib/registry-classes.mjs'
-// @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import {
   appEntry,
   compileCandidates,

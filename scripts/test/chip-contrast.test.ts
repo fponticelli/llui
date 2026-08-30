@@ -2,9 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import ts from 'typescript'
 import path from 'node:path'
-// @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import { extractClassCandidates } from '../lib/registry-classes.mjs'
-// @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import {
   contrast,
   gamutMapOklabToLinearSrgb,
@@ -128,13 +126,15 @@ function evalColor(expr: string, vars: Map<string, string>): Oklab {
     }
     const aWords = splitWords(a!)
     const pct = aWords.length === 2 ? readNumber(aWords[1]!, vars) / 100 : 0.5
-    return mixOklab(evalColor(aWords[0]!, vars), evalColor(b!, vars), pct) as Oklab
+    return mixOklab(evalColor(aWords[0]!, vars), evalColor(b!, vars), pct)
   }
   const oklch = /^oklch\(([^]*)\)$/i.exec(e)
   if (oklch !== null) {
     const parts = splitWords(oklch[1]!)
     if (parts.length !== 3) throw new Error(`expected 3 oklch components in: ${e}`)
-    return oklchToOklab(parts.map((p) => readNumber(p, vars)) as [number, number, number]) as Oklab
+    // The length check above is what makes the tuple assertion true; nothing in
+    // `map`'s type carries it.
+    return oklchToOklab(parts.map((p) => readNumber(p, vars)) as [number, number, number])
   }
   throw new Error(`cannot evaluate colour expression: ${e}`)
 }

@@ -62,6 +62,10 @@ const HUMAN_ONLY_PATTERNS = [
   /^.*Pointer/,
 ]
 
+/**
+ * @param {string} variantName
+ * @returns {'humanOnly' | 'intent'}
+ */
 function classify(variantName) {
   for (const re of HUMAN_ONLY_PATTERNS) {
     if (re.test(variantName)) return 'humanOnly'
@@ -69,29 +73,48 @@ function classify(variantName) {
   return 'intent'
 }
 
+/**
+ * @param {string} variant
+ * @returns {string}
+ */
 function intentText(variant) {
   return variant
     .replace(/([A-Z])/g, ' $1')
-    .replace(/^./, (c) => c.toUpperCase())
+    .replace(/^./, (/** @type {string} */ c) => c.toUpperCase())
     .trim()
 }
 
 const TAG_RE = /@intent\b|@humanOnly\b|@agentOnly\b|@requiresConfirm\b|@alwaysAffordable\b/
 
 /**
+ * One union's rewrite: the emitted lines, how many source lines were consumed,
+ * and how many annotations were inserted.
+ * @typedef {object} UnionRewrite
+ * @property {string[]} rewritten
+ * @property {number} consumed
+ * @property {number} edits
+ */
+
+/**
  * Scan a Msg union starting at lines[startIdx] (the line after `export
  * type XxxMsg =`). Returns the rewritten lines and edit count.
+ * @param {string[]} lines
+ * @param {number} startIdx
+ * @returns {UnionRewrite}
  */
 function annotateUnion(lines, startIdx) {
+  /** @type {string[]} */
   const out = []
   let i = startIdx
   let edits = 0
   // pending tracks comment/JSDoc lines accumulated since the last variant
   // — these are what we look at for an existing tag.
+  /** @type {string[]} */
   let pending = []
 
   while (i < lines.length) {
     const cur = lines[i]
+    if (cur === undefined) break
     const trimmed = cur.trim()
 
     // Stop at top-level statements.
@@ -106,18 +129,24 @@ function annotateUnion(lines, startIdx) {
     // Multi-line variant header (` | {` on its own line)
     const multi = /^(\s*)\|\s*\{\s*$/.test(cur)
 
+    /** @type {string | null} */
     let typeName = null
     let indent = ''
     let multiTypeIdx = -1
     if (single) {
-      typeName = single[2]
-      indent = single[1]
+      // Both groups always participate when the pattern matches; `?? null` /
+      // `?? ''` keep the pre-existing falsy handling below rather than inventing
+      // a variant name.
+      typeName = single[2] ?? null
+      indent = single[1] ?? ''
     } else if (multi) {
-      indent = /^(\s*)/.exec(cur)[1]
+      indent = /^(\s*)/.exec(cur)?.[1] ?? ''
       for (let j = i + 1; j < Math.min(i + 12, lines.length); j++) {
-        const tm = /^\s*type:\s*['"]([^'"]+)['"]/.exec(lines[j])
+        const candidate = lines[j]
+        if (candidate === undefined) break
+        const tm = /^\s*type:\s*['"]([^'"]+)['"]/.exec(candidate)
         if (tm) {
-          typeName = tm[1]
+          typeName = tm[1] ?? null
           multiTypeIdx = j
           break
         }
@@ -145,6 +174,7 @@ function annotateUnion(lines, startIdx) {
         let depth = 1
         while (i < lines.length && depth > 0) {
           const ln = lines[i]
+          if (ln === undefined) break
           for (const ch of ln) {
             if (ch === '{') depth++
             else if (ch === '}') depth--
@@ -181,14 +211,20 @@ function annotateUnion(lines, startIdx) {
   return { rewritten: out, consumed: i - startIdx, edits }
 }
 
+/**
+ * @param {string} source
+ * @returns {{ source: string, edits: number }}
+ */
 function annotateFile(source) {
   const lines = source.split('\n')
+  /** @type {string[]} */
   const out = []
   let i = 0
   let totalEdits = 0
 
   while (i < lines.length) {
     const line = lines[i]
+    if (line === undefined) break
     if (/^export type \w+Msg(<[^>]*>)?\s*=\s*$/.test(line.trim())) {
       out.push(line)
       i++

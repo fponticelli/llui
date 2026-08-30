@@ -2,9 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readdir, readFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
-// @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import { extractClassCandidates } from '../lib/registry-classes.mjs'
-// @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import {
   attrsInCandidate,
   attrValuePairsInCandidate,
@@ -13,6 +11,7 @@ import {
   publishedAttrValues,
   unresolvedAttrTypes,
 } from '../lib/registry-attrs.mjs'
+import type { ModuleCache } from '../lib/registry-attrs.mjs'
 
 const ROOT = path.resolve(__dirname, '../..')
 const UI = path.join(ROOT, 'registry/llui/ui')
@@ -528,7 +527,7 @@ describe('registry recipes only style attributes their machine publishes', () =>
    * found.
    */
   it('every data-*/aria-* declaration resolves, or is listed as residue', async () => {
-    const cache = new Map<string, unknown>()
+    const cache: ModuleCache = new Map()
     const problems: string[] = []
     const used = new Set<string>()
     let scanned = 0

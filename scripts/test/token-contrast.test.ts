@@ -2,9 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { chromium, type Browser } from 'playwright'
-// @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import { appEntry, compileCandidates, resolveCssId } from '../lib/tailwind-compile.mjs'
-// @ts-expect-error -- plain-JS script helpers, consumed by the repo's own tooling
 import { contrast, srgb8ToLinear } from '../lib/oklch.mjs'
 
 /**
@@ -473,8 +471,13 @@ const INSTRUMENT = [
   },
 ] as const
 
-const ratioOf = (reading: { surface: readonly number[]; ink: readonly number[] }): number =>
-  contrast(srgb8ToLinear(reading.surface), srgb8ToLinear(reading.ink))
+/** Both readings are 8-bit sRGB TRIPLES — the arity is the part that matters,
+ * because a `number[]` here is a length nobody checked and the conversion is a
+ * fixed 3x3. `Reading` and `Probe` above both already say so. */
+const ratioOf = (reading: {
+  surface: readonly [number, number, number]
+  ink: readonly [number, number, number]
+}): number => contrast(srgb8ToLinear(reading.surface), srgb8ToLinear(reading.ink))
 
 /** Every `@import` in a stylesheet, comments stripped first — `theme.css`
  * DOCUMENTS four imports in its header comment that it does not perform, and a

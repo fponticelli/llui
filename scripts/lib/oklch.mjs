@@ -33,6 +33,28 @@
 
 const cbrt = Math.cbrt
 
+/**
+ * A colour as exactly three components. WHICH three is the caller's business and
+ * is stated by the function that takes or returns it — OKLab `[L, a, b]`, OKLCh
+ * `[L, C, h°]`, linear sRGB `[r, g, b]` in [0,1], or 8-bit sRGB `[r, g, b]` in
+ * [0,255]. The arity is the part worth typing: every conversion here is a fixed
+ * 3x3, and a `number[]` reaching one of them is a length nobody checked.
+ *
+ * Parameters take the READONLY form so a caller holding a `readonly` triple (the
+ * shape `chip-contrast.test.ts` uses for OKLab) can pass it without copying;
+ * returns are mutable, which is assignable to either.
+ *
+ * @typedef {readonly [number, number, number]} Triple
+ */
+
+/**
+ * OKLab -> LINEAR sRGB. The result is NOT clamped: an out-of-gamut OKLab
+ * legitimately produces components outside [0,1], which is what
+ * `gamutMapOklabToLinearSrgb` below tests for.
+ *
+ * @param {Triple} oklab `[L, a, b]`
+ * @returns {[number, number, number]} linear sRGB `[r, g, b]`, unclamped
+ */
 export function oklabToLinearSrgb([L, a, b]) {
   const l_ = L + 0.3963377774 * a + 0.2158037573 * b
   const m_ = L - 0.1055613458 * a - 0.0638541728 * b
@@ -47,6 +69,12 @@ export function oklabToLinearSrgb([L, a, b]) {
   ]
 }
 
+/**
+ * LINEAR sRGB -> OKLab.
+ *
+ * @param {Triple} lin linear sRGB `[r, g, b]`
+ * @returns {[number, number, number]} `[L, a, b]`
+ */
 export function linearSrgbToOklab([r, g, b]) {
   const l = cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
   const m = cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
@@ -58,26 +86,49 @@ export function linearSrgbToOklab([r, g, b]) {
   ]
 }
 
+/**
+ * OKLCh -> OKLab. `h` is in DEGREES, the way CSS spells it.
+ *
+ * @param {Triple} oklch `[L, C, h]`
+ * @returns {[number, number, number]} `[L, a, b]`
+ */
 export const oklchToOklab = ([L, C, h]) => {
   const rad = (h * Math.PI) / 180
   return [L, C * Math.cos(rad), C * Math.sin(rad)]
 }
 
+/**
+ * @param {Triple} lin linear sRGB
+ * @param {number} [eps]
+ * @returns {boolean}
+ */
 const inGamut = ([r, g, b], eps = 1e-6) =>
   r >= -eps && r <= 1 + eps && g >= -eps && g <= 1 + eps && b >= -eps && b <= 1 + eps
 
+/**
+ * @param {Triple} lin linear sRGB, possibly out of gamut
+ * @returns {[number, number, number]} the same colour clamped into [0,1]
+ */
 const clip = ([r, g, b]) => [
   Math.min(1, Math.max(0, r)),
   Math.min(1, Math.max(0, g)),
   Math.min(1, Math.max(0, b)),
 ]
 
+/**
+ * @param {Triple} a OKLab
+ * @param {Triple} b OKLab
+ * @returns {number}
+ */
 const deltaEOK = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
 
 /**
  * CSS Color 4 §13.2 gamut mapping: hold OKLab L and h, binary-search chroma
  * until the clipped candidate is within JND (0.02) of the unclipped one.
  * Returns LINEAR sRGB in [0,1].
+ *
+ * @param {Triple} oklab `[L, a, b]`
+ * @returns {[number, number, number]} linear sRGB `[r, g, b]`, in gamut
  */
 export function gamutMapOklabToLinearSrgb(oklab) {
   const direct = oklabToLinearSrgb(oklab)
@@ -93,6 +144,7 @@ export function gamutMapOklabToLinearSrgb(oklab) {
   let best = clip(direct)
   while (hi - lo > 1e-5) {
     const mid = (lo + hi) / 2
+    /** @type {[number, number, number]} */
     const cand = [L, mid * Math.cos(h), mid * Math.sin(h)]
     const rgb = oklabToLinearSrgb(cand)
     if (inGamut(rgb)) {
@@ -110,16 +162,36 @@ export function gamutMapOklabToLinearSrgb(oklab) {
   return best
 }
 
-/** `color-mix(in oklab, a pct%, b)` on opaque colours: a plain OKLab lerp. */
+/**
+ * `color-mix(in oklab, a pct%, b)` on opaque colours: a plain OKLab lerp.
+ *
+ * @param {Triple} a OKLab, weighted by `pct`
+ * @param {Triple} b OKLab, weighted by `1 - pct`
+ * @param {number} pct a FRACTION in [0,1], not a percentage
+ * @returns {[number, number, number]} OKLab
+ */
 export const mixOklab = (a, b, pct) => [
   a[0] * pct + b[0] * (1 - pct),
   a[1] * pct + b[1] * (1 - pct),
   a[2] * pct + b[2] * (1 - pct),
 ]
 
-/** WCAG 2.x relative luminance from LINEAR sRGB. */
+/**
+ * WCAG 2.x relative luminance from LINEAR sRGB.
+ *
+ * @param {Triple} lin linear sRGB `[r, g, b]`
+ * @returns {number}
+ */
 export const luminance = ([r, g, b]) => 0.2126 * r + 0.7152 * g + 0.0722 * b
 
+/**
+ * WCAG 2.x contrast ratio. Symmetric — the lighter of the two is the numerator
+ * whichever way round they are passed.
+ *
+ * @param {Triple} linA linear sRGB
+ * @param {Triple} linB linear sRGB
+ * @returns {number} a ratio in [1, 21]
+ */
 export function contrast(linA, linB) {
   const a = luminance(linA)
   const b = luminance(linB)
@@ -127,11 +199,34 @@ export function contrast(linA, linB) {
   return (hi + 0.05) / (lo + 0.05)
 }
 
+/**
+ * Linear -> sRGB transfer function (one channel).
+ * @param {number} u
+ * @returns {number}
+ */
 const encode = (u) => (u <= 0.0031308 ? 12.92 * u : 1.055 * Math.pow(u, 1 / 2.4) - 0.055)
+
+/**
+ * sRGB -> linear transfer function (one channel).
+ * @param {number} u
+ * @returns {number}
+ */
 const decode = (u) => (u <= 0.04045 ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4))
 
-/** Round-trip through 8-bit sRGB, the way a display actually shows it. */
-export const quantize = (lin) => lin.map((u) => decode(Math.round(encode(u) * 255) / 255))
+/**
+ * Round-trip through 8-bit sRGB, the way a display actually shows it.
+ *
+ * Written channel by channel rather than with `.map` so the arity survives:
+ * `Array.prototype.map` widens a triple to `number[]`, which is how a
+ * length-checked colour silently becomes a length nobody checked.
+ *
+ * @param {Triple} lin linear sRGB
+ * @returns {[number, number, number]} linear sRGB, after an 8-bit round trip
+ */
+export const quantize = ([r, g, b]) => {
+  const round = (/** @type {number} */ u) => decode(Math.round(encode(u) * 255) / 255)
+  return [round(r), round(g), round(b)]
+}
 
 /**
  * An 8-bit sRGB triple (what `getImageData` hands back) -> linear sRGB, the
@@ -140,12 +235,19 @@ export const quantize = (lin) => lin.map((u) => decode(Math.round(encode(u) * 25
  * the pixel back, because CSS Color 4 syntaxes round-trip verbatim through
  * `getComputedStyle()` and through `canvas.fillStyle` — so the only safe
  * crossing from "what the browser resolved" to "a number" is a rasterised byte.
+ *
+ * @param {Triple} srgb8 `[r, g, b]`, each in [0,255]
+ * @returns {[number, number, number]} linear sRGB `[r, g, b]`, each in [0,1]
  */
 export const srgb8ToLinear = ([r, g, b]) => [decode(r / 255), decode(g / 255), decode(b / 255)]
 
-export const hex = (lin) =>
+/**
+ * @param {Triple} lin linear sRGB
+ * @returns {string} `#rrggbb`
+ */
+export const hex = ([r, g, b]) =>
   '#' +
-  lin
+  [r, g, b]
     .map((u) =>
       Math.round(encode(u) * 255)
         .toString(16)
@@ -153,10 +255,18 @@ export const hex = (lin) =>
     )
     .join('')
 
-/** HSL -> linear sRGB, for comparing the issue's proposed formulation. */
+/**
+ * HSL -> linear sRGB, for comparing the issue's proposed formulation.
+ *
+ * @param {number} h hue in DEGREES
+ * @param {number} s saturation as a fraction in [0,1]
+ * @param {number} l lightness as a fraction in [0,1]
+ * @returns {[number, number, number]} linear sRGB
+ */
 export function hslToLinearSrgb(h, s, l) {
-  const k = (n) => (n + h / 30) % 12
+  const k = (/** @type {number} */ n) => (n + h / 30) % 12
   const a = s * Math.min(l, 1 - l)
-  const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
+  const f = (/** @type {number} */ n) =>
+    l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))
   return [decode(f(0)), decode(f(8)), decode(f(4))]
 }

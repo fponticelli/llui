@@ -99,6 +99,43 @@ jobs:
       - name: Benchmark tooling type check
         run: pnpm check:benchmarks
 
+      # `turbo check` above runs PER PACKAGE and the repo root is not a workspace
+      # member, so before #252 nothing type-checked `scripts/` at all — the
+      # `check:benchmarks` config above names an explicit `files` list that
+      # reached 26 of the 62 files there, and the guards this repo leans on
+      # hardest sat outside it (`registry-attrs`, `tailwind-classes`,
+      # `token-contrast`, `chip-contrast` — the checks for dead CSS, wrong
+      # `data-*` values and failing contrast, all of which catch defects a green
+      # test suite cannot see). Measured: inserting a plain type error into
+      # `scripts/test/token-contrast.test.ts` survived `turbo check`,
+      # `turbo lint`, `check:benchmarks` AND `format:check`.
+      #
+      # `checkJs` is on, so the `.mjs` helpers those tests import are checked
+      # from the inside too, not merely across the import boundary. That half is
+      # the point: the tests index into loosely-typed helper results, and a drift
+      # surfaces as a runtime `undefined` inside an assertion — which can pass.
+      #
+      # It needs no build, and the reason is narrower than "scripts/ imports no
+      # package": THREE files reach into package SOURCES by relative path, in
+      # five import statements — `chip-contrast` (x1), `registry-demo-sync` (x2)
+      # and `lexical-loro-stress-lane` (x2). A fourth, `vitest-config-baseline`,
+      # reaches outside `scripts/` but only to the repo-root `vitest.shared.ts`,
+      # which is not a package source; count it under "outside scripts/" (4 files
+      # / 6 statements) and not under this one.
+      #
+      # What makes the gate build-independent is that every one of those resolves
+      # to a `.ts` SOURCE file: the program contains zero `@llui/*` specifiers and
+      # zero `packages/*/dist` artifacts, measured with `--listFiles`. So this step
+      # sits here purely to keep the type-check steps together, not because it
+      # depends on the build above.
+      #
+      # It is a TYPE gate, not an `any` ban: `JSON.parse` returns `any` and
+      # `scripts/` has ~38 call sites, plus two explicit `any`s this gate does
+      # not reject. Banning them needs ESLint, which still does not run here
+      # (#256).
+      - name: Scripts type check
+        run: pnpm check:scripts
+
       # The registry ships SOURCE that only a consumer's build compiles, so
       # `turbo check` never sees it. This is the same blind spot that let
       # `src/styles/classes/*` accumulate 116 dead Tailwind utilities behind a

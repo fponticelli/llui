@@ -69,8 +69,16 @@ describe('aggregateDurations', () => {
 })
 
 describe('compareDurations', () => {
-  // Six files clear the 200ms floor on purpose: the median scale needs at least
-  // `minSample` (5) comparable files before it will give a verdict at all.
+  // THE NOISE-FLOOR OPTION IS `minDeltaMs`, AND IT IS NOT SPELLED `floorMs`.
+  // Four cases below passed `{ factor: 3, floorMs: 200 }` — `floorMs` was the
+  // OLD clamped-denominator design that `minDeltaMs` replaced — so the object
+  // carried a key `compareDurations` never reads and every one of them silently
+  // ran at the DEFAULT 400 ms floor while its source claimed 200. An untyped
+  // `.mjs` boundary is what let that sit: the excess-property check only fires
+  // once the options parameter has a declared type (#252).
+  //
+  // Six files clear the 200ms SCALE floor on purpose: the median scale needs at
+  // least `minSample` (5) comparable files before it will give a verdict at all.
   const baseline = {
     'a.test.ts': 1_000,
     'b.test.ts': 2_000,
@@ -85,7 +93,7 @@ describe('compareDurations', () => {
     const result = compareDurations(
       baseline,
       { ...baseline, 'b.test.ts': 12_000 },
-      { factor: 3, floorMs: 200 },
+      { factor: 3, minDeltaMs: 200 },
     )
     expect(result.regressions.map((r) => r.file)).toEqual(['b.test.ts'])
     expect(result.regressions[0]?.ratio).toBeCloseTo(6, 1)
@@ -93,7 +101,7 @@ describe('compareDurations', () => {
 
   it('reports NOTHING when the whole machine is 4x slower', () => {
     const loaded = Object.fromEntries(Object.entries(baseline).map(([k, v]) => [k, v * 4]))
-    const result = compareDurations(baseline, loaded, { factor: 3, floorMs: 200 })
+    const result = compareDurations(baseline, loaded, { factor: 3, minDeltaMs: 200 })
     expect(result.scale).toBeCloseTo(4, 3)
     expect(result.regressions).toEqual([])
   })
@@ -101,7 +109,7 @@ describe('compareDurations', () => {
   it('still finds the regression when the machine is ALSO 4x slower', () => {
     const loaded = Object.fromEntries(Object.entries(baseline).map(([k, v]) => [k, v * 4]))
     loaded['b.test.ts'] = 2_000 * 4 * 6
-    const result = compareDurations(baseline, loaded, { factor: 3, floorMs: 200 })
+    const result = compareDurations(baseline, loaded, { factor: 3, minDeltaMs: 200 })
     expect(result.scale).toBeCloseTo(4, 3)
     expect(result.regressions.map((r) => r.file)).toEqual(['b.test.ts'])
   })
@@ -109,7 +117,7 @@ describe('compareDurations', () => {
   it('uses the MEDIAN so one outlier cannot inflate its own reference', () => {
     // With a mean, a file 400x slower would drag the scale up and hide itself.
     const current = { ...baseline, 'a.test.ts': 400_000 }
-    const result = compareDurations(baseline, current, { factor: 3, floorMs: 200 })
+    const result = compareDurations(baseline, current, { factor: 3, minDeltaMs: 200 })
     expect(result.scale).toBeCloseTo(1, 3)
     expect(result.regressions.map((r) => r.file)).toEqual(['a.test.ts'])
   })

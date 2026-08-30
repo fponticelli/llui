@@ -53,6 +53,12 @@ const outDir = process.env['LLUI_TEST_DURATIONS']
   ? resolve(repoRoot, process.env['LLUI_TEST_DURATIONS'])
   : join(repoRoot, '.test-durations')
 
+/**
+ * Read a numeric CLI flag, falling back when it is absent or unparseable.
+ * @param {string} name
+ * @param {number} fallback
+ * @returns {number}
+ */
 function numberFlag(name, fallback) {
   const index = args.indexOf(name)
   if (index < 0) return fallback
@@ -111,7 +117,9 @@ if (save) {
         recordedAt: new Date().toISOString().slice(0, 10),
         recordedUnder: {
           cpus: cpus().length,
-          loadAvg1m: Math.round(loadavg()[0] * 10) / 10,
+          // `loadavg()` always returns three entries; the `?? 0` is what
+          // `noUncheckedIndexedAccess` asks for, not a reachable branch.
+          loadAvg1m: Math.round((loadavg()[0] ?? 0) * 10) / 10,
           note: 'load per core well above ~2 means this baseline is smeared; prefer re-recording',
         },
         metric: 'sum of test durations per file, milliseconds (hooks excluded)',

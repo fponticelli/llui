@@ -48,6 +48,11 @@ const PACKAGES = readdirSync(join(ROOT, 'packages'))
 
 const SKIP_EXTENSIONS = new Set(['.js', '.ts', '.tsx', '.mjs', '.cjs', '.css', '.json', '.svg'])
 
+/**
+ * Whether a module specifier already ends in an extension we must not touch.
+ * @param {string} path
+ * @returns {boolean}
+ */
 function hasExtension(path) {
   const lastSlash = path.lastIndexOf('/')
   const basename = lastSlash >= 0 ? path.slice(lastSlash + 1) : path
@@ -57,6 +62,12 @@ function hasExtension(path) {
   return SKIP_EXTENSIONS.has(ext)
 }
 
+/**
+ * Every `.ts`/`.tsx` file under `dir`, recursively.
+ * @param {string} dir
+ * @param {string[]} [files]
+ * @returns {string[]}
+ */
 function findTsFiles(dir, files = []) {
   for (const entry of readdirSync(dir)) {
     if (entry === 'node_modules' || entry === 'dist') continue
@@ -93,14 +104,22 @@ for (const pkg of PACKAGES) {
   for (const file of files) {
     const content = readFileSync(file, 'utf8')
     let edits = 0
-    const newContent = content.replace(IMPORT_REGEX, (match, prefix, quote, path) => {
+    /**
+     * @param {string} match
+     * @param {string} prefix
+     * @param {string} quote
+     * @param {string} path
+     * @returns {string}
+     */
+    const addExtension = (match, prefix, quote, path) => {
       // Only rewrite RELATIVE imports
       if (!path.startsWith('./') && !path.startsWith('../')) return match
       // Skip if it already has an extension
       if (hasExtension(path)) return match
       edits++
       return `${prefix}${quote}${path}.js${quote}`
-    })
+    }
+    const newContent = content.replace(IMPORT_REGEX, addExtension)
     if (edits > 0) {
       pkgEdits += edits
       if (!DRY) writeFileSync(file, newContent)

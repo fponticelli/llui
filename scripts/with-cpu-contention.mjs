@@ -25,7 +25,9 @@ if (separator === -1 || command === undefined) {
     return { child, stopped }
   })
 
+  /** @type {import('node:child_process').ChildProcess | undefined} */
   let testProcess
+  /** @param {NodeJS.Signals} signal */
   const forwardSignal = (signal) => {
     testProcess?.kill(signal)
     for (const spinner of spinners) spinner.child.kill(signal)
@@ -37,14 +39,17 @@ if (separator === -1 || command === undefined) {
 
   try {
     console.error(`Running under ${workerCount} CPU contention workers`)
-    testProcess = spawn(command, args, {
+    const child = spawn(command, args, {
       stdio: 'inherit',
       shell: process.platform === 'win32',
     })
-    const result = await new Promise((resolve, reject) => {
-      testProcess.once('error', reject)
-      testProcess.once('exit', (code, signal) => resolve({ code, signal }))
+    testProcess = child
+    /** @type {Promise<{ code: number | null, signal: NodeJS.Signals | null }>} */
+    const exited = new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('exit', (code, signal) => resolve({ code, signal }))
     })
+    const result = await exited
     process.exitCode = result.code ?? (result.signal === 'SIGINT' ? 130 : 143)
   } finally {
     process.removeListener('SIGINT', onInterrupt)

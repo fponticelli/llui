@@ -20,24 +20,51 @@ import ts from 'typescript'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 
+/**
+ * The BARE-spelling attributes in `candidate` (`data-foo:x`,
+ * `group-data-foo/n:x`), added to `out`. Shared by `attrsInCandidate` — which
+ * also reads the bracketed form — and `bareAttrsInCandidate`, which reads only
+ * this one, so the two spellings of the same scan cannot drift apart.
+ *
+ * @param {string} candidate
+ * @param {Set<string>} out
+ * @returns {void}
+ */
+function collectBareAttrs(candidate, out) {
+  for (const m of candidate.matchAll(
+    /(?:^|:)(?:not-|group-|peer-)*((?:data|aria)-[a-zA-Z0-9-]+?)(?:\/[a-zA-Z0-9-]+)?:/g,
+  )) {
+    const whole = m[0]
+    const attr = m[1]
+    // The group is mandatory in the pattern, so a match always carries it.
+    if (attr === undefined) continue
+    // Skip the bracketed form, already handled (its next char is `[`).
+    if (!whole.includes('[')) out.add(attr)
+  }
+}
+
 /** `data-[foo=bar]:x` / `data-foo:x` / `not-data-foo:x` / `group-data-foo/n:x` /
  *  `aria-[foo=bar]:x` / `aria-foo:x` / `peer-data-[foo]:x` — every spelling
- *  Tailwind offers for an attribute variant. Returns bare attribute names. */
+ *  Tailwind offers for an attribute variant. Returns bare attribute names.
+ *
+ * @param {string} candidate
+ * @returns {string[]}
+ */
 export function attrsInCandidate(candidate) {
+  /** @type {Set<string>} */
   const out = new Set()
   // Bracketed form: data-[state=open], group-data-[collapsible=icon]/x, aria-[orientation=vertical]
   for (const m of candidate.matchAll(
     /(?:^|:)(?:not-|group-|peer-)*((?:data|aria)-)\[([a-zA-Z0-9-]+)/g,
   )) {
-    out.add(m[1] + m[2])
+    const prefix = m[1]
+    const name = m[2]
+    // Both groups are mandatory in the pattern; a match cannot omit either.
+    if (prefix === undefined || name === undefined) continue
+    out.add(prefix + name)
   }
   // Bare form: data-active:, not-data-in-month:, group-data-focused/day:
-  for (const m of candidate.matchAll(
-    /(?:^|:)(?:not-|group-|peer-)*((?:data|aria)-[a-zA-Z0-9-]+?)(?:\/[a-zA-Z0-9-]+)?:/g,
-  )) {
-    // Skip the bracketed form, already handled (its next char is `[`).
-    if (!m[0].includes('[')) out.add(m[1])
-  }
+  collectBareAttrs(candidate, out)
   return [...out]
 }
 
@@ -46,10 +73,16 @@ export function attrsInCandidate(candidate) {
  * declare. Read from the TYPE, not the implementation: the interface is the
  * published contract, and a key present in one but not the other is its own bug
  * the package's own type-check already catches.
+ *
+ * @param {string} fileName
+ * @param {string} source
+ * @returns {Set<string>}
  */
 export function publishedAttrs(fileName, source) {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  /** @type {Set<string>} */
   const out = new Set()
+  /** @param {ts.Node} node */
   const walk = (node) => {
     if (ts.isPropertySignature(node) && node.name !== undefined) {
       const name = ts.isStringLiteral(node.name)
@@ -78,8 +111,13 @@ export function publishedAttrs(fileName, source) {
 // perfect. A render is the only other thing that shows it.
 
 /** `data-[foo=bar]` pairs a candidate styles, as `"data-foo=bar"`. The bare
- *  spelling (`data-foo:`) carries no value and is not reported here. */
+ *  spelling (`data-foo:`) carries no value and is not reported here.
+ *
+ * @param {string} candidate
+ * @returns {string[]}
+ */
 export function attrValuePairsInCandidate(candidate) {
+  /** @type {Set<string>} */
   const out = new Set()
   // Unanchored on purpose: `data-[x=y]` cannot occur inside a longer token, and
   // every variant prefix Tailwind allows (`not-`, `group-`, `peer-`, a `/name`
@@ -87,7 +125,14 @@ export function attrValuePairsInCandidate(candidate) {
   // did, and it matched nothing at all — `group-data-[…]` has no colon before
   // the attribute and the `[` is not a name character.
   for (const m of candidate.matchAll(/((?:data|aria)-)\[([a-zA-Z0-9-]+)=([a-zA-Z0-9-]+)\]/g)) {
-    out.add(`${m[1]}${m[2]}=${m[3]}`)
+    const prefix = m[1]
+    const name = m[2]
+    const value = m[3]
+    // All three groups are mandatory in the pattern; a match carries them all.
+    // Guarded rather than interpolated: a template would silently spell a
+    // missing group as the text `undefined`, which reads as a real pair.
+    if (prefix === undefined || name === undefined || value === undefined) continue
+    out.add(`${prefix}${name}=${value}`)
   }
   return [...out]
 }
@@ -96,18 +141,23 @@ export function attrValuePairsInCandidate(candidate) {
  *  `group-data-foo/n:x`) — i.e. "present at all", with no value asserted. This
  *  is what a value-level parity allowance must be paired with: the bracketed
  *  form contributes the same attribute NAME, so pairing against names alone
- *  would be satisfied by the dead spelling itself. */
+ *  would be satisfied by the dead spelling itself.
+ *
+ * @param {string} candidate
+ * @returns {string[]}
+ */
 export function bareAttrsInCandidate(candidate) {
+  /** @type {Set<string>} */
   const out = new Set()
-  for (const m of candidate.matchAll(
-    /(?:^|:)(?:not-|group-|peer-)*((?:data|aria)-[a-zA-Z0-9-]+?)(?:\/[a-zA-Z0-9-]+)?:/g,
-  )) {
-    if (!m[0].includes('[')) out.add(m[1])
-  }
+  collectBareAttrs(candidate, out)
   return [...out]
 }
 
-/** Unwrap `Signal<X>` / `Reactive<X>` to X; anything else is returned as-is. */
+/** Unwrap `Signal<X>` / `Reactive<X>` to X; anything else is returned as-is.
+ *
+ * @param {ts.TypeNode} typeNode
+ * @returns {ts.TypeNode}
+ */
 function unwrapReactive(typeNode) {
   if (
     ts.isTypeReferenceNode(typeNode) &&
@@ -115,7 +165,8 @@ function unwrapReactive(typeNode) {
     (typeNode.typeName.text === 'Signal' || typeNode.typeName.text === 'Reactive') &&
     typeNode.typeArguments?.length === 1
   ) {
-    return typeNode.typeArguments[0]
+    const only = typeNode.typeArguments[0]
+    if (only !== undefined) return only
   }
   return typeNode
 }
@@ -150,7 +201,57 @@ function unwrapReactive(typeNode) {
 // that also answers a deep ACYCLIC chain, which no cycle set can.
 const MAX_ALIAS_DEPTH = 16
 
-/** Nearest ancestor directory holding a `package.json`, or `null`. */
+/**
+ * Where an imported or re-exported type NAME comes from.
+ *
+ * @typedef {{ specifier: string, exportedName: string }} ImportedType
+ */
+
+/**
+ * A parsed module and the two lookups alias resolution needs.
+ *
+ * @typedef {object} RegistryModule
+ * @property {string} fileName Absolute path the module was parsed under.
+ * @property {ts.SourceFile} sf
+ * @property {Map<string, ts.TypeNode>} aliases Top-level NON-generic `type X = …`.
+ * @property {Map<string, ImportedType>} imported Local name → where it comes from.
+ * @property {string | null} packageRoot Nearest ancestor holding a `package.json`.
+ * @property {ModuleCache} cache The sweep-wide parse cache this module was loaded under.
+ */
+
+/**
+ * Sweep-wide parse cache, keyed by resolved path. A `null` entry is a file that
+ * does not exist — remembered so a missing sibling is stat'ed once, not once per
+ * declaration that names it.
+ *
+ * @typedef {Map<string, RegistryModule | null>} ModuleCache
+ */
+
+/**
+ * Type parameters declared by `node`, whatever kind it is.
+ *
+ * Read STRUCTURALLY, through one downcast, rather than from a hand-list of node
+ * kinds: a kind the list failed to name would silently lose the shadow check,
+ * and `resolveAliasTarget` would then follow a module-level alias of the SAME
+ * name to a completely different type — the wrong-verdict direction this
+ * resolver exists to avoid.
+ *
+ * @param {ts.Node} node
+ * @returns {ts.NodeArray<ts.TypeParameterDeclaration> | undefined}
+ */
+function ownTypeParameters(node) {
+  const carrier =
+    /** @type {ts.Node & { readonly typeParameters?: ts.NodeArray<ts.TypeParameterDeclaration> }} */ (
+      node
+    )
+  return carrier.typeParameters
+}
+
+/** Nearest ancestor directory holding a `package.json`, or `null`.
+ *
+ * @param {string} fileName
+ * @returns {string | null}
+ */
 function packageRootOf(fileName) {
   let dir = path.dirname(path.resolve(fileName))
   for (;;) {
@@ -165,6 +266,10 @@ function packageRootOf(fileName) {
  * A parsed module plus the two lookups alias resolution needs: its top-level
  * type aliases, and where each imported/re-exported type NAME comes from.
  * Memoized per `cache` so one sweep parses each sibling once.
+ *
+ * @param {string} fileName
+ * @param {ModuleCache} cache
+ * @returns {RegistryModule | null}
  */
 function loadModule(fileName, cache) {
   const key = path.resolve(fileName)
@@ -179,11 +284,18 @@ function loadModule(fileName, cache) {
   return mod
 }
 
-/** Parse `source` as `fileName` and index its type aliases and type imports. */
+/** Parse `source` as `fileName` and index its type aliases and type imports.
+ *
+ * @param {string} fileName
+ * @param {string} source
+ * @param {ModuleCache} cache
+ * @returns {RegistryModule}
+ */
 function buildModule(fileName, source, cache) {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  /** @type {Map<string, ts.TypeNode>} */
   const aliases = new Map()
-  // local name → { specifier, exportedName }
+  /** @type {Map<string, ImportedType>} local name → { specifier, exportedName } */
   const imported = new Map()
   for (const st of sf.statements) {
     if (ts.isTypeAliasDeclaration(st)) {
@@ -228,6 +340,10 @@ function buildModule(fileName, source, cache) {
  * Resolve a RELATIVE specifier to a `.ts` file inside the SAME package.
  * Everything else — a bare specifier (`@llui/dom`, `typescript`), a path that
  * leaves the package root, a file that does not exist — resolves to `null`.
+ *
+ * @param {RegistryModule} mod
+ * @param {string} specifier
+ * @returns {string | null}
  */
 function resolveRelative(mod, specifier) {
   if (!specifier.startsWith('./') && !specifier.startsWith('../')) return null
@@ -251,10 +367,15 @@ function resolveRelative(mod, specifier) {
   return null
 }
 
-/** True when `name` is bound by a type PARAMETER on any ancestor of `node`. */
+/** True when `name` is bound by a type PARAMETER on any ancestor of `node`.
+ *
+ * @param {ts.Node} node
+ * @param {string} name
+ * @returns {boolean}
+ */
 function shadowedByTypeParameter(node, name) {
-  for (let cur = node; cur !== undefined; cur = cur.parent) {
-    const params = cur.typeParameters
+  for (/** @type {ts.Node | undefined} */ let cur = node; cur !== undefined; cur = cur.parent) {
+    const params = ownTypeParameters(cur)
     if (params === undefined) continue
     for (const p of params) if (p.name.text === name) return true
   }
@@ -264,6 +385,11 @@ function shadowedByTypeParameter(node, name) {
 /**
  * Follow `name` from `mod` to the type node it denotes, plus the module that
  * node lives in. `null` whenever it cannot be followed with certainty.
+ *
+ * @param {string} name
+ * @param {RegistryModule} mod
+ * @param {number} depth
+ * @returns {{ type: ts.TypeNode, mod: RegistryModule } | null}
  */
 function resolveAliasTarget(name, mod, depth) {
   if (depth > MAX_ALIAS_DEPTH) return null
@@ -278,8 +404,13 @@ function resolveAliasTarget(name, mod, depth) {
   return resolveAliasTarget(via.exportedName, next, depth + 1)
 }
 
-/** Strip parentheses so `('a' | 'b')` reads as the union it is. */
+/** Strip parentheses so `('a' | 'b')` reads as the union it is.
+ *
+ * @param {ts.TypeNode} typeNode
+ * @returns {ts.TypeNode}
+ */
 function unwrapParens(typeNode) {
+  /** @type {ts.TypeNode} */
   let cur = typeNode
   while (ts.isParenthesizedTypeNode(cur)) cur = cur.type
   return cur
@@ -290,11 +421,19 @@ function unwrapParens(typeNode) {
  * (a `string`, a template literal, an alias this syntax-only read cannot follow
  * — see the fail-closed list above). `null` means "no verdict": the check stays
  * silent rather than guessing, in keeping with the one-direction rule.
+ *
+ * @param {ts.TypeNode} typeNode
+ * @param {RegistryModule} [mod]
+ * @param {number} [depth]
+ * @param {Set<string>} [seen]
+ * @returns {Set<string> | null}
  */
 function literalValues(typeNode, mod, depth = 0, seen = new Set()) {
   if (depth > MAX_ALIAS_DEPTH) return null
   const inner = unwrapParens(unwrapReactive(unwrapParens(typeNode)))
+  /** @type {readonly ts.TypeNode[]} */
   const members = ts.isUnionTypeNode(inner) ? inner.types : [inner]
+  /** @type {Set<string>} */
   const out = new Set()
   for (const raw of members) {
     const m = unwrapParens(raw)
@@ -339,11 +478,18 @@ function literalValues(typeNode, mod, depth = 0, seen = new Set()) {
  * declare, mapped to the literal values it can hold (`null` = open type).
  * A key declared more than once unions its value sets, and one OPEN declaration
  * opens the attribute everywhere in the module.
+ *
+ * @param {string} fileName
+ * @param {string} source
+ * @param {ModuleCache} [cache]
+ * @returns {Map<string, Set<string> | null>}
  */
 export function publishedAttrValues(fileName, source, cache = new Map()) {
   const mod = buildModule(path.resolve(fileName), source, cache)
   cache.set(mod.fileName, mod)
+  /** @type {Map<string, Set<string> | null>} */
   const out = new Map()
+  /** @param {ts.Node} node */
   const walk = (node) => {
     if (ts.isPropertySignature(node) && node.name !== undefined && node.type !== undefined) {
       const name = ts.isStringLiteral(node.name)
@@ -353,13 +499,12 @@ export function publishedAttrValues(fileName, source, cache = new Map()) {
           : null
       if (name !== null && (name.startsWith('data-') || name.startsWith('aria-'))) {
         const values = literalValues(node.type, mod)
-        if (out.has(name)) {
-          const prev = out.get(name)
-          if (prev === null || values === null) out.set(name, null)
-          else for (const v of values) prev.add(v)
-        } else {
-          out.set(name, values === null ? null : new Set(values))
-        }
+        const prev = out.get(name)
+        // `out` only ever holds a `Set` or `null`, so `undefined` is exactly
+        // "this key has not been seen yet".
+        if (prev === undefined) out.set(name, values === null ? null : new Set(values))
+        else if (prev === null || values === null) out.set(name, null)
+        else for (const v of values) prev.add(v)
       }
     }
     ts.forEachChild(node, walk)
@@ -378,11 +523,18 @@ export function publishedAttrValues(fileName, source, cache = new Map()) {
  * open and no resolver can enumerate it. Only a NAMED type that fails to
  * resolve is, because that is a value set someone wrote down and the guard
  * cannot read.
+ *
+ * @param {string} fileName
+ * @param {string} source
+ * @param {ModuleCache} [cache]
+ * @returns {{ attr: string, typeText: string, reason: string }[]}
  */
 export function unresolvedAttrTypes(fileName, source, cache = new Map()) {
   const mod = buildModule(path.resolve(fileName), source, cache)
   cache.set(mod.fileName, mod)
+  /** @type {{ attr: string, typeText: string, reason: string }[]} */
   const out = []
+  /** @param {ts.Node} node */
   const walk = (node) => {
     if (ts.isPropertySignature(node) && node.name !== undefined && node.type !== undefined) {
       const name = ts.isStringLiteral(node.name)
@@ -411,9 +563,14 @@ export function unresolvedAttrTypes(fileName, source, cache = new Map()) {
  * The first named type in `typeNode`'s union that the resolver declines, with
  * why — `<Name>: type parameter` / `: unresolved`. `null` when the type is open
  * for a reason that has no name in it (a `string`, a `number`, a template).
+ *
+ * @param {ts.TypeNode} typeNode
+ * @param {RegistryModule} mod
+ * @returns {string | null}
  */
 function firstUnresolvableTypeName(typeNode, mod) {
   const inner = unwrapParens(unwrapReactive(unwrapParens(typeNode)))
+  /** @type {readonly ts.TypeNode[]} */
   const members = ts.isUnionTypeNode(inner) ? inner.types : [inner]
   for (const raw of members) {
     const m = unwrapParens(raw)
