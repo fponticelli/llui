@@ -107,12 +107,36 @@ import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
 
-/** Resolve `typescript` from the repo being checked, not from this file. */
+/**
+ * One free type name: referenced by a `.d.ts`, bound nowhere in it.
+ * @typedef {object} FreeTypeName
+ * @property {string} name
+ * @property {number} line
+ */
+
+/**
+ * One occurrence of the internal tag written where it is not an annotation.
+ * @typedef {object} MisplacedTag
+ * @property {number} line
+ * @property {'line-comment' | 'jsdoc-prose'} kind
+ * @property {string} text
+ */
+
+/**
+ * Resolve `typescript` from the repo being checked, not from this file.
+ * @param {string} root
+ * @returns {typeof import('typescript')}
+ */
 function loadTs(root) {
   return createRequire(join(root, '_.js'))('typescript')
 }
 
-/** Every `.d.ts` under `dir`, recursively. */
+/**
+ * Every `.d.ts` under `dir`, recursively.
+ * @param {string} dir
+ * @param {string[]} [out]
+ * @returns {string[]}
+ */
 export function walkDts(dir, out = []) {
   for (const e of readdirSync(dir)) {
     const f = join(dir, e)
@@ -122,7 +146,12 @@ export function walkDts(dir, out = []) {
   return out
 }
 
-/** Every `.ts`/`.tsx` under `dir`, recursively. */
+/**
+ * Every `.ts`/`.tsx` under `dir`, recursively.
+ * @param {string} dir
+ * @param {string[]} [out]
+ * @returns {string[]}
+ */
 export function walkTs(dir, out = []) {
   for (const e of readdirSync(dir)) {
     const f = join(dir, e)
@@ -138,6 +167,8 @@ export function walkTs(dir, out = []) {
  * TypeScript itself considers global — never a hand-maintained allowlist, which
  * would fail in the silent direction (a missing entry is a false positive, an
  * over-broad one hides a real free name).
+ * @param {string} root
+ * @returns {Set<string>}
  */
 export function globalTypeNames(root) {
   const ts = loadTs(root)
@@ -145,7 +176,9 @@ export function globalTypeNames(root) {
   const dummyName = '__llui_globals_probe__.ts'
   const dummy = ts.createSourceFile(dummyName, '', ts.ScriptTarget.ES2022, true)
   const orig = host.getSourceFile.bind(host)
-  host.getSourceFile = (f, ...rest) => (f === dummyName ? dummy : orig(f, ...rest))
+  /** @type {import('typescript').CompilerHost['getSourceFile']} */
+  const getSourceFile = (f, ...rest) => (f === dummyName ? dummy : orig(f, ...rest))
+  host.getSourceFile = getSourceFile
   const program = ts.createProgram({
     rootNames: [dummyName],
     options: {
@@ -158,6 +191,10 @@ export function globalTypeNames(root) {
   })
   const checker = program.getTypeChecker()
   const sf = program.getSourceFile(dummyName)
+  // A real guard, not a cast: if the synthetic file is missing the probe would
+  // return an EMPTY global set, and every ordinary reference would then read as
+  // free. `check-dist.mjs` floors the set size too; this fails closer to the cause.
+  if (!sf) throw new Error('globals probe: synthetic source file missing from the program')
   const flags = ts.SymbolFlags.Type | ts.SymbolFlags.Namespace | ts.SymbolFlags.Value
   return new Set(checker.getSymbolsInScope(sf, flags).map((s) => s.getName()))
 }
@@ -167,13 +204,20 @@ export function globalTypeNames(root) {
  * not ambient globals — i.e. names whose `import` or declaration was deleted.
  *
  * Returns `[{ name, line }]`, one entry per distinct name.
+ * @param {string} root
+ * @param {string} fileName
+ * @param {string} text
+ * @param {ReadonlySet<string>} globals
+ * @returns {{ free: FreeTypeName[], referenced: number }}
  */
 export function freeTypeNames(root, fileName, text, globals) {
   const ts = loadTs(root)
   const sf = ts.createSourceFile(fileName, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS)
 
   // Bindings: FLAT on purpose — see KNOWN LIMITS in the header.
+  /** @type {Set<string>} */
   const bound = new Set()
+  /** @param {import('typescript').Node | undefined} n */
   const bindName = (n) => {
     if (!n) return
     if (ts.isIdentifier(n)) bound.add(n.text)
@@ -181,7 +225,8 @@ export function freeTypeNames(root, fileName, text, globals) {
     else if (ts.isObjectBindingPattern(n) || ts.isArrayBindingPattern(n))
       for (const el of n.elements) if (!ts.isOmittedExpression(el)) bindName(el.name)
   }
-  ;(function collectBindings(node) {
+  /** @param {import('typescript').Node} node */
+  const collectBindings = (node) => {
     if (ts.isImportClause(node) && node.name) bindName(node.name)
     else if (ts.isImportSpecifier(node) || ts.isNamespaceImport(node)) bindName(node.name)
     else if (ts.isImportEqualsDeclaration(node)) bindName(node.name)
@@ -199,28 +244,38 @@ export function freeTypeNames(root, fileName, text, globals) {
     )
       bindName(node.name)
     ts.forEachChild(node, collectBindings)
-  })(sf)
+  }
+  collectBindings(sf)
 
   // References: the LEFTMOST identifier of every type reference / type query /
   // heritage clause. `import('x').Y` needs nothing bound and is skipped for free
   // (an ImportTypeNode carries its own specifier).
+  /** @type {Map<string, number>} */
   const referenced = new Map()
+  /**
+   * @param {import('typescript').EntityName} n
+   * @returns {import('typescript').Identifier | null}
+   */
   const leftmost = (n) => {
     while (ts.isQualifiedName(n)) n = n.left
     return ts.isIdentifier(n) ? n : null
   }
+  /** @param {import('typescript').Identifier | null} id */
   const note = (id) => {
     if (id && !referenced.has(id.text))
       referenced.set(id.text, sf.getLineAndCharacterOfPosition(id.getStart(sf)).line + 1)
   }
-  ;(function collectRefs(node) {
+  /** @param {import('typescript').Node} node */
+  const collectRefs = (node) => {
     if (ts.isTypeReferenceNode(node)) note(leftmost(node.typeName))
     else if (ts.isTypeQueryNode(node)) note(leftmost(node.exprName))
     else if (ts.isExpressionWithTypeArguments(node) && ts.isIdentifier(node.expression))
       note(node.expression)
     ts.forEachChild(node, collectRefs)
-  })(sf)
+  }
+  collectRefs(sf)
 
+  /** @type {FreeTypeName[]} */
   const free = []
   for (const [name, line] of referenced)
     if (!bound.has(name) && !globals.has(name)) free.push({ name, line })
@@ -262,13 +317,20 @@ export const MIN_TAG_MENTIONS = 4
  * Reported: any occurrence in a `//` line comment (#253's shape, and the shape
  * the "move the header below the imports" fix would leave behind), and any
  * occurrence mid-line inside a JSDoc block.
+ * @param {string} root
+ * @param {string} fileName
+ * @param {string} text
+ * @returns {MisplacedTag[]}
  */
 export function misplacedInternalTags(root, fileName, text) {
   const ts = loadTs(root)
   const sf = ts.createSourceFile(fileName, text, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TS)
+  /** @type {MisplacedTag[]} */
   const out = []
+  /** @type {Set<number>} */
   const seen = new Set()
 
+  /** @param {readonly import('typescript').CommentRange[] | undefined} ranges */
   const scan = (ranges) => {
     for (const r of ranges ?? []) {
       if (seen.has(r.pos)) continue
@@ -295,16 +357,23 @@ export function misplacedInternalTags(root, fileName, text) {
   // Every leading + trailing comment range in the file. Walking statements is
   // enough: `stripInternal` only ever consults a declaration's leading comments,
   // and a comment attaches to the node that follows it.
-  ;(function visit(node) {
+  /** @param {import('typescript').Node} node */
+  const visit = (node) => {
     scan(ts.getLeadingCommentRanges(text, node.pos))
     ts.forEachChild(node, visit)
-  })(sf)
+  }
+  visit(sf)
 
   return out.sort((a, b) => a.line - b.line)
 }
 
-/** Package dirs under `packages/` whose build config sets `stripInternal`. */
+/**
+ * Package dirs under `packages/` whose build config sets `stripInternal`.
+ * @param {string} root
+ * @returns {string[]}
+ */
 export function stripInternalPackages(root) {
+  /** @type {string[]} */
   const out = []
   for (const d of readdirSync(join(root, 'packages'))) {
     const cfg = join(root, 'packages', d, 'tsconfig.build.json')

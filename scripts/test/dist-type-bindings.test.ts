@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-// @ts-expect-error - .mjs helper without types (every scripts/lib consumer does this)
 import {
   INTERNAL_TAG,
   MIN_TAG_MENTIONS,
