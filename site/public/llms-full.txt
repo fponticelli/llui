@@ -12166,19 +12166,17 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `value` | `number` |
 | `min` | `number` |
 | `max` | `number` |
-| `low` | `number` |
-| `high` | `number` |
-| `optimum` | `number` |
+| `bands` | `MeterBand[]` |
 
-**Messages:** `setValue`, `setMax`
+**Messages:** `setValue`, `setMax`, `setBands`
 
-**Init options:** `value?: number, min?: number, max?: number, low?: number, high?: number, optimum?: number`
+**Init options:** `value?: number, min?: number, max?: number, low?: number, high?: number, optimum?: number, bands?: readonly MeterBandInit[]`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `track`, `range`, `label`, `valueText`
+**Parts:** `root`, `track`, `range`, `marker`, `label`, `bands`, `bandProps`, `band`, `valueText`, `bandLabel`
 
-**Utilities:** `percent()`, `thresholdState()`
+**Utilities:** `percent()`, `bandAt()`, `toneAt()`
 
 ---
 
@@ -15360,6 +15358,8 @@ export type MeterMsg =
   | { type: 'setValue'; value: number }
   /** @humanOnly */
   | { type: 'setMax'; max: number }
+  /** @humanOnly */
+  | { type: 'setBands'; bands: readonly MeterBandInit[] }
 ```
 
 ##### `NavMenuMsg` from `@llui/components`
@@ -20314,9 +20314,16 @@ export interface MeterInit {
   value?: number
   min?: number
   max?: number
+  /**
+   * Native `<meter>` spelling for the three-segment case, compiled into
+   * {@link MeterState.bands} as `low` / `middle` / `high`. Ignored when
+   * `bands` is given and yields at least one usable band — which is what makes
+   * `bands: []` keep the single-optimum behaviour.
+   */
   low?: number
   high?: number
   optimum?: number
+  bands?: readonly MeterBandInit[]
 }
 ```
 
@@ -20331,45 +20338,92 @@ export interface MeterParts {
     'aria-valuenow': Signal<number>
     'aria-valuetext': Signal<string>
     'aria-label': string | undefined
-    'data-state': Signal<MeterThreshold>
+    // Spelled out rather than aliased: `scripts/test/registry-attrs.test.ts`
+    // reads part-bag VALUES syntactically and gives an ALIAS no verdict, which
+    // is how the shipped skin came to style `data-[state=critical]` against a
+    // machine emitting `low`/`high` — two rules of dead CSS, for a release.
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    /** The current band's id — absent when the reading is in no band. */
+    'data-band': Signal<string | undefined>
     'data-scope': 'meter'
     'data-part': 'root'
   }
   track: {
-    'data-state': Signal<MeterThreshold>
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     'data-scope': 'meter'
     'data-part': 'track'
   }
+  /** The filled bar of a classic gauge: `inline-size` up to the reading. */
   range: {
-    'data-state': Signal<MeterThreshold>
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     'data-scope': 'meter'
     'data-part': 'range'
+    style: Signal<string>
+  }
+  /** The reading itself, for a BANDED track: positioned, not filled. */
+  marker: {
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-band': Signal<string | undefined>
+    'data-scope': 'meter'
+    'data-part': 'marker'
     style: Signal<string>
   }
   label: {
     'data-scope': 'meter'
     'data-part': 'label'
   }
+  /** The laid-out bands, for `each` — key rows on `band.id`. */
+  bands: Signal<MeterBandGeometry[]>
+  /**
+   * Attributes for one laid-out band, taking the ROW HANDLE `each` hands the
+   * render function. It returns signals rather than plain values so the bag is
+   * spreadable AS IS — `chart`'s `markProps` takes a snapshot instead and every
+   * call site has to `peek()` the row and then re-bind the fields that move.
+   */
+  bandProps: (band: Signal<MeterBandGeometry>) => {
+    'data-scope': 'meter'
+    'data-part': 'band'
+    'data-band': Signal<string>
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-current': Signal<'' | undefined>
+    style: Signal<string>
+  }
+  /**
+   * One band by id, for a view that names its bands statically. An id no band
+   * carries yields an INERT bag — `hidden`, zero-width, `neutral` — rather than
+   * throwing: `connect` runs while the view is being built, so a typo would
+   * take the whole page down instead of leaving one stripe undrawn.
+   */
+  band: (id: string) => {
+    'data-scope': 'meter'
+    'data-part': 'band'
+    'data-band': string
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-current': Signal<'' | undefined>
+    hidden: Signal<boolean>
+    style: Signal<string>
+  }
+  /** The formatted reading, WITHOUT the band name. */
   valueText: Signal<string>
+  /** The current band's announced name, or `''`. */
+  bandLabel: Signal<string>
 }
 ```
 
 ##### `MeterState` from `@llui/components`
-
-Meter — role="meter" gauge for a scalar measurement within a known range
-(e.g. disk usage, battery level). Distinct from progressbar: a meter is never
-indeterminate and represents a static measurement rather than task progress.
-`low`/`high`/`optimum` mirror the native <meter> attributes and drive the
-threshold styling exposed via `data-state`.
 
 ```typescript
 export interface MeterState {
   value: number
   min: number
   max: number
-  low?: number
-  high?: number
-  optimum?: number
+  /**
+   * The reference range, in AUTHOR ORDER. Nothing is sorted or merged: order
+   * decides which band wins an overlap (the first match) and the order the
+   * view draws them in, and re-ordering the author's ids would silently change
+   * both.
+   */
+  bands: MeterBand[]
 }
 ```
 
@@ -41459,6 +41513,14 @@ const toolbar
 
 #### Functions
 
+##### `bandAt()` from `@llui/components/meter`
+
+The band the reading falls in, or `null`. See {@link matchIndex} for the rule.
+
+```typescript
+function bandAt(state: MeterState): MeterBand | null
+```
+
 ##### `connect()` from `@llui/components/meter`
 
 ```typescript
@@ -41477,22 +41539,12 @@ function init(opts: MeterInit = {}): MeterState
 function percent(state: MeterState): number
 ```
 
-##### `thresholdState()` from `@llui/components/meter`
+##### `toneAt()` from `@llui/components/meter`
 
-Derives the threshold band the current value falls into, following the
-native <meter> semantics:
-- below `low` → the value is in the lower segment;
-- above `high` → the value is in the upper segment;
-- otherwise → the value is in the middle segment.
-Whether a segment is "good" depends on `optimum`: the segment containing
-`optimum` is 'optimal'; the segment adjacent to it is the lesser-preferred
-band; and the far segment is the worst. We map the worst → 'low', the
-preferred → 'optimal', and the in-between → 'high'. When `low`/`high` are
-missing the value is considered to be in the middle segment; when `optimum`
-is missing every band reads as 'optimal'.
+The current band's tone — the `data-state` every part carries.
 
 ```typescript
-function thresholdState(state: MeterState): MeterThreshold
+function toneAt(state: MeterState): MeterTone
 ```
 
 ##### `update()` from `@llui/components/meter`
@@ -41511,12 +41563,19 @@ export type MeterMsg =
   | { type: 'setValue'; value: number }
   /** @humanOnly */
   | { type: 'setMax'; max: number }
+  /** @humanOnly */
+  | { type: 'setBands'; bands: readonly MeterBandInit[] }
 ```
 
-##### `MeterThreshold` from `@llui/components/meter`
+##### `MeterTone` from `@llui/components/meter`
+
+A band's quality, and the whole `data-state` vocabulary. `neutral` is the
+absence of an opinion — a plain gauge, or a band the author gave no tone —
+and is deliberately not a synonym for `optimal`: a disk-usage meter with no
+thresholds declared is not claiming the reading is good.
 
 ```typescript
-export type MeterThreshold = 'low' | 'optimal' | 'high'
+export type MeterTone = 'optimal' | 'suboptimal' | 'critical' | 'neutral'
 ```
 
 #### Interfaces
@@ -41526,8 +41585,68 @@ export type MeterThreshold = 'low' | 'optimal' | 'high'
 ```typescript
 export interface ConnectOptions {
   label?: string
-  /** Custom formatter for value text. */
+  /** Custom formatter for the numeric half of the value text. */
   format?: (value: number, max: number) => string
+}
+```
+
+##### `MeterBand` from `@llui/components/meter`
+
+A band as STATE holds it.
+
+`tone` is always present — `init`/`setBands` fill the default, so every read
+is total. The EDGES follow #177's UNBOUNDED-CAPABLE idiom: an absent key
+means the band is open on that side, and the key is OMITTED rather than set
+to `undefined`, so the JSON round trip is an identity key for key.
+
+`label` is what `aria-valuetext` announces ("2.1 mIU/L, optimal") — the
+accessibility win the band model exists for, since a bare `aria-valuenow` of
+47 says nothing about whether the reading is in range. An author-written band
+defaults its label to its `id`; write `label: ''` to announce nothing.
+
+```typescript
+export interface MeterBand {
+  id: string
+  tone: MeterTone
+  /** Lower edge, INCLUSIVE. Absent → open below. */
+  from?: number
+  /** Upper edge, EXCLUSIVE (inclusive only where it reaches `max`). Absent → open above. */
+  to?: number
+  label?: string
+}
+```
+
+##### `MeterBandGeometry` from `@llui/components/meter`
+
+One band, laid out. Derived from state and stored nowhere: `from`/`to` are
+the resolved VALUE edges (an open side takes the track bound), `start`/`size`
+are the drawn box in percent, clamped into the track so a band reaching past
+`min`/`max` paints inside it.
+
+```typescript
+export interface MeterBandGeometry {
+  id: string
+  tone: MeterTone
+  label: string | undefined
+  from: number
+  to: number
+  start: number
+  size: number
+  current: boolean
+}
+```
+
+##### `MeterBandInit` from `@llui/components/meter`
+
+A band as a consumer WRITES it; `init`/`setBands` normalise it into a {@link MeterBand}.
+
+```typescript
+export interface MeterBandInit {
+  id: string
+  from?: number
+  to?: number
+  tone?: MeterTone
+  label?: string
 }
 ```
 
@@ -41538,9 +41657,16 @@ export interface MeterInit {
   value?: number
   min?: number
   max?: number
+  /**
+   * Native `<meter>` spelling for the three-segment case, compiled into
+   * {@link MeterState.bands} as `low` / `middle` / `high`. Ignored when
+   * `bands` is given and yields at least one usable band — which is what makes
+   * `bands: []` keep the single-optimum behaviour.
+   */
   low?: number
   high?: number
   optimum?: number
+  bands?: readonly MeterBandInit[]
 }
 ```
 
@@ -41555,45 +41681,92 @@ export interface MeterParts {
     'aria-valuenow': Signal<number>
     'aria-valuetext': Signal<string>
     'aria-label': string | undefined
-    'data-state': Signal<MeterThreshold>
+    // Spelled out rather than aliased: `scripts/test/registry-attrs.test.ts`
+    // reads part-bag VALUES syntactically and gives an ALIAS no verdict, which
+    // is how the shipped skin came to style `data-[state=critical]` against a
+    // machine emitting `low`/`high` — two rules of dead CSS, for a release.
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    /** The current band's id — absent when the reading is in no band. */
+    'data-band': Signal<string | undefined>
     'data-scope': 'meter'
     'data-part': 'root'
   }
   track: {
-    'data-state': Signal<MeterThreshold>
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     'data-scope': 'meter'
     'data-part': 'track'
   }
+  /** The filled bar of a classic gauge: `inline-size` up to the reading. */
   range: {
-    'data-state': Signal<MeterThreshold>
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     'data-scope': 'meter'
     'data-part': 'range'
+    style: Signal<string>
+  }
+  /** The reading itself, for a BANDED track: positioned, not filled. */
+  marker: {
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-band': Signal<string | undefined>
+    'data-scope': 'meter'
+    'data-part': 'marker'
     style: Signal<string>
   }
   label: {
     'data-scope': 'meter'
     'data-part': 'label'
   }
+  /** The laid-out bands, for `each` — key rows on `band.id`. */
+  bands: Signal<MeterBandGeometry[]>
+  /**
+   * Attributes for one laid-out band, taking the ROW HANDLE `each` hands the
+   * render function. It returns signals rather than plain values so the bag is
+   * spreadable AS IS — `chart`'s `markProps` takes a snapshot instead and every
+   * call site has to `peek()` the row and then re-bind the fields that move.
+   */
+  bandProps: (band: Signal<MeterBandGeometry>) => {
+    'data-scope': 'meter'
+    'data-part': 'band'
+    'data-band': Signal<string>
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-current': Signal<'' | undefined>
+    style: Signal<string>
+  }
+  /**
+   * One band by id, for a view that names its bands statically. An id no band
+   * carries yields an INERT bag — `hidden`, zero-width, `neutral` — rather than
+   * throwing: `connect` runs while the view is being built, so a typo would
+   * take the whole page down instead of leaving one stripe undrawn.
+   */
+  band: (id: string) => {
+    'data-scope': 'meter'
+    'data-part': 'band'
+    'data-band': string
+    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-current': Signal<'' | undefined>
+    hidden: Signal<boolean>
+    style: Signal<string>
+  }
+  /** The formatted reading, WITHOUT the band name. */
   valueText: Signal<string>
+  /** The current band's announced name, or `''`. */
+  bandLabel: Signal<string>
 }
 ```
 
 ##### `MeterState` from `@llui/components/meter`
-
-Meter — role="meter" gauge for a scalar measurement within a known range
-(e.g. disk usage, battery level). Distinct from progressbar: a meter is never
-indeterminate and represents a static measurement rather than task progress.
-`low`/`high`/`optimum` mirror the native <meter> attributes and drive the
-threshold styling exposed via `data-state`.
 
 ```typescript
 export interface MeterState {
   value: number
   min: number
   max: number
-  low?: number
-  high?: number
-  optimum?: number
+  /**
+   * The reference range, in AUTHOR ORDER. Nothing is sorted or merged: order
+   * decides which band wins an overlap (the first match) and the order the
+   * view draws them in, and re-ordering the author's ids would silently change
+   * both.
+   */
+  bands: MeterBand[]
 }
 ```
 

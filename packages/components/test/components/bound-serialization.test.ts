@@ -104,6 +104,18 @@ function poisonedInits(bad: number): Array<[string, unknown]> {
     ],
     ['marquee', marquee.init({ durationSec: bad })],
     ['meter', meter.init({ min: bad, max: bad, low: bad, high: bad, optimum: bad })],
+    // `meter`'s BAND edges are the same unbounded-capable idiom one level down —
+    // an unusable one is omitted, so the band reads as open on that side and the
+    // round trip is still an identity.
+    [
+      'meter bands',
+      meter.init({
+        bands: [
+          { id: 'a', from: bad, to: bad },
+          { id: 'b', from: bad, to: 4 },
+        ],
+      }),
+    ],
     ['number-input', numberInput.init({ value: 5, min: bad, max: bad, step: bad })],
     ['pagination', pagination.init({ pageSize: bad, total: bad, siblings: bad, boundaries: bad })],
     ['pin-input', pinInput.init({ length: bad })],
@@ -132,6 +144,16 @@ function defaultInits(): Array<[string, unknown]> {
     ['image-cropper', imageCropper.init()],
     ['marquee', marquee.init()],
     ['meter', meter.init()],
+    ['meter native', meter.init({ low: 20, high: 80, optimum: 90 })],
+    [
+      'meter bands',
+      meter.init({
+        bands: [
+          { id: 'a', to: 2 },
+          { id: 'b', from: 2 },
+        ],
+      }),
+    ],
     ['number-input', numberInput.init()],
     ['pagination', pagination.init()],
     ['pin-input', pinInput.init()],
@@ -186,6 +208,13 @@ describe('a bound-writing message never stores a non-finite bound (#177)', () =>
         progress.update(progress.init(), { type: 'setMax', max: bad })[0],
       )
       check(`meter setMax(${bad})`, meter.update(meter.init(), { type: 'setMax', max: bad })[0])
+      check(
+        `meter setBands(${bad})`,
+        meter.update(meter.init(), {
+          type: 'setBands',
+          bands: [{ id: 'a', from: bad, to: bad }],
+        })[0],
+      )
 
       const pages = pagination.init({ total: 95 })
       check(

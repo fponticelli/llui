@@ -115,7 +115,7 @@ async-list, avatar, breadcrumbs, carousel, cascade-select, listbox, meter, pagin
 - Ctrl/Cmd+A is deliberately **not** bound. APG's "Control + A: selects all cells" is a cell-selection idiom; this grid selects _rows_ and `toggleAll` toggles rather than selects, so binding it would hijack the browser's select-all for different semantics.
 
 - **Breadcrumbs** — hierarchical navigation trail with WAI-ARIA landmark/list semantics, `aria-current="page"` on the active (last) item, and automatic middle-collapse to `first … last N items` (with an expandable ellipsis trigger) when `maxVisible` is exceeded.
-- meter — role="meter" gauge for a scalar measurement within a known range (disk usage, battery, etc.), distinct from progressbar. Reports aria-valuemin/max/now plus a formatted aria-valuetext, and derives a `low`/`optimal`/`high` threshold band (native <meter> semantics) exposed via data-state for threshold styling. Read-only (no keyboard).
+- meter — role="meter" gauge for a scalar measurement within a known range (disk usage, battery, a lab result against its reference range), distinct from progressbar. Reports aria-valuemin/max/now plus a formatted aria-valuetext that NAMES the band the reading is in. State carries `bands` — N named regions, each with its own tone, laid out across the track and exposed as `parts.bands` / `parts.band(id)` with a `marker` at the reading; `low`/`high`/`optimum` are init options compiling to the native three segments. `data-state` is the current band's tone (`optimal` / `suboptimal` / `critical` / `neutral`). Read-only (no keyboard).
 
 ### Pickers
 

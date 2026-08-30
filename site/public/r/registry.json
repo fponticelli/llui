@@ -697,7 +697,7 @@
       "name": "meter",
       "type": "registry:ui",
       "title": "Meter",
-      "description": "Skin for @llui/components/meter — a measurement tinted by data-state.",
+      "description": "Skin for @llui/components/meter — a classic gauge, or a banded reference range with a marker.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [

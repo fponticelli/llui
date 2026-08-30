@@ -1,5 +1,16 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { component, mountApp, constant, noSend, div, span, text, type Send } from '@llui/dom'
+import {
+  component,
+  mountApp,
+  constant,
+  noSend,
+  div,
+  each,
+  span,
+  text,
+  type Send,
+  type Signal,
+} from '@llui/dom'
 import * as meter from '../src/components/meter'
 
 // `constant()` + `noSend` — the STATELESS half of the `connect(state, send, opts)`
@@ -104,8 +115,10 @@ describe('constant() + noSend drive a real connect()', () => {
       expect(r.getAttribute('aria-valuemax')).toBe('200')
       expect(r.getAttribute('aria-valuetext')).toBe('21%')
       expect(r.getAttribute('aria-label')).toBe('Sodium')
-      // 42 < low(50) and optimum(100) is in the middle band -> adjacent -> 'high'.
-      expect(r.getAttribute('data-state')).toBe('high')
+      // 42 < low(50), and optimum(100) sits in the middle segment -> the
+      // reading is one segment away from it -> 'suboptimal'.
+      expect(r.getAttribute('data-state')).toBe('suboptimal')
+      expect(r.getAttribute('data-band')).toBe('low')
       expect(part(host, 'range').getAttribute('style')).toContain('21%')
       expect(part(host, 'label').textContent).toBe('21%')
     },
@@ -122,7 +135,7 @@ describe('constant() + noSend drive a real connect()', () => {
       expect(part(host, 'root')).toBe(before) // same node
       expect(before.getAttribute('aria-valuenow')).toBe('42')
       expect(before.getAttribute('aria-valuetext')).toBe('21%')
-      expect(before.getAttribute('data-state')).toBe('high')
+      expect(before.getAttribute('data-state')).toBe('suboptimal')
       expect(part(host, 'range').getAttribute('style')).toContain('21%')
     },
   )
@@ -131,5 +144,147 @@ describe('constant() + noSend drive a real connect()', () => {
     // The type check is `pnpm check`; this pins the runtime half.
     const send: Send<meter.MeterMsg> = noSend
     expect(send({ type: 'setValue', value: 9 })).toBeUndefined()
+  })
+})
+
+// The motivating widget of #235, mounted: a lab result on a BANDED track, with
+// no TEA runtime of its own. `constant()` carries the fixture, `each` draws the
+// reference range from the derived layout, and the marker sits on it.
+//
+// Reading rendered ATTRIBUTES is the point. The unit tests read part-bag signals
+// through `produce`, which cannot see a bag that fails to spread — a nested bag
+// renders `[object Object]`, and a band bag returning SNAPSHOTS instead of row
+// handles would render every stripe with the FIRST row's geometry.
+describe('a banded meter renders from constant() with no runtime of its own', () => {
+  let app: ReturnType<typeof mountApp> | null = null
+
+  beforeEach(() => {
+    document.body.innerHTML = ''
+  })
+  afterEach(() => {
+    app?.dispose()
+    app = null
+    document.body.innerHTML = ''
+  })
+
+  /** A thyroid panel: three bands of unequal width, over 0..8 mIU/L. */
+  const TSH = meter.init({
+    value: 2.1,
+    min: 0,
+    max: 8,
+    bands: [
+      { id: 'low', to: 0.4, tone: 'critical', label: 'low' },
+      { id: 'ref', from: 0.4, to: 4, tone: 'optimal', label: 'optimal' },
+      { id: 'high', from: 4, tone: 'critical', label: 'high' },
+    ],
+  })
+
+  function mount() {
+    const def = component<{ tick: number }, { type: 'tick' }, never>({
+      name: 'Panel',
+      init: () => [{ tick: 0 }, []],
+      update: (s) => [{ tick: s.tick + 1 }, []],
+      view: () => {
+        const p = meter.connect(constant(TSH), noSend, {
+          label: 'TSH',
+          format: (v) => `${v} mIU/L`,
+        })
+        return [
+          div({ ...p.root }, [
+            div({ ...p.track }, [
+              each(p.bands, {
+                key: (b: meter.MeterBandGeometry) => b.id,
+                render: (b: Signal<meter.MeterBandGeometry>) => [div({ ...p.bandProps(b) }, [])],
+              }),
+              div({ ...p.marker }, []),
+            ]),
+            span({ ...p.label }, [text(p.valueText)]),
+          ]),
+        ]
+      },
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    app = mountApp(container, def)
+  }
+
+  const bands = () => [...document.querySelectorAll('[data-part="band"]')]
+
+  it('draws one stripe per band, each with its OWN geometry and tone', () => {
+    mount()
+    expect(bands().map((el) => el.getAttribute('data-band'))).toEqual(['low', 'ref', 'high'])
+    expect(bands().map((el) => el.getAttribute('data-state'))).toEqual([
+      'critical',
+      'optimal',
+      'critical',
+    ])
+    expect(bands().map((el) => el.getAttribute('style'))).toEqual([
+      'inset-inline-start:0%;inline-size:5%;',
+      'inset-inline-start:5%;inline-size:45%;',
+      'inset-inline-start:50%;inline-size:50%;',
+    ])
+    // Only the band holding the reading is marked current.
+    expect(bands().map((el) => el.hasAttribute('data-current'))).toEqual([false, true, false])
+  })
+
+  it('yields the band GEOMETRY as plain values, with no view and no mount', () => {
+    // #235 asked for a "pure geometry + attributes entry point" like `chart`'s
+    // `geometry(state)`. There is deliberately no per-component export for it —
+    // `constant()` already answers the question, and `peek()` is what turns the
+    // part bag's signals back into plain values for a consumer measuring or
+    // testing a meter outside a view. `constant` is the only handle whose
+    // `peek()` reads the captured value rather than a live component state, so
+    // this is exactly the T1 static tier and nothing else.
+    const parts = meter.connect(constant(TSH), noSend, { format: (v) => `${v} mIU/L` })
+    expect(parts.bands.peek()).toEqual([
+      {
+        id: 'low',
+        tone: 'critical',
+        label: 'low',
+        from: 0,
+        to: 0.4,
+        start: 0,
+        size: 5,
+        current: false,
+      },
+      {
+        id: 'ref',
+        tone: 'optimal',
+        label: 'optimal',
+        from: 0.4,
+        to: 4,
+        start: 5,
+        size: 45,
+        current: true,
+      },
+      {
+        id: 'high',
+        tone: 'critical',
+        label: 'high',
+        from: 4,
+        to: 8,
+        start: 50,
+        size: 50,
+        current: false,
+      },
+    ])
+    expect(parts.valueText.peek()).toBe('2.1 mIU/L')
+    expect(parts.bandLabel.peek()).toBe('optimal')
+    expect(parts.root['aria-valuetext'].peek()).toBe('2.1 mIU/L, optimal')
+  })
+
+  it('names the band in aria-valuetext and positions the marker on it', () => {
+    mount()
+    const root = document.querySelector('[data-part="root"]')!
+    expect(root.getAttribute('role')).toBe('meter')
+    expect(root.getAttribute('aria-valuenow')).toBe('2.1')
+    expect(root.getAttribute('aria-valuetext')).toBe('2.1 mIU/L, optimal')
+    expect(root.getAttribute('data-state')).toBe('optimal')
+    expect(root.getAttribute('data-band')).toBe('ref')
+    const marker = document.querySelector('[data-part="marker"]')!
+    expect(marker.getAttribute('style')).toBe('inset-inline-start:26.25%;')
+    expect(marker.getAttribute('data-band')).toBe('ref')
+    // The visible label stays the number; the band name is announced, not printed.
+    expect(document.querySelector('[data-part="label"]')!.textContent).toBe('2.1 mIU/L')
   })
 })
