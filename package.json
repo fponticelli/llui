@@ -39,7 +39,7 @@
     "pre-commit": "node scripts/pre-commit.mjs"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,mjs,cjs,jsx,json,md,css,html,yml,yaml}": "prettier --write"
+    "*.{ts,tsx,js,mjs,cjs,jsx,json,md,css,html,yml,yaml}": "node scripts/prettier-staged.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

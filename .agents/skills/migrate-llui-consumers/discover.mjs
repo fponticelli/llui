@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url'
 import { homedir } from 'node:os'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
-// .claude/skills/migrate-llui-consumers/discover.mjs -> repo root is 3 up.
+// .agents/skills/migrate-llui-consumers/discover.mjs -> repo root is 3 up.
 const LLUI_REPO = join(SCRIPT_DIR, '..', '..', '..')
 
 const args = process.argv.slice(2)

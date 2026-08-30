@@ -142,6 +142,8 @@ and throwing the result away registers nothing.
 - **Tell:** `onMount(() => …)` on its own line, its result unused; a helper called but not spread into the returned array.
 - **Fix:** place it: `view: () => [ onMount(() => setupHotkeys()), div(...) ]`.
 
+**And its `root` argument is the BUILD's root container, not the element the call sits inside.** Mounts are collected per build (a view, a `branch`/`show` arm, an `each` row), so an `onMount` written inside `svg({…}, [ … ])` is handed the component's mount container. Both mistakes are silent: an `instanceof` guard on it makes the callback do nothing at all, and a `querySelector` written as if `root` were the local element still finds the first match across the whole build — correct until a second instance of the component is on the page. Query for an id or attribute of your own instead. See `references/core-authoring.md`.
+
 ### 3. Ungatable list → O(n) re-evaluation of every row on every state change
 
 In an `each`/`virtualEach`, if a row reads component state via `state.map(...)` or the
@@ -249,14 +251,14 @@ normalization. This is especially dangerous in numeric component state and route
 
 ## Reference router — open the file that matches the task
 
-| Working on…                                                                                                                                                                                                          | Open                                |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
-| Core authoring depth: all structural primitives (`each`/`show`/`branch`/`virtualEach`/`lazy`/`portal`/`foreign`/`unsafeHtml`), `provide`/`useContext`, `onMount`, `batch`, the `raf` scheduler, sub-view composition | `references/core-authoring.md`      |
-| Headless components: `connect`/`overlay`, part bags, dialogs/menus/selects/tabs/trees, forms + validation, i18n/theme, the value-based select/combobox model                                                         | `references/components.md`          |
-| Effects, data fetching, routing, SSR: effect builders + `handleEffects`/`asOnEffect`, `ApiError`, `@llui/router` (routes/guards/links), `@llui/vike` (SSR + hydration + the JSON-state contract)                     | `references/effects-routing-ssr.md` |
-| Compiler/Vite diagnostics, `@llui/test`, custom interaction primitives, transitions, and annotation tooling                                                                                                          | `references/testing-tooling.md`     |
-| Markdown + rich-text editing: `@llui/markdown` renderers + streaming, `@llui/markdown-editor` config/plugins/handle, the Lexical `foreign` seam                                                                      | `references/rich-text.md`           |
-| Server-driven UI + agent surfaces: `@llui/a2ui` (envelopes, catalogs), `@llui/agent` (LAP client/server, agent-driven apps)                                                                                          | `references/a2ui-agent.md`          |
+| Working on…                                                                                                                                                                                                                                                          | Open                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Core authoring depth: all structural primitives (`each`/`show`/`branch`/`virtualEach`/`lazy`/`portal`/`foreign`/`unsafeHtml`), `provide`/`useContext`, `onMount`, `batch`, the `raf` scheduler, sub-view composition                                                 | `references/core-authoring.md`      |
+| Headless components: `connect`/`overlay`, part bags, dialogs/menus/selects/tabs/trees, forms + validation, i18n/theme, the value-based select/combobox model — AND styling them with the shadcn registry (`llui add`, `tokens.css` vs `theme.css`, `data-*` recipes) | `references/components.md`          |
+| Effects, data fetching, routing, SSR: effect builders + `handleEffects`/`asOnEffect`, `ApiError`, `@llui/router` (routes/guards/links), `@llui/vike` (SSR + hydration + the JSON-state contract)                                                                     | `references/effects-routing-ssr.md` |
+| Compiler/Vite diagnostics, `@llui/test`, custom interaction primitives, transitions, and annotation tooling                                                                                                                                                          | `references/testing-tooling.md`     |
+| Markdown + rich-text editing: `@llui/markdown` renderers + streaming, `@llui/markdown-editor` config/plugins/handle, the Lexical `foreign` seam                                                                                                                      | `references/rich-text.md`           |
+| Server-driven UI + agent surfaces: `@llui/a2ui` (envelopes, catalogs), `@llui/agent` (LAP client/server, agent-driven apps)                                                                                                                                          | `references/a2ui-agent.md`          |
 
 When a reference and the app's own code disagree, trust the app's installed version —
 check `node_modules/@llui/<pkg>/package.json` for the version and the app's usage for

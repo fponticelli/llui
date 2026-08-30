@@ -111,5 +111,50 @@ Before reporting interaction coverage, apply and inspect a faithful mutation of 
 then record the per-test kill/survival table with reasons. A malformed mutation that also breaks
 teardown or paired bookkeeping is not evidence.
 
+## Styling — a downstream obligation, not an optional extra
+
+A component with a VISUAL surface is not finished when its machine is, and there are TWO
+consumers of its `data-*` contract, not one:
+
+1. **`registry/llui/ui/<name>.ts`** — the shadcn-styled skin, copied into consumer projects by
+   `llui add`, rendered in `examples/registry-demo`.
+2. **`packages/components/src/styles/theme.css`** — the opt-in BASELINE stylesheet, which
+   styles the same parts with `[data-scope][data-part]` rules for apps with no Tailwind build.
+   A component with no rules here is simply unstyled for every baseline consumer.
+
+`scripts/test/registry-attrs.test.ts` cross-checks BOTH against the machine's part-bag types,
+so a selector naming an attribute you never publish fails the build on either side. Add the
+component to the registry's `MACHINE_OF` and, if its scope needs it, the sheet's
+`THEME_MACHINE_OF` — each map has a vacuity check, so a new scope cannot silently fall out of
+coverage.
+
+For the registry half specifically, two guards will fail the build if you skip either:
+
+- **`scripts/test/registry-attrs.test.ts`** cross-checks every `data-*` / `aria-*` a recipe
+  styles against what the machine's part-bag TYPES declare. It has a vacuity check on its
+  `MACHINE_OF` map, so a new skin that names no machine fails rather than silently falling out
+  of coverage — add it there (`[]` for a layout-only skin).
+- **`scripts/test/registry-demo-sync.test.ts`** requires every published registry item to be
+  copied into the demo, byte-identical to what `llui add` produces today.
+
+Two things about the ATTRIBUTE NAMES your `connect` publishes, both learned from shipped bugs:
+
+- **Match the package's existing spelling.** A highlight is a bare `data-highlighted`, not
+  `data-state="highlighted"` — `select`, `combobox`, `listbox` and `tags-input` all use the bare
+  flag, and `menu-machine` diverging meant every dropdown, context-menu and menubar item had no
+  highlight at all. `data-state` means open/closed. Grep a sibling machine before inventing a
+  name; a recipe naming an attribute nobody emits is valid CSS that never matches.
+- **A part bag's value is an ATTRIBUTE unless it obviously is not.** `combobox`'s `liveRegion`
+  carries `text` (a child) and `form-field`'s `errorText` carries `issues` (an array), so
+  spreading those bags whole emits `text="…"` on an empty live region. If a part must carry a
+  non-attribute, say so in its doc comment — the types catch the array, nothing catches the
+  string.
+
+**RENDER it before believing it.** Every rendering pass over this registry has found defects that
+the type-check, the class compiler and the attribute guard all pass: a part bag frozen at build
+time, a machine that needs consumer-wired pointer tracking, a focus ring clipped by an ancestor's
+`overflow-hidden`. Measuring attributes is not the same as looking at the page, and a screenshot
+has settled several cases where measurement gave a confident wrong answer.
+
 Finish with `pnpm --filter @llui/interactions build check test` when shared behavior changed,
 then `pnpm --filter @llui/components build check test`.

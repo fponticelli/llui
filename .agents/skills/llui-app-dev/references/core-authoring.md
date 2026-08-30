@@ -128,6 +128,37 @@ default rather than throwing.
 returns a function, that's the cleanup (run on unmount/dispose). **The returned `Mountable`
 must be placed in the view array** or nothing registers.
 
+**`root` is the BUILD's root container, NOT the element the call sits inside.** Mounts are
+collected per build — a component's view, a `branch`/`show` arm, an `each` row — and every
+callback in one build gets that build's container. So an `onMount` written inside
+`svg({…}, [ … ])` receives the component's mount container, not the `<svg>`.
+
+Both ways of getting this wrong fail silently, which is what makes it worth knowing:
+
+- a type guard on the argument (`if (!(root instanceof SVGElement)) return`) makes the
+  callback do **nothing** — no error, no warning, and the marker comment sits correctly in
+  the DOM;
+- a `root.querySelector('[data-part="…"]')` written as if `root` were the local element
+  still **finds something** — the first match in document order across the whole build — so
+  it works until a second instance of the component exists on the page, then quietly drives
+  the wrong one.
+
+Reach for the element you want deliberately: give it an id or an attribute of your own and
+query for that.
+
+```ts
+view: () => [
+  onMount((root) => {
+    const el = root.querySelector('#my-panel')       // NOT `root` itself
+    if (!(el instanceof HTMLElement)) return
+    const ro = new ResizeObserver(() => measure(el))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }),
+  div({ id: 'my-panel' }, [...]),
+]
+```
+
 ```ts
 view: ({ send }) => [
   onMount(() => {
@@ -174,10 +205,21 @@ const sendDialog = mapSend<Msg, dialog.DialogMsg>(send, (msg) => ({
 }))
 ```
 
-For the rare genuinely independent TEA loop, use `subApp()` from
-`@llui/dom/escape-hatch`. It requires a `reason`, shares no state with its host, and is
-driven through `onHandle`. There is no `child()` API. Prefer sliced-signal view functions
-unless independent lifetime/effects are the actual requirement.
+Widget state sits on one of three rungs, and picking the wrong one is the common
+structural mistake: **T1 static** (no state after build) is `connect(constant(v), noSend,
+opts)`; **T2 local** (private, transient — a copy button's flash, a disclosure's open
+flag) is `island({ def })` from `@llui/dom`; **T3 hoisted** (URL, undo, persistence, or a
+sibling reads it) is `connect(state.at('x'), send)`. Landing T1 and T2 widgets on T3 is
+what produces thirteen state slices for thirteen leaf widgets.
+
+`island()` mounts a component with its own update loop, mask scope and DOM region; it is
+not a child scope, so the host reconciler never walks it. Props go in declaratively —
+`props: state.at('token')` + `onProps: (v) => ({ type: 'setValue', value: v })`, where the
+change becomes a MESSAGE, not a state poke — and messages come out through `onHandle`.
+`reason` is optional documentation. Measured at N=500 leaves: ~2.4x mount cost, ~2x
+cheaper per host update. There is no `child()` API, and `subApp()` at
+`@llui/dom/escape-hatch` is the deprecated old name for `island()`. A sliced-signal view
+function is still the default; reach for an island when the state is genuinely private.
 
 ## View-less TEA programs
 

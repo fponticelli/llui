@@ -17,7 +17,8 @@ import { select } from '@llui/components/select'
 ```
 
 Each component module exports `init`, `update`, `connect` (and its `State`/`Msg` types).
-Optional styling: `import '@llui/components/styles/theme.css'`. The root barrel also
+Optional styling: the baseline sheet (`styles/theme.css`) or the registry — see "Styling
+them" below; pick one, never both. The root barrel also
 exports i18n/format helpers: `LocaleContext`, `en`, `formatDate`, `formatNumber`,
 `formatRelativeTime`, `validateSchema`.
 
@@ -115,3 +116,69 @@ state, errors, and submission. For **async** validation, thread a request id thr
 validate/result messages and drop stale results — an out-of-order resolution otherwise
 overwrites a newer one. (The `form-field` pattern does this; hand-rolled async validation
 must replicate it.)
+
+## Styling them: the registry
+
+The machines carry no classes, so the CSS comes from one of TWO supported paths. Identify
+which the app is on before reviewing any styling — the advice differs, and half of it is
+wrong on the other path.
+
+|                | **Registry** (`llui add`)     | **Baseline** (`theme.css`)                 |
+| -------------- | ----------------------------- | ------------------------------------------ |
+| CSS lives in   | the app's repo, per component | the package, one stylesheet                |
+| Needs Tailwind | yes                           | no                                         |
+| Restyle by     | editing the copied recipe     | overriding `[data-scope][data-part]` rules |
+
+Both drive the identical machines through the identical `data-*` contract, so **`connect`
+wiring, part-bag spreading and `overlay()` usage are the same on both** — only the source of
+the classes differs. Neither is legacy; the baseline exists for apps that do not want a
+Tailwind pipeline (`examples/markdown-showcase` is one).
+
+Full walkthrough with the trade-offs: **https://llui.dev/components**. What matters in review:
+
+- **An app must import ONE, never both.** `theme.css`'s `[data-scope][data-part]` rules are
+  UNLAYERED, and unlayered CSS beats `@layer utilities`, so with both imported every registry
+  recipe silently loses to the baseline — both stylesheets present and correct, wrong one wins.
+  Not out-writable: layer precedence ignores specificity. An app importing both has a bug even
+  if nothing looks obviously off yet. `llui init` / `llui add` warn about it; nothing else does.
+- **On the BASELINE path, most of the registry advice below does not apply.** There is no
+  recipe to edit and no `class` override to merge — overrides are plain CSS against the part
+  attributes, unlayered like the sheet, so source order decides. Do not tell someone to reach
+  for Tailwind utilities on a project that has no Tailwind build.
+- **Style state from `data-*`, and check the machine publishes it.** Every part bag emits
+  `data-state` / `data-disabled` / `data-orientation` and friends; the branch belongs in the
+  recipe (`data-[state=open]:bg-muted`), not in a computed class. A recipe naming an attribute
+  nobody emits is valid CSS that never matches — no error, no warning. The part bag's TYPE is
+  the list. Watch the near-miss spellings: bare presence (`data-highlighted`) versus an enum
+  (`data-[state=highlighted]`), and `data-axis` versus `data-orientation`.
+- **A `class` override wins**, because the registry routes it through `tailwind-merge`. A
+  reactive class puts the conditional INSIDE the `.map` body — the compiler rejects an operator
+  applied to a Signal.
+- **`overlay()` gives you neither position nor backdrop** — on the REGISTRY path. Pass
+  `positionerClass` for the `fixed inset-0` and the z-index; render the backdrop yourself
+  inside `content()`, where it wants `absolute inset-0`. The baseline sheet fills both in by
+  targeting `[data-part='positioner']` directly, which is exactly why this is invisible until
+  an app moves to utilities.
+
+### Traps that look like framework bugs
+
+Each is silent, and each has cost real debugging time:
+
+- **Some machines deliberately do not track the pointer.** `slider` and `splitter` are
+  keyboard-complete but ignore the mouse until the app wires the drag, because only the view
+  knows which element's rect a percentage is measured against. Each exports the helper
+  (`valueFromPoint`, `positionFromPoint`) and expects an `onMount` attaching
+  `pointermove`/`pointerup` **to the window**. Symptom: arrow keys work, the mouse does nothing.
+- **Some parts do not hide themselves.** A radio indicator, a command palette's empty state.
+  Gate them in CSS off the parent's `data-state`, or every radio renders filled.
+- **A part bag value is not always an attribute.** `combobox`'s `liveRegion` carries `text` (a
+  child) and `form-field`'s `errorText` carries `issues` (an array). Spreading those whole emits
+  `text="…"` on an empty live region, which announces nothing. Destructure.
+- **A live region must stay MOUNTED** — toggle with `hidden`, never `show`.
+- **Do not wrap a field in a panel recipe.** `ComboboxRoot` is the `Command` palette SURFACE,
+  with `overflow-hidden`; wrapping a labelled input in it clips the input's focus ring on three
+  sides, which paints as a thick border along one edge and reads as a styling bug.
+
+When a styling report is visual, **look at the render before measuring attributes**. Reading
+`getComputedStyle` in a background tab is actively misleading — Chrome pauses transitions there
+and returns whatever value the property is stuck at.
