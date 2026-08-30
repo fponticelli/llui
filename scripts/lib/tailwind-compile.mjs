@@ -77,17 +77,23 @@ function resolvePackageCss(id) {
   return path.resolve(dir, entry)
 }
 
+/**
+ * The path half of `loadStylesheet`, exported so an `@import` WALK resolves ids
+ * exactly the way the compile does. `scripts/test/token-contrast.test.ts`
+ * discovers its inputs by walking imports from each app entry; a second,
+ * lookalike resolver there would answer "does this entry reach the tokens?"
+ * against different rules than the compile that then measures it.
+ */
+export function resolveCssId(id, base) {
+  if (id.startsWith('.') || path.isAbsolute(id)) return path.resolve(base, id)
+  const workspace = WORKSPACE_CSS.exec(id)
+  if (workspace) return path.join(ROOT, 'packages', workspace[1], 'src', workspace[2])
+  if (id === 'tailwindcss') return fileURLToPath(import.meta.resolve('tailwindcss/index.css'))
+  return resolvePackageCss(id)
+}
+
 async function loadStylesheet(id, base) {
-  let file
-  if (id.startsWith('.') || path.isAbsolute(id)) {
-    file = path.resolve(base, id)
-  } else {
-    const workspace = WORKSPACE_CSS.exec(id)
-    if (workspace) file = path.join(ROOT, 'packages', workspace[1], 'src', workspace[2])
-    else if (id === 'tailwindcss')
-      file = fileURLToPath(import.meta.resolve('tailwindcss/index.css'))
-    else file = resolvePackageCss(id)
-  }
+  const file = resolveCssId(id, base)
   return { path: file, base: path.dirname(file), content: await readFile(file, 'utf8') }
 }
 
