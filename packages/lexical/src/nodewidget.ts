@@ -106,9 +106,14 @@
 // tag unspelled instead.
 //
 // Both shapes are gated by `scripts/check-dist.mjs` (`pnpm check:dist`), but by
-// DIFFERENT arms: the source arm catches either placement, while the dist arm
-// catches only the free-name half, for the luck reason above. That guard is a
-// BINDING check, not a type check — see `scripts/lib/dist-type-bindings.mjs`.
+// DIFFERENT arms: the source arm catches either placement, while the dist
+// BINDING arm catches only the free-name half, for the luck reason above. Since
+// #257 a third SEMANTIC arm type-checks every publishable `.d.ts` with
+// `skipLibCheck: false`, so the free-name half is now covered by tsc itself as
+// well — but it too is blind to the silent-API-loss direction, which by
+// construction emits a well-formed file. The source arm remains the only
+// unconditional guard against moving this header down. See
+// `scripts/lib/dist-type-bindings.mjs`.
 
 import {
   isDOMUnmanaged,

@@ -1,6 +1,7 @@
-// The two arms of the `stripInternal` guard (#253). Consumed by
-// `scripts/check-dist.mjs` (the gate) and `scripts/test/dist-type-bindings.test.ts`
-// (the analyzer's own tests + the source arm's corpus sweep).
+// The three arms that gate this repo's PUBLISHED `.d.ts` (#253, #257). Consumed
+// by `scripts/check-dist.mjs` (the gate) and
+// `scripts/test/dist-type-bindings.test.ts` (the analyzers' own tests + the
+// source arm's corpus sweep).
 //
 // THE BUG THIS EXISTS FOR
 // -----------------------
@@ -16,10 +17,11 @@
 // inherits `skipLibCheck: true`, so nothing in the repo type-checked another
 // package's emitted `.d.ts` and the release went out green.
 //
-// TWO ARMS, BECAUSE ONE CANNOT SEE THE OTHER'S FAILURE
-// ----------------------------------------------------
-// The arms are deliberately asymmetric, and the reason is measured rather than
-// theoretical (variants run through real tsc, TypeScript 6.0.2):
+// THREE ARMS, BECAUSE NONE SEES ANOTHER'S FAILURE
+// -----------------------------------------------
+// The SOURCE and DIST arms are deliberately asymmetric, and the reason is
+// measured rather than theoretical (variants run through real tsc,
+// TypeScript 6.0.2):
 //
 //   header ABOVE the imports (the shipped bug) -> the import is deleted and the
 //     names it bound go free. The DIST arm sees this; the SOURCE arm also does.
@@ -38,65 +40,128 @@
 //
 // So: the DIST arm catches the SYMPTOM whatever caused it (it knows nothing
 // about `stripInternal`), and the SOURCE arm catches the CAUSE — including the
-// silent-API-loss direction the dist arm can only see by luck. Neither arm is
-// redundant, and the source arm is the one that makes the second direction
-// unconditional.
+// silent-API-loss direction the dist arm can only see by luck, which is why the
+// source arm is the one that makes that second direction unconditional.
 //
-// WHAT THE DIST ARM IS, AND WHAT IT IS NOT
-// ----------------------------------------
-// It is a BINDING check, not a type check, and the difference is not academic —
-// read the limits below before treating a green run as "the published types
-// compile".
-//
-// A regression test that merely runs `tsc` over `dist` is GREEN under this
-// repo's default `skipLibCheck: true` and verifies nothing, so that is not the
-// alternative. The real alternative is ONE program over all 557 `.d.ts` with
-// `skipLibCheck: false`, and it is neither as slow nor as noisy as an earlier
-// version of this comment claimed. Measured on a quiet machine, three samples,
-// identical results under `types: ['node']`, `types: []` and no `types` field:
-// **4.9-6.9 s and ELEVEN diagnostics**, of which eight are in our OWN published
-// output:
+// THE SEMANTIC ARM (#257), AND WHY THE DIST ARM SURVIVES IT
+// ---------------------------------------------------------
+// The DIST arm is a BINDING check, not a type check. It answers "is every type
+// name this file references bound", which is exactly the #253 question, and it
+// answers it with zero allowlist in ~0.23 s of sweep plus ~0.73 s for the
+// globals program. What it structurally CANNOT answer is whether a module
+// SPECIFIER resolves: an `import('x').Y` binds nothing, so it is skipped — and
+// that is the commonest way a published `.d.ts` breaks a consumer after an
+// unbound name. #257 is what that hole cost: with the dist arm green, this repo
+// shipped
 //
 //   6 x TS2307  packages/vite-plugin/dist/{compile-plugin,hud-plugin}.d.ts
-//               Cannot find module 'rolldown'. An inferred plugin-hook `this`
-//               type leaked an undeclared transitive dep; `rolldown` exists only
-//               inside vite's own pnpm dir and is UNRESOLVABLE from vite-plugin
-//               under Bundler, NodeNext and Node10 alike. A real shipped defect,
-//               same family as #253. Tracked as #257.
+//               Cannot find module 'rolldown'. Vite's plugin-hook types are
+//               declared in `rolldown`, so INFERRING the return type of a
+//               `satisfies Plugin` factory wrote `import("rolldown").X` into our
+//               own `.d.ts` — and `rolldown` is an undeclared transitive that
+//               lives only inside vite's own pnpm dir, unresolvable from
+//               `packages/vite-plugin` under Bundler, NodeNext and Node10 alike.
 //   1 x TS2882  packages/devmode-annotate-editor/dist/index.d.ts — a side-effect
-//               CSS import with no module declaration. Also consumer-facing.
-//   1 x TS2416  packages/markdown-editor/dist/nodes/list.d.ts — the DELIBERATE
-//               `MarkdownListNode` divergence #129 depends on, whose
-//               `@ts-expect-error` does not survive into the `.d.ts`.
-//   3 x TS2304/7010/7051  inside loro-crdt's own shipped `.d.ts` — third-party,
-//               not ours to fix, and exactly what `skipLibCheck` exists for.
+//               CSS import whose specifier had no `types` condition to resolve
+//               through.
 //
-// So the semantic sweep is NOT "noise plus one documented exception": it finds
-// two live defects this arm cannot. It is not the gate today only because it is
-// RED on those two, and adopting it means either fixing them first or carrying a
-// four-entry allowlist. That is the right follow-up, in that order — not a
-// reason to call this arm a superset of it.
+// Both are fixed (a declared `: Plugin` return type; a `types` condition on
+// `@llui/markdown-editor`'s `./styles/*.css` subpaths), and the SEMANTIC arm now
+// gates the class: ONE `ts.Program` over every publishable package's `.d.ts`
+// with `skipLibCheck: false`.
 //
-// This arm answers the narrower question #253 actually needed — is every type
-// name this file references BOUND — over the same corpus in ~0.23 s of sweep
-// plus ~0.73 s for the globals program (`check:dist` wall: 1.6-1.7 s), with zero
-// allowlist entries. Globals come from a real `ts` program over the lib files
-// (`getSymbolsInScope`), never a hand-written list, so `HTMLElement` / `Buffer` /
-// `Record` are known because TypeScript says so.
+// The DIST arm's reports are a strict SUBSET of the semantic arm's — TS2304 is
+// what a free name produces — so say what keeps it rather than implying it adds
+// coverage. Two things do. (1) It has NO allowlist, and the semantic arm has
+// one: an allowlist entry is one edit away from switching a whole file's
+// diagnostics off, and #253's exact shape must not be reachable that way.
+// (2) It gives a message written for #253 (which NAME went free, and that its
+// import was deleted) where the semantic arm gives tsc's, and it is the arm the
+// unit tests in `scripts/test/dist-type-bindings.test.ts` exercise without a
+// build.
+//
+// WHAT THE SEMANTIC ARM COSTS, AND ITS ALLOWLIST DISCIPLINE
+// ---------------------------------------------------------
+// Measured on a quiet machine: 557 -> 558 `.d.ts` root names, 4.7-6.1 s, and
+// identical diagnostics under `types: ['node']`, `types: []` and no `types`
+// field. `check:dist` wall goes from ~1.6 s to ~7 s.
+//
+// It is scoped STRUCTURALLY to files under `packages/<pkg>/dist/`, not by
+// allowlist: three of the four surviving diagnostics live inside loro-crdt's own
+// shipped `.d.ts` (TS2304/7010/7051), which is precisely what `skipLibCheck`
+// exists for and would otherwise redden this gate on every dependency bump. A
+// third-party type change that surfaces an error IN OUR file is still reported,
+// because that IS a consumer-facing break.
+//
+// `SEMANTIC_ALLOWED` is CLOSED AT BOTH ENDS, the discipline
+// `scripts/test/token-contrast.test.ts` documents: an entry that no longer
+// matches a diagnostic fails as OBSOLETE. It is keyed `file` + `code` + a
+// reason; a bare code (or a bare file) would excuse every occurrence in the
+// repo. One entry today.
+//
+// MUTATION EVIDENCE (15 rows, re-run against the final tree; every row applied
+// alone, restored in a `finally`, verified by an empty per-file `git diff` —
+// never a file count). Kept HERE rather than in a review thread because the
+// numbers are the argument for the shape above, and a lane report evaporates.
+//
+//   | Faithful mutation                                          | Result |
+//   |------------------------------------------------------------|--------|
+//   | Drop `: Plugin` from the two leaking factories, rebuild     | RED, 6 x TS2307 at #257's exact positions |
+//   | Revert markdown-editor's CSS exports to bare strings        | RED, 1 x TS2882 |
+//   | Point PROBE_SIDE_EFFECT_TARGET at a missing file            | RED, refuses a verdict |
+//   | Drop the probe from the program's root names                | RED, probe reported [] |
+//   | Add an allowance describing a diagnostic nobody has seen    | RED, OBSOLETE |
+//   | Empty SEMANTIC_ALLOWED                                      | RED, the TS2416 it approves is reported |
+//   | Drop the structural `packages/*/dist` scope                 | RED, 3 loro-crdt entries reach the verdict |
+//   | Sweep 1 `.d.ts` per package                                 | RED on 4 checks (25 swept vs 558 walked) |
+//   | Raise the corpus floor above the real corpus                | RED, the floor is evaluated |
+//   | Drop ONE package from the swept roots                       | RED, 535 vs 558 |
+//   | ...the same, with defect 1 rebuilt into dist                | RED, 535 vs 558 |
+//   | Report nothing from our own output                          | RED, probe reported [] |
+//   | ...the same, with SEMANTIC_ALLOWED emptied                  | RED, probe reported [] |
+//   | Match an allowance on `code` alone (bare-code licence)      | gate GREEN, `dist-type-bindings.test.ts` RED |
+//   | Narrow BOTH `walkDts` consumers at once                     | RED, 533 swept / 549 loaded / 558 walked |
+//
+// The last five are why the two structural checks above exist, and each was
+// GREEN before them. `Drop ONE package` is the sharpest: it is a single edit,
+// it took the sweep from 558 files to 535, and the gate stayed green WITH
+// `import("rolldown")` back in the published `.d.ts` — while 558 and 535 were
+// being printed one line apart in the success output. `Report nothing` was
+// killed only by the obsolete-allowlist check, i.e. only by an entry expected
+// to disappear once #129 resolves, so the gate would have got weaker the day
+// that was fixed. `bare-code licence` is green on the GATE by construction (a
+// clean tree has nothing to mis-approve), which is why the matcher had to be
+// extracted and unit-tested rather than left inline.
+//
+// The one shape no mutation kills is deleting the `probeOk` verdict push: an
+// instrument check is unobservable while the instrument works, and that is
+// inherent rather than a gap to chase. Arm 4's own probe block has the same
+// property.
 //
 // KNOWN LIMITS, stated rather than implied:
-//   - **It does not resolve module specifiers.** An `import('x').Y` needs
-//     nothing BOUND, so it is skipped — which means an unresolvable specifier
-//     (the `rolldown` case above, and the commonest way a `.d.ts` breaks a
-//     consumer after an unbound name) is OUTSIDE this arm by construction. The
-//     `examples/markdown-editor` type-check that originally surfaced #253 DID
-//     catch that class; this arm is not a superset of it. Widening it means
-//     module resolution, and is gated on the two live defects above (#257).
-//   - Bindings are collected FLAT (every binder anywhere in the file lands in
-//     one set), so the arm cannot see a name that is bound in some inner scope
+//   - The semantic arm runs ONE resolution mode: `Bundler`, matching the root
+//     tsconfig and every consumer this repo has. Measured against the fixed
+//     tree, `nodenext` is clean too; `node10` ignores `exports` maps entirely
+//     (so the CSS `types` condition does not reach it) and is deprecated in
+//     TypeScript 6, so it is not swept.
+//   - A FILE-LESS diagnostic is dropped (`if (!d.file) continue`). Those are
+//     whole-program ones — TS2688 "cannot find type definition file for 'node'",
+//     TS6053 — which cannot be attributed to a published file, so they are not
+//     what this verdict is about; the cost is that a broken `types: ['node']`
+//     degrades this sweep quietly instead of reddening it. Arm 4's globals probe
+//     floors the same lib load, which is what covers that direction today.
+//   - It root-names every `.d.ts` in `dist/`. A real consumer only loads what
+//     its `exports` map reaches, so the arm is STRICTER than a consumer:
+//     measured, `compile-plugin.d.ts` and `hud-plugin.d.ts` are not reachable
+//     from `@llui/vite-plugin`'s public entry points, so the 6 x TS2307 were not
+//     yet consumer-visible — they became so the moment anything re-exported
+//     those factories. Being stricter is the point: an unresolvable specifier in
+//     a shipped file is a defect whether or not today's entry graph reaches it.
+//   - Bindings in the DIST arm are collected FLAT (every binder anywhere in the
+//     file lands in one set), so it cannot see a name bound in some inner scope
 //     but free at the point of use. That is the UNDER-report direction, chosen
 //     so the arm cannot false-positive on scoping; #253's shape (the binder is
-//     gone entirely) is unaffected.
+//     gone entirely) is unaffected, and the semantic arm answers it exactly.
 //   - The source arm reads only the literal tag. A declaration deleted because
 //     its leading comment came from somewhere this scan does not model is not
 //     covered.
@@ -104,7 +169,7 @@
 //     a line, reads as a genuine annotation and is allowed through.
 
 import { readdirSync, readFileSync, existsSync, statSync } from 'node:fs'
-import { join } from 'node:path'
+import { join, relative, sep } from 'node:path'
 import { createRequire } from 'node:module'
 
 /**
@@ -383,4 +448,230 @@ export function stripInternalPackages(root) {
     if (/"stripInternal"\s*:\s*true/.test(readFileSync(cfg, 'utf8'))) out.push(d)
   }
   return out
+}
+
+// ---------------------------------------------------------------------------
+// SEMANTIC ARM (#257). One program over every publishable package's emitted
+// `.d.ts` with `skipLibCheck: false` — the check a consumer that does not skip
+// lib checking actually runs against our published types.
+// ---------------------------------------------------------------------------
+
+/**
+ * One approved diagnostic in our own published output.
+ * @typedef {object} SemanticAllowance
+ * @property {string} file  Repo-relative POSIX path of the emitted `.d.ts`.
+ * @property {number} code  TypeScript diagnostic code.
+ * @property {string} reason
+ */
+
+/**
+ * Diagnostics allowed to stand in `packages/<pkg>/dist/**`.
+ *
+ * KEYED BY FILE **AND** CODE, never by one alone: a bare code excuses every
+ * occurrence in the repo, which is the shape `scripts/test/registry-attrs.test.ts`
+ * measured as switching a whole check off. CLOSED AT BOTH ENDS — `check-dist.mjs`
+ * fails on an entry that matches nothing, so a fixed defect cannot leave a
+ * standing licence behind.
+ *
+ * @type {readonly SemanticAllowance[]}
+ */
+export const SEMANTIC_ALLOWED = [
+  {
+    file: 'packages/markdown-editor/dist/nodes/list.d.ts',
+    code: 2416,
+    reason:
+      "MarkdownListNode's `$config` declares `extends: ElementNode` so " +
+      "`iterStaticNodeConfigChain` skips ListNode's unconditional " +
+      '`mergeNextSiblingListIfSameType` (#129). Lexical documents `extends` as ' +
+      '"must be the exact superclass" and TypeScript rejects the divergence, so ' +
+      "the override carries this package's one `@ts-expect-error` — which does " +
+      'NOT survive into the emitted `.d.ts`. Deliberate and load-bearing: ' +
+      'removing it re-opens #129 (two adjacent same-type Markdown lists merge).',
+  },
+]
+
+/**
+ * The allowlist LOOKUP, extracted so it is unit-testable. The keying is the
+ * load-bearing part and it cannot be tested through `SEMANTIC_ALLOWED`'s shape:
+ * a matcher mutated to `a.code === d.code` — the bare-code licence this file's
+ * prose warns against — leaves every entry perfectly well-formed and simply
+ * approves that code everywhere. Both halves of the key must be required, and
+ * `scripts/test/dist-type-bindings.test.ts` pins each direction.
+ *
+ * @param {string} file Repo-relative POSIX path of the emitted `.d.ts`.
+ * @param {number} code TypeScript diagnostic code.
+ * @returns {number} Index into `SEMANTIC_ALLOWED`, or -1.
+ */
+export function semanticAllowanceIndex(file, code) {
+  return SEMANTIC_ALLOWED.findIndex((a) => a.file === file && a.code === code)
+}
+
+/**
+ * The virtual `.d.ts` the semantic arm compiles alongside the corpus so the
+ * INSTRUMENT is proved before any verdict. A count floor says the walk found
+ * files; it cannot say the program is still capable of REPORTING.
+ *
+ * Three shapes, one per failure this arm exists for:
+ *   - an unresolvable INLINE import type (the `rolldown` shape, and precisely
+ *     what the dist binding arm is blind to),
+ *   - a side-effect import of a real file with no type declarations (the
+ *     `devmode-annotate-editor` CSS shape),
+ *   - a free type name (TS2304, the #253 shape the dist arm also covers).
+ *
+ * `PROBE_SIDE_EFFECT_TARGET` is a checked-in source file, never a build output,
+ * so the probe does not depend on another package having been built. If it is
+ * ever renamed the specifier becomes unresolvable and the probe reports TS2307
+ * instead of TS2882 — a LOUD failure, which is the safe direction.
+ *
+ * The probe file is placed INSIDE a real `packages/<pkg>/dist` directory (it is
+ * virtual — nothing is written to disk), so its diagnostics travel the SAME path
+ * a genuine finding does: the structural dist scope, the allowlist lookup, and
+ * the push into `reported`. That is deliberate. With the probe classified
+ * separately, a mutation that made the arm report NOTHING from our own output
+ * was caught only by the obsolete-allowlist check — i.e. only by an allowlist
+ * that is expected to be EMPTY once #129's TS2416 resolves, so the gate would
+ * have got weaker the day that was fixed. Routing the probe through the same
+ * code makes the reporting path itself the thing the instrument check proves.
+ */
+export const PROBE_SIDE_EFFECT_TARGET = 'packages/markdown-editor/src/styles/editor.css'
+
+/** Codes the probe must produce, in the order the probe writes them. */
+const PROBE_EXPECTED_CODES = [2882, 2307, 2304]
+
+/**
+ * SEMANTIC ARM. Type-check every `.d.ts` in `distDirs` with `skipLibCheck: false`
+ * and report the diagnostics that land in our own published output.
+ *
+ * @param {string} root
+ * @param {string[]} files Absolute paths of the `.d.ts` to root the program at.
+ * @param {string[]} distDirs Absolute `packages/<pkg>/dist` dirs that scope the verdict.
+ * @returns {{
+ *   reported: { file: string, line: number, column: number, code: number, message: string }[],
+ *   allowedHits: Map<number, number>,
+ *   probeCodes: number[],
+ *   probeOk: boolean,
+ *   judged: number,
+ *   ms: number,
+ * }}
+ */
+export function distSemanticDiagnostics(root, files, distDirs) {
+  const ts = loadTs(root)
+  // Inside a real dist dir (sorted so the choice is deterministic), and named so
+  // it cannot collide with an emitted file. Virtual: the host serves it from
+  // memory and nothing touches the filesystem.
+  const probeDir = [...distDirs].sort()[0]
+  if (probeDir === undefined) throw new Error('semantic sweep: no dist dir to place the probe in')
+  const probeName = join(probeDir, '__llui_dist_semantic_probe__.d.ts')
+  const probeRel = relative(root, probeName).split(sep).join('/')
+  // Relative to the PROBE's directory, not the repo root.
+  const sideEffectSpecifier = relative(probeDir, join(root, PROBE_SIDE_EFFECT_TARGET))
+    .split(sep)
+    .join('/')
+  const probeText =
+    `import '${sideEffectSpecifier}'\n` +
+    `export interface ProbeA { a: import('llui-no-such-module-anywhere').Nope }\n` +
+    `export interface ProbeB { b: LluiDefinitelyNotBoundAnywhere }\n`
+
+  const options = {
+    noEmit: true,
+    skipLibCheck: false,
+    strict: true,
+    target: ts.ScriptTarget.ES2022,
+    module: ts.ModuleKind.ESNext,
+    moduleResolution: ts.ModuleResolutionKind.Bundler,
+    lib: ['lib.es2022.d.ts', 'lib.dom.d.ts', 'lib.dom.iterable.d.ts'],
+    types: ['node'],
+  }
+  const host = ts.createCompilerHost(options, true)
+  const probeFile = ts.createSourceFile(
+    probeName,
+    probeText,
+    ts.ScriptTarget.ES2022,
+    true,
+    ts.ScriptKind.TS,
+  )
+  const origGetSourceFile = host.getSourceFile.bind(host)
+  /** @type {import('typescript').CompilerHost['getSourceFile']} */
+  const getSourceFile = (f, ...rest) =>
+    f === probeName ? probeFile : origGetSourceFile(f, ...rest)
+  host.getSourceFile = getSourceFile
+  const origFileExists = host.fileExists.bind(host)
+  host.fileExists = (f) => (f === probeName ? true : origFileExists(f))
+  const origReadFile = host.readFile.bind(host)
+  host.readFile = (f) => (f === probeName ? probeText : origReadFile(f))
+
+  const started = Date.now()
+  const program = ts.createProgram({ rootNames: [...files, probeName], options, host })
+  const diagnostics = ts.getPreEmitDiagnostics(program)
+  const ms = Date.now() - started
+
+  const normalizedDistDirs = distDirs.map((d) => ts.sys.resolvePath(d) + '/')
+  /** @type {{ file: string, line: number, column: number, code: number, message: string }[]} */
+  const reported = []
+  /** @type {Map<number, number>} */
+  const allowedHits = new Map()
+  /** @type {number[]} */
+  const probeCodes = []
+
+  for (const d of diagnostics) {
+    // KNOWN LIMIT, stated here and in the header: a FILE-LESS diagnostic (a
+    // whole-program one such as TS2688 "cannot find type definition file for
+    // 'node'", or TS6053) is dropped. It cannot be attributed to a published
+    // file, which is what this arm's verdict is about — but it also means a
+    // broken `types: ['node']` would degrade this sweep silently rather than
+    // redden it. The globals probe in arm 4 floors the same lib load.
+    if (!d.file) continue
+    const abs = ts.sys.resolvePath(d.file.fileName)
+    // STRUCTURAL scope, not an allowlist: a third-party `.d.ts` we merely pull in
+    // is exactly what `skipLibCheck` exists for. The probe lives inside a dist
+    // dir precisely so it must pass this test too.
+    if (!normalizedDistDirs.some((dir) => abs.startsWith(dir))) continue
+    const rel = relative(root, abs).split(sep).join('/')
+    const allowedIndex = semanticAllowanceIndex(rel, d.code)
+    if (allowedIndex >= 0) {
+      allowedHits.set(allowedIndex, (allowedHits.get(allowedIndex) ?? 0) + 1)
+      continue
+    }
+    const { line, character } =
+      d.start === undefined
+        ? { line: 0, character: 0 }
+        : d.file.getLineAndCharacterOfPosition(d.start)
+    reported.push({
+      file: rel,
+      line: line + 1,
+      column: character + 1,
+      code: d.code,
+      message: ts.flattenDiagnosticMessageText(d.messageText, ' ').slice(0, 400),
+    })
+  }
+
+  // Partition the probe back OUT of the verdict, after it has travelled the
+  // whole reporting path. Anything the probe produced that is not one of the
+  // three expected codes is left in `reported` on purpose — an unexpected probe
+  // diagnostic means the probe itself no longer says what this file claims.
+  /** @type {typeof reported} */
+  const verdict = []
+  for (const r of reported) {
+    if (r.file === probeRel && PROBE_EXPECTED_CODES.includes(r.code)) probeCodes.push(r.code)
+    else verdict.push(r)
+  }
+
+  // Counts the REAL corpus, not the virtual probe that shares its directory.
+  const judged = program.getSourceFiles().filter((f) => {
+    const abs = ts.sys.resolvePath(f.fileName)
+    return (
+      abs !== ts.sys.resolvePath(probeName) && normalizedDistDirs.some((dir) => abs.startsWith(dir))
+    )
+  }).length
+
+  return {
+    reported: verdict,
+    allowedHits,
+    probeCodes,
+    probeOk:
+      probeCodes.length === PROBE_EXPECTED_CODES.length &&
+      PROBE_EXPECTED_CODES.every((c, i) => probeCodes[i] === c),
+    judged,
+    ms,
+  }
 }

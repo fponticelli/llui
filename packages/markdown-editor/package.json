@@ -37,12 +37,18 @@
       "types": "./dist/plugins/table.d.ts",
       "import": "./dist/plugins/table.js"
     },
-    "./styles/editor.css": "./dist/styles/editor.css",
-    "./styles/block-drag.css": "./dist/styles/block-drag.css"
+    "./styles/editor.css": {
+      "types": "./dist/styles/css.d.ts",
+      "default": "./dist/styles/editor.css"
+    },
+    "./styles/block-drag.css": {
+      "types": "./dist/styles/css.d.ts",
+      "default": "./dist/styles/block-drag.css"
+    }
   },
   "scripts": {
     "prepack": "pnpm run build",
-    "build": "tsc -p tsconfig.build.json && mkdir -p dist/styles && cp src/styles/*.css dist/styles/",
+    "build": "tsc -p tsconfig.build.json && mkdir -p dist/styles && cp src/styles/*.css dist/styles/ && cp src/styles/css.d.ts dist/styles/",
     "check": "tsc --noEmit -p tsconfig.check.json",
     "lint": "eslint src",
     "test": "vitest run"

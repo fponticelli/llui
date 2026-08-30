@@ -423,11 +423,22 @@ the tarball:
    `skipLibCheck: true` itself, for reasons written in its tsconfig, so the
    canary is deliberate rather than accidental.
 
-   **Read this as a BINDING check, not a type check.** It does not resolve
+   **Read arm 4 as a BINDING check, not a type check.** It does not resolve
    module SPECIFIERS, so an unresolvable `import('x').Y` is outside it by
-   construction — two published `.d.ts` that a `skipLibCheck: false` consumer
-   cannot compile are open as #257. A green run here does NOT mean the published
-   types compile. See `scripts/lib/dist-type-bindings.mjs`.
+   construction — which is how six `import("rolldown").X` and one side-effect
+   CSS import shipped under a green gate. That is arm 5's job now.
+
+5. **Every emitted `.d.ts` in a publishable package TYPE-CHECKS**, in one
+   `ts.Program` with `skipLibCheck: false` (#257) — the check a consumer that
+   does not skip lib checking actually runs against our published types. ~5 s
+   over 558 files. The verdict is scoped STRUCTURALLY to `packages/*/dist/**`,
+   because three of the diagnostics a full sweep sees are inside loro-crdt's own
+   shipped types and would redden this gate on every dependency bump; the one
+   approved diagnostic in OUR output (`markdown-editor`'s deliberate
+   `MarkdownListNode.$config` divergence, #129) is in `SEMANTIC_ALLOWED`, which
+   is closed at both ends — an entry that stops matching fails as OBSOLETE. A
+   green run of arms 4 AND 5 does mean the published types compile, under
+   `moduleResolution: bundler`. See `scripts/lib/dist-type-bindings.mjs`.
 
 It parses with the TypeScript compiler rather than grepping, because this repo's
 own compiler sources quote `export { X } from './y'` inside comments and a text
