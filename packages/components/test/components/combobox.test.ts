@@ -293,12 +293,6 @@ describe('combobox creatable', () => {
   })
 
   it('selectOption on the create sentinel emits createOption with the input text', () => {
-    const s0 = {
-      ...init({ items: ['apple'], allowCreate: true }),
-      inputValue: 'cherry',
-      filteredItems: ['apple', CREATE_OPTION_VALUE],
-      open: true,
-    }
     const send = vi.fn()
     const p = connect(rootSignal(), send, { id: 'cb' })
     const itemParts = p.item(CREATE_OPTION_VALUE, 1)

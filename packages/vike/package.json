@@ -25,7 +25,7 @@
     "prepack": "pnpm run build",
     "build": "tsc -p tsconfig.build.json",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.test-types.json",
-    "lint": "eslint src",
+    "lint": "eslint src test test-types",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },

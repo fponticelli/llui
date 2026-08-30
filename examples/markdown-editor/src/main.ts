@@ -112,7 +112,6 @@ const fullApp = mountApp(
       corePlugin(),
       linkPlugin({
         onFollow: (url) => {
-          // eslint-disable-next-line no-console
           console.log('[link] follow →', url)
         },
       }),
@@ -124,7 +123,6 @@ const fullApp = mountApp(
       blockDragPlugin(),
       wikilinkPlugin({
         onNavigate: (link) => {
-          // eslint-disable-next-line no-console
           console.log('[wikilink] navigate →', link.target)
         },
         search: (query: string): DocCandidate[] => {

@@ -43,14 +43,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
 } from '../components/ui/dropdown-menu'
-import {
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-  SelectViewport,
-  SelectItemIndicator,
-} from '../components/ui/select'
+import { SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
 import { Avatar, AvatarFallback } from '../components/ui/avatar'

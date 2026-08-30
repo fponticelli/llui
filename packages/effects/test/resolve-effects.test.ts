@@ -215,7 +215,7 @@ describe('resolveEffects', () => {
     )
 
     // update always produces another effect — would infinite loop without depth limit
-    const result = await resolveEffects<State, Msg, Effect>(
+    await resolveEffects<State, Msg, Effect>(
       { items: [], error: null },
       [
         http<{ type: string; payload?: unknown; error?: ApiError }>({

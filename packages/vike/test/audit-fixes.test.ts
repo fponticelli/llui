@@ -2,7 +2,7 @@
 // verified finding; the comment names it.
 import { describe, it, expect, beforeEach } from 'vitest'
 import { browserEnv } from '@llui/dom/ssr'
-import { component, div, text } from '@llui/dom'
+import { div, text } from '@llui/dom'
 import type { SignalComponentDef } from '@llui/dom'
 import { createOnRenderHtml } from '../src/on-render-html.js'
 import type { RenderHtmlResult } from '../src/on-render-html.js'
@@ -138,7 +138,7 @@ describe('null data slice is preserved as the seed (finding #4)', () => {
     name: 'NullablePage',
     init: () => ({ label: 'from-init' }),
     update: (s) => s,
-    // eslint-disable-next-line eqeqeq
+
     view: ({ state }) => [
       div({ class: 'np' }, [text(state.map((s) => (s == null ? 'NULL-SEED' : s.label)))]),
     ],

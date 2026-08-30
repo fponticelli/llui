@@ -1,6 +1,6 @@
 import { div, button, span, label, input, each, onMount, text } from '@llui/dom'
 import type { Send, Signal, Renderable } from '@llui/dom'
-import { datePicker, type DayCell, monthGrid, weekRows } from '@llui/components/date-picker'
+import { datePicker, monthGrid, weekRows } from '@llui/components/date-picker'
 import { timePicker, formatTime } from '@llui/components/time-picker'
 import { colorPicker } from '@llui/components/color-picker'
 import { editable } from '@llui/components/editable'

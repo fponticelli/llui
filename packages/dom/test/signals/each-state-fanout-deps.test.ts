@@ -116,7 +116,7 @@ describe('eachArm — compiled render arm over a verbatim items handle (mid-tier
 })
 
 describe('eachDirect — state deps for factory rows', () => {
-  const factory: RowFactory = (doc, getCtx) => {
+  const factory: RowFactory = (doc, _getCtx) => {
     const root = doc.createElement('li')
     root.className = 'frow'
     const t = doc.createTextNode('')

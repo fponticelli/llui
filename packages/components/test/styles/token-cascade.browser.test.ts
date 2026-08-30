@@ -120,7 +120,9 @@ describe('#241/#242 — token cascade in Chromium', () => {
           const el = document.createElement('div')
           el.style.cssText = 'background: red; transition: background 40ms linear'
           document.body.appendChild(el)
-          getComputedStyle(el).backgroundColor
+          // Force a style flush so the transition starts from `red` rather than
+          // coalescing both writes into one computed value.
+          void getComputedStyle(el).backgroundColor
           el.style.background = 'blue'
           await new Promise((r) => setTimeout(r, 200))
           const end = getComputedStyle(el).backgroundColor

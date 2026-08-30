@@ -128,7 +128,7 @@ describe('a2uiUpdate (component reducer)', () => {
   })
 
   it('setUi writes client-local UI state without touching the data model', () => {
-    let s = applyEnvelope(initialA2uiState(), createBooking)
+    const s = applyEnvelope(initialA2uiState(), createBooking)
     const [next] = a2uiUpdate(s, {
       type: 'setUi',
       surfaceId: 'booking-form',
@@ -140,7 +140,7 @@ describe('a2uiUpdate (component reducer)', () => {
   })
 
   it('setData writes back into the surface data model (two-way binding)', () => {
-    let s = applyEnvelope(initialA2uiState(), createBooking)
+    const s = applyEnvelope(initialA2uiState(), createBooking)
     const [next] = a2uiUpdate(s, {
       type: 'setData',
       surfaceId: 'booking-form',

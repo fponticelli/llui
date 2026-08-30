@@ -11,7 +11,7 @@ import {
 } from '../../src/signals/dom'
 import { derived } from '../../src/signals/handle'
 import { compileAndLoad, identityComponent } from './compile-and-load'
-import { div, ul, li, span, input, text, each, show } from '../../src/signals/authoring'
+import { div, ul, li, span, text, each, show } from '../../src/signals/authoring'
 import type { Renderable } from '../../src/signals/dom'
 import type { Signal } from '../../src/signals/types'
 

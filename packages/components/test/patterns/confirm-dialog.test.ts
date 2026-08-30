@@ -97,12 +97,8 @@ describe('confirmDialog integration', () => {
 
   type AppMsg = { type: 'cd'; msg: ConfirmDialogMsg } | { type: 'triggerConfirm' }
 
-  function makeApp(): {
-    send: (m: AppMsg) => void
-    getState: () => Ctx
-  } {
+  function makeApp(): { send: (m: AppMsg) => void } {
     let sendRef!: (m: AppMsg) => void
-    let stateRef!: Ctx
 
     const def = component<Ctx, AppMsg, never>({
       name: 'Test',
@@ -149,11 +145,10 @@ describe('confirmDialog integration', () => {
     const container = document.createElement('div')
     document.body.appendChild(container)
     currentApp = mountApp(container, def)
-    // Track state by hooking into update via a custom path
-    const getState = (): Ctx => stateRef
-    // We can't easily extract state; just return what we send in
-    void getState
-    return { send: sendRef!, getState }
+    // State is asserted through the rendered DOM, not read back out of the
+    // component: `getState` used to be returned here backed by a `stateRef`
+    // nothing ever assigned, so it answered `undefined` while its type said Ctx.
+    return { send: sendRef! }
   }
 
   it('dialog not rendered initially', () => {

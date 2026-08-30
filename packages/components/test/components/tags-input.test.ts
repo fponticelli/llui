@@ -76,8 +76,6 @@ describe('tags-input reducer', () => {
 })
 
 describe('tags-input.connect', () => {
-  const p = connect(rootSignal(), vi.fn())
-
   it('input onKeyDown Enter adds tag', () => {
     const send = vi.fn()
     const pc = connect(signalOf(init()), send)

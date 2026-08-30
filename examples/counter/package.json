@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "check": "tsc --noEmit -p tsconfig.json",
-    "measure": "vite build && node measure.js"
+    "measure": "vite build && node measure.js",
+    "lint": "eslint src"
   },
   "dependencies": {
     "@llui/dom": "workspace:*"

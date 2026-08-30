@@ -286,7 +286,7 @@ describe(`nodeWidget (lexical ${LEXICAL_VERSION})`, () => {
       },
     })
     harness = makeEditor([widget])
-    const { editor, root } = harness
+    const { editor } = harness
 
     let pKey: NodeKey = ''
     editor.update(
@@ -376,7 +376,7 @@ describe(`nodeWidget (lexical ${LEXICAL_VERSION})`, () => {
       },
     })
     harness = makeEditor([head, tail])
-    const { editor, root } = harness
+    const { editor } = harness
 
     let pKey: NodeKey = ''
     editor.update(

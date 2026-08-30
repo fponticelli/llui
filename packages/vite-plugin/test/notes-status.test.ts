@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { mkdtempSync, mkdirSync, rmSync } from 'node:fs'
+import { appendFileSync, mkdtempSync, mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -154,7 +154,6 @@ describe('status sidecar', () => {
     })
     // Inject a garbage line
     const path = join(session(), 'status.jsonl')
-    const { appendFileSync } = require('node:fs') as typeof import('node:fs')
     appendFileSync(path, 'not json at all\n', 'utf8')
     appendStatus(session(), {
       ts: '2',

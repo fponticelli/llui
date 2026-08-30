@@ -1,5 +1,5 @@
 import { div, h1, h3, a, p, span, text, show, branch, each } from '@llui/dom'
-import type { State, Msg, Page, Repo, TreeEntry, Issue } from '../types'
+import type { Msg, Page, Repo, TreeEntry, Issue } from '../types'
 import type { Send, Signal, Renderable, Mountable } from '@llui/dom'
 import { routing } from '../router'
 import { readmeView } from './foreign-readme'

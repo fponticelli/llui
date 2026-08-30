@@ -8,7 +8,8 @@
     "dev:ssr": "tsx server.ts",
     "build": "vite build",
     "preview": "vite preview",
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "lint": "eslint src"
   },
   "dependencies": {
     "@llui/dom": "workspace:*",

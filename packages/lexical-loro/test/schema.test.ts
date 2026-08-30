@@ -31,7 +31,6 @@ import {
   KEY_UUID,
   LORO_TEXT_FORMATS,
   newUuid,
-  orderedChildren,
   ROOT_CONTAINER,
   TEXT_MARK_EXPAND,
   type ElementContainer,

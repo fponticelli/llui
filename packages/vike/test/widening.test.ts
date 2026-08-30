@@ -48,7 +48,7 @@ const ConcreteLayout: SignalComponentDef<LayoutState, LayoutMsg, LayoutEffect> =
 
 // A minimal page def — also concrete generics.
 type PageState = { value: number }
-const ConcretePage: SignalComponentDef<PageState, never, never> = {
+const _ConcretePage: SignalComponentDef<PageState, never, never> = {
   name: 'ConcretePage',
   init: () => ({ value: 0 }),
   update: (state) => state,

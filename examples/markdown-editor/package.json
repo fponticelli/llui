@@ -7,7 +7,8 @@
     "build": "vite build",
     "check": "tsc --noEmit -p tsconfig.json",
     "preview": "vite preview",
-    "test:e2e": "pnpm --filter @llui/markdown-editor build && playwright test"
+    "test:e2e": "pnpm --filter @llui/markdown-editor build && playwright test",
+    "lint": "eslint e2e src"
   },
   "dependencies": {
     "@llui/dom": "workspace:*",

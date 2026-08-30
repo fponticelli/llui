@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
-import { component, div, text, button } from '../../src/signals/authoring'
+import { component, div, text } from '../../src/signals/authoring'
 
 // Opt-in frame-scheduled commits (`scheduler: 'raf'`) — the streaming/burst
 // fast path for consumers that accept DOM-lags-state-by-a-frame: reducers and

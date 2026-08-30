@@ -43,6 +43,18 @@ export default tseslint.config(
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
       '@typescript-eslint/no-explicit-any': 'warn',
+      // A `let` that is READ between its declaration and its single assignment
+      // cannot be a `const` — merging the two would move the read past the
+      // write and change what the code does. The rule's default reports those
+      // anyway, and the fix it asks for is not available, so the only ways to
+      // satisfy it are a suppression comment or a rewrite that alters the
+      // program. `ignoreReadBeforeAssign` is the option the rule ships for
+      // exactly this shape. Turning it on RELAXES the rule, so it cannot make
+      // any currently-clean file dirty. The three in-repo cases (#259) are two
+      // shapes: a closure capturing a scope object that is built from the very
+      // binding it captures, and a cache handle passed as `undefined` on the
+      // first call and reassigned from the result.
+      'prefer-const': ['error', { ignoreReadBeforeAssign: true }],
     },
   },
   {

@@ -117,7 +117,6 @@ describe('toKeyedBlocks — per-block hash memoization (streaming O(tail))', () 
 
     const s2 = s1 + 'second paragraph'
     const r2 = incrementalParse(cache, s2, parse)
-    cache = r2.cache
     expect(r2.reused).toBeGreaterThanOrEqual(1) // the incremental parser reused a prefix
     keyingHashComputations(true) // reset
     keysOf(r2.root, s2)
@@ -154,7 +153,6 @@ describe('toKeyedBlocks — per-block hash memoization (streaming O(tail))', () 
     // its content-id (and key) must change, so the memo cannot blindly reuse it.
     const s2 = '[a][r]\n\n[r]: /new'
     const r2 = incrementalParse(cache, s2, parse)
-    cache = r2.cache
     const k2 = keysOf(r2.root, s2)
     expect(k2[0]).not.toBe(k1[0])
   })

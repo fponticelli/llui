@@ -21,7 +21,7 @@
     "build": "tsc -p tsconfig.build.json",
     "prepack": "pnpm run build",
     "check": "tsc --noEmit -p tsconfig.check.json",
-    "lint": "eslint src",
+    "lint": "eslint src test",
     "test": "vitest run"
   },
   "peerDependencies": {

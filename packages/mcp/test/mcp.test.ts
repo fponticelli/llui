@@ -4,7 +4,7 @@ import { LluiMcpServer, mcpActiveFilePath } from '../src/index'
 import type { LluiDebugAPI } from '@llui/dom'
 
 function mockDebugApi(state: Record<string, unknown> = { count: 0 }): LluiDebugAPI {
-  let currentState = { ...state }
+  const currentState = { ...state }
   const history: Array<{ msg: unknown; stateAfter: unknown }> = []
 
   return {
@@ -13,7 +13,7 @@ function mockDebugApi(state: Record<string, unknown> = { count: 0 }): LluiDebugA
       history.push({ msg, stateAfter: currentState })
     }),
     flush: vi.fn(),
-    evalUpdate: (msg) => ({ state: currentState, effects: [] }),
+    evalUpdate: (_msg) => ({ state: currentState, effects: [] }),
     getMessageHistory: () => history,
     exportTrace: () => ({
       lluiTrace: 1,

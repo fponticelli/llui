@@ -15,7 +15,7 @@
     "prepack": "pnpm run build",
     "build": "tsc -p tsconfig.build.json && mkdir -p dist/styles && cp src/styles/collab.css dist/styles/",
     "check": "tsc --noEmit -p tsconfig.check.json",
-    "lint": "eslint src",
+    "lint": "eslint src test",
     "test": "vitest run"
   },
   "peerDependencies": {

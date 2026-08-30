@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest'
-import { handleEffects, http, cancel, debounce, type Effect, type ApiError } from '../src/index'
+import { handleEffects, http, cancel, type Effect, type ApiError } from '../src/index'
 
 type CustomEffect = { type: 'custom'; data: string }
 type AllEffects = Effect | CustomEffect

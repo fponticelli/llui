@@ -1,4 +1,4 @@
-import { constant, each, g, noSend, text, type Mountable, type Send, type Signal } from '@llui/dom'
+import { constant, each, noSend, text, type Mountable, type Send, type Signal } from '@llui/dom'
 import * as chartC from '@llui/components/chart'
 import * as sparklineC from '@llui/components/sparkline'
 import {

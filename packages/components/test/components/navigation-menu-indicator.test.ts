@@ -136,7 +136,7 @@ describe('watchNavMenuIndicator', () => {
   // here (its `li` is its own offset parent), so an offsetLeft-based
   // implementation writes `0px` and fails this.
   it('positions against the indicator offsetParent, not the trigger offsetLeft', () => {
-    const { root, indicator, file, edit } = build()
+    const { root, indicator, file } = build()
     file.setAttribute('data-state', 'open')
     dispose = watchNavMenuIndicator(root)
     expect(indicator.style.getPropertyValue('--indicator-left')).toBe('40px')
@@ -146,7 +146,7 @@ describe('watchNavMenuIndicator', () => {
   })
 
   it('accounts for the offset parent border and scroll', () => {
-    const { root, indicator, file, edit } = build()
+    const { root, indicator, file } = build()
     setProp(root, 'clientLeft', 2)
     setProp(root, 'clientTop', 3)
     setProp(root, 'scrollLeft', 30)
@@ -175,7 +175,7 @@ describe('watchNavMenuIndicator', () => {
   // The arrow fades out in place; moving it mid-exit is the one thing that
   // looks broken, so a close must LEAVE the last position alone.
   it('keeps the last position when everything closes', async () => {
-    const { root, indicator, file, edit } = build()
+    const { root, indicator, edit } = build()
     edit.setAttribute('data-state', 'open')
     dispose = watchNavMenuIndicator(root)
     expect(indicator.style.getPropertyValue('--indicator-left')).toBe('110px')
@@ -188,7 +188,7 @@ describe('watchNavMenuIndicator', () => {
   // A nested trigger publishes data-state="open" too, and lives inside its
   // parent's panel — so document order puts the outermost open branch first.
   it('tracks the outermost open branch, not a nested one', () => {
-    const { root, indicator, file, edit } = build()
+    const { root, indicator, file } = build()
     const panel = document.createElement('div')
     const nested = document.createElement('button')
     nested.setAttribute('data-scope', 'navigation-menu')
@@ -205,7 +205,7 @@ describe('watchNavMenuIndicator', () => {
   })
 
   it('writes nothing when the indicator has no offset parent', () => {
-    const { root, indicator, file, edit } = build()
+    const { root, indicator, file } = build()
     setProp(indicator, 'offsetParent', null)
     file.setAttribute('data-state', 'open')
     dispose = watchNavMenuIndicator(root)
@@ -226,7 +226,7 @@ describe('watchNavMenuIndicator', () => {
   })
 
   it('survives an environment with no ResizeObserver', () => {
-    const { root, indicator, file, edit } = build()
+    const { root, indicator, file } = build()
     const RO = globalThis.ResizeObserver
     // @ts-expect-error — deleting a global for the duration of one assertion.
     delete globalThis.ResizeObserver
@@ -252,7 +252,7 @@ describe('watchNavMenuIndicator', () => {
       disconnect(): void {}
     } as unknown as typeof ResizeObserver
     try {
-      const { root, indicator, file, edit } = build()
+      const { root, indicator, edit } = build()
       edit.setAttribute('data-state', 'open')
       const spy = vi.spyOn(indicator.style, 'setProperty')
       dispose = watchNavMenuIndicator(root)

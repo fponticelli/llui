@@ -1,4 +1,4 @@
-import { div, each, span, table, tbody, text, thead, tr } from '@llui/dom'
+import { div, each, span, tbody, text, thead } from '@llui/dom'
 import type { Mountable, Send, Signal } from '@llui/dom'
 import * as carouselC from '@llui/components/carousel'
 import * as datePickerC from '@llui/components/date-picker'

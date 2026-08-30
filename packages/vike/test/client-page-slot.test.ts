@@ -184,8 +184,6 @@ describe('client pageSlot with comment anchor', () => {
   })
 
   it('dispose of an anchor-mounted layer removes its region but not outer siblings', async () => {
-    const root = document.getElementById('app')!
-
     // Mount directly into the shell parent by calling _mountChainSuffix
     // with a hand-built anchor. This verifies the anchor-based dispose
     // contract without going through the full nav cycle.

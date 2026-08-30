@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "check": "tsc --noEmit -p tsconfig.json",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "lint": "eslint src"
   },
   "dependencies": {
     "@llui/components": "workspace:*",

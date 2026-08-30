@@ -31,7 +31,7 @@ const matched = router.match('/users/1')
 if (matched?.name === 'user') {
   matched.params.id satisfies number
   // @ts-expect-error discriminating by name exposes only that route's parameters
-  matched.params.page
+  void matched.params.page
 }
 const routing = connectRouter(router)
 routing.push('user', { id: 1 })

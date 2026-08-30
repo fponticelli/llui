@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest'
 import { LluiMcpServer } from '../src/index'
 import type { LluiDebugAPI, PendingEffect, EffectTimelineEntry, StateDiff } from '@llui/dom'
-import type { EffectMatch } from '@llui/dom'
 
 function mkApi(overrides?: Partial<LluiDebugAPI>): LluiDebugAPI {
   const base: LluiDebugAPI = {
