@@ -87,6 +87,50 @@ import ts from 'typescript'
 import { isSignalExpr, singleRoot, unwrapCasts, STATE_ROOTS, type Roots } from './extract-deps.js'
 import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edits.js'
 import { ELEMENT_HELPERS as ELEMENT_TAGS, ALL_ELEMENT_HELPERS } from './element-helpers.js'
+
+/**
+ * `peek-in-slot`'s walk carries one CONTEXT, and it has three states rather than
+ * two. #245 is the reason it exists at all: the walk used to start `false`
+ * (= "in a slot") at the SOURCE FILE, so every `.peek()` in a module containing
+ * `component(` was reported — including in a reducer body, where `.peek()` is
+ * the documented correct one-shot read that this rule's own message recommends.
+ *
+ * `'exempt'` is the reason it is not two states. On `main` the old boolean was
+ * MONOTONE: nothing below the root ever set it back to "in a slot", so once an
+ * `on*` handler or a `.map`/`derived` body had flipped it, the whole remaining
+ * subtree was exempt. Adding slot ENTRY without `'exempt'` re-enters those
+ * regions from the inside and reports five shapes `main` was silent on, every
+ * one a non-bypassable build error:
+ *
+ *   onClick: () => { const x = div([text(sig.peek())]) }        // node in a handler
+ *   state.map((s) => div([text(sig.peek())]))                   // node in a derive body
+ *   derived([], () => div([text(sig.peek())]))                  // ditto
+ *   onClick: () => each(xs, { render: (i) => [text(i.peek())] })// structural in a handler
+ *   render: (item) => { const l = div([text(item.peek())]) … }  // the SANCTIONED row idiom
+ *
+ * — i.e. exactly the class of defect #245 exists to remove, reintroduced by its
+ * own fix. `'exempt'` is therefore STICKY: once taken, no entry below it
+ * re-enters. That buys a checkable invariant, which is the real specification of
+ * this change: **the report set is a SUBSET of `main`'s for every program.**
+ * #245 may only ever remove a report, never add one.
+ */
+type SlotContext =
+  /** A reactive slot — a `.peek()` here binds once and never updates. REPORT. */
+  | 'slot'
+  /** Not a slot, but a slot may still be entered below (module top level, a
+   * reducer, a module-scope helper's statements). */
+  | 'outside'
+  /** Inside a region `main` had already exempted (an `on*` handler, a
+   * `.map`/`derived` body, a block-body render `const`). STICKY. */
+  | 'exempt'
+
+/** Enter slot context — unless an exit has already been taken in this subtree,
+ * which nothing below may undo. */
+const enterSlot = (ctx: SlotContext): SlotContext => (ctx === 'exempt' ? 'exempt' : 'slot')
+
+/** Non-element `@llui/dom` calls whose arguments are reactive slots. The
+ * structural primitives (`each`/`show`/`branch`) have dedicated visitors. */
+const SLOT_BEARING_CALLS: ReadonlySet<string> = new Set(['text', 'unsafeHtml'])
 import { HelperBindings, bindingNames, isShadowed, scopeIntroduces } from './helper-bindings.js'
 import { ANNOTATION_TAGS, scanAnnotationCalls } from '../annotation-args.js'
 import type { ParsedModule } from '../parse.js'
@@ -584,7 +628,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
 
   // Walk a render callback's body under augmented roots; fall back to walking the
   // whole node if it isn't a function (defensive). Render bodies are reactive
-  // slots, so `peekOk` carries through (handlers within flip it true) — EXCEPT
+  // slots, so the context carries through (handlers within exempt it) — EXCEPT
   // block-body variable declarations: `const isDir = item.peek().type === 'dir'`
   // is the documented render-once row-local idiom, with identical semantics on
   // the authoring path and the compiled factory (wire decls run once per row
@@ -594,54 +638,69 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     fn: ts.Node,
     roots: Roots,
     params: readonly string[],
-    peekOk: boolean,
+    ctx: SlotContext,
   ): void => {
     const body = fnBody(fn)
     if (!body) {
-      visit(fn, roots, peekOk)
+      visit(fn, roots, ctx)
       return
     }
     const augmented = withParams(roots, params)
     if (ts.isBlock(body)) {
+      // A block-body render `const` is the sanctioned render-once row idiom, and
+      // `main` exempted it outright — so it is `'exempt'`, not `'outside'`: a
+      // node BUILT in that initializer must not re-enter slot context.
       for (const stmt of body.statements) {
-        visit(stmt, augmented, ts.isVariableStatement(stmt) ? true : peekOk)
+        visit(stmt, augmented, ts.isVariableStatement(stmt) ? 'exempt' : ctx)
       }
       return
     }
-    visit(body, augmented, peekOk)
+    visit(body, augmented, ctx)
   }
 
-  const visitEach = (node: ts.CallExpression, roots: Roots, peekOk: boolean): void => {
+  // A structural primitive's reactive input and its render arms are SLOT
+  // positions in their own right — a `.peek()` there is frozen exactly as one in
+  // an element child is — so these three visitors ENTER slot context rather than
+  // inheriting it. Inside a component `view` that is what the walk already
+  // carried; outside one (a module-scope view helper) it is what makes the rule
+  // still see the slot after #245 stopped treating the whole file as one. Entry
+  // goes through `enterSlot`, so a structural primitive built INSIDE a handler
+  // stays exempt — `main` was silent there and this change may only ever remove
+  // reports.
+  const visitEach = (node: ts.CallExpression, roots: Roots, ctx: SlotContext): void => {
+    const slot = enterSlot(ctx)
     const items = node.arguments[0]
     const opts = node.arguments[1]
-    if (items) visit(items, roots, peekOk) // items accessor: base roots
+    if (items) visit(items, roots, slot) // items accessor: base roots
     if (opts && ts.isObjectLiteralExpression(opts)) {
       for (const p of opts.properties) {
         if (ts.isPropertyAssignment(p) && p.name.getText(sf) === 'render') {
-          visitRender(p.initializer, roots, fnParamNames(p.initializer), peekOk) // item, index
+          visitRender(p.initializer, roots, fnParamNames(p.initializer), slot) // item, index
         } else {
           // key fn & friends: plain params -> base roots
-          visit(p, roots, peekOk)
+          visit(p, roots, slot)
         }
       }
-    } else if (opts) visit(opts, roots, peekOk)
+    } else if (opts) visit(opts, roots, slot)
   }
 
-  const visitShow = (node: ts.CallExpression, roots: Roots, peekOk: boolean): void => {
+  const visitShow = (node: ts.CallExpression, roots: Roots, ctx: SlotContext): void => {
+    const slot = enterSlot(ctx)
     const cond = node.arguments[0]
     const render = node.arguments[1]
-    if (cond) visit(cond, roots, peekOk)
-    if (render) visitRender(render, roots, fnParamNames(render), peekOk) // narrowed
+    if (cond) visit(cond, roots, slot)
+    if (render) visitRender(render, roots, fnParamNames(render), slot) // narrowed
   }
 
-  const visitBranch = (node: ts.CallExpression, roots: Roots, peekOk: boolean): void => {
+  const visitBranch = (node: ts.CallExpression, roots: Roots, ctx: SlotContext): void => {
+    const slot = enterSlot(ctx)
     const value = node.arguments[0]
-    if (value) visit(value, roots, peekOk)
+    if (value) visit(value, roots, slot)
     const a1 = node.arguments[1]
     const a2 = node.arguments[2]
     // 3-arg form: a1 is the key fn `(u) => u.kind` — its param is a PLAIN value
     // (like each's key fn), so walk it under base roots.
-    if (a1 && !ts.isObjectLiteralExpression(a1)) visit(a1, roots, peekOk)
+    if (a1 && !ts.isObjectLiteralExpression(a1)) visit(a1, roots, slot)
     const arms =
       a2 && ts.isObjectLiteralExpression(a2)
         ? a2
@@ -651,10 +710,20 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     if (arms) {
       for (const p of arms.properties) {
         if (ts.isPropertyAssignment(p)) {
-          visitRender(p.initializer, roots, fnParamNames(p.initializer), peekOk) // narrowed variant
-        } else visit(p, roots, peekOk)
+          visitRender(p.initializer, roots, fnParamNames(p.initializer), slot) // narrowed variant
+        } else visit(p, roots, slot)
       }
     }
+  }
+
+  /** Does this call BUILD reactive output, so that its arguments are slots?
+   * The element helpers (`div(…)`, `el('li', …)`, and the namespaced SVG ones)
+   * plus `text(…)`/`unsafeHtml(…)`. The structural primitives have their own
+   * visitors above. Resolved through `HelperBindings`, never by name, so a
+   * consumer's own `text()` does not open slot context. */
+  const isSlotBearingCall = (call: ts.CallExpression): boolean => {
+    const canon = bindings.resolveCall(call)
+    return canon !== null && (ALL_ELEMENT_HELPERS.has(canon) || SLOT_BEARING_CALLS.has(canon))
   }
 
   // a `sig.peek()` call on a signal-rooted receiver
@@ -949,7 +1018,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     }
   }
 
-  function visit(node: ts.Node, roots: Roots, peekOk: boolean): void {
+  function visit(node: ts.Node, roots: Roots, ctx: SlotContext): void {
     // component({ … view: (bag) => [...] }) — lint the view body under the SAME
     // root the lowering uses (the bag's `state` alias), so an aliased bag like
     // `({ state: s }) => [text(s.at('n') + 1)]` is checked, not silently passed.
@@ -985,7 +1054,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
             const alias = viewStateAlias(prop.initializer)
             const body = fnBody(prop.initializer)
             if (alias && body) {
-              visit(body, singleRoot(alias), false)
+              visit(body, singleRoot(alias), enterSlot(ctx))
               continue
             }
           }
@@ -993,11 +1062,23 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
           // current state / message / effect, not signals) — lint them with NO
           // signal roots so a param named `state` isn't treated as a signal.
           if (propName === 'init' || propName === 'update' || propName === 'onEffect') {
-            visit(prop, EMPTY_ROOTS, false)
+            // #245: a reducer body is NOT a slot. `.peek()` is the DOCUMENTED
+            // one-shot read there, and these are non-bypassable build errors, so
+            // reporting it failed builds for code doing the right thing.
+            visit(prop, EMPTY_ROOTS, 'outside')
             continue
           }
         }
-        visit(prop, roots, false) // other config props: plain values
+        // Other config props are plain values, EXCEPT a `view` the branch above
+        // could not destructure (no resolvable bag alias): its body is still
+        // built once, so it stays slot context.
+        visit(
+          prop,
+          roots,
+          ts.isPropertyAssignment(prop) && prop.name.getText(sf) === 'view'
+            ? enterSlot(ctx)
+            : 'outside',
+        )
       }
 
       // exhaustive-update: when the Msg union is fully resolvable in this file
@@ -1035,9 +1116,9 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     // structural primitives augment roots inside their render callbacks
     if (ts.isCallExpression(node)) {
       const callee = bindings.resolveCall(node)
-      if (callee === 'each') return visitEach(node, roots, peekOk)
-      if (callee === 'show') return visitShow(node, roots, peekOk)
-      if (callee === 'branch') return visitBranch(node, roots, peekOk)
+      if (callee === 'each') return visitEach(node, roots, ctx)
+      if (callee === 'show') return visitShow(node, roots, ctx)
+      if (callee === 'branch') return visitBranch(node, roots, ctx)
     }
 
     // element-level lint (controlled-input, a11y) on element-helper calls
@@ -1048,13 +1129,13 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
 
     // peek-in-slot: a non-reactive snapshot used in a reactive slot (renders
     // once, never updates). Legitimate inside event handlers / derive bodies.
-    if (!peekOk && isSignalPeek(node, roots)) {
+    if (ctx === 'slot' && isSignalPeek(node, roots)) {
       // `node` is `<receiver>.peek()` — quote the receiver so the suggested fix
       // is the user's actual signal, and offer the two reactive replacements:
       // `.at('field')` to track a sub-field, `.map(v => …)` to derive a value.
       // For a DELIBERATE one-shot read (keyed remount, value-shape dispatch) the
-      // sanctioned shape is a block-body render `const` (already allowed: peekOk
-      // flips true for render var-decls), with helpers taking the plain snapshot
+      // sanctioned shape is a block-body render `const` (already allowed: a
+      // render var-decl is exempt), with helpers taking the plain snapshot
       // value — NOT the live signal. Naming that path here keeps people off the
       // laundering trick (wrap in a fn whose param isn't `state`), which would
       // re-open the bypass the non-bypassable-error design exists to prevent.
@@ -1142,30 +1223,45 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
 
     node.forEachChild((c) => {
       // `.peek()` is allowed inside event-handler functions and .map/derived
-      // callback bodies — flip peekOk true when descending into them.
-      let childPeek = peekOk
+      // callback bodies — LEAVE slot context when descending into them.
+      let childCtx = ctx
       if (
         ts.isPropertyAssignment(node) &&
         c === node.initializer &&
         /^on[A-Z]/.test(node.name.getText(sf))
       ) {
-        childPeek = true
+        childCtx = 'exempt'
       } else if (ts.isCallExpression(node)) {
         const isMap =
           ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'map'
         const isDerived = bindings.resolveCall(node) === 'derived'
         if ((isMap && c === node.arguments[0]) || (isDerived && c === node.arguments[1])) {
-          childPeek = true
+          childCtx = 'exempt'
+        } else if (isSlotBearingCall(node) && node.arguments.some((a) => a === c)) {
+          // #245: ENTER slot context. An element helper's props and children —
+          // `div({ title: sig.peek() }, [text(sig.peek())])`, `el('li', …)`,
+          // `text(…)` — are the reactive positions a `.peek()` freezes, and they
+          // are reached from a module-scope view HELPER as well as from a
+          // component `view`, which is why the entry is on the CALL rather than
+          // on an enclosing `component(`. (An `on*` prop leaves it again on the
+          // next hop, above.)
+          childCtx = enterSlot(ctx)
         }
       }
-      visit(c, childRoots, childPeek)
+      visit(c, childRoots, childCtx)
     })
   }
   // Seed `state` as a signal root by convention, but `scopeShadowedNames` sheds it
   // wherever a local binding (module-scope `const state = […]`, a method param, etc.)
   // rebinds the name to a plain value — so only a free/ambient `state` (the component
   // signal) is linted as a signal.
-  visit(sf, STATE_ROOTS, false)
+  // #245: the walk starts OUT of slot context. A module's top level, a
+  // module-scope helper's statements, a reducer — none of them is a reactive
+  // slot, and `peek-in-slot` reported every `.peek()` in a gated file. Slot
+  // context is ENTERED at the positions that actually build reactive output: a
+  // component `view` body, an element-helper call's arguments, and a structural
+  // primitive's reactive input / render arms.
+  visit(sf, STATE_ROOTS, 'outside')
   diags.push(...annotationSyntaxDiagnostics(sf))
   // Same cost discipline as `lintTagSendSource` (#93): `tagSend` is a
   // LIBRARY-author helper, so almost no component file contains one, and the

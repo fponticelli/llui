@@ -294,6 +294,252 @@ describe('peek-in-slot', () => {
   })
 })
 
+// #245 — the rule's REACH. `lintSignals` used to walk from `visit(sf,
+// STATE_ROOTS, false)`, i.e. it entered the file already believing it was in a
+// reactive slot, so ANY `.peek()` on a recognized signal anywhere in a module
+// containing `component(` was reported. A REDUCER BODY IS NOT A SLOT — `.peek()`
+// there is the documented one-shot read, named as such in this very rule's own
+// message — and these diagnostics are non-bypassable build errors, so the reach
+// failed builds for code doing the right thing.
+//
+// The walk now starts OUT of slot context and ENTERS it at the three kinds of
+// position that actually build reactive output: a component `view` body, an
+// element-helper call's arguments (`div({…}, […])`, `el('li', …)`, `text(…)`),
+// and a structural primitive's reactive input / render arms. Both directions
+// are pinned, because either one alone is satisfiable by a rule that has
+// stopped working: a rule that never fires passes every negative, and the
+// original whole-file reach passes every positive.
+describe('peek-in-slot — slot scoping (#245)', () => {
+  const COMPONENT = (body: string): string =>
+    `const App = component({ name: 'A', init: () => ({ n: 0 }), ${body}, view: ({ state }) => [div([text(state.at('n'))])] })`
+
+  describe('NOT a slot — must stay silent', () => {
+    it('a reducer body (the documented one-shot read)', () => {
+      expect(
+        rules(
+          COMPONENT(
+            'update: (s) => { const limits = constant({ max: 5 }).peek(); return { n: limits.max } }',
+          ),
+        ),
+      ).not.toContain('peek-in-slot')
+    })
+
+    it('a reducer body reading through `derived` — the shape that already errored on main', () => {
+      expect(
+        rules(
+          COMPONENT(
+            'update: (s) => { const limits = derived([], () => ({ max: 5 })).peek(); return { n: limits.max } }',
+          ),
+        ),
+      ).not.toContain('peek-in-slot')
+    })
+
+    it('init()', () => {
+      expect(
+        rules(
+          `const App = component({ name: 'A', init: () => ({ n: constant(5).peek() }), update: (s) => s, view: ({ state }) => [div([text(state.at('n'))])] })`,
+        ),
+      ).not.toContain('peek-in-slot')
+    })
+
+    it('a config prop that is neither a reducer nor the view', () => {
+      expect(rules(COMPONENT("update: (s) => s, debugLabel: constant('L').peek()"))).not.toContain(
+        'peek-in-slot',
+      )
+    })
+
+    it('onEffect()', () => {
+      expect(
+        rules(COMPONENT('onEffect: () => { const v = constant(1).peek(); return v }')),
+      ).not.toContain('peek-in-slot')
+    })
+
+    it('a module-scope helper that builds no nodes', () => {
+      expect(
+        rules(
+          `function limit(n) { return Math.min(n, constant({ max: 5 }).peek().max) }\n${COMPONENT('update: (s) => s')}`,
+        ),
+      ).not.toContain('peek-in-slot')
+    })
+
+    it('a module top-level statement', () => {
+      expect(
+        rules(`const seed = constant({ n: 1 }).peek().n\n${COMPONENT('update: (s) => s')}`),
+      ).not.toContain('peek-in-slot')
+    })
+  })
+
+  describe('IS a slot — must still report', () => {
+    it('an attribute value in a component view', () => {
+      expect(
+        rules(
+          `const App = component({ name: 'A', init: () => ({ n: 0 }), update: (s) => s, view: ({ state }) => [div({ 'data-x': constant('L').peek() }, [])] })`,
+        ),
+      ).toContain('peek-in-slot')
+    })
+
+    it('a text child in a component view', () => {
+      expect(
+        rules(
+          `const App = component({ name: 'A', init: () => ({ n: 0 }), update: (s) => s, view: ({ state }) => [div([text(state.peek().n)])] })`,
+        ),
+      ).toContain('peek-in-slot')
+    })
+
+    // The reason slot entry is on the element CALL and not on an enclosing
+    // `component(`: a view HELPER builds the same nodes one function out, and
+    // the vite plugin routes such a module down its non-component branch. All
+    // five in-repo `peek-in-slot` reports live in helpers of exactly this shape.
+    it('an element slot inside a module-scope view HELPER', () => {
+      expect(
+        rules(
+          `function row() { return li({ 'data-n': constant(1).peek() }, [text(constant('x').peek())]) }\n${COMPONENT('update: (s) => s')}`,
+        ),
+      ).toContain('peek-in-slot')
+    })
+
+    it("an `each` render arm's row-param read, in a module-scope view helper", () => {
+      expect(
+        rules(
+          `function rows(items) { return each(items, { key: (i) => i, render: (item) => [li([text(item.peek())])] }) }\n${COMPONENT('update: (s) => s')}`,
+        ),
+      ).toContain('peek-in-slot')
+    })
+
+    // The structural entry has to be its OWN, not a side effect of the element
+    // call inside the arm: these three positions have no element call between
+    // the primitive and the `.peek()`, so only `visitEach`/`visitShow` entering
+    // slot context reaches them. All three are real in-repo shapes — the `each`
+    // arm is `packages/markdown/src/render.ts` (`render: (u) => u.peek().render()`)
+    // and the `show` arm is `packages/devmode-annotate/src/browse-view.ts`
+    // (`(d) => diffView(send, d.peek())`).
+    it('an `each` ITEMS accessor, with no element call in between', () => {
+      expect(
+        rules(
+          `function rows() { return each(constant([1]).peek(), { key: (i) => i, render: () => [li([text('x')])] }) }\n${COMPONENT('update: (s) => s')}`,
+        ),
+      ).toContain('peek-in-slot')
+    })
+
+    it('an `each` render arm returning a bare helper call', () => {
+      expect(
+        rules(
+          `function rows(items) { return each(items, { key: (i) => i, render: (item) => renderUnit(item.peek()) }) }\n${COMPONENT('update: (s) => s')}`,
+        ),
+      ).toContain('peek-in-slot')
+    })
+
+    it('a `show` render arm returning a bare helper call', () => {
+      expect(
+        rules(
+          `function maybe(sig) { return show(sig, (d) => diffView(d.peek())) }\n${COMPONENT('update: (s) => s')}`,
+        ),
+      ).toContain('peek-in-slot')
+    })
+
+    it('a `show` condition and a `branch` value, in a module-scope view helper', () => {
+      expect(
+        rules(
+          `function maybe() { return show(constant(1).peek(), () => [li([text('x')])]) }\n${COMPONENT('update: (s) => s')}`,
+        ),
+      ).toContain('peek-in-slot')
+      expect(
+        rules(
+          `function pick() { return branch(constant('a').peek(), { a: () => [li([text('x')])] }) }\n${COMPONENT('update: (s) => s')}`,
+        ),
+      ).toContain('peek-in-slot')
+    })
+
+    // Same shape one level out: a component VIEW whose body hands a snapshot
+    // straight to a helper, with no element call to re-enter slot context. The
+    // view's own entry is the only thing that reaches it.
+    it('a component view body handing a snapshot to a helper', () => {
+      expect(
+        rules(
+          `const App = component({ name: 'A', init: () => ({ n: 0 }), update: (s) => s, view: ({ state }) => [renderPanel(state.peek())] })`,
+        ),
+      ).toContain('peek-in-slot')
+    })
+
+    // A `view` whose bag the walk cannot destructure falls to the generic
+    // config-prop branch. Its body is still BUILT ONCE, so it keeps slot
+    // context there — otherwise the narrowing would switch the rule off for
+    // every view written with a non-destructured bag.
+    it('a view body the walk cannot destructure, outside any element call', () => {
+      expect(
+        rules(
+          `const App = component({ name: 'A', init: () => ({ n: 0 }), update: (s) => s, view: (bag) => [renderPanel(constant(1).peek())] })`,
+        ),
+      ).toContain('peek-in-slot')
+    })
+
+    // An `on*` prop LEAVES slot context on the next hop, so entering it at the
+    // element call must not swallow that — otherwise the handler exemption the
+    // rule has always had would be undone by the fix.
+    it('but not an `on*` handler nested in that element call', () => {
+      expect(
+        rules(
+          `function row() { return li({ onClick: () => send(constant(1).peek()) }, [text('x')]) }\n${COMPONENT('update: (s) => s')}`,
+        ),
+      ).not.toContain('peek-in-slot')
+    })
+  })
+
+  // The EXIT is STICKY, and that is the specification of this change rather
+  // than a detail of it. On `main` the flag was MONOTONE — nothing below the
+  // root ever set it back to "in a slot" — so once an `on*` handler or a
+  // `.map`/`derived` body had exempted a subtree, the whole of it was exempt.
+  // Adding slot ENTRY without that stickiness re-enters those regions from the
+  // INSIDE and reports five shapes `main` was silent on, every one a
+  // non-bypassable build error, i.e. exactly the class of defect #245 exists to
+  // remove — reintroduced by its own fix. The invariant these pin: **the report
+  // set is a SUBSET of `main`'s for every program.**
+  describe("an exit is STICKY — nothing below it re-enters (the fix's own regression)", () => {
+    const stays = (src: string): void => {
+      expect(rules(`${src}\n${COMPONENT('update: (s) => s')}`)).not.toContain('peek-in-slot')
+    }
+
+    it('a node BUILT inside an `on*` handler', () => {
+      stays(
+        'function row() { return button({ onClick: () => { const x = div([text(constant(1).peek())]); return x } }, []) }',
+      )
+    })
+
+    it('a node BUILT inside a `.map` derive body', () => {
+      stays('function row(sig) { return sig.map((v) => div([text(constant(1).peek())])) }')
+    })
+
+    it('a node BUILT inside a `derived()` body', () => {
+      stays('function row() { return derived([], () => div([text(constant(1).peek())])) }')
+    })
+
+    it('a STRUCTURAL primitive built inside an `on*` handler', () => {
+      stays(
+        'function row(items) { return button({ onClick: () => each(items, { key: (i) => i, render: (i) => [text(i.peek())] }) }, []) }',
+      )
+    })
+
+    it('a node BUILT in a block-body render `const` (the sanctioned row idiom)', () => {
+      stays(
+        "function rows() { return each(state.at('e'), { key: (e) => e.id, render: (item) => { const label = div([text(item.peek().name)]); return [label] } }) }",
+      )
+    })
+  })
+
+  // Slot entry is by IMPORT PROVENANCE, like every other framework-call
+  // recognition here (#238): a consumer's own `text()` builds no reactive slot,
+  // so a `.peek()` in its argument is an ordinary value read.
+  it("does not open slot context for a consumer's own helper of the same name", () => {
+    const src = [
+      "import { component, div, text as domText, constant } from '@llui/dom'",
+      'function text(v) { return v }',
+      'const label = text(constant(1).peek())',
+      `const App = component({ name: 'A', init: () => ({ n: 0 }), update: (s) => s, view: ({ state }) => [div([domText(state.at('n'))])] })`,
+    ].join('\n')
+    expect(lintSignalSource(src, 'App.ts').map((m) => m.rule)).not.toContain('peek-in-slot')
+  })
+})
+
 describe('at-after-map', () => {
   it('flags .at() chained after a signal .map()', () => {
     expect(rules("text(state.at('user').map((u) => u.profile).at('name'))")).toContain(
