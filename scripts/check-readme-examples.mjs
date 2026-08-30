@@ -606,7 +606,12 @@ export function checkPackage(pkgDir) {
         )
       }
       if (named.length === 0) continue
-      const key = `${typeOnly ? 'type' : 'value'} ${specifier}`
+      // `\0` as an ESCAPE, never a raw NUL byte. Both produce the same string;
+      // only one is diffable and greppable. A raw one shipped here and, being
+      // past git's 8000-byte sniff window, left `git diff` working while making
+      // `grep` refuse the file — which silently returned "no matches" to two
+      // review sweeps (#260, and #94 for the git-side half of the hazard).
+      const key = `${typeOnly ? 'type' : 'value'}\0${specifier}`
       let group = namedGroups.get(key)
       if (group === undefined) {
         group = { typeOnly, specifier, entries: new Map() }
