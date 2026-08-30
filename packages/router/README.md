@@ -28,6 +28,9 @@ const routes = {
     defaults: { page: 1 },
   }),
   files: route('/files/*path'),
+  login: route('/login'),
+  admin: route('/admin'),
+  editor: route('/editor/:slug'),
 }
 
 const router = createRouter(routes)
@@ -96,12 +99,12 @@ Place `...routing.listener(send)` in the view to handle browser back/forward and
 ## Guards
 
 ```ts
-const guarded = connectRouter(router, {
+const routing = connectRouter(router, {
   beforeEnter(to) {
-    if (to.name === 'archive' && !isLoggedIn()) return router.location('home')
+    if (to.name === 'admin' && !isLoggedIn()) return router.location('login')
   },
   beforeLeave(from) {
-    if (from.name === 'article' && hasUnsavedChanges()) {
+    if (from.name === 'editor' && hasUnsavedChanges()) {
       return confirm('Discard unsaved changes?')
     }
     return true

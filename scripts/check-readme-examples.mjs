@@ -30,12 +30,24 @@
  *   the values a snippet elides on purpose — a mock API, a runtime stub, the
  *   `{ state, send }` view bag the prose supplies. This is the honest form of
  *   what the file-level `@ts-nocheck` was reaching for.
- * - `@doc-skip` in the fence info string (```ts @doc-skip — invisible in
- *   rendered docs) or as a `// @doc-skip` in the first three lines excludes a
- *   block entirely. Use it only where the block is not a program: a
- *   side-by-side listing of import spellings, a shell transcript.
+ * - `@doc-skip` in the fence info string (invisible in rendered docs) or as a
+ *   `// @doc-skip` in the first three lines excludes a block entirely. Use it
+ *   only where the block is not a program: a side-by-side listing of import
+ *   spellings, a shell transcript.
  * - `DOC_ONLY_MODULES` stubs third-party modules a README references
- *   illustratively. Workspace `@llui/*` packages are NEVER stubbed.
+ *   illustratively. Workspace `@llui/*` packages are rejected by
+ *   `docOnlyModuleDefects` — they must be RESOLVED.
+ *
+ * REVIEW ALL THREE THE WAY YOU REVIEW AN ALLOWLIST. Each can silence real
+ * staleness, and the worst form leaves the rendered page byte-identical —
+ * measured against a control that fails `TS2305` on a renamed export: a
+ * `@doc-setup` DECLARING the renamed symbol makes the README pass once the
+ * block's own import is dropped, `@doc-skip` on every block leaves a whole
+ * README unchecked, and a stub silences its module outright. Two of the three
+ * are gated (a workspace package or a blank reason FAILS, and so does an entry
+ * the README no longer imports); `@doc-skip` is deliberately not, so it is the
+ * one to watch. "No file-level `@ts-nocheck`" is a statement about a single
+ * directive, not about what these three can add up to.
  *
  * What is deliberately NOT checked, and why:
  *
@@ -73,7 +85,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
  * rest of the info string is captured so a skip can be declared THERE
  * (```ts @doc-skip) instead of as a comment line the rendered docs show.
  */
-const FENCE_RE = /```(?:ts|tsx|typescript)\b([^\n]*)\n([\s\S]*?)```/g
+const FENCE_RE = /```(ts|tsx|typescript)\b([^\n]*)\n([\s\S]*?)```/g
 
 /**
  * THIRD-PARTY modules a README references illustratively and that the
@@ -107,6 +119,77 @@ const DOC_ONLY_MODULES = {
     zod: 'Standard Schema example; the router accepts any Standard Schema.',
     valibot: 'Standard Schema example; the router accepts any Standard Schema.',
   },
+}
+
+/**
+ * Reject a `DOC_ONLY_MODULES` entry that would stub something it must not, or
+ * that carries no reason. Without this the list is closed at the OBSOLETE end
+ * only: nothing stopped `DOC_ONLY_MODULES.probe['@llui/dom'] = ''` from
+ * silencing a renamed workspace export outright — measured, `exit=0` against a
+ * control that fails `TS2305` without it. The header's claim that workspace
+ * packages "must stay absent" was prose, not a gate.
+ *
+ * Takes the table as a parameter so a test drives THIS function rather than a
+ * re-statement of the rule beside it — a second implementation in the test
+ * would pass no matter what this one does.
+ * @param {Record<string, Record<string, string>>} [table] defaults to the
+ *   shipped `DOC_ONLY_MODULES`.
+ * @returns {string[]} one message per offending entry; empty when the list is
+ *   well-formed.
+ */
+export function docOnlyModuleDefects(table = DOC_ONLY_MODULES) {
+  /** @type {string[]} */
+  const defects = []
+  for (const [pkg, specs] of Object.entries(table)) {
+    for (const [spec, reason] of Object.entries(specs)) {
+      if (spec.startsWith('@llui/')) {
+        defects.push(
+          `DOC_ONLY_MODULES['${pkg}']['${spec}'] — a workspace package must be RESOLVED, ` +
+            'never stubbed: stubbing it silences a renamed or dropped export, which is ' +
+            'the drift this gate exists to catch.',
+        )
+      }
+      if (typeof reason !== 'string' || reason.trim() === '') {
+        defects.push(`DOC_ONLY_MODULES['${pkg}']['${spec}'] — needs a reason, not an empty string.`)
+      }
+    }
+  }
+  return defects
+}
+
+/**
+ * Entries whose specifier the named README no longer imports. The other end of
+ * the same list: an allowance must not outlive the snippet it excuses.
+ * @param {Record<string, Record<string, string>>} [table] defaults to the
+ *   shipped `DOC_ONLY_MODULES`.
+ * @returns {string[]}
+ */
+export function obsoleteDocOnlyModules(table = DOC_ONLY_MODULES) {
+  /** @type {string[]} */
+  const obsolete = []
+  for (const [pkg, specs] of Object.entries(table)) {
+    const readme = join(ROOT, 'packages', pkg, 'README.md')
+    const source = existsSync(readme) ? readFileSync(readme, 'utf8') : ''
+    for (const spec of Object.keys(specs)) {
+      if (!source.includes(`'${spec}'`) && !source.includes(`"${spec}"`)) {
+        obsolete.push(`DOC_ONLY_MODULES['${pkg}']['${spec}'] — no longer imported by that README`)
+      }
+    }
+  }
+  return obsolete
+}
+
+/**
+ * BOTH ends of the list in one call, which is what `main` runs. Keeping the
+ * concatenation here rather than inline at the call site is what lets a test
+ * pin that both ends are actually wired: a test calling the two halves
+ * directly stays green when `main` stops calling one of them.
+ * @param {Record<string, Record<string, string>>} [table] defaults to the
+ *   shipped `DOC_ONLY_MODULES`.
+ * @returns {string[]}
+ */
+export function docOnlyModuleListDefects(table = DOC_ONLY_MODULES) {
+  return [...docOnlyModuleDefects(table), ...obsoleteDocOnlyModules(table)]
 }
 
 /**
@@ -151,6 +234,7 @@ export function splitSetup(source) {
  * @property {number} offset README line minus synthetic line, for body lines.
  * @property {number} headerLines synthetic lines before the block body.
  * @property {number} indent columns the block was dedented by.
+ * @property {number} lastLine last README line the block body covers.
  */
 
 /**
@@ -194,6 +278,10 @@ function execOutput(err) {
  * One fenced block, with the README line its first body line sits on.
  * @typedef {object} Block
  * @property {string} body dedented; see `indent`.
+ * @property {boolean} tsx opened as a ```tsx fence, so it must be written to a
+ *   `.tsx` file — parsing TSX as TS misparses JSX, which is the ScriptKind trap
+ *   `@llui/compiler` documents at length. Latent (no tsx fence ships today) and
+ *   measured on a fixture: `TS1005` x2, `TS1134`, `TS1161`.
  * @property {number} startLine 1-based README line of the block's first body line.
  * @property {number} indent columns stripped from every line, so a reported
  *   column can be put back where the README actually has it.
@@ -212,12 +300,13 @@ export function extractBlocks(source) {
   /** @type {RegExpExecArray | null} */
   let match
   while ((match = FENCE_RE.exec(source)) !== null) {
-    const info = match[1]
-    const body = match[2]
+    const lang = match[1]
+    const info = match[2]
+    const body = match[3]
     // The fence pattern's groups always participate, so this cannot fire — it
     // exists so a future edit to FENCE_RE that loses one fails loudly instead
     // of silently skipping blocks.
-    if (info === undefined || body === undefined) {
+    if (lang === undefined || info === undefined || body === undefined) {
       throw new Error('check-readme-examples: fence matched with no body')
     }
     // Skip blocks tagged `@doc-skip` — in the fence info string (invisible in
@@ -246,6 +335,7 @@ export function extractBlocks(source) {
       body: indent === 0 ? body : lines.map((l) => l.slice(indent)).join('\n'),
       startLine: newlines + 2,
       indent,
+      tsx: lang === 'tsx',
     })
   }
   return blocks
@@ -318,9 +408,17 @@ export function parseImportClause(clause) {
 const DECLARATION_RE =
   /^(export\s+)?(?:declare\s+)?(?:default\s+)?(?:abstract\s+)?(?:async\s+)?(?:const|let|var|function\*?|class|type|interface|enum)\s+([A-Za-z_$][\w$]*)/gm
 
+/** A standalone `export { a, b as c }` list (no `from`), at top level. */
+const EXPORT_LIST_RE = /^export\s*\{([^}]*)\}\s*(?!from)/gm
+
 /**
  * The top-level names a block declares, each flagged with whether the block
  * already exports it.
+ *
+ * "Exported" covers the `export` MODIFIER and a standalone `export { x }` list.
+ * Missing the second form makes the generated republish re-export a name the
+ * block already exports — two bogus `Duplicate identifier` per occurrence, on a
+ * block doing nothing wrong.
  * @param {string} source
  * @returns {Map<string, boolean>} name → exported.
  */
@@ -331,6 +429,18 @@ export function declaredNames(source) {
     const name = m[2]
     if (name === undefined) continue
     if (!names.has(name)) names.set(name, m[1] !== undefined)
+  }
+  for (const m of source.matchAll(EXPORT_LIST_RE)) {
+    const list = m[1]
+    if (list === undefined) continue
+    for (const part of list.split(',')) {
+      const trimmed = part.trim()
+      if (trimmed === '') continue
+      const local = /^(?:type\s+)?([A-Za-z_$][\w$]*)/.exec(trimmed)
+      if (local !== null && local[1] !== undefined && names.has(local[1])) {
+        names.set(local[1], true)
+      }
+    }
   }
   return names
 }
@@ -571,7 +681,7 @@ export function checkPackage(pkgDir) {
     const headerText = preamble.join('\n')
     const headerLines = 1 + (headerText === '' ? 0 : headerText.split('\n').length) + 1
     const header = `// AUTO-GENERATED from packages/${pkgName}/README.md — do not edit.\n${headerText}${headerText === '' ? '' : '\n'}\n`
-    const outPath = join(tmpDir, `${pkgName}-block-${i}.ts`)
+    const outPath = join(tmpDir, `${pkgName}-block-${i}.${block.tsx ? 'tsx' : 'ts'}`)
     // The trailing `export { … }` makes a block with no import/export a MODULE
     // rather than a script (so its top-level names stay private to it and
     // top-level `await` is legal) AND publishes what the later blocks import.
@@ -590,6 +700,7 @@ export function checkPackage(pkgDir) {
       offset: block.startLine - headerLines - 1,
       headerLines,
       indent: block.indent,
+      lastLine: block.startLine + block.body.split('\n').length - 1,
     })
   }
 
@@ -622,7 +733,14 @@ export function checkPackage(pkgDir) {
   // `@llui/*` specifier resolves through that package's own `exports` map,
   // subpaths included. Measured at 23 of 74 unresolvable modules.
   linkWorkspacePackages(join(tmpDir, 'node_modules', '@llui'))
-  linkOne(join(tmpDir, 'node_modules', 'vite'), join(ROOT, 'node_modules', 'vite'))
+  // `symlinkSync` creates a DANGLING link silently, and a dangling `vite`
+  // surfaces as `Property 'PROD' does not exist` several packages later rather
+  // than as a missing dependency. Assert the target instead.
+  const viteDir = join(ROOT, 'node_modules', 'vite')
+  if (!existsSync(viteDir)) {
+    throw new Error(`check-readme-examples: ${viteDir} is missing — run \`pnpm install\``)
+  }
+  linkOne(join(tmpDir, 'node_modules', 'vite'), viteDir)
 
   // tsc 6 errors when given files alongside an inferred tsconfig.json.
   // Generate a per-package mini-tsconfig that narrows the input to
@@ -640,9 +758,11 @@ export function checkPackage(pkgDir) {
   // dependencies — measured by moving it back to the root cache against the
   // final code: 54 errors, `vike/server` x24, `mdast` x9, `lexical` x6,
   // `@lexical/markdown` x6, `yjs`, `loro-crdt`, `@lexical/headless` x3 each.
-  // `scripts/test/readme-examples.test.ts` CANNOT see this — its fixtures are
-  // bare temp directories with no dependencies to resolve — so that mutation
-  // survives the suite and is answered by this measurement instead.
+  // A bare `mkdtemp` fixture cannot observe this at all — it has no
+  // dependencies to resolve — so `scripts/test/readme-examples.test.ts` roots
+  // one INSIDE a package's own gitignored `node_modules/.cache` instead, where
+  // the resolution walk reaches that package's deps. Moving this line back to
+  // the root cache reddens that test.
   const tsconfigPath = join(tmpDir, `${pkgName}-tsconfig.json`)
   writeFileSync(
     tsconfigPath,
@@ -667,10 +787,18 @@ export function checkPackage(pkgDir) {
           // shouldn't depend on type roots beyond what TS auto-includes.
           allowImportingTsExtensions: true,
           ignoreDeprecations: '6.0',
-          // The one strictness a snippet may not have: an example that
-          // elides a callback's parameter types is doing so on purpose, and
-          // `noImplicitAny` says nothing about whether the API it documents
-          // still exists.
+          // The one strictness a snippet may not have: an example that elides
+          // a callback's parameter types is doing so on purpose, and a build
+          // error there would push README authors to annotate for the checker's
+          // benefit rather than the reader's.
+          //
+          // Be precise about what it costs, because the obvious justification
+          // is WRONG: an implicit-any BINDING makes every downstream member
+          // access on it unchecked, so `function usesApi(bag) { return
+          // bag.methodThatWasDeleted() }` passes (measured). It is narrow — a
+          // CONTEXTUALLY typed callback parameter is still checked, which is
+          // most of what a README writes — but it is a real hole, not a
+          // free-of-charge relaxation.
           noImplicitAny: false,
           baseUrl: ROOT,
         },
@@ -738,8 +866,15 @@ function remapDiagnostics(raw, pkgDir, offsetOf) {
       // location and is not one. Say where it really is instead: the header is
       // built from this README's imports and its `@doc-setup` region.
       if (Number(lineNo) <= mapping.headerLines) return `${rel} [generated header]: ${rest}`
+      // The appended `export { … }` sits one line PAST the block, so its
+      // diagnostics would name a README line the block does not cover — and in
+      // a short README, one the file does not have at all. Say where it really
+      // is, the same way the header side does; a plausible-looking wrong line
+      // is worse than no line.
+      const readmeLine = Number(lineNo) + mapping.offset
+      if (readmeLine > mapping.lastLine) return `${rel} [generated footer]: ${rest}`
       const col = Number(colNo) + mapping.indent
-      return `${rel}(${Number(lineNo) + mapping.offset},${col}): ${rest}`
+      return `${rel}(${readmeLine},${col}): ${rest}`
     })
     .join('\n')
 }
@@ -758,23 +893,14 @@ export function main(args) {
   )
   const targets = args.length > 0 ? args : allPkgs
 
-  // The stub list is checked BEFORE any package runs, so an entry that has
-  // outlived the snippet it excused is a failure of its own rather than an
-  // invisible widening of what the gate waves through.
-  /** @type {string[]} */
-  const obsolete = []
-  for (const [pkg, specs] of Object.entries(DOC_ONLY_MODULES)) {
-    const readme = join(ROOT, 'packages', pkg, 'README.md')
-    const source = existsSync(readme) ? readFileSync(readme, 'utf8') : ''
-    for (const spec of Object.keys(specs)) {
-      if (!source.includes(`'${spec}'`) && !source.includes(`"${spec}"`)) {
-        obsolete.push(`DOC_ONLY_MODULES['${pkg}']['${spec}'] — no longer imported by that README`)
-      }
-    }
-  }
-  if (obsolete.length > 0) {
-    process.stdout.write(`✗ obsolete stub entries\n`)
-    for (const line of obsolete) process.stdout.write(`    ${line}\n`)
+  // The stub list is gated at BOTH ends before any package runs — an entry
+  // that stubs a workspace package or carries no reason, and one that has
+  // outlived the snippet it excused. Either is an invisible widening of what
+  // the gate waves through, so it fails on its own rather than silently.
+  const listDefects = docOnlyModuleListDefects()
+  if (listDefects.length > 0) {
+    process.stdout.write(`✗ DOC_ONLY_MODULES\n`)
+    for (const line of listDefects) process.stdout.write(`    ${line}\n`)
     return 1
   }
 

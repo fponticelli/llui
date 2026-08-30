@@ -1,12 +1,16 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   checkPackage,
   declaredNames,
+  docOnlyModuleDefects,
+  docOnlyModuleListDefects,
   extractBlocks,
+  obsoleteDocOnlyModules,
   parseImportClause,
   splitSetup,
 } from '../check-readme-examples.mjs'
@@ -24,9 +28,29 @@ import {
  */
 
 /** @returns the temp dir, registered for teardown. */
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+
 const dirs: string[] = []
 function fixture(readme: string): string {
   const dir = mkdtempSync(join(tmpdir(), 'llui-readme-check-test-'))
+  dirs.push(dir)
+  writeFileSync(join(dir, 'README.md'), readme)
+  return dir
+}
+
+/**
+ * A fixture rooted INSIDE a real package, so Node's resolution walk reaches
+ * that package's own `node_modules` and its THIRD-PARTY dependencies resolve.
+ * A bare `mkdtemp` fixture cannot see that — which is why moving the synthetic
+ * file back to the workspace-root cache survived the whole suite while costing
+ * 54 errors on the real corpus.
+ *
+ * It lives under the package's `node_modules/.cache`, which is gitignored, so
+ * it is structurally invisible to the repo-walking guards that enumerate with
+ * `git ls-files`.
+ */
+function packageRootedFixture(pkg: string, readme: string): string {
+  const dir = mkdtempSync(join(ROOT, 'packages', pkg, 'node_modules', '.cache', 'readme-fixture-'))
   dirs.push(dir)
   writeFileSync(join(dir, 'README.md'), readme)
   return dir
@@ -77,6 +101,51 @@ describe('check:docs type-checks, not just parses (#255)', () => {
     expect(result.diagnostics).toContain('README.md(10,7)')
     expect(result.diagnostics).not.toContain('llui-readme-check/')
     expect(result.diagnostics).not.toContain('-block-')
+  })
+})
+
+describe('DOC_ONLY_MODULES is closed at BOTH ends', () => {
+  it('the shipped list is well-formed and every entry is still used', () => {
+    expect(docOnlyModuleDefects()).toEqual([])
+    expect(obsoleteDocOnlyModules()).toEqual([])
+  })
+
+  it('rejects a workspace @llui/* package', () => {
+    // A stub silences a renamed or dropped export outright — measured before
+    // this gate existed, `DOC_ONLY_MODULES.probe['@llui/dom'] = ''` took a
+    // control that fails TS2305 to exit 0. Workspace packages must RESOLVE.
+    const defects = docOnlyModuleDefects({ probe: { '@llui/dom': 'a real reason' } })
+    expect(defects).toHaveLength(1)
+    expect(defects[0]).toContain('@llui/dom')
+    expect(defects[0]).toContain('RESOLVED')
+  })
+
+  it('rejects an entry with a blank reason', () => {
+    expect(docOnlyModuleDefects({ probe: { express: '' } })).toHaveLength(1)
+    expect(docOnlyModuleDefects({ probe: { express: '   ' } })).toHaveLength(1)
+  })
+
+  it('accepts a third-party entry that carries a reason', () => {
+    expect(docOnlyModuleDefects({ probe: { express: 'server integration example' } })).toEqual([])
+  })
+
+  it('the pass `main` runs reports BOTH ends', () => {
+    // `main` calls this one function, so dropping either half from it is
+    // caught here. Testing the two halves alone would not notice.
+    const both = docOnlyModuleListDefects({
+      router: { '@llui/dom': 'reason', 'no-such-module': 'reason' },
+    })
+    expect(both.some((d) => d.includes('RESOLVED'))).toBe(true)
+    expect(both.some((d) => d.includes('no longer imported'))).toBe(true)
+  })
+
+  it('reports an entry the README no longer imports, and only that one', () => {
+    // `@llui/router` really does import `zod`; `no-such-module` cannot.
+    const stale = obsoleteDocOnlyModules({
+      router: { zod: 'reason', 'no-such-module': 'reason' },
+    })
+    expect(stale).toHaveLength(1)
+    expect(stale[0]).toContain('no-such-module')
   })
 })
 
@@ -211,12 +280,68 @@ describe('relative imports name the reader’s project', () => {
     expect(result.diagnostics).toContain('TS2307')
   })
 
+  it('resolves the documenting package’s own THIRD-PARTY dependencies', () => {
+    // `loro-crdt` is a peer/dev dependency of `@llui/lexical-loro` and is not
+    // hoisted to the workspace root, so this passes only because the synthetic
+    // file sits under that package rather than in the root cache.
+    const result = checkPackage(
+      packageRootedFixture(
+        'lexical-loro',
+        fence("import { LoroDoc } from 'loro-crdt'\nvoid LoroDoc"),
+      ),
+    )
+    expect(result.ok).toBe(true)
+  })
+
   it('resolves a workspace @llui/* package for real', () => {
     const result = checkPackage(
       fixture(fence(`import { notAnExport } from '@llui/dom'\nvoid notAnExport`)),
     )
     expect(result.ok).toBe(false)
     expect(result.diagnostics).toMatch(/TS(2305|2724)/)
+  })
+})
+
+describe('a tsx fence is written to a .tsx file', () => {
+  it('parses JSX rather than misreading it as TS', () => {
+    // The ScriptKind trap `@llui/compiler` documents: parsing TSX as TS
+    // misparses JSX. Latent (no tsx fence ships today) but the fence syntax is
+    // accepted, so the day one is written it must not fail for the wrong
+    // reason. Without the `.tsx` extension this reports TS1005 x2 / TS1134 /
+    // TS1161.
+    const readme = '```tsx\nconst el = <div className="x">hi</div>\nvoid el\n```\n'
+    expect(checkPackage(fixture(readme)).ok).toBe(true)
+  })
+
+  it('records which fence language a block came from', () => {
+    expect(extractBlocks('```tsx\nconst a = 1\n```\n')[0]?.tsx).toBe(true)
+    expect(extractBlocks('```ts\nconst a = 1\n```\n')[0]?.tsx).toBe(false)
+    expect(extractBlocks('```typescript\nconst a = 1\n```\n')[0]?.tsx).toBe(false)
+  })
+})
+
+describe('generated-code positions never claim a README line', () => {
+  it('a standalone `export { x }` does not collide with the republish', () => {
+    // `declaredNames` used to flag only the `export` MODIFIER, so the appended
+    // republish re-exported a name the block already exported: two bogus
+    // `Duplicate identifier` on a block doing nothing wrong.
+    const readme = fence('const a = 1\nexport { a }')
+    expect(checkPackage(fixture(readme)).ok).toBe(true)
+  })
+
+  it('labels a diagnostic on the appended footer instead of inventing a line', () => {
+    // The republish sits one line PAST the block, so in a short README it maps
+    // to a line the file does not have. `DECLARATION_RE` is anchored at column
+    // 0 and knows nothing about template literals, so a `const` written at the
+    // start of a template line is collected and then re-exported — an honest
+    // over-approximation, and the cheapest way to put a diagnostic on the
+    // generated line.
+    const readme = fence('const s = `\nconst ghost = 1\n`\nvoid s')
+    const result = checkPackage(fixture(readme))
+    expect(result.ok).toBe(false)
+    expect(result.diagnostics).toContain('[generated footer]')
+    // The block covers README lines 2-5; nothing may claim line 6 or beyond.
+    expect(result.diagnostics).not.toMatch(/README\.md\(\d+,/)
   })
 })
 
