@@ -100,6 +100,19 @@ export interface ThemeScaleTokens {
   '--spacing-8': string
 }
 
-export interface ThemeTokens extends ThemeBaseTokens, ThemeDerivedTokens, ThemeScaleTokens {}
+/** The value-hued categorical chip scale. `--chip-hue` is per-CHIP (set inline
+ * from `chipHue(value)`); the other three are the fixed lightness / chroma / mix
+ * that make one contrast measurement cover every hue, and overriding them moves
+ * the whole scale — including off the AA guarantee, which is measured against
+ * the shipped values by `scripts/test/chip-contrast.test.ts`. */
+export interface ThemeChipTokens {
+  '--chip-lightness': string
+  '--chip-chroma': string
+  '--chip-mix': string
+  '--chip-hue': string
+}
+
+export interface ThemeTokens
+  extends ThemeBaseTokens, ThemeDerivedTokens, ThemeScaleTokens, ThemeChipTokens {}
 
 export type ThemeToken = keyof ThemeTokens

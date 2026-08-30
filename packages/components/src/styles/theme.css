@@ -564,6 +564,60 @@
   opacity: 1;
 }
 
+/* ─── Chip (value-hued categorical label) ─── */
+
+/*
+ * The baseline half of `chipHue()`. Geometry matches the tags-input tag above
+ * so the two sit on a line together; only the colour differs, and it is
+ * DERIVED from the one custom property the consumer sets:
+ *
+ *   span({ 'data-scope': 'chip', 'data-part': 'chip',
+ *          'style.--chip-hue': String(chipHue(kind)) }, [text(kind)])
+ *
+ * The two `color-mix()` expressions live HERE, in a rule that matches the chip,
+ * and NOT as a `--chip-fill` token in `tokens.css`. That is forced, not a style
+ * choice: a custom property's `var()` references are substituted at the
+ * computed-value time of the element that DECLARES it, so a `--chip-fill` on
+ * `:root` would resolve `var(--chip-hue)` against `:root` and every chip on the
+ * page would inherit the same already-substituted colour. Measured in Chrome —
+ * a `:root` copy of this expression returned hue 230.5 (the token default) for
+ * a chip carrying `--chip-hue: 188.5`, while the same expression declared on
+ * the chip returned 188.5.
+ *
+ * No `.dark` override, for the same reason the derived tokens above need none:
+ * `--background` and `--foreground` swap between themes, and `--chip-mix` is
+ * one percentage for both ends, so the light ink and the dark fill come out
+ * EXACTLY equal (OKLab L 0.359) and the other pair very nearly so — light fill
+ * L 0.872 against dark ink L 0.863, since `--foreground` is 0.985 and not a
+ * true white. That is why dark measures below light at every hue. Across all
+ * 360 hues in both themes: 7.04:1–7.54:1 by CSS Color 4 gamut mapping,
+ * 6.90:1–7.54:1 as Chrome rasterises it — versus 4.30:1–9.85:1, with 17 hues
+ * under AA, for the same idea expressed in HSL.
+ */
+[data-scope='chip'][data-part='chip'] {
+  display: inline-flex;
+  width: fit-content;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-1);
+  padding: 0.125rem var(--spacing-2);
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  background: color-mix(
+    in oklab,
+    oklch(var(--chip-lightness) var(--chip-chroma) var(--chip-hue)) var(--chip-mix),
+    var(--background)
+  );
+  color: color-mix(
+    in oklab,
+    oklch(var(--chip-lightness) var(--chip-chroma) var(--chip-hue)) var(--chip-mix),
+    var(--foreground)
+  );
+}
+
 /* ─── Rating Group ─── */
 
 [data-scope='rating-group'][data-part='root'] {

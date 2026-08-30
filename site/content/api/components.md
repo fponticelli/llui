@@ -37187,6 +37187,36 @@ const searchableSelect
 
 #### Functions
 
+##### `chipHue()` from `@llui/components/styles`
+
+The hue for a category value — stable across sessions, machines and releases,
+never inside a {@link RESERVED_HUE_ARCS} band, and always one of
+{@link CHIP_HUES}.
+
+Feed it to `--chip-hue`; the chip's fill and ink are derived from that one
+number by the recipe.
+
+```typescript
+function chipHue(value: string): number
+```
+
+##### `chipHueAt()` from `@llui/components/styles`
+
+The hue for the `index`-th member of an ORDERED set, walked by a golden-angle
+stride so that neighbours in the sequence are far apart on the wheel.
+
+This is where `--chart-1..5` and the chip scale agree: a chart with more
+series than the five chart tokens define needs exactly this — an unbounded,
+reserved-hue-respecting categorical scale allocated by position rather than by
+name. Wraps (and repeats) past {@link CHIP_HUE_SLOT_COUNT}; a negative or
+fractional index is normalised rather than rejected, because the caller is
+usually an array index and a throw there would be a worse failure than a
+repeat.
+
+```typescript
+function chipHueAt(index: number): number
+```
+
 ##### `createVariants()` from `@llui/components/styles`
 
 ```typescript
@@ -37201,6 +37231,14 @@ Concatenate class strings, filtering falsy values.
 
 ```typescript
 function cx(...classes: ClassValue[]): string
+```
+
+##### `isReservedHue()` from `@llui/components/styles`
+
+Whether `hue` falls inside a {@link RESERVED_HUE_ARCS} band.
+
+```typescript
+function isReservedHue(hue: number): boolean
 ```
 
 #### Types
@@ -37233,10 +37271,29 @@ export type VariantRecord = Record<string, Record<string, string>>
 
 #### Interfaces
 
+##### `ReservedHueArc` from `@llui/components/styles`
+
+A hue arc withheld from the categorical scale because a reader assigns it
+STATUS meaning. Half-widths are categorical: the band spans the hues a viewer
+would name as that colour family, which is a coarser and more robust boundary
+than a perceptual-difference threshold at the chip's low chroma.
+
+```typescript
+export interface ReservedHueArc {
+  /** What the band protects. */
+  readonly name: 'crit' | 'warn' | 'ok'
+  /** Centre hue, degrees. */
+  readonly center: number
+  /** Degrees either side of {@link center} that are excluded. */
+  readonly halfWidth: number
+}
+```
+
 ##### `ThemeTokens` from `@llui/components/styles`
 
 ```typescript
-export interface ThemeTokens extends ThemeBaseTokens, ThemeDerivedTokens, ThemeScaleTokens {}
+export interface ThemeTokens
+  extends ThemeBaseTokens, ThemeDerivedTokens, ThemeScaleTokens, ThemeChipTokens {}
 ```
 
 ##### `VariantConfig` from `@llui/components/styles`
@@ -37248,6 +37305,55 @@ export interface VariantConfig<V extends VariantRecord> {
   defaultVariants?: { [K in keyof V]?: keyof V[K] }
   compoundVariants?: Array<{ [K in keyof V]?: keyof V[K] } & { class: string }>
 }
+```
+
+#### Constants
+
+##### `CHIP_HUE_SLOT_COUNT` from `@llui/components/styles`
+
+How many distinct chip colours the scale has.
+
+Twelve is the largest count whose slots stay at least 21 degrees apart on the
+252 degrees the reserved arcs leave, and 21 degrees is roughly where two chip
+FILLS stop being reliably distinguishable (their chroma after the mix is only
+~0.062–0.081, so a hue step buys little OKLab distance — the more saturated
+ink carries the rest of the signal). Raising it makes two categories that
+"have different colours" look the same, which is worse than an honest
+collision: at twelve slots, values that collide are IDENTICAL rather than
+subtly-different-but-not-really.
+
+```typescript
+const CHIP_HUE_SLOT_COUNT
+```
+
+##### `CHIP_HUES` from `@llui/components/styles`
+
+The scale itself: {@link CHIP_HUE_SLOT_COUNT} hues, evenly spaced by ARC
+LENGTH over the unreserved hues and centred in their slots. Even spacing by
+arc length is what makes the minimum separation a guarantee — skipping a
+reserved band only ever ADDS degrees between two neighbours.
+
+"Centred in their slots" is centring in the concatenated ARC space and carries
+no promise about distance to a reserved edge: 131.5 lands 0.5 degrees off
+`ok`'s edge. See the reserved-hues note at the top of this file.
+
+```typescript
+const CHIP_HUES: readonly number[]
+```
+
+##### `RESERVED_HUE_ARCS` from `@llui/components/styles`
+
+The three status families, in ascending hue. Non-overlapping by construction
+and asserted to be so by `packages/components/test/styles/chip-hue.test.ts` —
+{@link CHIP_HUES} derives the allowed arcs by walking the gaps between them,
+which is only correct while they are disjoint.
+
+`crit` is centred on `--destructive` (27.325 light, 22.216 dark; the band
+contains both). `warn` and `ok` are the amber and green a traffic light
+trains readers to expect.
+
+```typescript
+const RESERVED_HUE_ARCS: readonly ReservedHueArc[]
 ```
 
 ### `@llui/components/chart`
