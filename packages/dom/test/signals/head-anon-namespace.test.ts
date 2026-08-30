@@ -287,11 +287,12 @@ describe('#240 — anonymous head keys are namespaced per owning instance', () =
       ['style:#~2/1', '/* SIBLING */'],
     ])
 
-    // The client half is read off a REAL `document.head`, not a collector: `lazy`
-    // forwards no `contexts` (#243), so the loaded component never sees a seeded
-    // HEAD_SINK and resolves the per-document fallback sink instead. That is the sink
-    // the host falls back to as well, which is exactly why the two collided — and it
-    // makes this assertion independent of whether #243 is fixed.
+    // The client half is read off a REAL `document.head`, not a collector: this mount
+    // SEEDS NO `HEAD_SINK` AT ALL, so the loaded component resolves the context to its
+    // `null` default and writes to the per-document fallback sink. That is the sink the
+    // host falls back to as well, which is exactly why the two collided. Note the cause:
+    // `lazy` DOES forward the placing build's contexts (#243) — there is simply nothing
+    // here to forward, which is what makes this assertion independent of #243.
     const doc = document.implementation.createHTMLDocument('lazy-ns')
     const container = doc.createElement('div')
     doc.body.appendChild(container)

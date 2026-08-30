@@ -110,3 +110,31 @@ export function useContext<T>(context: Context<T>): T {
   if (!ctx) return context.default
   return ctx.contexts.has(context.id) ? (ctx.contexts.get(context.id) as T) : context.default
 }
+
+/**
+ * Context values for an ISOLATED build (`island`, `lazy`): the placing build's map
+ * with the caller's explicit entries laid OVER it. Returns one side by reference
+ * when the other contributes nothing, so the common case (no explicit map)
+ * allocates nothing.
+ *
+ * THE `inherited` ARGUMENT MUST BE READ AT PLACEMENT, never from inside the
+ * deferred mount. `provide` is immutable-by-swap: it installs a new map for the
+ * duration of its synchronous `render()` and restores the PARENT map reference
+ * afterwards, so a read taken later sees the parent's map and every ancestor
+ * `provide` has already vanished. An isolated instance also builds under a fresh
+ * `runBuild` with no parent build on the stack, so nothing would inherit it
+ * implicitly either. Forwarding only the explicit map dropped every
+ * ancestor-provided value SILENTLY — #231 for `island`, #243 for `lazy`; notably
+ * `ComponentLocaleContext` (all of `@llui/components`' i18n falls back to English)
+ * and `HEAD_SINK` (head entries from the child never reach an SSR collector).
+ */
+export function mergeContexts(
+  inherited: ReadonlyMap<symbol, unknown>,
+  explicit: ReadonlyMap<symbol, unknown> | undefined,
+): ReadonlyMap<symbol, unknown> {
+  if (!explicit || explicit.size === 0) return inherited
+  if (inherited.size === 0) return explicit
+  const merged = new Map(inherited)
+  for (const [k, v] of explicit) merged.set(k, v)
+  return merged
+}

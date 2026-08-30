@@ -164,13 +164,16 @@ describe('island under SSR', () => {
 
   it('REJECTS a bare island as an each row root, and names island in the diagnostic', () => {
     // The SSR body is a multi-node fragment, so an island used as a row's only node
-    // trips `each`'s stable-row-root guard — a HARD server error where the client
-    // merely renders and then corrupts on reorder (the anchors migrate, the mounted
-    // bodies do not). Pinned as a CONTRACT rather than left as an accident of the
-    // fragment return: `ssrBody` must return multiple nodes, so this is the shape
-    // authors will hit, and the wrap (`div([island(...)])`) cures both halves. Every
-    // other island test here wraps its island in an element, which is exactly why
-    // nothing caught it.
+    // trips `each`'s stable-row-root guard. Pinned as a CONTRACT rather than left as
+    // an accident of the fragment return: `ssrBody` must return multiple nodes, so
+    // this is the shape authors will hit, and the wrap (`div([island(...)])`) cures
+    // it. Every other island test here wraps its island in an element, which is
+    // exactly why nothing caught it.
+    //
+    // The CLIENT half is now symmetric (#239) — it rejects the same shape through
+    // the `row-root.ts` marker instead of rendering and corrupting on the first
+    // reorder — and is pinned in `issue-239-island-row-root.test.ts`. This test keeps
+    // the SERVER direction, which travels a different branch of the same guard.
     const Bare = component<{ rows: Array<{ id: string }> }, Inert>({
       init: () => ({ rows: [{ id: 'a' }, { id: 'b' }] }),
       update: (s) => s,
@@ -181,10 +184,13 @@ describe('island under SSR', () => {
         }),
       ],
     })
-    expect(() => renderToString(Bare, undefined, document)).toThrow(/`island`/)
+    expect(() => renderToString(Bare, undefined, document)).toThrow(/`island\(\)`/)
     expect(() => renderToString(Bare, undefined, document)).toThrow(
-      /wrap the conditional body in an element/,
+      /Wrap it in an element so the row has a stable boundary/,
     )
+    // The SERVER branch is the FRAGMENT one, and it must say so: an author reading
+    // "returns an anchor comment" here would go looking for the wrong thing.
+    expect(() => renderToString(Bare, undefined, document)).toThrow(/DocumentFragment/)
 
     // The wrap is the fix, in the same render — not a caveat with no remedy.
     const Wrapped = component<{ rows: Array<{ id: string }> }, Inert>({
