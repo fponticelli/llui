@@ -11,6 +11,7 @@ import {
   bareAttrsInCandidate,
   publishedAttrs,
   publishedAttrValues,
+  unresolvedAttrTypes,
 } from '../lib/registry-attrs.mjs'
 
 const ROOT = path.resolve(__dirname, '../..')
@@ -254,6 +255,42 @@ const VALUE_ALLOWED: Record<string, Allowance> = {
       "the CONSUMER flips expanded/collapsed on the sidebar root — see SidebarTrigger's note. " +
       "The `collapsible` machine's own open/closed lives on a different element.",
   },
+
+  // The one shape alias resolution (#248) cannot judge: a DESCENDANT selector
+  // names another machine's state. `has-data-[state=checked]` on FieldLabel is
+  // upstream's checkbox-row highlight, and `checkbox` / `radio-group` / `switch`
+  // all publish `data-state="checked"` — but the value arm resolves `data-state`
+  // against the FIELD's own machines, where it is `FormStatus`. This entry is
+  // scoped to the one file and the one value, which is the whole point of the
+  // per-file keying: it does not switch `data-state` values off anywhere else.
+  //
+  // Do NOT generalise it by skipping `has-` / `group-` / `peer-` candidates:
+  // `field.ts`'s own `group-data-[disabled=true]/field` bug — two entries above
+  // this one — is exactly that shape, and it is what the value arm exists for.
+  'field.ts: data-state=checked': {
+    reason:
+      "upstream's checkbox-row highlight, matched on a DESCENDANT control " +
+      '(`checkbox` / `radio-group` / `switch` all publish `data-state="checked"`), ' +
+      "not on the field's own machine",
+  },
+}
+
+/**
+ * `file.ts: attr` sites whose declared type NAMES something the resolver
+ * declines to follow, with why. This is the companion guard #248 owes: alias
+ * resolution closed the hole for every same-package alias, and this pins the
+ * residue so a NEW unfollowable declaration fails the build instead of
+ * silently re-opening it at site 67.
+ *
+ * A `string` / `number` / `boolean` declaration is NOT listed and never needs
+ * to be: it is honestly open, and no resolver can enumerate it. Only a NAMED
+ * type belongs here — a value set someone wrote down that the guard cannot read.
+ */
+const UNRESOLVED_ALLOWED: Record<string, string> = {
+  'menu-machine.ts: data-scope':
+    "a TYPE PARAMETER (`MenuItemAttrs<Scope extends string>`) — the scope name is the consuming component's to choose, so it is genuinely open. The value arm skips `data-scope` anyway.",
+  'table.ts: data-row-index':
+    '`typeof HEADER_ROW_INDEX` — a numeric sentinel, and the same key is also declared plain `number`, so the attribute is open regardless.',
 }
 
 async function machineAttrs(names: readonly string[]): Promise<Set<string>> {
@@ -474,6 +511,54 @@ describe('registry recipes only style attributes their machine publishes', () =>
     expect(problems, problems.join('\n')).toEqual([])
   })
 
+  /**
+   * The companion guard. Alias resolution is only a fix for as long as every
+   * alias stays followable; the moment one is not, the value arm goes silent
+   * for that attribute again and nothing says so. This lists the residue with a
+   * reason each, so a new unfollowable declaration is a build failure rather
+   * than a hole discovered a release later — which is how #235's `meter` was
+   * found.
+   */
+  it('every data-*/aria-* declaration resolves, or is listed as residue', async () => {
+    const cache = new Map<string, unknown>()
+    const problems: string[] = []
+    const used = new Set<string>()
+    let scanned = 0
+    for (const dir of [MACHINES, PATTERNS]) {
+      for (const file of (await readdir(dir)).filter((f) => f.endsWith('.ts'))) {
+        const full = path.join(dir, file)
+        const found: { attr: string; typeText: string; reason: string }[] = unresolvedAttrTypes(
+          full,
+          await readFile(full, 'utf8'),
+          cache,
+        )
+        scanned++
+        for (const { attr, typeText, reason } of found) {
+          if (UNRESOLVED_ALLOWED[`${file}: ${attr}`] !== undefined) {
+            used.add(`${file}: ${attr}`)
+            continue
+          }
+          problems.push(`  ${file}: ${attr} — declared \`${typeText}\` (${reason})`)
+        }
+      }
+    }
+    expect(scanned).toBeGreaterThan(50)
+    // Vacuity, and the reason it is not just `scanned`: a report function that
+    // returned `[]` for everything would pass the residue check with nothing
+    // measured. Every allowance must still be EARNED by a real declaration, so
+    // an entry that stops matching — because the declaration was fixed, or
+    // because the reporter went silent — fails here instead of rotting.
+    expect([...used].sort()).toEqual(Object.keys(UNRESOLVED_ALLOWED).sort())
+    expect(
+      [...new Set(problems)].sort(),
+      'These part-bag declarations name a type the value arm cannot follow, so it gives no ' +
+        'verdict for them and a wrong value in a recipe would go unreported (see #235). ' +
+        'Spell the union inline, move the alias into the same package, or add it to ' +
+        'UNRESOLVED_ALLOWED with a reason:\n' +
+        problems.join('\n'),
+    ).toEqual([])
+  })
+
   it('detects a misspelled attribute', async () => {
     // The check is only worth its runtime if it can fail. This is the exact
     // shape that shipped: the carousel indicator styling `data-[state=active]`
@@ -527,6 +612,42 @@ function themeAttrsByScope(css: string): Map<string, Set<string>> {
   return out
 }
 
+/**
+ * scope → the `attr=value` pairs its rules select on, as `"data-state=open"`.
+ *
+ * The baseline sheet had a NAME arm and no VALUE arm, which is the same asymmetry
+ * the registry side had before `field.ts`'s three dead rules were found — and it
+ * cost the same thing. Adding this arm found TWO live dead rules on the day it
+ * was written: `[data-scope='menu'][data-part='item'][data-state='highlighted']`
+ * and the identical `context-menu` rule, against a `menu-machine` that publishes
+ * a BARE `data-highlighted` (`select` and `combobox`, four rules away in the same
+ * file, already used the bare spelling). The keyboard-highlighted item in a
+ * baseline-styled dropdown or context menu had no highlight at all — the residue
+ * of the machine-side fix for that same bug, in the surface it did not reach.
+ *
+ * Attributes only reachable through a value the sheet spells (`data-state`) are
+ * exactly the ones the name arm cannot judge, so this is not redundant with it.
+ */
+function themeAttrValuesByScope(css: string): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>()
+  for (const block of css.split('}')) {
+    const selector = block.split('{')[0]
+    if (selector === undefined) continue
+    const scopes = [...selector.matchAll(/\[data-scope=['"]?([a-z-]+)/g)].map((m) => m[1]!)
+    if (scopes.length === 0) continue
+    const pairs = [...selector.matchAll(/\[((?:data|aria)-[a-z-]+)=['"]?([a-zA-Z0-9-]*)/g)]
+      // Same carve-out as the registry arm: these name a PART, not a state.
+      .filter((m) => m[1] !== 'data-scope' && m[1] !== 'data-part')
+      .map((m) => `${m[1]}=${m[2]}`)
+    for (const scope of scopes) {
+      const set = out.get(scope) ?? new Set<string>()
+      pairs.forEach((p) => set.add(p))
+      out.set(scope, set)
+    }
+  }
+  return out
+}
+
 /** Baseline scopes whose rules span several machines, as the registry's own
  * MACHINE_OF does. Anything unlisted is looked up by its own name. */
 const THEME_MACHINE_OF: Record<string, readonly string[]> = {
@@ -571,10 +692,59 @@ describe('the baseline stylesheet only styles attributes its machine publishes',
     expect(problems, 'These baseline rules can never match:\n' + problems.join('\n')).toEqual([])
   })
 
+  it('reports no dead rule VALUE', async () => {
+    const byScope = themeAttrValuesByScope(await readFile(THEME_CSS, 'utf8'))
+    const problems: string[] = []
+    let judged = 0
+    for (const [scope, pairs] of byScope) {
+      const names = THEME_MACHINE_OF[scope] ?? [scope]
+      const published = await machineAttrValues(names)
+      if (published.size === 0) continue
+      for (const pair of [...pairs].sort()) {
+        const eq = pair.indexOf('=')
+        const attr = pair.slice(0, eq)
+        const value = pair.slice(eq + 1)
+        if (ALLOWED[`*: ${attr}`] !== undefined) continue
+        const values = published.get(attr)
+        // Not published at all → the NAME arm above owns it. Open type → no
+        // verdict, the same silence the registry arm keeps.
+        if (values === undefined || values === null) continue
+        judged++
+        if (values.has(value)) continue
+        const emitted =
+          values.size === 0
+            ? '(absent only)'
+            : [...values].map((v) => (v === '' ? '"" (bare)' : `"${v}"`)).join(', ')
+        problems.push(
+          `  [data-scope='${scope}'] … [${attr}='${value}'] — ${names.join('/')} emits ${emitted}`,
+        )
+      }
+    }
+    // Vacuity: without this the arm reports nothing the moment every attribute
+    // it reaches becomes open, and reads as a clean sheet.
+    expect(judged).toBeGreaterThan(20)
+    expect(
+      problems,
+      'These baseline rules name a VALUE their machine never publishes, so they can never ' +
+        'match:\n' +
+        problems.join('\n'),
+    ).toEqual([])
+  })
+
   it('detects a dead rule', async () => {
     // The shape that shipped: the drawer's slide-in on `data-placement`.
     const published = await machineAttrs(['drawer'])
     expect(published.has('data-side')).toBe(true)
     expect(published.has('data-placement')).toBe(false)
+  })
+
+  it('detects a dead rule VALUE', async () => {
+    // The shape that shipped, and that adding the value arm found: the menu
+    // item's keyboard highlight on `data-state='highlighted'`, against a
+    // machine publishing a BARE `data-highlighted`.
+    const published = await machineAttrValues(['menu', 'menu-machine'])
+    expect(published.get('data-state')?.has('highlighted')).toBe(false)
+    expect(published.get('data-state')?.has('open')).toBe(true)
+    expect(published.get('data-highlighted')?.has('')).toBe(true)
   })
 })

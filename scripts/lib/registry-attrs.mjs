@@ -17,6 +17,8 @@
 // machine publishing an attribute nothing styles) is normal and desirable: a
 // part bag is a public surface, and most consumers style a fraction of it.
 import ts from 'typescript'
+import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 
 /** `data-[foo=bar]:x` / `data-foo:x` / `not-data-foo:x` / `group-data-foo/n:x` /
  *  `aria-[foo=bar]:x` / `aria-foo:x` / `peer-data-[foo]:x` — every spelling
@@ -118,17 +120,170 @@ function unwrapReactive(typeNode) {
   return typeNode
 }
 
+// ── Alias resolution (#248) ────────────────────────────────────────────────
+//
+// The value arm above gave NO VERDICT whenever the declared type was a NAMED
+// type rather than an inline union — `Signal<Orientation>`, `Signal<StepStatus>`
+// — because a syntax-only read of one file cannot see what the name means. That
+// silence is a hole with a shipped bug in it: `meter` declared
+// `'data-state': Signal<MeterThreshold>` while the skin styled
+// `data-[state=critical]` / `data-[state=suboptimal]` against a machine emitting
+// `low|optimal|high`, and the range painted `bg-primary` in every state for a
+// full release (#235). Sixty-six declarations across `components/` and
+// `patterns/` sat behind that silence, nineteen distinct aliases, `aria-*`
+// included — where a wrong value is an accessibility defect rather than dead CSS.
+//
+// So the resolver follows a named type to its declaration, through the file's
+// own top-level `type X = …` and through RELATIVE imports/re-exports inside the
+// same package. It FAILS CLOSED — back to `null`, "no verdict" — on everything
+// else, because a wrong verdict here is a build failure for a consumer who did
+// nothing wrong: a bare-specifier or cross-package import, a type PARAMETER
+// (`MenuItemAttrs<Scope extends string>` really is open), a generic alias, an
+// interface/enum/class, a mapped or conditional type, a cycle, a file that does
+// not exist, or a path that escapes the package root.
+
+const MAX_ALIAS_DEPTH = 16
+
+/** Nearest ancestor directory holding a `package.json`, or `null`. */
+function packageRootOf(fileName) {
+  let dir = path.dirname(path.resolve(fileName))
+  for (;;) {
+    if (existsSync(path.join(dir, 'package.json'))) return dir
+    const up = path.dirname(dir)
+    if (up === dir) return null
+    dir = up
+  }
+}
+
+/**
+ * A parsed module plus the two lookups alias resolution needs: its top-level
+ * type aliases, and where each imported/re-exported type NAME comes from.
+ * Memoized per `cache` so one sweep parses each sibling once.
+ */
+function loadModule(fileName, cache) {
+  const key = path.resolve(fileName)
+  const hit = cache.get(key)
+  if (hit !== undefined) return hit
+  if (!existsSync(key)) {
+    cache.set(key, null)
+    return null
+  }
+  const mod = buildModule(key, readFileSync(key, 'utf8'), cache)
+  cache.set(key, mod)
+  return mod
+}
+
+/** Parse `source` as `fileName` and index its type aliases and type imports. */
+function buildModule(fileName, source, cache) {
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const aliases = new Map()
+  // local name → { specifier, exportedName }
+  const imported = new Map()
+  for (const st of sf.statements) {
+    if (ts.isTypeAliasDeclaration(st)) {
+      // A GENERIC alias cannot be resolved without its arguments; fail closed.
+      if (st.typeParameters !== undefined && st.typeParameters.length > 0) continue
+      aliases.set(st.name.text, st.type)
+      continue
+    }
+    if (ts.isImportDeclaration(st) && st.importClause !== undefined) {
+      const spec = st.moduleSpecifier
+      if (!ts.isStringLiteral(spec)) continue
+      const bindings = st.importClause.namedBindings
+      if (bindings === undefined || !ts.isNamedImports(bindings)) continue
+      for (const el of bindings.elements) {
+        imported.set(el.name.text, {
+          specifier: spec.text,
+          exportedName: (el.propertyName ?? el.name).text,
+        })
+      }
+      continue
+    }
+    // `export type { X } from './y.js'` — a re-export is how a barrel restates
+    // a sibling's alias, and it reads exactly like an import for this purpose.
+    // `export * from` is deliberately NOT followed: it names no binding, so
+    // resolving through it would mean guessing which module owns the name.
+    if (ts.isExportDeclaration(st) && st.exportClause !== undefined) {
+      const spec = st.moduleSpecifier
+      if (spec === undefined || !ts.isStringLiteral(spec)) continue
+      if (!ts.isNamedExports(st.exportClause)) continue
+      for (const el of st.exportClause.elements) {
+        imported.set(el.name.text, {
+          specifier: spec.text,
+          exportedName: (el.propertyName ?? el.name).text,
+        })
+      }
+    }
+  }
+  return { fileName, sf, aliases, imported, packageRoot: packageRootOf(fileName), cache }
+}
+
+/**
+ * Resolve a RELATIVE specifier to a `.ts` file inside the SAME package.
+ * Everything else — a bare specifier (`@llui/dom`, `typescript`), a path that
+ * leaves the package root, a file that does not exist — resolves to `null`.
+ */
+function resolveRelative(mod, specifier) {
+  if (!specifier.startsWith('./') && !specifier.startsWith('../')) return null
+  if (mod.packageRoot === null) return null
+  const base = path.resolve(path.dirname(mod.fileName), specifier)
+  // TS sources import each other with a `.js` extension under NodeNext.
+  const candidates = [base.replace(/\.jsx?$/, '.ts'), base + '.ts', path.join(base, 'index.ts')]
+  for (const cand of candidates) {
+    const rel = path.relative(mod.packageRoot, cand)
+    if (rel.startsWith('..') || path.isAbsolute(rel)) continue
+    if (existsSync(cand)) return cand
+  }
+  return null
+}
+
+/** True when `name` is bound by a type PARAMETER on any ancestor of `node`. */
+function shadowedByTypeParameter(node, name) {
+  for (let cur = node; cur !== undefined; cur = cur.parent) {
+    const params = cur.typeParameters
+    if (params === undefined) continue
+    for (const p of params) if (p.name.text === name) return true
+  }
+  return false
+}
+
+/**
+ * Follow `name` from `mod` to the type node it denotes, plus the module that
+ * node lives in. `null` whenever it cannot be followed with certainty.
+ */
+function resolveAliasTarget(name, mod, depth) {
+  if (depth > MAX_ALIAS_DEPTH) return null
+  const local = mod.aliases.get(name)
+  if (local !== undefined) return { type: local, mod }
+  const via = mod.imported.get(name)
+  if (via === undefined) return null
+  const file = resolveRelative(mod, via.specifier)
+  if (file === null) return null
+  const next = loadModule(file, mod.cache)
+  if (next === null) return null
+  return resolveAliasTarget(via.exportedName, next, depth + 1)
+}
+
+/** Strip parentheses so `('a' | 'b')` reads as the union it is. */
+function unwrapParens(typeNode) {
+  let cur = typeNode
+  while (ts.isParenthesizedTypeNode(cur)) cur = cur.type
+  return cur
+}
+
 /**
  * The literal string values a type can hold, or `null` when the type is OPEN
- * (a `string`, an imported alias, a template literal — anything whose members
- * this syntax-only read cannot enumerate). `null` means "no verdict": the check
- * stays silent rather than guessing, in keeping with the one-direction rule.
+ * (a `string`, a template literal, an alias this syntax-only read cannot follow
+ * — see the fail-closed list above). `null` means "no verdict": the check stays
+ * silent rather than guessing, in keeping with the one-direction rule.
  */
-function literalValues(typeNode) {
-  const inner = unwrapReactive(typeNode)
+function literalValues(typeNode, mod, depth = 0, seen = new Set()) {
+  if (depth > MAX_ALIAS_DEPTH) return null
+  const inner = unwrapParens(unwrapReactive(unwrapParens(typeNode)))
   const members = ts.isUnionTypeNode(inner) ? inner.types : [inner]
   const out = new Set()
-  for (const m of members) {
+  for (const raw of members) {
+    const m = unwrapParens(raw)
     if (ts.isLiteralTypeNode(m)) {
       const lit = m.literal
       if (ts.isStringLiteral(lit)) {
@@ -140,6 +295,26 @@ function literalValues(typeNode) {
       return null
     }
     if (m.kind === ts.SyntaxKind.UndefinedKeyword) continue
+    // A NAMED type: follow it, or give no verdict.
+    if (
+      mod !== undefined &&
+      ts.isTypeReferenceNode(m) &&
+      ts.isIdentifier(m.typeName) &&
+      m.typeArguments === undefined
+    ) {
+      const name = m.typeName.text
+      // A type PARAMETER (`MenuItemAttrs<Scope extends string>`) is genuinely
+      // open — the machine's own callers choose the value.
+      if (shadowedByTypeParameter(m, name)) return null
+      const key = `${mod.fileName}#${name}`
+      if (seen.has(key)) return null
+      const target = resolveAliasTarget(name, mod, 0)
+      if (target === null) return null
+      const nested = literalValues(target.type, target.mod, depth + 1, new Set([...seen, key]))
+      if (nested === null) return null
+      for (const v of nested) out.add(v)
+      continue
+    }
     return null
   }
   return out
@@ -151,8 +326,9 @@ function literalValues(typeNode) {
  * A key declared more than once unions its value sets, and one OPEN declaration
  * opens the attribute everywhere in the module.
  */
-export function publishedAttrValues(fileName, source) {
-  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+export function publishedAttrValues(fileName, source, cache = new Map()) {
+  const mod = buildModule(path.resolve(fileName), source, cache)
+  cache.set(mod.fileName, mod)
   const out = new Map()
   const walk = (node) => {
     if (ts.isPropertySignature(node) && node.name !== undefined && node.type !== undefined) {
@@ -162,7 +338,7 @@ export function publishedAttrValues(fileName, source) {
           ? node.name.text
           : null
       if (name !== null && (name.startsWith('data-') || name.startsWith('aria-'))) {
-        const values = literalValues(node.type)
+        const values = literalValues(node.type, mod)
         if (out.has(name)) {
           const prev = out.get(name)
           if (prev === null || values === null) out.set(name, null)
@@ -174,6 +350,68 @@ export function publishedAttrValues(fileName, source) {
     }
     ts.forEachChild(node, walk)
   }
-  walk(sf)
+  walk(mod.sf)
   return out
+}
+
+/**
+ * Every `'data-*'` / `'aria-*'` declaration in a module whose declared type
+ * NAMES a type the resolver could not follow — the residue of the hole #248
+ * closes, and what the companion guard pins so a new one cannot arrive
+ * unnoticed. Reported as `{ attr, typeText, reason }`.
+ *
+ * A `string` / `number` / `boolean` declaration is NOT residue: it is honestly
+ * open and no resolver can enumerate it. Only a NAMED type that fails to
+ * resolve is, because that is a value set someone wrote down and the guard
+ * cannot read.
+ */
+export function unresolvedAttrTypes(fileName, source, cache = new Map()) {
+  const mod = buildModule(path.resolve(fileName), source, cache)
+  cache.set(mod.fileName, mod)
+  const out = []
+  const walk = (node) => {
+    if (ts.isPropertySignature(node) && node.name !== undefined && node.type !== undefined) {
+      const name = ts.isStringLiteral(node.name)
+        ? node.name.text
+        : ts.isIdentifier(node.name)
+          ? node.name.text
+          : null
+      if (
+        name !== null &&
+        (name.startsWith('data-') || name.startsWith('aria-')) &&
+        literalValues(node.type, mod) === null
+      ) {
+        const named = firstUnresolvableTypeName(node.type, mod)
+        if (named !== null) {
+          out.push({ attr: name, typeText: node.type.getText(mod.sf), reason: named })
+        }
+      }
+    }
+    ts.forEachChild(node, walk)
+  }
+  walk(mod.sf)
+  return out
+}
+
+/**
+ * The first named type in `typeNode`'s union that the resolver declines, with
+ * why — `<Name>: type parameter` / `: unresolved`. `null` when the type is open
+ * for a reason that has no name in it (a `string`, a `number`, a template).
+ */
+function firstUnresolvableTypeName(typeNode, mod) {
+  const inner = unwrapParens(unwrapReactive(unwrapParens(typeNode)))
+  const members = ts.isUnionTypeNode(inner) ? inner.types : [inner]
+  for (const raw of members) {
+    const m = unwrapParens(raw)
+    // `typeof SOME_CONST` names a VALUE's type. It is a value set someone wrote
+    // down and this read cannot follow it, so it is residue like any alias.
+    if (ts.isTypeQueryNode(m)) return `${m.exprName.getText(mod.sf)}: typeof query`
+    if (!ts.isTypeReferenceNode(m)) continue
+    if (!ts.isIdentifier(m.typeName)) return `${m.typeName.getText(mod.sf)}: qualified name`
+    const name = m.typeName.text
+    if (m.typeArguments !== undefined) return `${name}: generic`
+    if (shadowedByTypeParameter(m, name)) return `${name}: type parameter`
+    if (literalValues(m, mod) === null) return `${name}: unresolved`
+  }
+  return null
 }
