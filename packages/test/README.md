@@ -15,7 +15,6 @@ import { counterDef } from './counter'
 const harness = testView(counterDef, { count: 0 })
 
 harness.click('[data-testid="increment"]')
-harness.flush()
 
 expect(harness.text('[data-testid="display"]')).toBe('1')
 harness.unmount()
@@ -25,14 +24,14 @@ harness.unmount()
 
 ```ts
 import { describe, it, expect } from 'vitest'
-import { component, type ComponentDef } from '@llui/dom'
+import { component, type SignalComponentDef } from '@llui/dom'
 import { testComponent, testView, assertEffects } from '@llui/test'
 
 type State = { count: number }
 type Msg = { type: 'inc' } | { type: 'dec' } | { type: 'reset' }
 type Effect = { type: 'logged'; level: 'info' | 'warn'; payload: unknown }
 
-const Counter: ComponentDef<State, Msg, Effect> = component<State, Msg, Effect>({
+const Counter: SignalComponentDef<State, Msg, Effect> = component<State, Msg, Effect>({
   name: 'Counter',
   init: () => [{ count: 0 }, [{ type: 'logged', level: 'info', payload: 'mount' }]],
   update: (state, msg) => {
@@ -49,11 +48,11 @@ const Counter: ComponentDef<State, Msg, Effect> = component<State, Msg, Effect>(
 })
 
 describe('Counter', () => {
-  it('drives state via send + flush, reads effects', () => {
+  it('drives state via send, reads effects', () => {
     const harness = testComponent(Counter)
     harness.send({ type: 'inc' })
     harness.send({ type: 'inc' })
-    harness.flush()
+    // `send` is synchronous — the reducer has already run and state is applied.
     expect(harness.state.count).toBe(2)
 
     // assertEffects partial-matches the recorded effect log; init() emits

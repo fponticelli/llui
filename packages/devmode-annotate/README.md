@@ -147,3 +147,11 @@ After submitting "edit button copy is wrong":
 ```
 
 The `.md` file carries the prose plus a frontmatter block with URL, viewport, route, component path, LLui versions — everything the LLM needs to act on the note without round-trips. The format is `@llui/notes-format`; the design notes live in the [devmode-annotate proposal](../../docs/proposals/devmode-annotate/) (`current-state.md` is the one kept current).
+
+<!-- @doc-setup
+// The host's own user model — the point of the snippet is that the gate is
+// yours, so the shape is deliberately unspecified in the prose.
+// Not rendered; read by `pnpm check:docs`.
+
+declare const currentUser: { isStaff: boolean }
+-->

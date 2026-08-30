@@ -21,7 +21,7 @@ greater than zero; `aspectRatio: null` remains the explicit unconstrained crop.
 
 What stays the **consumer's** responsibility (deliberately not shipped):
 
-- Markup and CSS. Components emit `data-scope` / `data-part` / `data-state` hooks; visual styling — including CSS logical-property mirroring for RTL — is yours (an opt-in theme + Tailwind class helpers are available under `@llui/components/styles/*`).
+- Markup and CSS. Components emit `data-scope` / `data-part` / `data-state` hooks; visual styling — including CSS logical-property mirroring for RTL — is yours (an opt-in baseline stylesheet and design tokens are available under `@llui/components/styles/*`; Tailwind class recipes ship as registry source you copy with `@llui/cli`).
 - Driving time and observers: `setInterval`/`requestAnimationFrame` ticks (timer, toast countdown), `IntersectionObserver` (in-view, async-list sentinel, toc scroll-spy), and pointer-event wiring for drag (sortable, slider, carousel swipe, image-cropper) — the machine exposes pure helpers and tick/drag messages; you own the listeners.
 - Bring-your-own heavy deps: a QR encoder (qr-code), canvas rendering (signature-pad), and the actual data fetch behind every `load*` effect.
 - Exit-animation timing: overlays expose a `'closing'` `data-state` + `isPresent` and wait for an `animationend`; the CSS transition itself is yours (and unmount is synchronous when no animation is configured).
@@ -43,17 +43,17 @@ Each component exports `init`, `update`, `connect`, and a barrel object:
 
 ```typescript
 import { component, div, button, text } from '@llui/dom'
-import { tabs } from '@llui/components/tabs'
+import { tabs, type TabsState, type TabsMsg } from '@llui/components/tabs'
 
-type State = { tabs: tabs.TabsState }
-type Msg = { type: 'tabs'; msg: tabs.TabsMsg }
+type State = { tabs: TabsState }
+type Msg = { type: 'tabs'; msg: TabsMsg }
 
 const App = component<State, Msg, never>({
   name: 'App',
   init: () => [{ tabs: tabs.init({ items: ['a', 'b', 'c'], value: 'a' }) }, []],
   update: (s, m) => {
-    const [t] = tabs.update(s.tabs, m.msg)
-    return [{ ...s, tabs: t }, []]
+    const [next] = tabs.update(s.tabs, m.msg)
+    return [{ ...s, tabs: next }, []]
   },
   view: ({ state, send }) => {
     const t = tabs.connect(state.at('tabs'), (m) => send({ type: 'tabs', msg: m }), { id: 'demo' })
@@ -192,6 +192,9 @@ The three "outside-aware" utilities above (`dismissable`, `aria-hidden`, `focus-
 A portaled surface declares both its portal root and the element it logically belongs to:
 
 ```ts
+import { onMount } from '@llui/dom'
+import { registerNestedLayer } from '@llui/components/utils'
+
 onMount((owner) => registerNestedLayer(() => overlayRootElement(), { owner }))
 ```
 
@@ -244,29 +247,21 @@ import '@llui/components/styles/theme-dark.css'
 
 This activates automatically via `prefers-color-scheme: dark`. Force light with `<html data-theme="light">`, force dark with `<html data-theme="dark">`. The dark file is separate because Tailwind 4's `@theme` scanner would otherwise merge dark tokens into the root theme.
 
-### JS class helpers — Tailwind utility strings
+### Tailwind class recipes — from the registry, not from this package
 
-Each component has a class helper that returns Tailwind utility strings per part, with size/variant props:
+There are no per-component `xClasses()` helpers. They were removed: they had
+no consumer, and 116 of their utility occurrences compiled to no CSS at all.
+Class recipes now ship as **registry source you own and edit**, copied into
+your project by the CLI and verified against a real Tailwind build:
 
-```typescript
-import { tabsClasses } from '@llui/components/styles/tabs'
-
-const cls = tabsClasses({ size: 'sm', variant: 'pill' })
-// cls.root, cls.list, cls.trigger, cls.panel, cls.indicator
-
-div({ ...t.root, class: cls.root }, [
-  div({ ...t.list, class: cls.list }, [
-    button({ ...t.item('a').trigger, class: cls.trigger }, [text('Tab A')]),
-  ]),
-  div({ ...t.item('a').panel, class: cls.panel }, [text('Content A')]),
-])
+```sh
+npx @llui/cli add tabs
 ```
 
-Or import everything from the barrel:
-
-```typescript
-import { tabsClasses, dialogClasses, cx } from '@llui/components/styles'
-```
+The copied component spreads the part bag and carries the recipe itself, so a
+skin change is an edit in your own tree rather than a version bump here.
+Import `tokens.css` (tokens only) on that path — **not** `theme.css`, whose
+unlayered baseline rules would override every recipe.
 
 ### Variant engine
 
@@ -292,7 +287,7 @@ button({ size: 'sm', intent: 'ghost' }) // → class string
 
 Three forms, in order of preference:
 
-```typescript
+```typescript @doc-skip
 // ✓ best — sub-path import. Bypasses the barrel entirely; smallest
 //          bundle, fastest cold builds (no parse cost for unused
 //          components).
@@ -323,6 +318,8 @@ import { timer } from '@llui/components/timer'
 Input components accept an optional `validate` callback on `ConnectOptions` that gates state changes:
 
 ```typescript
+import { editable } from '@llui/components/editable'
+
 const parts = editable.connect(state.at('name'), send, {
   validate: (value) => {
     if (value.length < 3) return ['Too short']
@@ -332,3 +329,18 @@ const parts = editable.connect(state.at('name'), send, {
 ```
 
 Supported on: editable, number-input, tags-input, pin-input, file-upload.
+
+<!-- @doc-setup
+// The view bag the component snippets are written inside, and the reader's own
+// portal-root resolver. One declaration per group.
+// Not rendered; read by `pnpm check:docs`.
+
+import type { Send, Signal } from '@llui/dom'
+import type { EditableState } from '@llui/components/editable'
+
+declare const state: Signal<{ name: EditableState }>
+
+declare const send: Send<unknown>
+
+declare function overlayRootElement(): HTMLElement
+-->

@@ -27,8 +27,10 @@ Use `createOnRenderHtml` to control the full HTML document — add stylesheets, 
 ```ts
 // pages/+onRenderHtml.ts
 import { createOnRenderHtml } from '@llui/vike/server'
+import { linkedomEnv } from '@llui/dom/ssr/linkedom'
 
 export const onRenderHtml = createOnRenderHtml({
+  domEnv: linkedomEnv,
   document: ({ html, state, pageContext }) => `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -96,10 +98,12 @@ export const onRenderClient = createOnRenderClient({
 ```ts
 // pages/+onRenderHtml.ts — server renders layout + page as one tree
 import { createOnRenderHtml } from '@llui/vike/server'
+import { linkedomEnv } from '@llui/dom/ssr/linkedom'
 import { AppLayout } from './Layout'
 
 export const onRenderHtml = createOnRenderHtml({
   Layout: AppLayout,
+  domEnv: linkedomEnv,
 })
 ```
 
@@ -148,7 +152,9 @@ This is the idiomatic way to build a **section with its own persistent chrome** 
 
 ```ts
 // /docs/* keeps DocsLayout (the sidebar) mounted; everything else drops it.
-const Layout = (pageContext) =>
+import { jsdomEnv } from '@llui/dom/ssr/jsdom'
+
+const Layout = (pageContext: { urlPathname: string }) =>
   pageContext.urlPathname.startsWith('/docs') ? [AppLayout, DocsLayout] : [AppLayout]
 
 createOnRenderHtml({ Layout, domEnv: jsdomEnv })
@@ -203,7 +209,7 @@ export const AppLayout = component<LayoutState, LayoutMsg>({
 // Any page below the layout can now use the toast dispatcher.
 // pages/studio/+Page.ts
 import { component, button, text, useContext } from '@llui/dom'
-import { ToastContext } from '../Layout'
+import { ToastContext, type ToastDispatchers } from '../Layout'
 
 export const StudioPage = component<StudioState, StudioMsg>({
   name: 'StudioPage',
@@ -215,7 +221,7 @@ export const StudioPage = component<StudioState, StudioMsg>({
     return [s, []]
   },
   view: ({ send }) => {
-    const toast = useContext(ToastContext)
+    const toast: ToastDispatchers = useContext(ToastContext)
     return [button({ onClick: () => toast.show('Saved') }, [text('Save')])]
   },
 })
@@ -242,7 +248,8 @@ export const AppLayout = component<AppLayoutState, AppLayoutMsg>({
   // Runs only when lluiLayoutData[0] is absent (e.g. a client-side mount for a
   // route whose data hook didn't populate it).
   init: () => ({ user: 'anonymous', unread: 0 }),
-  // ...
+  update: (s) => s,
+  view: () => [pageSlot()],
 })
 ```
 
@@ -321,7 +328,9 @@ For raw animations without `@llui/transitions`, write the hooks yourself:
 
 ```ts
 export const onRenderClient = createOnRenderClient({
-  onLeave: (el) => el.animate({ opacity: [1, 0] }, 200).finished,
+  onLeave: async (el) => {
+    await el.animate({ opacity: [1, 0] }, 200).finished
+  },
   onEnter: (el) => el.animate({ opacity: [0, 1] }, 200),
 })
 ```
@@ -463,3 +472,31 @@ Hydrates the server-rendered HTML on the client via `hydrateSignalApp()`. It doe
 | `createNavigationProgress` | `@llui/vike/client` | Reactive `pending` signal + `+onPageTransition*` hooks for a during-fetch loader |
 
 The barrel export (`@llui/vike`) re-exports everything, but prefer sub-path imports to avoid bundling jsdom into the client.
+
+<!-- @doc-setup
+// The reader's own layouts, layout state machine and page types — the snippets
+// above are about the CHAIN, so the pieces it is built from are named in prose
+// rather than defined. One declaration per group.
+// Not rendered; read by `pnpm check:docs`.
+
+import type { SignalComponentDef } from '@llui/dom'
+
+declare const DocsLayout: SignalComponentDef<unknown, unknown, never>
+
+declare const DashboardLayout: SignalComponentDef<unknown, unknown, never>
+
+// The two AppLayout examples below own different slices; a reader's is theirs.
+type LayoutState = { toasts?: string[]; session?: string | null }
+
+type LayoutMsg = { type: 'toast/show'; msg: string } | { type: 'toast/dismiss'; id: string }
+
+declare const layoutUpdate: (state: LayoutState, msg: LayoutMsg) => [LayoutState, never[]]
+
+declare function ToastStack(): import('@llui/dom').Mountable
+
+type StudioState = { saved: boolean }
+
+type StudioMsg = { type: 'saveSucceeded' }
+
+type AppLayoutMsg = { type: 'noop' }
+-->

@@ -28,6 +28,9 @@ const routes = {
     defaults: { page: 1 },
   }),
   files: route('/files/*path'),
+  login: route('/login'),
+  admin: route('/admin'),
+  editor: route('/editor/:slug'),
 }
 
 const router = createRouter(routes)
@@ -120,3 +123,18 @@ import { browserRouterEnv, connectRouter } from '@llui/router/connect'
 
 const routing = connectRouter(router, { env: browserRouterEnv() })
 ```
+
+<!-- @doc-setup
+// Host-supplied predicates and the view bag the guard/link snippets elide.
+// One declaration per group. Not rendered; read by `pnpm check:docs`.
+
+import type { Renderable } from '@llui/dom'
+
+declare function isLoggedIn(): boolean
+
+declare function hasUnsavedChanges(): boolean
+
+declare const send: (msg: unknown) => void
+
+declare const children: Renderable
+-->

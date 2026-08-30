@@ -20,7 +20,11 @@ pnpm add @llui/security
 ```ts
 import { sanitizeUrl, defaultAllowedProtocols } from '@llui/security'
 import { isLoopbackOrigin, isLoopbackAuthority } from '@llui/security'
-// or via subpaths:
+```
+
+Or via subpaths:
+
+```ts
 import { sanitizeUrl } from '@llui/security/url'
 import { isLoopbackAuthority } from '@llui/security/loopback'
 ```

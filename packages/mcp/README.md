@@ -16,6 +16,7 @@ Install `@llui/mcp` as a dev dependency. The Vite plugin auto-detects the packag
 
 ```ts
 // vite.config.ts
+import { defineConfig } from 'vite'
 import llui from '@llui/vite-plugin'
 export default defineConfig({ plugins: [llui()] })
 ```
