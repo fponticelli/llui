@@ -57,6 +57,11 @@ beforeAll(async () => {
     path.join(src, 'cyc-b.ts'),
     `import type { A } from './cyc-a.js'\nexport type B = A\n`,
   )
+  // A DIRECTORY beside `main.ts` whose NAME an extensionless specifier spells.
+  // Candidate 0 of the resolution list is the directory itself, so a bare
+  // existence test returns it and `readFileSync` throws EISDIR.
+  await mkdir(path.join(src, 'sub'), { recursive: true })
+  await writeFile(path.join(src, 'sub', 'index.ts'), `export type Sub = 'a'\n`)
   // A file OUTSIDE the package root — reachable by path, never by resolution.
   await mkdir(path.join(root, 'outside'), { recursive: true })
   await writeFile(path.join(root, 'outside', 'far.ts'), `export type Far = 'nope'\n`)
@@ -191,7 +196,15 @@ describe('the value arm FAILS CLOSED on anything it cannot follow', () => {
     expect(map.get('data-x')).toBeNull()
   })
 
-  it('declines a CYCLE rather than recursing forever', async () => {
+  it('terminates on a CYCLE with no verdict', async () => {
+    // NAMED for what it pins, not for the guard a reader assumes. TWO
+    // independent mechanisms deliver this — the `seen` set and
+    // `MAX_ALIAS_DEPTH` — so removing EITHER alone survives, the same
+    // redundant-pair shape as the two generic guards above. Measured: dropping
+    // the `seen` set is green across both files. The earlier name claimed
+    // "rather than recursing forever", which is a guard this test cannot
+    // distinguish; the deep-chain case below makes the depth cap observable on
+    // its own, and the `seen` set is documented in the lib as defence in depth.
     const source = [
       `import type { A } from './cyc-a.js'`,
       `export interface P { root: { 'data-x': Signal<A> } }`,
@@ -200,6 +213,33 @@ describe('the value arm FAILS CLOSED on anything it cannot follow', () => {
     await writeFile(file, source)
     const map: Map<string, Set<string> | null> = publishedAttrValues(file, source, new Map())
     expect(map.get('data-x')).toBeNull()
+  })
+
+  it('declines an alias chain deeper than MAX_ALIAS_DEPTH', async () => {
+    // The acyclic case, which the `seen` set cannot answer and the depth cap
+    // must. Fail-closed direction: a 24-deep chain is legitimate code that gets
+    // no verdict rather than a wrong one.
+    const links = Array.from({ length: 24 }, (_, i) => `type A${i} = A${i + 1}`)
+    const source = [
+      ...links,
+      `type A24 = 'deep'`,
+      `export interface P { root: { 'data-x': Signal<A0> } }`,
+    ].join('\n')
+    const file = path.join(src, 'main.ts')
+    await writeFile(file, source)
+    const map: Map<string, Set<string> | null> = publishedAttrValues(file, source, new Map())
+    expect(map.get('data-x')).toBeNull()
+    // ...and a chain SHORTER than the cap still resolves, so the assertion above
+    // is about the bound rather than about chains being unresolvable at all.
+    const shallow = [
+      `type B0 = B1`,
+      `type B1 = B2`,
+      `type B2 = 'ok'`,
+      `export interface Q { root: { 'data-y': Signal<B0> } }`,
+    ].join('\n')
+    await writeFile(file, shallow)
+    const map2: Map<string, Set<string> | null> = publishedAttrValues(file, shallow, new Map())
+    expect([...(map2.get('data-y') ?? [])]).toEqual(['ok'])
   })
 
   it('declines an INTERFACE, a mapped type and a conditional type', async () => {
@@ -224,6 +264,27 @@ describe('the value arm FAILS CLOSED on anything it cannot follow', () => {
     await writeFile(file, source)
     const map: Map<string, Set<string> | null> = publishedAttrValues(file, source, new Map())
     expect(map.get('data-x')).toBeNull()
+  })
+
+  it('resolves an EXTENSIONLESS directory specifier to its index, and never throws', async () => {
+    // A guard whose contract is to fail closed must not fail LOUD either. Before
+    // the `isFile()` stat, candidate 0 was the directory `./sub` itself, which
+    // `existsSync` accepts and `readFileSync` rejects with
+    // `EISDIR: illegal operation on a directory, read` — a crash out of the
+    // resolver rather than a `null`. Asserting the resolved VALUE rather than
+    // merely "does not throw" pins both halves: the crash is gone AND the
+    // fall-through lands on `sub/index.ts`, which is what TypeScript resolves.
+    const source = [
+      `import type { Sub } from './sub'`,
+      `export interface P { root: { 'data-x': Signal<Sub> } }`,
+    ].join('\n')
+    const file = path.join(src, 'main.ts')
+    await writeFile(file, source)
+    let map: Map<string, Set<string> | null> | undefined
+    expect(() => {
+      map = publishedAttrValues(file, source, new Map())
+    }).not.toThrow()
+    expect([...(map?.get('data-x') ?? [])]).toEqual(['a'])
   })
 
   it('still declines a plain `string`, as it always did', async () => {

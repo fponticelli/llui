@@ -407,6 +407,7 @@ describe('registry recipes only style attributes their machine publishes', () =>
   it('reports no recipe attribute VALUE its machine never emits', async () => {
     const files = (await readdir(UI)).filter((f) => f.endsWith('.ts'))
     const problems: string[] = []
+    const usedAllowances = new Set<string>()
     for (const file of files) {
       const slug = file.slice(0, -3)
       const names = MACHINE_OF[slug] ?? [slug]
@@ -436,6 +437,7 @@ describe('registry recipes only style attributes their machine publishes', () =>
         if (values.has(value)) continue
         const allowance = VALUE_ALLOWED[`${file}: ${pair}`]
         if (allowance !== undefined) {
+          usedAllowances.add(`${file}: ${pair}`)
           const paired = allowance.pairedWith
           // Paired against the BARE spelling set, never the name set: the dead
           // bracketed form contributes its own name, so a name-level pairing
@@ -456,6 +458,12 @@ describe('registry recipes only style attributes their machine publishes', () =>
         )
       }
     }
+    // Every allowance must still be EARNED by a real pair in a real file. An
+    // entry that stops matching — because the recipe was fixed, or because the
+    // arm went silent for that attribute — fails here instead of rotting into a
+    // hole nobody re-examines. Same assertion `UNRESOLVED_ALLOWED` carries, and
+    // it was added because this list had none while a new entry was added to it.
+    expect([...usedAllowances].sort()).toEqual(Object.keys(VALUE_ALLOWED).sort())
     expect(
       problems,
       'These recipes style a VALUE their machine never publishes, so the rule can never ' +
@@ -662,6 +670,17 @@ const THEME_MACHINE_OF: Record<string, readonly string[]> = {
   menubar: ['menubar', 'menu', 'menu-machine'],
 }
 
+/**
+ * Baseline `scope: data-attr=value` pairs whose value the scope's machine does
+ * not publish, with the reason — the theme sheet's analogue of `VALUE_ALLOWED`.
+ *
+ * Keyed by SCOPE, never by bare attribute name: a bare-name entry would switch
+ * the check off for every scope in the sheet, which is the trap the registry
+ * arm's per-file keying exists to avoid. Empty today, and that is a finding
+ * rather than an oversight — every pair this arm can judge is live.
+ */
+const THEME_VALUE_ALLOWED: Record<string, Allowance> = {}
+
 describe('the baseline stylesheet only styles attributes its machine publishes', () => {
   it('maps every styled scope to a machine', async () => {
     const byScope = themeAttrsByScope(await readFile(THEME_CSS, 'utf8'))
@@ -704,7 +723,16 @@ describe('the baseline stylesheet only styles attributes its machine publishes',
         const eq = pair.indexOf('=')
         const attr = pair.slice(0, eq)
         const value = pair.slice(eq + 1)
-        if (ALLOWED[`*: ${attr}`] !== undefined) continue
+        // Keyed by SCOPE, never by bare attribute name. The NAME arm above
+        // reads `ALLOWED['*: ' + attr]` — a global bare-name key, exactly the
+        // shape CLAUDE.md warns about, where one entry switches the check off
+        // for every scope. It is inherited and per-file keying is meaningless
+        // in a ONE-FILE corpus, so per-SCOPE is the right analogue here and is
+        // what this arm uses. Measured: the star list was skipping 5 of 48
+        // judgeable pairs (`drawer: data-side` x4, `pagination:
+        // aria-current=page`) and hiding nothing — with it removed the arm
+        // still reports 0, so those 5 are now genuinely checked.
+        if (THEME_VALUE_ALLOWED[`${scope}: ${pair}`] !== undefined) continue
         const values = published.get(attr)
         // Not published at all → the NAME arm above owns it. Open type → no
         // verdict, the same silence the registry arm keeps.

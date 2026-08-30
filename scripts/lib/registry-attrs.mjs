@@ -17,7 +17,7 @@
 // machine publishing an attribute nothing styles) is normal and desirable: a
 // part bag is a public surface, and most consumers style a fraction of it.
 import ts from 'typescript'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import path from 'node:path'
 
 /** `data-[foo=bar]:x` / `data-foo:x` / `not-data-foo:x` / `group-data-foo/n:x` /
@@ -142,6 +142,12 @@ function unwrapReactive(typeNode) {
 // interface/enum/class, a mapped or conditional type, a cycle, a file that does
 // not exist, or a path that escapes the package root.
 
+// Termination is guarded TWICE, on purpose and redundantly: `MAX_ALIAS_DEPTH`
+// bounds any chain, and the `seen` set in `literalValues` catches a cycle at the
+// first repeat. Either alone is sufficient — measured, dropping `seen` leaves
+// both test files green — so do not read one as covering for the other's
+// removal. `seen` reports the cycle at depth 1 instead of 16; the cap is the one
+// that also answers a deep ACYCLIC chain, which no cycle set can.
 const MAX_ALIAS_DEPTH = 16
 
 /** Nearest ancestor directory holding a `package.json`, or `null`. */
@@ -232,7 +238,15 @@ function resolveRelative(mod, specifier) {
   for (const cand of candidates) {
     const rel = path.relative(mod.packageRoot, cand)
     if (rel.startsWith('..') || path.isAbsolute(rel)) continue
-    if (existsSync(cand)) return cand
+    // `isFile()`, not merely `existsSync`: for an EXTENSIONLESS specifier whose
+    // name is a DIRECTORY (`./sub`), candidate 0 is the directory itself and a
+    // bare existence test hands it to `readFileSync`, which throws EISDIR — a
+    // CRASH out of a resolver whose entire contract is to fail closed. With the
+    // stat, `./sub` falls through to `sub/index.ts`, which is the answer
+    // TypeScript gives. Latent while nothing under `packages/components/src`
+    // imports extensionlessly, but the residue pin exists to push new files
+    // through here.
+    if (existsSync(cand) && statSync(cand).isFile()) return cand
   }
   return null
 }
