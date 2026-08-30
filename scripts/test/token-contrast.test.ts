@@ -97,8 +97,10 @@ import { contrast, srgb8ToLinear } from '../lib/oklch.mjs'
  *
  * ─── Cost, and why it is safe in CI ──────────────────────────────────────────
  *
- * ~0.5 s wall for the whole file (one browser, six contexts, two Tailwind
- * compiles, twelve `setContent` + `evaluate` round trips). CI's `verify` job
+ * ~1.5-2.5 s of test time for the whole file, 4-5 s wall (one browser, six
+ * contexts, two Tailwind compiles, twelve `setContent` + `evaluate` round
+ * trips). Most of that is `getImageData`: every colour is resolved by painting
+ * it, and the IACVT probes below triple the number of paints. CI's `verify` job
  * already runs inside `mcr.microsoft.com/playwright:v1.59.1-noble`, so Chromium
  * is present with no download, and `pnpm test:scripts` — the step that runs this
  * file — runs there too; no workflow change is needed.
@@ -107,10 +109,18 @@ import { contrast, srgb8ToLinear } from '../lib/oklch.mjs'
  * anywhere in it, so there is nothing here to flake. That is not just an
  * argument: the whole 11 x 6 x 2 matrix was re-measured inside that exact
  * container image and came back BYTE-IDENTICAL to the macOS numbers at three
- * decimals, with all 48 instrument readings identical at six. (The container run
- * was aarch64, so it evidences linux-vs-macOS, not x64-vs-arm.) The tightest
- * margin in the matrix is `destructive` at 4.570:1 in light mode — 1.5% of
- * headroom, several 8-bit levels of drift away from the floor.
+ * decimals, with all 48 instrument readings identical at six.
+ *
+ * Two honest limits on that evidence. The container run was **aarch64**, so it
+ * evidences linux-vs-macOS and NOT x64-vs-arm; CI's runner is x64 and remains
+ * UNVERIFIED (an amd64 run of the same image under emulation could not launch
+ * Chromium — playwright's 180 s launch deadline expired). And the tightest
+ * margin in the matrix, `destructive` at 4.570:1 in light mode, is **two** 8-bit
+ * levels from the floor, not "several": measured, surface +2 gives 4.4917 and
+ * ink -2 gives 4.4914, both already failing. What keeps that narrow margin
+ * defensible is not the headroom but the rasteriser — playwright launches
+ * Chromium with `--force-color-profile=srgb`, so the colour pipeline is pinned
+ * rather than display-dependent.
  */
 
 const ROOT = path.resolve(__dirname, '../..')
@@ -123,6 +133,15 @@ const AA_NORMAL_TEXT = 4.5
  * The surface/foreground pairs the token contract defines. Every one is a
  * `--x` / `--x-foreground` couple declared in `tokens.css` and overridden in
  * `tokens-dark.css`; `background` is the one whose ink is not named after it.
+ *
+ * SCOPE: this measures the CONTRACT, not what any component paints. A recipe is
+ * free to ignore a foreground token — `registry/llui/ui/button.ts`'s destructive
+ * variant is `bg-destructive text-white … dark:bg-destructive/60` and never
+ * reads `--destructive-foreground` at all, so the tightest row here describes a
+ * pair `registry-demo` does not actually render (what it does render measures
+ * 4.77 light / 6.04 / 5.71 dark, clear). The contract is still the right thing
+ * to gate: it is what a consumer's own `bg-x text-x-foreground` gets, and both
+ * regressions #250 names were contract regressions with no component involved.
  */
 const PAIRS = [
   'background',
@@ -174,22 +193,36 @@ const CELLS = [
  * existed to catch. A pair that is a deliberate upstream value in light mode says
  * nothing about the same pair in dark mode or in another app's palette.
  *
- * Every entry must carry a reason, and every entry must still be BELOW the floor
- * — an obsolete exemption fails the test rather than sitting there approving a
- * regression that has not happened yet.
+ * Every entry is CLOSED AT BOTH ENDS, and the lower end is not decoration. An
+ * exemption stating only "below 4.5 is known here" approves every value below
+ * 4.5, including ones nobody has ever seen: measured, with these six entries in
+ * place but no floor, degrading `--muted-foreground` from `oklch(0.556 0 0)` to
+ * `oklch(0.93 0 0)` took light-mode `muted` from 4.349:1 to 1.443:1 and the file
+ * still reported 7 passed. That is exactly "an exemption sitting there ready to
+ * approve a regression that has not happened yet" — the thing this allowlist
+ * claims to prevent — so each entry carries the ratio it was MEASURED at, and a
+ * reading below that floor fails like any other. The upper end is closed by the
+ * obsolete-entry test below.
  */
-const ALLOWED_BELOW_AA: Record<string, string> = Object.fromEntries(
+type Exemption = { reason: string; atLeast: number }
+
+const ALLOWED_BELOW_AA: Record<string, Exemption> = Object.fromEntries(
   ['examples/components-demo/src/main.css', 'examples/registry-demo/src/main.css'].flatMap((file) =>
     ['os=light x pref=light', 'os=light x pref=system', 'os=dark x pref=light'].map((cell) => [
       `${file}: muted: ${cell}`,
-      // shadcn/ui's own light values, ported verbatim (`--muted` oklch(0.97 0 0),
-      // `--muted-foreground` oklch(0.556 0 0)). `--muted-foreground` is the
-      // SECONDARY-text token — captions, placeholders, help text — and upstream
-      // sizes it at that contrast deliberately. Raising it would fork the palette
-      // from every shadcn theme, screenshot and generator, which is the parity
-      // the registry is built on. Dark mode clears AA (5.857:1); this is a
-      // light-mode-only shortfall of 0.15.
-      'shadcn/ui upstream value for secondary text; 4.35:1, and changing it forks the palette from every shadcn theme',
+      {
+        // shadcn/ui's own light values, ported verbatim (`--muted` oklch(0.97 0 0),
+        // `--muted-foreground` oklch(0.556 0 0)). `--muted-foreground` is the
+        // SECONDARY-text token — captions, placeholders, help text — and upstream
+        // sizes it at that contrast deliberately. Raising it would fork the palette
+        // from every shadcn theme, screenshot and generator, which is the parity
+        // the registry is built on. Dark mode clears AA (5.857:1); this is a
+        // light-mode-only shortfall of 0.15.
+        reason:
+          'shadcn/ui upstream value for secondary text; changing it forks the palette from every shadcn theme',
+        // Measured 4.349:1 in all three light cells, on both demos.
+        atLeast: 4.34,
+      },
     ]),
   ),
 )
@@ -210,6 +243,7 @@ type Probe = {
   transitionCanary: string
   rejected: string[]
   undeclared: string[]
+  unresolved: string[]
   instrument: { label: string; ink: [number, number, number]; surface: [number, number, number] }[]
   pairs: { pair: string; ink: [number, number, number]; surface: [number, number, number] }[]
 }
@@ -299,24 +333,88 @@ function probeInPage(input: {
   canary.style.backgroundColor = 'blue'
   const transitionCanary = getComputedStyle(canary).backgroundColor
 
+  // The probe sits inside a WRAPPER so the ink check below can vary what
+  // `color` inherits — see `unresolved`.
+  const wrapper = document.createElement('div')
+  document.body.appendChild(wrapper)
   const probe = document.createElement('div')
-  document.body.appendChild(probe)
+  wrapper.appendChild(probe)
   const resolve = (property: string, expression: string): string => {
     probe.style.setProperty(property, expression)
     const out = getComputedStyle(probe).getPropertyValue(property)
     probe.style.removeProperty(property)
     return out
   }
+  /** Resolve every `color: <expression>` under ONE chosen inherited ink.
+   *
+   * Batched rather than per-pair on purpose: writing `wrapper.style.color`
+   * invalidates inherited colour for the subtree, so a set/read/restore per pair
+   * forces a full style recalc against the app's whole compiled stylesheet each
+   * time. Measured: interleaving the two sentinels took the file from ~0.5 s to
+   * ~10 s; two writes per page puts it back. */
+  const resolveInksUnder = (inherited: string): string[] => {
+    wrapper.style.color = inherited
+    const out = input.pairs.map(({ inkVar }) => resolve('color', `var(${inkVar})`))
+    wrapper.style.removeProperty('color')
+    return out
+  }
 
   // A `var()` naming a token nobody declares is INVALID AT COMPUTED-VALUE TIME,
-  // not an error: `background-color` falls back to transparent and `color` to
-  // the inherited ink, so a renamed or deleted token would be measured as
-  // something plausible rather than reported. Read the custom properties off the
-  // root and require each to be declared.
+  // not an error: `background-color` falls back to its initial `transparent` and
+  // `color` to the inherited ink, so a renamed or deleted token would be measured
+  // as something plausible rather than reported. Read the custom properties off
+  // the root and require each to be declared.
   const rootStyle = getComputedStyle(document.documentElement)
   const undeclared = input.pairs
     .flatMap(({ surfaceVar, inkVar }) => [surfaceVar, inkVar])
     .filter((name) => rootStyle.getPropertyValue(name).trim() === '')
+
+  // …and the check above covers only HALF its own stated mechanism, because a
+  // custom property holds an arbitrary token stream: a token DECLARED with a
+  // non-colour value (`--card: oklch(1 0 0)px`) is declared, so it passes, and
+  // still goes invalid at computed-value time. Measured: that one typo in
+  // `tokens.css` left all seven tests green while the probe silently measured
+  // `--background` in place of `--card`.
+  //
+  // Both halves of the fallback are observable if you vary what the fallback
+  // would BE — the same two-sentinel idea `paintOver` uses one level up:
+  //
+  //   SURFACE — the fallback is `transparent`, which paints nothing, so the
+  //     reading is whatever sits behind it. Paint the resolved value over two
+  //     different bases and require the same pixel. That doubles as a real
+  //     constraint rather than a trick: a translucent SURFACE would make the
+  //     measured ratio a fiction about whatever happens to be underneath, so all
+  //     eleven are required to be opaque. (`--border` is legitimately
+  //     translucent and is deliberately not one of them.)
+  //   INK — `color` is INHERITED, so the fallback is the surrounding ink, which
+  //     on these pages is `--foreground`: entirely plausible, and wrong. Resolve
+  //     it under two different inherited inks and require the same answer.
+  const BLACK: [number, number, number] = [0, 0, 0]
+  const unresolved: string[] = []
+
+  const inksUnderMagenta = resolveInksUnder('rgb(255, 0, 255)')
+  const inksUnderGreen = resolveInksUnder('rgb(0, 255, 0)')
+
+  const pairs = input.pairs.map(({ pair, surfaceVar, inkVar }, i) => {
+    const surfaceValue = resolve('background-color', `var(${surfaceVar})`)
+    const overWhite = paintOver(WHITE, surfaceValue)
+    const overBlack = paintOver(BLACK, surfaceValue)
+    if (overWhite.join() !== overBlack.join())
+      unresolved.push(
+        `${surfaceVar} does not resolve to an opaque colour (computed "${surfaceValue}") — ` +
+          `a declared-but-invalid value falls back to transparent`,
+      )
+
+    const inkA = inksUnderMagenta[i]!
+    const inkB = inksUnderGreen[i]!
+    if (inkA !== inkB)
+      unresolved.push(
+        `${inkVar} resolves to the INHERITED ink rather than a colour of its own ` +
+          `("${inkA}" / "${inkB}") — a declared-but-invalid value falls back to inherit`,
+      )
+
+    return { pair, ...measure(surfaceValue, inkA) }
+  })
 
   return {
     visibility: document.visibilityState,
@@ -324,17 +422,12 @@ function probeInPage(input: {
     transitionCanary,
     rejected,
     undeclared,
+    unresolved,
     instrument: input.instrument.map(({ label, surface, ink }) => ({
       label,
       ...measure(surface, ink),
     })),
-    pairs: input.pairs.map(({ pair, surfaceVar, inkVar }) => ({
-      pair,
-      ...measure(
-        resolve('background-color', `var(${surfaceVar})`),
-        resolve('color', `var(${inkVar})`),
-      ),
-    })),
+    pairs,
   }
 }
 
@@ -385,7 +478,13 @@ const ratioOf = (reading: { surface: readonly number[]; ink: readonly number[] }
 
 /** Every `@import` in a stylesheet, comments stripped first — `theme.css`
  * DOCUMENTS four imports in its header comment that it does not perform, and a
- * naive scan follows all of them. */
+ * naive scan follows all of them.
+ *
+ * Today that stripping is DEFENSIVE ONLY, and saying so is the honest version:
+ * every commented `@import` currently in the tree names a file the walk reaches
+ * anyway, so removing the strip changes no verdict. Keep it — a documented
+ * import of something the file does NOT import is exactly the shape a header
+ * comment grows — but do not cite it as load-bearing. */
 function importsOf(css: string): string[] {
   const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '')
   return [...withoutComments.matchAll(/@import\s+(?:url\()?['"]([^'"]+)['"]/g)].map((m) => m[1]!)
@@ -599,6 +698,16 @@ describe('design-token contrast (#250)', () => {
       missing.map((f) => `${f.file} [${f.cell}]: ${f.probe.undeclared.join(', ')}`),
       'a pair names a custom property the stylesheet never declares',
     ).toEqual([])
+
+    // The other half of the same mechanism: a token that IS declared but holds a
+    // non-colour value is equally invalid at computed-value time, and falls back
+    // to transparent (surface) or to the inherited ink (foreground) — both of
+    // which measure as something plausible. See the note in `probeInPage`.
+    const iacvt = pageFacts.filter((f) => f.probe.unresolved.length > 0)
+    expect(
+      iacvt.map((f) => `${f.file} [${f.cell}]: ${f.probe.unresolved.join('; ')}`),
+      'a pair token is declared but does not resolve to a colour of its own',
+    ).toEqual([])
   })
 
   it('applies the preference each cell claims to test', () => {
@@ -614,12 +723,18 @@ describe('design-token contrast (#250)', () => {
   it('every surface/foreground pair clears AA in all six preference x OS cells', () => {
     const failures = readings
       .filter((r) => r.ratio < AA_NORMAL_TEXT)
-      .filter((r) => ALLOWED_BELOW_AA[`${r.file}: ${r.pair}: ${r.cell}`] === undefined)
-      .map(
-        (r) =>
-          `${r.file}: ${r.pair}: ${r.cell} — ${r.ratio.toFixed(3)}:1 ` +
-          `(ink rgb(${r.ink}) on rgb(${r.surface}))`,
-      )
+      .flatMap((r) => {
+        const key = `${r.file}: ${r.pair}: ${r.cell}`
+        const where = `${key} — ${r.ratio.toFixed(3)}:1 (ink rgb(${r.ink}) on rgb(${r.surface}))`
+        const exemption = ALLOWED_BELOW_AA[key]
+        if (exemption === undefined) return [where]
+        // An exemption names the ratio it was MEASURED at, not merely "under
+        // 4.5". Without this arm the entry approves every value below the floor,
+        // 1.443:1 included — measured.
+        if (r.ratio < exemption.atLeast)
+          return [`${where} — BELOW its exemption floor of ${exemption.atLeast}:1`]
+        return []
+      })
     expect(
       failures,
       `These token pairs are below ${AA_NORMAL_TEXT}:1:\n${failures.join('\n')}`,
