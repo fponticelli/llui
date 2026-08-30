@@ -20,10 +20,10 @@ describe('owned benchmark process lifecycle', () => {
         process.execPath,
         ['-e', 'setInterval(() => {}, 1_000)'],
         { stdio: 'ignore' },
-        async (child) => {
+        (child) => {
           pid = child.pid
           expect(isAlive(pid)).toBe(true)
-          throw new Error('benchmark failed')
+          return Promise.reject(new Error('benchmark failed'))
         },
       ),
     ).rejects.toThrow('benchmark failed')

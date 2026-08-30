@@ -67,10 +67,12 @@ describe('registry-demo stays in sync with the registry', () => {
 
   it('the demo pulls in every item the registry publishes', async () => {
     // A new registry item that no demo renders is an item nobody has looked at.
-    const registry = JSON.parse(await readFile(path.join(ROOT, 'registry/registry.json'), 'utf8'))
+    const registry = JSON.parse(
+      await readFile(path.join(ROOT, 'registry/registry.json'), 'utf8'),
+    ) as { items: readonly { name: string; type: string }[] }
     const published = registry.items
-      .filter((i: { type: string }) => i.type === 'registry:ui')
-      .map((i: { name: string }) => i.name)
+      .filter((i) => i.type === 'registry:ui')
+      .map((i) => i.name)
       .sort()
     expect(await demoItems()).toEqual(published)
   })

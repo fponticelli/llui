@@ -278,7 +278,7 @@ describe('value-hued chip contrast', () => {
     }
   })
 
-  it('reports the HSL formulation this replaced as failing — the sweep can fail', async () => {
+  it('reports the HSL formulation this replaced as failing — the sweep can fail', () => {
     // The originally proposed `hsl(H 55% 30%)` on `hsl(H 58% 91%)`. HSL's `L` is
     // a channel average, so perceived lightness swings hard with hue. Without
     // this case the sweep above proves only that SOME formulation passes.
@@ -297,7 +297,7 @@ describe('value-hued chip contrast', () => {
     expect(max / min).toBeGreaterThan(2)
   })
 
-  it('every hue the hash can emit is one of the measured slots', async () => {
+  it('every hue the hash can emit is one of the measured slots', () => {
     expect(CHIP_HUES).toHaveLength(CHIP_HUE_SLOT_COUNT)
     const slots = new Set(CHIP_HUES)
     // A corpus wide enough to exercise the modulo, not a spot check.

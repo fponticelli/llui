@@ -199,7 +199,6 @@ function annotateUnion(lines, startIdx) {
       // Other content — likely the union's right-hand-side has ended (e.g. a
       // type expression on its own line). Flush and stop.
       out.push(...pending)
-      pending = []
       out.push(cur)
       i++
       return { rewritten: out, consumed: i - startIdx, edits }

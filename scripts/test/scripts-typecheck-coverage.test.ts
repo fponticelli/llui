@@ -52,7 +52,9 @@ function gitScriptFiles(): string[] {
 
 /** The root file set `tsconfig.scripts.json` actually expands to. */
 function configRootFiles(): { fileNames: string[]; options: ts.CompilerOptions } {
-  const read = ts.readConfigFile(CONFIG, ts.sys.readFile)
+  // Wrapped rather than passed by reference: `ts.sys.readFile` is a method, and
+  // handing a method to another function loses its receiver (`unbound-method`).
+  const read = ts.readConfigFile(CONFIG, (p) => ts.sys.readFile(p))
   expect(
     read.error,
     `tsconfig.scripts.json must parse: ${JSON.stringify(read.error)}`,

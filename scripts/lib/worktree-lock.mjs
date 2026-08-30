@@ -209,6 +209,7 @@ function snapshotLock(lockPath) {
  */
 function parseRecord(raw) {
   try {
+    /** @type {unknown} */
     const parsed = JSON.parse(raw)
     if (typeof parsed !== 'object' || parsed === null) return null
     const { pid, host, token, startedAt, label } = /** @type {Record<string, unknown>} */ (parsed)
@@ -383,7 +384,9 @@ export function sameInode(a, b) {
  */
 function reapAbandonedBreaker(breaker, ctx) {
   try {
-    const held = /** @type {Record<string, unknown>} */ (JSON.parse(readFileSync(breaker, 'utf8')))
+    /** @type {unknown} */
+    const parsedBreaker = JSON.parse(readFileSync(breaker, 'utf8'))
+    const held = /** @type {Record<string, unknown>} */ (parsedBreaker)
     const at = held['at']
     const pid = held['pid']
     const age = ctx.now() - (typeof at === 'number' ? at : 0)

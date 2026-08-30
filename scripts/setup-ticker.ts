@@ -104,14 +104,20 @@ const LOCK_PACKAGES: Record<string, string | null> = {
   svelte: 'svelte',
 }
 
+/** A manifest's `version`, or undefined when the file has none. */
+function readManifestVersion(manifestPath: string): string | undefined {
+  const parsed = JSON.parse(readFileSync(manifestPath, 'utf8')) as { version?: unknown }
+  return typeof parsed.version === 'string' ? parsed.version : undefined
+}
+
 function readVersion(fw: string, pkg: string): string {
   const candidate = resolve(TICKER_DIR, 'frameworks', fw, 'node_modules', pkg, 'package.json')
   if (existsSync(candidate)) {
-    return JSON.parse(readFileSync(candidate, 'utf8')).version ?? ''
+    return readManifestVersion(candidate) ?? ''
   }
   // For workspace deps like @llui/dom, fall back to the source package's package.json.
   if (pkg === '@llui/dom') {
-    return JSON.parse(readFileSync(resolve(ROOT, 'packages/dom/package.json'), 'utf8')).version
+    return readManifestVersion(resolve(ROOT, 'packages/dom/package.json')) ?? ''
   }
   return ''
 }

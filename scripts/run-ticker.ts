@@ -217,7 +217,7 @@ try {
   type FwResults = Record<string, Record<string, number | null>>
 
   const baseline: FwResults = readBenchmarkBaseline(BASELINE).ticker
-  const current: FwResults = JSON.parse(JSON.stringify(baseline))
+  const current = JSON.parse(JSON.stringify(baseline)) as FwResults
   const measured: BenchmarkMatrix = {}
   const samples = new Map<string, number[]>()
 
@@ -288,7 +288,7 @@ try {
       const agg = medianOf(arr)
       if (agg != null) {
         current[fwName][b.id] = agg
-        measured[fwName]![b.id] = agg
+        measured[fwName][b.id] = agg
       }
     }
   }

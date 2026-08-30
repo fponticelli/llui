@@ -123,7 +123,13 @@ export function aggregateDurations(reports, repoRoot) {
       if (typeof name !== 'string' || !Array.isArray(assertionResults)) continue
       const key = relative(repoRoot, name).split('\\').join('/')
       let total = 0
-      for (const test of assertionResults) {
+      // `Array.isArray` narrows an `unknown` to `any[]` — its lib signature is
+      // `arg is any[]` — so the loop variable would be `any` and every read off
+      // it unchecked. Re-declare as `unknown[]` before iterating. (`results`
+      // above is already `unknown[]`, which the same guard leaves alone.)
+      /** @type {readonly unknown[]} */
+      const tests = assertionResults
+      for (const test of tests) {
         const duration = /** @type {Record<string, unknown>} */ (test)?.['duration']
         if (typeof duration === 'number' && Number.isFinite(duration)) total += duration
       }

@@ -25,7 +25,31 @@ const compilerEntry = join(
   'dist',
   'index.js',
 )
-const { buildManifest, serializeManifest } = await import(compilerEntry)
+/**
+ * The compiler's manifest API, typed from its own SOURCE.
+ *
+ * The specifier above is a runtime path, so `await import()` hands back `any`
+ * and something has to state the shape. Three spellings were measured:
+ *
+ *   - `typeof import('.../compiler/DIST/index.js')` — exact, and REJECTED: it
+ *     puts a build artifact into the `pnpm check:scripts` program, which is
+ *     deliberately build-independent (see the `Scripts type check` step in
+ *     `ci.yml`), so the gate would stop running on a cold checkout.
+ *   - a hand-written `@typedef` of just the two entry points — cheapest, and
+ *     rejected because it is a hand-maintained restatement that can drift from
+ *     the real signatures silently (`serializeManifest` takes a `Manifest`, not
+ *     the structural stand-in a local typedef reaches for).
+ *   - `typeof import('.../compiler/SRC/index.js')` — SHIPPED. It is source, so
+ *     the gate stays build-independent, and `scripts/` already reaches into
+ *     package sources by relative path in three other files. Measured cost:
+ *     the non-`node_modules` program grows 74 -> 104 files and `check:scripts`
+ *     ~2.4 s -> ~2.8 s (load ~220, so read the delta, not the level).
+ */
+
+/** @type {unknown} */
+const compilerModule = await import(compilerEntry)
+const { buildManifest, serializeManifest } =
+  /** @type {typeof import('../packages/compiler/src/index.js')} */ (compilerModule)
 
 const pkgDirArg = process.argv[2]
 if (!pkgDirArg) {
@@ -90,7 +114,10 @@ writeFileSync(outFile, serializeManifest(manifest))
 
 const pkgName = (() => {
   try {
-    return JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8')).name ?? pkgDir
+    /** @type {unknown} */
+    const parsed = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf8'))
+    const name = /** @type {{ name?: unknown }} */ (parsed).name
+    return typeof name === 'string' && name !== '' ? name : pkgDir
   } catch {
     return pkgDir
   }

@@ -2,22 +2,17 @@
  * Accessibility audit — runs axe-core against the components demo via Playwright.
  * Usage: npx tsx scripts/a11y-audit.ts
  */
+import type { AxeResults, RunOptions } from 'axe-core'
 import { chromium } from 'playwright'
 import { createServer } from 'http'
 import { readFileSync, existsSync } from 'fs'
 import { resolve, extname } from 'path'
 
-const DEMO_DIR = resolve(import.meta.dirname!, '..', 'examples', 'components-demo', 'dist')
+const DEMO_DIR = resolve(import.meta.dirname, '..', 'examples', 'components-demo', 'dist')
 // Load axe-core from the pinned node_modules copy (devDependency) rather than a
 // CDN: a network fetch mid-audit is a flaky, unpinnable, offline-hostile
 // dependency, and the CDN version could silently drift from what we test against.
-const AXE_SOURCE_PATH = resolve(
-  import.meta.dirname!,
-  '..',
-  'node_modules',
-  'axe-core',
-  'axe.min.js',
-)
+const AXE_SOURCE_PATH = resolve(import.meta.dirname, '..', 'node_modules', 'axe-core', 'axe.min.js')
 
 const MIME: Record<string, string> = {
   '.html': 'text/html',
@@ -66,33 +61,34 @@ async function main() {
     () => typeof (globalThis as Record<string, unknown>).axe !== 'undefined',
   )
 
-  // Run axe
+  // Run axe.
+  //
+  // The callback body is serialized and evaluated IN THE PAGE, so `axe` is the
+  // global the injected bundle installed there and cannot be imported. It is
+  // reached through a typed view of `globalThis` built from axe-core's own
+  // published types (`import type`, therefore fully erased and never shipped
+  // into the page) rather than through `any` — an `any` here would flow into
+  // `result` and out through every `.map` below, which is precisely the
+  // propagation `no-unsafe-*` exists to stop.
   const results = await page.evaluate(async () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const axe = (globalThis as any).axe
+    const { axe } = globalThis as unknown as {
+      axe: { run: (context: Element, options: RunOptions) => Promise<AxeResults> }
+    }
     const result = await axe.run(document.body, {
       runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'],
     })
     return {
-      violations: result.violations.map(
-        (v: {
-          id: string
-          impact: string
-          description: string
-          helpUrl: string
-          nodes: { html: string; failureSummary: string }[]
-        }) => ({
-          id: v.id,
-          impact: v.impact,
-          description: v.description,
-          helpUrl: v.helpUrl,
-          count: v.nodes.length,
-          examples: v.nodes.slice(0, 3).map((n: { html: string; failureSummary: string }) => ({
-            html: n.html.slice(0, 200),
-            summary: n.failureSummary,
-          })),
-        }),
-      ),
+      violations: result.violations.map((v) => ({
+        id: v.id,
+        impact: v.impact ?? 'unknown',
+        description: v.description,
+        helpUrl: v.helpUrl,
+        count: v.nodes.length,
+        examples: v.nodes.slice(0, 3).map((n) => ({
+          html: n.html.slice(0, 200),
+          summary: n.failureSummary ?? '',
+        })),
+      })),
       passes: result.passes.length,
       incomplete: result.incomplete.length,
     }

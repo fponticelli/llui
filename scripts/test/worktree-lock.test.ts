@@ -63,6 +63,23 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
+/**
+ * Read the lock file back as an unnarrowed record.
+ *
+ * What this buys is precise, and NOT what a first draft of this comment
+ * claimed: reads come back `unknown` rather than `any`, so anything done WITH a
+ * read value is type-checked. It does NOT catch a misspelled key —
+ * `Record<string, unknown>` admits every key (measured: `tsc` reports nothing
+ * on `readLockRecord()['tokne']`) — and it never needed to, because
+ * `expect(undefined).toBe('x')` FAILS loudly either way (measured). The `any`
+ * cost is downstream: `JSON.parse(...).label.toUpperCase()` compiles and this
+ * spelling does not, and `no-unsafe-member-access` is what makes the whole
+ * chain visible in the first place.
+ */
+function readLockRecord(): Record<string, unknown> {
+  return JSON.parse(readFileSync(lockPath, 'utf8')) as Record<string, unknown>
+}
+
 /** Write a lock record directly, bypassing acquisition. */
 function plantLock(record: Record<string, unknown>): string {
   const raw = JSON.stringify(record)
@@ -75,7 +92,7 @@ describe('acquireLock', () => {
     const { release, record } = await acquireLock(lockPath, { label: 'unit' })
     expect(existsSync(lockPath)).toBe(true)
     expect(record.pid).toBe(process.pid)
-    expect(JSON.parse(readFileSync(lockPath, 'utf8')).label).toBe('unit')
+    expect(readLockRecord()['label']).toBe('unit')
     release()
     expect(existsSync(lockPath)).toBe(false)
   })
@@ -160,11 +177,11 @@ describe('acquireLock', () => {
         timeoutMs: 500,
         isAlive: () => false,
         now: () => (clock += 100),
-        sleep: async () => undefined,
+        sleep: () => Promise.resolve(undefined),
       }),
     ).rejects.toThrow(/Timed out/)
     // Still there: never broken, because it was never confirmed.
-    expect(JSON.parse(readFileSync(lockPath, 'utf8')).token).toBe('ghost')
+    expect(readLockRecord()['token']).toBe('ghost')
   })
 
   it('breaks it once the SAME bytes have been confirmed for confirmMs', async () => {
@@ -176,7 +193,7 @@ describe('acquireLock', () => {
       timeoutMs: 60_000,
       isAlive: () => false,
       now: () => (clock += 100),
-      sleep: async () => undefined,
+      sleep: () => Promise.resolve(undefined),
     })
     expect(record.token).not.toBe('dead')
     release()
@@ -309,7 +326,7 @@ describe('lockIsStale', () => {
    * trips. `staleMs` above `timeoutMs` made it dead code: a foreign record
    * blocked every commit in every worktree for the full timeout and then threw.
    */
-  it('ships a staleMs that a waiter can actually reach before its timeout', async () => {
+  it('ships a staleMs that a waiter can actually reach before its timeout', () => {
     const source = readFileSync(join(here, '..', 'lib', 'worktree-lock.mjs'), 'utf8')
     const timeoutMs = Number(/timeoutMs = ([\d_]+)/.exec(source)?.[1]?.replace(/_/g, ''))
     const staleMs = Number(/staleMs = ([\d_]+)/.exec(source)?.[1]?.replace(/_/g, ''))
@@ -322,12 +339,12 @@ describe('lockIsStale', () => {
 describe('releaseLock', () => {
   it('refuses to delete a lock that was stolen from us', async () => {
     const { release } = await acquireLock(lockPath, { label: 'ours' })
-    const mine = JSON.parse(readFileSync(lockPath, 'utf8'))
+    const mine = readLockRecord()
     // Simulate a stale sweep having handed the lock to someone else.
     writeFileSync(lockPath, JSON.stringify({ ...mine, token: 'theirs' }))
     release()
     expect(existsSync(lockPath)).toBe(true)
-    expect(JSON.parse(readFileSync(lockPath, 'utf8')).token).toBe('theirs')
+    expect(readLockRecord()['token']).toBe('theirs')
     releaseLock(lockPath, 'theirs')
     expect(existsSync(lockPath)).toBe(false)
   })
@@ -340,9 +357,7 @@ describe('releaseLock', () => {
 describe('withLock', () => {
   it('releases the lock when the body throws', async () => {
     await expect(
-      withLock(lockPath, { pollMs: 1 }, async () => {
-        throw new Error('boom')
-      }),
+      withLock(lockPath, { pollMs: 1 }, () => Promise.reject(new Error('boom'))),
     ).rejects.toThrow('boom')
     expect(existsSync(lockPath)).toBe(false)
   })

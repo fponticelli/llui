@@ -116,12 +116,15 @@ jobs:
       # surfaces as a runtime `undefined` inside an assertion — which can pass.
       #
       # It needs no build, and the reason is narrower than "scripts/ imports no
-      # package": THREE files reach into package SOURCES by relative path, in
-      # five import statements — `chip-contrast` (x1), `registry-demo-sync` (x2)
-      # and `lexical-loro-stress-lane` (x2). A fourth, `vitest-config-baseline`,
-      # reaches outside `scripts/` but only to the repo-root `vitest.shared.ts`,
-      # which is not a package source; count it under "outside scripts/" (4 files
-      # / 6 statements) and not under this one.
+      # package": FOUR files reach into package SOURCES by relative path, in six
+      # import statements — `chip-contrast` (x1), `registry-demo-sync` (x2),
+      # `lexical-loro-stress-lane` (x2) and `emit-deps` (x1, a type-only
+      # `import()` of `@llui/compiler`'s SRC entry, added by #256 in place of a
+      # hand-written restatement of two signatures). A fifth,
+      # `vitest-config-baseline`, reaches outside `scripts/` but only to the
+      # repo-root `vitest.shared.ts`, which is not a package source; count it
+      # under "outside scripts/" (5 files / 7 statements) and not under this
+      # one.
       #
       # What makes the gate build-independent is that every one of those resolves
       # to a `.ts` SOURCE file: the program contains zero `@llui/*` specifiers and
@@ -129,12 +132,45 @@ jobs:
       # sits here purely to keep the type-check steps together, not because it
       # depends on the build above.
       #
-      # It is a TYPE gate, not an `any` ban: `JSON.parse` returns `any` and
-      # `scripts/` has ~38 call sites, plus two explicit `any`s this gate does
-      # not reject. Banning them needs ESLint, which still does not run here
-      # (#256).
+      # It is a TYPE gate and not an `any` ban — `JSON.parse` returns `any` and
+      # `scripts/` has ~38 call sites, none of which a tsconfig can reject. The
+      # ban is the `Scripts lint` step BELOW (#256, closed): ESLint now runs
+      # here, type-aware, with the `no-unsafe-*` family and `no-explicit-any` at
+      # error, and zero explicit `any`s survive. (This comment used to claim two
+      # did. Only ONE was TypeScript — `a11y-audit.ts`, now typed from
+      # axe-core's own declarations. The other, `jfb-trace-start.ts`'s
+      # `entries: any[]`, sits inside a TEMPLATE LITERAL: source text this
+      # script splices into an upstream JS file, so no gate here has an opinion
+      # on it and a grep that counts it is counting a string.)
       - name: Scripts type check
         run: pnpm check:scripts
+
+      # The OTHER half of the same gap (#256). `pnpm turbo lint` below runs the
+      # `lint` task PER PACKAGE and the root is not a workspace member, so
+      # nothing linted `scripts/` at all — #252 closed the type-check half and
+      # left this one open in as many words ("Banning them needs ESLint, which
+      # still does not run here").
+      #
+      # It sits HERE rather than beside `Lint` on purpose: the two `scripts/`
+      # gates are one pair, and a reader asking "what covers `scripts/`?" should
+      # find both in one place rather than 40 lines apart. Ordering is otherwise
+      # free — `verify` fails fast, so a step's position only decides which
+      # failure you are shown first.
+      #
+      # It is TYPE-AWARE over the same `tsconfig.scripts.json` program the step
+      # above compiles, which is what makes the `no-unsafe-*` family available
+      # for the `.mjs` half too; the rule-set measurements and why
+      # `strictTypeChecked` was rejected are in `eslint.config.ts`. Over the 66
+      # files the globs match, on an 18-core darwin/arm64 machine: 4.1 s quiet,
+      # 4.4 s (median of 3) at load ~210, and 4.8 s at load ~240 in an
+      # independent measurement — call it ~4-5 s, and do not read the level as
+      # portable to the 4-core CI runner.
+      #
+      # `--max-warnings=0` in the script: no rule in this block is warn-level
+      # today, so it is currently a no-op, but a gate that ignores warnings is
+      # the thing this repo says does not work on LLMs or on humans in a hurry.
+      - name: Scripts lint
+        run: pnpm lint:scripts
 
       # The registry ships SOURCE that only a consumer's build compiles, so
       # `turbo check` never sees it. This is the same blind spot that let

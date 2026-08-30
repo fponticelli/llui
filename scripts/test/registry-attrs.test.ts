@@ -361,7 +361,7 @@ describe('registry recipes only style attributes their machine publishes', () =>
       if (published.size === 0) continue
       const full = path.join(UI, file)
       const candidates: string[] = extractClassCandidates(full, await readFile(full, 'utf8'))
-      const referenced = new Set(candidates.flatMap((c) => attrsInCandidate(c) as string[]))
+      const referenced = new Set(candidates.flatMap((c) => attrsInCandidate(c)))
       for (const attr of [...referenced].sort()) {
         if (published.has(attr)) continue
         const allowance = ALLOWED[`${file}: ${attr}`] ?? ALLOWED[`*: ${attr}`]
@@ -415,8 +415,8 @@ describe('registry recipes only style attributes their machine publishes', () =>
       if (published.size === 0) continue
       const full = path.join(UI, file)
       const candidates: string[] = extractClassCandidates(full, await readFile(full, 'utf8'))
-      const bare = new Set(candidates.flatMap((c) => bareAttrsInCandidate(c) as string[]))
-      const pairs = new Set(candidates.flatMap((c) => attrValuePairsInCandidate(c) as string[]))
+      const bare = new Set(candidates.flatMap((c) => bareAttrsInCandidate(c)))
+      const pairs = new Set(candidates.flatMap((c) => attrValuePairsInCandidate(c)))
       for (const pair of [...pairs].sort()) {
         const eq = pair.indexOf('=')
         const attr = pair.slice(0, eq)
@@ -571,7 +571,7 @@ describe('registry recipes only style attributes their machine publishes', () =>
     // shape that shipped: the carousel indicator styling `data-[state=active]`
     // against a machine that publishes a bare `data-active`.
     const published = await machineAttrs(['carousel'])
-    const referenced = attrsInCandidate('data-[state=active]:bg-primary') as string[]
+    const referenced = attrsInCandidate('data-[state=active]:bg-primary')
     expect(referenced).toEqual(['data-state'])
     expect(published.has('data-state')).toBe(false)
     expect(published.has('data-active')).toBe(true)

@@ -65,8 +65,16 @@ function execOutput(err) {
   if (typeof err !== 'object' || err === null) return ''
   const stdout = 'stdout' in err ? err.stdout : undefined
   const stderr = 'stderr' in err ? err.stderr : undefined
-  const text = (/** @type {unknown} */ value) =>
-    value === null || value === undefined ? '' : String(value)
+  // `stdout`/`stderr` on a child-process error are a Buffer under the default
+  // encoding and a string when one was requested. Nothing else is meaningful
+  // here, and `String(unknown)` on anything else stringifies to
+  // `[object Object]` — a diagnostic that says nothing, which is worse than an
+  // empty one.
+  const text = (/** @type {unknown} */ value) => {
+    if (typeof value === 'string') return value
+    if (value instanceof Uint8Array) return Buffer.from(value).toString('utf8')
+    return ''
+  }
   return text(stdout) + text(stderr)
 }
 

@@ -580,14 +580,14 @@ describe('design-token contrast (#250)', () => {
           await page.setContent(
             `<!doctype html><html${attr}><head><meta charset="utf-8"><style>${compiled.get(entry)}</style></head><body></body></html>`,
           )
-          const probe = (await page.evaluate(probeInPage, {
+          const probe = await page.evaluate(probeInPage, {
             pairs: PAIRS.map((pair) => ({
               pair,
               surfaceVar: surfaceVar(pair),
               inkVar: inkVar(pair),
             })),
             instrument: INSTRUMENT.map(({ label, surface, ink }) => ({ label, surface, ink })),
-          })) as Probe
+          })
           pageFacts.push({ cell: cell.name, file: rel, probe })
           for (const [i, entryReading] of probe.instrument.entries())
             instrumentReadings.push({
@@ -728,7 +728,9 @@ describe('design-token contrast (#250)', () => {
       .filter((r) => r.ratio < AA_NORMAL_TEXT)
       .flatMap((r) => {
         const key = `${r.file}: ${r.pair}: ${r.cell}`
-        const where = `${key} — ${r.ratio.toFixed(3)}:1 (ink rgb(${r.ink}) on rgb(${r.surface}))`
+        const where =
+          `${key} — ${r.ratio.toFixed(3)}:1 ` +
+          `(ink rgb(${r.ink.join(',')}) on rgb(${r.surface.join(',')}))`
         const exemption = ALLOWED_BELOW_AA[key]
         if (exemption === undefined) return [where]
         // An exemption names the ratio it was MEASURED at, not merely "under

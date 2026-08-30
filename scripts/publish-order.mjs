@@ -47,8 +47,9 @@ const pkgs = []
 for (const dir of readdirSync(pkgsDir)) {
   const pj = join(pkgsDir, dir, 'package.json')
   if (!existsSync(pj)) continue
-  /** @type {PackageManifest} */
-  const json = JSON.parse(readFileSync(pj, 'utf8'))
+  /** @type {unknown} */
+  const parsed = JSON.parse(readFileSync(pj, 'utf8'))
+  const json = /** @type {PackageManifest} */ (parsed)
   if (typeof json.name !== 'string' || json.name === '') {
     throw new Error(`publish-order: ${pj} has no "name"`)
   }
@@ -118,7 +119,7 @@ while (ready.length) {
     indeg.set(d, remaining - 1)
     if (remaining - 1 === 0) {
       // insert keeping the queue sorted
-      let i = ready.findIndex((x) => x > d)
+      const i = ready.findIndex((x) => x > d)
       if (i === -1) ready.push(d)
       else ready.splice(i, 0, d)
     }

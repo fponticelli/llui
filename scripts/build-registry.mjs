@@ -31,8 +31,9 @@ const OUT = path.join(ROOT, 'site', 'public', 'r')
  * @typedef {{ items: RegistryItem[] } & Record<string, unknown>} Registry
  */
 
-/** @type {Registry} */
-const registry = JSON.parse(await readFile(SOURCE, 'utf8'))
+/** @type {unknown} */
+const parsedRegistry = JSON.parse(await readFile(SOURCE, 'utf8'))
+const registry = /** @type {Registry} */ (parsedRegistry)
 
 await rm(OUT, { recursive: true, force: true })
 await mkdir(OUT, { recursive: true })

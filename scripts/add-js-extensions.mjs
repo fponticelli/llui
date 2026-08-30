@@ -27,7 +27,7 @@
  */
 
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs'
-import { resolve, join, relative } from 'node:path'
+import { resolve, join } from 'node:path'
 
 const ROOT = resolve(import.meta.dirname, '..')
 const DRY = process.argv.includes('--dry')

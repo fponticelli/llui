@@ -73,6 +73,24 @@ import { withLock, lockPathFor } from './lib/worktree-lock.mjs'
  * protection that is opt-in per shell is not exclusion.
  */
 
+/**
+ * Run `pnpm lint-staged`, resolving with the exit code this hook should produce.
+ *
+ * Named (rather than inlined at the `withLock` call) so the promise has a
+ * DECLARED element type. `new Promise(executor)` infers nothing from the
+ * executor's `resolve` calls, so an inline callback made `withLock`'s `T`
+ * unresolved and `exitCode` an `any` that then flowed into `process.exit`.
+ *
+ * @returns {Promise<number>}
+ */
+function runLintStaged() {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn('pnpm', ['lint-staged'], { stdio: 'inherit', shell: false })
+    child.on('error', rejectPromise)
+    child.on('exit', (code, signal) => resolvePromise(signal !== null ? 1 : (code ?? 1)))
+  })
+}
+
 const gitCommonDir = resolve(
   execFileSync('git', ['rev-parse', '--git-common-dir'], { encoding: 'utf8' }).trim(),
 )
@@ -90,12 +108,7 @@ const exitCode = await withLock(
     staleMs: 600_000,
     onWait: (message) => process.stderr.write(`[llui] ${message}\n`),
   },
-  () =>
-    new Promise((resolvePromise, rejectPromise) => {
-      const child = spawn('pnpm', ['lint-staged'], { stdio: 'inherit', shell: false })
-      child.on('error', rejectPromise)
-      child.on('exit', (code, signal) => resolvePromise(signal !== null ? 1 : (code ?? 1)))
-    }),
+  runLintStaged,
 )
 
 process.exit(exitCode)

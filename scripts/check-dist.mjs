@@ -54,8 +54,13 @@ import {
   walkTs,
 } from './lib/dist-type-bindings.mjs'
 
-/** @type {typeof import('typescript')} */
-const ts = createRequire(import.meta.url)('typescript')
+// `createRequire(...)(...)` is typed `any`, so the annotation has to land on a
+// SECOND binding: a JSDoc cast is invisible to typescript-eslint (the rule
+// resolves the inner expression and still sees `any` — observed, cause unread),
+// while `any` -> `unknown` on a declaration is accepted by both gates.
+/** @type {unknown} */
+const tsModule = createRequire(import.meta.url)('typescript')
+const ts = /** @type {typeof import('typescript')} */ (tsModule)
 
 /**
  * The subset of a package manifest this check reads.
@@ -94,8 +99,9 @@ function targets() {
   return readdirSync('packages').filter((d) => {
     const p = `packages/${d}/package.json`
     if (!existsSync(p)) return false
-    /** @type {PackageManifest} */
-    const manifest = JSON.parse(readFileSync(p, 'utf8'))
+    /** @type {unknown} */
+    const parsed = JSON.parse(readFileSync(p, 'utf8'))
+    const manifest = /** @type {PackageManifest} */ (parsed)
     return !manifest.private
   })
 }
@@ -153,8 +159,9 @@ for (const pkgDir of targets()) {
     problems.push(`${pkgDir}: no dist/ — build before running this check`)
     continue
   }
-  /** @type {PackageManifest} */
-  const pkg = JSON.parse(readFileSync(`${root}/package.json`, 'utf8'))
+  /** @type {unknown} */
+  const parsedPkg = JSON.parse(readFileSync(`${root}/package.json`, 'utf8'))
+  const pkg = /** @type {PackageManifest} */ (parsedPkg)
   // Top-level names in `files` decide what ships. A map source outside them is
   // dangling in the tarball even though it resolves here in the workspace.
   const shipped = new Set((pkg.files ?? []).map((f) => firstSegment(f.replace(/^\.\//, ''))))
@@ -165,8 +172,9 @@ for (const pkgDir of targets()) {
         if (!spec.endsWith('.js')) problems.push(`${file}: extensionless import "${spec}"`)
       }
     } else if (file.endsWith('.map')) {
-      /** @type {SourceMap} */
-      const map = JSON.parse(readFileSync(file, 'utf8'))
+      /** @type {unknown} */
+      const parsedMap = JSON.parse(readFileSync(file, 'utf8'))
+      const map = /** @type {SourceMap} */ (parsedMap)
       for (const s of map.sources ?? []) {
         const abs = normalize(join(dirname(file), s))
         const pkgRelative = relative(root, abs)

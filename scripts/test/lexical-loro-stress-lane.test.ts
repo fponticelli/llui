@@ -11,6 +11,23 @@ interface PackageManifest {
   readonly scripts?: Readonly<Record<string, string>>
 }
 
+/**
+ * The two discovery fields this file reads off a vitest config.
+ *
+ * `vitest.config.ts` is built with `mergeConfig`, whose return type is
+ * `Record<string, any>`, so `normalConfig.test` arrives as `any`. That does not
+ * make the assertions below vacuous — `expect(undefined).toEqual([...])` fails
+ * loudly — but it does mean nothing states or checks the shape this file
+ * depends on: every hop is unchecked, and the values reaching `toEqual` are
+ * `any` rather than `readonly string[]`. Declaring it once puts the assumption
+ * in one readable place and lets the `no-unsafe-*` family see the rest.
+ * `vitest.stress.config.ts` uses `defineConfig` and is already typed, which is
+ * why only one of the two needs this.
+ */
+interface DiscoveryConfig {
+  readonly test?: { readonly include?: readonly string[] }
+}
+
 describe('@llui/lexical-loro test lanes', () => {
   it('keeps deep stress tests out of the default package command', () => {
     const manifest = JSON.parse(
@@ -21,8 +38,9 @@ describe('@llui/lexical-loro test lanes', () => {
     expect(manifest.scripts?.['test:contention']).toBe(
       'node ../../scripts/with-cpu-contention.mjs -- pnpm exec vitest run test/convergence.test.ts test/convergence-attack.test.ts test/to-loro.test.ts test/harden.test.ts --reporter=verbose',
     )
-    expect(normalConfig.test?.include).toEqual(['test/**/*.test.ts'])
-    expect(normalConfig.test?.include).not.toContain('test/stress/**/*.stress.ts')
+    const normalInclude = (normalConfig as DiscoveryConfig).test?.include
+    expect(normalInclude).toEqual(['test/**/*.test.ts'])
+    expect(normalInclude).not.toContain('test/stress/**/*.stress.ts')
   })
 
   it('exposes the deep suite through one dedicated package command and budget', () => {

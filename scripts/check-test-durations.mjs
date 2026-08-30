@@ -90,7 +90,11 @@ if (!existsSync(outDir)) {
 
 const reports = readdirSync(outDir)
   .filter((name) => name.endsWith('.json'))
-  .map((name) => JSON.parse(readFileSync(join(outDir, name), 'utf8')))
+  .map((name) => {
+    /** @type {unknown} */
+    const parsed = JSON.parse(readFileSync(join(outDir, name), 'utf8'))
+    return parsed
+  })
 const current = aggregateDurations(reports, repoRoot)
 const fileCount = Object.keys(current).length
 if (fileCount === 0) {
@@ -137,7 +141,9 @@ if (!existsSync(baselinePath)) {
   process.stderr.write(`no baseline at ${baselinePath}; run \`pnpm test:durations\` first\n`)
   process.exit(1)
 }
-const baseline = JSON.parse(readFileSync(baselinePath, 'utf8')).files ?? {}
+/** @type {unknown} */
+const parsedBaseline = JSON.parse(readFileSync(baselinePath, 'utf8'))
+const baseline = /** @type {{ files?: Record<string, number> }} */ (parsedBaseline).files ?? {}
 const comparison = compareDurations(baseline, current, { factor, minDeltaMs, maxSpread, maxScale })
 process.stdout.write(
   formatComparison(comparison, { factor, minDeltaMs, maxSpread, maxScale }) + '\n',

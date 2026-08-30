@@ -82,13 +82,15 @@ function resolvePackageCss(id) {
    * manifest on purpose: anything else here would be read without being
    * declared, and `JSON.parse` hands back `any`.
    *
-   * @type {{
+   * @typedef {{
    *   exports?: { '.'?: { style?: string } | string },
    *   style?: string,
    *   main?: string,
-   * }}
+   * }} CssEntryManifest
    */
-  const pkg = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))
+  /** @type {unknown} */
+  const parsed = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'))
+  const pkg = /** @type {CssEntryManifest} */ (parsed)
   const dot = pkg.exports?.['.']
   const entry = (typeof dot === 'object' ? dot?.style : undefined) ?? pkg.style ?? pkg.main
   if (entry === undefined) throw new Error(`No CSS entry for "${id}"`)

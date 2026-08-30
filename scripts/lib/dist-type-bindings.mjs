@@ -128,7 +128,9 @@ import { createRequire } from 'node:module'
  * @returns {typeof import('typescript')}
  */
 function loadTs(root) {
-  return createRequire(join(root, '_.js'))('typescript')
+  /** @type {unknown} */
+  const mod = createRequire(join(root, '_.js'))('typescript')
+  return /** @type {typeof import('typescript')} */ (mod)
 }
 
 /**

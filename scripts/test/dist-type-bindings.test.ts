@@ -175,7 +175,7 @@ describe('the repo corpus', () => {
     let mentioning = 0
     const problems: string[] = []
     for (const pkg of packages) {
-      for (const file of walkTs(join(ROOT, 'packages', pkg, 'src')) as string[]) {
+      for (const file of walkTs(join(ROOT, 'packages', pkg, 'src'))) {
         scanned++
         const text = readFileSync(file, 'utf8')
         if (!text.includes(INTERNAL_TAG)) continue
