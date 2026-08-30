@@ -512,11 +512,20 @@ function eachRoots(itemParam: string, stateParam: string | null): Roots {
 }
 
 /** Does any scope AT or INSIDE `node` re-bind `name`? Over-approximates on
- * purpose — a shadow anywhere in a row prunes the root for the WHOLE row, which
- * costs at most a lowering tier. `scopeIntroduces` is the shared predicate (it
- * knows params, block `const`/`let`/`var`, hoisted `function`/`class`, `for`
- * initializers, `catch`, and a function/class expression's own name); this file
- * must never re-derive shadowing of its own. */
+ * purpose — a shadow anywhere in a row prunes the root for the WHOLE row.
+ *
+ * **Pruning is NOT free, and an earlier revision of this comment said it was.**
+ * Costing "at most a lowering tier" is true of the row's own reads (they stay
+ * verbatim and the runtime re-roots the handle) and FALSE of the each's own
+ * dependency MASK: in pass 1 the row's component-state reads are what fill
+ * `renderDeps`, so a pruned read is invisible to the gate above it and the row
+ * freezes at mount. That is why `emitSource`'s residue flag also takes
+ * `rowStateName === null` — see the call site.
+ *
+ * `scopeIntroduces` is the shared predicate (it knows params, block
+ * `const`/`let`/`var`, hoisted `function`/`class`, `for` initializers, `catch`,
+ * and a function/class expression's own name); this file must never re-derive
+ * shadowing of its own. */
 function subtreeShadows(node: ts.Node, name: string): boolean {
   let found = false
   const walk = (n: ts.Node): void => {
@@ -1318,9 +1327,16 @@ export function transformNodeExpr(
           const rowStateDeps = [...renderDeps]
             .filter((d) => d === 'state' || d.startsWith('state.'))
             .map((d) => (d === 'state' ? '' : d.slice('state.'.length)))
-          // Verbatim residue (a leaked row param bound to a runtime handle) may
-          // read state through code the collector can't see — degrade to the
-          // whole-state path so the reconcile fires on any state change.
+          // Verbatim residue may read state through code the collector cannot
+          // see — degrade to the whole-state path so the reconcile fires on any
+          // state change. TWO sources of residue, and the second one is #247's:
+          // a LEAKED ROW PARAM bound to a runtime handle, and a PRUNED `state`
+          // root, whose reads stay verbatim and therefore never reach
+          // `renderDeps` at all. This is the mask half of the row contract that
+          // `authoring.ts:eachArm` states for the tier it owns ("default to
+          // whole-state: this tier exists FOR rows with verbatim residue …
+          // whose state reads are unknowable"); pass 1 emits `signalEach`
+          // directly, so it has to meet that contract itself.
           if (residue) rowStateDeps.push('')
           const sourceDeps = [...new Set([...itemsLowered.deps, ...rowStateDeps])]
           if (collect) {
@@ -1373,8 +1389,16 @@ export function transformNodeExpr(
             leaked,
           )
         if (body != null) {
-          // residue: leaked-handle code may read state invisibly → whole-state dep
-          const source = emitSource(renderDeps, leaked.size > 0)
+          // Residue → whole-state dep. `leaked.size > 0` is a row param bound to
+          // a runtime handle; `rowStateName === null` is #247's PRUNED state
+          // root, whose reads survive VERBATIM in the arm and so contribute
+          // nothing to `renderDeps`. Without the second term the each's own mask
+          // never intersects the path the row actually reads and the row FREEZES
+          // AT MOUNT — correct row, wrong gate. In pass 1 `rowStateName === null`
+          // is exactly "pruned" (the ambient roots always carry the view's state
+          // root, or the enclosing view supplies it), and pushing `''` is
+          // unconditionally conservative either way.
+          const source = emitSource(renderDeps, leaked.size > 0 || rowStateName === null)
           if (source !== null) {
             eachLoweredHook?.(eachPos)
             const prelude = [...leaked].map(

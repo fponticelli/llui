@@ -130,6 +130,9 @@ export const C = component<State, Msg, never>({
       const out = tx(view('{ state }', 'state'))
       expect(out).toContain('(ctx) => ctx.state.mode')
       expect(out).toContain("['state.mode']")
+      // and the each's own mask stays PRECISE — this is the control for the
+      // whole-state widening the pruned case takes below.
+      expect(out).toContain("deps: ['rows', 'mode']")
     })
 
     it('an ALIASED bag rebases the alias — the local name is what counts', () => {
@@ -179,6 +182,12 @@ export const C = component<State, Msg, never>({
   })
 
   describe('the row itself shadows the name', () => {
+    // Be exact about what the pre-fix render looked like, because the two
+    // spellings fail differently and "it rendered the state object" is only true
+    // of one: `text(state)` emitted `produce: (ctx) => ctx.state`, so the row
+    // stringified the whole state OBJECT, while `text(state.at('label'))`
+    // emitted `ctx.state.label` — a field the component state does not have —
+    // and rendered EMPTY. Same defect, and the empty one is the quieter half.
     it('a row PARAM named `state` is the ITEM, not the component state', () => {
       const out = tx(`${HEAD}
 type State = { rows: string[]; mode: string }
@@ -197,6 +206,10 @@ export const C = component<State, Msg, never>({
       expect(out).not.toContain('ctx.state')
     })
 
+    // Only a HANDLE-valued local is a manifestation. A VALUE-valued one
+    // (`const state = item.peek()`) is byte-identical on both compilers —
+    // `state.label` is a plain property read, never a signal expression, so no
+    // root was ever consulted. Do not cite it as a fourth broken shape.
     it('a row BLOCK-BODY local named `state` shadows it', () => {
       const out = tx(`${HEAD}
 type State = { rows: string[]; mode: string }
@@ -315,6 +328,57 @@ export const C = component<State, Msg, never>({
 `)
       expect(out).not.toContain('ctx.state')
       expect(out).not.toContain('getCtx().state')
+    })
+  })
+
+  // Pruning is only half the fix. In PASS 1 the row's component-state reads are
+  // what fill `renderDeps`, and `renderDeps` becomes the structural binding's
+  // `deps` — so a pruned read is invisible to the gate ABOVE the row, the mask
+  // never intersects the path the row actually reads, and the row FREEZES AT
+  // MOUNT. Correct row, wrong gate; `emitSource`'s residue flag therefore takes
+  // `rowStateName === null` as well as a leaked row param.
+  //
+  // This is the emitted-shape guard. The behavioural one — mount, change only
+  // component state, read the DOM back — is
+  // `packages/dom/test/signals/issue-247-pruned-row-state-deps.test.ts`, and it
+  // is the only place the staleness is actually observable: nothing in a vitest
+  // run puts a test file through the vite plugin.
+  describe('a pruned row keeps the each reconciling (the dependency MASK)', () => {
+    const shadowed = (rowBody: string): string =>
+      tx(`${HEAD}
+type State = { rows: string[]; tag: string }
+type Msg = { type: 'x' }
+export const C = component<State, Msg, never>({
+  name: 'C',
+  init: () => ({ rows: [], tag: 'T' }),
+  update: (s: State) => [s, []],
+  view: ({ state, send }) => [each(state.at('rows'), {
+    key: (i: string) => i,
+    render: (item) => [li({ onClick: (state: MouseEvent) => { void state; void send } }, ${rowBody})],
+  })],
+})
+`)
+
+    it('widens the each source deps to whole-state when the root is pruned', () => {
+      const out = shadowed(`[text(state.at('tag'))]`)
+      // the read itself stays verbatim (that half is correct on its own)…
+      expect(out).toContain("text(state.at('tag'))")
+      // …and the each's mask degrades to whole-state so the row still reconciles
+      expect(out).toContain("deps: ['rows', '']")
+    })
+
+    it('a pruned row that reads NO component state keeps its PRECISE deps', () => {
+      // The widening rides on the ARM path only, and a row with nothing to read
+      // verbatim still reaches the DIRECT tier, whose deps come from the
+      // bindings it actually emitted. That is what bounds the cost: a pruned
+      // root does not widen every list, only the ones that fell to an arm.
+      // (A pruned row CANNOT reach the direct tier with a reactive state read —
+      // such a slot declines it as `row-prop/text-reads-nonroot-signal` — so the
+      // direct tier's precise deps are still complete.)
+      const out = shadowed(`[text(item)]`)
+      expect(out).toContain('signalEachDirect(')
+      expect(out).toContain("deps: ['rows']")
+      expect(out).not.toContain("deps: ['rows', '']")
     })
   })
 
