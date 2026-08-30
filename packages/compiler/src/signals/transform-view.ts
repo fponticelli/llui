@@ -16,7 +16,14 @@
 
 import ts from 'typescript'
 import { signalToProduce } from './lower.js'
-import { isSignalExpr, signalPathOf, STATE_ROOTS, type Roots } from './extract-deps.js'
+import {
+  isSignalExpr,
+  signalPathOf,
+  viewSignalRoots,
+  STATE_ROOTS,
+  type RootInfo,
+  type Roots,
+} from './extract-deps.js'
 import { ELEMENT_HELPERS } from './element-helpers.js'
 import { HelperBindings, scopeIntroduces } from './helper-bindings.js'
 import { CANONICAL_HELPER_NAMES, type HelperEmitNames } from './runtime-helpers.js'
@@ -479,12 +486,145 @@ function paramOf(roots: Roots): string {
   return 's'
 }
 
-/** Roots for an each row: item param -> ctx.item, the component `state` -> ctx.state. */
-function eachRoots(itemParam: string): Roots {
-  return new Map([
-    [itemParam, { value: 'ctx.item', dep: 'item' }],
-    ['state', { value: 'ctx.state', dep: 'state' }],
-  ])
+/**
+ * Roots for an each row: the item param -> `ctx.item`, and — when the component
+ * state really IS in scope under `stateParam` — that name -> `ctx.state`.
+ *
+ * `stateParam` comes from {@link rowComponentStateName}; passing `null` (nothing
+ * denotes the component state here) is the safe answer, since a name absent from
+ * the roots is simply not a signal expression and the row keeps it verbatim.
+ *
+ * The state entry is written LAST on purpose, and the reason is the one case the
+ * two names can COLLIDE. `rowComponentStateName` has already pruned any name the
+ * render callback re-binds, so a surviving collision means the row does NOT bind
+ * it — which happens when `itemParam` is the DEFAULT `'item'` (the render takes
+ * no identifier param) and the view aliased its bag as `({ state: item })`.
+ * There, `item` resolves OUTWARD to the state, so the state root must win.
+ * (`render: (state) => [text(state)]` is the other direction and is handled by
+ * the pruning, not by the ordering — it used to lower to `ctx.state` and render
+ * the whole state object in place of the row.)
+ */
+function eachRoots(itemParam: string, stateParam: string | null): Roots {
+  const m = new Map<string, RootInfo>()
+  m.set(itemParam, { value: 'ctx.item', dep: 'item' })
+  if (stateParam !== null) m.set(stateParam, { value: 'ctx.state', dep: 'state' })
+  return m
+}
+
+/** Does any scope AT or INSIDE `node` re-bind `name`? Over-approximates on
+ * purpose — a shadow anywhere in a row prunes the root for the WHOLE row.
+ *
+ * **Pruning is NOT free, and an earlier revision of this comment said it was.**
+ * Costing "at most a lowering tier" is true of the row's own reads (they stay
+ * verbatim and the runtime re-roots the handle) and FALSE of the each's own
+ * dependency MASK: in pass 1 the row's component-state reads are what fill
+ * `renderDeps`, so a pruned read is invisible to the gate above it and the row
+ * freezes at mount. That is why `emitSource`'s residue flag also takes
+ * `rowStateName === null` — see the call site.
+ *
+ * `scopeIntroduces` is the shared predicate (it knows params, block
+ * `const`/`let`/`var`, hoisted `function`/`class`, `for` initializers, `catch`,
+ * and a function/class expression's own name); this file must never re-derive
+ * shadowing of its own. */
+function subtreeShadows(node: ts.Node, name: string): boolean {
+  let found = false
+  const walk = (n: ts.Node): void => {
+    if (found) return
+    if (scopeIntroduces(n, name)) {
+      found = true
+      return
+    }
+    n.forEachChild(walk)
+  }
+  walk(node)
+  return found
+}
+
+/** The nearest enclosing signal component `view` function containing `at`, or
+ * null. Recognized exactly the way pass 1 recognizes one — the `view` property
+ * of a call whose callee resolves (by IMPORT PROVENANCE, never by name) to
+ * `@llui/dom`'s `component`. */
+function enclosingSignalView(at: ts.Node): ts.ArrowFunction | ts.FunctionExpression | null {
+  const bindings = ambientBindings()
+  for (let n: ts.Node | undefined = at.parent; n !== undefined; n = n.parent) {
+    if (!ts.isArrowFunction(n) && !ts.isFunctionExpression(n)) continue
+    const prop: ts.Node | undefined = n.parent
+    if (!prop || !ts.isPropertyAssignment(prop) || prop.initializer !== n) continue
+    if (prop.name.getText(prop.getSourceFile()) !== 'view') continue
+    const obj: ts.Node | undefined = prop.parent
+    if (!obj || !ts.isObjectLiteralExpression(obj)) continue
+    const call: ts.Node | undefined = obj.parent
+    if (!call || !ts.isCallExpression(call) || call.arguments[0] !== obj) continue
+    if (bindings.resolveCall(call) !== 'component') continue
+    return n
+  }
+  return null
+}
+
+/**
+ * The name under which the mounted component's state is visible to an `each`
+ * row written at `eachNode`, or null when nothing in scope denotes it.
+ *
+ * A row's `ctx.state` is the COMPONENT state (`RowCtx.state`), so rebasing an
+ * identifier onto it is sound only when that identifier really names the
+ * component state at that point. `eachRoots` used to answer that with the bare
+ * spelling `'state'`, unconditionally — so a view HELPER's parameter of that
+ * name (`plot(state: Signal<ChartState>, …)`, the composition pattern the docs
+ * recommend) was silently rebased onto the app root: `deps: ['state.x']` with
+ * `produce: (ctx) => ctx.state.x`, reading a different object than the author
+ * wrote. It compiles, type-checks and renders — with the wrong values (#247; a
+ * pie chart's tooltip swatch was orange for every slice).
+ *
+ * Three conditions, each a `scopeIntroduces` question rather than a special
+ * case:
+ *
+ *  1. Some binding in scope denotes the component state. Its LOCAL name is what
+ *     counts — `view: ({ state: st }) => …` makes `st` the component state and
+ *     leaves a bare `state` meaning whatever the module bound it to, which is
+ *     the same defect in its other direction. The name comes from the AMBIENT
+ *     roots where the lowering context still carries them (pass 1, threaded
+ *     down through every `show`/`branch` arm), and otherwise from the enclosing
+ *     component `view`'s bag — which is how pass 2 tells its two shapes apart: a
+ *     free-standing view helper (no view above it, so no component state exists
+ *     to name) from an `each` inside a view that pass 1 declined.
+ *  2. Nothing BETWEEN the each site and that binder re-binds the name. The view
+ *     function IS the binder, so the walk stops just short of it; with no view
+ *     above (a helper, or a unit-level `transformNodeExpr` call) it runs to the
+ *     file root, where any binding at all is a shadow.
+ *  3. Nothing at or inside the row's render callback re-binds it.
+ */
+function rowComponentStateName(
+  eachNode: ts.Node,
+  renderFn: ts.Node | null,
+  ambient: Roots | null,
+): string | null {
+  const viewFn = enclosingSignalView(eachNode)
+  const name = ambientStateRootName(ambient) ?? (viewFn ? viewStateRootName(viewFn) : null)
+  if (name === null) return null
+  for (let n: ts.Node | undefined = eachNode; n !== undefined && n !== viewFn; n = n.parent) {
+    if (scopeIntroduces(n, name)) return null
+  }
+  if (renderFn !== null && subtreeShadows(renderFn, name)) return null
+  return name
+}
+
+/** A root's dep namespace for the WHOLE component state — the empty path. */
+const WHOLE_STATE_DEP = ''
+
+/** The key an ambient roots map gives the WHOLE component state, or null — a
+ * row's own roots (`ctx.item`/`ctx.state`) carry none, which is what makes a
+ * nested each fall through to the enclosing view. */
+function ambientStateRootName(roots: Roots | null): string | null {
+  if (roots === null) return null
+  for (const [name, info] of roots) if (info.dep === WHOLE_STATE_DEP) return name
+  return null
+}
+
+/** The local name a component `view`'s bag binds the state to. */
+function viewStateRootName(viewFn: ts.ArrowFunction | ts.FunctionExpression): string | null {
+  const viewRoots = viewSignalRoots(viewFn)
+  if (viewRoots === null) return null
+  return [...viewRoots.keys()][0] ?? null
 }
 
 /** True if `expr` is a signal expression that yields a HANDLE (not a peeked value):
@@ -1187,9 +1327,16 @@ export function transformNodeExpr(
           const rowStateDeps = [...renderDeps]
             .filter((d) => d === 'state' || d.startsWith('state.'))
             .map((d) => (d === 'state' ? '' : d.slice('state.'.length)))
-          // Verbatim residue (a leaked row param bound to a runtime handle) may
-          // read state through code the collector can't see — degrade to the
-          // whole-state path so the reconcile fires on any state change.
+          // Verbatim residue may read state through code the collector cannot
+          // see — degrade to the whole-state path so the reconcile fires on any
+          // state change. TWO sources of residue, and the second one is #247's:
+          // a LEAKED ROW PARAM bound to a runtime handle, and a PRUNED `state`
+          // root, whose reads stay verbatim and therefore never reach
+          // `renderDeps` at all. This is the mask half of the row contract that
+          // `authoring.ts:eachArm` states for the tier it owns ("default to
+          // whole-state: this tier exists FOR rows with verbatim residue …
+          // whose state reads are unknowable"); pass 1 emits `signalEach`
+          // directly, so it has to meet that contract itself.
           if (residue) rowStateDeps.push('')
           const sourceDeps = [...new Set([...itemsLowered.deps, ...rowStateDeps])]
           if (collect) {
@@ -1206,8 +1353,13 @@ export function transformNodeExpr(
         // id) by reading the live row ctx — so real rows reach this path, not just
         // the handler-free benchmark shape. Reactive attrs/IDL props are bound too.
         const factoryDeps = new Set<string>()
+        // Which name (if any) denotes the component state inside this row — see
+        // `rowComponentStateName`. Computed once against the ORIGINAL render
+        // callback; `lowerRowFactory` re-checks it against an inlined helper body.
+        const rowStateName = rowComponentStateName(node, renderFn, roots)
         const factory =
-          renderFn && lowerRowFactory(renderFn, itemParam, indexParam, sf, factoryDeps)
+          renderFn &&
+          lowerRowFactory(renderFn, itemParam, indexParam, rowStateName, sf, factoryDeps)
         if (factory) {
           const source = emitSource(factoryDeps)
           if (source !== null) {
@@ -1230,15 +1382,23 @@ export function transformNodeExpr(
           lowerArmArray(
             renderFn,
             sf,
-            eachRoots(itemParam),
+            eachRoots(itemParam, rowStateName),
             [itemParam, indexParam],
             renderDeps,
             (r) => reportBail('each-render', r, eachPos),
             leaked,
           )
         if (body != null) {
-          // residue: leaked-handle code may read state invisibly → whole-state dep
-          const source = emitSource(renderDeps, leaked.size > 0)
+          // Residue → whole-state dep. `leaked.size > 0` is a row param bound to
+          // a runtime handle; `rowStateName === null` is #247's PRUNED state
+          // root, whose reads survive VERBATIM in the arm and so contribute
+          // nothing to `renderDeps`. Without the second term the each's own mask
+          // never intersects the path the row actually reads and the row FREEZES
+          // AT MOUNT — correct row, wrong gate. In pass 1 `rowStateName === null`
+          // is exactly "pruned" (the ambient roots always carry the view's state
+          // root, or the enclosing view supplies it), and pushing `''` is
+          // unconditionally conservative either way.
+          const source = emitSource(renderDeps, leaked.size > 0 || rowStateName === null)
           if (source !== null) {
             eachLoweredHook?.(eachPos)
             const prelude = [...leaked].map(
@@ -1513,12 +1673,20 @@ function eventName(prop: string): string {
 /** Roots for lowering an event-handler body in a direct row: the row params and
  * component `state` resolve to reads off the LIVE row ctx (`getCtx().item` / `.index`
  * / `.state`), so a handler reads the current row's values at event time. */
-function handlerRoots(itemParam: string, indexParam: string | null): Roots {
-  const m = new Map<string, { value: string; dep: string }>([
-    [itemParam, { value: 'getCtx().item', dep: 'item' }],
-    ['state', { value: 'getCtx().state', dep: 'state' }],
-  ])
+function handlerRoots(
+  itemParam: string,
+  indexParam: string | null,
+  stateParam: string | null,
+): Roots {
+  // Same contract as `eachRoots`, ordering included: `getCtx().state` is the
+  // COMPONENT state, so only the name that genuinely denotes it may rebase onto
+  // it (#247), and the state root is written LAST for the collision reason
+  // spelled out there. `indexParam` cannot collide with it — it is a render
+  // PARAMETER, which `rowComponentStateName` has already pruned against.
+  const m = new Map<string, RootInfo>()
+  m.set(itemParam, { value: 'getCtx().item', dep: 'item' })
   if (indexParam) m.set(indexParam, { value: 'getCtx().index', dep: 'index' })
+  if (stateParam !== null) m.set(stateParam, { value: 'getCtx().state', dep: 'state' })
   return m
 }
 
@@ -1575,6 +1743,10 @@ function lowerRowFactory(
   fnIn: ts.Expression,
   itemParam: string,
   indexParam: string | null,
+  // The name the component state answers to inside this row, from
+  // `rowComponentStateName` at the call site — `null` when nothing here denotes
+  // it, in which case the row simply has no `ctx.state` root (#247).
+  stateParamIn: string | null,
   sfIn: ts.SourceFile,
   collect?: Set<string>,
 ): string | null {
@@ -1610,8 +1782,13 @@ function lowerRowFactory(
   const body = rowBody(fn)
   if (!body || body.arr.elements.length === 0) return bail('row-body-not-array')
   const { decls, arr } = body
-  const roots = eachRoots(itemParam)
-  const hRoots = handlerRoots(itemParam, indexParam)
+  // Helper INLINING relocates a same-file helper's body into the row, so the
+  // shadowing question has to be re-asked against the body that is actually
+  // being lowered — the call site could only see the delegating render.
+  const stateParam =
+    stateParamIn !== null && !subtreeShadows(fn, stateParamIn) ? stateParamIn : null
+  const roots = eachRoots(itemParam, stateParam)
+  const hRoots = handlerRoots(itemParam, indexParam, stateParam)
   // Row-INVARIANT binding parts hoist to per-each-site consts (next to the
   // cached skeleton): the `deps` array literal is always invariant, and a
   // `produce` is invariant unless it reads a per-row block-body local. They
@@ -1985,7 +2162,12 @@ export function lowerHelperEach(node: ts.CallExpression, sf: ts.SourceFile): str
   }
   if (keySrc === null || !renderFn) return bail('missing-key-or-render')
   const collected = new Set<string>()
-  const factory = lowerRowFactory(renderFn, itemParam, indexParam, sf, collected)
+  // Pass 2 reaches BOTH shapes: an `each` in a free-standing view helper (no
+  // component state in scope at all) and one inside a component view that pass 1
+  // declined (its items source did not root in the bag). `rowComponentStateName`
+  // separates them; it does NOT assume "helper pass ⇒ no state" (#247).
+  const rowStateName = rowComponentStateName(node, renderFn, null)
+  const factory = lowerRowFactory(renderFn, itemParam, indexParam, rowStateName, sf, collected)
   if (factory) {
     eachLoweredHook?.(pos)
     // Precise component-state deps for the structural binding: the `state.*`
@@ -2002,14 +2184,14 @@ export function lowerHelperEach(node: ts.CallExpression, sf: ts.SourceFile): str
   // handlers' `.peek()` reads rewrite to live-ctx reads (the ambient roots), so
   // the arm is emitted as `(getCtx) => [...]` matching signalEach's render
   // contract.
-  armHandlerRoots = handlerRoots(itemParam, indexParam)
+  armHandlerRoots = handlerRoots(itemParam, indexParam, rowStateName)
   let armBody: { arr: string; decls: readonly string[] } | null
   const leaked = new Set<string>()
   try {
     armBody = lowerArmArray(
       renderFn,
       sf,
-      eachRoots(itemParam),
+      eachRoots(itemParam, rowStateName),
       [itemParam, indexParam],
       undefined,
       (r) => reportBail('each-render', r, pos),
