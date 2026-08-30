@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -50,7 +50,21 @@ function fixture(readme: string): string {
  * `git ls-files`.
  */
 function packageRootedFixture(pkg: string, readme: string): string {
-  const dir = mkdtempSync(join(ROOT, 'packages', pkg, 'node_modules', '.cache', 'readme-fixture-'))
+  // CREATE the `.cache` directory rather than assuming it: it is gitignored,
+  // pnpm does not create it, and a fresh checkout therefore has none. Do not
+  // "simplify" this away on the grounds that the directory always seems to be
+  // there — it seems to be there because `check-readme-examples.mjs` creates
+  // one per package as a side effect (its own `mkdirSync` at the equivalent
+  // site), and `pnpm check:docs` runs at step ~190 of `ci.yml` while
+  // `pnpm test:scripts` runs at ~287. So CI passes by accident of STEP ORDER:
+  // `rm -rf packages/*/node_modules/.cache && pnpm test:scripts` fails with
+  // ENOENT on `mkdtemp`, which is what a developer running this suite alone in
+  // a fresh worktree gets — a red with nothing to do with their change, and a
+  // red `main` the day the steps are reordered. Fixed here, at the assumption,
+  // never by pinning the CI order.
+  const cacheDir = join(ROOT, 'packages', pkg, 'node_modules', '.cache')
+  mkdirSync(cacheDir, { recursive: true })
+  const dir = mkdtempSync(join(cacheDir, 'readme-fixture-'))
   dirs.push(dir)
   writeFileSync(join(dir, 'README.md'), readme)
   return dir
