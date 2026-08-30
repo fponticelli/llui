@@ -587,6 +587,101 @@ describe('resilience of the ordering projection', () => {
     // O(n log n) grows ~4.9x and O(n^2) grows 16x; a threshold of 12 separates
     // them (a true quadratic still fails hard) while leaving headroom for
     // measurement noise on a loaded CI runner.
+    //
+    // ── #246: WHY THIS FLAKES, WHAT FIXED IT, AND WHAT DID NOT ──
+    //
+    // This fires under PARALLEL LOAD and is green on a quiet re-run — reported
+    // at ratio 16.47, reproduced here at 29.53 and 31.30. Unlike the timeout
+    // half of #246 a bigger budget is not even applicable, and it fails with a
+    // number that reads as a real regression rather than as an obvious flake.
+    //
+    // START FROM THE ARITHMETIC, because it closes the obvious door: the
+    // observed noise EXCEEDS the signal. Quadratic growth for a 4x size step is
+    // 16.0, and healthy code has been measured here at 16.41, 18.51, 29.53 and
+    // 31.30. So there is NO threshold that both tolerates the noise and still
+    // rejects a quadratic. Raising 12 is not a trade-off, it is arithmetically
+    // unavailable.
+    //
+    // The MECHANISM is a load TRANSIENT, not load itself, and that is measured
+    // rather than assumed. On an 18-core machine, 8 trials under SUSTAINED CPU
+    // saturation (load ~740) gave min 3.07 / p50 4.07 / max 6.19 — zero over 12,
+    // because a steady slowdown scales BOTH windows and cancels in the ratio,
+    // exactly as the paragraph above claims. What breaks it is a burst that
+    // lands inside one window and not the other (another lane's suite starting
+    // or finishing), and the large window is 4x longer, so it catches a burst
+    // 4x more often. That is why the flake is always UPWARD.
+    //
+    // FOUR cheaper estimators were measured against that, all interleaved in
+    // the same trials so they saw the same transients, and NONE of them works:
+    //
+    //   - `process.cpuUsage()` instead of wall clock, which is the #193 trick of
+    //     removing the load term at the source. It tightened one run's tail
+    //     (p90 9.50 -> 5.50) and widened another's (max 6.19 -> 8.03), and in
+    //     the trial that reproduced the flake it read 19.20 against wall's
+    //     29.53. Descheduling is only half the story: SMT and memory-bandwidth
+    //     contention inflate CPU time too.
+    //   - EQUAL-LENGTH windows (4x the iterations at n=500), which removes the
+    //     systematic bias named above. Its gain was inside the noise of 8-14
+    //     trials (max 10.03 vs 10.34, then 5.80 vs 6.19), it read 18.10 in the
+    //     flaking trial, and it roughly DOUBLES the test's wall time — trading a
+    //     ratio flake for a timeout one.
+    //   - BEST-OF-N per size. Worse, and structurally so: the minimum lands on
+    //     the DENOMINATOR too, and an unusually fast small window inflates the
+    //     ratio. Measured max 16.35 (wall) and 37.39 (cpu) where the plain
+    //     estimator stayed at 10.34.
+    //   - INTERLEAVING the two sizes so both accumulators span the same stretch
+    //     of clock — the most promising of the four, and by far the worst in
+    //     practice: p50 7.70, p90 40.30, max 56.74, 5 of 14 trials over 12.
+    //     Alternating two working sets destroys the cache locality each size
+    //     had to itself.
+    //
+    // `{ retry: 2 }` LOOKED like the free answer — it touches neither threshold,
+    // sizes, iterations nor estimator, only how many independent samples must
+    // agree — and it is REJECTED, on numbers. Measuring only the HEALTHY
+    // distribution makes it look free; measuring the mutant's too is what kills
+    // it. Both were measured under local batch load (~load 220 on 18 cores, 16
+    // trials each) against a faithful quadratic mutant (`out.sort(...)` replaced
+    // by an insertion sort with identical output — the `indexOf-in-a-loop` shape
+    // named above), at the OLD 500/2000 sizes:
+    //
+    //   healthy    2.80 3.07 3.23 3.51 3.56 3.63 4.15 4.20 4.76 6.24 9.12
+    //              12.82 16.00 16.41 18.51 31.30        -> 5/16 OVER 12 (red)
+    //   quadratic  5.37 8.31 9.21 9.21 10.94 12.21 12.85 13.18 13.53 13.78
+    //              14.81 15.30 15.34 16.47 22.39 70.11  -> 5/16 UNDER 12 (miss)
+    //
+    // Under those conditions the test is a coin flip in BOTH directions: ~31% of
+    // healthy runs go red, and ~31% of genuinely quadratic ones go green. `retry`
+    // cuts the false reds to ~3% (0.31^3) and raises the MISSES to ~67%
+    // (1 - 0.69^3) — it buys quiet by more than doubling the thing the test
+    // exists to prevent, in exactly the condition where the flake lives. That is
+    // the whole case against it, and it is why the flake is ACCEPTED rather than
+    // retried away. Note the flake's home is the local parallel-agent batch: CI
+    // runs `pnpm -r --workspace-concurrency=2` on a 4-core runner, the gentle
+    // STEADY regime where 0 of 12 and 0 of 20 trials exceeded 12.
+    //
+    // WHAT DID CHANGE IS THE SIZES, and it is the one intervention that improves
+    // BOTH directions at once. At 500/2000 the projection's O(n) Loro reads
+    // still dominate the sort, so the quadratic mutant medians ~13 — barely over
+    // the threshold, nothing like the 16x the first paragraph assumes, and the
+    // consequence is that the SHIPPED configuration missed a real regression
+    // HALF THE TIME. Measured through this test (not a replica — see the warning
+    // below) under harsh bursts plus a concurrent `turbo test`:
+    //
+    //                    false red        MISS
+    //     500/2000        5/24 = 21%     12/24 = 50%
+    //     1000/4000       2/16 = 12.5%    1/16 =  6%
+    //
+    // The cost is ~6x wall time, not the ~2x a first estimate claimed: 0.33 s
+    // steady / 0.60 s harsh at 500/2000 against 3.51 s p50 / 6.97 s max at
+    // 1000/4000. Headroom against the 30 s budget falls from ~10x to ~3-4x —
+    // still safe, and that number is the one to check before raising the sizes
+    // again.
+    //
+    // MEASURE THIS TEST, NEVER A REPLICA OF IT. A standalone `tsx` harness
+    // copying `project()` line for line reproduces a plausible distribution and
+    // is WRONG: `tsx` runs ~2x slower than vitest's build, which compresses the
+    // quadratic signal back into the Loro-read floor and makes 500/2000 look
+    // adequate. Instrument `constraints.test.ts` itself.
     const project = (n: number): number => {
       const { doc, root } = freshDoc(1n)
       const children = elementChildren(root)
@@ -603,8 +698,12 @@ describe('resilience of the ordering projection', () => {
       return (performance.now() - started) / iterations
     }
 
-    const small = project(500)
-    const large = project(2000) // 4x the size
+    // 1000/4000, not 500/2000 — see the #246 block above. The step is still 4x,
+    // so the threshold's arithmetic is unchanged; what changes is that the sort
+    // now dominates the projection's O(n) Loro reads, which is what gives the
+    // threshold the separation its first paragraph claims.
+    const small = project(1000)
+    const large = project(4000) // 4x the size
     expect(large / small).toBeLessThan(12)
   })
 })

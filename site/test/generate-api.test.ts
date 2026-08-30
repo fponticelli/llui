@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { beforeAll, describe, it, expect } from 'vitest'
 import * as ts from 'typescript'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
@@ -528,62 +528,142 @@ describe('public package subpaths', () => {
 
     expect(missing).toEqual([])
   })
+})
 
-  it('documents every symbol exported by every public entry point', () => {
-    const entries: Array<{ page: string; source: string; specifier: string }> = []
+// ── issue #246: the export-walk fixture, split so budgets match costs ──
 
-    for (const dir of readdirSync(resolve(repoRoot, 'packages'))) {
-      const manifestPath = resolve(repoRoot, 'packages', dir, 'package.json')
-      let manifest: {
-        name: string
-        private?: boolean
-        exports?: Record<string, unknown>
-      }
-      try {
-        manifest = JSON.parse(readFileSync(manifestPath, 'utf-8')) as typeof manifest
-      } catch {
-        continue
-      }
-      if (manifest.private) continue
-      const page = readRepo(`site/content/api/${dir}.md`)
-      for (const [subpath, value] of Object.entries(manifest.exports ?? {})) {
-        const target =
-          typeof value === 'string'
-            ? value
-            : value && typeof value === 'object'
-              ? ((value as Record<string, unknown>).types ??
-                (value as Record<string, unknown>).import)
-              : undefined
-        if (typeof target !== 'string' || target.endsWith('.css')) continue
-        const sourcePattern = target
-          .replace(/^\.\/dist\//, 'src/')
-          .replace(/\.d\.ts$/, '.ts')
-          .replace(/\.js$/, '.ts')
+interface ApiEntry {
+  /** The generated page this entry point must appear on. */
+  readonly page: string
+  /** The `src/` file the export map resolves to. */
+  readonly source: string
+  /** The specifier a consumer imports. */
+  readonly specifier: string
+}
 
-        if (subpath.includes('*') || sourcePattern.includes('*')) {
-          const absolutePattern = resolve(repoRoot, 'packages', dir, sourcePattern)
-          const filePattern = basename(absolutePattern)
-          const [prefix, suffix] = filePattern.split('*') as [string, string]
-          for (const file of readdirSync(dirname(absolutePattern)).sort()) {
-            if (!file.startsWith(prefix) || !file.endsWith(suffix)) continue
-            const match = file.slice(prefix.length, file.length - suffix.length)
-            entries.push({
-              page,
-              source: resolve(dirname(absolutePattern), file),
-              specifier: manifest.name + subpath.replace('*', match).slice(1),
-            })
-          }
-        } else {
+/** Every publishable package's entry points, mapped dist -> src. Cheap (~5 ms):
+ *  `readdirSync` + `JSON.parse`, no TypeScript. Called at COLLECTION time so the
+ *  per-package tests below can be declared before the fixture is built. */
+function publicEntryPoints(): Map<string, { name: string; entries: ApiEntry[] }> {
+  const byPackage = new Map<string, { name: string; entries: ApiEntry[] }>()
+  for (const dir of readdirSync(resolve(repoRoot, 'packages'))) {
+    let manifest: { name: string; private?: boolean; exports?: Record<string, unknown> }
+    try {
+      manifest = JSON.parse(
+        readFileSync(resolve(repoRoot, 'packages', dir, 'package.json'), 'utf-8'),
+      ) as typeof manifest
+    } catch {
+      continue
+    }
+    if (manifest.private) continue
+    const page = readRepo(`site/content/api/${dir}.md`)
+    const entries: ApiEntry[] = []
+    for (const [subpath, value] of Object.entries(manifest.exports ?? {})) {
+      const target =
+        typeof value === 'string'
+          ? value
+          : value && typeof value === 'object'
+            ? ((value as Record<string, unknown>).types ??
+              (value as Record<string, unknown>).import)
+            : undefined
+      if (typeof target !== 'string' || target.endsWith('.css')) continue
+      const sourcePattern = target
+        .replace(/^\.\/dist\//, 'src/')
+        .replace(/\.d\.ts$/, '.ts')
+        .replace(/\.js$/, '.ts')
+
+      if (subpath.includes('*') || sourcePattern.includes('*')) {
+        const absolutePattern = resolve(repoRoot, 'packages', dir, sourcePattern)
+        const filePattern = basename(absolutePattern)
+        const [prefix, suffix] = filePattern.split('*') as [string, string]
+        for (const file of readdirSync(dirname(absolutePattern)).sort()) {
+          if (!file.startsWith(prefix) || !file.endsWith(suffix)) continue
+          const match = file.slice(prefix.length, file.length - suffix.length)
           entries.push({
             page,
-            source: resolve(repoRoot, 'packages', dir, sourcePattern),
-            specifier: subpath === '.' ? manifest.name : manifest.name + subpath.slice(1),
+            source: resolve(dirname(absolutePattern), file),
+            specifier: manifest.name + subpath.replace('*', match).slice(1),
           })
         }
+      } else {
+        entries.push({
+          page,
+          source: resolve(repoRoot, 'packages', dir, sourcePattern),
+          specifier: subpath === '.' ? manifest.name : manifest.name + subpath.slice(1),
+        })
       }
     }
+    if (entries.length > 0) byPackage.set(dir, { name: manifest.name, entries })
+  }
+  return byPackage
+}
 
-    const program = ts.createProgram([...new Set(entries.map((entry) => entry.source))], {
+/**
+ * Every symbol a public entry point exports must appear on its package's API
+ * page — answered by the TYPE SYSTEM rather than by the generator, so a
+ * generator that silently stops emitting a symbol is caught instead of agreeing
+ * with itself.
+ *
+ * THE SHAPE OF THIS BLOCK IS THE FIX FOR #246, and it is #197's recipe applied
+ * one package over. It used to be ONE `it` that built a `ts.Program` over every
+ * entry point and then walked all 25 packages inside the same test. Measured on
+ * an 18-core machine: **1.0 s** with the machine quiet, and **32.8 s — a FAILURE
+ * against the 30 s `testTimeout`** — under CPU contention at load ~350. That is
+ * a 33x load factor eating 30x of headroom, and `vitest.shared.ts` states the
+ * rule for it in two halves: a test that approaches the budget wants to be
+ * CHEAPER rather than a bigger number, and contention has no ceiling, so no
+ * number is safe for a CPU-bound test anyway.
+ *
+ * What costs is MEASURED, not guessed. `ts.createProgram` reads and parses 1280
+ * files to resolve 182 entry points, and that is essentially the whole bill —
+ * the per-package export walk is under a millisecond. So the expensive thing is
+ * a FIXTURE, not an assertion, and it belongs in `beforeAll`, whose budget is
+ * the shared `hookTimeout` (60 s) — a number `vitest.shared.ts` sized for
+ * exactly this kind of unavoidable floor. Each package then gets its own `it`
+ * carrying only its own walk, which also names the package in the failure
+ * instead of emitting one list of every undocumented symbol in the workspace.
+ *
+ * Be precise about what that buys, because it is not a load fix: the same total
+ * work runs, and the dominant term simply moves under a budget twice its former
+ * size. It converts the measured 32.8 s failure into a pass and gives the same
+ * headroom a 60 s `testTimeout` would, without raising any budget or making any
+ * other test slower to fail.
+ *
+ * Two things that do NOT work, both measured rather than assumed:
+ *
+ *   - **Trimming the program.** `types: []`, `noLib`, and both together each
+ *     produce a BIT-IDENTICAL export set (so they would be safe) and no reliable
+ *     saving — `noLib` drops 63 of 1280 files. Interleaved on a loaded machine
+ *     the four variants ranged 591 ms to 8529 ms with the order of their medians
+ *     unstable between runs, which is itself the finding: load, not options, is
+ *     what moves this number.
+ *   - **Sharing the program with `generate-api.ts`.** It does build one, but in
+ *     a different PROCESS (`check:generated`), so there is nothing to share and
+ *     no cost to save. Be precise about the second reason, because the obvious
+ *     phrasing is wrong: a `ts.Program` is an INPUT, not the generator's answer,
+ *     so sharing one would NOT make this check circular. What would is sharing
+ *     the generator's ENTRY-POINT RESOLUTION — the export-map -> `src/` mapping
+ *     re-derived below — since an entry point the generator failed to enumerate
+ *     would then be one this test never asks about, and both halves would agree
+ *     that nothing is missing.
+ *
+ * A THIRD thing this restructure costs, and it is a real loss (#193): the
+ * fixture is no longer visible to the duration baseline. `aggregateDurations`
+ * sums `assertionResults[].duration` only, so work done in a hook is not in the
+ * per-file total — measured at identical load, this file went 6987 ms -> 1247 ms
+ * REPORTED while its wall time stayed ~6.8 s. A future regression in this
+ * `createProgram` cost is therefore invisible to `check:test-durations`. That is
+ * accepted (the alternative is a test that fails under load instead), but do not
+ * read a green duration report as evidence that this fixture stayed cheap.
+ */
+describe('every public entry point is documented', () => {
+  const byPackage = publicEntryPoints()
+  const allEntries = [...byPackage.values()].flatMap((pkg) => pkg.entries)
+
+  let program: ts.Program
+  let checker: ts.TypeChecker
+  beforeAll(() => {
+    program = ts.createProgram([...new Set(allEntries.map((entry) => entry.source))], {
       target: ts.ScriptTarget.ES2022,
       module: ts.ModuleKind.ESNext,
       moduleResolution: ts.ModuleResolutionKind.Bundler,
@@ -591,31 +671,70 @@ describe('public package subpaths', () => {
       skipLibCheck: true,
       noEmit: true,
     })
-    const checker = program.getTypeChecker()
-    const missing: string[] = []
-
-    for (const entry of entries) {
-      const source = program.getSourceFile(entry.source)
-      const moduleSymbol = source && checker.getSymbolAtLocation(source)
-      if (!moduleSymbol) continue
-      const entryHeading = `### \`${entry.specifier}\``
-      const start = entry.page.indexOf(entryHeading)
-      let section = entry.page
-      if (start >= 0) {
-        const next = entry.page.indexOf('\n### `', start + entryHeading.length)
-        section = entry.page.slice(start, next < 0 ? undefined : next)
-      }
-      for (const exported of checker.getExportsOfModule(moduleSymbol)) {
-        const name = exported.getName()
-        if (name === 'default') continue
-        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const heading = new RegExp('^#{3,6} `' + escaped + '(?:\\(\\))?`', 'm')
-        if (!heading.test(section)) missing.push(`${entry.specifier}:${name}`)
-      }
-    }
-
-    expect(missing).toEqual([])
+    checker = program.getTypeChecker()
   })
+
+  // VACUITY GUARD. Generating one `it` per package introduces a failure mode the
+  // single test did not have: a `describe` whose loop produces NO tests is
+  // green, and so is a package whose entry list came back empty. Pin the shape
+  // of the enumeration itself, and pin that every entry RESOLVES to a module
+  // symbol — the walk below skips one that does not, so an entry map that
+  // silently stopped resolving would assert nothing at all.
+  //
+  // The package count is DERIVED, not a floor. A floor tolerates losing a
+  // package, which is measured rather than theorised: at
+  // `toBeGreaterThanOrEqual(24)` against 25 non-private packages, a mutation
+  // dropping exactly `router` from the enumeration SURVIVED — 75 tests, green,
+  // one package's API page unchecked. `site/content/api/` is the independent
+  // oracle: `assertPackageRegistryComplete` already requires one page per
+  // publishable package, so the two counts must agree exactly and neither has to
+  // be bumped by hand when a package is added.
+  it('enumerates every publishable package and resolves all of their entry points', () => {
+    const apiPages = readdirSync(resolve(repoRoot, 'site/content/api')).filter((f) =>
+      f.endsWith('.md'),
+    )
+    expect(apiPages.length).toBeGreaterThan(20)
+    expect(byPackage.size).toBe(apiPages.length)
+    expect([...byPackage.keys()].sort()).toEqual(apiPages.map((f) => f.replace(/\.md$/, '')).sort())
+    expect(allEntries.length).toBeGreaterThanOrEqual(150)
+    expect([...byPackage.keys()]).toContain('dom')
+    expect([...byPackage.keys()]).toContain('components')
+
+    const unresolved = allEntries
+      .filter((entry) => {
+        const source = program.getSourceFile(entry.source)
+        return !(source && checker.getSymbolAtLocation(source))
+      })
+      .map((entry) => entry.specifier)
+    expect(unresolved).toEqual([])
+  })
+
+  for (const [dir, { name, entries }] of byPackage) {
+    it(`documents every symbol ${name} exports`, () => {
+      expect(entries.length, dir).toBeGreaterThan(0)
+      const missing: string[] = []
+      for (const entry of entries) {
+        const source = program.getSourceFile(entry.source)
+        const moduleSymbol = source && checker.getSymbolAtLocation(source)
+        if (!moduleSymbol) continue
+        const entryHeading = `### \`${entry.specifier}\``
+        const start = entry.page.indexOf(entryHeading)
+        let section = entry.page
+        if (start >= 0) {
+          const next = entry.page.indexOf('\n### `', start + entryHeading.length)
+          section = entry.page.slice(start, next < 0 ? undefined : next)
+        }
+        for (const exported of checker.getExportsOfModule(moduleSymbol)) {
+          const symbolName = exported.getName()
+          if (symbolName === 'default') continue
+          const escaped = symbolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          const heading = new RegExp('^#{3,6} `' + escaped + '(?:\\(\\))?`', 'm')
+          if (!heading.test(section)) missing.push(`${entry.specifier}:${symbolName}`)
+        }
+      }
+      expect(missing).toEqual([])
+    })
+  }
 })
 
 describe('published package versions', () => {
