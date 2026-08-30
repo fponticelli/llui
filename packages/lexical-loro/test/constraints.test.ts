@@ -576,7 +576,7 @@ describe('resilience of the ordering projection', () => {
     expect(rendered(root)).toEqual(['good'])
   })
 
-  it('projects in sub-quadratic time (the sort is O(n log n), not O(n^2))', () => {
+  it('projects in sub-quadratic time (the sort is O(n log n), not O(n^2))', { retry: 2 }, () => {
     // The children map has no order of its own, so every projection sorts. What
     // matters is that the sort stays O(n log n): a regression that made it
     // quadratic (e.g. an indexOf-in-a-loop) would block the main thread on a
@@ -587,6 +587,63 @@ describe('resilience of the ordering projection', () => {
     // O(n log n) grows ~4.9x and O(n^2) grows 16x; a threshold of 12 separates
     // them (a true quadratic still fails hard) while leaving headroom for
     // measurement noise on a loaded CI runner.
+    //
+    // ── #246: WHY THE MEASUREMENT IS UNCHANGED AND `retry` IS THE ONLY FIX ──
+    //
+    // This fires under PARALLEL LOAD and is green on a quiet re-run — reported
+    // at ratio 16.47, reproduced here at 29.53. Unlike the timeout half of #246
+    // a bigger budget is not even applicable, and it fails with a number that
+    // reads as a real regression rather than as an obvious flake.
+    //
+    // START FROM THE ARITHMETIC, because it closes the obvious door: the
+    // observed noise EXCEEDS the signal. Quadratic growth for a 4x size step is
+    // 16.0, and the flake has been seen at 16.47 and 29.53. So there is NO
+    // threshold that both tolerates the noise and still rejects a quadratic.
+    // Raising 12 is not a trade-off here, it is arithmetically unavailable.
+    //
+    // The MECHANISM is a load TRANSIENT, not load itself, and that is measured
+    // rather than assumed. On an 18-core machine, 8 trials under SUSTAINED CPU
+    // saturation (load ~740) gave min 3.07 / p50 4.07 / max 6.19 — zero over 12,
+    // because a steady slowdown scales BOTH windows and cancels in the ratio,
+    // exactly as the paragraph above claims. What breaks it is a burst that
+    // lands inside one window and not the other (another lane's suite starting
+    // or finishing), and the large window is 4x longer, so it catches a burst
+    // 4x more often. That is why the flake is always UPWARD.
+    //
+    // FOUR cheaper estimators were measured against that, all interleaved in
+    // the same trials so they saw the same transients, and NONE of them works:
+    //
+    //   - `process.cpuUsage()` instead of wall clock, which is the #193 trick of
+    //     removing the load term at the source. It tightened one run's tail
+    //     (p90 9.50 -> 5.50) and widened another's (max 6.19 -> 8.03), and in
+    //     the trial that reproduced the flake it read 19.20 against wall's
+    //     29.53. Descheduling is only half the story: SMT and memory-bandwidth
+    //     contention inflate CPU time too.
+    //   - EQUAL-LENGTH windows (4x the iterations at n=500), which removes the
+    //     systematic bias named above. Its gain was inside the noise of 8-14
+    //     trials (max 10.03 vs 10.34, then 5.80 vs 6.19), it read 18.10 in the
+    //     flaking trial, and it roughly DOUBLES the test's wall time — trading a
+    //     ratio flake for a timeout one.
+    //   - BEST-OF-N per size. Worse, and structurally so: the minimum lands on
+    //     the DENOMINATOR too, and an unusually fast small window inflates the
+    //     ratio. Measured max 16.35 (wall) and 37.39 (cpu) where the plain
+    //     estimator stayed at 10.34.
+    //   - INTERLEAVING the two sizes so both accumulators span the same stretch
+    //     of clock — the most promising of the four, and by far the worst in
+    //     practice: p50 7.70, p90 40.30, max 56.74, 5 of 14 trials over 12.
+    //     Alternating two working sets destroys the cache locality each size
+    //     had to itself.
+    //
+    // So the measurement below is left EXACTLY as it was, and the honest
+    // statement is that this assertion is not load-robust and cannot be made so
+    // by a better clock. `retry` is the one lever that costs nothing: it does
+    // not touch the threshold, the sizes, the iteration counts or the estimator
+    // — only how many independent samples must agree before the suite goes red.
+    // A transient is independent across attempts (measured at ~1 bad trial in
+    // 14, so ~4e-4 for three), while a genuine quadratic reads ~16 every time
+    // and fails all three. `packages/agent-e2e/vitest.config.ts` carries the
+    // same reasoning for its browser fixtures. `testTimeout` is per ATTEMPT, so
+    // three attempts of a ~2.5 s test do not approach the budget.
     const project = (n: number): number => {
       const { doc, root } = freshDoc(1n)
       const children = elementChildren(root)
