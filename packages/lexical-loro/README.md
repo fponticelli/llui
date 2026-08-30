@@ -31,8 +31,14 @@ undo instead. Wiring `loroCollab` directly (without `@llui/markdown-editor`),
 pass both to `lexicalForeign`:
 
 ```ts
+import { lexicalForeign } from '@llui/lexical'
+
 const collab = loroCollab({ doc })
 lexicalForeign({
+  namespace: 'doc',
+  serialize,
+  deserialize,
+  readonly,
   seedMode: 'deferred',
   register: collab.register,
   externalUndo: collab.externalUndo,
@@ -285,3 +291,30 @@ this package.
 ## License
 
 MIT
+
+<!-- @doc-setup
+// Values the snippets above elide because the surrounding prose supplies them:
+// whether this peer bootstraps, and the caller-owned node / transformer sets
+// and markdown that the reconcile example is explicitly about. One declaration
+// per group. Not rendered; read by `pnpm check:docs`.
+
+import type { Klass, LexicalEditor, LexicalNode } from 'lexical'
+import type { Signal } from '@llui/dom'
+import type { Transformer } from '@lexical/markdown'
+
+declare const isCreator: boolean
+
+declare const MY_NODES: ReadonlyArray<Klass<LexicalNode>>
+
+declare const MY_TRANSFORMERS: Array<Transformer>
+
+declare const agentMarkdown: string
+
+declare const onError: (error: Error) => void
+
+declare const serialize: (editor: LexicalEditor) => string
+
+declare const deserialize: (editor: LexicalEditor, value: string) => void
+
+declare const readonly: Signal<boolean>
+-->

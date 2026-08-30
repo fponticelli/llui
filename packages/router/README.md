@@ -96,12 +96,12 @@ Place `...routing.listener(send)` in the view to handle browser back/forward and
 ## Guards
 
 ```ts
-const routing = connectRouter(router, {
+const guarded = connectRouter(router, {
   beforeEnter(to) {
-    if (to.name === 'admin' && !isLoggedIn()) return router.location('login')
+    if (to.name === 'archive' && !isLoggedIn()) return router.location('home')
   },
   beforeLeave(from) {
-    if (from.name === 'editor' && hasUnsavedChanges()) {
+    if (from.name === 'article' && hasUnsavedChanges()) {
       return confirm('Discard unsaved changes?')
     }
     return true
@@ -120,3 +120,18 @@ import { browserRouterEnv, connectRouter } from '@llui/router/connect'
 
 const routing = connectRouter(router, { env: browserRouterEnv() })
 ```
+
+<!-- @doc-setup
+// Host-supplied predicates and the view bag the guard/link snippets elide.
+// One declaration per group. Not rendered; read by `pnpm check:docs`.
+
+import type { Renderable } from '@llui/dom'
+
+declare function isLoggedIn(): boolean
+
+declare function hasUnsavedChanges(): boolean
+
+declare const send: (msg: unknown) => void
+
+declare const children: Renderable
+-->

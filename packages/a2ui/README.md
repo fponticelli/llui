@@ -115,7 +115,9 @@ const myCatalog = defineCatalog({
   id: 'https://example.com/catalogs/my/catalog.json',
   extends: basicCatalog,
   components: {
-    Gauge: ({ node, ctx, scope }) => [el('my-gauge', { value: ctx /* … */ })],
+    Gauge: ({ node, ctx, scope }) => [
+      el('my-gauge', { 'data-id': node.id }, ctx.renderChildren(undefined, scope)),
+    ],
   },
 })
 
@@ -160,3 +162,15 @@ Implements the full A2UI v0.9 server→client message set (`createSurface`,
 Conformance-tested against the real `google/A2UI` v0.9 sample payloads. Custom
 components (e.g. inline-catalog `OrgChart`) render once the consumer registers a
 catalog via `defineCatalog`.
+
+<!-- @doc-setup
+// Values the snippets above elide: the transport the prose says is yours, the
+// mount element, and the server URL. One declaration per group.
+// Not rendered; read by `pnpm check:docs`.
+
+declare const socket: { send: (data: string) => void }
+
+declare const container: HTMLElement
+
+declare const url: string
+-->

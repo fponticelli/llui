@@ -102,9 +102,12 @@ All three accept an optional trailing `transition?: TransitionOptions` (from `@l
 Factor sub-views as plain functions that take signal handles — they run via the runtime authoring helpers, so they compose without compilation:
 
 ```typescript
+import { button, h1, text } from '@llui/dom'
 import type { Signal, Renderable } from '@llui/dom'
 
-function header(title: Signal<string>, send: (m: Msg) => void): Renderable {
+type HeaderMsg = { type: 'menu' }
+
+function header(title: Signal<string>, send: (m: HeaderMsg) => void): Renderable {
   return [h1([text(title)]), button({ onClick: () => send({ type: 'menu' }) }, [text('☰')])]
 }
 
@@ -117,16 +120,16 @@ view: ({ state, send }) => [...header(state.at('title'), send)]
 `update()` returns `[state, effects]`; each effect is passed to the component's `onEffect` handler. Use `@llui/effects` for the builders and `asOnEffect` to adapt a handler chain:
 
 ```typescript
-import { http, handleEffects, asOnEffect } from '@llui/effects'
+import { handleEffects, asOnEffect } from '@llui/effects'
 
 const onEffect = asOnEffect(
   handleEffects<Effect>().else(({ effect, send }) => {
     // handle your effect union
   }),
 )
-
-component<State, Msg, Effect>({ name, init, update, view, onEffect })
 ```
+
+Pass the result as the component's `onEffect`: `component<State, Msg, Effect>({ …, onEffect })`.
 
 ## API
 
@@ -190,3 +193,21 @@ import { subApp } from '@llui/dom/escape-hatch' // isolated child TEA loop (rare
 ## Performance
 
 Competitive with the fastest fine-grained reactive frameworks on [js-framework-benchmark](https://github.com/krausest/js-framework-benchmark) — see the [benchmarks page](https://llui.dev/benchmarks).
+
+<!-- @doc-setup
+// The component state the structural-primitive snippets read, and the effect
+// union the `onEffect` snippet handles. One declaration per group.
+// Not rendered; read by `pnpm check:docs`.
+
+import type { Signal } from '@llui/dom'
+
+declare const state: Signal<{
+  title: string
+  user: { name: string } | null
+  todos: { id: string; label: string }[]
+  route: { kind: 'home' } | { kind: 'entity'; id: string }
+  tab: 'one' | 'two'
+}>
+
+type Effect = { type: 'log'; message: string }
+-->

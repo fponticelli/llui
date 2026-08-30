@@ -18,7 +18,7 @@ import { fade, slide, mergeTransitions } from '@llui/transitions'
 // Fade + slide on a show block (transition is the 4th positional arg)
 show(
   state.at('visible'),
-  () => div([text(state.map((s) => s.message))]),
+  () => [div([text(state.map((s) => s.message))])],
   undefined, // no orElse arm
   mergeTransitions(fade(), slide({ direction: 'down' })),
 )
@@ -58,12 +58,12 @@ import { show } from '@llui/dom'
 import { spring } from '@llui/transitions'
 
 // Default: opacity 0 → 1 with react-spring-like defaults
-show(state.at('open'), () => content(), undefined, spring())
+show(state.at('open'), () => [content()], undefined, spring())
 
 // Custom spring feel
 show(
   state.at('open'),
-  () => content(),
+  () => [content()],
   undefined,
   spring({ stiffness: 300, damping: 15, property: 'opacity' }),
 )
@@ -144,12 +144,28 @@ import { show, each, li, text } from '@llui/dom'
 import { fade, flip } from '@llui/transitions'
 
 // show with fade — transition is the 4th positional arg
-show(state.at('open'), () => content(), undefined, fade())
+show(state.at('open'), () => [content()], undefined, fade())
 
 // each with FLIP reorder — transition is an option in the second arg
 each(state.at('list'), {
   key: (item) => item.id,
-  render: (item) => li([text(item.map((i) => i.name))]),
+  render: (item) => [li([text(item.map((i) => i.name))])],
   transition: flip({ duration: 200 }),
 })
 ```
+
+<!-- @doc-setup
+// Values the snippets above elide because the surrounding prose supplies them.
+// Not rendered; read by `pnpm check:docs`.
+
+import type { Mountable, Signal } from '@llui/dom'
+
+declare const state: Signal<{
+  visible: boolean
+  message: string
+  open: boolean
+  list: { id: string; name: string }[]
+}>
+
+declare function content(): Mountable
+-->

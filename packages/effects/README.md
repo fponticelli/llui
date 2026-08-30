@@ -22,7 +22,7 @@ function update(state: State, msg: Msg): [State, Effect[]] {
           debounce(
             'search',
             300,
-            http({
+            http<Msg>({
               url: `/api/search?q=${msg.value}`,
               onSuccess: (data) => ({ type: 'results', data }),
               onError: (err) => ({ type: 'searchError', err }),
@@ -30,6 +30,8 @@ function update(state: State, msg: Msg): [State, Effect[]] {
           ),
         ],
       ]
+    default:
+      return [state, []]
   }
 }
 
@@ -78,7 +80,7 @@ Upload files with progress tracking via XMLHttpRequest:
 ```ts
 import { upload } from '@llui/effects'
 
-const effect = upload({
+const effect = upload<UploadMsg>({
   url: '/api/upload',
   body: formData,
   headers: { Authorization: `Bearer ${token}` },
@@ -99,19 +101,23 @@ effect that you yield from `update()`:
 ```ts
 import { clipboardRead, clipboardWrite } from '@llui/effects'
 
-// Copy: yield clipboardWrite from update()
-return [state, [clipboardWrite('Hello, world!')]]
+function copy(state: State): [State, Effect[]] {
+  // Copy: yield clipboardWrite from update()
+  return [state, [clipboardWrite('Hello, world!')]]
+}
 
-// Read: yield clipboardRead from update()
-return [
-  state,
-  [
-    clipboardRead({
-      onSuccess: (text) => ({ type: 'pasted', text }),
-      onError: (error) => ({ type: 'clipError', error }),
-    }),
-  ],
-]
+function paste(state: State): [State, Effect[]] {
+  // Read: yield clipboardRead from update()
+  return [
+    state,
+    [
+      clipboardRead<ClipMsg>({
+        onSuccess: (text) => ({ type: 'pasted', text }),
+        onError: (error) => ({ type: 'clipError', error }),
+      }),
+    ],
+  ]
+}
 ```
 
 ### Notification
@@ -136,7 +142,7 @@ One-shot position request:
 ```ts
 import { geolocation } from '@llui/effects'
 
-geolocation({
+geolocation<GeoMsg>({
   enableHighAccuracy: true,
   onSuccess: (pos) => ({
     type: 'located',
@@ -162,3 +168,38 @@ geolocation({
 | ------------- | -------------------------------------------------------------------------------------------------- |
 | `Async<T, E>` | `idle \| loading \| success \| failure` -- async data state                                        |
 | `ApiError`    | `network \| timeout \| notfound \| unauthorized \| forbidden \| ratelimit \| validation \| server` |
+
+<!-- @doc-setup
+// The app types the snippets are written against, plus the per-example message
+// unions the standalone builder calls name explicitly (`M` is inferred from
+// `onSuccess` alone, so `onError`'s shape has to be spelled somewhere).
+// One declaration per group. Not rendered; read by `pnpm check:docs`.
+
+import type { ApiError } from '@llui/effects'
+
+type State = { query: string }
+
+type Msg =
+  | { type: 'search'; value: string }
+  | { type: 'results'; data: unknown }
+  | { type: 'searchError'; err: ApiError }
+
+// `Effect` is the package's own built-in union, re-exported under that name;
+// an app widens it with its own variants.
+import type { Effect } from '@llui/effects'
+
+type UploadMsg =
+  | { type: 'uploadProgress'; pct: number }
+  | { type: 'uploadDone'; data: unknown; status: number }
+  | { type: 'uploadFailed'; error: ApiError }
+
+type ClipMsg = { type: 'pasted'; text: string } | { type: 'clipError'; error: unknown }
+
+type GeoMsg =
+  | { type: 'located'; lat: number; lng: number }
+  | { type: 'geoError'; error: unknown }
+
+declare const formData: FormData
+
+declare const token: string
+-->

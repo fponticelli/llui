@@ -27,7 +27,10 @@ import { createLluiAgentServer } from '@llui/agent/server'
 import express from 'express'
 
 const agent = createLluiAgentServer({
-  identityResolver: async (req) => req.cookies.user_id ?? null,
+  // `identityResolver` receives a Web `Request`, not an express one — read the
+  // cookie off the header (or use `defaultIdentityResolver` for the signed
+  // -cookie flow this package ships).
+  identityResolver: async (req) => parseUserIdCookie(req.headers.get('cookie')),
 })
 
 const app = express()
@@ -132,6 +135,8 @@ export const App = component<State, Msg, Effect>({
 Wire your root state and Msg to include agent sub-slices:
 
 ```ts
+import { agentConnect, agentConfirm, agentLog } from '@llui/agent/client'
+
 type State = {
   // ...your app state...
   agent: {
@@ -295,3 +300,12 @@ there is what the client should target. The `/cdn-cgi/*` shim does not
 exist in production and you do not need it — pick one canonical path
 (`/agent` or whatever you mount), point `agentBasePath` at it, and you're
 done.
+
+<!-- @doc-setup
+// Reader-supplied adapters the server snippets name in prose. One declaration
+// per group. Not rendered; read by `pnpm check:docs`.
+
+declare function expressToWebRequest(req: unknown): Request
+
+declare function parseUserIdCookie(header: string | null): Promise<string | null>
+-->

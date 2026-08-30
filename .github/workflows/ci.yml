@@ -144,6 +144,15 @@ jobs:
       - name: Registry type check
         run: pnpm check:registry
 
+      # README examples, type-checked against the built packages (#255). It was
+      # a `verify`-only step, so nothing stopped a stale example reaching main —
+      # and until #255 it disabled semantic checking with a file-level
+      # `@ts-nocheck` and only ever caught unbalanced braces. It needs the Build
+      # step above: every `@llui/*` import resolves through that package's real
+      # `exports` map. ~11 s locally over the 26 packages.
+      - name: README example type check
+        run: pnpm check:docs
+
       - name: Lint
         run: pnpm turbo lint
 

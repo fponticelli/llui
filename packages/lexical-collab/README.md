@@ -120,3 +120,30 @@ import '@llui/lexical-collab/styles/collab.css'
 The in-memory networked provider used by this package's own tests connects N
 peers without a server — useful for asserting convergence in your app's tests.
 (See `test/network.ts`.)
+
+<!-- @doc-setup
+// Values the low-level-seam snippet elides: the mount target, and the session
+// pieces the surrounding prose describes. One declaration per group, so a name
+// an earlier block already defines only drops that group. Not rendered; read by
+// `pnpm check:docs`.
+
+import type { Signal } from '@llui/dom'
+import type { LexicalEditor } from 'lexical'
+import type { CollabProvider, CollabUser } from '@llui/lexical-collab'
+
+declare const el: HTMLElement
+
+declare const id: string
+
+declare const provider: CollabProvider
+
+declare const user: CollabUser
+
+declare const seed: (editor: LexicalEditor) => void
+
+declare const serialize: (editor: LexicalEditor) => string
+
+declare const deserialize: (editor: LexicalEditor, value: string) => void
+
+declare const readonly: Signal<boolean>
+-->

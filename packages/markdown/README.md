@@ -195,3 +195,10 @@ Also exported: `defaultRenderers`, `mergeRenderers`, `sanitizeUrl`, `resolveUrl`
 ## License
 
 MIT
+
+<!-- @doc-setup
+// The Markdown text each snippet renders; the surrounding prose supplies it.
+// Not rendered; read by `pnpm check:docs`.
+
+declare const source: string
+-->
