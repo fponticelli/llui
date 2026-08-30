@@ -15,7 +15,9 @@
 // WHY THIS MODULE EXISTS (the "one auditable place" rule)
 // ------------------------------------------------------
 // Lexical has no `DecorationSet`. The capability is assembled from FOUR
-// `@experimental` (and, for the render config, `@internal`) primitives:
+// primitives lexical marks `@experimental` — and, for the render config, with
+// its `internal` JSDoc tag, which this header deliberately never spells with
+// its leading sigil (see THE UNSPELLED TAG at the end of the header):
 //
 //   • `EditorDOMRenderConfig.$decorateDOM`  — synchronous "the DOM for this node
 //     was just (re)built" callback, the attach point.
@@ -25,8 +27,8 @@
 //   • `setDOMUnmanaged()`                   — stops Lexical's mutation observer
 //     evicting the widget as foreign DOM.
 //
-// `@internal` is a stronger warning than `@experimental`: the shape may change
-// with no deprecation cycle. Confining every one of those imports to THIS FILE
+// The `internal` tag is a stronger warning than `@experimental`: the shape may
+// change with no deprecation cycle. Confining every one of those imports to THIS FILE
 // means a breaking Lexical upgrade is one module to repair rather than N
 // consumers. `grep -rn "setDOMUnmanaged\|EditorDOMRenderConfig" packages/`
 // should return exactly this file.
@@ -77,6 +79,33 @@
 // be pure and cheap; `render` (and therefore any expensive evaluation) runs only
 // when the source genuinely changed. An edit elsewhere in the document never
 // reaches the widget runtime at all.
+//
+// THE UNSPELLED TAG (#253)
+// ------------------------
+// `tsconfig.build.json` sets `stripInternal`, and TypeScript's test for it
+// (`isInternalDeclaration` -> `hasInternalAnnotation`) is a raw substring search
+// for the sigil-prefixed `internal` tag over EVERY leading comment range of a
+// declaration. It cannot tell an annotation from the prose beside it — the
+// repo's own "needle that also matches the prose" trap, except the needle
+// belongs to TypeScript and the damage lands in a PUBLISHED artifact.
+//
+// This header is the leading comment of whatever statement follows it, so
+// spelling that tag here deleted the `import` below from `dist/nodewidget.d.ts`
+// and left `LexicalNode` / `NodeKey` / `LexicalEditor` / `Klass` /
+// `EditorDOMRenderConfig` as five unbound names for any consumer type-checking
+// with `skipLibCheck: false`. Blank lines do NOT detach the header.
+//
+// Do not "fix" a recurrence by moving this header BELOW the imports. Measured
+// against tsc: it then attaches to the next declaration and `stripInternal`
+// deletes THAT instead — here, `WidgetPlacement`. Dropping an exported
+// declaration from the published API is strictly worse than an unbound name,
+// and whether any binding check NOTICES is luck: it only shows up as a free
+// name if something that survived still references the deleted one (it does in
+// this file, via `WidgetSpec.placement`; in the reduced repro nothing did, and
+// the emitted `.d.ts` was well-bound and quietly missing an export). Keep the
+// tag unspelled instead.
+//
+// Both shapes are gated by `scripts/check-dist.mjs` (`pnpm check:dist`).
 
 import {
   isDOMUnmanaged,

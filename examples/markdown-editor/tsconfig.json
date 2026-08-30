@@ -5,6 +5,25 @@
     "moduleResolution": "bundler",
     "strict": true,
     "esModuleInterop": true,
+    // Matches the root tsconfig (which every package inherits) and the other
+    // standalone example, vike-layout. Without it this example type-checks
+    // @llui/markdown-editor's emitted .d.ts, where `MarkdownListNode.$config`
+    // reports TS2416: that divergence from `ListNode` is DELIBERATE — it is the
+    // off-contract `extends` that #129 depends on, and it carries the package's
+    // one `@ts-expect-error` in SOURCE, which does not survive into the .d.ts.
+    // Nothing here can or should "fix" it.
+    //
+    // This example used to be the one workspace that saw another package's
+    // emitted .d.ts, and that is how #253 was found. That canary is now a
+    // deliberate one: `pnpm check:dist` asserts every type name in every
+    // publishable package's .d.ts is bound, across all 25 packages rather than
+    // only what this example happens to import.
+    "skipLibCheck": true,
+    // In the CONFIG, not only via the CLI flag (#251). `tsc -p` against a config
+    // without it writes .js/.d.ts next to the sources, and Vite then resolves
+    // src/main.js over src/main.ts — which fails several packages later with the
+    // compiler plugin's "integrity check failed: no compiled component() calls
+    // found", naming nothing about the real cause.
     "noEmit": true,
     "lib": ["ES2022", "DOM"]
   },

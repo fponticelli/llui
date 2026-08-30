@@ -395,7 +395,7 @@ Quick sanity check on the build output:
 pnpm check:dist
 ```
 
-`scripts/check-dist.mjs` verifies three things about EVERY publishable package's
+`scripts/check-dist.mjs` verifies four things about EVERY publishable package's
 `dist/`, all of which are invisible in-repo and only bite a consumer who installs
 the tarball:
 
@@ -409,6 +409,15 @@ the tarball:
    source, so a stale `dist/` ships dead modules. `publish.sh` `rm -rf dist`
    before building, so a tarball is safe either way, but a hit here means your
    local `dist` is stale: clean-rebuild before trusting anything else it says.
+4. **Every type name an emitted `.d.ts` references is BOUND**, and no source in
+   a `stripInternal` package spells the internal JSDoc tag as prose (#253). Both
+   arms exist because `stripInternal` deletes any declaration whose LEADING
+   COMMENT contains that tag, and TypeScript's test for it is a raw substring
+   search that cannot tell an annotation from the paragraph beside it — an
+   80-line `//` module header did it in `@llui/lexical`, deleting the whole
+   `import` below it and shipping five unbound names. Nothing in-repo caught it:
+   every workspace inherits `skipLibCheck: true`, so no package type-checks
+   another's emitted `.d.ts`. See `scripts/lib/dist-type-bindings.mjs`.
 
 It parses with the TypeScript compiler rather than grepping, because this repo's
 own compiler sources quote `export { X } from './y'` inside comments and a text

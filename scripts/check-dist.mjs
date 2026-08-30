@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Verify the PUBLISHED shape of each package's build output. Three invariants
+// Verify the PUBLISHED shape of each package's build output. Four invariants
 // that are invisible in-repo (everything resolves fine from the workspace) and
 // only break once a consumer installs the tarball:
 //
@@ -21,6 +21,14 @@
 //      — `scripts/publish.sh` `rm -rf dist` before building for exactly this
 //      reason). A map whose source is gone is the cheapest way to detect it.
 //
+//   4. Every type name an emitted `.d.ts` REFERENCES is BOUND, and no source
+//      file in a `stripInternal` package mentions the internal JSDoc tag as
+//      prose. Two arms of one guard (#253) — see
+//      `scripts/lib/dist-type-bindings.mjs` for why one cannot replace the
+//      other, and why the dist arm is structural rather than a `tsc` run
+//      (a `tsc` run is green under this repo's `skipLibCheck: true` and
+//      verifies nothing).
+//
 // Imports are found by PARSING with the TypeScript compiler, not by regex: this
 // repo's own compiler sources quote `export { X } from './y'` inside comments
 // and doc strings, and a text scan reports those as violations. A release gate
@@ -34,6 +42,15 @@
 import { readdirSync, readFileSync, statSync, existsSync } from 'node:fs'
 import { join, dirname, relative, normalize } from 'node:path'
 import { createRequire } from 'node:module'
+import {
+  INTERNAL_TAG,
+  freeTypeNames,
+  globalTypeNames,
+  misplacedInternalTags,
+  stripInternalPackages,
+  walkDts,
+  walkTs,
+} from './lib/dist-type-bindings.mjs'
 
 const ts = createRequire(import.meta.url)('typescript')
 
@@ -116,6 +133,99 @@ for (const pkgDir of targets()) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 4. stripInternal guard (#253), both arms.
+// ---------------------------------------------------------------------------
+const repoRoot = process.cwd()
+/** True when the caller named packages on argv, so corpus floors do not apply. */
+const scoped = process.argv.slice(2).filter((a) => !a.startsWith('-')).length > 0
+
+// INSTRUMENT CHECK, before any verdict. A count floor only proves the walk
+// visited files; it cannot prove either arm is still capable of REPORTING. Both
+// analyzers are therefore run against a known-bad input first, and a guard that
+// stays silent on that is broken rather than reassuring.
+{
+  const probeGlobals = new Set(['string'])
+  const bad = 'export interface P { f: Gone }\n'
+  if (freeTypeNames(repoRoot, 'probe.d.ts', bad, probeGlobals).free.length !== 1)
+    problems.push('dist type bindings: the free-name probe did not report a known unbound name.')
+  const good = "import type { Gone } from 'x'\nexport interface P { f: Gone }\n"
+  if (freeTypeNames(repoRoot, 'probe.d.ts', good, probeGlobals).free.length !== 0)
+    problems.push('dist type bindings: the free-name probe reported a name that IS imported.')
+  const prose = `// mentions ${INTERNAL_TAG} in prose\nexport interface P { f: string }\n`
+  if (misplacedInternalTags(repoRoot, 'probe.ts', prose).length !== 1)
+    problems.push('stripInternal source scan: the probe did not report a known prose mention.')
+  const annotated = `/** ${INTERNAL_TAG} */\nexport interface P { f: string }\n`
+  if (misplacedInternalTags(repoRoot, 'probe.ts', annotated).length !== 0)
+    problems.push('stripInternal source scan: the probe reported a genuine JSDoc annotation.')
+}
+
+// SOURCE arm. Buildless, so it runs over every stripInternal package regardless
+// of which packages were named on argv.
+let sourceFiles = 0
+let tagsJudged = 0
+for (const pkgDir of stripInternalPackages(repoRoot)) {
+  const src = join(repoRoot, 'packages', pkgDir, 'src')
+  if (!existsSync(src)) continue
+  for (const file of walkTs(src)) {
+    sourceFiles++
+    const text = readFileSync(file, 'utf8')
+    if (!text.includes('internal')) continue
+    tagsJudged++
+    for (const t of misplacedInternalTags(repoRoot, file, text)) {
+      problems.push(
+        `${relative(repoRoot, file)}:${t.line}: the internal JSDoc tag appears as ${
+          t.kind === 'line-comment' ? 'a // comment' : 'JSDoc prose'
+        }, not as an annotation — stripInternal will DELETE the next declaration ` +
+          `from the emitted .d.ts (#253). Reword so the tag is not spelled: ${t.text}`,
+      )
+    }
+  }
+}
+
+// DIST arm. Needs a build; `targets()` already pushed a problem for any missing
+// dist above, so an unbuilt tree fails loudly rather than sweeping nothing.
+let dtsFiles = 0
+let refsJudged = 0
+const globals = globalTypeNames(repoRoot)
+if (globals.size < 500)
+  problems.push(
+    `dist type bindings: the globals probe resolved only ${globals.size} names — the lib files did not load, so every reference would read as free. Refusing to give a verdict.`,
+  )
+else {
+  for (const pkgDir of targets()) {
+    const dist = `packages/${pkgDir}/dist`
+    if (!existsSync(dist)) continue
+    for (const file of walkDts(dist)) {
+      dtsFiles++
+      const { free, referenced } = freeTypeNames(
+        repoRoot,
+        file,
+        readFileSync(file, 'utf8'),
+        globals,
+      )
+      refsJudged += referenced
+      for (const f of free)
+        problems.push(
+          `${file}:${f.line}: "${f.name}" is referenced but bound nowhere — its import or declaration was deleted from the emitted .d.ts (#253). Any consumer with skipLibCheck:false gets TS2304.`,
+        )
+    }
+  }
+  // Vacuity: a FULL sweep that stopped finding things must fail, not pass
+  // quietly. Scoped to the default target set on purpose — `targets()` also
+  // accepts package names on argv, and a corpus floor applied to a one-package
+  // invocation would reject it for doing exactly what was asked. The instrument
+  // check above is what covers the scoped form.
+  if (!scoped && (dtsFiles < 100 || refsJudged < 500))
+    problems.push(
+      `dist type bindings: judged only ${dtsFiles} .d.ts / ${refsJudged} type references — far below the expected corpus. The walk found nothing to check.`,
+    )
+}
+if (sourceFiles < 50)
+  problems.push(
+    `stripInternal source scan: judged only ${sourceFiles} source files across ${stripInternalPackages(repoRoot).length} stripInternal package(s) — the walk found nothing to check.`,
+  )
+
 if (problems.length) {
   console.error(`✗ dist integrity: ${problems.length} problem(s)\n`)
   for (const p of problems.slice(0, 20)) console.error(`   ${p}`)
@@ -125,3 +235,7 @@ if (problems.length) {
 }
 
 console.log('✓ dist integrity: imports carry .js, sourcemap sources exist and ship')
+console.log(
+  `✓ stripInternal guard: ${refsJudged} type references across ${dtsFiles} .d.ts all bound (${globals.size} globals); ` +
+    `${tagsJudged} of ${sourceFiles} source files scanned for a misplaced internal tag`,
+)
