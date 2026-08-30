@@ -17,7 +17,7 @@ import MagicString from 'magic-string'
 import { preResolveAll, prependLines } from './compile-helpers.js'
 import type { LluiPluginState } from './shared-state.js'
 
-export function createCompilePlugin(state: LluiPluginState) {
+export function createCompilePlugin(state: LluiPluginState): Plugin {
   return {
     name: 'llui:compile',
     // #87 depends on LLui seeing authored TS before any normal transform.

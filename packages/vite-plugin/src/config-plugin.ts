@@ -11,7 +11,7 @@ import {
   resolveRouterInput,
 } from './plugin-helpers.js'
 
-export function createConfigPlugin(state: LluiPluginState) {
+export function createConfigPlugin(state: LluiPluginState): Plugin {
   return {
     name: 'llui:config',
     enforce: 'pre',

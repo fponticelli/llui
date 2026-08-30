@@ -4,7 +4,7 @@ import type { LluiPluginState } from './shared-state.js'
 const HUD_VMOD_ID = 'virtual:llui-devmode-annotate-init'
 const HUD_VMOD_RESOLVED_ID = '\0' + HUD_VMOD_ID
 
-export function createHudPlugin(state: LluiPluginState) {
+export function createHudPlugin(state: LluiPluginState): Plugin {
   return {
     name: 'llui:hud',
     enforce: 'pre',

@@ -26,12 +26,13 @@
     // CANARY NOTE: this example used to be the one workspace that type-checked
     // another package's emitted `.d.ts`, and that is how #253 was found. Setting
     // this gives that up HERE, so it is replaced by a deliberate guard —
-    // `pnpm check:dist` asserts every type name in every publishable package's
-    // `.d.ts` is bound, across all 25 packages instead of only what this example
-    // imports. Be precise about the trade: that guard does NOT resolve module
-    // specifiers, so the `import("rolldown")` class it cannot see is genuinely
-    // lost here (#257). github-explorer still runs without skipLibCheck and is a weaker
-    // surviving canary (it imports far less).
+    // `pnpm check:dist`, which since #257 runs the same check this example used
+    // to: ONE program over every publishable package's `.d.ts` with
+    // `skipLibCheck: false`, across all 25 packages instead of only what this
+    // example imports. So the trade is no longer a loss — the `import("rolldown")`
+    // class the older BINDING-only guard could not see is covered there, and the
+    // two defects it found are fixed. github-explorer still runs without
+    // skipLibCheck and remains a weaker incidental canary (it imports far less).
     "skipLibCheck": true,
     // In the CONFIG, not only via the CLI flag (#251). `tsc -p` against a config
     // without it writes .js/.d.ts next to the sources, and Vite then resolves

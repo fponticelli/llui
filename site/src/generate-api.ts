@@ -106,7 +106,13 @@ function entrySources(pkgDir: string): PackageEntrySource[] {
         : val && typeof val === 'object'
           ? ((val as Record<string, unknown>).types ?? (val as Record<string, unknown>).import)
           : undefined
-    if (typeof target !== 'string' || target.endsWith('.css')) continue
+    // A CSS entry point is named by its SUBPATH, not by what the map points at.
+    // Since #257 `@llui/markdown-editor`'s `./styles/*.css` subpaths carry a `types`
+    // condition (an `export {}`, so a `skipLibCheck: false` consumer can resolve the
+    // side-effect import our own published `.d.ts` emits), which makes `target` a
+    // `.d.ts` path — testing only the target then reads a stylesheet as a TypeScript
+    // entry point and demands an API section for it.
+    if (typeof target !== 'string' || key.endsWith('.css') || target.endsWith('.css')) continue
     const rel = target
       .replace(/^\.\//, '')
       .replace(/^dist\//, 'src/')

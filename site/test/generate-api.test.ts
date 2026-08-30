@@ -483,7 +483,14 @@ describe('public package subpaths', () => {
               ? ((value as Record<string, unknown>).types ??
                 (value as Record<string, unknown>).import)
               : undefined
-        if (typeof target !== 'string' || target.endsWith('.css')) continue
+        // A CSS entry point is named by its SUBPATH, not by what the map points at.
+        // Since #257 `@llui/markdown-editor`'s `./styles/*.css` subpaths carry a `types`
+        // condition (an `export {}`, so a `skipLibCheck: false` consumer can resolve the
+        // side-effect import our own published `.d.ts` emits), which makes `target` a
+        // `.d.ts` path — testing only the target then reads a stylesheet as a TypeScript
+        // entry point and demands an API section for it.
+        if (typeof target !== 'string' || subpath.endsWith('.css') || target.endsWith('.css'))
+          continue
         const specifier = manifest.name + subpath.slice(1)
         if (!page.includes(`### \`${specifier}\``)) missing.push(specifier)
       }
@@ -509,7 +516,13 @@ describe('public package subpaths', () => {
             ? ((value as Record<string, unknown>).types ??
               (value as Record<string, unknown>).import)
             : undefined
-      if (typeof target !== 'string' || !target.includes('*') || target.endsWith('.css')) continue
+      if (
+        typeof target !== 'string' ||
+        !target.includes('*') ||
+        subpath.endsWith('.css') ||
+        target.endsWith('.css')
+      )
+        continue
 
       const sourcePattern = target
         .replace(/^\.\/dist\//, 'src/')
@@ -566,7 +579,8 @@ function publicEntryPoints(): Map<string, { name: string; entries: ApiEntry[] }>
             ? ((value as Record<string, unknown>).types ??
               (value as Record<string, unknown>).import)
             : undefined
-      if (typeof target !== 'string' || target.endsWith('.css')) continue
+      if (typeof target !== 'string' || subpath.endsWith('.css') || target.endsWith('.css'))
+        continue
       const sourcePattern = target
         .replace(/^\.\/dist\//, 'src/')
         .replace(/\.d\.ts$/, '.ts')

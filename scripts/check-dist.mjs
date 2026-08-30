@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Verify the PUBLISHED shape of each package's build output. Four invariants
+// Verify the PUBLISHED shape of each package's build output. Five invariants
 // that are invisible in-repo (everything resolves fine from the workspace) and
 // only break once a consumer installs the tarball:
 //
@@ -24,11 +24,19 @@
 //   4. Every type name an emitted `.d.ts` REFERENCES is BOUND, and no source
 //      file in a `stripInternal` package mentions the internal JSDoc tag as
 //      prose. Two arms of one guard (#253) — see
-//      `scripts/lib/dist-type-bindings.mjs` for why one cannot replace the
-//      other, and for what this arm does NOT cover: it is a BINDING check, so
-//      it does not resolve module specifiers, and the wider
-//      `skipLibCheck: false` sweep it declines to be finds two live defects it
-//      cannot (#257). A green run here is not "the published types compile".
+//      `scripts/lib/dist-type-bindings.mjs` for why neither can replace the
+//      other.
+//
+//   5. Every emitted `.d.ts` in a publishable package TYPE-CHECKS, in one
+//      `ts.Program` with `skipLibCheck: false` (#257) — the check a consumer
+//      that does not skip lib checking actually runs against our published
+//      types. This is what closes the hole invariant 4 leaves open by
+//      construction: a BINDING check cannot see an unresolvable module
+//      SPECIFIER, and that is how six `import("rolldown").X` and one
+//      side-effect CSS import shipped under a green gate. Verdict is scoped
+//      STRUCTURALLY to `packages/*/dist/**` (a third-party `.d.ts` we merely
+//      pull in is what `skipLibCheck` exists for); the one approved diagnostic
+//      in our own output is in `SEMANTIC_ALLOWED`, closed at both ends.
 //
 // Imports are found by PARSING with the TypeScript compiler, not by regex: this
 // repo's own compiler sources quote `export { X } from './y'` inside comments
@@ -46,6 +54,9 @@ import { createRequire } from 'node:module'
 import {
   INTERNAL_TAG,
   MIN_TAG_MENTIONS,
+  PROBE_SIDE_EFFECT_TARGET,
+  SEMANTIC_ALLOWED,
+  distSemanticDiagnostics,
   freeTypeNames,
   globalTypeNames,
   misplacedInternalTags,
@@ -146,6 +157,14 @@ function relativeSpecifiers(file, text) {
 /** @type {string[]} */
 const problems = []
 
+// INDEPENDENT CORPUS ORACLE. Invariants 1-3 walk `dist` with `walk()`; arms 4
+// and 5 walk it again with `walkDts()`. Counting `.d.ts` here costs nothing and
+// gives the exact-set assertion below a THIRD enumeration to agree with, so a
+// narrowing that touches one walk cannot pass by narrowing the other too
+// (CLAUDE.md: "assert an EXACT set size — a floor only detects
+// under-collection").
+let integrityDts = 0
+
 for (const pkgDir of targets()) {
   const root = `packages/${pkgDir}`
   const dist = `${root}/dist`
@@ -160,6 +179,7 @@ for (const pkgDir of targets()) {
   const shipped = new Set((pkg.files ?? []).map((f) => firstSegment(f.replace(/^\.\//, ''))))
 
   for (const file of walk(dist)) {
+    if (file.endsWith('.d.ts')) integrityDts++
     if (file.endsWith('.js')) {
       for (const spec of relativeSpecifiers(file, readFileSync(file, 'utf8'))) {
         if (!spec.endsWith('.js')) problems.push(`${file}: extensionless import "${spec}"`)
@@ -242,6 +262,8 @@ for (const pkgDir of stripInternalPackages(repoRoot)) {
 // dist above, so an unbuilt tree fails loudly rather than sweeping nothing.
 let dtsFiles = 0
 let refsJudged = 0
+/** Filled by arm 5 below, printed in the success summary. */
+let semanticSummary = 'not run'
 const globals = globalTypeNames(repoRoot)
 if (globals.size < 500)
   problems.push(
@@ -290,6 +312,97 @@ if (tagsJudged < MIN_TAG_MENTIONS)
     `stripInternal source scan: only ${tagsJudged} of ${sourceFiles} source files reached the analyzer (expected at least ${MIN_TAG_MENTIONS}) — the pre-filter is dropping everything, so this arm is judging nothing.`,
   )
 
+// ---------------------------------------------------------------------------
+// 5. SEMANTIC arm (#257): one program over every publishable package's emitted
+//    `.d.ts` with `skipLibCheck: false`. This is what closes the specifier hole
+//    arm 4's dist half leaves open by construction; read the header of
+//    `scripts/lib/dist-type-bindings.mjs` before changing the scope or the
+//    allowlist.
+// ---------------------------------------------------------------------------
+/** @type {string[]} */
+const semanticRoots = []
+/** @type {string[]} */
+const semanticDistDirs = []
+for (const pkgDir of targets()) {
+  const dist = `packages/${pkgDir}/dist`
+  if (!existsSync(dist)) continue
+  semanticDistDirs.push(join(repoRoot, dist))
+  for (const file of walkDts(dist)) semanticRoots.push(join(repoRoot, file))
+}
+
+if (!existsSync(join(repoRoot, PROBE_SIDE_EFFECT_TARGET))) {
+  problems.push(
+    `dist semantic sweep: the instrument probe's side-effect target "${PROBE_SIDE_EFFECT_TARGET}" does not exist, so the probe would report TS2307 instead of TS2882. Point PROBE_SIDE_EFFECT_TARGET at a checked-in non-TypeScript file.`,
+  )
+} else if (semanticRoots.length === 0) {
+  problems.push('dist semantic sweep: no .d.ts to check — build before running this check')
+} else {
+  const semantic = distSemanticDiagnostics(repoRoot, semanticRoots, semanticDistDirs)
+
+  // INSTRUMENT CHECK, before any verdict — the same discipline arm 4 uses. A
+  // file count proves the walk ran; only the probe proves the program can still
+  // REPORT the three failures this arm exists for.
+  if (!semantic.probeOk)
+    problems.push(
+      `dist semantic sweep: the instrument probe reported [${semantic.probeCodes.join(', ')}] — expected TS2882 (side-effect import with no declarations), TS2307 (unresolvable inline import type) and TS2304 (free name). Refusing to give a verdict.`,
+    )
+
+  for (const d of semantic.reported)
+    problems.push(
+      `${d.file}:${d.line}:${d.column}: TS${d.code} ${d.message} — a published .d.ts that any consumer with skipLibCheck:false fails to compile (#257).`,
+    )
+
+  // The allowlist is CLOSED AT BOTH ENDS: an entry that no longer describes a
+  // real diagnostic is a standing licence for a defect that has been fixed.
+  for (const [i, a] of SEMANTIC_ALLOWED.entries())
+    if (!semantic.allowedHits.has(i))
+      problems.push(
+        `dist semantic sweep: SEMANTIC_ALLOWED[${i}] (${a.file}: TS${a.code}) matched nothing — OBSOLETE. Delete it; leaving it standing approves a diagnostic nobody has seen.`,
+      )
+
+  // VERDICT INTEGRITY: an EXACT set size, across THREE independent enumerations
+  // of the same corpus, not a floor.
+  //
+  // This is the assertion the first cut of this arm shipped without, and the
+  // hole was not theoretical: dropping ONE package from `semanticRoots` took the
+  // sweep from 558 files to 535 and the gate stayed GREEN — with
+  // `import("rolldown")` back in the published `.d.ts`, and with 558 and 535
+  // printed one line apart in the success output with nothing comparing them. A
+  // floor of 100 against a 558-file corpus can only see a TOTAL loss; a partial
+  // one is exactly how a gate goes quiet while the tree is broken (CLAUDE.md:
+  // "assert an EXACT set size … a floor only detects under-collection, and would
+  // have passed at 210").
+  //
+  // The three counts come from three separate walks, so no single edit can
+  // silence the check by narrowing "both sides":
+  //   integrityDts        — invariant 1-3's `walk()` over dist
+  //   dtsFiles            — arm 4's `walkDts()` over dist
+  //   semanticRoots.length— arm 5's own `walkDts()` over dist
+  //   semantic.judged     — what the PROGRAM actually loaded under those dirs
+  // The last is the one that also catches a file that was fed in and silently
+  // not parsed. `dtsFiles` is 0 when the globals probe failed, which is already
+  // a reported problem, so it is compared only when arm 4 ran.
+  if (!scoped) {
+    if (semantic.judged !== semanticRoots.length)
+      problems.push(
+        `dist semantic sweep: the program loaded ${semantic.judged} .d.ts under packages/*/dist but ${semanticRoots.length} were handed to it — every root name must be loaded, so the sweep is judging a DIFFERENT corpus than it walked.`,
+      )
+    if (semanticRoots.length !== integrityDts)
+      problems.push(
+        `dist semantic sweep: swept ${semanticRoots.length} .d.ts but the dist integrity walk found ${integrityDts} — the two enumerations of the same corpus disagree, so one of them is dropping files.`,
+      )
+    if (dtsFiles > 0 && semanticRoots.length !== dtsFiles)
+      problems.push(
+        `dist semantic sweep: swept ${semanticRoots.length} .d.ts but the binding arm judged ${dtsFiles} — the two arms are not looking at the same corpus.`,
+      )
+    if (semantic.judged < 100)
+      problems.push(
+        `dist semantic sweep: the program loaded only ${semantic.judged} .d.ts under packages/*/dist — far below the expected corpus.`,
+      )
+  }
+  semanticSummary = `${semantic.judged} .d.ts type-checked with skipLibCheck:false in ${semantic.ms} ms (${SEMANTIC_ALLOWED.length} allowed)`
+}
+
 if (problems.length) {
   console.error(`✗ dist integrity: ${problems.length} problem(s)\n`)
   for (const p of problems.slice(0, 20)) console.error(`   ${p}`)
@@ -303,3 +416,4 @@ console.log(
   `✓ stripInternal guard: ${refsJudged} type references across ${dtsFiles} .d.ts all bound (${globals.size} globals); ` +
     `${tagsJudged} of ${sourceFiles} source files scanned for a misplaced internal tag`,
 )
+console.log(`✓ published types compile: ${semanticSummary}`)

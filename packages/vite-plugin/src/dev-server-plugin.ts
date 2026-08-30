@@ -16,7 +16,7 @@ interface ServerResponseLike {
   end(body?: string): void
 }
 
-export function createDevServerPlugin(state: LluiPluginState) {
+export function createDevServerPlugin(state: LluiPluginState): Plugin {
   function readMcpMarker(): { port: number; devUrl?: string } | null {
     try {
       if (!existsSync(state.activeFilePath)) return null
