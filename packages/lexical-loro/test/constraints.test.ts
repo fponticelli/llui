@@ -576,7 +576,7 @@ describe('resilience of the ordering projection', () => {
     expect(rendered(root)).toEqual(['good'])
   })
 
-  it('projects in sub-quadratic time (the sort is O(n log n), not O(n^2))', { retry: 2 }, () => {
+  it('projects in sub-quadratic time (the sort is O(n log n), not O(n^2))', () => {
     // The children map has no order of its own, so every projection sorts. What
     // matters is that the sort stays O(n log n): a regression that made it
     // quadratic (e.g. an indexOf-in-a-loop) would block the main thread on a
@@ -588,18 +588,19 @@ describe('resilience of the ordering projection', () => {
     // them (a true quadratic still fails hard) while leaving headroom for
     // measurement noise on a loaded CI runner.
     //
-    // ── #246: WHY THE MEASUREMENT IS UNCHANGED AND `retry` IS THE ONLY FIX ──
+    // ── #246: WHY THIS FLAKES, AND WHY IT IS LEFT EXACTLY AS IT IS ──
     //
     // This fires under PARALLEL LOAD and is green on a quiet re-run — reported
-    // at ratio 16.47, reproduced here at 29.53. Unlike the timeout half of #246
-    // a bigger budget is not even applicable, and it fails with a number that
-    // reads as a real regression rather than as an obvious flake.
+    // at ratio 16.47, reproduced here at 29.53 and 31.30. Unlike the timeout
+    // half of #246 a bigger budget is not even applicable, and it fails with a
+    // number that reads as a real regression rather than as an obvious flake.
     //
     // START FROM THE ARITHMETIC, because it closes the obvious door: the
     // observed noise EXCEEDS the signal. Quadratic growth for a 4x size step is
-    // 16.0, and the flake has been seen at 16.47 and 29.53. So there is NO
-    // threshold that both tolerates the noise and still rejects a quadratic.
-    // Raising 12 is not a trade-off here, it is arithmetically unavailable.
+    // 16.0, and healthy code has been measured here at 16.41, 18.51, 29.53 and
+    // 31.30. So there is NO threshold that both tolerates the noise and still
+    // rejects a quadratic. Raising 12 is not a trade-off, it is arithmetically
+    // unavailable.
     //
     // The MECHANISM is a load TRANSIENT, not load itself, and that is measured
     // rather than assumed. On an 18-core machine, 8 trials under SUSTAINED CPU
@@ -634,16 +635,38 @@ describe('resilience of the ordering projection', () => {
     //     Alternating two working sets destroys the cache locality each size
     //     had to itself.
     //
-    // So the measurement below is left EXACTLY as it was, and the honest
-    // statement is that this assertion is not load-robust and cannot be made so
-    // by a better clock. `retry` is the one lever that costs nothing: it does
-    // not touch the threshold, the sizes, the iteration counts or the estimator
-    // — only how many independent samples must agree before the suite goes red.
-    // A transient is independent across attempts (measured at ~1 bad trial in
-    // 14, so ~4e-4 for three), while a genuine quadratic reads ~16 every time
-    // and fails all three. `packages/agent-e2e/vitest.config.ts` carries the
-    // same reasoning for its browser fixtures. `testTimeout` is per ATTEMPT, so
-    // three attempts of a ~2.5 s test do not approach the budget.
+    // `{ retry: 2 }` LOOKED like the free answer — it touches neither threshold,
+    // sizes, iterations nor estimator, only how many independent samples must
+    // agree — and it is REJECTED, on numbers. Both distributions were measured
+    // under local batch load (~load 220 on 18 cores, 16 trials each) against a
+    // faithful quadratic mutant (`out.sort(...)` replaced by an insertion sort
+    // with identical output — the `indexOf-in-a-loop` shape named above):
+    //
+    //   healthy    2.80 3.07 3.23 3.51 3.56 3.63 4.15 4.20 4.76 6.24 9.12
+    //              12.82 16.00 16.41 18.51 31.30        -> 5/16 OVER 12 (red)
+    //   quadratic  5.37 8.31 9.21 9.21 10.94 12.21 12.85 13.18 13.53 13.78
+    //              14.81 15.30 15.34 16.47 22.39 70.11  -> 5/16 UNDER 12 (miss)
+    //
+    // Under those conditions the test is a coin flip in BOTH directions: 31% of
+    // healthy runs go red, and 31% of genuinely quadratic ones go green. `retry`
+    // cuts the false reds to ~3% (0.31^3) and raises the MISSES to ~67%
+    // (1 - 0.69^3) — it buys quiet by more than doubling the thing the test
+    // exists to prevent, in exactly the condition where the flake lives. So the
+    // test ships unchanged and its flake is ACCEPTED. Note the flake's home is
+    // the local parallel-agent batch, not CI: CI runs `pnpm -r
+    // --workspace-concurrency=2` on a 4-core runner, which is the gentle STEADY
+    // regime where 8 of 8 trials stayed under 6.19.
+    //
+    // ONE change would genuinely strengthen this, and is deliberately NOT made
+    // here because it deserves its own calibration: BIGGER SIZES. At these sizes
+    // the projection's O(n) Loro reads still dominate the sort, so the quadratic
+    // mutant's MEDIAN is only 13.2 — barely over the threshold, nothing like the
+    // 16x the paragraph above assumes. At n=1000/4000 (5 trials each, load ~280)
+    // the healthy median was unchanged at 4.23 while the quadratic median rose
+    // to 21.36, i.e. the SIGNAL roughly doubled while the noise did not. It
+    // costs ~2x the test's wall time and 5 trials is thinner calibration than
+    // this repo's own standard (#193 swept two load conditions), so it is
+    // recorded on #246 rather than shipped on the strength of one afternoon.
     const project = (n: number): number => {
       const { doc, root } = freshDoc(1n)
       const children = elementChildren(root)
