@@ -638,9 +638,23 @@ function publicEntryPoints(): Map<string, { name: string; entries: ApiEntry[] }>
  *     unstable between runs, which is itself the finding: load, not options, is
  *     what moves this number.
  *   - **Sharing the program with `generate-api.ts`.** It does build one, but in
- *     a different PROCESS (`check:generated`), so there is nothing to share; and
- *     an oracle borrowed from the generator could only ever agree with the
- *     generator, which is the one thing this check must not do.
+ *     a different PROCESS (`check:generated`), so there is nothing to share and
+ *     no cost to save. Be precise about the second reason, because the obvious
+ *     phrasing is wrong: a `ts.Program` is an INPUT, not the generator's answer,
+ *     so sharing one would NOT make this check circular. What would is sharing
+ *     the generator's ENTRY-POINT RESOLUTION — the export-map -> `src/` mapping
+ *     re-derived below — since an entry point the generator failed to enumerate
+ *     would then be one this test never asks about, and both halves would agree
+ *     that nothing is missing.
+ *
+ * A THIRD thing this restructure costs, and it is a real loss (#193): the
+ * fixture is no longer visible to the duration baseline. `aggregateDurations`
+ * sums `assertionResults[].duration` only, so work done in a hook is not in the
+ * per-file total — measured at identical load, this file went 6987 ms -> 1247 ms
+ * REPORTED while its wall time stayed ~6.8 s. A future regression in this
+ * `createProgram` cost is therefore invisible to `check:test-durations`. That is
+ * accepted (the alternative is a test that fails under load instead), but do not
+ * read a green duration report as evidence that this fixture stayed cheap.
  */
 describe('every public entry point is documented', () => {
   const byPackage = publicEntryPoints()
@@ -666,8 +680,22 @@ describe('every public entry point is documented', () => {
   // of the enumeration itself, and pin that every entry RESOLVES to a module
   // symbol — the walk below skips one that does not, so an entry map that
   // silently stopped resolving would assert nothing at all.
+  //
+  // The package count is DERIVED, not a floor. A floor tolerates losing a
+  // package, which is measured rather than theorised: at
+  // `toBeGreaterThanOrEqual(24)` against 25 non-private packages, a mutation
+  // dropping exactly `router` from the enumeration SURVIVED — 75 tests, green,
+  // one package's API page unchecked. `site/content/api/` is the independent
+  // oracle: `assertPackageRegistryComplete` already requires one page per
+  // publishable package, so the two counts must agree exactly and neither has to
+  // be bumped by hand when a package is added.
   it('enumerates every publishable package and resolves all of their entry points', () => {
-    expect(byPackage.size).toBeGreaterThanOrEqual(24)
+    const apiPages = readdirSync(resolve(repoRoot, 'site/content/api')).filter((f) =>
+      f.endsWith('.md'),
+    )
+    expect(apiPages.length).toBeGreaterThan(20)
+    expect(byPackage.size).toBe(apiPages.length)
+    expect([...byPackage.keys()].sort()).toEqual(apiPages.map((f) => f.replace(/\.md$/, '')).sort())
     expect(allEntries.length).toBeGreaterThanOrEqual(150)
     expect([...byPackage.keys()]).toContain('dom')
     expect([...byPackage.keys()]).toContain('components')

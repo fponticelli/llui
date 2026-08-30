@@ -588,7 +588,7 @@ describe('resilience of the ordering projection', () => {
     // them (a true quadratic still fails hard) while leaving headroom for
     // measurement noise on a loaded CI runner.
     //
-    // ── #246: WHY THIS FLAKES, AND WHY IT IS LEFT EXACTLY AS IT IS ──
+    // ── #246: WHY THIS FLAKES, WHAT FIXED IT, AND WHAT DID NOT ──
     //
     // This fires under PARALLEL LOAD and is green on a quiet re-run — reported
     // at ratio 16.47, reproduced here at 29.53 and 31.30. Unlike the timeout
@@ -637,36 +637,51 @@ describe('resilience of the ordering projection', () => {
     //
     // `{ retry: 2 }` LOOKED like the free answer — it touches neither threshold,
     // sizes, iterations nor estimator, only how many independent samples must
-    // agree — and it is REJECTED, on numbers. Both distributions were measured
-    // under local batch load (~load 220 on 18 cores, 16 trials each) against a
-    // faithful quadratic mutant (`out.sort(...)` replaced by an insertion sort
-    // with identical output — the `indexOf-in-a-loop` shape named above):
+    // agree — and it is REJECTED, on numbers. Measuring only the HEALTHY
+    // distribution makes it look free; measuring the mutant's too is what kills
+    // it. Both were measured under local batch load (~load 220 on 18 cores, 16
+    // trials each) against a faithful quadratic mutant (`out.sort(...)` replaced
+    // by an insertion sort with identical output — the `indexOf-in-a-loop` shape
+    // named above), at the OLD 500/2000 sizes:
     //
     //   healthy    2.80 3.07 3.23 3.51 3.56 3.63 4.15 4.20 4.76 6.24 9.12
     //              12.82 16.00 16.41 18.51 31.30        -> 5/16 OVER 12 (red)
     //   quadratic  5.37 8.31 9.21 9.21 10.94 12.21 12.85 13.18 13.53 13.78
     //              14.81 15.30 15.34 16.47 22.39 70.11  -> 5/16 UNDER 12 (miss)
     //
-    // Under those conditions the test is a coin flip in BOTH directions: 31% of
-    // healthy runs go red, and 31% of genuinely quadratic ones go green. `retry`
+    // Under those conditions the test is a coin flip in BOTH directions: ~31% of
+    // healthy runs go red, and ~31% of genuinely quadratic ones go green. `retry`
     // cuts the false reds to ~3% (0.31^3) and raises the MISSES to ~67%
     // (1 - 0.69^3) — it buys quiet by more than doubling the thing the test
-    // exists to prevent, in exactly the condition where the flake lives. So the
-    // test ships unchanged and its flake is ACCEPTED. Note the flake's home is
-    // the local parallel-agent batch, not CI: CI runs `pnpm -r
-    // --workspace-concurrency=2` on a 4-core runner, which is the gentle STEADY
-    // regime where 8 of 8 trials stayed under 6.19.
+    // exists to prevent, in exactly the condition where the flake lives. That is
+    // the whole case against it, and it is why the flake is ACCEPTED rather than
+    // retried away. Note the flake's home is the local parallel-agent batch: CI
+    // runs `pnpm -r --workspace-concurrency=2` on a 4-core runner, the gentle
+    // STEADY regime where 0 of 12 and 0 of 20 trials exceeded 12.
     //
-    // ONE change would genuinely strengthen this, and is deliberately NOT made
-    // here because it deserves its own calibration: BIGGER SIZES. At these sizes
-    // the projection's O(n) Loro reads still dominate the sort, so the quadratic
-    // mutant's MEDIAN is only 13.2 — barely over the threshold, nothing like the
-    // 16x the paragraph above assumes. At n=1000/4000 (5 trials each, load ~280)
-    // the healthy median was unchanged at 4.23 while the quadratic median rose
-    // to 21.36, i.e. the SIGNAL roughly doubled while the noise did not. It
-    // costs ~2x the test's wall time and 5 trials is thinner calibration than
-    // this repo's own standard (#193 swept two load conditions), so it is
-    // recorded on #246 rather than shipped on the strength of one afternoon.
+    // WHAT DID CHANGE IS THE SIZES, and it is the one intervention that improves
+    // BOTH directions at once. At 500/2000 the projection's O(n) Loro reads
+    // still dominate the sort, so the quadratic mutant medians ~13 — barely over
+    // the threshold, nothing like the 16x the first paragraph assumes, and the
+    // consequence is that the SHIPPED configuration missed a real regression
+    // HALF THE TIME. Measured through this test (not a replica — see the warning
+    // below) under harsh bursts plus a concurrent `turbo test`:
+    //
+    //                    false red        MISS
+    //     500/2000        5/24 = 21%     12/24 = 50%
+    //     1000/4000       2/16 = 12.5%    1/16 =  6%
+    //
+    // The cost is ~6x wall time, not the ~2x a first estimate claimed: 0.33 s
+    // steady / 0.60 s harsh at 500/2000 against 3.51 s p50 / 6.97 s max at
+    // 1000/4000. Headroom against the 30 s budget falls from ~10x to ~3-4x —
+    // still safe, and that number is the one to check before raising the sizes
+    // again.
+    //
+    // MEASURE THIS TEST, NEVER A REPLICA OF IT. A standalone `tsx` harness
+    // copying `project()` line for line reproduces a plausible distribution and
+    // is WRONG: `tsx` runs ~2x slower than vitest's build, which compresses the
+    // quadratic signal back into the Loro-read floor and makes 500/2000 look
+    // adequate. Instrument `constraints.test.ts` itself.
     const project = (n: number): number => {
       const { doc, root } = freshDoc(1n)
       const children = elementChildren(root)
@@ -683,8 +698,12 @@ describe('resilience of the ordering projection', () => {
       return (performance.now() - started) / iterations
     }
 
-    const small = project(500)
-    const large = project(2000) // 4x the size
+    // 1000/4000, not 500/2000 — see the #246 block above. The step is still 4x,
+    // so the threshold's arithmetic is unchanged; what changes is that the sort
+    // now dominates the projection's O(n) Loro reads, which is what gives the
+    // threshold the separation its first paragraph claims.
+    const small = project(1000)
+    const large = project(4000) // 4x the size
     expect(large / small).toBeLessThan(12)
   })
 })
