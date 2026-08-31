@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
+import { ProductContractSchema } from './product-contract.js'
 
 /**
  * Registry schema — a deliberate subset of shadcn/ui's `registry-item.json`, with
@@ -37,6 +38,10 @@ export const RegistryItemSchema = z.object({
 export const RegistrySchema = z.object({
   name: z.string().min(1),
   homepage: z.string().optional(),
+  /** LLui registries publish the relationship between copied source and public
+   * machine imports. Optional so additive metadata does not break compatible
+   * third-party registries that only implement the item protocol. */
+  productContract: ProductContractSchema.optional(),
   items: z.array(RegistryItemSchema),
 })
 

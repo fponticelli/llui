@@ -124,6 +124,18 @@ function collectDependencies(items: readonly RegistryItem[]): {
 }
 ```
 
+### `formatProductList()`
+
+Render registry discovery without collapsing copied source and package
+machines into one misleading "component" list.
+
+Registries without LLui's additive product metadata keep the historical
+name/description output, which preserves third-party compatibility.
+
+```typescript
+function formatProductList(registry: Registry): string
+```
+
 ### `isRemote()`
 
 ```typescript
@@ -164,6 +176,17 @@ function loadRemoteItem(source: string, name: string): Promise<RegistryItem>
 function readConfig(cwd: string): Promise<Config | null>
 ```
 
+### `resolveCopiedArtifact()`
+
+Resolve an `llui add` name without confusing it with an equal package name.
+
+```typescript
+function resolveCopiedArtifact(
+  contract: ProductContract,
+  target: string,
+): ResolvedCopiedArtifact | undefined
+```
+
 ### `resolveItems()`
 
 Resolve the requested names plus everything they depend on, in dependency-first
@@ -176,6 +199,15 @@ should not be a crash in someone else's install.
 
 ```typescript
 function resolveItems(registry: Registry, names: readonly string[]): RegistryItem[]
+```
+
+### `resolveProductIdentity()`
+
+```typescript
+function resolveProductIdentity(
+  contract: ProductContract,
+  name: string,
+): ResolvedProductIdentity | undefined
 ```
 
 ### `rewriteImports()`
@@ -222,6 +254,48 @@ function writeConfig(cwd: string, config: Config): Promise<string>
 export type Config = z.infer<typeof ConfigSchema>
 ```
 
+### `CopiedArtifact`
+
+```typescript
+export type CopiedArtifact = z.infer<typeof CopiedArtifactSchema>
+```
+
+### `MachineFree`
+
+```typescript
+export type MachineFree = z.infer<typeof MachineFreeSchema>
+```
+
+### `ProductAlias`
+
+```typescript
+export type ProductAlias = z.infer<typeof ProductAliasSchema>
+```
+
+### `ProductCategory`
+
+```typescript
+export type ProductCategory = z.infer<typeof ProductCategorySchema>
+```
+
+### `ProductContract`
+
+```typescript
+export type ProductContract = z.infer<typeof ProductContractSchema>
+```
+
+### `ProductEntry`
+
+```typescript
+export type ProductEntry = z.infer<typeof ProductEntrySchema>
+```
+
+### `PublicMachine`
+
+```typescript
+export type PublicMachine = z.infer<typeof PublicMachineSchema>
+```
+
 ### `Registry`
 
 ```typescript
@@ -238,6 +312,34 @@ export type RegistryFile = z.infer<typeof RegistryFileSchema>
 
 ```typescript
 export type RegistryItem = z.infer<typeof RegistryItemSchema>
+```
+
+### `ResolvedCopiedArtifact`
+
+```typescript
+export type ResolvedCopiedArtifact = {
+  canonical: ProductEntry
+  artifact: Omit<CopiedArtifact, 'displayName' | 'scenarioId'> & {
+    displayName: string
+    scenarioId: string
+  }
+  alias?: ProductAlias
+}
+```
+
+### `ResolvedProductIdentity`
+
+```typescript
+export type ResolvedProductIdentity = {
+  canonical: ProductEntry
+  alias?: ProductAlias
+}
+```
+
+### `StylingSupport`
+
+```typescript
+export type StylingSupport = z.infer<typeof StylingSupportSchema>
 ```
 
 ## Interfaces
@@ -283,10 +385,52 @@ const CONFIG_FILE
 const ConfigSchema
 ```
 
+### `CopiedArtifactSchema`
+
+```typescript
+const CopiedArtifactSchema
+```
+
 ### `DEFAULT_CONFIG`
 
 ```typescript
 const DEFAULT_CONFIG: Config
+```
+
+### `MachineFreeSchema`
+
+```typescript
+const MachineFreeSchema
+```
+
+### `ProductAliasSchema`
+
+```typescript
+const ProductAliasSchema
+```
+
+### `ProductCategorySchema`
+
+```typescript
+const ProductCategorySchema
+```
+
+### `ProductContractSchema`
+
+```typescript
+const ProductContractSchema
+```
+
+### `ProductEntrySchema`
+
+```typescript
+const ProductEntrySchema
+```
+
+### `PublicMachineSchema`
+
+```typescript
+const PublicMachineSchema
 ```
 
 ### `RegistryFileSchema`
@@ -314,6 +458,12 @@ const RegistryItemSchema
 
 ```typescript
 const RegistrySchema
+```
+
+### `StylingSupportSchema`
+
+```typescript
+const StylingSupportSchema
 ```
 
 ## Public Entry Points

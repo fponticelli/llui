@@ -11,14 +11,33 @@ registry/
   llui/ui/           components
 ```
 
-## Two kinds of item
+## Product contract and artifact kinds
 
-- **Presentational** — `button`, `card`, `input`, `textarea`, `label`, `badge`, `chip`,
-  `separator`, `skeleton`, `alert`, `table`. Element helpers with a class recipe. No
-  state, no `update`, no scope.
-- **Skins** — `switch`, `tabs`, `accordion`, `dialog`, `popover`, `tooltip`. The right
-  tag and the classes for `@llui/components` parts. The state machine, keyboard handling
-  and ARIA stay in the package; the consumer spreads the part bag in.
+`registry.json.productContract` is the canonical inventory shared by the CLI, tests and
+generated registry index. It classifies every public `@llui/components/*` subpath and every
+published `registry:ui` item, including its canonical identity, direct aliases, category,
+machine import, typed copied artifacts, styling support and scenario identity. Each copied
+artifact owns its `llui add` name, artifact kind and styling classification. It may inherit
+the canonical display/scenario identity when those facts are genuinely shared; variants in a
+multi-artifact product declare their scenario identities explicitly. Do not maintain a second
+list in prose; `llui list` renders the resolved contract.
+
+The contract keeps four artifacts distinct:
+
+- **Machines** are headless package imports. Some have a copied skin; others are useful
+  only as a state/ARIA primitive and have no `llui add` target.
+- **Skins** are copied adapters for machine parts. A skin names its public machine, or is
+  explicitly marked as application-owned state when no package machine exists.
+- **Patterns** are first-class composed package exports. They may have a copied adapter,
+  but are not relabelled as a primitive machine.
+- **Presentational items** are copied element helpers with no invented machine.
+
+Aliases point straight to one canonical identity and retain the target copied artifact's kind,
+so a pattern alias is never relabelled as a skin. Variant skins such as a calendar/date picker
+or drawer/sheet remain separate copied artifacts—with their own install, display and scenario
+identity—rather than pretending to be aliases. `scenarioId` is the renderer-neutral identity
+that gallery surfaces may share later; renderer functions stay in their own apps and are
+deliberately not named by this contract.
 
 ## Fidelity to shadcn/ui
 

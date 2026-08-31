@@ -11,6 +11,7 @@ import {
   type Config,
 } from './config.js'
 import { loadRegistry } from './registry.js'
+import { formatProductList } from './product-list.js'
 import { baselineWarning, findBaselineImports } from './stylesheet-check.js'
 
 const USAGE = `llui — add registry components to an LLui app
@@ -102,10 +103,7 @@ async function cmdInit(cwd: string, flags: Argv['flags']): Promise<void> {
 async function cmdList(cwd: string, flags: Argv['flags']): Promise<void> {
   const config = await resolveConfig(cwd, flags)
   const registry = await loadRegistry(config.registry)
-  const width = Math.max(...registry.items.map((i) => i.name.length))
-  for (const item of registry.items) {
-    console.log(`  ${item.name.padEnd(width)}  ${item.description ?? ''}`)
-  }
+  console.log(formatProductList(registry))
 }
 
 async function cmdAdd(cwd: string, argv: Argv): Promise<void> {

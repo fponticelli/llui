@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { readdir, readFile } from 'node:fs/promises'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import { ProductContractSchema } from '../../packages/cli/src/product-contract'
 import { extractClassCandidates } from '../lib/registry-classes.mjs'
 import {
   attrsInCandidate,
@@ -19,69 +20,40 @@ const MACHINES = path.join(ROOT, 'packages/components/src/components')
 const PATTERNS = path.join(ROOT, 'packages/components/src/patterns')
 
 /**
- * A registry skin styles a headless machine, but its FILENAME is shadcn's name
- * and the machine's is LLui's. This maps the ones that differ; anything not
- * listed is looked up by its own name. A skin with no machine at all (pure
- * layout, or several machines) maps to `[]` and is checked against the union of
- * whatever it does list.
+ * The product contract owns the public machine → copied skin relationship.
+ * This guard adds only IMPLEMENTATION supplements: state-bearing modules a
+ * composite skin also styles beyond its one public product machine. Keeping
+ * those internals here avoids leaking renderer details into the public catalog.
  */
-const MACHINE_OF: Record<string, readonly string[]> = {
-  // shadcn name → LLui machine
-  breadcrumb: ['breadcrumbs'],
-  calendar: ['date-picker'],
-  'context-menu': ['context-menu', 'menu-machine'],
-  'dropdown-menu': ['menu', 'menu-machine'],
-  menubar: ['menubar', 'menu', 'menu-machine'],
-  'navigation-menu': ['navigation-menu'],
-  resizable: ['splitter'],
-  sheet: ['drawer', 'dialog'],
-  sonner: ['toast'],
-  'input-otp': ['pin-input'],
+const MACHINE_SUPPLEMENTS: Record<string, readonly string[]> = {
+  'alert-dialog': ['dialog'],
   command: ['combobox'],
-  combobox: ['combobox'],
-  select: ['select', 'listbox'],
-  'alert-dialog': ['alert-dialog', 'dialog'],
-  field: ['field', 'fieldset', 'form'],
-  // shadcn's `form` is a react-hook-form binding; LLui's equivalent is the
-  // composed `patterns/form-field`, which is what these recipes are wired to.
-  form: ['form', 'field', 'form-field'],
-  'radio-group': ['radio-group'],
-  'toggle-group': ['toggle-group', 'toggle'],
-  // Composite / layout-only skins: no single machine publishes their state, so
-  // the union of the machines they DO drive is the contract.
+  'context-menu': ['menu-machine'],
+  'dropdown-menu': ['menu-machine'],
+  field: ['fieldset', 'form'],
+  form: ['form', 'field'],
+  menubar: ['menu', 'menu-machine'],
+  select: ['listbox'],
+  sheet: ['dialog'],
   sidebar: ['collapsible'],
-  carousel: ['carousel'],
-  chart: ['chart'],
-  sparkline: ['sparkline'],
-  'scroll-area': ['scroll-area'],
-  pagination: ['pagination'],
-  'tree-view': ['tree-view'],
-  // Lives under `patterns/`, which the vacuity check does not scan.
-  'data-table': ['data-table'],
-  'button-group': [],
-  'input-group': [],
-  typography: [],
-  skeleton: [],
-  spinner: [],
-  kbd: [],
-  card: [],
-  empty: [],
-  item: [],
-  alert: [],
-  badge: [],
-  // Presentational, like `badge`: a chip's colour is a pure function of its
-  // value plus one custom property, so there is no machine and no state.
-  chip: [],
-  button: [],
-  input: [],
-  label: [],
-  textarea: [],
-  separator: ['separator'],
-  'aspect-ratio': [],
-  icons: [],
-  table: ['table'],
-  steps: ['steps'],
+  'toggle-group': ['toggle'],
 }
+
+const sourceRegistry = JSON.parse(
+  readFileSync(path.join(ROOT, 'registry/registry.json'), 'utf8'),
+) as { productContract?: unknown }
+const productContract = ProductContractSchema.parse(sourceRegistry.productContract)
+const MACHINE_OF: Record<string, readonly string[]> = Object.fromEntries(
+  productContract.entries.flatMap((entry) => {
+    const publicName =
+      entry.machine.kind === 'public' ? entry.machine.importPath.split('/').at(-1) : undefined
+    const primary = publicName === undefined ? [] : [publicName]
+    return entry.copiedArtifacts.map((artifact) => [
+      artifact.name,
+      [...primary, ...(MACHINE_SUPPLEMENTS[artifact.name] ?? [])],
+    ])
+  }),
+)
 
 /**
  * Attributes a recipe may name that no PART bag declares, with the reason.
@@ -345,8 +317,7 @@ describe('registry recipes only style attributes their machine publishes', () =>
     )
     expect(
       unmapped,
-      `These skins name no machine and have none of their own — add them to MACHINE_OF ` +
-        `(use [] for a layout-only skin):\n  ${unmapped.join('\n  ')}`,
+      `These skins are absent from registry.json.productContract:\n  ${unmapped.join('\n  ')}`,
     ).toEqual([])
   })
 
