@@ -33,9 +33,22 @@ components makes every one of their classes lose, with nothing to tell you.
 | -------------------- | ----------------------------------------------------------------------------------------- |
 | `llui init`          | Write `components.json`. `--ui`/`--lib` set target dirs, `--alias` sets an import prefix. |
 | `llui add <item...>` | Copy items and their `registryDependencies`. `--overwrite`, `--dry-run`.                  |
-| `llui list`          | Show what the registry offers.                                                            |
+| `llui list`          | Show copied artifacts beside their related public machine imports and styling modes.      |
 
 All commands accept `--registry <url|path>` and `--cwd <dir>`.
+
+`llui add` and `@llui/components/*` are deliberately different surfaces. `add` copies a
+registry/Tailwind skin, pattern or presentational component into your app; a package
+subpath imports a headless state machine. Run `llui list` to see the relationship instead
+of guessing from a shared name. It labels machine-only products, machine-backed skins,
+patterns, presentational items, intentional application-owned-state skins and direct
+aliases. A dash in the **ADD NAME** or **MACHINE IMPORT** column means that artifact has no
+equivalent on that surface.
+
+Every copied row is resolved from its own typed artifact record, rather than borrowing a
+machine's title or kind. That keeps variant installs such as `calendar`/`date-picker` and
+`drawer`/`sheet` distinct, and labels aliases by the copied artifact they actually install
+(`alias pattern`, `alias skin` or `alias presentational`).
 
 ## `components.json`
 

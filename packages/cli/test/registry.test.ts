@@ -6,6 +6,7 @@ import {
   RegistrySchema,
   type Registry,
 } from '../src/registry'
+import { ProductContractSchema } from '../src/product-contract'
 
 const item = (name: string, deps: string[] = []) => ({
   name,
@@ -76,6 +77,35 @@ describe('RegistrySchema', () => {
     expect(() =>
       RegistrySchema.parse({ name: 't', items: [{ ...item('x'), files: [] }] }),
     ).toThrow()
+  })
+
+  it('preserves a typed product contract when the registry publishes one', () => {
+    const productContract = ProductContractSchema.parse({
+      version: 1,
+      entries: [
+        {
+          name: 'switch',
+          displayName: 'Switch',
+          category: 'controls',
+          artifactKind: 'machine',
+          machine: { kind: 'public', importPath: '@llui/components/switch' },
+          copiedArtifacts: [
+            {
+              name: 'switch',
+              artifactKind: 'skin',
+              styling: { baseline: false, registryTailwind: true, styleless: false },
+            },
+          ],
+          styling: { baseline: true, registryTailwind: true, styleless: true },
+          scenarioId: 'component:switch',
+        },
+      ],
+      aliases: [],
+    })
+
+    const parsed = RegistrySchema.parse({ name: 'test', items: [item('switch')], productContract })
+
+    expect(parsed.productContract).toEqual(productContract)
   })
 })
 

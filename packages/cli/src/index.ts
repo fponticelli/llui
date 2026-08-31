@@ -10,6 +10,29 @@ export {
   type Config,
 } from './config.js'
 export { rewriteImports } from './rewrite.js'
+export { formatProductList } from './product-list.js'
+export {
+  CopiedArtifactSchema,
+  MachineFreeSchema,
+  ProductAliasSchema,
+  ProductCategorySchema,
+  ProductContractSchema,
+  ProductEntrySchema,
+  PublicMachineSchema,
+  StylingSupportSchema,
+  resolveCopiedArtifact,
+  resolveProductIdentity,
+  type CopiedArtifact,
+  type MachineFree,
+  type ProductAlias,
+  type ProductCategory,
+  type ProductContract,
+  type ProductEntry,
+  type PublicMachine,
+  type ResolvedCopiedArtifact,
+  type ResolvedProductIdentity,
+  type StylingSupport,
+} from './product-contract.js'
 export {
   RegistryFileSchema,
   RegistryItemSchema,

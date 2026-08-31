@@ -5,20 +5,21 @@ description: A walkthrough from an empty app to a styled, state-wired screen —
 
 # Using the components
 
-LLui ships components in two halves that you assemble yourself:
+LLui has two related product surfaces that you can assemble:
 
 - **`@llui/components`** — the machines. State, keyboard handling, ARIA, focus and
   dismissal. No classes, no opinions about how anything looks.
-- **the registry** — the skins. shadcn/ui's class recipes, copied into _your_ project by
-  `llui add`, spread onto the machine's parts.
+- **the registry** — copied skins, composed patterns and presentational elements.
+  Machine-backed skins spread shadcn/ui class recipes onto a package machine's parts;
+  presentational items do not invent a machine merely to make the names line up.
 
 You can use either half alone. A machine with no skin is a fully accessible headless
 component; a skin with no machine is a styled element. This page walks the normal case:
 both, together.
 
-> Everything here is live in [the registry demo](/examples) — every component on that page
-> is a machine plus a registry skin, and its source is the closest thing to a reference
-> implementation.
+> Everything here is live in [the registry demo](/examples). Its sections render
+> machine-backed skins, patterns and intentionally machine-free presentational items; the
+> copied source is the closest thing to a reference implementation.
 
 ## Choosing a styling path
 
@@ -138,6 +139,13 @@ pnpm llui list
 pnpm llui add button
 ```
 
+`llui list` makes the two surfaces explicit. **ADD NAME** is what the CLI can copy;
+**MACHINE IMPORT** is the headless package subpath, when one exists. The artifact column
+distinguishes machine, skin, presentational item, pattern and alias, and the styling column
+states baseline, registry/Tailwind and styleless support. The two names may match, differ,
+or exist on only one surface. In particular, `llui add form` copies the adapter for the
+`form-field` pattern; `@llui/components/form` remains its own lower-level machine.
+
 You now own `src/components/ui/button.ts`. It is your source — edit it. `llui add` never
 overwrites an existing file; pass `--overwrite` when you really mean to discard your edits.
 
@@ -149,8 +157,8 @@ Button({ variant: 'outline' }, [text('Cancel')])
 Button({ variant: 'destructive', size: 'sm' }, [text('Delete')])
 ```
 
-`button` is **presentational** — a styled element with no state. So are `card`, `input`,
-`label`, `badge`, `separator`, `skeleton`, `alert` and `table`. Nothing to wire.
+`button` is **presentational** — a styled element with no state and therefore no machine to
+wire. Other machine-free items are labelled the same way by `llui list`.
 
 ## 3. Wire a machine
 

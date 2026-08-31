@@ -1,4 +1,2524 @@
 {
+  "productContract": {
+    "version": 1,
+    "entries": [
+      {
+        "name": "accordion",
+        "displayName": "Accordion",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/accordion"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:accordion",
+        "copiedArtifacts": [
+          {
+            "name": "accordion",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "alert-dialog",
+        "displayName": "Alert Dialog",
+        "category": "overlays",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/alert-dialog"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:alert-dialog",
+        "copiedArtifacts": [
+          {
+            "name": "alert-dialog",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "angle-slider",
+        "displayName": "Angle Slider",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/angle-slider"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:angle-slider",
+        "copiedArtifacts": [
+          {
+            "name": "angle-slider",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "async-list",
+        "displayName": "Async List",
+        "category": "feedback",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/async-list"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:async-list",
+        "copiedArtifacts": [
+          {
+            "name": "async-list",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "avatar",
+        "displayName": "Avatar",
+        "category": "data-display",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/avatar"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:avatar",
+        "copiedArtifacts": [
+          {
+            "name": "avatar",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "breadcrumbs",
+        "displayName": "Breadcrumbs",
+        "category": "navigation",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/breadcrumbs"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:breadcrumbs",
+        "copiedArtifacts": [
+          {
+            "name": "breadcrumb",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            },
+            "displayName": "Breadcrumb"
+          }
+        ]
+      },
+      {
+        "name": "carousel",
+        "displayName": "Carousel",
+        "category": "data-display",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/carousel"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:carousel",
+        "copiedArtifacts": [
+          {
+            "name": "carousel",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "cascade-select",
+        "displayName": "Cascade Select",
+        "category": "forms",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/cascade-select"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:cascade-select",
+        "copiedArtifacts": [
+          {
+            "name": "cascade-select",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "chart",
+        "displayName": "Chart",
+        "category": "data-display",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/chart"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:chart",
+        "copiedArtifacts": [
+          {
+            "name": "chart",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "checkbox",
+        "displayName": "Checkbox",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/checkbox"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:checkbox",
+        "copiedArtifacts": [
+          {
+            "name": "checkbox",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "clipboard",
+        "displayName": "Clipboard",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/clipboard"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:clipboard",
+        "copiedArtifacts": [
+          {
+            "name": "clipboard",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "collapsible",
+        "displayName": "Collapsible",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/collapsible"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:collapsible",
+        "copiedArtifacts": [
+          {
+            "name": "collapsible",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "color-picker",
+        "displayName": "Color Picker",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/color-picker"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:color-picker",
+        "copiedArtifacts": [
+          {
+            "name": "color-picker",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "combobox",
+        "displayName": "Combobox",
+        "category": "forms",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/combobox"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:combobox",
+        "copiedArtifacts": [
+          {
+            "name": "combobox",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "context-menu",
+        "displayName": "Context Menu",
+        "category": "overlays",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/context-menu"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:context-menu",
+        "copiedArtifacts": [
+          {
+            "name": "context-menu",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "date-input",
+        "displayName": "Date Input",
+        "category": "forms",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/date-input"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:date-input",
+        "copiedArtifacts": [
+          {
+            "name": "date-input",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "date-picker",
+        "displayName": "Date Picker",
+        "category": "forms",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/date-picker"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:date-picker",
+        "copiedArtifacts": [
+          {
+            "name": "calendar",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            },
+            "displayName": "Calendar / Date Picker",
+            "scenarioId": "registry:calendar"
+          },
+          {
+            "name": "date-picker",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            },
+            "scenarioId": "registry:date-picker"
+          }
+        ]
+      },
+      {
+        "name": "dialog",
+        "displayName": "Dialog",
+        "category": "overlays",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/dialog"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:dialog",
+        "copiedArtifacts": [
+          {
+            "name": "dialog",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "drawer",
+        "displayName": "Drawer",
+        "category": "overlays",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/drawer"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:drawer",
+        "copiedArtifacts": [
+          {
+            "name": "drawer",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            },
+            "scenarioId": "registry:drawer"
+          },
+          {
+            "name": "sheet",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            },
+            "displayName": "Sheet / Drawer",
+            "scenarioId": "registry:sheet"
+          }
+        ]
+      },
+      {
+        "name": "editable",
+        "displayName": "Editable",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/editable"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:editable",
+        "copiedArtifacts": [
+          {
+            "name": "editable",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "field",
+        "displayName": "Field",
+        "category": "forms",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/field"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:field",
+        "copiedArtifacts": [
+          {
+            "name": "field",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "fieldset",
+        "displayName": "Fieldset",
+        "category": "forms",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/fieldset"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": false,
+          "styleless": true
+        },
+        "scenarioId": "component:fieldset",
+        "copiedArtifacts": []
+      },
+      {
+        "name": "file-upload",
+        "displayName": "File Upload",
+        "category": "forms",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/file-upload"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:file-upload",
+        "copiedArtifacts": [
+          {
+            "name": "file-upload",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "floating-panel",
+        "displayName": "Floating Panel",
+        "category": "overlays",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/floating-panel"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:floating-panel",
+        "copiedArtifacts": [
+          {
+            "name": "floating-panel",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "form",
+        "displayName": "Form",
+        "category": "forms",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/form"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": false,
+          "styleless": true
+        },
+        "scenarioId": "component:form",
+        "copiedArtifacts": []
+      },
+      {
+        "name": "hover-card",
+        "displayName": "Hover Card",
+        "category": "overlays",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/hover-card"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:hover-card",
+        "copiedArtifacts": [
+          {
+            "name": "hover-card",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "image-cropper",
+        "displayName": "Image Cropper",
+        "category": "media",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/image-cropper"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:image-cropper",
+        "copiedArtifacts": [
+          {
+            "name": "image-cropper",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "in-view",
+        "displayName": "In View",
+        "category": "utilities",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/in-view"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": false,
+          "styleless": true
+        },
+        "scenarioId": "component:in-view",
+        "copiedArtifacts": []
+      },
+      {
+        "name": "listbox",
+        "displayName": "Listbox",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/listbox"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": false,
+          "styleless": true
+        },
+        "scenarioId": "component:listbox",
+        "copiedArtifacts": []
+      },
+      {
+        "name": "marquee",
+        "displayName": "Marquee",
+        "category": "data-display",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/marquee"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:marquee",
+        "copiedArtifacts": [
+          {
+            "name": "marquee",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "menu",
+        "displayName": "Menu",
+        "category": "navigation",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/menu"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:menu",
+        "copiedArtifacts": [
+          {
+            "name": "dropdown-menu",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            },
+            "displayName": "Dropdown Menu"
+          }
+        ]
+      },
+      {
+        "name": "menubar",
+        "displayName": "Menubar",
+        "category": "navigation",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/menubar"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:menubar",
+        "copiedArtifacts": [
+          {
+            "name": "menubar",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "meter",
+        "displayName": "Meter",
+        "category": "feedback",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/meter"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:meter",
+        "copiedArtifacts": [
+          {
+            "name": "meter",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "navigation-menu",
+        "displayName": "Navigation Menu",
+        "category": "navigation",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/navigation-menu"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:navigation-menu",
+        "copiedArtifacts": [
+          {
+            "name": "navigation-menu",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "number-input",
+        "displayName": "Number Input",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/number-input"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:number-input",
+        "copiedArtifacts": [
+          {
+            "name": "number-input",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "pagination",
+        "displayName": "Pagination",
+        "category": "navigation",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/pagination"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:pagination",
+        "copiedArtifacts": [
+          {
+            "name": "pagination",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "password-input",
+        "displayName": "Password Input",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/password-input"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:password-input",
+        "copiedArtifacts": [
+          {
+            "name": "password-input",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "pin-input",
+        "displayName": "Pin Input",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/pin-input"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:pin-input",
+        "copiedArtifacts": [
+          {
+            "name": "input-otp",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            },
+            "displayName": "Input OTP"
+          }
+        ]
+      },
+      {
+        "name": "popover",
+        "displayName": "Popover",
+        "category": "overlays",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/popover"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:popover",
+        "copiedArtifacts": [
+          {
+            "name": "popover",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "presence",
+        "displayName": "Presence",
+        "category": "utilities",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/presence"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": false,
+          "styleless": true
+        },
+        "scenarioId": "component:presence",
+        "copiedArtifacts": []
+      },
+      {
+        "name": "progress",
+        "displayName": "Progress",
+        "category": "feedback",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/progress"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:progress",
+        "copiedArtifacts": [
+          {
+            "name": "progress",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "qr-code",
+        "displayName": "QR Code",
+        "category": "data-display",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/qr-code"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:qr-code",
+        "copiedArtifacts": [
+          {
+            "name": "qr-code",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "radio-group",
+        "displayName": "Radio Group",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/radio-group"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:radio-group",
+        "copiedArtifacts": [
+          {
+            "name": "radio-group",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "rating-group",
+        "displayName": "Rating Group",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/rating-group"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:rating-group",
+        "copiedArtifacts": [
+          {
+            "name": "rating-group",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "scroll-area",
+        "displayName": "Scroll Area",
+        "category": "layout",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/scroll-area"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:scroll-area",
+        "copiedArtifacts": [
+          {
+            "name": "scroll-area",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "search-field",
+        "displayName": "Search Field",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/search-field"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:search-field",
+        "copiedArtifacts": [
+          {
+            "name": "search-field",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "select",
+        "displayName": "Select",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/select"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:select",
+        "copiedArtifacts": [
+          {
+            "name": "select",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "signature-pad",
+        "displayName": "Signature Pad",
+        "category": "media",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/signature-pad"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:signature-pad",
+        "copiedArtifacts": [
+          {
+            "name": "signature-pad",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "slider",
+        "displayName": "Slider",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/slider"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:slider",
+        "copiedArtifacts": [
+          {
+            "name": "slider",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "sortable",
+        "displayName": "Sortable",
+        "category": "layout",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/sortable"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:sortable",
+        "copiedArtifacts": [
+          {
+            "name": "sortable",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "sparkline",
+        "displayName": "Sparkline",
+        "category": "data-display",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/sparkline"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:sparkline",
+        "copiedArtifacts": [
+          {
+            "name": "sparkline",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "splitter",
+        "displayName": "Splitter",
+        "category": "layout",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/splitter"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:splitter",
+        "copiedArtifacts": [
+          {
+            "name": "resizable",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            },
+            "displayName": "Resizable"
+          }
+        ]
+      },
+      {
+        "name": "steps",
+        "displayName": "Steps",
+        "category": "layout",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/steps"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:steps",
+        "copiedArtifacts": [
+          {
+            "name": "steps",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "switch",
+        "displayName": "Switch",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/switch"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:switch",
+        "copiedArtifacts": [
+          {
+            "name": "switch",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "table",
+        "displayName": "Table",
+        "category": "data-display",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/table"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:table",
+        "copiedArtifacts": [
+          {
+            "name": "table",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "tabs",
+        "displayName": "Tabs",
+        "category": "navigation",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/tabs"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:tabs",
+        "copiedArtifacts": [
+          {
+            "name": "tabs",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "tags-input",
+        "displayName": "Tags Input",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/tags-input"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:tags-input",
+        "copiedArtifacts": [
+          {
+            "name": "tags-input",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "theme-switch",
+        "displayName": "Theme Switch",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/theme-switch"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:theme-switch",
+        "copiedArtifacts": [
+          {
+            "name": "theme-switch",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "time-picker",
+        "displayName": "Time Picker",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/time-picker"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:time-picker",
+        "copiedArtifacts": [
+          {
+            "name": "time-picker",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "timer",
+        "displayName": "Timer",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/timer"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:timer",
+        "copiedArtifacts": [
+          {
+            "name": "timer",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "toast",
+        "displayName": "Toast",
+        "category": "feedback",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/toast"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:toast",
+        "copiedArtifacts": [
+          {
+            "name": "sonner",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            },
+            "displayName": "Sonner / Toast"
+          }
+        ]
+      },
+      {
+        "name": "toc",
+        "displayName": "Table of Contents",
+        "category": "navigation",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/toc"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:toc",
+        "copiedArtifacts": [
+          {
+            "name": "toc",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "toggle",
+        "displayName": "Toggle",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/toggle"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:toggle",
+        "copiedArtifacts": [
+          {
+            "name": "toggle",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "toggle-group",
+        "displayName": "Toggle Group",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/toggle-group"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:toggle-group",
+        "copiedArtifacts": [
+          {
+            "name": "toggle-group",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "toolbar",
+        "displayName": "Toolbar",
+        "category": "navigation",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/toolbar"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:toolbar",
+        "copiedArtifacts": [
+          {
+            "name": "toolbar",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "tooltip",
+        "displayName": "Tooltip",
+        "category": "overlays",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/tooltip"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:tooltip",
+        "copiedArtifacts": [
+          {
+            "name": "tooltip",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "tour",
+        "displayName": "Tour",
+        "category": "overlays",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/tour"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:tour",
+        "copiedArtifacts": [
+          {
+            "name": "tour",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "tree-view",
+        "displayName": "Tree View",
+        "category": "navigation",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/tree-view"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "component:tree-view",
+        "copiedArtifacts": [
+          {
+            "name": "tree-view",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "command-menu",
+        "displayName": "Command Menu",
+        "category": "patterns",
+        "artifactKind": "pattern",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/patterns/command-menu"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "pattern:command-menu",
+        "copiedArtifacts": [
+          {
+            "name": "command",
+            "artifactKind": "pattern",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            },
+            "displayName": "Command"
+          }
+        ]
+      },
+      {
+        "name": "confirm-dialog",
+        "displayName": "Confirm Dialog",
+        "category": "patterns",
+        "artifactKind": "pattern",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/patterns/confirm-dialog"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": false,
+          "styleless": true
+        },
+        "scenarioId": "pattern:confirm-dialog",
+        "copiedArtifacts": []
+      },
+      {
+        "name": "data-table",
+        "displayName": "Data Table",
+        "category": "patterns",
+        "artifactKind": "pattern",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/patterns/data-table"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "pattern:data-table",
+        "copiedArtifacts": [
+          {
+            "name": "data-table",
+            "artifactKind": "pattern",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "form-field",
+        "displayName": "Form Field",
+        "category": "patterns",
+        "artifactKind": "pattern",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/patterns/form-field"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "scenarioId": "pattern:form-field",
+        "copiedArtifacts": [
+          {
+            "name": "form",
+            "artifactKind": "pattern",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            },
+            "displayName": "Form"
+          }
+        ]
+      },
+      {
+        "name": "searchable-select",
+        "displayName": "Searchable Select",
+        "category": "patterns",
+        "artifactKind": "pattern",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/patterns/searchable-select"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": false,
+          "styleless": true
+        },
+        "scenarioId": "pattern:searchable-select",
+        "copiedArtifacts": []
+      },
+      {
+        "name": "wizard",
+        "displayName": "Wizard",
+        "category": "patterns",
+        "artifactKind": "pattern",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/patterns/wizard"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": false,
+          "styleless": true
+        },
+        "scenarioId": "pattern:wizard",
+        "copiedArtifacts": []
+      },
+      {
+        "name": "alert",
+        "displayName": "Alert",
+        "category": "feedback",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:alert",
+        "copiedArtifacts": [
+          {
+            "name": "alert",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "aspect-ratio",
+        "displayName": "Aspect Ratio",
+        "category": "layout",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:aspect-ratio",
+        "copiedArtifacts": [
+          {
+            "name": "aspect-ratio",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "badge",
+        "displayName": "Badge",
+        "category": "data-display",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:badge",
+        "copiedArtifacts": [
+          {
+            "name": "badge",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "button",
+        "displayName": "Button",
+        "category": "controls",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:button",
+        "copiedArtifacts": [
+          {
+            "name": "button",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "button-group",
+        "displayName": "Button Group",
+        "category": "controls",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:button-group",
+        "copiedArtifacts": [
+          {
+            "name": "button-group",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "card",
+        "displayName": "Card",
+        "category": "layout",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:card",
+        "copiedArtifacts": [
+          {
+            "name": "card",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "chip",
+        "displayName": "Chip",
+        "category": "controls",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:chip",
+        "copiedArtifacts": [
+          {
+            "name": "chip",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "empty",
+        "displayName": "Empty",
+        "category": "feedback",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:empty",
+        "copiedArtifacts": [
+          {
+            "name": "empty",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "icons",
+        "displayName": "Icons",
+        "category": "utilities",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:icons",
+        "copiedArtifacts": [
+          {
+            "name": "icons",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "input",
+        "displayName": "Input",
+        "category": "forms",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:input",
+        "copiedArtifacts": [
+          {
+            "name": "input",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "input-group",
+        "displayName": "Input Group",
+        "category": "forms",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:input-group",
+        "copiedArtifacts": [
+          {
+            "name": "input-group",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "item",
+        "displayName": "Item",
+        "category": "layout",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:item",
+        "copiedArtifacts": [
+          {
+            "name": "item",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "kbd",
+        "displayName": "Kbd",
+        "category": "data-display",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:kbd",
+        "copiedArtifacts": [
+          {
+            "name": "kbd",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "label",
+        "displayName": "Label",
+        "category": "forms",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:label",
+        "copiedArtifacts": [
+          {
+            "name": "label",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "separator",
+        "displayName": "Separator",
+        "category": "layout",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:separator",
+        "copiedArtifacts": [
+          {
+            "name": "separator",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "skeleton",
+        "displayName": "Skeleton",
+        "category": "feedback",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:skeleton",
+        "copiedArtifacts": [
+          {
+            "name": "skeleton",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "spinner",
+        "displayName": "Spinner",
+        "category": "feedback",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:spinner",
+        "copiedArtifacts": [
+          {
+            "name": "spinner",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "textarea",
+        "displayName": "Textarea",
+        "category": "forms",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:textarea",
+        "copiedArtifacts": [
+          {
+            "name": "textarea",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "typography",
+        "displayName": "Typography",
+        "category": "data-display",
+        "artifactKind": "presentational",
+        "machine": {
+          "kind": "none",
+          "reason": "presentational"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:typography",
+        "copiedArtifacts": [
+          {
+            "name": "typography",
+            "artifactKind": "presentational",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
+        "name": "sidebar",
+        "displayName": "Sidebar",
+        "category": "layout",
+        "artifactKind": "skin",
+        "machine": {
+          "kind": "none",
+          "reason": "application-owned-state"
+        },
+        "styling": {
+          "baseline": false,
+          "registryTailwind": true,
+          "styleless": false
+        },
+        "scenarioId": "registry:sidebar",
+        "copiedArtifacts": [
+          {
+            "name": "sidebar",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      }
+    ],
+    "aliases": [
+      {
+        "name": "breadcrumb",
+        "canonicalName": "breadcrumbs"
+      },
+      {
+        "name": "command",
+        "canonicalName": "command-menu"
+      },
+      {
+        "name": "dropdown-menu",
+        "canonicalName": "menu"
+      },
+      {
+        "name": "input-otp",
+        "canonicalName": "pin-input"
+      },
+      {
+        "name": "resizable",
+        "canonicalName": "splitter"
+      },
+      {
+        "name": "sonner",
+        "canonicalName": "toast"
+      }
+    ]
+  },
   "$schema": "https://ui.shadcn.com/schema/registry.json",
   "name": "llui",
   "homepage": "https://llui.dev",
@@ -37,7 +2557,7 @@
       "name": "alert-dialog",
       "type": "registry:ui",
       "title": "Alert Dialog",
-      "description": "Skin for @llui/components/alert-dialog \u2014 a confirmation that will not dismiss on an outside click.",
+      "description": "Skin for @llui/components/alert-dialog — a confirmation that will not dismiss on an outside click.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["dialog", "utils"],
       "files": [
@@ -52,7 +2572,7 @@
       "name": "angle-slider",
       "type": "registry:ui",
       "title": "Angle Slider",
-      "description": "Skin for @llui/components/angle-slider \u2014 a circular dial.",
+      "description": "Skin for @llui/components/angle-slider — a circular dial.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -82,7 +2602,7 @@
       "name": "async-list",
       "type": "registry:ui",
       "title": "Async List",
-      "description": "Skin for @llui/components/async-list \u2014 infinite list with sentinel, retry and error text.",
+      "description": "Skin for @llui/components/async-list — infinite list with sentinel, retry and error text.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -172,7 +2692,7 @@
       "name": "calendar",
       "type": "registry:ui",
       "title": "Calendar / Date Picker",
-      "description": "Skin for @llui/components/date-picker \u2014 month grid, presets, range states.",
+      "description": "Skin for @llui/components/date-picker — month grid, presets, range states.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -217,7 +2737,7 @@
       "name": "cascade-select",
       "type": "registry:ui",
       "title": "Cascade Select",
-      "description": "Skin for @llui/components/cascade-select \u2014 chained native selects.",
+      "description": "Skin for @llui/components/cascade-select — chained native selects.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -232,7 +2752,7 @@
       "name": "chart",
       "type": "registry:ui",
       "title": "Chart",
-      "description": "Skin for @llui/components/chart \u2014 shadcn's container, tooltip and legend recipes over a cartesian/polar plotting machine.",
+      "description": "Skin for @llui/components/chart — shadcn's container, tooltip and legend recipes over a cartesian/polar plotting machine.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -277,7 +2797,7 @@
       "name": "clipboard",
       "type": "registry:ui",
       "title": "Clipboard",
-      "description": "Skin for @llui/components/clipboard \u2014 copy field with a live-region indicator.",
+      "description": "Skin for @llui/components/clipboard — copy field with a live-region indicator.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["input", "utils"],
       "files": [
@@ -307,7 +2827,7 @@
       "name": "color-picker",
       "type": "registry:ui",
       "title": "Color Picker",
-      "description": "Skin for @llui/components/color-picker \u2014 2D area, native range sliders and preset swatches.",
+      "description": "Skin for @llui/components/color-picker — 2D area, native range sliders and preset swatches.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["input", "utils"],
       "files": [
@@ -322,7 +2842,7 @@
       "name": "combobox",
       "type": "registry:ui",
       "title": "Combobox",
-      "description": "Skin for @llui/components/combobox \u2014 filtering input over an anchored list.",
+      "description": "Skin for @llui/components/combobox — filtering input over an anchored list.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["command", "select", "utils"],
       "files": [
@@ -337,7 +2857,7 @@
       "name": "command",
       "type": "registry:ui",
       "title": "Command",
-      "description": "Skin for @llui/components/patterns/command-menu \u2014 the \u2318K palette.",
+      "description": "Skin for @llui/components/patterns/command-menu — the ⌘K palette.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["icons", "utils"],
       "files": [
@@ -382,7 +2902,7 @@
       "name": "date-input",
       "type": "registry:ui",
       "title": "Date Input",
-      "description": "Skin for @llui/components/date-input \u2014 typed date entry with an error region.",
+      "description": "Skin for @llui/components/date-input — typed date entry with an error region.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["input", "utils"],
       "files": [
@@ -412,7 +2932,7 @@
       "name": "dialog",
       "type": "registry:ui",
       "title": "Dialog",
-      "description": "Skin for @llui/components/dialog \u2014 backdrop, content, title, close, footer.",
+      "description": "Skin for @llui/components/dialog — backdrop, content, title, close, footer.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["icons", "utils"],
       "files": [
@@ -427,7 +2947,7 @@
       "name": "drawer",
       "type": "registry:ui",
       "title": "Drawer",
-      "description": "vaul-style edge panel \u2014 rounded entering edge, 80vh cap, grab handle.",
+      "description": "vaul-style edge panel — rounded entering edge, 80vh cap, grab handle.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["icons", "utils"],
       "files": [
@@ -457,7 +2977,7 @@
       "name": "editable",
       "type": "registry:ui",
       "title": "Editable",
-      "description": "Skin for @llui/components/editable \u2014 click-to-edit text.",
+      "description": "Skin for @llui/components/editable — click-to-edit text.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "input", "utils"],
       "files": [
@@ -487,7 +3007,7 @@
       "name": "field",
       "type": "registry:ui",
       "title": "Field",
-      "description": "Skin for @llui/components/field \u2014 label, description and error wiring.",
+      "description": "Skin for @llui/components/field — label, description and error wiring.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -502,7 +3022,7 @@
       "name": "file-upload",
       "type": "registry:ui",
       "title": "File Upload",
-      "description": "Skin for @llui/components/file-upload \u2014 dropzone with a file list.",
+      "description": "Skin for @llui/components/file-upload — dropzone with a file list.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -517,7 +3037,7 @@
       "name": "floating-panel",
       "type": "registry:ui",
       "title": "Floating Panel",
-      "description": "Skin for @llui/components/floating-panel \u2014 draggable, resizable, minimizable surface.",
+      "description": "Skin for @llui/components/floating-panel — draggable, resizable, minimizable surface.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -532,7 +3052,7 @@
       "name": "form",
       "type": "registry:ui",
       "title": "Form",
-      "description": "Skin for @llui/components/patterns/form-field \u2014 shadcn's form recipes bound to a Standard Schema reducer instead of react-hook-form.",
+      "description": "Skin for @llui/components/patterns/form-field — shadcn's form recipes bound to a Standard Schema reducer instead of react-hook-form.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils", "label", "input"],
       "files": [
@@ -562,7 +3082,7 @@
       "name": "icons",
       "type": "registry:ui",
       "title": "Icons",
-      "description": "Icons loaded from Iconify by `prefix:name` \u2014 the Lucide glyphs shadcn/ui bakes into its components, plus any other Iconify set. Fetched from the public API by default; point `iconConfig.api` at a self-hosted Iconify to drop the third-party dependency.",
+      "description": "Icons loaded from Iconify by `prefix:name` — the Lucide glyphs shadcn/ui bakes into its components, plus any other Iconify set. Fetched from the public API by default; point `iconConfig.api` at a self-hosted Iconify to drop the third-party dependency.",
       "dependencies": ["@llui/dom"],
       "registryDependencies": ["utils"],
       "files": [
@@ -577,7 +3097,7 @@
       "name": "image-cropper",
       "type": "registry:ui",
       "title": "Image Cropper",
-      "description": "Skin for @llui/components/image-cropper \u2014 crop box with corner grips.",
+      "description": "Skin for @llui/components/image-cropper — crop box with corner grips.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -592,7 +3112,7 @@
       "name": "input",
       "type": "registry:ui",
       "title": "Input",
-      "description": "Text input. The caller owns the value binding \u2014 see the controlled-input rule.",
+      "description": "Text input. The caller owns the value binding — see the controlled-input rule.",
       "dependencies": ["@llui/dom"],
       "registryDependencies": ["utils"],
       "files": [
@@ -622,7 +3142,7 @@
       "name": "input-otp",
       "type": "registry:ui",
       "title": "Input OTP",
-      "description": "Skin for @llui/components/pin-input \u2014 paste-splitting and auto-advance.",
+      "description": "Skin for @llui/components/pin-input — paste-splitting and auto-advance.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -682,7 +3202,7 @@
       "name": "marquee",
       "type": "registry:ui",
       "title": "Marquee",
-      "description": "Skin for @llui/components/marquee \u2014 clipped, edge-faded scrolling track.",
+      "description": "Skin for @llui/components/marquee — clipped, edge-faded scrolling track.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -712,7 +3232,7 @@
       "name": "meter",
       "type": "registry:ui",
       "title": "Meter",
-      "description": "Skin for @llui/components/meter \u2014 a classic gauge, or a banded reference range with a marker.",
+      "description": "Skin for @llui/components/meter — a classic gauge, or a banded reference range with a marker.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -742,7 +3262,7 @@
       "name": "number-input",
       "type": "registry:ui",
       "title": "Number Input",
-      "description": "Skin for @llui/components/number-input \u2014 clamping, step, press-and-hold.",
+      "description": "Skin for @llui/components/number-input — clamping, step, press-and-hold.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -772,7 +3292,7 @@
       "name": "password-input",
       "type": "registry:ui",
       "title": "Password Input",
-      "description": "Skin for @llui/components/password-input \u2014 text field with a reveal toggle.",
+      "description": "Skin for @llui/components/password-input — text field with a reveal toggle.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["input", "utils"],
       "files": [
@@ -817,7 +3337,7 @@
       "name": "qr-code",
       "type": "registry:ui",
       "title": "QR Code",
-      "description": "Skin for @llui/components/qr-code \u2014 rendered code with a download trigger.",
+      "description": "Skin for @llui/components/qr-code — rendered code with a download trigger.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -847,7 +3367,7 @@
       "name": "rating-group",
       "type": "registry:ui",
       "title": "Rating Group",
-      "description": "Skin for @llui/components/rating-group \u2014 keyboard-navigable, half-star capable.",
+      "description": "Skin for @llui/components/rating-group — keyboard-navigable, half-star capable.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -877,7 +3397,7 @@
       "name": "scroll-area",
       "type": "registry:ui",
       "title": "Scroll Area",
-      "description": "Skin for @llui/components/scroll-area \u2014 a custom scrollbar over native scrolling.",
+      "description": "Skin for @llui/components/scroll-area — a custom scrollbar over native scrolling.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -892,7 +3412,7 @@
       "name": "search-field",
       "type": "registry:ui",
       "title": "Search Field",
-      "description": "Skin for @llui/components/search-field \u2014 search input with a clear affordance.",
+      "description": "Skin for @llui/components/search-field — search input with a clear affordance.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["input", "utils"],
       "files": [
@@ -937,7 +3457,7 @@
       "name": "sheet",
       "type": "registry:ui",
       "title": "Sheet / Drawer",
-      "description": "Skin for @llui/components/drawer \u2014 an edge-anchored panel, side as a variant.",
+      "description": "Skin for @llui/components/drawer — an edge-anchored panel, side as a variant.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["icons", "utils"],
       "files": [
@@ -952,7 +3472,7 @@
       "name": "sidebar",
       "type": "registry:ui",
       "title": "Sidebar",
-      "description": "Skin for a collapsible app sidebar \u2014 header, groups, menu, submenus, rail and inset. Presentation only; the open/closed state stays in your app.",
+      "description": "Skin for a collapsible app sidebar — header, groups, menu, submenus, rail and inset. Presentation only; the open/closed state stays in your app.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -967,7 +3487,7 @@
       "name": "signature-pad",
       "type": "registry:ui",
       "title": "Signature Pad",
-      "description": "Skin for @llui/components/signature-pad \u2014 drawing surface with clear and undo.",
+      "description": "Skin for @llui/components/signature-pad — drawing surface with clear and undo.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -1027,7 +3547,7 @@
       "name": "sortable",
       "type": "registry:ui",
       "title": "Sortable",
-      "description": "Skin for @llui/components/sortable \u2014 drag-reorder list with drop feedback.",
+      "description": "Skin for @llui/components/sortable — drag-reorder list with drop feedback.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1072,7 +3592,7 @@
       "name": "steps",
       "type": "registry:ui",
       "title": "Steps",
-      "description": "Skin for @llui/components/steps \u2014 a stepper/wizard indicator.",
+      "description": "Skin for @llui/components/steps — a stepper/wizard indicator.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1087,7 +3607,7 @@
       "name": "switch",
       "type": "registry:ui",
       "title": "Switch",
-      "description": "Skin for @llui/components/switch \u2014 recipe only, state stays in the package.",
+      "description": "Skin for @llui/components/switch — recipe only, state stays in the package.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1162,7 +3682,7 @@
       "name": "theme-switch",
       "type": "registry:ui",
       "title": "Theme Switch",
-      "description": "Skin for @llui/components/theme-switch \u2014 segmented options or a single toggle.",
+      "description": "Skin for @llui/components/theme-switch — segmented options or a single toggle.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1177,7 +3697,7 @@
       "name": "time-picker",
       "type": "registry:ui",
       "title": "Time Picker",
-      "description": "Skin for @llui/components/time-picker \u2014 hour/minute spinbuttons with an AM/PM toggle.",
+      "description": "Skin for @llui/components/time-picker — hour/minute spinbuttons with an AM/PM toggle.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1192,7 +3712,7 @@
       "name": "timer",
       "type": "registry:ui",
       "title": "Timer",
-      "description": "Skin for @llui/components/timer \u2014 tabular readout with transport controls.",
+      "description": "Skin for @llui/components/timer — tabular readout with transport controls.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -1207,7 +3727,7 @@
       "name": "toc",
       "type": "registry:ui",
       "title": "Table of Contents",
-      "description": "Skin for @llui/components/toc \u2014 depth-indented outline with scroll tracking.",
+      "description": "Skin for @llui/components/toc — depth-indented outline with scroll tracking.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1252,7 +3772,7 @@
       "name": "toolbar",
       "type": "registry:ui",
       "title": "Toolbar",
-      "description": "Skin for @llui/components/toolbar \u2014 roving focus across groups.",
+      "description": "Skin for @llui/components/toolbar — roving focus across groups.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1282,7 +3802,7 @@
       "name": "tour",
       "type": "registry:ui",
       "title": "Tour",
-      "description": "Skin for @llui/components/tour \u2014 spotlight coach marks.",
+      "description": "Skin for @llui/components/tour — spotlight coach marks.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["button", "utils"],
       "files": [
@@ -1297,7 +3817,7 @@
       "name": "tree-view",
       "type": "registry:ui",
       "title": "Tree View",
-      "description": "Skin for @llui/components/tree-view \u2014 full role=\"tree\" keyboard nav.",
+      "description": "Skin for @llui/components/tree-view — full role=\"tree\" keyboard nav.",
       "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
@@ -1312,7 +3832,7 @@
       "name": "typography",
       "type": "registry:ui",
       "title": "Typography",
-      "description": "Prose primitives \u2014 headings, paragraphs, lists, code, blockquote.",
+      "description": "Prose primitives — headings, paragraphs, lists, code, blockquote.",
       "dependencies": ["@llui/dom"],
       "registryDependencies": ["utils"],
       "files": [
