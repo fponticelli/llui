@@ -12,6 +12,7 @@ import {
   compileCandidates,
   markerName,
   markerReferences,
+  REGISTRY_TAILWIND_ENTRY,
   selectorFor,
 } from '../lib/tailwind-compile.mjs'
 
@@ -87,7 +88,7 @@ async function appCandidates(appRoot: string): Promise<Map<string, string[]>> {
 /** The dead classes among an app's candidates, compiled against its OWN entry CSS. */
 async function deadIn(byFile: Map<string, string[]>, cssEntry: string): Promise<string[]> {
   const all = [...new Set([...byFile.values()].flat())].filter((c) => markerName(c) === null).sort()
-  // Compiled against the app's OWN entry CSS, not the theme alone: app code
+  // Compiled against the app's OWN entry CSS, not the registry Tailwind entry alone: app code
   // mixes utilities with hand-written classes (`.demo-section`), and both are
   // legitimately "defined". Only a class no rule anywhere defines is dead.
   const { dead } = await compileCandidates(all, appEntry(cssEntry))
@@ -95,6 +96,12 @@ async function deadIn(byFile: Map<string, string[]>, cssEntry: string): Promise<
 }
 
 describe('registry Tailwind classes', () => {
+  it('compiles copied recipes against the explicit registry Tailwind entries', () => {
+    expect(REGISTRY_TAILWIND_ENTRY).toContain('tokens.css')
+    expect(REGISTRY_TAILWIND_ENTRY).toContain('tokens-dark.css')
+    expect(REGISTRY_TAILWIND_ENTRY).not.toContain('theme.css')
+  })
+
   it('emits at least one class candidate per ui component', async () => {
     // Guards the check itself: an extractor that silently stopped reading a
     // recipe position would make the compile assertion below vacuously pass.
@@ -162,8 +169,21 @@ describe('registry Tailwind classes', () => {
     })
     expect(
       dead,
-      `These classes compile to NO CSS against packages/components/src/styles/theme.css:\n${blame.join('\n')}`,
+      `These classes compile to NO CSS against packages/components/src/styles/tokens.css:\n${blame.join('\n')}`,
     ).toEqual([])
+  })
+
+  it('builds registry utilities from the Tailwind entry without baseline selector pollution', async () => {
+    const { css, dead } = await compileCandidates([
+      'bg-card',
+      'text-card-foreground',
+      'rounded-md',
+      'duration-fast',
+      'z-dialog',
+    ])
+    expect(dead).toEqual([])
+    expect(css).toContain('background-color: var(--card)')
+    expect(css).not.toContain('[data-scope')
   })
 
   it('detects a class that produces no CSS', async () => {
@@ -199,7 +219,7 @@ describe('registry Tailwind classes', () => {
       // The demos' own entry, so `bg-background` resolves the way it does there.
       await writeFile(
         path.join(app, 'src/main.css'),
-        ['@import "tailwindcss";', '@import "@llui/components/styles/theme.css";'].join('\n'),
+        ['@import "tailwindcss";', '@import "@llui/components/styles/tokens.css";'].join('\n'),
       )
       await writeFile(
         path.join(app, 'index.html'),

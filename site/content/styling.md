@@ -18,16 +18,53 @@ project; they are not meant to be combined.
 | You get   | Every component styled, immediately           | Source files you own and edit       |
 | Best for  | Prototypes, internal tools, docs              | Product UI with a design of its own |
 
+## Baseline CSS distribution
+
+The convenient complete entry is ordinary published CSS:
+
+```css
+@import '@llui/components/styles/theme.css';
+```
+
+It needs no Tailwind package, PostCSS plugin, Vite plugin, configuration, or preprocessing.
+The entry includes light and dark tokens, focus-visible and disabled conventions,
+RTL-sensitive logical defaults, reduced-motion handling, forced-colors treatment, every
+component family, and motion in a deterministic order.
+
+For a smaller custom composition, import `semantic-tokens.css`,
+`semantic-tokens-dark.css`, and `foundation.css` first, then any of
+`form-controls.css`, `disclosure-navigation.css`, `menus-overlays.css`,
+`data-display.css`, `layout.css`, and `motion.css`. Each is a declared package export.
+
+### Migrating an existing baseline import
+
+- Remove the old `theme-dark.css` import; `theme.css` now includes dark tokens and the
+  redundant old subpath is no longer exported.
+- Base shadcn names (`--primary`, `--background`, `--radius`, and their pairs) are unchanged.
+- Baseline-only scales now use semantic names: `--radius-md` → `--llui-radius-md`,
+  `--shadow-sm` → `--llui-shadow-sm`, `--transition-duration-fast` →
+  `--llui-duration-fast`, `--z-index-dialog` → `--llui-z-dialog`, and `--spacing-2` →
+  `--llui-space-2`.
+- Disabled component parts now use the shared `--llui-disabled-opacity` convention (default
+  `0.5`) instead of family-specific opacity literals.
+
 ## The token contract
 
 Both paths read the same tokens, and they follow **shadcn/ui**: paired surface and
 foreground variables, one `--radius` that derives the rest of the scale, oklch values.
 
+The baseline imports the semantic modules directly. The registry keeps its separate,
+explicit Tailwind v4 entry:
+
 ```css
 @import 'tailwindcss';
-@import '@llui/components/styles/theme.css';
-@import '@llui/components/styles/theme-dark.css';
+@import 'tw-animate-css';
+@import '@llui/components/styles/tokens.css';
+@import '@llui/components/styles/tokens-dark.css';
 ```
+
+`tokens.css` composes the same semantic values with `tailwind.css`, which owns the Tailwind
+namespace mapping and shadcn base layer. It imports no baseline component selector.
 
 A shadcn/ui theme — including the output of the community theme generators — pastes
 over the `:root` block verbatim. **Its dark half needs one edit**: generator output scopes
@@ -110,13 +147,13 @@ Why each half is needed, measured in real Chromium across all six (preference ×
 > into dark mode consistently, where before it leaked on a light OS and was overruled on a
 > dark one. Override a surface token in the dark block too, not in `:root` alone.
 
-> **Tailwind v4 is required.** The colour tokens are mapped into Tailwind's `--color-*`
-> namespace with `@theme inline`, and the radius/shadow/duration/z-index scales come
-> from a plain `@theme`. Without a Tailwind v4 pipeline those scales emit nothing.
+> **Tailwind v4 is required only for copied registry skins.** Their explicit mapping uses
+> `@theme inline` to expose the shared semantic values as utilities. The baseline entry never
+> imports that mapping and requires no Tailwind processing.
 
 ### Namespace names are not what they look like
 
-If you add your own scale tokens, use Tailwind's real namespace names:
+If you add your own registry utility tokens, use Tailwind's real namespace names:
 
 | You want        | Declare                      | Not               |
 | --------------- | ---------------------------- | ----------------- |

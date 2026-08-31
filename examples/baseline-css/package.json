@@ -1,0 +1,19 @@
+{
+  "name": "@llui/example-baseline-css",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "preview": "vite preview",
+    "lint": "eslint src vite.config.ts"
+  },
+  "dependencies": {
+    "@llui/components": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.0",
+    "vite": "^8.0.0"
+  }
+}

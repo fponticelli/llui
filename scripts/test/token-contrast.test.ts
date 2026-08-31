@@ -493,7 +493,15 @@ function importsOf(css: string): string[] {
   return [...withoutComments.matchAll(/@import\s+(?:url\()?['"]([^'"]+)['"]/g)].map((m) => m[1]!)
 }
 
-/** Does this entry stylesheet transitively reach the library's token files? */
+const TOKEN_FILES = new Set([
+  'semantic-tokens.css',
+  'semantic-tokens-dark.css',
+  'tokens.css',
+  'tokens-dark.css',
+])
+
+/** Does this entry stylesheet transitively reach a public token entry or its
+ * semantic source modules? */
 async function reachesTokens(entry: string): Promise<boolean> {
   const seen = new Set<string>()
   const queue = [entry]
@@ -501,8 +509,7 @@ async function reachesTokens(entry: string): Promise<boolean> {
     const file = queue.pop()!
     if (seen.has(file)) continue
     seen.add(file)
-    if (path.dirname(file) === TOKENS_DIR && /^tokens.*\.css$/.test(path.basename(file)))
-      return true
+    if (path.dirname(file) === TOKENS_DIR && TOKEN_FILES.has(path.basename(file))) return true
     let css: string
     try {
       css = await readFile(file, 'utf8')

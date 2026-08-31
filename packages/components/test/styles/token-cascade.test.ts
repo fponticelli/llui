@@ -34,8 +34,8 @@ const STYLES = resolve(import.meta.dirname, '../../src/styles')
 /** CSS comments carry `:root:where(...)` prose, so strip them before matching. */
 const stripComments = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, '')
 
-const tokensDark = stripComments(readFileSync(resolve(STYLES, 'tokens-dark.css'), 'utf8'))
-const tokens = stripComments(readFileSync(resolve(STYLES, 'tokens.css'), 'utf8'))
+const tokensDark = stripComments(readFileSync(resolve(STYLES, 'semantic-tokens-dark.css'), 'utf8'))
+const tokens = stripComments(readFileSync(resolve(STYLES, 'semantic-tokens.css'), 'utf8'))
 
 /** The guard inside `@media (prefers-color-scheme: dark)`. */
 const mediaSelector = tokensDark
@@ -139,7 +139,7 @@ describe('#241 — the media guard must not outrank a consumer override', () => 
 })
 
 describe('#242 — the .dark class is a CONSUMER convention, and the file says so', () => {
-  const raw = readFileSync(resolve(STYLES, 'tokens-dark.css'), 'utf8')
+  const raw = readFileSync(resolve(STYLES, 'semantic-tokens-dark.css'), 'utf8')
 
   it('still ships the .dark selector (dropping it would break next-themes consumers)', () => {
     // Measured: with the class present on <html> — which is what next-themes and

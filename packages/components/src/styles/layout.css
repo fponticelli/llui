@@ -1,0 +1,46 @@
+/*
+ * @llui/components — baseline layout components
+ *
+ * Ordinary published CSS. Import semantic-tokens.css,
+ * semantic-tokens-dark.css, and foundation.css before a family module,
+ * or import theme.css for the deterministic complete theme.
+ */
+
+/* ─── Splitter ─── */
+
+[data-scope='splitter'][data-part='root'] {
+  display: flex;
+  height: 5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--llui-radius-md);
+  overflow: hidden;
+}
+
+[data-scope='splitter'][data-part='root'][data-dragging=''] {
+  user-select: none;
+}
+
+[data-scope='splitter'][data-part='primary-panel'],
+[data-scope='splitter'][data-part='secondary-panel'] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+[data-scope='splitter'][data-part='resize-trigger'] {
+  width: 4px;
+  background: var(--border);
+  cursor: col-resize;
+}
+
+[data-scope='splitter'][data-part='resize-trigger']:hover {
+  background: var(--border-hover);
+}
+
+[data-scope='splitter'][data-part='resize-trigger']:focus {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}

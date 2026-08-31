@@ -27,14 +27,14 @@ The machines carry no classes, so the CSS has to come from somewhere. There are 
 can come from, and **you pick one** — see the warning at the end of this section for why they
 cannot be combined.
 
-|                        | **Registry** (`llui add`)                           | **Baseline** (`theme.css`)                   |
-| ---------------------- | --------------------------------------------------- | -------------------------------------------- |
-| Where the CSS lives    | your repo, one file per component                   | the package, one 1748-line stylesheet        |
-| Needs Tailwind         | yes                                                 | no                                           |
-| Looks like             | shadcn/ui, verbatim                                 | LLui's own look                              |
-| To restyle a component | edit your copy                                      | override its `[data-scope][data-part]` rules |
-| To restyle everything  | override tokens in `:root` (+ dark, see Retheme)    | override tokens in `:root` (+ dark)          |
-| Upgrades               | you own the file; `llui add --overwrite` to re-pull | arrives with the package                     |
+|                        | **Registry** (`llui add`)                           | **Baseline** (`theme.css`)                    |
+| ---------------------- | --------------------------------------------------- | --------------------------------------------- |
+| Where the CSS lives    | your repo, one file per component                   | published family modules + one complete entry |
+| Needs Tailwind         | yes                                                 | no                                            |
+| Looks like             | shadcn/ui, verbatim                                 | LLui's own look                               |
+| To restyle a component | edit your copy                                      | override its `[data-scope][data-part]` rules  |
+| To restyle everything  | override tokens in `:root` (+ dark, see Retheme)    | override tokens in `:root` (+ dark)           |
+| Upgrades               | you own the file; `llui add --overwrite` to re-pull | arrives with the package                      |
 
 Both drive the identical machines through the identical `data-*` contract. Nothing about your
 component wiring changes between them; only the source of the classes does.
@@ -56,7 +56,7 @@ and the reason it is a distribution model rather than a dependency.
 ### When the baseline is the right answer
 
 - **You do not want a Tailwind pipeline.** One `@import` and every component looks finished.
-  `examples/markdown-showcase` uses it for exactly this reason.
+  `examples/baseline-css` builds this path with no Tailwind package or plugin.
 - **You are prototyping**, or the app's look is not the point yet.
 - **You want restyling to arrive with the package** rather than being your maintenance.
 
@@ -78,9 +78,9 @@ than something a designer will recognise.
 > `llui init` and `llui add` warn when they find `theme.css` imported in your project, because
 > nothing else will.
 
-If you are on the baseline and want to move: replace the `theme.css` / `theme-dark.css` imports
-with `tokens.css` / `tokens-dark.css`, add Tailwind, then `llui add` the components you use. The
-tokens are the same in both, so your theme survives the move.
+If you are on the baseline and want to move: replace the single `theme.css` import with
+`tokens.css` / `tokens-dark.css`, add Tailwind v4, then `llui add` the components you use. The
+semantic values are the same in both, so your theme survives the move.
 
 > **The rest of this page assumes the registry.** Only three parts of it differ by path —
 > setup (below), copying components (§2), and customizing (§6). **Wiring a machine (§3),
@@ -120,12 +120,13 @@ pnpm add -D @llui/vite-plugin
 
 ```css
 @import '@llui/components/styles/theme.css';
-@import '@llui/components/styles/theme-dark.css';
 ```
 
-That is the whole setup — no Tailwind, no CLI, no per-component files. `theme.css` imports
-the same tokens the registry uses and adds ~207 `[data-scope][data-part]` rules on top, so
-every component you wire is styled the moment you spread its part bag.
+That is the whole setup — no Tailwind dependency, plugin, config, CLI, or preprocessing.
+`theme.css` composes semantic light/dark tokens, shared state foundations, component-family
+modules, and motion, so every component you wire is styled when you spread its part bag.
+The former second `theme-dark.css` import must be removed; dark tokens now come through
+`theme.css`, and the redundant subpath is no longer exported.
 
 Import one set or the other, never both — see [choosing a styling
 path](#choosing-a-styling-path).
@@ -477,16 +478,15 @@ below reach every rule in the sheet.
 
 ### Retheme
 
-**Both paths share this.** `tokens.css` defines shadcn's token names (`--background`,
-`--primary`, `--primary-foreground`, `--radius`, …) in `:root`, and `theme.css` imports the
-same file — so a shadcn theme generator's **`:root` half pastes in verbatim**, and a theme you
-build survives a move between the two paths. The dark half needs one find-and-replace: this
+**Both paths share semantic values.** `semantic-tokens.css` owns shadcn's token names
+(`--background`, `--primary`, `--primary-foreground`, `--radius`, …) in `:root`.
+`theme.css` imports it directly; the registry's `tokens.css` imports it alongside an isolated
+Tailwind mapping. A shadcn theme generator's **`:root` half pastes in verbatim**, and a theme
+you build survives a move between paths. The dark half needs one find-and-replace: this
 package never writes the `.dark` class, so scope your dark overrides to
 `[data-theme='dark']` and repeat them under the media query.
 
 ```css
-@import '@llui/components/styles/tokens.css';
-
 :root {
   --primary: oklch(0.55 0.2 265);
   --radius: 0.75rem;
@@ -501,7 +501,7 @@ package never writes the `.dark` class, so scope your dark overrides to
   --primary-foreground: <its paired ink>;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']):not(.light) {
+  :root:where(:not([data-theme='light'])):where(:not(.light)) {
     --primary: <your dark surface>;
     --primary-foreground: <its paired ink>;
   }

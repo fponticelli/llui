@@ -28,7 +28,7 @@ import {
  * published attribute. Both are green on a chip whose yellow is unreadable.
  *
  * So this test evaluates the SHIPPED expressions. It parses `--chip-lightness` /
- * `--chip-chroma` / `--chip-mix` out of `tokens.css`, the two `color-mix()`
+ * `--chip-chroma` / `--chip-mix` out of `semantic-tokens.css`, the two `color-mix()`
  * recipes out of `registry/llui/ui/chip.ts`, and `--background` / `--foreground`
  * out of both theme files, then sweeps all 360 hues. Editing any of those
  * numbers re-measures rather than re-asserts; changing the SHAPE of the recipe
@@ -52,7 +52,7 @@ const AA_NORMAL_TEXT = 4.5
 type Oklab = readonly [number, number, number]
 
 /** Every `--name: value` in a stylesheet, asserting that repeated declarations
- * of the same token agree. `tokens-dark.css` declares its palette twice (once
+ * of the same token agree. `semantic-tokens-dark.css` declares its palette twice (once
  * under `prefers-color-scheme`, once under `.dark` / `[data-theme='dark']`), and
  * a drift between the two would otherwise be invisible here. */
 function readTokens(css: string): Map<string, string> {
@@ -171,18 +171,21 @@ async function chipExpressions(): Promise<{ fill: string; ink: string }> {
  * The BASELINE stylesheet's copy of the same two expressions.
  *
  * There are two consumers of this contract, not one: the registry recipe under
- * Tailwind, and `theme.css`'s `[data-scope='chip']` rule for an app with no
+ * Tailwind, and `data-display.css`'s `[data-scope='chip']` rule for an app with no
  * Tailwind build. Two copies of a colour formula drift, and the drift is exactly
  * the invisible kind — both render, both look plausible, and only one is the one
  * that was measured. So this reads the baseline block and the tests below sweep
  * it AND assert it agrees with the recipe hue for hue.
  */
 async function baselineExpressions(): Promise<{ fill: string; ink: string }> {
-  const css = await readFile(path.join(STYLES, 'theme.css'), 'utf8')
+  const css = await readFile(path.join(STYLES, 'data-display.css'), 'utf8')
   const block = /\[data-scope='chip'\]\[data-part='chip'\]\s*\{([^}]*(?:\([^)]*\)[^}]*)*)\}/.exec(
     css,
   )
-  expect(block, "theme.css must carry a [data-scope='chip'][data-part='chip'] rule").not.toBeNull()
+  expect(
+    block,
+    "data-display.css must carry a [data-scope='chip'][data-part='chip'] rule",
+  ).not.toBeNull()
   const read = (prop: string): string => {
     const m = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 's').exec(block![1]!)
     expect(m, `the baseline chip rule must declare \`${prop}\``).not.toBeNull()
@@ -193,8 +196,8 @@ async function baselineExpressions(): Promise<{ fill: string; ink: string }> {
 
 async function themeVars(): Promise<{ light: Map<string, string>; dark: Map<string, string> }> {
   const [light, darkOnly] = await Promise.all([
-    readFile(path.join(STYLES, 'tokens.css'), 'utf8').then(readTokens),
-    readFile(path.join(STYLES, 'tokens-dark.css'), 'utf8').then(readTokens),
+    readFile(path.join(STYLES, 'semantic-tokens.css'), 'utf8').then(readTokens),
+    readFile(path.join(STYLES, 'semantic-tokens-dark.css'), 'utf8').then(readTokens),
   ])
   return { light, dark: new Map([...light, ...darkOnly]) }
 }
@@ -304,19 +307,11 @@ describe('value-hued chip contrast', () => {
     for (let i = 0; i < 5000; i++) expect(slots.has(chipHue(`category-${i}`))).toBe(true)
   })
 
-  it('the registry chip publishes no `data-scope`, so the baseline rules cannot reach it', async () => {
-    // `theme.css` styles this component at `[data-scope='chip'][data-part='chip']`,
-    // and those baseline rules are UNLAYERED — they beat every `@layer utilities`
-    // class the recipe emits. The two do not collide only because the baseline
-    // selector needs BOTH attributes and the registry chip emits only
-    // `data-part`. That is incidental: every other registry component picks up
-    // `data-scope` at runtime from a `connect()` part bag, and the chip is
-    // exempt purely because it has no machine.
-    //
-    // So this pins the absence. Neither existing guard would see the collision
-    // — the classes still compile and the attribute is still published — and it
-    // is the Switch-thumb shape: correct CSS present for both, one silently
-    // losing. A future `chipConnect()` fails HERE, next to the reason.
+  it('keeps the registry chip attribute contract unchanged', async () => {
+    // The chip is the one registry primitive without a machine, so it publishes
+    // `data-part` but no machine-owned `data-scope`. Baseline selectors are now
+    // isolated in a different entry regardless; this assertion only pins the
+    // existing registry markup contract.
     // Parsed, not grepped. The first cut was `/data-scope/.test(source)` and it
     // failed on the PROSE — the paragraph above in chip.ts names the attribute
     // four times. A needle that occurs somewhere other than the code under test
@@ -333,11 +328,7 @@ describe('value-hued chip contrast', () => {
       ts.forEachChild(node, walk)
     }
     walk(sf)
-    expect(
-      published,
-      'chip.ts must not publish `data-scope`: the unlayered baseline rules in ' +
-        'theme.css would then override every recipe class on the same element.',
-    ).toEqual([])
+    expect(published, 'chip.ts must keep its existing machine-free attribute contract.').toEqual([])
     // Vacuity guard: the walk must be able to see the attribute it DOES publish.
     const parts: string[] = []
     const walkParts = (node: ts.Node): void => {
