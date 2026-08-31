@@ -16,11 +16,40 @@ registry/
 `registry.json.productContract` is the canonical inventory shared by the CLI, tests and
 generated registry index. It classifies every public `@llui/components/*` subpath and every
 published `registry:ui` item, including its canonical identity, direct aliases, category,
-machine import, typed copied artifacts, styling support and scenario identity. Each copied
-artifact owns its `llui add` name, artifact kind and styling classification. It may inherit
-the canonical display/scenario identity when those facts are genuinely shared; variants in a
-multi-artifact product declare their scenario identities explicitly. Do not maintain a second
-list in prose; `llui list` renders the resolved contract.
+machine import, typed copied artifacts, styling support, presentation coverage and scenario
+identity. Each copied artifact owns its `llui add` name, artifact kind and styling
+classification. It may inherit the canonical display/scenario identity when those facts are
+genuinely shared; variants in a multi-artifact product declare their scenario identities
+explicitly. Do not maintain a second list in prose; `llui list` renders the resolved contract.
+
+`category` remains the user-facing taxonomy. The required `presentation.family` is a separate,
+single-owner visual-language cohort used to divide alignment and gallery work without deriving
+another inventory. Its four values are `forms-controls`, `navigation-data`, `menus-overlays` and
+`specialized-tools`. Aliases and copied artifacts never repeat that field: resolving either name
+returns its canonical entry and therefore inherits the canonical presentation profile.
+
+Each profile classifies both supported paths, `baseline` and `registryTailwind`, with exactly one
+coverage mode:
+
+- `styled` means the product directly ships the path's complete default visual treatment.
+- `partial` means it directly ships meaningful treatment but deliberately leaves a named part of
+  the presentation to composition or the consumer. Its rationale states that boundary.
+- `composed` means the product owns no styling on this path but has a real presentation made from
+  the named canonical products. References are canonical (never aliases), visually available on
+  the same path, unique, non-self-referential and acyclic. Composition is valid for either a public
+  or machine-free canonical product.
+- `styleless` means the public package machine or pattern is intentionally useful without owned
+  visuals. It requires `machine.kind: "public"`, and the canonical `styling.styleless` flag must
+  agree. That headless artifact remains usable alongside either presentation path even when the
+  path ships no direct skin.
+- `not-applicable` means the canonical product is machine-free and therefore has no public
+  headless artifact. It requires `machine.kind: "none"`.
+
+Every non-`styled` mode explains itself. `styled` and `partial` correspond exactly to a true
+`styling.baseline` / `styling.registryTailwind` flag; `composed`, `styleless` and
+`not-applicable` correspond to false. The older booleans therefore stay useful to callers that
+only need availability, while the profile supplies the reason and composition boundary needed by
+the gallery, docs and future visual-system evolution.
 
 The contract keeps four artifacts distinct:
 

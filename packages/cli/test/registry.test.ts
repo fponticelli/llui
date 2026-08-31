@@ -81,7 +81,7 @@ describe('RegistrySchema', () => {
 
   it('preserves a typed product contract when the registry publishes one', () => {
     const productContract = ProductContractSchema.parse({
-      version: 1,
+      version: 2,
       entries: [
         {
           name: 'switch',
@@ -97,6 +97,11 @@ describe('RegistrySchema', () => {
             },
           ],
           styling: { baseline: true, registryTailwind: true, styleless: true },
+          presentation: {
+            family: 'forms-controls',
+            baseline: { mode: 'styled' },
+            registryTailwind: { mode: 'styled' },
+          },
           scenarioId: 'component:switch',
         },
       ],

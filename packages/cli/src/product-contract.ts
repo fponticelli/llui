@@ -24,6 +24,75 @@ export const ProductCategorySchema = z.enum([
   'utilities',
 ])
 
+/** Single-owner visual-language cohort. This is independent of the user-facing product category. */
+export const PresentationFamilySchema = z.enum([
+  'forms-controls',
+  'navigation-data',
+  'menus-overlays',
+  'specialized-tools',
+])
+
+const PresentationRationaleSchema = z
+  .string()
+  .trim()
+  .min(1, 'Presentation rationale must contain non-whitespace text.')
+
+/** The product directly supplies the path's complete default visual treatment. */
+export const StyledPresentationCoverageSchema = z.object({ mode: z.literal('styled') }).strict()
+
+/** The product directly supplies meaningful styling but names the presentation boundary it leaves open. */
+export const PartialPresentationCoverageSchema = z
+  .object({
+    mode: z.literal('partial'),
+    rationale: PresentationRationaleSchema,
+  })
+  .strict()
+
+/** The product owns no styling on this path; its presentation is composed from canonical products. */
+export const ComposedPresentationCoverageSchema = z
+  .object({
+    mode: z.literal('composed'),
+    products: z
+      .array(z.string().regex(PRODUCT_NAME))
+      .min(1, 'Composed presentation coverage must reference at least one canonical product.'),
+    rationale: PresentationRationaleSchema,
+  })
+  .strict()
+
+/** A public package machine or pattern that remains useful without owned visual treatment. */
+export const StylelessPresentationCoverageSchema = z
+  .object({
+    mode: z.literal('styleless'),
+    rationale: PresentationRationaleSchema,
+  })
+  .strict()
+
+/** A machine-free canonical product with no public headless artifact. */
+export const NotApplicablePresentationCoverageSchema = z
+  .object({
+    mode: z.literal('not-applicable'),
+    rationale: PresentationRationaleSchema,
+  })
+  .strict()
+
+/** One path's explicit visual-coverage classification. */
+export const PresentationCoverageSchema = z.discriminatedUnion('mode', [
+  StyledPresentationCoverageSchema,
+  PartialPresentationCoverageSchema,
+  ComposedPresentationCoverageSchema,
+  StylelessPresentationCoverageSchema,
+  NotApplicablePresentationCoverageSchema,
+])
+
+/** Canonical family ownership and baseline/registry coverage for one product. */
+export const ProductPresentationSchema = z
+  .object({
+    family: PresentationFamilySchema,
+    baseline: PresentationCoverageSchema,
+    registryTailwind: PresentationCoverageSchema,
+  })
+  .strict()
+
 export const PublicMachineSchema = z
   .object({
     kind: z.literal('public'),
@@ -61,6 +130,8 @@ export const ProductEntrySchema = z
     machine: z.discriminatedUnion('kind', [PublicMachineSchema, MachineFreeSchema]),
     copiedArtifacts: z.array(CopiedArtifactSchema),
     styling: StylingSupportSchema,
+    /** Aliases and copied artifacts inherit this canonical profile through resolution. */
+    presentation: ProductPresentationSchema,
     scenarioId: z.string().min(1),
   })
   .strict()
@@ -72,9 +143,10 @@ export const ProductAliasSchema = z
   })
   .strict()
 
+/** Canonical v2 product inventory, including presentation ownership and validated composition. */
 export const ProductContractSchema = z
   .object({
-    version: z.literal(1),
+    version: z.literal(2),
     entries: z.array(ProductEntrySchema),
     aliases: z.array(ProductAliasSchema),
   })
@@ -84,12 +156,16 @@ export const ProductContractSchema = z
     const scenarioIds = new Set<string>()
     const machineImports = new Set<string>()
     const copiedArtifactOwners = new Map<string, string>()
+    const canonicalEntries = new Map<string, IndexedProductEntry>()
 
-    for (const entry of contract.entries) {
+    for (const [entryIndex, entry] of contract.entries.entries()) {
       if (names.has(entry.name)) {
         addIssue(context, `Duplicate canonical identity "${entry.name}".`, ['entries'])
       }
       names.add(entry.name)
+      if (!canonicalEntries.has(entry.name)) {
+        canonicalEntries.set(entry.name, { entry, index: entryIndex })
+      }
 
       if (scenarioIds.has(entry.scenarioId)) {
         addIssue(context, `Duplicate scenario identity "${entry.scenarioId}".`, ['entries'])
@@ -125,6 +201,11 @@ export const ProductContractSchema = z
       validateArtifact(entry, context)
       validateStyling(entry, context)
     }
+
+    for (const [entryIndex, entry] of contract.entries.entries()) {
+      validatePresentation(entry, entryIndex, canonicalEntries, context)
+    }
+    validatePresentationCycles(canonicalEntries, context)
 
     const aliasNames = new Set(contract.aliases.map(({ name }) => name))
     const seenAliases = new Set<string>()
@@ -168,6 +249,175 @@ export const ProductContractSchema = z
       }
     }
   })
+
+const PRESENTATION_PATHS = ['baseline', 'registryTailwind'] as const
+type PresentationPath = (typeof PRESENTATION_PATHS)[number]
+type ParsedProductEntry = z.infer<typeof ProductEntrySchema>
+type IndexedProductEntry = { entry: ParsedProductEntry; index: number }
+
+function validatePresentation(
+  entry: ParsedProductEntry,
+  entryIndex: number,
+  canonicalEntries: ReadonlyMap<string, IndexedProductEntry>,
+  context: z.RefinementCtx,
+): void {
+  for (const path of PRESENTATION_PATHS) {
+    const coverage = entry.presentation[path]
+    const ownsStyles = coverage.mode === 'styled' || coverage.mode === 'partial'
+    const modePath = presentationModePath(entryIndex, path)
+
+    if (ownsStyles && !entry.styling[path]) {
+      addIssue(
+        context,
+        `Product "${entry.name}" presentation ${path} mode "${coverage.mode}" requires styling.${path} to be true.`,
+        modePath,
+      )
+    }
+    if (!ownsStyles && entry.styling[path]) {
+      addIssue(
+        context,
+        `Product "${entry.name}" presentation ${path} mode "${coverage.mode}" requires styling.${path} to be false.`,
+        modePath,
+      )
+    }
+    if (coverage.mode === 'styleless' && !entry.styling.styleless) {
+      addIssue(
+        context,
+        `Product "${entry.name}" presentation ${path} is styleless, but styling.styleless is false.`,
+        modePath,
+      )
+    }
+
+    if (coverage.mode === 'styleless' && entry.machine.kind !== 'public') {
+      addIssue(
+        context,
+        `Product "${entry.name}" presentation ${path} mode "styleless" requires machine.kind to be "public".`,
+        modePath,
+      )
+    }
+    if (coverage.mode === 'not-applicable' && entry.machine.kind !== 'none') {
+      addIssue(
+        context,
+        `Product "${entry.name}" presentation ${path} mode "not-applicable" requires machine.kind to be "none".`,
+        modePath,
+      )
+    }
+
+    if (coverage.mode !== 'composed') continue
+
+    const seenProducts = new Set<string>()
+    for (const [productIndex, product] of coverage.products.entries()) {
+      const productPath = presentationProductPath(entryIndex, path, productIndex)
+      if (seenProducts.has(product)) {
+        addIssue(
+          context,
+          `Product "${entry.name}" presentation ${path} composes canonical product "${product}" more than once.`,
+          productPath,
+        )
+        continue
+      }
+      seenProducts.add(product)
+
+      if (product === entry.name) {
+        addIssue(
+          context,
+          `Product "${entry.name}" presentation ${path} cannot compose itself.`,
+          productPath,
+        )
+        continue
+      }
+
+      const composedProduct = canonicalEntries.get(product)
+      if (composedProduct === undefined) {
+        addIssue(
+          context,
+          `Product "${entry.name}" presentation ${path} references unknown canonical product "${product}".`,
+          productPath,
+        )
+        continue
+      }
+
+      if (!isVisuallyAvailable(composedProduct.entry.presentation[path])) {
+        addIssue(
+          context,
+          `Product "${entry.name}" presentation ${path} composes "${product}", whose ${path} coverage is not visually available.`,
+          productPath,
+        )
+      }
+    }
+  }
+}
+
+function presentationModePath(entryIndex: number, path: PresentationPath): readonly PropertyKey[] {
+  return ['entries', entryIndex, 'presentation', path, 'mode']
+}
+
+function presentationProductPath(
+  entryIndex: number,
+  path: PresentationPath,
+  productIndex: number,
+): readonly PropertyKey[] {
+  return ['entries', entryIndex, 'presentation', path, 'products', productIndex]
+}
+
+function isVisuallyAvailable(coverage: z.infer<typeof PresentationCoverageSchema>): boolean {
+  return coverage.mode === 'styled' || coverage.mode === 'partial' || coverage.mode === 'composed'
+}
+
+function validatePresentationCycles(
+  canonicalEntries: ReadonlyMap<string, IndexedProductEntry>,
+  context: z.RefinementCtx,
+): void {
+  for (const path of PRESENTATION_PATHS) {
+    const states = new Map<string, 'visiting' | 'visited'>()
+    const stack: string[] = []
+    const reportedCycles = new Set<string>()
+
+    const visit = (name: string): void => {
+      const state = states.get(name)
+      if (state === 'visited') return
+      if (state === 'visiting') return
+
+      const indexedEntry = canonicalEntries.get(name)
+      if (indexedEntry === undefined || indexedEntry.entry.presentation[path].mode !== 'composed') {
+        return
+      }
+
+      states.set(name, 'visiting')
+      stack.push(name)
+      for (const [productIndex, product] of indexedEntry.entry.presentation[
+        path
+      ].products.entries()) {
+        const target = canonicalEntries.get(product)
+        if (
+          target !== undefined &&
+          target.entry.presentation[path].mode === 'composed' &&
+          product !== name
+        ) {
+          if (states.get(product) === 'visiting') {
+            const cycleStart = stack.indexOf(product)
+            const cycle = [...stack.slice(cycleStart), product]
+            const signature = [...new Set(cycle.slice(0, -1))].sort().join('\0')
+            if (!reportedCycles.has(signature)) {
+              reportedCycles.add(signature)
+              addIssue(
+                context,
+                `Presentation composition cycle on ${path}: ${cycle.join(' -> ')}.`,
+                presentationProductPath(indexedEntry.index, path, productIndex),
+              )
+            }
+          } else {
+            visit(product)
+          }
+        }
+      }
+      stack.pop()
+      states.set(name, 'visited')
+    }
+
+    for (const name of canonicalEntries.keys()) visit(name)
+  }
+}
 
 function addIssue(context: z.RefinementCtx, message: string, path: readonly PropertyKey[]): void {
   context.addIssue({ code: 'custom', message, path: [...path] })
@@ -336,6 +586,16 @@ export function resolveCopiedArtifact(
 
 export type StylingSupport = z.infer<typeof StylingSupportSchema>
 export type ProductCategory = z.infer<typeof ProductCategorySchema>
+export type PresentationFamily = z.infer<typeof PresentationFamilySchema>
+export type StyledPresentationCoverage = z.infer<typeof StyledPresentationCoverageSchema>
+export type PartialPresentationCoverage = z.infer<typeof PartialPresentationCoverageSchema>
+export type ComposedPresentationCoverage = z.infer<typeof ComposedPresentationCoverageSchema>
+export type StylelessPresentationCoverage = z.infer<typeof StylelessPresentationCoverageSchema>
+export type NotApplicablePresentationCoverage = z.infer<
+  typeof NotApplicablePresentationCoverageSchema
+>
+export type PresentationCoverage = z.infer<typeof PresentationCoverageSchema>
+export type ProductPresentation = z.infer<typeof ProductPresentationSchema>
 export type PublicMachine = z.infer<typeof PublicMachineSchema>
 export type MachineFree = z.infer<typeof MachineFreeSchema>
 export type CopiedArtifact = z.infer<typeof CopiedArtifactSchema>

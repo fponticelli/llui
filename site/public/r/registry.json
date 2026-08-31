@@ -1,6 +1,6 @@
 {
   "productContract": {
-    "version": 1,
+    "version": 2,
     "entries": [
       {
         "name": "accordion",
@@ -15,6 +15,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:accordion",
         "copiedArtifacts": [
@@ -43,6 +52,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:alert-dialog",
         "copiedArtifacts": [
           {
@@ -69,6 +87,17 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "partial",
+            "rationale": "The baseline directly owns only user-selection and touch-interaction resets; the consumer owns dial and thumb geometry plus value presentation."
+          },
+          "registryTailwind": {
+            "mode": "partial",
+            "rationale": "The registry skin directly owns dial chrome plus focus and disabled treatment; the consumer positions the thumb from data-value because radius and geometry are presentation-specific."
+          }
         },
         "scenarioId": "component:angle-slider",
         "copiedArtifacts": [
@@ -97,6 +126,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:async-list",
         "copiedArtifacts": [
           {
@@ -124,6 +163,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:avatar",
         "copiedArtifacts": [
           {
@@ -150,6 +198,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:breadcrumbs",
         "copiedArtifacts": [
@@ -179,6 +237,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:carousel",
         "copiedArtifacts": [
           {
@@ -205,6 +272,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:cascade-select",
         "copiedArtifacts": [
@@ -233,6 +310,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:chart",
         "copiedArtifacts": [
           {
@@ -259,6 +346,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:checkbox",
         "copiedArtifacts": [
@@ -287,6 +383,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:clipboard",
         "copiedArtifacts": [
           {
@@ -313,6 +418,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:collapsible",
         "copiedArtifacts": [
@@ -341,6 +455,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:color-picker",
         "copiedArtifacts": [
           {
@@ -367,6 +490,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:combobox",
         "copiedArtifacts": [
@@ -395,6 +527,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:context-menu",
         "copiedArtifacts": [
           {
@@ -422,6 +563,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:date-input",
         "copiedArtifacts": [
           {
@@ -448,6 +599,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:date-picker",
         "copiedArtifacts": [
@@ -488,6 +648,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:dialog",
         "copiedArtifacts": [
           {
@@ -514,6 +683,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:drawer",
         "copiedArtifacts": [
@@ -554,6 +732,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:editable",
         "copiedArtifacts": [
           {
@@ -580,6 +767,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:field",
         "copiedArtifacts": [
@@ -608,6 +805,17 @@
           "registryTailwind": false,
           "styleless": true
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styleless",
+            "rationale": "No copied registry artifact belongs to this product; its headless state, ARIA, and part attributes remain independently usable."
+          }
+        },
         "scenarioId": "component:fieldset",
         "copiedArtifacts": []
       },
@@ -624,6 +832,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:file-upload",
         "copiedArtifacts": [
@@ -652,6 +869,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:floating-panel",
         "copiedArtifacts": [
           {
@@ -679,6 +906,18 @@
           "registryTailwind": false,
           "styleless": true
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "composed",
+            "products": ["form-field"],
+            "rationale": "The copied `form` presentation belongs to the form-field pattern, which composes this lifecycle with field wiring and validation display."
+          }
+        },
         "scenarioId": "component:form",
         "copiedArtifacts": []
       },
@@ -695,6 +934,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:hover-card",
         "copiedArtifacts": [
@@ -723,6 +971,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:image-cropper",
         "copiedArtifacts": [
           {
@@ -750,6 +1008,17 @@
           "registryTailwind": false,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styleless",
+            "rationale": "No copied registry artifact belongs to this product; its headless state, ARIA, and part attributes remain independently usable."
+          }
+        },
         "scenarioId": "component:in-view",
         "copiedArtifacts": []
       },
@@ -767,6 +1036,16 @@
           "registryTailwind": false,
           "styleless": true
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styleless",
+            "rationale": "No copied registry artifact belongs to this product; its headless state, ARIA, and part attributes remain independently usable."
+          }
+        },
         "scenarioId": "component:listbox",
         "copiedArtifacts": []
       },
@@ -783,6 +1062,17 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "partial",
+            "rationale": "The copied skin owns clipping, layout, and edge fading; the consumer still owns the scrolling animation driven by the machine variables."
+          }
         },
         "scenarioId": "component:marquee",
         "copiedArtifacts": [
@@ -810,6 +1100,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:menu",
         "copiedArtifacts": [
@@ -839,6 +1138,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:menubar",
         "copiedArtifacts": [
           {
@@ -865,6 +1174,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:meter",
         "copiedArtifacts": [
@@ -893,6 +1212,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:navigation-menu",
         "copiedArtifacts": [
           {
@@ -919,6 +1248,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:number-input",
         "copiedArtifacts": [
@@ -947,6 +1285,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:pagination",
         "copiedArtifacts": [
           {
@@ -974,6 +1321,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:password-input",
         "copiedArtifacts": [
           {
@@ -1000,6 +1356,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:pin-input",
         "copiedArtifacts": [
@@ -1029,6 +1394,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:popover",
         "copiedArtifacts": [
           {
@@ -1056,6 +1430,17 @@
           "registryTailwind": false,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styleless",
+            "rationale": "No copied registry artifact belongs to this product; its headless state, ARIA, and part attributes remain independently usable."
+          }
+        },
         "scenarioId": "component:presence",
         "copiedArtifacts": []
       },
@@ -1072,6 +1457,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:progress",
         "copiedArtifacts": [
@@ -1100,6 +1494,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:qr-code",
         "copiedArtifacts": [
           {
@@ -1126,6 +1530,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:radio-group",
         "copiedArtifacts": [
@@ -1154,6 +1567,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:rating-group",
         "copiedArtifacts": [
           {
@@ -1180,6 +1602,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:scroll-area",
         "copiedArtifacts": [
@@ -1208,6 +1640,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:search-field",
         "copiedArtifacts": [
           {
@@ -1234,6 +1676,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:select",
         "copiedArtifacts": [
@@ -1262,6 +1713,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:signature-pad",
         "copiedArtifacts": [
           {
@@ -1288,6 +1749,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:slider",
         "copiedArtifacts": [
@@ -1316,6 +1786,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:sortable",
         "copiedArtifacts": [
           {
@@ -1343,6 +1823,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:sparkline",
         "copiedArtifacts": [
           {
@@ -1369,6 +1858,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:splitter",
         "copiedArtifacts": [
@@ -1398,6 +1896,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:steps",
         "copiedArtifacts": [
           {
@@ -1424,6 +1931,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:switch",
         "copiedArtifacts": [
@@ -1452,6 +1968,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:table",
         "copiedArtifacts": [
           {
@@ -1478,6 +2004,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:tabs",
         "copiedArtifacts": [
@@ -1506,6 +2041,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:tags-input",
         "copiedArtifacts": [
           {
@@ -1532,6 +2076,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:theme-switch",
         "copiedArtifacts": [
@@ -1560,6 +2114,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:time-picker",
         "copiedArtifacts": [
           {
@@ -1587,6 +2150,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:timer",
         "copiedArtifacts": [
           {
@@ -1613,6 +2186,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:toast",
         "copiedArtifacts": [
@@ -1642,6 +2224,16 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:toc",
         "copiedArtifacts": [
           {
@@ -1668,6 +2260,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:toggle",
         "copiedArtifacts": [
@@ -1696,6 +2297,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:toggle-group",
         "copiedArtifacts": [
           {
@@ -1722,6 +2332,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:toolbar",
         "copiedArtifacts": [
@@ -1750,6 +2370,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:tooltip",
         "copiedArtifacts": [
           {
@@ -1776,6 +2405,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "component:tour",
         "copiedArtifacts": [
@@ -1804,6 +2443,15 @@
           "registryTailwind": true,
           "styleless": true
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "component:tree-view",
         "copiedArtifacts": [
           {
@@ -1830,6 +2478,16 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "partial",
+            "rationale": "The pattern directly adopts baseline dialog, input, focus, and disabled styling; command grouping and list chrome remain view-owned."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "pattern:command-menu",
         "copiedArtifacts": [
@@ -1859,6 +2517,17 @@
           "registryTailwind": false,
           "styleless": true
         },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "composed",
+            "products": ["alert-dialog", "button"],
+            "rationale": "Registry consumers wire the confirm state through alert-dialog chrome and button actions; the pattern intentionally ships no copied skin of its own."
+          }
+        },
         "scenarioId": "pattern:confirm-dialog",
         "copiedArtifacts": []
       },
@@ -1875,6 +2544,17 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "partial",
+            "rationale": "The copied pattern styles loading, empty, and error surfaces; table structure, filters, and pagination retain their own product styling."
+          }
         },
         "scenarioId": "pattern:data-table",
         "copiedArtifacts": [
@@ -1902,6 +2582,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": true
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "styleless",
+            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "pattern:form-field",
         "copiedArtifacts": [
@@ -1931,6 +2621,18 @@
           "registryTailwind": false,
           "styleless": true
         },
+        "presentation": {
+          "family": "menus-overlays",
+          "baseline": {
+            "mode": "partial",
+            "rationale": "The pattern directly adopts baseline control, focus, and overlay styling; the view owns how trigger, filter, and list chrome are composed."
+          },
+          "registryTailwind": {
+            "mode": "composed",
+            "products": ["select", "command-menu"],
+            "rationale": "Registry consumers render the selection trigger and popup with select chrome and the filter/list with command-menu chrome."
+          }
+        },
         "scenarioId": "pattern:searchable-select",
         "copiedArtifacts": []
       },
@@ -1948,6 +2650,18 @@
           "registryTailwind": false,
           "styleless": true
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "partial",
+            "rationale": "Wizard directly exposes steps-scoped parts styled by the baseline theme; step content, validation messages, and navigation layout remain view-owned."
+          },
+          "registryTailwind": {
+            "mode": "composed",
+            "products": ["steps", "button"],
+            "rationale": "Registry consumers render the wizard indicator with steps and its navigation actions with buttons; the validation pattern owns no copied chrome."
+          }
+        },
         "scenarioId": "pattern:wizard",
         "copiedArtifacts": []
       },
@@ -1964,6 +2678,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": false
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "registry:alert",
         "copiedArtifacts": [
@@ -1992,6 +2716,16 @@
           "registryTailwind": true,
           "styleless": false
         },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "registry:aspect-ratio",
         "copiedArtifacts": [
           {
@@ -2018,6 +2752,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": false
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "registry:badge",
         "copiedArtifacts": [
@@ -2046,6 +2790,16 @@
           "registryTailwind": true,
           "styleless": false
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "registry:button",
         "copiedArtifacts": [
           {
@@ -2072,6 +2826,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": false
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "registry:button-group",
         "copiedArtifacts": [
@@ -2100,6 +2864,16 @@
           "registryTailwind": true,
           "styleless": false
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "registry:card",
         "copiedArtifacts": [
           {
@@ -2126,6 +2900,15 @@
           "baseline": true,
           "registryTailwind": true,
           "styleless": false
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "registry:chip",
         "copiedArtifacts": [
@@ -2154,6 +2937,16 @@
           "registryTailwind": true,
           "styleless": false
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "registry:empty",
         "copiedArtifacts": [
           {
@@ -2180,6 +2973,17 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": false
+        },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "partial",
+            "rationale": "The copied icon helper owns safe glyph geometry and loading; each consuming recipe or caller owns semantic size and color."
+          }
         },
         "scenarioId": "registry:icons",
         "copiedArtifacts": [
@@ -2208,6 +3012,16 @@
           "registryTailwind": true,
           "styleless": false
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "registry:input",
         "copiedArtifacts": [
           {
@@ -2234,6 +3048,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": false
+        },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "registry:input-group",
         "copiedArtifacts": [
@@ -2262,6 +3086,16 @@
           "registryTailwind": true,
           "styleless": false
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "registry:item",
         "copiedArtifacts": [
           {
@@ -2288,6 +3122,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": false
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "registry:kbd",
         "copiedArtifacts": [
@@ -2316,6 +3160,16 @@
           "registryTailwind": true,
           "styleless": false
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "registry:label",
         "copiedArtifacts": [
           {
@@ -2342,6 +3196,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": false
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "registry:separator",
         "copiedArtifacts": [
@@ -2370,6 +3234,16 @@
           "registryTailwind": true,
           "styleless": false
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "registry:skeleton",
         "copiedArtifacts": [
           {
@@ -2396,6 +3270,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": false
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "registry:spinner",
         "copiedArtifacts": [
@@ -2424,6 +3308,16 @@
           "registryTailwind": true,
           "styleless": false
         },
+        "presentation": {
+          "family": "forms-controls",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "registry:textarea",
         "copiedArtifacts": [
           {
@@ -2451,6 +3345,16 @@
           "registryTailwind": true,
           "styleless": false
         },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
         "scenarioId": "registry:typography",
         "copiedArtifacts": [
           {
@@ -2477,6 +3381,16 @@
           "baseline": false,
           "registryTailwind": true,
           "styleless": false
+        },
+        "presentation": {
+          "family": "navigation-data",
+          "baseline": {
+            "mode": "not-applicable",
+            "rationale": "This copied-only visual product has no baseline package artifact to style."
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
         },
         "scenarioId": "registry:sidebar",
         "copiedArtifacts": [
