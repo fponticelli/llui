@@ -7,7 +7,7 @@ description: 'Opt-in collaborative editing for the LLui ↔ Lexical editor over 
 
 <!-- package-version:start -->
 
-**Current package version:** `0.1.2`
+**Current package version:** `0.1.3`
 
 <!-- package-version:end -->
 

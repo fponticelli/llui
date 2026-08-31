@@ -7,7 +7,7 @@ description: 'LLM-driven control surface: LAP server + browser client runtime fo
 
 <!-- package-version:start -->
 
-**Current package version:** `0.13.0`
+**Current package version:** `0.13.1`
 
 <!-- package-version:end -->
 

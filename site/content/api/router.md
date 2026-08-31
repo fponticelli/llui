@@ -7,7 +7,7 @@ description: 'Named, type-safe routing with Standard Schema, guards, and history
 
 <!-- package-version:start -->
 
-**Current package version:** `0.12.0`
+**Current package version:** `0.12.1`
 
 <!-- package-version:end -->
 

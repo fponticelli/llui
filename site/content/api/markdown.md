@@ -7,7 +7,7 @@ description: 'Reactive Markdown rendering for LLui — parse to mdast and build 
 
 <!-- package-version:start -->
 
-**Current package version:** `0.13.0`
+**Current package version:** `0.13.1`
 
 <!-- package-version:end -->
 

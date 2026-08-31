@@ -7,7 +7,7 @@ description: 'Test harness: testComponent, testView, propertyTest, replayTrace'
 
 <!-- package-version:start -->
 
-**Current package version:** `0.13.0`
+**Current package version:** `0.13.1`
 
 <!-- package-version:end -->
 

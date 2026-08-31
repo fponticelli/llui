@@ -7,7 +7,7 @@ description: '66 headless components + opt-in CSS theme and Tailwind class helpe
 
 <!-- package-version:start -->
 
-**Current package version:** `0.18.0`
+**Current package version:** `0.19.0`
 
 <!-- package-version:end -->
 

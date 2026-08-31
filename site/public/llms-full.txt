@@ -1905,7 +1905,7 @@ __lluiDebug = __lluiComponents.Dashboard // switch target
 
 # @llui/dom
 
-**Current package version:** `0.13.3`
+**Current package version:** `0.14.0`
 
 Runtime for the [LLui](https://github.com/fponticelli/llui) web framework — The Elm Architecture on a compile-time-optimized **signal** runtime.
 
@@ -6096,7 +6096,7 @@ export type SubAppSpec<S, M, E = never> = IslandSpec<S, M, E> & { reason: string
 
 # @llui/compiler
 
-**Current package version:** `0.13.1`
+**Current package version:** `0.14.0`
 
 Build-tool-agnostic compiler engine for [LLui](https://github.com/fponticelli/llui). It runs the **signal transform** — lowering signal expressions in a component's direct view to runtime helpers (`signalText`/`el`/`signalEach`/…) and emitting introspection metadata — and enforces the signal lint set as non-bypassable compile-time errors.
 
@@ -8074,7 +8074,7 @@ const SVG_ELEMENT_HELPERS: ReadonlySet<string>
 
 # @llui/vite-plugin
 
-**Current package version:** `0.12.1`
+**Current package version:** `0.12.2`
 
 Vite adapter for [LLui](https://github.com/fponticelli/llui). Wires the `@llui/compiler` signal transform into Vite — lowering signal expressions in component views to runtime helpers, emitting introspection metadata, and surfacing the signal lint rules as non-bypassable build errors. There is no virtual DOM.
 
@@ -9998,7 +9998,7 @@ const defaultClaudeSpawner: LlmSpawner
 
 # @llui/compiler-ssr
 
-**Current package version:** `0.13.0`
+**Current package version:** `0.13.1`
 
 Opt-in compiler module for SSR. Handles the `'use client'` directive and the SSR-specific emission paths consumed by [`@llui/vike`](/api/vike).
 
@@ -11152,7 +11152,7 @@ const wsSendRunner: Runner
 
 # @llui/components
 
-**Current package version:** `0.18.0`
+**Current package version:** `0.19.0`
 
 66 headless UI components for [LLui](https://github.com/fponticelli/llui). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes. Component state is JSON-serializable: numeric inputs reject non-finite runtime values, use finite-or-absent bounds, and validate positive divisors such as pagination `pageSize` and numeric crop `aspectRatio`.
 
@@ -48613,7 +48613,7 @@ const RegistrySchema
 
 # @llui/interactions
 
-**Current package version:** `0.1.1`
+**Current package version:** `0.1.2`
 
 Low-level DOM interaction primitives for applications and libraries that own their component
 state machines and markup. It provides the interaction layer used by `@llui/components` without
@@ -49217,7 +49217,7 @@ const ALL_NESTED_LAYER_ASPECTS: readonly NestedLayerAspect[]
 
 # @llui/router
 
-**Current package version:** `0.12.0`
+**Current package version:** `0.12.1`
 
 Named, type-safe URL routing for LLui, with history and hash modes, guards, and link helpers.
 
@@ -49975,7 +49975,7 @@ export interface RouterUnmatchedMessage {
 
 # @llui/transitions
 
-**Current package version:** `0.12.0`
+**Current package version:** `0.12.1`
 
 Animation helpers for [LLui](https://github.com/fponticelli/llui) structural primitives. Works with `show`, `branch`, and `each`.
 
@@ -50655,7 +50655,7 @@ export interface TransitionSpec {
 
 # @llui/test
 
-**Current package version:** `0.13.0`
+**Current package version:** `0.13.1`
 
 Test harness for [LLui](https://github.com/fponticelli/llui) components. Mount components in jsdom, send messages, and assert on state and DOM.
 
@@ -51142,7 +51142,7 @@ export interface TestHarness<S, M, E> {
 
 # @llui/vike
 
-**Current package version:** `0.13.0`
+**Current package version:** `0.13.1`
 
 [Vike](https://vike.dev) SSR/SSG adapter for [LLui](https://github.com/fponticelli/llui). Server-side rendering with client hydration, or static site generation via prerendering.
 
@@ -52789,7 +52789,7 @@ function isLoopbackOrigin(origin: string | undefined): boolean
 
 # @llui/mcp
 
-**Current package version:** `0.15.0`
+**Current package version:** `0.15.1`
 
 [Model Context Protocol](https://spec.modelcontextprotocol.io/) server for [LLui](https://github.com/fponticelli/llui). Exposes debug tools for LLM-assisted development.
 
@@ -53063,7 +53063,7 @@ class LluiMcpServer {
 
 # @llui/agent
 
-**Current package version:** `0.13.0`
+**Current package version:** `0.13.1`
 
 The agent package lets an LLM drive a running LLui app — read state, enumerate available actions, dispatch messages, and observe the result. It is **not** a debugging surface (see [`@llui/mcp`](/api/mcp) for that). It is a production-intended control channel authored into your app.
 
@@ -59382,7 +59382,7 @@ export interface DescribeCache {
 
 # @llui/agent-bridge
 
-**Current package version:** `0.11.1`
+**Current package version:** `0.11.2`
 
 The MCP bridge that lets Claude Desktop (and other MCP clients) drive an LLui app. Companion to [`@llui/agent`](/api/agent) — the bridge speaks MCP on one side and [LAP](/api/agent) on the other.
 
@@ -59634,7 +59634,7 @@ class BindingMap {
 
 # @llui/devmode-annotate
 
-**Current package version:** `0.4.4`
+**Current package version:** `0.4.5`
 
 Browser-side HUD that connects the running LLui app to a shared on-disk notebook the LLM can also read and write. Floating button → click to draft a text note, or drag to draw a rectangle around the thing you want the LLM to look at → submit. The note lands as a `.md` file on disk under `<your-app>/.llui/notes/session-<id>/` with a screenshot, the URL, the route, the component path under the cursor, scope state, recent messages, dirty trace, and (opt-in) verbose runtime telemetry.
 
@@ -61435,7 +61435,7 @@ const SCREENSHOT_URL_CACHE_LIMIT
 
 # @llui/devmode-annotate-editor
 
-**Current package version:** `0.1.5`
+**Current package version:** `0.1.6`
 
 The optional Lexical-powered note surface for [`@llui/devmode-annotate`](/api/devmode-annotate). Core always provides a plain Markdown textarea; importing this package before the HUD mounts registers the existing rich editor with its floating selection toolbar and slash commands.
 
@@ -62782,7 +62782,7 @@ export interface SerializedNote {
 
 # @llui/a2ui
 
-**Current package version:** `0.3.4`
+**Current package version:** `0.3.5`
 
 Renders Google's [**A2UI**](https://a2ui.org) (Agent-to-UI) protocol on the LLui signal runtime. A2UI is a transport-agnostic JSON protocol: a local or remote agent streams declarative UI messages that reference components from a **catalog the client already trusts** — the agent never ships code. `@llui/a2ui` is a renderer for that stream, built on LLui's chunked-mask reconciler, and it reuses [`@llui/components`](/api/components) headless primitives for the interactive parts.
 
@@ -63649,7 +63649,7 @@ const SUPPORTED_VERSIONS: readonly string[]
 
 # @llui/markdown
 
-**Current package version:** `0.13.0`
+**Current package version:** `0.13.1`
 
 Turns a Markdown string into real LLui DOM. `markdown(source)` parses to an [mdast](https://github.com/syntax-tree/mdast) AST and renders it through LLui's authoring helpers as live reactive nodes — there is no virtual DOM and no `dangerouslySetInnerHTML`. Bind it to a reactive `source` signal and the preview re-renders as the string changes; top-level blocks are content-hash-keyed, so a growing or streaming document reuses the DOM of unchanged blocks instead of rebuilding.
 
@@ -64454,7 +64454,7 @@ const defaultAllowedProtocols: readonly string[]
 
 # @llui/markdown-editor
 
-**Current package version:** `0.8.5`
+**Current package version:** `0.8.6`
 
 A WYSIWYG Markdown editor you drop into an LLui app as a single component. The user edits rich text; the editor's state holds the Markdown. It is built on [`@llui/lexical`](/api/lexical) and ships a transformer registry (GFM, callouts, …), a toolbar surface, and a set of opt-in plugins for the features beyond plain prose — links, images, tables, math, mentions, emoji, slash commands, and more.
 
@@ -66825,7 +66825,7 @@ function tablePlugin(): MarkdownPlugin
 
 # @llui/lexical
 
-**Current package version:** `0.5.0`
+**Current package version:** `0.5.1`
 
 The seam between [Lexical](https://lexical.dev) (Meta's extensible text-editor framework) and the LLui signal runtime. It mounts a Lexical editor as a [`foreign()`](/api/dom) island inside an LLui view, defines a small plugin contract so editor behavior composes the same way LLui views do, and bridges Lexical `DecoratorNode`s to LLui sub-views so rich embeds (callouts, math, images, …) are authored as ordinary LLui components.
 
@@ -67669,7 +67669,7 @@ const WIDGET_CLASS
 
 # @llui/lexical-collab
 
-**Current package version:** `0.4.0`
+**Current package version:** `0.4.1`
 
 Adds real-time collaborative editing to the [`@llui/lexical`](/api/lexical) binding. `yjsCollab(...)` produces a `foreign` fragment you spread into `lexicalForeign({ …, ...collab.foreign })` — or you pass the handle through the [markdown editor's](/api/markdown-editor) `collab` option, which does this for you. Sync runs over a [Yjs](https://yjs.dev) provider you inject, so you keep control of the transport (WebSocket, WebRTC, …).
 
@@ -67844,7 +67844,7 @@ export interface YjsCollabConfig {
 
 # @llui/lexical-loro
 
-**Current package version:** `0.1.2`
+**Current package version:** `0.1.3`
 
 Opt-in collaborative editing over [Loro](https://loro.dev). `loroCollab` composes
 a full bidirectional binding into one `register` you hand to `lexicalForeign`,

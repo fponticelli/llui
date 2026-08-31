@@ -7,7 +7,7 @@ description: 'Animation: transition(), presets, flip, spring, stagger'
 
 <!-- package-version:start -->
 
-**Current package version:** `0.12.0`
+**Current package version:** `0.12.1`
 
 <!-- package-version:end -->
 
