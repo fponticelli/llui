@@ -18,11 +18,11 @@ import { classPart } from '../../lib/utils'
 export const AngleSlider = classPart(div, 'flex flex-col items-center gap-2')
 export const AngleSliderControl = classPart(
   div,
-  'relative size-24 rounded-full border border-input bg-muted/40 shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 data-disabled:pointer-events-none data-disabled:opacity-50',
+  'relative size-24 rounded-full border border-input bg-muted/40 shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 data-disabled:pointer-events-none data-disabled:opacity-50 forced-colors:forced-color-adjust-none forced-colors:border-[ButtonText] forced-colors:bg-[Canvas]',
 )
 export const AngleSliderThumb = classPart(
   div,
-  'absolute size-3 rounded-full border border-primary bg-background shadow-sm',
+  'absolute size-3 rounded-full border border-primary bg-background shadow-sm forced-colors:forced-color-adjust-none forced-colors:border-[Highlight] forced-colors:bg-[Canvas]',
 )
 export const AngleSliderValueText = classPart(
   span,

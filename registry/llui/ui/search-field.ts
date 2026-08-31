@@ -7,7 +7,7 @@ import { inputRecipe } from '@/ui/input'
  * counterpart; the `Input` recipe verbatim plus the two affordances the machine
  * provides.
  *
- * Padded on BOTH sides (`pl-9 pr-9`): the leading glyph and the clear button
+ * Padded on BOTH sides (`ps-9 pe-9`): the leading glyph and the clear button
  * are absolutely positioned, so without the padding the value runs under them.
  * The leading glyph is the CONSUMER's to render — the machine has no part for
  * it, deliberately, since it is pure decoration.
@@ -21,12 +21,12 @@ export const SearchFieldLabel = classPart(
   label,
   'mb-1.5 block text-sm leading-none font-medium select-none',
 )
-export const SearchFieldInput = classPart(input, `${inputRecipe} pr-9 pl-9`)
+export const SearchFieldInput = classPart(input, `${inputRecipe} pe-9 ps-9`)
 export const SearchFieldIcon = classPart(
   div,
-  "pointer-events-none absolute top-0 left-0 flex size-9 items-center justify-center text-muted-foreground [&_svg:not([class*='size-'])]:size-4",
+  "pointer-events-none absolute top-0 start-0 flex size-9 items-center justify-center text-muted-foreground [&_svg:not([class*='size-'])]:size-4",
 )
 export const SearchFieldClearTrigger = classPart(
   button,
-  "absolute top-0 right-0 flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg:not([class*='size-'])]:size-4",
+  "absolute top-0 end-0 flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg:not([class*='size-'])]:size-4",
 )

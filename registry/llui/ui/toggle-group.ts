@@ -2,7 +2,8 @@ import { button, div } from '@llui/dom'
 import { classPart, classPartWithDefaults } from '@/lib/utils'
 
 /**
- * Ported verbatim from shadcn/ui (MIT © 2023 shadcn).
+ * Ported from shadcn/ui (MIT © 2023 shadcn), with system-color accessibility
+ * suffixes that preserve each item's pressed state in forced colors.
  *
  * Spacing comes from a `--gap` custom property read through
  * `gap-[--spacing(var(--gap))]`, paired with `data-spacing`. Set
@@ -17,7 +18,7 @@ export const ToggleGroup = classPart(
 )
 export const ToggleGroupItem = classPartWithDefaults(
   button,
-  "w-auto min-w-0 shrink-0 inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] outline-none hover:bg-muted hover:text-muted-foreground focus:z-10 focus-visible:z-10 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground group-data-[variant=outline]/toggle-group:border group-data-[variant=outline]/toggle-group:border-input data-[spacing=0]:rounded-none data-[spacing=0]:shadow-none data-[spacing=0]:first:rounded-l-md data-[spacing=0]:last:rounded-r-md data-[spacing=0]:data-[variant=outline]:border-l-0 data-[spacing=0]:data-[variant=outline]:first:border-l [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "w-auto min-w-0 shrink-0 inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] outline-none hover:bg-muted hover:text-muted-foreground focus:z-10 focus-visible:z-10 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[state=on]:bg-accent data-[state=on]:text-accent-foreground group-data-[variant=outline]/toggle-group:border group-data-[variant=outline]/toggle-group:border-input data-[spacing=0]:rounded-none data-[spacing=0]:shadow-none data-[spacing=0]:first:rounded-s-md data-[spacing=0]:last:rounded-e-md data-[spacing=0]:data-[variant=outline]:border-s-0 data-[spacing=0]:data-[variant=outline]:first:border-s forced-colors:forced-color-adjust-none forced-colors:border forced-colors:border-[ButtonText] forced-colors:bg-[Canvas] forced-colors:text-[ButtonText] forced-colors:data-[state=on]:border-[Highlight] forced-colors:data-[state=on]:bg-[Highlight] forced-colors:data-[state=on]:text-[HighlightText] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   // shadcn defaults `spacing="default"` as a prop; without it the
   // `data-[spacing=default]:` shadow on an outline group matches nothing.
   { 'data-spacing': 'default' },

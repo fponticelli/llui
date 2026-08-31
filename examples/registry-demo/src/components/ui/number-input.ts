@@ -13,9 +13,9 @@ export const NumberInputControl = classPart(
 )
 export const NumberInputDecrement = classPart(
   button,
-  'inline-flex h-full w-8 items-center justify-center rounded-l-md text-muted-foreground transition-[color,box-shadow] hover:bg-muted hover:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+  'inline-flex h-full w-8 items-center justify-center rounded-s-md text-muted-foreground transition-[color,box-shadow] hover:bg-muted hover:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
 )
 export const NumberInputIncrement = classPart(
   button,
-  'inline-flex h-full w-8 items-center justify-center rounded-r-md text-muted-foreground transition-[color,box-shadow] hover:bg-muted hover:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+  'inline-flex h-full w-8 items-center justify-center rounded-e-md text-muted-foreground transition-[color,box-shadow] hover:bg-muted hover:text-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
 )

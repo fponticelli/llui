@@ -764,15 +764,14 @@
           "importPath": "@llui/components/field"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "forms-controls",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -801,15 +800,14 @@
           "importPath": "@llui/components/fieldset"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": false,
           "styleless": true
         },
         "presentation": {
           "family": "forms-controls",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styleless",
@@ -902,15 +900,14 @@
           "importPath": "@llui/components/form"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": false,
           "styleless": true
         },
         "presentation": {
           "family": "forms-controls",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "composed",
@@ -2579,15 +2576,14 @@
           "importPath": "@llui/components/patterns/form-field"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "forms-controls",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"

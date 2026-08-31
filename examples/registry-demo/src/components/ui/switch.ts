@@ -2,7 +2,8 @@ import { button, span } from '@llui/dom'
 import { classPartWithDefaults } from '../../lib/utils'
 
 /**
- * Ported verbatim from shadcn/ui (MIT © 2023 shadcn).
+ * Ported from shadcn/ui (MIT © 2023 shadcn), with logical RTL translation
+ * and system-color accessibility suffixes.
  *
  * The SKIN only — the state machine, keyboard handling and ARIA stay in
  * `@llui/components/switch`. Spread the part bag in; every visual state is
@@ -25,11 +26,11 @@ import { classPartWithDefaults } from '../../lib/utils'
  */
 export const Switch = classPartWithDefaults(
   button,
-  'peer group/switch inline-flex shrink-0 items-center rounded-full border border-transparent shadow-xs transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[size=default]:h-[1.15rem] data-[size=default]:w-8 data-[size=sm]:h-3.5 data-[size=sm]:w-6 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input dark:data-[state=unchecked]:bg-input/80',
+  "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent shadow-xs transition-all outline-none before:absolute before:top-1/2 before:left-1/2 before:size-6 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 data-[size=default]:h-[1.15rem] data-[size=default]:w-8 data-[size=sm]:h-3.5 data-[size=sm]:w-6 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input dark:data-[state=unchecked]:bg-input/80 forced-colors:forced-color-adjust-none forced-colors:data-[state=checked]:border-[Highlight] forced-colors:data-[state=checked]:bg-[Highlight] forced-colors:data-[state=checked]:text-[HighlightText] forced-colors:data-[state=unchecked]:border-[ButtonText] forced-colors:data-[state=unchecked]:bg-[Canvas] forced-colors:data-[state=unchecked]:text-[ButtonText]",
   { 'data-size': 'default' },
 )
 export const SwitchThumb = classPartWithDefaults(
   span,
-  'pointer-events-none block rounded-full bg-background ring-0 transition-transform group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 data-[state=checked]:translate-x-[calc(100%-2px)] data-[state=unchecked]:translate-x-0 dark:data-[state=checked]:bg-primary-foreground dark:data-[state=unchecked]:bg-foreground',
+  'pointer-events-none block rounded-full bg-background ring-0 transition-transform group-data-[size=default]/switch:size-4 group-data-[size=sm]/switch:size-3 data-[state=checked]:translate-x-[calc(100%-2px)] rtl:data-[state=checked]:-translate-x-[calc(100%-2px)] data-[state=unchecked]:translate-x-0 dark:data-[state=checked]:bg-primary-foreground dark:data-[state=unchecked]:bg-foreground forced-colors:forced-color-adjust-none forced-colors:bg-[Canvas]',
   { 'data-size': 'default' },
 )

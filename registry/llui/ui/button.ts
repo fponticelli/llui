@@ -3,10 +3,10 @@ import { createVariants, type VariantProps } from '@llui/components/styles'
 import { mergeClass, splitArgs } from '@/lib/utils'
 
 /**
- * Recipes ported VERBATIM from shadcn/ui (new-york-v4, MIT © 2023 shadcn), with
- * only the changes LLui genuinely requires. Keeping them byte-identical is the
- * point: it is what makes a shadcn theme, a shadcn screenshot and a shadcn
- * tutorial all still describe what you get here.
+ * Recipes ported from shadcn/ui (new-york-v4, MIT © 2023 shadcn), with only
+ * the changes LLui genuinely requires. The upstream core stays intact so a
+ * shadcn theme, screenshot, and tutorial still describe what you get here;
+ * `forced-colors:` suffixes are LLui's system-color accessibility layer.
  *
  * The shared idioms below are shadcn's and recur across every control — do not
  * "simplify" them into LLui inventions:
@@ -45,7 +45,7 @@ const variants = {
 }
 
 export const buttonVariants = createVariants({
-  base: "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  base: "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 forced-colors:forced-color-adjust-none forced-colors:border forced-colors:border-[ButtonText] forced-colors:bg-[Canvas] forced-colors:text-[ButtonText] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   variants,
   defaultVariants: { variant: 'default', size: 'default' },
 })

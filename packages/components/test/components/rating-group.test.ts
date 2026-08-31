@@ -18,7 +18,7 @@ describe('rating-group reducer', () => {
     const [s] = update(init({ count: 5, allowHalf: false }), {
       type: 'clickItem',
       index: 2,
-      isLeftHalf: true,
+      isStartHalf: true,
     })
     expect(s.value).toBe(3)
   })
@@ -27,7 +27,7 @@ describe('rating-group reducer', () => {
     const [s] = update(init({ count: 5, allowHalf: true }), {
       type: 'clickItem',
       index: 2,
-      isLeftHalf: true,
+      isStartHalf: true,
     })
     expect(s.value).toBe(2.5)
   })
@@ -78,6 +78,14 @@ describe('itemFill', () => {
 describe('rating-group.connect', () => {
   const parts = connect(rootSignal(), vi.fn())
 
+  const pointerAt = (clientX: number): PointerEvent =>
+    ({
+      clientX,
+      currentTarget: {
+        getBoundingClientRect: () => ({ left: 100, width: 40 }),
+      },
+    }) as unknown as PointerEvent
+
   it('root has role=radiogroup', () => {
     expect(parts.root.role).toBe('radiogroup')
   })
@@ -94,6 +102,42 @@ describe('rating-group.connect', () => {
     p.item(0).root.onPointerLeave(new PointerEvent('pointerleave'))
     expect(send).toHaveBeenCalledWith({ type: 'hover', value: null })
   })
+
+  it.each([
+    ['ltr', 110, true, 2.5],
+    ['ltr', 130, false, 3],
+    ['rtl', 110, false, 3],
+    ['rtl', 130, true, 2.5],
+  ] as const)(
+    '%s click at physical x=%i maps to logical-start half=%s',
+    (dir, x, startHalf, expectedValue) => {
+      const initial = init({ allowHalf: true, dir })
+      const send = vi.fn()
+      const p = connect(signalOf(initial), send)
+      const message = { type: 'clickItem' as const, index: 2, isStartHalf: startHalf }
+      p.item(2).root.onClick(pointerAt(x))
+      expect(send).toHaveBeenCalledWith(message)
+      expect(update(initial, message)[0].value).toBe(expectedValue)
+    },
+  )
+
+  it.each([
+    ['ltr', 110, true, 2.5],
+    ['ltr', 130, false, 3],
+    ['rtl', 110, false, 3],
+    ['rtl', 130, true, 2.5],
+  ] as const)(
+    '%s hover at physical x=%i maps to logical-start half=%s',
+    (dir, x, startHalf, expectedValue) => {
+      const initial = init({ allowHalf: true, dir })
+      const send = vi.fn()
+      const p = connect(signalOf(initial), send)
+      const message = { type: 'hoverItem' as const, index: 2, isStartHalf: startHalf }
+      p.item(2).root.onPointerMove(pointerAt(x))
+      expect(send).toHaveBeenCalledWith(message)
+      expect(update(initial, message)[0].hoveredValue).toBe(expectedValue)
+    },
+  )
 
   it('ArrowRight sends increment', () => {
     const send = vi.fn()

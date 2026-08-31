@@ -363,30 +363,6 @@
   color: var(--muted-foreground);
 }
 
-/* ─── Listbox ─── */
-
-[data-scope='listbox'][data-part='root'] {
-  border: 1px solid var(--border);
-  border-radius: var(--llui-radius-md);
-  overflow: auto;
-  background: var(--popover);
-}
-
-[data-scope='listbox'][data-part='item'] {
-  padding: 0.375rem var(--llui-space-2);
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
-[data-scope='listbox'][data-part='item']:hover {
-  background: var(--accent);
-}
-
-[data-scope='listbox'][data-part='item'][data-state='selected'] {
-  background: color-mix(in srgb, var(--primary) 15%, transparent);
-  color: var(--primary-soft-foreground);
-}
-
 /* ─── Confirm Dialog (pattern) ─── */
 
 .confirm-dialog {

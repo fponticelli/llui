@@ -3,9 +3,9 @@ import { classPart, mergeClass } from '../../lib/utils'
 import { CircleIcon } from './icons'
 
 /**
- * Ported from shadcn/ui (MIT © 2023 shadcn) with ONE addition — `group/radio-item`
- * on the item, exactly as `checkbox.ts` carries `group/checkbox` and for the same
- * reason.
+ * Ported from shadcn/ui (MIT © 2023 shadcn) with LLui's `group/radio-item`
+ * state hook and system-color accessibility suffixes. The group hook matches
+ * `checkbox.ts`'s `group/checkbox` for the same reason.
  *
  * Radix UNMOUNTS `RadioGroupPrimitive.Indicator` when an item is unchecked, so
  * shadcn's recipe never has to hide it. `@llui/components/radio-group` has no
@@ -17,7 +17,7 @@ import { CircleIcon } from './icons'
 export const RadioGroup = classPart(div, 'grid gap-3')
 export const RadioGroupItem = classPart(
   button,
-  'group/radio-item aspect-square size-4 shrink-0 rounded-full border border-input text-primary shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:bg-input/30 dark:aria-invalid:ring-destructive/40',
+  "group/radio-item relative aspect-square size-4 shrink-0 rounded-full border border-input text-primary shadow-xs transition-[color,box-shadow] outline-none before:absolute before:top-1/2 before:left-1/2 before:size-6 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:bg-input/30 dark:aria-invalid:ring-destructive/40 forced-colors:forced-color-adjust-none forced-colors:border-[ButtonText] forced-colors:bg-[Canvas] forced-colors:text-[ButtonText] forced-colors:data-[state=checked]:border-[Highlight] forced-colors:data-[state=checked]:text-[Highlight]",
 )
 /** The dot — shadcn's `CircleIcon` with `fill-primary`, absolutely centred, and
  * hidden while the item is unchecked (see above). `invisible`, not `hidden`, so
@@ -29,7 +29,7 @@ export function RadioGroupIndicator(props?: ElProps): Mountable {
     {
       ...rest,
       class: mergeClass(
-        'relative flex items-center justify-center group-data-[state=unchecked]/radio-item:invisible',
+        'relative flex items-center justify-center group-data-[state=unchecked]/radio-item:invisible forced-colors:forced-color-adjust-none forced-colors:text-[Highlight]',
         className,
       ),
     },
