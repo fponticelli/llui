@@ -248,6 +248,12 @@ function writeConfig(cwd: string, config: Config): Promise<string>
 
 ## Types
 
+### `ComposedPresentationCoverage`
+
+```typescript
+export type ComposedPresentationCoverage = z.infer<typeof ComposedPresentationCoverageSchema>
+```
+
 ### `Config`
 
 ```typescript
@@ -264,6 +270,32 @@ export type CopiedArtifact = z.infer<typeof CopiedArtifactSchema>
 
 ```typescript
 export type MachineFree = z.infer<typeof MachineFreeSchema>
+```
+
+### `NotApplicablePresentationCoverage`
+
+```typescript
+export type NotApplicablePresentationCoverage = z.infer<
+  typeof NotApplicablePresentationCoverageSchema
+>
+```
+
+### `PartialPresentationCoverage`
+
+```typescript
+export type PartialPresentationCoverage = z.infer<typeof PartialPresentationCoverageSchema>
+```
+
+### `PresentationCoverage`
+
+```typescript
+export type PresentationCoverage = z.infer<typeof PresentationCoverageSchema>
+```
+
+### `PresentationFamily`
+
+```typescript
+export type PresentationFamily = z.infer<typeof PresentationFamilySchema>
 ```
 
 ### `ProductAlias`
@@ -288,6 +320,12 @@ export type ProductContract = z.infer<typeof ProductContractSchema>
 
 ```typescript
 export type ProductEntry = z.infer<typeof ProductEntrySchema>
+```
+
+### `ProductPresentation`
+
+```typescript
+export type ProductPresentation = z.infer<typeof ProductPresentationSchema>
 ```
 
 ### `PublicMachine`
@@ -336,6 +374,18 @@ export type ResolvedProductIdentity = {
 }
 ```
 
+### `StyledPresentationCoverage`
+
+```typescript
+export type StyledPresentationCoverage = z.infer<typeof StyledPresentationCoverageSchema>
+```
+
+### `StylelessPresentationCoverage`
+
+```typescript
+export type StylelessPresentationCoverage = z.infer<typeof StylelessPresentationCoverageSchema>
+```
+
 ### `StylingSupport`
 
 ```typescript
@@ -373,6 +423,14 @@ export interface AddResult {
 
 ## Constants
 
+### `ComposedPresentationCoverageSchema`
+
+The product owns no styling on this path; its presentation is composed from canonical products.
+
+```typescript
+const ComposedPresentationCoverageSchema
+```
+
 ### `CONFIG_FILE`
 
 ```typescript
@@ -403,6 +461,38 @@ const DEFAULT_CONFIG: Config
 const MachineFreeSchema
 ```
 
+### `NotApplicablePresentationCoverageSchema`
+
+A machine-free canonical product with no public headless artifact.
+
+```typescript
+const NotApplicablePresentationCoverageSchema
+```
+
+### `PartialPresentationCoverageSchema`
+
+The product directly supplies meaningful styling but names the presentation boundary it leaves open.
+
+```typescript
+const PartialPresentationCoverageSchema
+```
+
+### `PresentationCoverageSchema`
+
+One path's explicit visual-coverage classification.
+
+```typescript
+const PresentationCoverageSchema
+```
+
+### `PresentationFamilySchema`
+
+Single-owner visual-language cohort. This is independent of the user-facing product category.
+
+```typescript
+const PresentationFamilySchema
+```
+
 ### `ProductAliasSchema`
 
 ```typescript
@@ -417,6 +507,8 @@ const ProductCategorySchema
 
 ### `ProductContractSchema`
 
+Canonical v2 product inventory, including presentation ownership and validated composition.
+
 ```typescript
 const ProductContractSchema
 ```
@@ -425,6 +517,14 @@ const ProductContractSchema
 
 ```typescript
 const ProductEntrySchema
+```
+
+### `ProductPresentationSchema`
+
+Canonical family ownership and baseline/registry coverage for one product.
+
+```typescript
+const ProductPresentationSchema
 ```
 
 ### `PublicMachineSchema`
@@ -458,6 +558,22 @@ const RegistryItemSchema
 
 ```typescript
 const RegistrySchema
+```
+
+### `StyledPresentationCoverageSchema`
+
+The product directly supplies the path's complete default visual treatment.
+
+```typescript
+const StyledPresentationCoverageSchema
+```
+
+### `StylelessPresentationCoverageSchema`
+
+A public package machine or pattern that remains useful without owned visual treatment.
+
+```typescript
+const StylelessPresentationCoverageSchema
 ```
 
 ### `StylingSupportSchema`

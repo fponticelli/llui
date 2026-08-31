@@ -12,38 +12,58 @@ const item = (name: string, type = 'registry:ui') => ({
   files: [{ path: `${name}.ts`, type, target: `${name}.ts` }],
 })
 
+const styledCoverage = { mode: 'styled' as const }
+
+const stylelessCoverage = {
+  mode: 'styleless' as const,
+  rationale: 'This fixture intentionally leaves the machine unstyled.',
+}
+
+const notApplicableCoverage = {
+  mode: 'not-applicable' as const,
+  rationale: 'This fixture has no baseline presentation.',
+}
+
 const publicEntry = (
   name: string,
   copiedNames: string[],
   artifactKind: 'machine' | 'pattern' = 'machine',
-) => ({
-  name,
-  displayName: name,
-  category: artifactKind === 'pattern' ? 'patterns' : 'controls',
-  artifactKind,
-  machine: {
-    kind: 'public' as const,
-    importPath: `@llui/components/${artifactKind === 'pattern' ? 'patterns/' : ''}${name}`,
-  },
-  copiedArtifacts: copiedNames.map((copiedName) => ({
-    name: copiedName,
-    artifactKind: artifactKind === 'pattern' ? ('pattern' as const) : ('skin' as const),
-    styling: { baseline: false, registryTailwind: true, styleless: false },
-  })),
-  styling: {
+) => {
+  const styling = {
     baseline: name === 'switch',
     registryTailwind: copiedNames.length > 0,
     styleless: true,
-  },
-  scenarioId: `component:${name}`,
-})
+  }
+  return {
+    name,
+    displayName: name,
+    category: artifactKind === 'pattern' ? 'patterns' : 'controls',
+    artifactKind,
+    machine: {
+      kind: 'public' as const,
+      importPath: `@llui/components/${artifactKind === 'pattern' ? 'patterns/' : ''}${name}`,
+    },
+    copiedArtifacts: copiedNames.map((copiedName) => ({
+      name: copiedName,
+      artifactKind: artifactKind === 'pattern' ? ('pattern' as const) : ('skin' as const),
+      styling: { baseline: false, registryTailwind: true, styleless: false },
+    })),
+    styling,
+    presentation: {
+      family: 'forms-controls' as const,
+      baseline: styling.baseline ? styledCoverage : stylelessCoverage,
+      registryTailwind: styling.registryTailwind ? styledCoverage : stylelessCoverage,
+    },
+    scenarioId: `component:${name}`,
+  }
+}
 
 describe('formatProductList', () => {
   it('explains add versus import and identifies every artifact relationship', () => {
     const registry = RegistrySchema.parse({
       name: 'test',
       productContract: {
-        version: 1,
+        version: 2,
         entries: [
           publicEntry('switch', ['switch']),
           publicEntry('presence', []),
@@ -70,6 +90,11 @@ describe('formatProductList', () => {
               },
             ],
             styling: { baseline: true, registryTailwind: true, styleless: true },
+            presentation: {
+              family: 'specialized-tools',
+              baseline: { mode: 'styled' },
+              registryTailwind: { mode: 'styled' },
+            },
           },
           {
             ...publicEntry('machine-backed-skin', ['machine-backed-skin']),
@@ -89,6 +114,11 @@ describe('formatProductList', () => {
               },
             ],
             styling: { baseline: false, registryTailwind: true, styleless: false },
+            presentation: {
+              family: 'forms-controls',
+              baseline: notApplicableCoverage,
+              registryTailwind: { mode: 'styled' },
+            },
             scenarioId: 'registry:button',
           },
           {
@@ -105,6 +135,11 @@ describe('formatProductList', () => {
               },
             ],
             styling: { baseline: false, registryTailwind: true, styleless: false },
+            presentation: {
+              family: 'specialized-tools',
+              baseline: notApplicableCoverage,
+              registryTailwind: { mode: 'styled' },
+            },
             scenarioId: 'registry:icon-set',
           },
           {
@@ -121,6 +156,11 @@ describe('formatProductList', () => {
               },
             ],
             styling: { baseline: false, registryTailwind: true, styleless: false },
+            presentation: {
+              family: 'navigation-data',
+              baseline: notApplicableCoverage,
+              registryTailwind: { mode: 'styled' },
+            },
             scenarioId: 'registry:sidebar',
           },
         ],

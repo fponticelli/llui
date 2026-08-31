@@ -12,6 +12,12 @@ const registryStyling = {
   styleless: false,
 }
 
+const styledPresentation = {
+  family: 'forms-controls',
+  baseline: { mode: 'styled' },
+  registryTailwind: { mode: 'styled' },
+}
+
 const copiedArtifact = (
   name: string,
   artifactKind: 'skin' | 'presentational' | 'pattern' = 'skin',
@@ -29,6 +35,7 @@ const entry = (name: string) => ({
   machine: { kind: 'public', importPath: `@llui/components/${name}` },
   copiedArtifacts: [copiedArtifact(name)],
   styling: { baseline: true, registryTailwind: true, styleless: true },
+  presentation: styledPresentation,
   scenarioId: `component:${name}`,
 })
 
@@ -41,7 +48,7 @@ const messagesFor = (value: unknown): string[] => {
 describe('ProductContractSchema', () => {
   it('resolves copied artifacts with their own install, display, scenario, kind, and styling identity', () => {
     const contract = ProductContractSchema.parse({
-      version: 1,
+      version: 2,
       entries: [
         {
           ...entry('date-picker'),
@@ -81,7 +88,7 @@ describe('ProductContractSchema', () => {
 
   it('rejects duplicate canonical identities', () => {
     const messages = messagesFor({
-      version: 1,
+      version: 2,
       entries: [entry('switch'), entry('switch')],
       aliases: [],
     })
@@ -97,7 +104,7 @@ describe('ProductContractSchema', () => {
     }
 
     const messages = messagesFor({
-      version: 1,
+      version: 2,
       entries: [entry('switch'), other],
       aliases: [],
     })
@@ -110,14 +117,14 @@ describe('ProductContractSchema', () => {
 
   it('requires aliases to resolve directly to a canonical entry', () => {
     const broken = messagesFor({
-      version: 1,
+      version: 2,
       entries: [entry('breadcrumbs')],
       aliases: [{ name: 'crumbs', canonicalName: 'missing' }],
     })
     expect(broken).toContain('Alias "crumbs" targets unknown canonical identity "missing".')
 
     const chain = messagesFor({
-      version: 1,
+      version: 2,
       entries: [entry('breadcrumbs')],
       aliases: [
         { name: 'breadcrumb', canonicalName: 'breadcrumbs' },
@@ -129,7 +136,7 @@ describe('ProductContractSchema', () => {
     )
 
     const cycle = messagesFor({
-      version: 1,
+      version: 2,
       entries: [entry('breadcrumbs')],
       aliases: [
         { name: 'crumbs', canonicalName: 'breadcrumb' },
@@ -143,7 +150,7 @@ describe('ProductContractSchema', () => {
 
   it('rejects duplicate aliases and canonical-name collisions', () => {
     const messages = messagesFor({
-      version: 1,
+      version: 2,
       entries: [entry('switch')],
       aliases: [
         { name: 'toggle', canonicalName: 'switch' },
@@ -158,14 +165,14 @@ describe('ProductContractSchema', () => {
 
   it('requires aliases to name copied artifacts owned by their canonical entry', () => {
     const missingTarget = messagesFor({
-      version: 1,
+      version: 2,
       entries: [entry('breadcrumbs')],
       aliases: [{ name: 'breadcrumb', canonicalName: 'breadcrumbs' }],
     })
     expect(missingTarget).toContain('Alias "breadcrumb" is not a copied artifact of "breadcrumbs".')
 
     const wrongOwner = messagesFor({
-      version: 1,
+      version: 2,
       entries: [
         entry('breadcrumbs'),
         { ...entry('toggle'), copiedArtifacts: [copiedArtifact('breadcrumb')] },
@@ -183,7 +190,7 @@ describe('ProductContractSchema', () => {
       artifactKind: 'machine',
       machine: { kind: 'none', reason: 'presentational' },
     }
-    expect(messagesFor({ version: 1, entries: [machineFree], aliases: [] })).toContain(
+    expect(messagesFor({ version: 2, entries: [machineFree], aliases: [] })).toContain(
       'Machine "button" must reference its public package import.',
     )
 
@@ -191,7 +198,7 @@ describe('ProductContractSchema', () => {
       ...entry('badge'),
       artifactKind: 'presentational',
     }
-    expect(messagesFor({ version: 1, entries: [inventedMachine], aliases: [] })).toContain(
+    expect(messagesFor({ version: 2, entries: [inventedMachine], aliases: [] })).toContain(
       'Presentational item "badge" must be explicitly machine-free.',
     )
 
@@ -201,7 +208,7 @@ describe('ProductContractSchema', () => {
       machine: { kind: 'none', reason: 'application-owned-state' },
     }
     expect(
-      ProductContractSchema.safeParse({ version: 1, entries: [intentionalSkin], aliases: [] })
+      ProductContractSchema.safeParse({ version: 2, entries: [intentionalSkin], aliases: [] })
         .success,
     ).toBe(true)
 
@@ -213,14 +220,14 @@ describe('ProductContractSchema', () => {
       styling: { baseline: true, registryTailwind: false, styleless: false },
     }
     expect(
-      messagesFor({ version: 1, entries: [unpublishedPresentational], aliases: [] }),
+      messagesFor({ version: 2, entries: [unpublishedPresentational], aliases: [] }),
     ).toContain('Presentational item "badge" must declare at least one copied artifact.')
   })
 
   it('requires every styling mode classification and keeps registry support in sync with skins', () => {
     const missingMode = entry('switch') as Record<string, unknown>
     missingMode.styling = { baseline: true, registryTailwind: true }
-    expect(messagesFor({ version: 1, entries: [missingMode], aliases: [] })).toContain(
+    expect(messagesFor({ version: 2, entries: [missingMode], aliases: [] })).toContain(
       'Invalid input: expected boolean, received undefined',
     )
 
@@ -228,7 +235,7 @@ describe('ProductContractSchema', () => {
       ...entry('switch'),
       copiedArtifacts: [],
     }
-    expect(messagesFor({ version: 1, entries: [inconsistent], aliases: [] })).toContain(
+    expect(messagesFor({ version: 2, entries: [inconsistent], aliases: [] })).toContain(
       'Product "switch" declares registry/Tailwind support but has no copied artifact.',
     )
 
@@ -241,7 +248,7 @@ describe('ProductContractSchema', () => {
         },
       ],
     }
-    expect(messagesFor({ version: 1, entries: [missingCopiedMode], aliases: [] })).toContain(
+    expect(messagesFor({ version: 2, entries: [missingCopiedMode], aliases: [] })).toContain(
       'Invalid input: expected boolean, received undefined',
     )
   })
@@ -255,7 +262,7 @@ describe('ProductContractSchema', () => {
       scenarioId: 'pattern:command-menu',
     }
 
-    expect(messagesFor({ version: 1, entries: [wrongKind], aliases: [] })).toContain(
+    expect(messagesFor({ version: 2, entries: [wrongKind], aliases: [] })).toContain(
       'Copied artifact "command" is classified as skin, but product "command-menu" requires pattern.',
     )
   })
@@ -269,14 +276,14 @@ describe('ProductContractSchema', () => {
       ],
     }
 
-    expect(messagesFor({ version: 1, entries: [product], aliases: [] })).toContain(
+    expect(messagesFor({ version: 2, entries: [product], aliases: [] })).toContain(
       'Copied artifact "calendar" in multi-artifact product "date-picker" must declare its scenario identity explicitly.',
     )
   })
 
   it('resolves aliases to one canonical identity', () => {
     const contract = ProductContractSchema.parse({
-      version: 1,
+      version: 2,
       entries: [{ ...entry('breadcrumbs'), copiedArtifacts: [copiedArtifact('breadcrumb')] }],
       aliases: [{ name: 'breadcrumb', canonicalName: 'breadcrumbs' }],
     })
@@ -296,6 +303,14 @@ describe('ProductContractSchema', () => {
       ...entry('form'),
       copiedArtifacts: [],
       styling: { baseline: false, registryTailwind: false, styleless: true },
+      presentation: {
+        family: 'forms-controls',
+        baseline: { mode: 'styleless', rationale: 'The machine is intentionally headless.' },
+        registryTailwind: {
+          mode: 'styleless',
+          rationale: 'The machine is intentionally headless.',
+        },
+      },
     }
     const pattern = {
       ...entry('form-field'),
@@ -305,7 +320,7 @@ describe('ProductContractSchema', () => {
       scenarioId: 'pattern:form-field',
     }
     const contract = ProductContractSchema.parse({
-      version: 1,
+      version: 2,
       entries: [machine, pattern],
       aliases: [],
     })
@@ -319,7 +334,7 @@ describe('ProductContractSchema', () => {
 describe('assertProductInventory', () => {
   const contract = () =>
     ProductContractSchema.parse({
-      version: 1,
+      version: 2,
       entries: [entry('switch')],
       aliases: [],
     })
