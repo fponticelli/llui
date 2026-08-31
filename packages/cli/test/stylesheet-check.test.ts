@@ -49,23 +49,14 @@ describe('baseline stylesheet detection', () => {
   })
 
   it('does not mistake tokens-dark for the baseline', async () => {
-    // `tokens-dark.css` and `theme-dark.css` differ by four characters, and
-    // matching the wrong one would warn every correctly-configured project —
-    // a check that cries wolf gets ignored, which is worse than no check.
+    // Matching a registry token entry would warn every correctly-configured
+    // project — a check that cries wolf gets ignored, which is worse than no
+    // check.
     const dir = await project({
       'src/a.css': "@import '@llui/components/styles/tokens-dark.css';\n",
     })
     try {
       expect(await findBaselineImports(dir)).toEqual([])
-    } finally {
-      await rm(dir, { recursive: true, force: true })
-    }
-  })
-
-  it('finds theme-dark.css too', async () => {
-    const dir = await project({ 'app.css': "@import '@llui/components/styles/theme-dark.css';\n" })
-    try {
-      expect(await findBaselineImports(dir)).toEqual(['app.css'])
     } finally {
       await rm(dir, { recursive: true, force: true })
     }

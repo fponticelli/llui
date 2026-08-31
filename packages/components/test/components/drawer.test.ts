@@ -38,13 +38,14 @@ describe('drawer.connect', () => {
     expect(parts.content['aria-modal']).toBe('true')
   })
 
-  it('data-side reflects side option', () => {
-    const right = connect(rootSignal(), vi.fn(), { id: 'x', side: 'right' })
-    const left = connect(rootSignal(), vi.fn(), { id: 'y', side: 'left' })
-    expect(right.content['data-side']).toBe('right')
-    expect(left.content['data-side']).toBe('left')
-    expect(right.positioner['data-side']).toBe('right')
-  })
+  it.each(['left', 'right', 'top', 'bottom'] as const)(
+    'publishes the physical %s side on content and positioner',
+    (side) => {
+      const sided = connect(rootSignal(), vi.fn(), { id: `drawer-${side}`, side })
+      expect(sided.content['data-side']).toBe(side)
+      expect(sided.positioner['data-side']).toBe(side)
+    },
+  )
 
   it('default side is right', () => {
     expect(parts.content['data-side']).toBe('right')

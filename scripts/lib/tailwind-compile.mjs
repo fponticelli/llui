@@ -17,22 +17,23 @@ import { fileURLToPath } from 'node:url'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..')
 const STYLES = path.join(ROOT, 'packages/components/src/styles')
 
-/** The package theme alone — the correct input for REGISTRY classes, which are
- * Tailwind utilities by policy and have no other stylesheet to come from. */
-export const THEME_ONLY = [
+/** The explicit registry token entries — the correct input for copied skins,
+ * which are Tailwind utilities by policy and must never compile baseline
+ * component selectors. */
+export const REGISTRY_TAILWIND_ENTRY = [
   '@import "tailwindcss";',
   // shadcn's recipes use `animate-in` / `fade-in-0` / `slide-in-from-top-2`,
   // which come from `tw-animate-css`, not Tailwind core. The registry declares
   // it as a dependency, so the check must resolve it too — otherwise every
   // ported overlay recipe reports as dead CSS.
   '@import "tw-animate-css";',
-  `@import "${path.join(STYLES, 'theme.css')}";`,
-  `@import "${path.join(STYLES, 'theme-dark.css')}";`,
+  `@import "${path.join(STYLES, 'tokens.css')}";`,
+  `@import "${path.join(STYLES, 'tokens-dark.css')}";`,
 ].join('\n')
 
 /**
  * An APP's real entry CSS. App code legitimately mixes utilities with its own
- * hand-written classes, so checking it against the theme alone reports every
+ * hand-written classes, so checking it against the registry Tailwind entry alone reports every
  * plain class as dead. Compiling the entry the app actually ships means a class
  * counts as live if ANY rule defines it — utility or hand-written — which is
  * exactly the question being asked.
@@ -132,13 +133,13 @@ async function loadStylesheet(id, base) {
 
 /**
  * @param {readonly string[]} candidates
- * @param {string} [input] CSS entry to compile against — `THEME_ONLY` for
+ * @param {string} [input] CSS entry to compile against — `REGISTRY_TAILWIND_ENTRY` for
  *   registry classes, `appEntry(file)` for an app that mixes utilities with its
  *   own hand-written rules.
  * @returns {Promise<{ css: string, dead: string[] }>} `dead` lists candidates
  *   that produced no rule, in source order, so a failure names the first one.
  */
-export async function compileCandidates(candidates, input = THEME_ONLY) {
+export async function compileCandidates(candidates, input = REGISTRY_TAILWIND_ENTRY) {
   const compiler = await compile(input, { base: ROOT, loadStylesheet })
   const css = compiler.build([...candidates])
   const dead = candidates.filter((c) => !css.includes(selectorFor(c)))

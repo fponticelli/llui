@@ -1,6 +1,6 @@
 @import 'tailwindcss';
+@import '@llui/components/styles/tailwind.css';
 @import '@llui/components/styles/theme.css';
-@import '@llui/components/styles/theme-dark.css';
 
 /*
  * Brand override — the shadcn/ui token contract, so this is exactly the shape a
@@ -73,7 +73,7 @@
 
 /* Demo-specific layout */
 .demo-section {
-  border-radius: var(--radius-lg);
+  border-radius: var(--llui-radius-lg);
   border: 1px solid var(--border);
   background: var(--card);
   padding: 1.5rem;
@@ -100,14 +100,14 @@
   height: 2.25rem;
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--llui-radius-md);
   background: transparent;
   padding: 0.25rem 0.75rem;
   font-size: 0.875rem;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--llui-shadow-sm);
   transition:
-    color var(--transition-duration-fast),
-    box-shadow var(--transition-duration-fast);
+    color var(--llui-duration-fast),
+    box-shadow var(--llui-duration-fast);
 }
 
 .input::placeholder {

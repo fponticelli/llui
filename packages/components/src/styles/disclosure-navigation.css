@@ -1,0 +1,321 @@
+/*
+ * @llui/components — baseline disclosure and navigation components
+ *
+ * Ordinary published CSS. Import semantic-tokens.css,
+ * semantic-tokens-dark.css, and foundation.css before a family module,
+ * or import theme.css for the deterministic complete theme.
+ */
+
+/* ─── Accordion ─── */
+
+[data-scope='accordion'][data-part='root'] {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--llui-radius-lg);
+  overflow: hidden;
+}
+
+[data-scope='accordion'][data-part='item'] {
+  border-bottom: 1px solid var(--border);
+}
+
+[data-scope='accordion'][data-part='item']:last-child {
+  border-bottom: none;
+}
+
+[data-scope='accordion'][data-part='trigger'] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: var(--llui-space-3) var(--llui-space-4);
+  font-weight: 500;
+  background: var(--card);
+  border: none;
+  cursor: pointer;
+  transition: background var(--llui-duration-fast);
+}
+
+[data-scope='accordion'][data-part='trigger']:hover {
+  background: var(--accent);
+}
+
+[data-scope='accordion'][data-part='trigger'][data-state='open'] {
+  background: var(--muted);
+}
+
+[data-scope='accordion'][data-part='content'] {
+  padding: var(--llui-space-4);
+}
+
+[data-scope='accordion'][data-part='content'][hidden] {
+  display: none;
+}
+
+/* ─── Tabs ─── */
+
+[data-scope='tabs'][data-part='root'] {
+  display: flex;
+  flex-direction: column;
+}
+
+[data-scope='tabs'][data-part='root'][data-orientation='vertical'] {
+  flex-direction: row;
+}
+
+[data-scope='tabs'][data-part='list'] {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  gap: var(--llui-space-1);
+  position: relative;
+}
+
+[data-scope='tabs'][data-part='list'][aria-orientation='vertical'] {
+  flex-direction: column;
+  border-bottom: none;
+  border-inline-end: 1px solid var(--border);
+}
+
+[data-scope='tabs'][data-part='trigger'] {
+  padding: var(--llui-space-2) var(--llui-space-4);
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  transition: all var(--llui-duration-fast);
+}
+
+[data-scope='tabs'][data-part='trigger']:hover {
+  color: var(--foreground);
+}
+
+[data-scope='tabs'][data-part='trigger'][data-state='active'] {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+
+[data-scope='tabs'][data-part='panel'] {
+  padding: var(--llui-space-4);
+}
+
+[data-scope='tabs'][data-part='panel'][hidden] {
+  display: none;
+}
+
+[data-scope='tabs'][data-part='indicator'] {
+  position: absolute;
+  bottom: 0;
+  height: 2px;
+  background: var(--primary);
+  transition: all var(--llui-duration-normal) ease;
+  left: var(--indicator-left, 0);
+  width: var(--indicator-width, 0);
+}
+
+/* ─── Pagination ─── */
+
+[data-scope='pagination'][data-part='root'] {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--llui-space-1);
+}
+
+[data-scope='pagination'][data-part='item'],
+[data-scope='pagination'][data-part='prev-trigger'],
+[data-scope='pagination'][data-part='next-trigger'] {
+  min-width: 2rem;
+  padding: 0.375rem var(--llui-space-2);
+  border: 1px solid var(--border);
+  background: var(--card);
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  border-radius: var(--llui-radius-sm);
+  transition: all var(--llui-duration-fast);
+}
+
+[data-scope='pagination'][data-part='item']:hover:not(:disabled),
+[data-scope='pagination'][data-part='prev-trigger']:hover:not(:disabled),
+[data-scope='pagination'][data-part='next-trigger']:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--border-hover);
+}
+
+[data-scope='pagination'][data-part='item'][aria-current='page'] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+[data-scope='pagination'][data-part='ellipsis'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+}
+
+/* ─── Steps ─── */
+
+[data-scope='steps'][data-part='root'] {
+  display: flex;
+  align-items: center;
+  gap: var(--llui-space-2);
+}
+
+[data-scope='steps'][data-part='item'] {
+  display: flex;
+  align-items: center;
+  gap: var(--llui-space-2);
+  flex: 1;
+}
+
+[data-scope='steps'][data-part='trigger'] {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-scope='steps'][data-part='trigger'][data-status='current'] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-foreground);
+}
+
+[data-scope='steps'][data-part='trigger'][data-status='completed'] {
+  background: rgb(34 197 94);
+  border-color: rgb(34 197 94);
+  color: var(--primary-foreground);
+}
+
+[data-scope='steps'][data-part='separator'] {
+  flex: 1;
+  height: 2px;
+  background: var(--border);
+}
+
+[data-scope='steps'][data-part='separator'][data-status='completed'] {
+  background: rgb(34 197 94);
+}
+
+/* ─── Carousel ─── */
+
+[data-scope='carousel'][data-part='root'] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--llui-space-2);
+}
+
+[data-scope='carousel'][data-part='viewport'] {
+  position: relative;
+  height: 8rem;
+  border-radius: var(--llui-radius-lg);
+  overflow: hidden;
+}
+
+[data-scope='carousel'][data-part='slide'] {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary-foreground);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+[data-scope='carousel'][data-part='indicator-group'] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--llui-space-1);
+}
+
+[data-scope='carousel'][data-part='indicator'] {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 9999px;
+  background: var(--border);
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+[data-scope='carousel'][data-part='indicator'][aria-selected='true'] {
+  background: var(--primary);
+}
+
+[data-scope='carousel'][data-part='next-trigger'],
+[data-scope='carousel'][data-part='prev-trigger'] {
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-size: 1rem;
+  color: var(--muted-foreground);
+}
+
+[data-scope='carousel'][data-part='next-trigger']:hover,
+[data-scope='carousel'][data-part='prev-trigger']:hover {
+  color: var(--foreground);
+}
+
+/* ─── Tree View ─── */
+
+[data-scope='tree-view'][data-part='root'] {
+  font-size: 0.875rem;
+}
+
+[data-scope='tree-view'][data-part='item'] {
+  display: flex;
+  align-items: center;
+  gap: var(--llui-space-1);
+  padding: var(--llui-space-1) var(--llui-space-2);
+  border-radius: var(--llui-radius-sm);
+  cursor: pointer;
+}
+
+[data-scope='tree-view'][data-part='item']:hover {
+  background: var(--accent);
+}
+
+[data-scope='tree-view'][data-part='item'][data-selected=''] {
+  background: color-mix(in srgb, var(--primary) 15%, transparent);
+  color: var(--primary-soft-foreground);
+}
+
+[data-scope='tree-view'][data-part='branch-trigger'] {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--llui-radius-sm);
+  background: transparent;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  padding: 0;
+  font-size: 1rem;
+  transition:
+    transform var(--llui-duration-fast),
+    background-color var(--llui-duration-fast);
+}
+
+[data-scope='tree-view'][data-part='branch-trigger']:hover {
+  background: var(--accent-strong);
+}
+
+[data-scope='tree-view'][data-part='branch-trigger'][data-state='open'] {
+  transform: rotate(90deg);
+}

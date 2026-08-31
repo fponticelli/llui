@@ -139,9 +139,9 @@ Shared helpers used internally and exported for advanced use:
 
 ## Styling (opt-in)
 
-Components are fully headless by default. An opt-in styling layer provides two complementary mechanisms:
+Components are fully headless by default. Two independent styling distributions are available; choose one for component parts.
 
-### CSS theme -- `theme.css`
+### CSS theme — `theme.css`
 
 Import once at your app root for a complete default look based on `data-scope`/`data-part` attribute selectors:
 
@@ -149,46 +149,41 @@ Import once at your app root for a complete default look based on `data-scope`/`
 import '@llui/components/styles/theme.css'
 ```
 
-Includes design tokens (`@theme`) and enter/exit animations for overlays. Override any token in your own CSS:
+This is ordinary published CSS. It requires no Tailwind dependency, plugin, configuration, or preprocessing step. The complete entry deterministically composes semantic light/dark tokens, cross-family focus/disabled/direction/motion foundations, and reviewable component-family modules. Override semantic tokens in plain CSS:
 
 ```css
-@theme {
-  --color-primary: #8b5cf6;
-  --radius-lg: 1rem;
+:root {
+  --primary: oklch(0.55 0.21 258);
+  --llui-radius-lg: 1rem;
 }
 ```
 
-For dark mode, import the separate dark theme file **after** Tailwind and theme.css:
+Dark tokens are included. The theme follows `prefers-color-scheme`, `.dark`, and `[data-theme='dark']`; `[data-theme='light']` or `.light` opts out. The former second `theme-dark.css` import must be removed; that redundant subpath is no longer exported.
 
-```typescript
-import '@llui/components/styles/theme-dark.css'
+For a custom bundle, import `semantic-tokens.css`, `semantic-tokens-dark.css`, and `foundation.css` first, then only the public family entries you need: `form-controls.css`, `disclosure-navigation.css`, `menus-overlays.css`, `data-display.css`, `layout.css`, and `motion.css`.
+
+The non-colour baseline names deliberately moved out of Tailwind namespaces: `--radius-md`, `--shadow-sm`, `--transition-duration-fast`, `--z-index-dialog`, and `--spacing-2` become `--llui-radius-md`, `--llui-shadow-sm`, `--llui-duration-fast`, `--llui-z-dialog`, and `--llui-space-2`. Base shadcn token names such as `--primary` and `--radius` are unchanged.
+
+Disabled component parts now share the foundation's `--llui-disabled-opacity` value (default `0.5`) instead of repeating family-specific literals. Override that token once to adjust the complete baseline.
+
+### Tailwind class recipes — from the registry, not from this package
+
+There are no per-component `xClasses()` helpers. They were removed: they had
+no consumer, and 116 of their utility occurrences compiled to no CSS at all.
+Class recipes now ship as **registry source you own and edit**, copied into
+your project by the CLI and verified against a real Tailwind build:
+
+```sh
+npx @llui/cli add tabs
 ```
 
-This activates automatically via `prefers-color-scheme: dark`. Force light with `<html data-theme="light">`, force dark with `<html data-theme="dark">`. The dark file is separate because Tailwind 4's `@theme` scanner would otherwise merge dark tokens into the root theme.
-
-### JS class helpers -- Tailwind utility strings
-
-Each component has a class helper that returns Tailwind utility strings per part, with size/variant props:
-
-```typescript
-import { tabsClasses } from '@llui/components/styles/tabs'
-
-const cls = tabsClasses({ size: 'sm', variant: 'pill' })
-// cls.root, cls.list, cls.trigger, cls.panel, cls.indicator
-
-div({ ...t.root, class: cls.root }, [
-  div({ ...t.list, class: cls.list }, [
-    button({ ...t.item('a').trigger, class: cls.trigger }, [text('Tab A')]),
-  ]),
-  div({ ...t.item('a').panel, class: cls.panel }, [text('Content A')]),
-])
-```
-
-Or import everything from the barrel:
-
-```typescript
-import { tabsClasses, dialogClasses, cx } from '@llui/components/styles'
-```
+The copied component spreads the part bag and carries the recipe itself, so a
+skin change is an edit in your own tree rather than a version bump here.
+The registry is an explicit Tailwind v4 path. Import `tokens.css` and
+`tokens-dark.css` through that pipeline — **not** `theme.css`, whose unlayered
+baseline rules would override every recipe. `tokens.css` reaches the shared
+semantic values plus the isolated `tailwind.css` utility mapping; it never
+imports a baseline family selector.
 
 ### Variant engine
 

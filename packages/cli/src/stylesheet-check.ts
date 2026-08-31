@@ -21,7 +21,7 @@ import path from 'node:path'
  * narrowed to `tokens.css`.
  */
 
-const BASELINE = /@import\s+['"][^'"]*@llui\/components\/styles\/theme(-dark)?\.css['"]/
+const BASELINE = /@import\s+['"][^'"]*@llui\/components\/styles\/theme\.css['"]/
 const TOKENS = /@import\s+['"][^'"]*@llui\/components\/styles\/tokens(-dark)?\.css['"]/
 
 const SKIP_DIRS = new Set(['node_modules', 'dist', 'build', '.git', '.next', 'coverage'])

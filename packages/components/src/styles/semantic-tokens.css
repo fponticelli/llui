@@ -1,0 +1,159 @@
+/*
+ * @llui/components — shared semantic design tokens
+ *
+ * Plain CSS consumed by both the zero-build baseline theme and the copied
+ * Tailwind registry path. This file contains values only: no Tailwind
+ * directives, utility mappings, component selectors, or preprocessing contract.
+ */
+
+/* ─── Base tokens (shadcn/ui contract) ─── */
+:root {
+  --radius: 0.625rem;
+
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
+
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+}
+
+/*
+ * ─── Derived interaction tokens (LLui) ───
+ *
+ * `color-mix` toward `--foreground` rather than toward a fixed dark, so the same
+ * expression darkens on a light theme and lightens on a dark one — `--foreground`
+ * is near-black in light mode and near-white in dark. No `.dark` override needed
+ * for any token in this block, which is why they are defined ONCE, outside the
+ * theme blocks a generator overwrites.
+ */
+:root {
+  --accent-strong: color-mix(in oklab, var(--accent) 82%, var(--foreground));
+  --border-hover: color-mix(in oklab, var(--border) 70%, var(--foreground));
+  --primary-hover: color-mix(in oklab, var(--primary) 88%, var(--foreground));
+  --primary-active: color-mix(in oklab, var(--primary) 76%, var(--foreground));
+  --destructive-hover: color-mix(in oklab, var(--destructive) 86%, var(--foreground));
+  /* Foreground for primary-tinted "soft" surfaces — selected/highlighted list
+   * items, tags, etc. (paired with a `color-mix(primary 15%, transparent)`
+   * background). Mixed toward `--foreground` so it stays legible against the
+   * tint in BOTH themes. */
+  --primary-soft-foreground: color-mix(in oklab, var(--primary) 70%, var(--foreground));
+
+  /*
+   * ─── Value-hued categorical chips ───
+   *
+   * A chip's colour is DERIVED from its value: `chipHue(value)` (from
+   * `@llui/components/styles`) hashes the string to a hue and the consumer sets
+   * it as `--chip-hue` on the element. Lightness, chroma and the mix ratio are
+   * fixed here, which is what makes ONE contrast measurement cover every
+   * category — see `registry/llui/ui/chip.ts` for the two expressions that read
+   * them, and `scripts/test/chip-contrast.test.ts`, which sweeps all 360 hues in
+   * both themes against the values below and fails under 4.5:1.
+   *
+   * OKLCH, not HSL, and that is the whole reason the guarantee holds. HSL's `L`
+   * is a channel average rather than a perceived lightness, so `hsl(H 55% 30%)`
+   * on `hsl(H 58% 91%)` — the obvious formulation — swings from 4.30:1 at H=60
+   * to 9.85:1 at H=240 and drops BELOW AA at 17 hues. In OKLab the same sweep
+   * spans 7.04:1–7.54:1 (6.90:1–7.50:1 as Chrome actually rasterises it, which
+   * clips out-of-gamut chroma instead of gamut-mapping it). So: AA everywhere
+   * with more than 1.5x margin, and at the AAA line rather than safely past it.
+   *
+   * There is deliberately NO `--chip-fill` / `--chip-ink` token here, and it is
+   * not an omission: a custom property's `var()` references are substituted at
+   * the computed-value time of the element that DECLARES it, so a `--chip-fill`
+   * defined on `:root` would bake in `:root`'s `--chip-hue` and every chip would
+   * inherit the same colour. The colour expressions have to live in a rule that
+   * matches the chip.
+   *
+   * `--chip-mix` is one percentage for BOTH ends because `--background` and
+   * `--foreground` swap between themes: at 40% the light ink and the dark fill
+   * are EXACTLY the same colour (OKLab L 0.359 either way), and the light fill
+   * and the dark ink are very nearly so — 0.872 against 0.863, because
+   * `--foreground` is 0.985 rather than a true white. That 0.009 asymmetry is
+   * small but it is not nothing: it is precisely why dark measures below light
+   * at every hue (6.90–7.32 against 7.10–7.54). Same trick as the derived
+   * tokens above, and why the chip needs no dark override.
+   *
+   * `--chip-hue` is a DEFAULT (an unreserved slot), so a chip rendered without a
+   * value still paints instead of resolving to an invalid `oklch()`.
+   */
+  --chip-lightness: 0.68;
+  --chip-chroma: 0.2;
+  --chip-mix: 40%;
+  --chip-hue: 230.5;
+
+  /* Spacing steps used by the baseline family rules. Their values also match
+   * Tailwind's built-in numeric scale, so the registry entry does not need to
+   * redefine that scale. */
+  --llui-space-1: 0.25rem;
+  --llui-space-2: 0.5rem;
+  --llui-space-3: 0.75rem;
+  --llui-space-4: 1rem;
+  --llui-space-6: 1.5rem;
+  --llui-space-8: 2rem;
+
+  /* Sidebar layout. shadcn sets these inline on its provider; defaulting them
+   * here means a registry Sidebar lays out with no wiring, and overriding one on
+   * the wrapper still resizes the whole thing (`w-(--sidebar-width)` and
+   * `group-data-[collapsible=icon]:w-(--sidebar-width-icon)` both read them). */
+  --sidebar-width: 16rem;
+  --sidebar-width-icon: 3rem;
+  --sidebar-width-mobile: 18rem;
+}
+
+/* ─── Shared semantic scales and state conventions ─── */
+:root {
+  --llui-radius-sm: calc(var(--radius) - 4px);
+  --llui-radius-md: calc(var(--radius) - 2px);
+  --llui-radius-lg: var(--radius);
+  --llui-radius-xl: calc(var(--radius) + 4px);
+
+  --llui-shadow-2xs: 0 1px rgba(0, 0, 0, 0.05);
+  --llui-shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --llui-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --llui-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  --llui-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+
+  --llui-duration-fast: 150ms;
+  --llui-duration-normal: 200ms;
+
+  --llui-z-popover: 50;
+  --llui-z-dialog: 100;
+  --llui-z-tooltip: 150;
+
+  --llui-animation-accordion-down: accordion-down 0.2s ease-out;
+  --llui-animation-accordion-up: accordion-up 0.2s ease-out;
+  --llui-animation-caret-blink: caret-blink 1.25s ease-out infinite;
+
+  --llui-focus-ring-width: 2px;
+  --llui-focus-ring-offset: 2px;
+  --llui-disabled-opacity: 0.5;
+}

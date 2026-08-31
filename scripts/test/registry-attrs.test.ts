@@ -552,12 +552,11 @@ describe('registry recipes only style attributes their machine publishes', () =>
 /**
  * The SAME invariant, applied to the other styling path.
  *
- * `theme.css` is the opt-in BASELINE stylesheet — 1748 lines of
- * `[data-scope][data-part]` rules that make components look finished without
- * Tailwind. It keys off exactly the same `data-*` contract the registry recipes
- * do, so it can rot in exactly the same way: a selector naming an attribute the
- * machine never publishes is valid CSS that never matches, with no error and no
- * warning.
+ * `theme.css` is the complete BASELINE entry. Its ordered family imports carry
+ * the `[data-scope][data-part]` rules that make components look finished without
+ * Tailwind. They key off exactly the same `data-*` contract the registry recipes
+ * do, so they can rot in exactly the same way: a selector naming an attribute
+ * the machine never publishes is valid CSS that never matches.
  *
  * It had no check at all until this ran ad hoc and found one — the drawer's
  * enter animation selected `[data-placement=…]` against a machine publishing
@@ -566,7 +565,20 @@ describe('registry recipes only style attributes their machine publishes', () =>
  * one is caught at the commit that writes it rather than whenever someone
  * thinks to look.
  */
-const THEME_CSS = path.join(ROOT, 'packages/components/src/styles/theme.css')
+const STYLES = path.join(ROOT, 'packages/components/src/styles')
+
+/** Read the concrete modules composed by the public complete-theme entry. */
+async function baselineCss(): Promise<string> {
+  const entry = await readFile(path.join(STYLES, 'theme.css'), 'utf8')
+  const imports = [
+    ...entry.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/@import ['"]\.\/([^'"]+)['"]/g),
+  ]
+    .map((match) => match[1])
+    .filter((file): file is string => file !== undefined)
+  return (await Promise.all(imports.map((file) => readFile(path.join(STYLES, file), 'utf8')))).join(
+    '\n',
+  )
+}
 
 /** scope → the `data-*` / `aria-*` names its rules select on. */
 function themeAttrsByScope(css: string): Map<string, Set<string>> {
@@ -653,7 +665,7 @@ const THEME_VALUE_ALLOWED: Record<string, Allowance> = {}
 
 describe('the baseline stylesheet only styles attributes its machine publishes', () => {
   it('maps every styled scope to a machine', async () => {
-    const byScope = themeAttrsByScope(await readFile(THEME_CSS, 'utf8'))
+    const byScope = themeAttrsByScope(await baselineCss())
     expect(byScope.size).toBeGreaterThan(20)
     const unmapped = [...byScope.keys()].filter(
       (s) =>
@@ -668,7 +680,7 @@ describe('the baseline stylesheet only styles attributes its machine publishes',
   })
 
   it('reports no dead rule', async () => {
-    const byScope = themeAttrsByScope(await readFile(THEME_CSS, 'utf8'))
+    const byScope = themeAttrsByScope(await baselineCss())
     const problems: string[] = []
     for (const [scope, attrs] of byScope) {
       const published = await machineAttrs(THEME_MACHINE_OF[scope] ?? [scope])
@@ -682,7 +694,7 @@ describe('the baseline stylesheet only styles attributes its machine publishes',
   })
 
   it('reports no dead rule VALUE', async () => {
-    const byScope = themeAttrValuesByScope(await readFile(THEME_CSS, 'utf8'))
+    const byScope = themeAttrValuesByScope(await baselineCss())
     const problems: string[] = []
     let judged = 0
     for (const [scope, pairs] of byScope) {

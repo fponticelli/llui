@@ -171,7 +171,7 @@ describe('applyTheme', () => {
  */
 describe('applyTheme pairs with the selectors tokens-dark.css actually ships', () => {
   const css = readFileSync(
-    resolve(import.meta.dirname, '../../src/styles/tokens-dark.css'),
+    resolve(import.meta.dirname, '../../src/styles/semantic-tokens-dark.css'),
     'utf8',
     // Both blocks carry prose ABOUT their own selectors, so a match run over the
     // raw text captures the comment as part of the selector.

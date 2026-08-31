@@ -317,10 +317,19 @@
       "types": "./dist/patterns/searchable-select.d.ts",
       "import": "./dist/patterns/searchable-select.js"
     },
+    "./styles/semantic-tokens.css": "./dist/styles/semantic-tokens.css",
+    "./styles/semantic-tokens-dark.css": "./dist/styles/semantic-tokens-dark.css",
+    "./styles/foundation.css": "./dist/styles/foundation.css",
+    "./styles/form-controls.css": "./dist/styles/form-controls.css",
+    "./styles/disclosure-navigation.css": "./dist/styles/disclosure-navigation.css",
+    "./styles/menus-overlays.css": "./dist/styles/menus-overlays.css",
+    "./styles/data-display.css": "./dist/styles/data-display.css",
+    "./styles/layout.css": "./dist/styles/layout.css",
+    "./styles/motion.css": "./dist/styles/motion.css",
+    "./styles/tailwind.css": "./dist/styles/tailwind.css",
     "./styles/tokens.css": "./dist/styles/tokens.css",
     "./styles/tokens-dark.css": "./dist/styles/tokens-dark.css",
     "./styles/theme.css": "./dist/styles/theme.css",
-    "./styles/theme-dark.css": "./dist/styles/theme-dark.css",
     "./styles": {
       "types": "./dist/styles/index.d.ts",
       "import": "./dist/styles/index.js"
@@ -332,20 +341,15 @@
   },
   "scripts": {
     "prepack": "pnpm run build",
-    "build": "tsc -p tsconfig.build.json && mkdir -p dist/styles && cp src/styles/theme.css src/styles/theme-dark.css src/styles/tokens.css src/styles/tokens-dark.css dist/styles/",
+    "build": "tsc -p tsconfig.build.json && pnpm run publish:styles",
+    "publish:styles": "node ../../scripts/publish-component-styles.mjs",
     "check": "tsc --noEmit -p tsconfig.check.json",
     "lint": "eslint src test",
     "test": "vitest run"
   },
   "peerDependencies": {
     "@llui/dom": "workspace:^",
-    "@llui/interactions": "workspace:^",
-    "tailwindcss": "^4.0.0"
-  },
-  "peerDependenciesMeta": {
-    "tailwindcss": {
-      "optional": true
-    }
+    "@llui/interactions": "workspace:^"
   },
   "devDependencies": {
     "@llui/compiler": "workspace:*",
@@ -355,10 +359,7 @@
     "vitest": "^4.1.2"
   },
   "sideEffects": [
-    "./dist/styles/theme.css",
-    "./dist/styles/theme-dark.css",
-    "./dist/styles/tokens.css",
-    "./dist/styles/tokens-dark.css"
+    "./dist/styles/*.css"
   ],
   "dependencies": {
     "@standard-schema/spec": "^1.0.0"

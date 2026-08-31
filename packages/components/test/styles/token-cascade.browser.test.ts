@@ -29,8 +29,8 @@ import { resolve } from 'node:path'
  */
 
 const STYLES = resolve(import.meta.dirname, '../../src/styles')
-const tokens = readFileSync(resolve(STYLES, 'tokens.css'), 'utf8')
-const tokensDark = readFileSync(resolve(STYLES, 'tokens-dark.css'), 'utf8')
+const tokens = readFileSync(resolve(STYLES, 'semantic-tokens.css'), 'utf8')
+const tokensDark = readFileSync(resolve(STYLES, 'semantic-tokens-dark.css'), 'utf8')
 
 /** The guard the stylesheet actually ships, read back out of it. */
 const MEDIA_GUARD = tokensDark

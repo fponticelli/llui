@@ -4,11 +4,12 @@
  * `--x` / `--x-foreground` surfaces plus `--border` / `--input` / `--ring`,
  * the chart and sidebar scales, and a single `--radius` that derives the rest.
  *
- * A shadcn/ui theme (including the output of the community theme generators)
- * can be pasted over the `:root` / `.dark` blocks of `theme.css` verbatim.
+ * A shadcn/ui theme (including the output of community theme generators) can
+ * replace the base `:root` / `.dark` values. The baseline reads these semantic
+ * tokens directly; `styles/tailwind.css` maps the same values independently for
+ * copied Tailwind v4 registry skins.
  *
- * Override a token in your own CSS — plain `:root`, no Tailwind needed, because
- * `theme.css` maps them into Tailwind's `--color-*` namespace with `@theme inline`:
+ * Override a token in your own CSS — plain `:root`, no Tailwind needed:
  * ```css
  * :root { --primary: oklch(0.55 0.22 264); --radius: 1rem; }
  * ```
@@ -67,37 +68,45 @@ export interface ThemeDerivedTokens {
   '--destructive-hover': string
 }
 
-/** Non-colour scales. These live in `theme.css`'s `@theme` block, so each is BOTH
- * a real custom property and a Tailwind utility (`rounded-md`, `shadow-lg`,
- * `duration-fast`, `z-dialog`).
- *
- * The namespace prefixes are load-bearing: Tailwind v4 reads durations from
- * `--transition-duration-*` and z-indexes from `--z-index-*`. Spelling them
- * `--duration-*` / `--z-*` produces valid-looking classes that emit NO CSS. */
+/** Shared non-colour semantic scales and baseline state conventions. The
+ * `--llui-*` names are ordinary custom properties used by baseline family
+ * modules. The independent Tailwind entry maps the applicable radius, shadow,
+ * duration, z-index, and animation scales to utility namespaces without
+ * duplicating their values. */
 export interface ThemeScaleTokens {
   '--radius': string
-  '--radius-sm': string
-  '--radius-md': string
-  '--radius-lg': string
-  '--radius-xl': string
+  '--llui-radius-sm': string
+  '--llui-radius-md': string
+  '--llui-radius-lg': string
+  '--llui-radius-xl': string
 
-  '--shadow-sm': string
-  '--shadow-md': string
-  '--shadow-lg': string
+  '--llui-shadow-2xs': string
+  '--llui-shadow-xs': string
+  '--llui-shadow-sm': string
+  '--llui-shadow-md': string
+  '--llui-shadow-lg': string
 
-  '--transition-duration-fast': string
-  '--transition-duration-normal': string
+  '--llui-duration-fast': string
+  '--llui-duration-normal': string
 
-  '--z-index-popover': string
-  '--z-index-dialog': string
-  '--z-index-tooltip': string
+  '--llui-z-popover': string
+  '--llui-z-dialog': string
+  '--llui-z-tooltip': string
 
-  '--spacing-1': string
-  '--spacing-2': string
-  '--spacing-3': string
-  '--spacing-4': string
-  '--spacing-6': string
-  '--spacing-8': string
+  '--llui-space-1': string
+  '--llui-space-2': string
+  '--llui-space-3': string
+  '--llui-space-4': string
+  '--llui-space-6': string
+  '--llui-space-8': string
+
+  '--llui-animation-accordion-down': string
+  '--llui-animation-accordion-up': string
+  '--llui-animation-caret-blink': string
+
+  '--llui-focus-ring-width': string
+  '--llui-focus-ring-offset': string
+  '--llui-disabled-opacity': string
 }
 
 /** The value-hued categorical chip scale. `--chip-hue` is per-CHIP (set inline

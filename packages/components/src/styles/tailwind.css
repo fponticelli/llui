@@ -1,0 +1,146 @@
+/*
+ * @llui/components — Tailwind v4 registry mapping
+ *
+ * This is the explicit Tailwind-only half of the styling distribution. The
+ * copied registry path imports it through tokens.css; the baseline theme never
+ * imports it. Values stay owned by semantic-tokens.css and are mapped here into
+ * Tailwind utility namespaces.
+ */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-strong: var(--accent-strong);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-border-hover: var(--border-hover);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-active: var(--primary-active);
+  --color-primary-soft-foreground: var(--primary-soft-foreground);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@theme inline {
+  --radius-sm: var(--llui-radius-sm);
+  --radius-md: var(--llui-radius-md);
+  --radius-lg: var(--llui-radius-lg);
+  --radius-xl: var(--llui-radius-xl);
+
+  --shadow-2xs: var(--llui-shadow-2xs);
+  --shadow-xs: var(--llui-shadow-xs);
+  --shadow-sm: var(--llui-shadow-sm);
+  --shadow-md: var(--llui-shadow-md);
+  --shadow-lg: var(--llui-shadow-lg);
+
+  --transition-duration-fast: var(--llui-duration-fast);
+  --transition-duration-normal: var(--llui-duration-normal);
+
+  --z-index-popover: var(--llui-z-popover);
+  --z-index-dialog: var(--llui-z-dialog);
+  --z-index-tooltip: var(--llui-z-tooltip);
+
+  --animate-accordion-down: var(--llui-animation-accordion-down);
+  --animate-accordion-up: var(--llui-animation-accordion-up);
+  --animate-caret-blink: var(--llui-animation-caret-blink);
+}
+
+@keyframes caret-blink {
+  0%,
+  70%,
+  100% {
+    opacity: 1;
+  }
+  20%,
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--content-height, auto);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--content-height, auto);
+  }
+  to {
+    height: 0;
+  }
+}
+
+/*
+ * ─── Base layer (shadcn/ui) ───
+ *
+ * Tailwind v4 changed the default border colour to `currentColor`, so a bare
+ * `border` in a recipe paints BLACK rather than the theme's border token. Every
+ * shadcn component relies on this rule to fix that — `Card`, `Dialog`,
+ * `Popover`, `Select` and the `outline` Button all write plain `border`.
+ * Without it they render with a hard black outline, which is what a port that
+ * copies the recipes but not this block looks like.
+ *
+ * `outline-ring/50` gives the same treatment to the focus outline colour.
+ *
+ * In `@layer base`, so ANY utility or app rule outranks it.
+ */
+@layer base {
+  * {
+    border-color: var(--border);
+    outline-color: color-mix(in oklab, var(--ring) 50%, transparent);
+  }
+
+  /*
+   * Tailwind v3's preflight set `button { cursor: pointer }`; v4 REMOVED it, so
+   * without this rule every button on the page shows the default arrow. shadcn
+   * adds it back in its own `globals.css` for exactly that reason, and its
+   * components rely on it — they set `cursor-default` (menu items),
+   * `cursor-not-allowed` (disabled) and `cursor-text` (input addons), but never
+   * `cursor-pointer`, because this is where it comes from.
+   *
+   * `:not(:disabled)` so a disabled control keeps the not-allowed cursor its own
+   * recipe sets, and `[role='button']` covers the parts LLui renders on a
+   * non-button element.
+   */
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+  }
+}
