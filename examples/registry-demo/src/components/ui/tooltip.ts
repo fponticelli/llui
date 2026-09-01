@@ -3,8 +3,10 @@ import { classPart } from '../../lib/utils'
 import { floatingOverlayMotionRecipe } from '../../lib/floating-motion'
 
 /**
- * Ported verbatim from shadcn/ui (MIT © 2023 shadcn), minus
- * `origin-(--radix-tooltip-content-transform-origin)` — see `popover.ts` for why.
+ * Ported from shadcn/ui (MIT © 2023 shadcn), with LLui's shared presence,
+ * viewport-containment, and forced-colors policies. The Radix-specific
+ * `origin-(--radix-tooltip-content-transform-origin)` is omitted; see
+ * `popover.ts` for why.
  *
  * Note the colours: shadcn's tooltip is INVERTED (`bg-foreground` on
  * `text-background`), not a popover surface. It reads as a transient hint rather
@@ -12,9 +14,9 @@ import { floatingOverlayMotionRecipe } from '../../lib/floating-motion'
  */
 export const TooltipContent = classPart(
   div,
-  `z-50 w-fit rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background ${floatingOverlayMotionRecipe}`,
+  `z-50 w-fit max-w-[min(20rem,calc(100vw-2rem))] max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain wrap-break-word rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background forced-colors:border forced-colors:border-[CanvasText] forced-colors:bg-[CanvasText] forced-colors:text-[Canvas] ${floatingOverlayMotionRecipe}`,
 )
 export const TooltipArrow = classPart(
   div,
-  'z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-foreground fill-foreground',
+  'absolute z-50 size-2.5 rotate-45 rounded-[2px] bg-foreground fill-foreground forced-colors:bg-[CanvasText] forced-colors:fill-[CanvasText]',
 )

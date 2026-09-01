@@ -71,8 +71,9 @@ export interface OverlayFloatingConfig {
   /** Reading direction — a function so it can be peeked at mount time (menu). */
   dir?: TextDirection | (() => TextDirection | undefined)
   /** Attach positioning in the MOUNT phase (survives the exit animation) rather
-   * than the interaction phase. Used by popover, whose content stays anchored
-   * while the close transition plays. */
+   * than the interaction phase. Required when `visibleWhen` unwinds interactions
+   * before `mountWhen` releases retained exit content; the engine rejects that
+   * two-phase lifetime unless placement persists with the mounted node. */
   persistent?: boolean
 }
 
@@ -202,6 +203,13 @@ export interface OverlayEngineOptions<S> {
 }
 
 export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
+  if (opts.floating && opts.visibleWhen && opts.floating.persistent !== true) {
+    throw new Error(
+      '[llui/components] A two-phase overlay requires persistent floating. ' +
+        'Mount-scoped positioning preserves resolved geometry while the node is retained for exit; ' +
+        'visibility-scoped interaction wiring still unwinds at the close request.',
+    )
+  }
   // A modal surface owns the layer everything else nests INSIDE, so it never
   // registers as a nested layer of something else.
   const isModal = opts.focusTrap !== undefined || opts.hideSiblings === true
@@ -450,8 +458,9 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
 
   const buildInner = (): Renderable => {
     const children: Mountable[] = []
-    // Persistent floating (popover): lives with the mounted node so the content
-    // stays anchored while the exit animation plays.
+    // Persistent floating lives with the mounted node so the content stays
+    // anchored while the exit animation plays. The invariant at the top of
+    // `createOverlay` makes this mandatory for every two-phase floating overlay.
     if (opts.floating?.persistent) {
       children.push(
         onMount((root) => {

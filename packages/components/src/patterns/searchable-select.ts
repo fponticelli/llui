@@ -41,8 +41,9 @@ import {
  *   trigger — there is no hard dependency.
  *
  * Async option loading and option groups are inherited from `combobox` as
- * passthrough: pass `groups`, drive `loadStart`/`loadSuccess`/`loadError`
- * through `combobox` messages via `setItems`, etc. (see `combobox` docs).
+ * passthrough: pass `groups`, then drive the pattern's typed
+ * `loadStart`/`loadSuccess`/`loadError` messages (see `combobox` docs). Request
+ * ids retain combobox's stale-response protection unchanged.
  */
 
 export type { SelectionMode, AsyncStatus, ComboboxGroup }
@@ -92,6 +93,12 @@ export type SearchableSelectMsg =
   | { type: 'triggerType'; char: string }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  /** @intent("Mark an async option fetch as started; pass the request's id") */
+  | { type: 'loadStart'; requestId: number }
+  /** @humanOnly */
+  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /** @humanOnly */
+  | { type: 'loadError'; requestId: number; error: string }
 
 export interface SearchableSelectInit {
   value?: string[]
@@ -216,6 +223,12 @@ export function update(
         disabled: msg.disabled,
       })
       return [lift(state, c), []]
+    }
+    case 'loadStart':
+    case 'loadSuccess':
+    case 'loadError': {
+      const [c] = comboboxUpdate(state.combobox, msg)
+      return c === state.combobox ? [state, []] : [lift(state, c), []]
     }
   }
 }
@@ -435,7 +448,15 @@ export function connect(
       case 'setItems':
         send({ type: 'setItems', items: m.items, disabled: m.disabled })
         return
-      // async load messages are driven by the consumer directly; ignore here
+      case 'loadStart':
+        send({ type: 'loadStart', requestId: m.requestId })
+        return
+      case 'loadSuccess':
+        send({ type: 'loadSuccess', requestId: m.requestId, items: m.items })
+        return
+      case 'loadError':
+        send({ type: 'loadError', requestId: m.requestId, error: m.error })
+        return
       default:
         return
     }

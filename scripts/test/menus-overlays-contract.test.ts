@@ -4,8 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { ProductContractSchema, type ProductEntry } from '../../packages/cli/src/product-contract'
 import {
-  MENUS_OVERLAYS_ENVIRONMENTS,
+  MENUS_OVERLAYS_ENVIRONMENT_AXES,
+  MENUS_OVERLAYS_SCENARIO_DEFINITIONS,
   menusOverlaysScenarios,
+  type MenusOverlaysScenarioId,
 } from '../lib/menus-overlays-scenarios'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -56,24 +58,43 @@ function composedBaselineEvidence(entry: ProductEntry): boolean {
 }
 
 describe('menus-overlays presentation contract', () => {
-  it('projects the sole canonical inventory into deterministic product-keyed scenarios', () => {
-    const expectedIds = canonicalFamily.map(({ name }) => name)
-    expect(expectedIds).toHaveLength(17)
+  it('projects the sole canonical inventory into scenario-keyed cases and orthogonal axes', () => {
+    const expectedScenarioIds = canonicalFamily.map(({ scenarioId }) => scenarioId)
+    expect(expectedScenarioIds).toHaveLength(17)
     expect(scenarios).toMatchObject({
       family: 'menus-overlays',
-      environments: MENUS_OVERLAYS_ENVIRONMENTS,
-      productIds: expectedIds,
+      environmentAxes: MENUS_OVERLAYS_ENVIRONMENT_AXES,
     })
-    expect(Object.keys(scenarios.byProductId)).toEqual(expectedIds)
-    expect(
-      scenarios.productIds.map((productId) => scenarios.byProductId[productId]?.scenarioId),
-    ).toEqual(canonicalFamily.map(({ scenarioId }) => scenarioId))
+    expect(scenarios.scenarios.map(({ scenarioId }) => scenarioId)).toEqual(expectedScenarioIds)
+    expect(Object.keys(scenarios.byScenarioId)).toEqual(expectedScenarioIds)
+    expect(Object.keys(MENUS_OVERLAYS_SCENARIO_DEFINITIONS)).toEqual(expectedScenarioIds)
+    expect(MENUS_OVERLAYS_ENVIRONMENT_AXES).toEqual({
+      theme: ['light', 'dark'],
+      direction: ['ltr', 'rtl'],
+      motion: ['full', 'reduced'],
+      viewport: ['wide', 'narrow'],
+      forcedColors: [false, true],
+    })
+    for (const scenario of scenarios.scenarios) {
+      const caseIds = scenario.cases.map(({ id }) => id)
+      expect(caseIds, scenario.scenarioId).toContain(scenario.defaultCaseId)
+      expect(new Set(caseIds).size, scenario.scenarioId).toBe(caseIds.length)
+      for (const scenarioCase of scenario.cases) {
+        expect(() => {
+          JSON.parse(JSON.stringify(scenarioCase.input))
+        }, scenarioCase.id).not.toThrow()
+        expect(
+          scenarioCase.environmentAxes.every((axis) => axis in MENUS_OVERLAYS_ENVIRONMENT_AXES),
+          `${scenario.scenarioId}:${scenarioCase.id}`,
+        ).toBe(true)
+      }
+    }
   })
 
   it('preserves profiles, copied-artifact scenarios, and public imports without a second classification', () => {
     for (const entry of canonicalFamily) {
-      const scenario = scenarios.byProductId[entry.name]
-      expect(scenario, entry.name).toEqual({
+      const scenario = scenarios.byScenarioId[entry.scenarioId as MenusOverlaysScenarioId]
+      expect(scenario, entry.scenarioId).toMatchObject({
         productId: entry.name,
         scenarioId: entry.scenarioId,
         displayName: entry.displayName,
@@ -85,7 +106,99 @@ describe('menus-overlays presentation contract', () => {
           scenarioId: artifact.scenarioId ?? entry.scenarioId,
         })),
       })
+      for (const scenarioCase of scenario.cases) {
+        expect(scenarioCase.input.content).toEqual({
+          label: `${entry.displayName}: ${scenarioCase.label}`,
+          detail: `Semantic ${scenarioCase.id} presentation for ${entry.scenarioId}.`,
+        })
+        expect(scenarioCase.input.overflow, `${entry.name}:${scenarioCase.id}`).toEqual(
+          scenarioCase.id === 'overflow' ? { itemCount: 24 } : undefined,
+        )
+      }
     }
+  })
+
+  it('changes renderer content when canonical display semantics change', () => {
+    const target = canonicalFamily[0]!
+    const renamed = {
+      ...contract,
+      entries: contract.entries.map((entry) =>
+        entry.name === target.name ? { ...entry, displayName: 'Mutated display name' } : entry,
+      ),
+    }
+
+    const renamedScenario =
+      menusOverlaysScenarios(renamed).byScenarioId[target.scenarioId as MenusOverlaysScenarioId]
+    for (const scenarioCase of renamedScenario.cases) {
+      expect(scenarioCase.input.content.label).toBe(`Mutated display name: ${scenarioCase.label}`)
+      expect(scenarioCase.input.content.detail).toBe(
+        `Semantic ${scenarioCase.id} presentation for ${target.scenarioId}.`,
+      )
+    }
+  })
+
+  it('rejects either side of case-definition drift against canonical scenario membership', () => {
+    const removed = canonicalFamily[0]!
+    const added = contract.entries.find((entry) => entry.presentation.family !== 'menus-overlays')!
+    const withoutCanonicalProduct = {
+      ...contract,
+      entries: contract.entries.map((entry) =>
+        entry.name === removed.name
+          ? { ...entry, presentation: { ...entry.presentation, family: 'forms-controls' as const } }
+          : entry,
+      ),
+    }
+    const withUnconfiguredProduct = {
+      ...contract,
+      entries: contract.entries.map((entry) =>
+        entry.name === added.name
+          ? { ...entry, presentation: { ...entry.presentation, family: 'menus-overlays' as const } }
+          : entry,
+      ),
+    }
+
+    expect(() => menusOverlaysScenarios(withoutCanonicalProduct)).toThrow(
+      new RegExp(`extras: .*${removed.scenarioId}`),
+    )
+    expect(() => menusOverlaysScenarios(withUnconfiguredProduct)).toThrow(
+      new RegExp(`missing: .*${added.scenarioId}`),
+    )
+  })
+
+  it('declares only applicable stable cases for unlike products', () => {
+    const caseIds = (scenarioId: MenusOverlaysScenarioId) =>
+      scenarios.byScenarioId[scenarioId].cases.map(({ id }) => id)
+    expect(caseIds('component:menu')).toEqual(['open', 'opening', 'closing', 'overflow'])
+    expect(caseIds('component:combobox')).toEqual([
+      'open',
+      'loading',
+      'empty',
+      'error',
+      'closed',
+      'overflow',
+    ])
+    expect(caseIds('component:toast')).toEqual([
+      'info',
+      'success',
+      'warning',
+      'error',
+      'loading',
+      'custom',
+      'placement-top',
+      'placement-top-start',
+      'placement-top-end',
+      'placement-bottom',
+      'placement-bottom-start',
+      'closing',
+      'overflow',
+    ])
+    const toolbar = scenarios.byScenarioId['component:toolbar']
+    expect(caseIds('component:toolbar')).toEqual(['horizontal', 'vertical', 'overflow'])
+    expect(toolbar.cases.every(({ input }) => input.presence === undefined)).toBe(true)
+    expect(caseIds('component:navigation-menu')).not.toContain('vertical')
+    expect(
+      scenarios.byScenarioId['component:navigation-menu'].unsupportedCases.map(({ id }) => id),
+    ).toContain('vertical')
   })
 
   it('has observable baseline evidence or an explicit partial/styleless boundary for every entry', () => {

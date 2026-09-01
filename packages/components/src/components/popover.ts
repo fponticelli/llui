@@ -247,7 +247,8 @@ export interface OverlayOptions {
   restoreFocus?: boolean
   /** Portal target (default: 'body'). */
   target?: string | HTMLElement
-  /** Arrow element selector within content (optional). */
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
 }
 

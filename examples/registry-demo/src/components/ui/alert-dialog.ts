@@ -1,5 +1,6 @@
 import { div } from '@llui/dom'
 import { classPart, classPartWithDefaults } from '../../lib/utils'
+import { overlayReducedMotionRecipe } from '../../lib/floating-motion'
 
 export {
   DialogBackdrop as AlertDialogBackdrop,
@@ -22,17 +23,17 @@ export {
  */
 export const AlertDialogContent = classPartWithDefaults(
   div,
-  'group/alert-dialog-content fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 data-[size=sm]:max-w-xs data-[state=opening]:animate-in data-[state=opening]:fade-in-0 data-[state=opening]:zoom-in-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closing]:animate-out data-[state=closing]:fade-out-0 data-[state=closing]:zoom-out-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[size=default]:sm:max-w-lg',
+  `group/alert-dialog-content fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] max-h-[calc(100dvh-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto overscroll-contain wrap-break-word rounded-lg border bg-background p-6 shadow-lg duration-200 forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] data-[size=sm]:max-w-xs data-[state=opening]:animate-in data-[state=opening]:fade-in-0 data-[state=opening]:zoom-in-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closing]:animate-out data-[state=closing]:fade-out-0 data-[state=closing]:zoom-out-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[size=default]:sm:max-w-lg ${overlayReducedMotionRecipe}`,
   // shadcn's React component defaults `size="default"`; a recipe-only port loses
   // that, and the `data-[size=default]:` half of this recipe — the `sm:max-w-lg`
-  // cap, plus the header's whole left-aligned layout, which reads it through
+  // cap, plus the header's whole start-aligned layout, which reads it through
   // `group/alert-dialog-content` — then matches nothing. The dialog silently
-  // renders full-width with a centred header at every breakpoint.
+  // renders full-width with a centered header at every breakpoint.
   { 'data-size': 'default' },
 )
 export const AlertDialogHeader = classPart(
   div,
-  'grid grid-rows-[auto_1fr] place-items-center gap-1.5 text-center has-data-[part=alert-dialog-media]:grid-rows-[auto_auto_1fr] has-data-[part=alert-dialog-media]:gap-x-6 sm:group-data-[size=default]/alert-dialog-content:has-data-[part=alert-dialog-media]:grid-rows-[auto_1fr] sm:group-data-[size=default]/alert-dialog-content:place-items-start sm:group-data-[size=default]/alert-dialog-content:text-left',
+  'grid grid-rows-[auto_1fr] place-items-center gap-1.5 text-center has-data-[part=alert-dialog-media]:grid-rows-[auto_auto_1fr] has-data-[part=alert-dialog-media]:gap-x-6 sm:group-data-[size=default]/alert-dialog-content:has-data-[part=alert-dialog-media]:grid-rows-[auto_1fr] sm:group-data-[size=default]/alert-dialog-content:place-items-start sm:group-data-[size=default]/alert-dialog-content:text-start',
 )
 export const AlertDialogFooter = classPart(
   div,

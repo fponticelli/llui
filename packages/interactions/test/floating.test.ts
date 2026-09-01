@@ -120,7 +120,7 @@ describe('attachFloating transactional state', () => {
     cleanup()
   })
 
-  it('restores exact prior geometry, state attributes, and arrow styles once', async () => {
+  it('positions the arrow on both axes across flips and restores every owned inset once', async () => {
     const anchor = document.createElement('button')
     const floating = document.createElement('div')
     const content = document.createElement('div')
@@ -131,12 +131,19 @@ describe('attachFloating transactional state', () => {
     floating.style.setProperty('transform', 'scale(0.5)')
     content.setAttribute('data-placement', 'legacy-start')
     content.setAttribute('data-side', 'legacy')
+    arrow.style.setProperty('position', 'relative', 'important')
     arrow.style.setProperty('left', '3px', 'important')
     arrow.style.setProperty('top', '5px')
+    arrow.style.setProperty('right', '7px')
+    arrow.style.setProperty('bottom', '9px', 'important')
+    Object.defineProperties(arrow, {
+      offsetWidth: { configurable: true, value: 10 },
+      offsetHeight: { configurable: true, value: 8 },
+    })
     const onUpdate = vi.fn()
-    floatingUi.computePosition.mockResolvedValueOnce(
-      positioned('right-end', { middlewareData: { arrow: { x: 7, y: 9 } } }),
-    )
+    floatingUi.computePosition
+      .mockResolvedValueOnce(positioned('bottom-start', { middlewareData: { arrow: { x: 17 } } }))
+      .mockResolvedValueOnce(positioned('right-end', { middlewareData: { arrow: { y: 19 } } }))
 
     const cleanup = attachFloating({
       anchor,
@@ -151,11 +158,25 @@ describe('attachFloating transactional state', () => {
     expect(floating.style.top).toBe('0px')
     expect(floating.style.left).toBe('0px')
     expect(floating.style.transform).toBe('translate(12px, 28px)')
+    expect(content.getAttribute('data-placement')).toBe('bottom-start')
+    expect(content.getAttribute('data-side')).toBe('bottom')
+    expect(arrow.style.left).toBe('17px')
+    expect(arrow.style.position).toBe('absolute')
+    expect(arrow.style.top).toBe('-4px')
+    expect(arrow.style.right).toBe('')
+    expect(arrow.style.bottom).toBe('')
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+
+    floatingUi.update?.()
+    await flush()
+
     expect(content.getAttribute('data-placement')).toBe('right-end')
     expect(content.getAttribute('data-side')).toBe('right')
-    expect(arrow.style.left).toBe('7px')
-    expect(arrow.style.top).toBe('9px')
-    expect(onUpdate).toHaveBeenCalledTimes(1)
+    expect(arrow.style.left).toBe('-5px')
+    expect(arrow.style.top).toBe('19px')
+    expect(arrow.style.right).toBe('')
+    expect(arrow.style.bottom).toBe('')
+    expect(onUpdate).toHaveBeenCalledTimes(2)
 
     cleanup()
     cleanup()
@@ -169,9 +190,14 @@ describe('attachFloating transactional state', () => {
     expect(floating.style.getPropertyValue('transform')).toBe('scale(0.5)')
     expect(content.getAttribute('data-placement')).toBe('legacy-start')
     expect(content.getAttribute('data-side')).toBe('legacy')
+    expect(arrow.style.getPropertyValue('position')).toBe('relative')
+    expect(arrow.style.getPropertyPriority('position')).toBe('important')
     expect(arrow.style.getPropertyValue('left')).toBe('3px')
     expect(arrow.style.getPropertyPriority('left')).toBe('important')
     expect(arrow.style.getPropertyValue('top')).toBe('5px')
+    expect(arrow.style.getPropertyValue('right')).toBe('7px')
+    expect(arrow.style.getPropertyValue('bottom')).toBe('9px')
+    expect(arrow.style.getPropertyPriority('bottom')).toBe('important')
   })
 
   it('disposes before observers stop and suppresses a pending result and callback', async () => {

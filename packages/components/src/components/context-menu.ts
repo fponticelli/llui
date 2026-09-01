@@ -32,6 +32,10 @@ import { allFiniteNumbers } from '../utils/number.js'
  * Shares the menu's JSON-serializable item tree: submenus, checkbox/radio
  * items, groups, and separators. The root content is positioned at the
  * pointer (raw x/y); submenus position against their trigger via floating-ui.
+ * The real DOM region that dispatches `contextmenu` is captured outside state
+ * as the nested-layer owner for that visible interaction only. Ownership is
+ * cleared at the close request (before any retained exit content unmounts), so
+ * a replayed/programmatic `openAt` cannot inherit a stale modal relationship.
  */
 
 /** Kind of a context-menu item. */
@@ -86,8 +90,9 @@ export interface ContextMenuInit {
   closeOnSelect?: boolean
   /** Omit to follow the page's own direction (see `MenuState.dir`). */
   dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 

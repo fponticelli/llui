@@ -3,10 +3,12 @@ import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
+import { isEngineFocusInProgress } from '../utils/engine-focus.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { firstEnabled, rovingTabStop } from '../utils/list-navigation.js'
 import { deriveOnceN } from '../utils/derive.js'
 import { wrapChildSend } from '../utils/child-send.js'
+import { flipArrow, type TextDirection } from '../utils/direction.js'
 import {
   init as menuInit,
   update as menuUpdate,
@@ -71,6 +73,8 @@ export interface MenubarState {
   disabledMenus: string[]
   /** Embedded per-menu machine states, keyed by menu id. */
   menuStates: Record<string, MenuState>
+  /** Reading direction for both the bar and its delegated menu trees. */
+  dir: TextDirection
 }
 
 export type MenubarMsg =
@@ -81,27 +85,38 @@ export type MenubarMsg =
   /** @intent("Move roving focus to the menu with the given id (switches the open menu in open mode)") */
   | { type: 'focusMenu'; id: string }
   /** @humanOnly */
+  | { type: 'syncTriggerFocus'; id: string }
+  /** @humanOnly */
   | { type: 'focusNext' }
   /** @humanOnly */
   | { type: 'focusPrev' }
   /** @humanOnly */
   | { type: 'menuMsg'; id: string; msg: MenuMsg }
+  /** @intent("Set the reading direction") */
+  | { type: 'setDir'; dir: TextDirection }
 
 export interface MenubarInit {
   menus: MenubarMenu[]
   /** Initially-focused menu id (defaults to the first enabled menu). */
   focused?: string | null
+  /** Reading direction for horizontal keys and delegated menus (default: ltr). */
+  dir?: TextDirection
 }
 
 export function init(opts: MenubarInit): MenubarState {
+  const dir = opts.dir ?? 'ltr'
   const menus = opts.menus.map((m) => m.id)
   const disabledMenus = opts.menus.filter((m) => m.disabled).map((m) => m.id)
   const menuStates: Record<string, MenuState> = {}
   for (const m of opts.menus) {
-    menuStates[m.id] = menuInit({ items: m.items, closeOnSelect: m.closeOnSelect })
+    menuStates[m.id] = menuInit({
+      items: m.items,
+      closeOnSelect: m.closeOnSelect,
+      dir,
+    })
   }
   const focused = opts.focused !== undefined ? opts.focused : firstEnabled(menus, disabledMenus)
-  return { menus, open: null, focused, disabledMenus, menuStates }
+  return { menus, open: null, focused, disabledMenus, menuStates, dir }
 }
 
 // ---- pure helpers ----
@@ -172,6 +187,14 @@ export function update(state: MenubarState, msg: MenubarMsg): [MenubarState, nev
       if (state.open) return [openMenuState(state, msg.id), []]
       return [{ ...state, focused: msg.id }, []]
     }
+    case 'syncTriggerFocus': {
+      if (state.disabledMenus.includes(msg.id)) return [state, []]
+      // An old overlay may conditionally restore focus to its own trigger while
+      // the bar is switching to a sibling. Ignore that stale DOM focus; the
+      // explicit keyboard/pointer/click message already selected the new menu.
+      if (state.open !== null && state.open !== msg.id) return [state, []]
+      return [{ ...state, focused: msg.id }, []]
+    }
     case 'focusNext': {
       const to = nextMenu(state.menus, state.disabledMenus, state.focused, 1)
       if (to === null) return [state, []]
@@ -192,6 +215,16 @@ export function update(state: MenubarState, msg: MenubarMsg): [MenubarState, nev
       // If the delegated msg closed the menu, clear the top-level open marker.
       const open = state.open === msg.id && !next.open ? null : state.open
       return [{ ...state, open, menuStates }, []]
+    }
+    case 'setDir': {
+      if (state.dir === msg.dir) return [state, []]
+      const menuStates = Object.fromEntries(
+        Object.entries(state.menuStates).map(([id, menuState]) => [
+          id,
+          menuUpdate(menuState, { type: 'setDir', dir: msg.dir })[0],
+        ]),
+      )
+      return [{ ...state, dir: msg.dir, menuStates }, []]
     }
   }
 }
@@ -330,12 +363,10 @@ export function connect(
     (e: KeyboardEvent): void => {
       delegated.content.onKeyDown(e)
       if (e.defaultPrevented) return
-      // Raw `e.key`, matching the trigger handler above: the bar's own axis is
-      // the visual left/right of the strip, and the panel has already applied
-      // its own direction handling to the keys it took.
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      const key = flipArrow(e.key, state.peek().dir)
       e.preventDefault()
-      send(e.key === 'ArrowRight' ? { type: 'focusNext' } : { type: 'focusPrev' })
+      send(key === 'ArrowRight' ? { type: 'focusNext' } : { type: 'focusPrev' })
     }
 
   return {
@@ -371,7 +402,9 @@ export function connect(
           send({ type: 'focusMenu', id })
         }
       }),
-      onFocus: tagSend(send, ['focusMenu'], () => send({ type: 'focusMenu', id })),
+      onFocus: tagSend(send, ['focusMenu', 'syncTriggerFocus'], () =>
+        send({ type: isEngineFocusInProgress() ? 'syncTriggerFocus' : 'focusMenu', id }),
+      ),
       onKeyDown: tagSend(send, ['focusNext', 'focusPrev', 'openMenu'], (e: KeyboardEvent) => {
         const origin = e.currentTarget as Element | null
         // After roving the focused trigger in state, move REAL DOM focus to it —
@@ -380,7 +413,11 @@ export function connect(
           const focused = state.peek()?.focused
           if (focused != null) focusRovingItem(origin, 'menubar', focused, { itemPart: 'trigger' })
         }
-        switch (e.key) {
+        const key =
+          e.key === 'ArrowRight' || e.key === 'ArrowLeft'
+            ? flipArrow(e.key, state.peek().dir)
+            : e.key
+        switch (key) {
           case 'ArrowRight':
             e.preventDefault()
             send({ type: 'focusNext' })
@@ -472,6 +509,7 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
       offset: opts.offset ?? 4,
       flip: opts.flip !== false,
       shift: opts.shift !== false,
+      dir: () => opts.state.peek().dir,
     },
     dismiss: {
       // Escape unwinds ONE submenu level of the currently-open menu before

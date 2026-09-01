@@ -1053,10 +1053,11 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `focused`       | `string \| null`            |
 | `disabledMenus` | `string[]`                  |
 | `menuStates`    | `Record<string, MenuState>` |
+| `dir`           | `TextDirection`             |
 
-**Messages:** `openMenu`, `closeMenu`, `focusMenu`, `focusNext`, `focusPrev`, `menuMsg`
+**Messages:** `openMenu`, `closeMenu`, `focusMenu`, `syncTriggerFocus`, `focusNext`, `focusPrev`, `menuMsg`, `setDir`
 
-**Init options:** `menus: MenubarMenu[], focused?: string | null`
+**Init options:** `menus: MenubarMenu[], focused?: string | null, dir?: TextDirection`
 
 **Connect options:** `ConnectOptions`
 
@@ -2119,8 +2120,10 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Owns `position`, `top`, `left`, and `transform` on `floating`; `left` and
-`top` on an optional arrow; and placement attributes on `stateTarget`.
+Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+all four physical inset properties on an optional arrow; and placement
+attributes on `stateTarget`. The arrow's static-side inset is half its
+untransformed layout size, so a square arrow straddles the resolved edge.
 Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
 exact prior values (including priority) or absence of those properties.
 
@@ -4920,11 +4923,15 @@ export type MenubarMsg =
   /** @intent("Move roving focus to the menu with the given id (switches the open menu in open mode)") */
   | { type: 'focusMenu'; id: string }
   /** @humanOnly */
+  | { type: 'syncTriggerFocus'; id: string }
+  /** @humanOnly */
   | { type: 'focusNext' }
   /** @humanOnly */
   | { type: 'focusPrev' }
   /** @humanOnly */
   | { type: 'menuMsg'; id: string; msg: MenuMsg }
+  /** @intent("Set the reading direction") */
+  | { type: 'setDir'; dir: TextDirection }
 ```
 
 ##### `MenuCheckItemParts` from `@llui/components`
@@ -8140,8 +8147,9 @@ export interface ContextMenuInit {
   closeOnSelect?: boolean
   /** Omit to follow the page's own direction (see `MenuState.dir`). */
   dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 ```
@@ -10143,6 +10151,8 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
 }
 ```
@@ -10599,6 +10609,8 @@ export interface MenubarInit {
   menus: MenubarMenu[]
   /** Initially-focused menu id (defaults to the first enabled menu). */
   focused?: string | null
+  /** Reading direction for horizontal keys and delegated menus (default: ltr). */
+  dir?: TextDirection
 }
 ```
 
@@ -10683,6 +10695,8 @@ export interface MenubarState {
   disabledMenus: string[]
   /** Embedded per-menu machine states, keyed by menu id. */
   menuStates: Record<string, MenuState>
+  /** Reading direction for both the bar and its delegated menu trees. */
+  dir: TextDirection
 }
 ```
 
@@ -10719,8 +10733,9 @@ export interface MenuInit {
   closeOnSelect?: boolean
   /** Omit to follow the page's own direction (see {@link MenuState.dir}). */
   dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 ```
@@ -11673,7 +11688,8 @@ export interface OverlayOptions {
   restoreFocus?: boolean
   /** Portal target (default: 'body'). */
   target?: string | HTMLElement
-  /** Arrow element selector within content (optional). */
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
 }
 ```
@@ -14605,6 +14621,8 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
   /** Dismiss on Escape regardless of where focus is (default: true). */
   closeOnEscape?: boolean
@@ -15653,8 +15671,10 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components/utils`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Owns `position`, `top`, `left`, and `transform` on `floating`; `left` and
-`top` on an optional arrow; and placement attributes on `stateTarget`.
+Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+all four physical inset properties on an optional arrow; and placement
+attributes on `stateTarget`. The arrow's static-side inset is half its
+untransformed layout size, so a square arrow straddles the resolved edge.
 Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
 exact prior values (including priority) or absence of those properties.
 
@@ -19129,8 +19149,10 @@ export type SyncEngineFocusBodyRequired = {
 ##### `attachFloating()` from `@llui/components/utils/floating`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Owns `position`, `top`, `left`, and `transform` on `floating`; `left` and
-`top` on an optional arrow; and placement attributes on `stateTarget`.
+Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+all four physical inset properties on an optional arrow; and placement
+attributes on `stateTarget`. The arrow's static-side inset is half its
+untransformed layout size, so a square arrow straddles the resolved edge.
 Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
 exact prior values (including priority) or absence of those properties.
 
@@ -19383,8 +19405,10 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components/utils/index`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Owns `position`, `top`, `left`, and `transform` on `floating`; `left` and
-`top` on an optional arrow; and placement attributes on `stateTarget`.
+Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+all four physical inset properties on an optional arrow; and placement
+attributes on `stateTarget`. The arrow's static-side inset is half its
+untransformed layout size, so a square arrow straddles the resolved edge.
 Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
 exact prior values (including priority) or absence of those properties.
 
@@ -22272,8 +22296,9 @@ export interface OverlayFloatingConfig {
   /** Reading direction — a function so it can be peeked at mount time (menu). */
   dir?: TextDirection | (() => TextDirection | undefined)
   /** Attach positioning in the MOUNT phase (survives the exit animation) rather
-   * than the interaction phase. Used by popover, whose content stays anchored
-   * while the close transition plays. */
+   * than the interaction phase. Required when `visibleWhen` unwinds interactions
+   * before `mountWhen` releases retained exit content; the engine rejects that
+   * two-phase lifetime unless placement persists with the mounted node. */
   persistent?: boolean
 }
 ```
@@ -25166,7 +25191,8 @@ export interface OverlayOptions {
   restoreFocus?: boolean
   /** Portal target (default: 'body'). */
   target?: string | HTMLElement
-  /** Arrow element selector within content (optional). */
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
 }
 ```
@@ -25365,6 +25391,8 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
   /** Dismiss on Escape regardless of where focus is (default: true). */
   closeOnEscape?: boolean
@@ -25642,8 +25670,9 @@ export interface MenuInit {
   closeOnSelect?: boolean
   /** Omit to follow the page's own direction (see {@link MenuState.dir}). */
   dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 ```
@@ -28903,6 +28932,8 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
 }
 ```
@@ -30643,8 +30674,9 @@ export interface ContextMenuInit {
   closeOnSelect?: boolean
   /** Omit to follow the page's own direction (see `MenuState.dir`). */
   dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 ```
@@ -37629,11 +37661,15 @@ export type MenubarMsg =
   /** @intent("Move roving focus to the menu with the given id (switches the open menu in open mode)") */
   | { type: 'focusMenu'; id: string }
   /** @humanOnly */
+  | { type: 'syncTriggerFocus'; id: string }
+  /** @humanOnly */
   | { type: 'focusNext' }
   /** @humanOnly */
   | { type: 'focusPrev' }
   /** @humanOnly */
   | { type: 'menuMsg'; id: string; msg: MenuMsg }
+  /** @intent("Set the reading direction") */
+  | { type: 'setDir'; dir: TextDirection }
 ```
 
 #### Interfaces
@@ -37656,6 +37692,8 @@ export interface MenubarInit {
   menus: MenubarMenu[]
   /** Initially-focused menu id (defaults to the first enabled menu). */
   focused?: string | null
+  /** Reading direction for horizontal keys and delegated menus (default: ltr). */
+  dir?: TextDirection
 }
 ```
 
@@ -37740,6 +37778,8 @@ export interface MenubarState {
   disabledMenus: string[]
   /** Embedded per-menu machine states, keyed by menu id. */
   menuStates: Record<string, MenuState>
+  /** Reading direction for both the bar and its delegated menu trees. */
+  dir: TextDirection
 }
 ```
 
@@ -39482,6 +39522,12 @@ export type SearchableSelectMsg =
   | { type: 'triggerType'; char: string }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  /** @intent("Mark an async option fetch as started; pass the request's id") */
+  | { type: 'loadStart'; requestId: number }
+  /** @humanOnly */
+  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /** @humanOnly */
+  | { type: 'loadError'; requestId: number; error: string }
 ```
 
 ##### `SearchableSelectSelectionMode` from `@llui/components/patterns`
@@ -41477,6 +41523,12 @@ export type SearchableSelectMsg =
   | { type: 'triggerType'; char: string }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  /** @intent("Mark an async option fetch as started; pass the request's id") */
+  | { type: 'loadStart'; requestId: number }
+  /** @humanOnly */
+  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /** @humanOnly */
+  | { type: 'loadError'; requestId: number; error: string }
 ```
 
 ##### `SelectionMode` from `@llui/components/patterns/searchable-select`

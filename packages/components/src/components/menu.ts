@@ -126,8 +126,9 @@ export interface MenuInit {
   closeOnSelect?: boolean
   /** Omit to follow the page's own direction (see {@link MenuState.dir}). */
   dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 
@@ -419,6 +420,7 @@ export function overlay(opts: OverlayOptions): Mountable {
       flip: opts.flip !== false,
       shift: opts.shift !== false,
       dir: () => floatingDir(opts.state.peek()),
+      persistent: true,
     },
     dismiss: {
       // Escape unwinds ONE submenu level while a submenu is open; only when no

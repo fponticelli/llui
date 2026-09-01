@@ -31,7 +31,7 @@ import { CheckIcon, ChevronDownIcon } from './icons'
  * the trigger — shadcn spells that attribute `data-slot`.
  */
 const selectTriggerRecipe =
-  "flex w-fit items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[placeholder]:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[part=select-value]:line-clamp-1 *:data-[part=select-value]:flex *:data-[part=select-value]:items-center *:data-[part=select-value]:gap-2 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground"
+  "flex w-fit max-w-full min-w-0 items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[placeholder]:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] *:data-[part=select-value]:line-clamp-1 *:data-[part=select-value]:flex *:data-[part=select-value]:min-w-0 *:data-[part=select-value]:items-center *:data-[part=select-value]:gap-2 dark:bg-input/30 dark:hover:bg-input/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground"
 
 /**
  * SelectTrigger — renders its OWN chevron, as shadcn's does. A caller supplies
@@ -61,17 +61,17 @@ export function SelectTrigger(
 
 /** The value span. `data-part` is what the trigger's `*:data-[part=select-value]`
  * rules target, so it is not optional decoration. */
-export const SelectValue = classPart(span, '')
+export const SelectValue = classPart(span, 'min-w-0 truncate')
 export const SelectContent = classPart(
   div,
-  `relative z-50 max-h-72 min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-md border bg-popover text-popover-foreground shadow-md ${floatingOverlayMotionRecipe}`,
+  `relative z-50 min-w-[8rem] max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-x-hidden overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover text-popover-foreground shadow-md forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] ${floatingOverlayMotionRecipe}`,
 )
 export const SelectViewport = classPart(div, 'p-1')
 export const SelectItem = classPart(
   div,
-  "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+  "relative flex w-full min-w-0 cursor-default items-center gap-2 rounded-sm py-1.5 pe-8 ps-2 text-sm wrap-break-word outline-none select-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground aria-selected:font-medium data-[disabled]:pointer-events-none data-[disabled]:opacity-50 forced-colors:data-[highlighted]:bg-[Highlight] forced-colors:data-[highlighted]:text-[HighlightText] forced-colors:data-[highlighted]:[outline:2px_solid_Highlight] forced-colors:data-[highlighted]:outline-offset-[-2px] forced-colors:aria-selected:[outline:2px_solid_Highlight] forced-colors:aria-selected:outline-offset-[-2px] forced-colors:data-[disabled]:text-[GrayText] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:min-w-0 *:[span]:last:items-center *:[span]:last:gap-2",
 )
-const selectItemIndicatorRecipe = 'absolute right-2 flex size-3.5 items-center justify-center'
+const selectItemIndicatorRecipe = 'absolute end-2 flex size-3.5 items-center justify-center'
 
 /** The selected tick. Renders its own `CheckIcon`, as shadcn's does; the
  * component's `data-state` decides whether it is shown. */

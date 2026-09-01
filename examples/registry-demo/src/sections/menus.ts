@@ -1,4 +1,4 @@
-import { div, each, li, nav, onMount, show, span, text, ul } from '@llui/dom'
+import { div, each, li, onMount, show, span, text, ul } from '@llui/dom'
 import type { Mountable, Send, Signal } from '@llui/dom'
 import * as contextMenuC from '@llui/components/context-menu'
 import * as menubarC from '@llui/components/menubar'
@@ -271,8 +271,14 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'Navigation Menu',
       'A `nav` landmark with disclosure buttons — NOT menubar/menu roles, because site navigation is not an application menu. Panels render inline, so the root sets `data-viewport="false"`.',
       [
-        NavigationMenu({ 'data-viewport': 'false', class: 'w-full max-w-none justify-start' }, [
-          nav({ ...navm.root, id: 'demo-nav' }, [
+        NavigationMenu(
+          {
+            ...navm.root,
+            id: 'demo-nav',
+            'data-viewport': 'false',
+            class: 'w-full max-w-none justify-start',
+          },
+          [
             // The machine answers WHETHER the arrow shows (`indicator`'s
             // data-state); where it sits is layout, so the watcher measures the
             // open trigger and writes --indicator-left/--indicator-width onto
@@ -316,8 +322,8 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
             // A sibling of the list, inside the positioned root: the track is
             // `absolute` and resolves its offset against `NavigationMenu`.
             NavigationMenuIndicatorTrack({ ...navm.indicator }, [NavigationMenuIndicatorArrow()]),
-          ]),
-        ]),
+          ],
+        ),
       ],
     ),
 

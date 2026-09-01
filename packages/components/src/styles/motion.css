@@ -249,6 +249,15 @@
   animation: scale-in var(--llui-duration-fast) ease-out;
 }
 
+/* Select, combobox, and searchable-select are synchronous boolean machines:
+   `open` is their only mounted entry state. Close removes the node immediately,
+   so no baseline exit selector can run until those machines gain presence. */
+[data-scope='select'][data-part='content'][data-state='open'],
+[data-scope='combobox'][data-part='content'][data-state='open'],
+[data-scope='searchable-select'][data-part='content'][data-state='open'] {
+  animation: scale-in var(--llui-duration-fast) ease-out;
+}
+
 [data-scope='popover'][data-part='content'][data-state='closing'],
 [data-scope='popover'][data-part='content'][data-state='closed'],
 [data-scope='tooltip'][data-part='content'][data-state='closing'],
@@ -272,7 +281,13 @@
   animation: collapse-up var(--llui-duration-normal) ease-out;
 }
 
-/* Toast enter */
+/* Toast presence. Toasts are born `open`, so entry does not gate the machine;
+   animated dismissal retains `closing` until this real end event removes the
+   row. `closed` is intentionally absent because it is never mounted. */
 [data-scope='toast'][data-part='root'][data-state='open'] {
   animation: slide-in-from-bottom var(--llui-duration-normal) ease-out;
+}
+
+[data-scope='toast'][data-part='root'][data-state='closing'] {
+  animation: fade-out var(--llui-duration-fast) ease-in;
 }

@@ -37,11 +37,13 @@
   max-height: calc(100dvh - 2rem);
   overflow: auto;
   overscroll-behavior: contain;
+  overflow-wrap: anywhere;
   border: 1px solid var(--border);
   border-radius: var(--llui-radius-md);
   background: var(--popover);
   color: var(--popover-foreground);
   padding: var(--llui-space-1);
+  line-height: 1.5;
   box-shadow: var(--llui-shadow-md);
   outline: none;
 }
@@ -81,10 +83,11 @@
   max-height: calc(100dvh - 2rem);
   overflow: auto;
   overscroll-behavior: contain;
+  overflow-wrap: anywhere;
   border: 1px solid var(--border);
   border-radius: var(--llui-radius-xl);
-  background: var(--popover);
-  color: var(--popover-foreground);
+  background: var(--background);
+  color: var(--foreground);
   padding: var(--llui-space-6);
   box-shadow: var(--llui-shadow-lg);
   outline: none;
@@ -182,6 +185,7 @@
   line-height: 1.25rem;
   cursor: pointer;
   user-select: none;
+  overflow-wrap: anywhere;
   outline: none;
 }
 
@@ -307,6 +311,7 @@
   max-height: calc(100dvh - 2rem);
   overflow: auto;
   overscroll-behavior: contain;
+  overflow-wrap: anywhere;
   border: 1px solid var(--border);
   border-radius: var(--llui-radius-md);
   background: var(--popover);
@@ -337,6 +342,9 @@
 
 [data-scope='tooltip'][data-part='content'] {
   max-width: min(20rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  overscroll-behavior: contain;
   border-radius: var(--llui-radius-sm);
   background: var(--foreground);
   color: var(--background);
@@ -344,9 +352,11 @@
   box-shadow: var(--llui-shadow-md);
   font-size: 0.75rem;
   line-height: 1rem;
+  overflow-wrap: anywhere;
 }
 
 :is([data-scope='popover'], [data-scope='hover-card'], [data-scope='tooltip'])[data-part='arrow'] {
+  position: absolute;
   width: 0.5rem;
   height: 0.5rem;
   transform: rotate(45deg);
@@ -374,9 +384,10 @@
   max-height: 100dvh;
   overflow: auto;
   overscroll-behavior: contain;
+  overflow-wrap: anywhere;
   border: 1px solid var(--border);
-  background: var(--popover);
-  color: var(--popover-foreground);
+  background: var(--background);
+  color: var(--foreground);
   padding: var(--llui-space-6);
   box-shadow: var(--llui-shadow-lg);
   outline: none;
@@ -425,6 +436,7 @@
   gap: var(--llui-space-2);
   overflow: auto;
   overscroll-behavior: contain;
+  overflow-wrap: anywhere;
 }
 
 [data-scope='toast'][data-part='region'][data-placement^='top'] {
@@ -456,6 +468,7 @@
   color: var(--popover-foreground);
   padding: var(--llui-space-4);
   box-shadow: var(--llui-shadow-lg);
+  overflow-wrap: anywhere;
 }
 
 [data-scope='toast'][data-part='root'][data-type='success'] {
@@ -503,6 +516,17 @@
 }
 
 @media (forced-colors: active) {
+  /* These nodes are the modal scrim on the baseline path. Keep the system
+     foreground behind the Canvas surface even when the optional backdrop part
+     is omitted and the positioner owns the scrim. Do not disable forced-color
+     adjustment on the subtree: descendants must keep mapping to system colors. */
+  :is([data-scope='dialog'], [data-scope='drawer']):is(
+    [data-part='positioner'],
+    [data-part='backdrop']
+  ) {
+    background: CanvasText;
+  }
+
   :is(
     [data-scope='dialog'],
     [data-scope='drawer'],
@@ -518,7 +542,6 @@
     border-color: CanvasText;
     background: Canvas;
     color: CanvasText;
-    forced-color-adjust: none;
   }
 
   :is(
@@ -530,32 +553,124 @@
     ):is([data-part='item'], [data-part='subtrigger'])[data-highlighted] {
     background: Highlight;
     color: HighlightText;
-    forced-color-adjust: none;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  :is(
+      [data-scope='select'],
+      [data-scope='combobox'],
+      [data-scope='searchable-select']
+    )[data-part='item'][data-state='selected'] {
+    border-color: Highlight;
+    background: Canvas;
+    color: CanvasText;
+    font-weight: 600;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  :is(
+      [data-scope='menu'],
+      [data-scope='context-menu'],
+      [data-scope='select'],
+      [data-scope='combobox'],
+      [data-scope='searchable-select']
+    )[data-part='item']:is([aria-selected='true'], [aria-checked='true']) {
+    border-color: Highlight;
+    background: Canvas;
+    color: CanvasText;
+    font-weight: 600;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  :is(
+      [data-scope='menu'],
+      [data-scope='context-menu'],
+      [data-scope='select'],
+      [data-scope='combobox'],
+      [data-scope='searchable-select']
+    ):is([data-part='item'], [data-part='subtrigger']):is([data-disabled], [aria-disabled='true']) {
+    color: GrayText;
+  }
+
+  :is(
+      [data-scope='menu'],
+      [data-scope='context-menu'],
+      [data-scope='select'],
+      [data-scope='combobox'],
+      [data-scope='searchable-select']
+    )[data-part='item'].menu-item-destructive {
+    color: LinkText;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.15em;
+  }
+
+  :is(
+      [data-scope='menu'],
+      [data-scope='context-menu'],
+      [data-scope='select'],
+      [data-scope='combobox'],
+      [data-scope='searchable-select']
+    )[data-part='item'].menu-item-destructive[data-highlighted] {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='success'],
+  [data-scope='toast'][data-part='root'][data-type='warning'],
+  [data-scope='toast'][data-part='root'][data-type='error'],
+  [data-scope='toast'][data-part='root'][data-type='loading'] {
+    border-color: CanvasText;
+    border-inline-start-width: 4px;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='success'] {
+    border-inline-start-style: double;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='warning'] {
+    border-inline-start-style: dashed;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='error'] {
+    border-inline-start-style: solid;
+    color: LinkText;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='loading'] {
+    border-inline-start-style: dotted;
   }
 
   [data-scope='tooltip']:is([data-part='content'], [data-part='arrow']) {
     border-color: CanvasText;
     background: CanvasText;
     color: Canvas;
-    forced-color-adjust: none;
   }
 }
 
 /* ─── Confirm Dialog (pattern) ─── */
 
 .confirm-dialog {
+  box-sizing: border-box;
   position: relative;
   width: 100%;
-  max-width: 28rem;
+  max-width: min(28rem, calc(100vw - 2rem));
   max-height: calc(100dvh - 2rem);
+  margin-inline: auto;
   overflow: auto;
   overscroll-behavior: contain;
   border: 1px solid var(--border);
   border-radius: var(--llui-radius-lg);
-  background: var(--card);
-  color: var(--card-foreground);
+  background: var(--background);
+  color: var(--foreground);
   padding: var(--llui-space-6);
   box-shadow: var(--llui-shadow-lg);
+  overflow-wrap: anywhere;
 }
 
 .confirm-dialog__actions {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
+import ts from 'typescript'
 import { ProductContractSchema } from '../../packages/cli/src/product-contract'
 import { extractClassCandidates } from '../lib/registry-classes.mjs'
 import { compileCandidates } from '../lib/tailwind-compile.mjs'
@@ -64,6 +65,85 @@ const floatingSideCandidates = [
   'data-[side=top]:slide-in-from-bottom-2',
 ] as const
 
+const reducedMotionCandidates = [
+  'motion-reduce:[animation-duration:0.01ms]!',
+  'motion-reduce:[transition-duration:0.01ms]!',
+] as const
+
+interface DemoArrowOverlay {
+  readonly arrowPartAliases: readonly string[]
+  readonly contentIdentifiers: readonly string[]
+}
+
+/**
+ * Read the authored overlay call rather than matching formatting. An arrow is
+ * wired only when the same connected part owns both content and arrow inside
+ * the overlay's content factory, and the runtime receives the arrow selector.
+ */
+const demoArrowOverlays = (file: string, source: string): DemoArrowOverlay[] => {
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
+  const overlays: DemoArrowOverlay[] = []
+
+  const visit = (node: ts.Node): void => {
+    const firstArgument = ts.isCallExpression(node) ? node.arguments[0] : undefined
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'overlay' &&
+      node.arguments.length === 1 &&
+      firstArgument !== undefined &&
+      ts.isObjectLiteralExpression(firstArgument)
+    ) {
+      const options = firstArgument
+      const arrowSelector = options.properties.find(
+        (property): property is ts.PropertyAssignment =>
+          ts.isPropertyAssignment(property) &&
+          property.name.getText(sourceFile) === 'arrowSelector',
+      )
+      const content = options.properties.find(
+        (property): property is ts.PropertyAssignment =>
+          ts.isPropertyAssignment(property) && property.name.getText(sourceFile) === 'content',
+      )
+
+      if (
+        arrowSelector &&
+        ts.isStringLiteral(arrowSelector.initializer) &&
+        arrowSelector.initializer.text === "[data-part='arrow']" &&
+        content
+      ) {
+        const arrowPartAliases = new Set<string>()
+        const contentPartAliases = new Set<string>()
+        const contentIdentifiers = new Set<string>()
+        const inspectContent = (contentNode: ts.Node): void => {
+          if (ts.isIdentifier(contentNode)) contentIdentifiers.add(contentNode.text)
+          if (
+            ts.isSpreadAssignment(contentNode) &&
+            ts.isPropertyAccessExpression(contentNode.expression) &&
+            ts.isIdentifier(contentNode.expression.expression)
+          ) {
+            const alias = contentNode.expression.expression.text
+            if (contentNode.expression.name.text === 'arrow') arrowPartAliases.add(alias)
+            if (contentNode.expression.name.text === 'content') contentPartAliases.add(alias)
+          }
+          contentNode.forEachChild(inspectContent)
+        }
+        inspectContent(content.initializer)
+
+        const pairedAliases = [...arrowPartAliases].filter((alias) => contentPartAliases.has(alias))
+        if (pairedAliases.length > 0) {
+          overlays.push({
+            arrowPartAliases: pairedAliases,
+            contentIdentifiers: [...contentIdentifiers],
+          })
+        }
+      }
+    }
+    node.forEachChild(visit)
+  }
+  visit(sourceFile)
+  return overlays
+}
+
 /**
  * Derive direct consumers from the canonical family and implementation
  * capability instead of maintaining another component list: a public machine
@@ -81,6 +161,11 @@ const directFloatingArtifacts = familyEntries.flatMap((entry) => {
   })
 })
 
+const arrowArtifacts = directFloatingArtifacts.flatMap((name) => {
+  const exportedArrow = artifactSource(name).match(/export const (\w+Arrow)\s*=/)?.[1]
+  return exportedArrow ? [{ name, exportedArrow }] : []
+})
+
 /** Overlay machines with a real four-phase presence lifecycle; toast is not an
  * overlay and therefore stays outside this policy even though it is animated. */
 const presenceArtifacts = familyEntries.flatMap((entry) => {
@@ -92,20 +177,56 @@ const presenceArtifacts = familyEntries.flatMap((entry) => {
   return entry.copiedArtifacts.map((artifact) => artifact.name)
 })
 
+const animatedArtifacts = [
+  ...new Set(
+    familyEntries.flatMap((entry) =>
+      entry.copiedArtifacts.flatMap((artifact) => {
+        const file = path.join(REGISTRY_UI, `${artifact.name}.ts`)
+        const source = readFileSync(file, 'utf8')
+        const local = extractClassCandidates(file, source)
+        return local.some((candidate) => candidate.includes('animate-')) ||
+          source.includes('floatingOverlayMotionRecipe')
+          ? [artifact.name]
+          : []
+      }),
+    ),
+  ),
+]
+
 describe('menus-overlays registry motion policy', () => {
+  it('documents menu animation opt-in as an enter-and-exit lifecycle', () => {
+    for (const product of ['menu', 'context-menu'] as const) {
+      const source = readFileSync(
+        path.join(ROOT, 'packages/components/src/components', `${product}.ts`),
+        'utf8',
+      )
+      const initDocs = source.match(
+        /export interface \w+Init \{[\s\S]*?skipAnimations\?: boolean/,
+      )?.[0]
+      expect(initDocs, product).toContain('opening and closing')
+      expect(initDocs, product).toContain("status 'opening' or 'closing'")
+      expect(initDocs, product).toContain('animationEnd')
+    }
+  })
+
   it('publishes one scan-visible floating presence + physical-side recipe', async () => {
     expect(existsSync(SUPPORT_FILE), 'missing registry/llui/lib/floating-motion.ts').toBe(true)
     const support = supportCandidates()
     expect(support).toEqual(
-      expect.arrayContaining([...floatingPresenceCandidates, ...floatingSideCandidates]),
+      expect.arrayContaining([
+        ...floatingPresenceCandidates,
+        ...floatingSideCandidates,
+        ...reducedMotionCandidates,
+      ]),
     )
 
     const item = sourceRegistry.items.find(({ name }) => name === 'floating-motion')
     expect(item).toEqual({
       name: 'floating-motion',
       type: 'registry:lib',
-      title: 'Floating overlay motion',
-      description: 'Shared presence and physical-side animation policy for floating overlay skins.',
+      title: 'Overlay motion',
+      description:
+        'Shared presence, physical-side, and nonzero reduced-motion policy for overlay and transient skins.',
       dependencies: [],
       registryDependencies: [],
       files: [
@@ -119,6 +240,25 @@ describe('menus-overlays registry motion policy', () => {
 
     const { dead } = await compileCandidates(support)
     expect(dead).toEqual([])
+  })
+
+  it('routes every animated family skin through the nonzero reduced-motion policy', () => {
+    expect(animatedArtifacts.length).toBeGreaterThan(0)
+    const violations: string[] = []
+    for (const name of animatedArtifacts) {
+      const source = artifactSource(name)
+      if (
+        !source.includes('floatingOverlayMotionRecipe') &&
+        !source.includes('overlayReducedMotionRecipe')
+      ) {
+        violations.push(`${name}: no shared reduced-motion recipe`)
+      }
+      const item = sourceRegistry.items.find((candidate) => candidate.name === name)
+      if (!item?.registryDependencies?.includes('floating-motion')) {
+        violations.push(`${name}: registryDependencies omits floating-motion`)
+      }
+    }
+    expect(violations).toEqual([])
   })
 
   it('makes every direct floating-content caller import and declare the shared policy', () => {
@@ -138,6 +278,35 @@ describe('menus-overlays registry motion policy', () => {
       }
     }
     expect(violations).toEqual([])
+  })
+
+  it('wires every exported floating arrow through both demo runtimes and content roots', () => {
+    expect(arrowArtifacts.length).toBeGreaterThan(0)
+    const demoFiles = [
+      path.join(ROOT, 'examples/components-demo/src/sections/overlays.ts'),
+      path.join(ROOT, 'examples/registry-demo/src/sections/overlays.ts'),
+    ]
+
+    for (const file of demoFiles) {
+      const source = readFileSync(file, 'utf8')
+      const overlays = demoArrowOverlays(file, source)
+      expect(overlays, path.relative(ROOT, file)).toHaveLength(arrowArtifacts.length)
+      expect(
+        overlays.flatMap(({ arrowPartAliases }) => arrowPartAliases),
+        path.relative(ROOT, file),
+      ).toHaveLength(arrowArtifacts.length)
+
+      // The copied demo has named recipe components, so additionally prove
+      // every exported Arrow is inside one of the selector-owning factories.
+      if (file.includes('registry-demo')) {
+        for (const { name, exportedArrow } of arrowArtifacts) {
+          expect(
+            overlays.some(({ contentIdentifiers }) => contentIdentifiers.includes(exportedArrow)),
+            name,
+          ).toBe(true)
+        }
+      }
+    }
   })
 
   it('keeps opening/closing machine truth and open/closed compatibility synchronized', () => {

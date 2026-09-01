@@ -4,6 +4,7 @@ import * as carouselC from '@llui/components/carousel'
 import * as datePickerC from '@llui/components/date-picker'
 import * as popoverC from '@llui/components/popover'
 import * as toastC from '@llui/components/toast'
+import type { ToastType } from '@llui/components/toast'
 import {
   Carousel,
   CarouselContent,
@@ -78,7 +79,58 @@ export type Msg =
   | { type: 'toaster'; msg: toastC.ToasterMsg }
   | { type: 'pickerOpen'; msg: popoverC.PopoverMsg }
   | { type: 'picker'; msg: datePickerC.DatePickerMsg }
-  | { type: 'pushToast'; variant: 'default' | 'destructive' }
+  | { type: 'pushToast'; toastType: ToastType }
+
+const TOAST_DEMOS = {
+  info: {
+    type: 'info',
+    label: 'Information',
+    title: 'Changes saved',
+    description: 'Your workspace is up to date.',
+  },
+  success: {
+    type: 'success',
+    label: 'Success',
+    title: 'Deploy complete',
+    description: 'The release is live.',
+  },
+  warning: {
+    type: 'warning',
+    label: 'Warning',
+    title: 'Quota nearly full',
+    description: 'Storage is above 90%.',
+  },
+  error: {
+    type: 'error',
+    label: 'Error',
+    title: 'Deploy failed',
+    description: 'The build exited with status 1.',
+  },
+  loading: {
+    type: 'loading',
+    label: 'Loading',
+    title: 'Deploying',
+    description: 'Uploading the release bundle.',
+  },
+  custom: {
+    type: 'custom',
+    label: 'Custom',
+    title: 'Review requested',
+    description: 'A teammate requested your review.',
+  },
+} as const satisfies Record<
+  ToastType,
+  {
+    type: ToastType
+    label: string
+    title: string
+    description: string
+  }
+>
+
+function toastDemo(type: ToastType): (typeof TOAST_DEMOS)[ToastType] {
+  return TOAST_DEMOS[type]
+}
 
 export const init = (): [State, never[]] => [
   {
@@ -86,7 +138,7 @@ export const init = (): [State, never[]] => [
     // while the reader is elsewhere is noise. Every other affordance is live.
     carousel: carouselC.init({ count: SLIDES.length, loop: true }),
     calendar: datePickerC.init({ mode: 'range' }),
-    toaster: toastC.init({ max: 3 }),
+    toaster: toastC.init({ max: Object.keys(TOAST_DEMOS).length, animated: true }),
     pickerOpen: popoverC.init(),
     picker: datePickerC.init({ mode: 'single' }),
     nextToast: 1,
@@ -116,17 +168,15 @@ export function update(state: State, msg: Msg): [State, never[]] {
       return [{ ...state, picker, pickerOpen: closed }, []]
     }
     case 'pushToast': {
+      const demo = toastDemo(msg.toastType)
       const id = `t${state.nextToast}`
       const [toaster] = toastC.update(state.toaster, {
         type: 'create',
         toast: {
           id,
-          type: msg.variant === 'destructive' ? 'error' : 'info',
-          title: msg.variant === 'destructive' ? 'Deploy failed' : 'Changes saved',
-          description:
-            msg.variant === 'destructive'
-              ? 'The build exited with status 1.'
-              : 'Your workspace is up to date.',
+          type: demo.type,
+          title: demo.title,
+          description: demo.description,
           // Sticky. The countdown advances on `tick`, which needs a timer this
           // section has no effect channel for — a duration nothing ticks would
           // simply never fire, so the honest shape is an explicit dismiss.
@@ -319,18 +369,19 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       "shadcn's `sonner.tsx` has no recipes of its own — it hands the sonner library theme variables. `@llui/components/toast` owns the queue, the cap and the live region, so these recipes are built from shadcn's token vocabulary.",
       [
         row('Push', [
-          Button(
-            { variant: 'outline', onClick: () => send({ type: 'pushToast', variant: 'default' }) },
-            [text('Show toast')],
+          ...Object.values(TOAST_DEMOS).map((demo) =>
+            Button(
+              {
+                variant: demo.type === 'error' ? 'destructive' : 'outline',
+                'data-toast-demo-type': demo.type,
+                onClick: () => send({ type: 'pushToast', toastType: demo.type }),
+              },
+              [text(demo.label)],
+            ),
           ),
-          Button(
-            {
-              variant: 'destructive',
-              onClick: () => send({ type: 'pushToast', variant: 'destructive' }),
-            },
-            [text('Show error')],
-          ),
-          span({ class: 'text-xs text-muted-foreground' }, [text('Capped at 3.')]),
+          span({ class: 'text-xs text-muted-foreground' }, [
+            text(`Capped at ${Object.keys(TOAST_DEMOS).length}.`),
+          ]),
         ]),
       ],
     ),
@@ -343,7 +394,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
           const parts = toaster.toast(t)
           const item = t.peek()
           return [
-            Toast({ ...parts.root, variant: item.type === 'error' ? 'destructive' : 'default' }, [
+            Toast({ ...parts.root, variant: item.type }, [
               div({ class: 'flex flex-col gap-1' }, [
                 ToastTitle({ ...parts.title }, [text(item.title ?? '')]),
                 ToastDescription({ ...parts.description }, [text(item.description ?? '')]),

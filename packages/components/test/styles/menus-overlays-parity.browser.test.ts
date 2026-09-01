@@ -40,9 +40,6 @@ const floatingSurface = (scope: string): string => `
 
 const fixture = `<!doctype html><html><head><style>${baselineCss}</style></head><body>
   ${FLOATING_SCOPES.map(floatingSurface).join('\n')}
-  ${element('popover', 'arrow', 'popover-arrow')}
-  ${element('hover-card', 'arrow', 'hover-card-arrow')}
-  ${element('tooltip', 'arrow', 'tooltip-arrow')}
   <div data-scope="dialog" data-part="positioner">
     ${element('dialog', 'content', 'dialog-content')}
   </div>
@@ -208,27 +205,12 @@ describe('menus and overlays baseline parity in Chromium', () => {
     expect(new Set(highlightPairs.map((pair) => pair.join('|')))).toHaveLength(1)
   })
 
-  it('keeps floating layers ordered and arrow visuals in their surface hierarchy', async () => {
+  it('keeps floating layers ordered and surfaces in their visual hierarchy', async () => {
     for (const scope of FLOATING_SCOPES) {
       const zIndex = await page
         .locator(`#${scope}-positioner`)
         .evaluate((node) => getComputedStyle(node).zIndex)
       expect(zIndex, scope).toBe(scope === 'tooltip' ? '150' : '50')
-    }
-    for (const scope of ['popover', 'hover-card', 'tooltip'] as const) {
-      const arrow = await page.locator(`#${scope}-arrow`).evaluate((node) => {
-        const style = getComputedStyle(node)
-        return {
-          backgroundColor: style.backgroundColor,
-          height: style.height,
-          transform: style.transform,
-          width: style.width,
-        }
-      })
-      expect(arrow.width, scope).toBe('8px')
-      expect(arrow.height, scope).toBe('8px')
-      expect(arrow.transform, scope).not.toBe('none')
-      expect(arrow.backgroundColor, scope).not.toBe('rgba(0, 0, 0, 0)')
     }
     expect(
       await page.locator('#popover-content').evaluate((node) => getComputedStyle(node).width),

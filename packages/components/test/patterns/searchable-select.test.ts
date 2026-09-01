@@ -93,6 +93,32 @@ describe('searchableSelect reducer', () => {
     expect(s.combobox.value).toEqual([])
   })
 
+  it('forwards async loading, success, error, and stale-request semantics to combobox', () => {
+    let s = init({ items: ['Existing'] })
+    s = apply(s, { type: 'loadStart', requestId: 1 })
+    expect(s.combobox).toMatchObject({ status: 'loading', requestId: 1, error: null })
+
+    s = apply(s, { type: 'loadStart', requestId: 2 })
+    const stale = apply(s, { type: 'loadSuccess', requestId: 1, items: ['Stale'] })
+    expect(stale).toBe(s)
+
+    s = apply(s, { type: 'loadSuccess', requestId: 2, items: ['Fresh'] })
+    expect(s.combobox).toMatchObject({
+      status: 'loaded',
+      requestId: 2,
+      items: ['Fresh'],
+      filteredItems: ['Fresh'],
+    })
+
+    s = apply(s, { type: 'loadStart', requestId: 3 })
+    s = apply(s, { type: 'loadError', requestId: 3, error: 'Network unavailable' })
+    expect(s.combobox).toMatchObject({
+      status: 'error',
+      requestId: 3,
+      error: 'Network unavailable',
+    })
+  })
+
   describe('multiple mode', () => {
     it('toggles values and stays open', () => {
       let s = init({ items: ['Apple', 'Banana', 'Cherry'], selectionMode: 'multiple' })
@@ -185,6 +211,21 @@ describe('searchableSelect connect parts', () => {
     expect(parts.clear['data-part']).toBe('clear')
     expect(parts.empty['data-part']).toBe('empty')
     expect(parts.liveRegion['aria-live']).toBe('polite')
+  })
+
+  it('projects the real async machine state into listbox ARIA and live output', () => {
+    const loading = apply(init({ items: ['Apple'] }), { type: 'loadStart', requestId: 1 })
+    expect(read(parts.content['data-status'], loading)).toBe('loading')
+    expect(read(parts.content['aria-busy'], loading)).toBe('true')
+
+    const failed = apply(loading, {
+      type: 'loadError',
+      requestId: 1,
+      error: 'Could not load fruit',
+    })
+    expect(read(parts.content['data-status'], failed)).toBe('error')
+    expect(read(parts.content['aria-busy'], failed)).toBeUndefined()
+    expect(read(parts.liveRegion.text, failed)).toBe('Could not load fruit')
   })
 
   it('item parts carry aria-selected wiring', () => {

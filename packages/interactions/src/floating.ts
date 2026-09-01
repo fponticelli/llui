@@ -41,6 +41,13 @@ const PHYSICAL_SIDE_BY_PLACEMENT = {
   'left-end': 'left',
 } as const satisfies Record<Placement, PhysicalSide>
 
+const ARROW_STATIC_SIDE_BY_PLACEMENT_SIDE = {
+  top: 'bottom',
+  right: 'left',
+  bottom: 'top',
+  left: 'right',
+} as const satisfies Record<PhysicalSide, PhysicalSide>
+
 type InlineStyleSnapshot = {
   property: string
   present: boolean
@@ -142,8 +149,10 @@ export interface FloatingOptions {
 
 /**
  * Position `floating` relative to `anchor` with live updates on scroll/resize.
- * Owns `position`, `top`, `left`, and `transform` on `floating`; `left` and
- * `top` on an optional arrow; and placement attributes on `stateTarget`.
+ * Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+ * all four physical inset properties on an optional arrow; and placement
+ * attributes on `stateTarget`. The arrow's static-side inset is half its
+ * untransformed layout size, so a square arrow straddles the resolved edge.
  * Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
  * exact prior values (including priority) or absence of those properties.
  */
@@ -166,7 +175,9 @@ export function attachFloating(opts: FloatingOptions): () => void {
   )
   const floatingHadStyleAttribute = floating.hasAttribute('style')
   const arrowStyles = arrow
-    ? ['left', 'top'].map((property) => snapshotInlineStyle(arrow, property))
+    ? ['position', 'left', 'top', 'right', 'bottom'].map((property) =>
+        snapshotInlineStyle(arrow, property),
+      )
     : []
   const arrowHadStyleAttribute = arrow?.hasAttribute('style') ?? false
   const priorPlacement = stateTarget.getAttribute('data-placement')
@@ -194,6 +205,7 @@ export function attachFloating(opts: FloatingOptions): () => void {
   floating.style.position = 'absolute'
   floating.style.top = '0'
   floating.style.left = '0'
+  if (arrow) arrow.style.position = 'absolute'
 
   const update = (): void => {
     if (disposed) return
@@ -204,12 +216,20 @@ export function attachFloating(opts: FloatingOptions): () => void {
     }).then(({ x, y, placement: actual, middlewareData }) => {
       if (disposed) return
       floating.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
+      const actualSide = PHYSICAL_SIDE_BY_PLACEMENT[actual]
       stateTarget.dataset.placement = actual
-      stateTarget.dataset.side = PHYSICAL_SIDE_BY_PLACEMENT[actual]
-      if (arrow && middlewareData.arrow) {
-        const { x: ax, y: ay } = middlewareData.arrow
+      stateTarget.dataset.side = actualSide
+      if (arrow) {
+        for (const property of ['left', 'top', 'right', 'bottom']) {
+          arrow.style.removeProperty(property)
+        }
+        const { x: ax, y: ay } = middlewareData.arrow ?? {}
         if (ax != null) arrow.style.left = `${ax}px`
         if (ay != null) arrow.style.top = `${ay}px`
+        const staticSide = ARROW_STATIC_SIDE_BY_PLACEMENT_SIDE[actualSide]
+        const staticAxisSize =
+          actualSide === 'top' || actualSide === 'bottom' ? arrow.offsetHeight : arrow.offsetWidth
+        arrow.style.setProperty(staticSide, `${-staticAxisSize / 2}px`)
       }
       onUpdate?.({
         x,

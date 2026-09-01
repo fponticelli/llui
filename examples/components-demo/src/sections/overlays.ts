@@ -568,10 +568,12 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 button({ ...po.closeTrigger, class: 'btn btn-secondary mt-3 btn-sm' }, [
                   text('Got it'),
                 ]),
+                div({ ...po.arrow }),
               ],
             ),
           ],
           placement: 'bottom-start',
+          arrowSelector: "[data-part='arrow']",
         }),
       ]),
       card('Tooltip', [
@@ -580,7 +582,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           state: state.at('tooltip'),
           send: (m) => send({ type: 'tooltip', msg: m }),
           parts: tp,
-          content: () => [div({ ...tp.content }, [text('This is a tooltip')])],
+          content: () => [
+            div({ ...tp.content }, [text('This is a tooltip'), div({ ...tp.arrow })]),
+          ],
+          arrowSelector: "[data-part='arrow']",
         }),
       ]),
       card('Hover Card', [
@@ -597,8 +602,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
               p({ class: 'mt-1 text-xs text-muted-foreground' }, [
                 text('Full keyboard, screen-reader, pointer support.'),
               ]),
+              div({ ...hc.arrow }),
             ]),
           ],
+          arrowSelector: "[data-part='arrow']",
         }),
       ]),
       card('Menu', [

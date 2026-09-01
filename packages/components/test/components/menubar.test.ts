@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect } from '../../src/components/menubar'
 import type { MenubarState } from '../../src/components/menubar'
 import type { MenuItem } from '../../src/components/menu'
+import { runEngineFocus } from '../../src/utils/engine-focus'
 import { rootSignal, read } from '../_signal'
 
 const fileItems: MenuItem[] = [
@@ -25,6 +26,20 @@ const baseInit = () =>
       { id: 'view', items: viewItems },
     ],
   })
+
+const baseInitWithDir = (dir: 'ltr' | 'rtl') =>
+  init(
+    Object.assign(
+      {
+        menus: [
+          { id: 'file', items: fileItems },
+          { id: 'edit', items: editItems },
+          { id: 'view', items: viewItems },
+        ],
+      },
+      { dir },
+    ),
+  )
 
 describe('menubar reducer', () => {
   it('initializes with menus, nothing open, first menu focused', () => {
@@ -200,6 +215,20 @@ describe('menubar.connect — root + triggers', () => {
     p.menuTrigger('edit').onFocus(new FocusEvent('focus'))
     expect(send).toHaveBeenCalledWith({ type: 'focusMenu', id: 'edit' })
   })
+
+  it('does not treat an engine focus restoration as a user-driven menu switch', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'mb' })
+    runEngineFocus(() => p.menuTrigger('edit').onFocus(new FocusEvent('focus')))
+    expect(send).toHaveBeenCalledWith({ type: 'syncTriggerFocus', id: 'edit' })
+  })
+
+  it('ignores stale focus restoration from the menu being switched away from', () => {
+    const switched = update(baseInit(), { type: 'openMenu', id: 'edit' })[0]
+    const [next] = update(switched, { type: 'syncTriggerFocus', id: 'file' })
+    expect(next).toBe(switched)
+    expect(next.open).toBe('edit')
+  })
 })
 
 describe('menubar.connect — APG keyboard', () => {
@@ -219,6 +248,18 @@ describe('menubar.connect — APG keyboard', () => {
     p.menuTrigger('file').onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
     expect(send).toHaveBeenCalledWith({ type: 'focusPrev' })
+  })
+
+  it.each([
+    ['ArrowRight', 'focusPrev'],
+    ['ArrowLeft', 'focusNext'],
+  ] as const)('maps RTL trigger %s to logical %s', (key, message) => {
+    const send = vi.fn()
+    const p = connect(signalFrom(baseInitWithDir('rtl')), send, { id: 'mb' })
+    const ev = new KeyboardEvent('keydown', { key, cancelable: true })
+    p.menuTrigger('file').onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: message })
   })
 
   it('ArrowDown opens the focused menu and focuses its first item', () => {
@@ -313,6 +354,54 @@ describe('menubar.connect — APG keyboard', () => {
     p.menu('edit').content.onKeyDown(ev)
     expect(ev.defaultPrevented).toBe(true)
     expect(send).toHaveBeenCalledWith({ type: 'focusPrev' })
+  })
+
+  it.each([
+    ['ArrowRight', 'focusPrev'],
+    ['ArrowLeft', 'focusNext'],
+  ] as const)('maps unconsumed RTL panel %s to logical %s', (key, message) => {
+    const send = vi.fn()
+    const openState = update(baseInitWithDir('rtl'), { type: 'openMenu', id: 'file' })[0]
+    const p = connect(signalFrom(openState), send, { id: 'mb' })
+    const ev = new KeyboardEvent('keydown', { key, cancelable: true })
+    p.menu('file').content.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({ type: message })
+  })
+
+  it('lets the RTL delegated panel consume physical ArrowLeft to open a submenu', () => {
+    const send = vi.fn()
+    const state = init(
+      Object.assign(
+        {
+          menus: [
+            {
+              id: 'file',
+              items: [
+                {
+                  value: 'recent',
+                  kind: 'action' as const,
+                  children: [{ value: 'r1', kind: 'action' as const }],
+                },
+              ],
+            },
+            { id: 'edit', items: editItems },
+          ],
+        },
+        { dir: 'rtl' as const },
+      ),
+    )
+    const openState = update(state, { type: 'openMenu', id: 'file' })[0]
+    const p = connect(signalFrom(openState), send, { id: 'mb' })
+    const ev = new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true })
+    p.menu('file').content.onKeyDown(ev)
+    expect(ev.defaultPrevented).toBe(true)
+    expect(send).toHaveBeenCalledWith({
+      type: 'menuMsg',
+      id: 'file',
+      msg: { type: 'openSub', value: 'recent' },
+    })
+    expect(send).not.toHaveBeenCalledWith({ type: 'focusNext' })
   })
 
   it('does NOT walk when the panel consumed the arrow (submenu open/close)', () => {

@@ -69,8 +69,10 @@ function _scrollLockCount(): number
 ### `attachFloating()`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Owns `position`, `top`, `left`, and `transform` on `floating`; `left` and
-`top` on an optional arrow; and placement attributes on `stateTarget`.
+Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+all four physical inset properties on an optional arrow; and placement
+attributes on `stateTarget`. The arrow's static-side inset is half its
+untransformed layout size, so a square arrow straddles the resolved edge.
 Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
 exact prior values (including priority) or absence of those properties.
 

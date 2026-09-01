@@ -65,4 +65,22 @@ describe('select.overlay integration', () => {
     await new Promise((r) => setTimeout(r, 0))
     expect(document.querySelector('[data-part="content"]')).toBeNull()
   })
+
+  it('unmounts synchronously on close, so no exit animation state is reachable', async () => {
+    const { send } = makeApp()
+    send({ type: 'open' })
+    await new Promise((r) => setTimeout(r, 0))
+    const content = document.querySelector<HTMLElement>('[data-part="content"]')!
+    expect(content.dataset['state']).toBe('open')
+
+    send({ type: 'close' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.querySelector('[data-part="content"]')).toBeNull()
+
+    // An end event on the detached node cannot advance a nonexistent presence
+    // phase or remount it. The visual contract therefore has an entry only.
+    content.dispatchEvent(new Event('animationend'))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(document.querySelector('[data-part="content"]')).toBeNull()
+  })
 })
