@@ -15748,9 +15748,9 @@ export type RatingGroupMsg =
   /** @humanOnly */
   | { type: 'hover'; value: number | null }
   /** @humanOnly */
-  | { type: 'clickItem'; index: number; isLeftHalf: boolean }
+  | { type: 'clickItem'; index: number; isStartHalf: boolean }
   /** @humanOnly */
-  | { type: 'hoverItem'; index: number; isLeftHalf: boolean }
+  | { type: 'hoverItem'; index: number; isStartHalf: boolean }
   /** @intent("Increase the rating by step (default: 0.5 if allowHalf, else 1)") */
   | { type: 'incrementValue'; step?: number }
   /** @intent("Decrease the rating by step (default: 0.5 if allowHalf, else 1)") */
@@ -34108,9 +34108,9 @@ export type RatingGroupMsg =
   /** @humanOnly */
   | { type: 'hover'; value: number | null }
   /** @humanOnly */
-  | { type: 'clickItem'; index: number; isLeftHalf: boolean }
+  | { type: 'clickItem'; index: number; isStartHalf: boolean }
   /** @humanOnly */
-  | { type: 'hoverItem'; index: number; isLeftHalf: boolean }
+  | { type: 'hoverItem'; index: number; isStartHalf: boolean }
   /** @intent("Increase the rating by step (default: 0.5 if allowHalf, else 1)") */
   | { type: 'incrementValue'; step?: number }
   /** @intent("Decrease the rating by step (default: 0.5 if allowHalf, else 1)") */
