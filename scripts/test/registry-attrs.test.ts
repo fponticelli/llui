@@ -87,7 +87,10 @@ const ALLOWED: Record<string, Allowance> = {
   '*: data-slot': {
     reason: 'upstream leftover, guarded separately — see the data-slot rule in CLAUDE.md',
   },
-  '*: data-side': { reason: 'overlay positioners: written by the floating engine, not a part bag' },
+  '*: data-side': {
+    reason:
+      'floating overlay content: written on the explicit state target by the floating engine, not a part bag',
+  },
   '*: aria-invalid': { reason: 'set by the consumer on any control' },
   '*: aria-selected': { reason: 'set by the consumer on any option' },
   '*: aria-checked': { reason: 'set by the consumer on any toggle' },

@@ -181,9 +181,16 @@ describe('menu presence lifecycle', () => {
     expect(init({ items: flat, open: true }).status).toBe('open')
   })
 
-  it('opening moves status to open (no enter animation wired)', () => {
+  it('default opening moves status to open synchronously', () => {
     const [s] = update(init({ items: flat }), { type: 'open' })
     expect(s.status).toBe('open')
+  })
+
+  it('animated opening waits at opening until animationEnd', () => {
+    const [opening] = update(init({ items: flat, skipAnimations: false }), { type: 'open' })
+    expect(opening.status).toBe('opening')
+    expect(isPresent(opening)).toBe(true)
+    expect(update(opening, { type: 'animationEnd' })[0].status).toBe('open')
   })
 
   it('non-animated close (default) jumps straight to closed — no hang', () => {

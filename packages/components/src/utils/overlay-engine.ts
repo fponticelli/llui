@@ -282,23 +282,52 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
 
   const attachFloatingFor = (els: OverlayElements): (() => void) => {
     const f = opts.floating!
+    let restoreSameWidth: (() => void) | undefined
     if (f.sameWidth && els.placementAnchor) {
+      const style = els.floating.style
+      const priorMinWidth = style.getPropertyValue('min-width')
+      const priorPriority = style.getPropertyPriority('min-width')
+      const hadMinWidth = priorMinWidth !== ''
+      const hadStyleAttribute = els.floating.hasAttribute('style')
       els.floating.style.minWidth = `${els.placementAnchor.offsetWidth}px`
+      restoreSameWidth = () => {
+        if (hadMinWidth) style.setProperty('min-width', priorMinWidth, priorPriority)
+        else style.removeProperty('min-width')
+        if (!hadStyleAttribute && style.length === 0) els.floating.removeAttribute('style')
+      }
     }
     const arrow = f.arrowSelector
       ? (els.content.querySelector(f.arrowSelector) as HTMLElement | null)
       : null
     const dir = typeof f.dir === 'function' ? f.dir() : f.dir
-    return attachFloating({
-      anchor: els.placementAnchor ?? els.content,
-      floating: els.floating,
-      placement: f.placement,
-      offset: f.offset,
-      flip: f.flip,
-      shift: f.shift,
-      dir,
-      arrow: arrow ?? undefined,
-    })
+    let stopFloating: () => void
+    try {
+      stopFloating = attachFloating({
+        anchor: els.placementAnchor ?? els.content,
+        floating: els.floating,
+        stateTarget: els.content,
+        placement: f.placement,
+        offset: f.offset,
+        flip: f.flip,
+        shift: f.shift,
+        dir,
+        arrow: arrow ?? undefined,
+      })
+    } catch (error) {
+      restoreSameWidth?.()
+      throw error
+    }
+
+    let disposed = false
+    return () => {
+      if (disposed) return
+      disposed = true
+      try {
+        stopFloating()
+      } finally {
+        restoreSameWidth?.()
+      }
+    }
   }
 
   const interactionMount = (): Mountable =>

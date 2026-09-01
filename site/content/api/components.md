@@ -2119,7 +2119,10 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Applies `left` + `top` styles to the floating element. Returns a cleanup.
+Owns `position`, `top`, `left`, and `transform` on `floating`; `left` and
+`top` on an optional arrow; and placement attributes on `stateTarget`.
+Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
+exact prior values (including priority) or absence of those properties.
 
 ```typescript
 export declare function attachFloating(opts: FloatingOptions): () => void
@@ -9341,6 +9344,12 @@ export interface FloatingOptions {
   anchor: Element
   /** The floating element (content). */
   floating: HTMLElement
+  /**
+   * Element that receives the resolved full `data-placement` and physical
+   * `data-side`. Defaults to `floating`. Use a separate content element when
+   * `floating` is a geometry-only positioner wrapper.
+   */
+  stateTarget?: HTMLElement
   /** Preferred placement (default: 'bottom'). */
   placement?: Placement
   /** Gap between anchor and floating, in px (default: 0). */
@@ -15644,7 +15653,10 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components/utils`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Applies `left` + `top` styles to the floating element. Returns a cleanup.
+Owns `position`, `top`, `left`, and `transform` on `floating`; `left` and
+`top` on an optional arrow; and placement attributes on `stateTarget`.
+Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
+exact prior values (including priority) or absence of those properties.
 
 ```typescript
 export declare function attachFloating(opts: FloatingOptions): () => void
@@ -17296,6 +17308,12 @@ export interface FloatingOptions {
   anchor: Element
   /** The floating element (content). */
   floating: HTMLElement
+  /**
+   * Element that receives the resolved full `data-placement` and physical
+   * `data-side`. Defaults to `floating`. Use a separate content element when
+   * `floating` is a geometry-only positioner wrapper.
+   */
+  stateTarget?: HTMLElement
   /** Preferred placement (default: 'bottom'). */
   placement?: Placement
   /** Gap between anchor and floating, in px (default: 0). */
@@ -19111,7 +19129,10 @@ export type SyncEngineFocusBodyRequired = {
 ##### `attachFloating()` from `@llui/components/utils/floating`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Applies `left` + `top` styles to the floating element. Returns a cleanup.
+Owns `position`, `top`, `left`, and `transform` on `floating`; `left` and
+`top` on an optional arrow; and placement attributes on `stateTarget`.
+Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
+exact prior values (including priority) or absence of those properties.
 
 ```typescript
 export declare function attachFloating(opts: FloatingOptions): () => void
@@ -19135,6 +19156,12 @@ export interface FloatingOptions {
   anchor: Element
   /** The floating element (content). */
   floating: HTMLElement
+  /**
+   * Element that receives the resolved full `data-placement` and physical
+   * `data-side`. Defaults to `floating`. Use a separate content element when
+   * `floating` is a geometry-only positioner wrapper.
+   */
+  stateTarget?: HTMLElement
   /** Preferred placement (default: 'bottom'). */
   placement?: Placement
   /** Gap between anchor and floating, in px (default: 0). */
@@ -19356,7 +19383,10 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components/utils/index`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Applies `left` + `top` styles to the floating element. Returns a cleanup.
+Owns `position`, `top`, `left`, and `transform` on `floating`; `left` and
+`top` on an optional arrow; and placement attributes on `stateTarget`.
+Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
+exact prior values (including priority) or absence of those properties.
 
 ```typescript
 export declare function attachFloating(opts: FloatingOptions): () => void
@@ -21008,6 +21038,12 @@ export interface FloatingOptions {
   anchor: Element
   /** The floating element (content). */
   floating: HTMLElement
+  /**
+   * Element that receives the resolved full `data-placement` and physical
+   * `data-side`. Defaults to `floating`. Use a separate content element when
+   * `floating` is a geometry-only positioner wrapper.
+   */
+  stateTarget?: HTMLElement
   /** Preferred placement (default: 'bottom'). */
   placement?: Placement
   /** Gap between anchor and floating, in px (default: 0). */

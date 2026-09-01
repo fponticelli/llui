@@ -15,13 +15,74 @@ import {
  * popover, tooltip, menu, and any other component that attaches a floating
  * element to an anchor.
  *
- * Returns a cleanup function that removes scroll/resize listeners and stops
- * position updates.
+ * Returns a cleanup function that removes scroll/resize listeners, suppresses
+ * pending position writes, and restores every inline style/attribute this
+ * attachment owns to its exact pre-attachment state.
  */
 
 export type { Placement }
 
 import type { TextDirection } from './direction.js'
+
+type PhysicalSide = 'top' | 'right' | 'bottom' | 'left'
+
+const PHYSICAL_SIDE_BY_PLACEMENT = {
+  top: 'top',
+  'top-start': 'top',
+  'top-end': 'top',
+  right: 'right',
+  'right-start': 'right',
+  'right-end': 'right',
+  bottom: 'bottom',
+  'bottom-start': 'bottom',
+  'bottom-end': 'bottom',
+  left: 'left',
+  'left-start': 'left',
+  'left-end': 'left',
+} as const satisfies Record<Placement, PhysicalSide>
+
+type InlineStyleSnapshot = {
+  property: string
+  present: boolean
+  value: string
+  priority: string
+}
+
+function snapshotInlineStyle(element: HTMLElement, property: string): InlineStyleSnapshot {
+  let present = false
+  for (let index = 0; index < element.style.length; index++) {
+    if (element.style.item(index) === property) {
+      present = true
+      break
+    }
+  }
+  return {
+    property,
+    present,
+    value: element.style.getPropertyValue(property),
+    priority: element.style.getPropertyPriority(property),
+  }
+}
+
+function restoreInlineStyles(
+  element: HTMLElement,
+  snapshots: readonly InlineStyleSnapshot[],
+  hadStyleAttribute: boolean,
+): void {
+  for (const snapshot of snapshots) {
+    if (snapshot.present) {
+      element.style.setProperty(snapshot.property, snapshot.value, snapshot.priority)
+    } else {
+      element.style.removeProperty(snapshot.property)
+    }
+  }
+  if (!hadStyleAttribute && element.style.length === 0) element.removeAttribute('style')
+}
+
+function restoreAttribute(element: HTMLElement, name: string, value: string | null): void {
+  if (value === null) element.removeAttribute(name)
+  else element.setAttribute(name, value)
+}
 
 /**
  * The platform floating-ui positions against, with `isRTL` answered by the
@@ -46,6 +107,12 @@ export interface FloatingOptions {
   anchor: Element
   /** The floating element (content). */
   floating: HTMLElement
+  /**
+   * Element that receives the resolved full `data-placement` and physical
+   * `data-side`. Defaults to `floating`. Use a separate content element when
+   * `floating` is a geometry-only positioner wrapper.
+   */
+  stateTarget?: HTMLElement
   /** Preferred placement (default: 'bottom'). */
   placement?: Placement
   /** Gap between anchor and floating, in px (default: 0). */
@@ -75,12 +142,16 @@ export interface FloatingOptions {
 
 /**
  * Position `floating` relative to `anchor` with live updates on scroll/resize.
- * Applies `left` + `top` styles to the floating element. Returns a cleanup.
+ * Owns `position`, `top`, `left`, and `transform` on `floating`; `left` and
+ * `top` on an optional arrow; and placement attributes on `stateTarget`.
+ * Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
+ * exact prior values (including priority) or absence of those properties.
  */
 export function attachFloating(opts: FloatingOptions): () => void {
   const {
     anchor,
     floating,
+    stateTarget = floating,
     placement = 'bottom',
     offset = 0,
     flip = true,
@@ -89,6 +160,25 @@ export function attachFloating(opts: FloatingOptions): () => void {
     arrow,
     onUpdate,
   } = opts
+
+  const floatingStyles = ['position', 'top', 'left', 'transform'].map((property) =>
+    snapshotInlineStyle(floating, property),
+  )
+  const floatingHadStyleAttribute = floating.hasAttribute('style')
+  const arrowStyles = arrow
+    ? ['left', 'top'].map((property) => snapshotInlineStyle(arrow, property))
+    : []
+  const arrowHadStyleAttribute = arrow?.hasAttribute('style') ?? false
+  const priorPlacement = stateTarget.getAttribute('data-placement')
+  const priorSide = stateTarget.getAttribute('data-side')
+  let disposed = false
+
+  const restore = (): void => {
+    restoreInlineStyles(floating, floatingStyles, floatingHadStyleAttribute)
+    if (arrow) restoreInlineStyles(arrow, arrowStyles, arrowHadStyleAttribute)
+    restoreAttribute(stateTarget, 'data-placement', priorPlacement)
+    restoreAttribute(stateTarget, 'data-side', priorSide)
+  }
 
   const platform = dir === undefined ? undefined : directedPlatform(dir)
 
@@ -106,13 +196,16 @@ export function attachFloating(opts: FloatingOptions): () => void {
   floating.style.left = '0'
 
   const update = (): void => {
+    if (disposed) return
     void computePosition(anchor, floating, {
       placement,
       middleware,
       ...(platform ? { platform } : {}),
     }).then(({ x, y, placement: actual, middlewareData }) => {
+      if (disposed) return
       floating.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
-      floating.dataset.placement = actual
+      stateTarget.dataset.placement = actual
+      stateTarget.dataset.side = PHYSICAL_SIDE_BY_PLACEMENT[actual]
       if (arrow && middlewareData.arrow) {
         const { x: ax, y: ay } = middlewareData.arrow
         if (ax != null) arrow.style.left = `${ax}px`
@@ -129,5 +222,22 @@ export function attachFloating(opts: FloatingOptions): () => void {
     })
   }
 
-  return autoUpdate(anchor, floating, update)
+  let stopUpdates: () => void
+  try {
+    stopUpdates = autoUpdate(anchor, floating, update)
+  } catch (error) {
+    disposed = true
+    restore()
+    throw error
+  }
+
+  return () => {
+    if (disposed) return
+    disposed = true
+    try {
+      stopUpdates()
+    } finally {
+      restore()
+    }
+  }
 }

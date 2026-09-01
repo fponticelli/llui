@@ -187,7 +187,7 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
         {
           ...state,
           open: true,
-          status: statusOnOpen(state.status),
+          status: statusOnOpen(state.status, state.skipAnimations),
           highlights: setHighlight(state.highlights, '', highlighted),
         },
         [],
@@ -201,7 +201,7 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
         {
           ...state,
           open: true,
-          status: statusOnOpen(state.status),
+          status: statusOnOpen(state.status, state.skipAnimations),
           highlights: setHighlight(
             state.highlights,
             '',

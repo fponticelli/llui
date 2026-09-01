@@ -90,6 +90,17 @@ describe('context-menu presence lifecycle', () => {
     expect(s.status).toBe('open')
   })
 
+  it('animated openAt waits at opening until animationEnd', () => {
+    const [opening] = update(init({ items: flat, skipAnimations: false }), {
+      type: 'openAt',
+      x: 1,
+      y: 2,
+    })
+    expect(opening.status).toBe('opening')
+    expect(isPresent(opening)).toBe(true)
+    expect(update(opening, { type: 'animationEnd' })[0].status).toBe('open')
+  })
+
   it('non-animated close (default) jumps straight to closed — no hang', () => {
     const s0 = { ...init({ items: flat }), open: true, status: 'open' as const }
     const [s] = update(s0, { type: 'close' })

@@ -1,0 +1,209 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { attachFloating, type Placement } from '../src/floating'
+
+const floatingUi = vi.hoisted(() => ({
+  autoUpdate: vi.fn(),
+  computePosition: vi.fn(),
+  stop: vi.fn(),
+  update: undefined as (() => void) | undefined,
+}))
+
+vi.mock('@floating-ui/dom', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@floating-ui/dom')>()
+  return {
+    ...actual,
+    autoUpdate: floatingUi.autoUpdate,
+    computePosition: floatingUi.computePosition,
+  }
+})
+
+type PositionResult = {
+  x: number
+  y: number
+  placement: Placement
+  strategy: 'absolute'
+  middlewareData: { arrow?: { x?: number; y?: number } }
+}
+
+function positioned(placement: Placement, overrides: Partial<PositionResult> = {}): PositionResult {
+  return {
+    x: 12.4,
+    y: 27.6,
+    placement,
+    strategy: 'absolute',
+    middlewareData: {},
+    ...overrides,
+  }
+}
+
+function deferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+} {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => {
+    resolve = done
+  })
+  return { promise, resolve }
+}
+
+const flush = async (): Promise<void> => {
+  await Promise.resolve()
+  await Promise.resolve()
+}
+
+beforeEach(() => {
+  floatingUi.computePosition.mockReset()
+  floatingUi.autoUpdate.mockReset()
+  floatingUi.stop.mockReset()
+  floatingUi.update = undefined
+  floatingUi.autoUpdate.mockImplementation(
+    (_anchor: Element, _floating: HTMLElement, update: () => void) => {
+      floatingUi.update = update
+      update()
+      return floatingUi.stop
+    },
+  )
+})
+
+describe('attachFloating transactional state', () => {
+  it('publishes resolved placement and physical side on a separate state target after flips', async () => {
+    const anchor = document.createElement('button')
+    const positioner = document.createElement('div')
+    const content = document.createElement('div')
+    positioner.append(content)
+    floatingUi.computePosition
+      .mockResolvedValueOnce(positioned('bottom-start'))
+      .mockResolvedValueOnce(positioned('top-end', { x: 19, y: 4 }))
+
+    const cleanup = attachFloating({ anchor, floating: positioner, stateTarget: content })
+    await flush()
+
+    expect(content.getAttribute('data-placement')).toBe('bottom-start')
+    expect(content.getAttribute('data-side')).toBe('bottom')
+    expect(positioner.hasAttribute('data-placement')).toBe(false)
+    expect(positioner.hasAttribute('data-side')).toBe(false)
+    expect(positioner.style.transform).toBe('translate(12px, 28px)')
+
+    floatingUi.update?.()
+    await flush()
+
+    expect(content.getAttribute('data-placement')).toBe('top-end')
+    expect(content.getAttribute('data-side')).toBe('top')
+    expect(positioner.style.transform).toBe('translate(19px, 4px)')
+    cleanup()
+  })
+
+  it.each([
+    ['top', 'top'],
+    ['top-start', 'top'],
+    ['top-end', 'top'],
+    ['right', 'right'],
+    ['right-start', 'right'],
+    ['right-end', 'right'],
+    ['bottom', 'bottom'],
+    ['bottom-start', 'bottom'],
+    ['bottom-end', 'bottom'],
+    ['left', 'left'],
+    ['left-start', 'left'],
+    ['left-end', 'left'],
+  ] as const)('maps resolved %s placement to physical %s side', async (placement, side) => {
+    const anchor = document.createElement('button')
+    const floating = document.createElement('div')
+    floatingUi.computePosition.mockResolvedValueOnce(positioned(placement))
+
+    const cleanup = attachFloating({ anchor, floating })
+    await flush()
+
+    expect(floating.getAttribute('data-placement')).toBe(placement)
+    expect(floating.getAttribute('data-side')).toBe(side)
+    cleanup()
+  })
+
+  it('restores exact prior geometry, state attributes, and arrow styles once', async () => {
+    const anchor = document.createElement('button')
+    const floating = document.createElement('div')
+    const content = document.createElement('div')
+    const arrow = document.createElement('div')
+    floating.style.setProperty('position', 'fixed', 'important')
+    floating.style.setProperty('top', '11px')
+    floating.style.setProperty('left', '13px', 'important')
+    floating.style.setProperty('transform', 'scale(0.5)')
+    content.setAttribute('data-placement', 'legacy-start')
+    content.setAttribute('data-side', 'legacy')
+    arrow.style.setProperty('left', '3px', 'important')
+    arrow.style.setProperty('top', '5px')
+    const onUpdate = vi.fn()
+    floatingUi.computePosition.mockResolvedValueOnce(
+      positioned('right-end', { middlewareData: { arrow: { x: 7, y: 9 } } }),
+    )
+
+    const cleanup = attachFloating({
+      anchor,
+      floating,
+      stateTarget: content,
+      arrow,
+      onUpdate,
+    })
+    await flush()
+
+    expect(floating.style.position).toBe('absolute')
+    expect(floating.style.top).toBe('0px')
+    expect(floating.style.left).toBe('0px')
+    expect(floating.style.transform).toBe('translate(12px, 28px)')
+    expect(content.getAttribute('data-placement')).toBe('right-end')
+    expect(content.getAttribute('data-side')).toBe('right')
+    expect(arrow.style.left).toBe('7px')
+    expect(arrow.style.top).toBe('9px')
+    expect(onUpdate).toHaveBeenCalledTimes(1)
+
+    cleanup()
+    cleanup()
+
+    expect(floatingUi.stop).toHaveBeenCalledTimes(1)
+    expect(floating.style.getPropertyValue('position')).toBe('fixed')
+    expect(floating.style.getPropertyPriority('position')).toBe('important')
+    expect(floating.style.getPropertyValue('top')).toBe('11px')
+    expect(floating.style.getPropertyValue('left')).toBe('13px')
+    expect(floating.style.getPropertyPriority('left')).toBe('important')
+    expect(floating.style.getPropertyValue('transform')).toBe('scale(0.5)')
+    expect(content.getAttribute('data-placement')).toBe('legacy-start')
+    expect(content.getAttribute('data-side')).toBe('legacy')
+    expect(arrow.style.getPropertyValue('left')).toBe('3px')
+    expect(arrow.style.getPropertyPriority('left')).toBe('important')
+    expect(arrow.style.getPropertyValue('top')).toBe('5px')
+  })
+
+  it('disposes before observers stop and suppresses a pending result and callback', async () => {
+    const anchor = document.createElement('button')
+    const floating = document.createElement('div')
+    const content = document.createElement('div')
+    const arrow = document.createElement('div')
+    const result = deferred<PositionResult>()
+    const onUpdate = vi.fn()
+    floatingUi.computePosition.mockReturnValueOnce(result.promise)
+    floatingUi.stop.mockImplementation(() => floatingUi.update?.())
+
+    const cleanup = attachFloating({
+      anchor,
+      floating,
+      stateTarget: content,
+      arrow,
+      onUpdate,
+    })
+    expect(floatingUi.computePosition).toHaveBeenCalledTimes(1)
+
+    cleanup()
+    cleanup()
+    result.resolve(positioned('left-start', { middlewareData: { arrow: { x: 2, y: 4 } } }))
+    await flush()
+
+    expect(floatingUi.stop).toHaveBeenCalledTimes(1)
+    expect(floatingUi.computePosition).toHaveBeenCalledTimes(1)
+    expect(floating.getAttribute('style')).toBeNull()
+    expect(content.hasAttribute('data-placement')).toBe(false)
+    expect(content.hasAttribute('data-side')).toBe(false)
+    expect(arrow.getAttribute('style')).toBeNull()
+    expect(onUpdate).not.toHaveBeenCalled()
+  })
+})

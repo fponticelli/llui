@@ -94,11 +94,12 @@ export type MenuTreeMsg =
 
 // ---- presence lifecycle (composes presence.update; never reinvents it) ----
 
-/** Advance the root content's presence status on an OPEN. With no enter
- * animation wired for menus, opening resolves directly to 'open'. */
-export function statusOnOpen(status: PresenceStatus): PresenceStatus {
+/** Advance the root content's presence status on an OPEN. The default
+ * synchronous path lands on `open`; an animated menu stays at `opening` until
+ * its content's real animation-end event resolves the shared presence machine. */
+export function statusOnOpen(status: PresenceStatus, skipAnimations: boolean): PresenceStatus {
   const [next] = presence.update({ status, unmountOnExit: true }, { type: 'open' })
-  return next.status === 'opening' ? 'open' : next.status
+  return skipAnimations && next.status === 'opening' ? 'open' : next.status
 }
 
 /** Advance the root content's presence status on a CLOSE REQUEST. With

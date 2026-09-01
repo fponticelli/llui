@@ -143,7 +143,7 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
         {
           ...state,
           open: true,
-          status: statusOnOpen(state.status),
+          status: statusOnOpen(state.status, state.skipAnimations),
           x: msg.x,
           y: msg.y,
           openPath: [],

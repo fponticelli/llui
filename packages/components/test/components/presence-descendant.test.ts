@@ -89,7 +89,7 @@ describe('descendant animation/transition end does not advance presence', () => 
 })
 
 /**
- * The five overlays now reduce through the SAME presence transitions
+ * The animated overlays now reduce through the SAME presence transitions
  * (`presence.ts`), so they must produce the same status sequence — that shared
  * machine is what keeps their handlers from drifting apart again.
  */
@@ -164,6 +164,28 @@ describe('every overlay produces the same animated presence sequence', () => {
         { type: 'show' },
         { type: 'animationEnd' },
         { type: 'hide' },
+        { type: 'animationEnd' },
+      ]),
+    ).toEqual(expected)
+  })
+
+  it('menu', () => {
+    expect(
+      trace(menu.init({ items: [], skipAnimations: false }), menu.update, [
+        { type: 'open' },
+        { type: 'animationEnd' },
+        { type: 'close' },
+        { type: 'animationEnd' },
+      ]),
+    ).toEqual(expected)
+  })
+
+  it('context-menu', () => {
+    expect(
+      trace(contextMenu.init({ items: [], skipAnimations: false }), contextMenu.update, [
+        { type: 'openAt', x: 1, y: 2 },
+        { type: 'animationEnd' },
+        { type: 'close' },
         { type: 'animationEnd' },
       ]),
     ).toEqual(expected)

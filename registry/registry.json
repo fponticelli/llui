@@ -3905,7 +3905,7 @@
       "title": "Dropdown Menu",
       "description": "Skin for @llui/components/menu, with groups, submenus and shortcuts.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["icons", "utils"],
+      "registryDependencies": ["floating-motion", "icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/dropdown-menu.ts",
@@ -4025,7 +4025,7 @@
       "title": "Hover Card",
       "description": "Skin for @llui/components/hover-card.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["floating-motion", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/hover-card.ts",
@@ -4175,7 +4175,7 @@
       "title": "Menubar",
       "description": "Skin for @llui/components/menubar; reuses the dropdown recipes.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["dropdown-menu", "utils"],
+      "registryDependencies": ["dropdown-menu", "floating-motion", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/menubar.ts",
@@ -4265,7 +4265,7 @@
       "title": "Popover",
       "description": "Skin for @llui/components/popover, with data-[side] enter animations.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["floating-motion", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/popover.ts",
@@ -4385,7 +4385,7 @@
       "title": "Select",
       "description": "Skin for @llui/components/select, including the hidden native form control.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["icons", "utils"],
+      "registryDependencies": ["floating-motion", "icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/select.ts",
@@ -4745,7 +4745,7 @@
       "title": "Tooltip",
       "description": "Skin for @llui/components/tooltip.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["floating-motion", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/tooltip.ts",
@@ -4796,6 +4796,21 @@
           "path": "registry/llui/ui/typography.ts",
           "type": "registry:ui",
           "target": "typography.ts"
+        }
+      ]
+    },
+    {
+      "name": "floating-motion",
+      "type": "registry:lib",
+      "title": "Floating overlay motion",
+      "description": "Shared presence and physical-side animation policy for floating overlay skins.",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/llui/lib/floating-motion.ts",
+          "type": "registry:lib",
+          "target": "floating-motion.ts"
         }
       ]
     },
