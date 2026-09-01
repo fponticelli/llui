@@ -50,6 +50,23 @@ machine's title or kind. That keeps variant installs such as `calendar`/`date-pi
 `drawer`/`sheet` distinct, and labels aliases by the copied artifact they actually install
 (`alias pattern`, `alias skin` or `alias presentational`).
 
+## Presentation scenario protocol
+
+Gallery and visual-regression consumers import the browser-safe protocol directly from
+`@llui/cli/presentation-scenarios`; it is intentionally absent from the Node-backed
+`@llui/cli` root entry. `ProductContract` remains the only product inventory and the only
+source of product metadata. A family supplies semantic cases keyed by the contract's
+`scenarioId`, and `compileScenarioFamily` performs the exact join in canonical contract order.
+
+A `scenarioId` identifies a product presentation across renderer paths. A case `id` is instead
+a stable, product-local state such as `open` or `loading`. Each case owns only JSON data, the
+environment axes it supports, and any copied-artifact targets it applies to. Theme, direction,
+motion, viewport and forced-colors axes compose independently; the resolver fills canonical
+defaults and rejects unsupported route selections.
+
+The compiled catalog is the only shared seam. Baseline and registry/Tailwind adapters consume
+the same resolved data but keep their DOM, CSS, selectors and LLui runtime code isolated.
+
 ## `components.json`
 
 ```json

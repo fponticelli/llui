@@ -6,4 +6,9 @@ describe('@llui/cli public API', () => {
     expect(publicApi).toHaveProperty('CopiedArtifactSchema')
     expect(publicApi).not.toHaveProperty('assertProductInventory')
   })
+
+  it('keeps the browser-only presentation protocol off the Node-backed root entry', () => {
+    expect(publicApi).not.toHaveProperty('compileScenarioFamily')
+    expect(publicApi).not.toHaveProperty('resolveScenarioSelection')
+  })
 })

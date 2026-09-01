@@ -18,6 +18,10 @@
     "./registry": {
       "types": "./dist/registry.d.ts",
       "import": "./dist/registry.js"
+    },
+    "./presentation-scenarios": {
+      "types": "./dist/presentation-scenarios.d.ts",
+      "import": "./dist/presentation-scenarios.js"
     }
   },
   "files": [

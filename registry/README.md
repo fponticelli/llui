@@ -64,9 +64,11 @@ The contract keeps four artifacts distinct:
 Aliases point straight to one canonical identity and retain the target copied artifact's kind,
 so a pattern alias is never relabelled as a skin. Variant skins such as a calendar/date picker
 or drawer/sheet remain separate copied artifacts—with their own install, display and scenario
-identity—rather than pretending to be aliases. `scenarioId` is the renderer-neutral identity
-that gallery surfaces may share later; renderer functions stay in their own apps and are
-deliberately not named by this contract.
+identity—rather than pretending to be aliases. A canonical product's `scenarioId` joins its
+baseline and registry presentations; a copied artifact's `scenarioId` identifies that specific
+presentation target. Neither is a product-local case ID: families own cases and JSON inputs in
+the shared presentation-scenario catalog, while renderer functions stay in their own apps and
+are deliberately not named by either contract.
 
 ## Fidelity to shadcn/ui
 

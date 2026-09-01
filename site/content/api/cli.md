@@ -707,4 +707,250 @@ const RegistryItemSchema
 const RegistrySchema
 ```
 
+### `@llui/cli/presentation-scenarios`
+
+#### Functions
+
+##### `compileScenarioFamily()` from `@llui/cli/presentation-scenarios`
+
+Join family-owned semantic cases to ProductContract's canonical inventory.
+
+```typescript
+export function compileScenarioFamily<const Definitions extends PresentationScenarioDefinitions>(
+  contract: ProductContract,
+  family: PresentationFamily,
+  definitions: Definitions,
+): CompiledPresentationScenarioFamily<Definitions[keyof Definitions]['cases'][number]>
+```
+
+##### `resolveScenarioSelection()` from `@llui/cli/presentation-scenarios`
+
+Resolve one deterministic renderer input from a compiled family catalog.
+
+```typescript
+export function resolveScenarioSelection<Case extends PresentationScenarioCase>(
+  contract: ProductContract,
+  catalog: CompiledPresentationScenarioFamily<Case>,
+  selection: PresentationScenarioSelection,
+): ResolvedPresentationScenarioSelection<Case>
+```
+
+#### Types
+
+##### `PresentationScenarioDefinitions` from `@llui/cli/presentation-scenarios`
+
+Family-owned definitions keyed by ProductContract `scenarioId`.
+
+```typescript
+export type PresentationScenarioDefinitions = Readonly<
+  Record<string, PresentationScenarioDefinition>
+>
+```
+
+##### `PresentationScenarioEnvironment` from `@llui/cli/presentation-scenarios`
+
+Fully resolved environment supplied independently to either renderer path.
+
+```typescript
+export type PresentationScenarioEnvironment = {
+  readonly [Axis in PresentationScenarioEnvironmentAxis]: (typeof PRESENTATION_SCENARIO_ENVIRONMENT_VALUES)[Axis][number]
+}
+```
+
+##### `PresentationScenarioEnvironmentAxis` from `@llui/cli/presentation-scenarios`
+
+One environment dimension a case explicitly supports varying.
+
+```typescript
+export type PresentationScenarioEnvironmentAxis =
+  keyof typeof PRESENTATION_SCENARIO_ENVIRONMENT_VALUES
+```
+
+##### `PresentationScenarioErrorCode` from `@llui/cli/presentation-scenarios`
+
+Stable failure categories exposed to gallery routing and build tooling.
+
+```typescript
+export type PresentationScenarioErrorCode =
+  | 'invalid-definitions'
+  | 'unknown-product'
+  | 'unknown-case'
+  | 'invalid-environment'
+  | 'invalid-copied-artifact'
+  | 'invalid-catalog'
+  | 'invalid-path'
+```
+
+##### `PresentationScenarioJson` from `@llui/cli/presentation-scenarios`
+
+Renderer-neutral data accepted as a scenario input.
+
+```typescript
+export type PresentationScenarioJson =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly PresentationScenarioJson[]
+  | { readonly [key: string]: PresentationScenarioJson }
+```
+
+##### `PresentationScenarioPath` from `@llui/cli/presentation-scenarios`
+
+A renderer path whose availability is owned by ProductContract.
+
+```typescript
+export type PresentationScenarioPath = (typeof PRESENTATION_SCENARIO_PATHS)[number]
+```
+
+#### Interfaces
+
+##### `CompiledPresentationScenario` from `@llui/cli/presentation-scenarios`
+
+One compiled product join without duplicated ProductContract metadata.
+
+```typescript
+export interface CompiledPresentationScenario<
+  Case extends PresentationScenarioCase = PresentationScenarioCase,
+> {
+  readonly productId: string
+  readonly scenarioId: string
+  readonly defaultCaseId: string
+  readonly cases: readonly CompiledPresentationScenarioCase<Case>[]
+}
+```
+
+##### `CompiledPresentationScenarioCase` from `@llui/cli/presentation-scenarios`
+
+Canonical renderer input copied from a validated family case.
+
+```typescript
+export interface CompiledPresentationScenarioCase<
+  Case extends PresentationScenarioCase = PresentationScenarioCase,
+> {
+  readonly id: Case['id']
+  readonly label: Case['label']
+  readonly input: Case['input']
+  readonly environmentAxes: Case['environmentAxes']
+  readonly copiedArtifactNames?: Case['copiedArtifactNames']
+}
+```
+
+##### `CompiledPresentationScenarioFamily` from `@llui/cli/presentation-scenarios`
+
+Deterministic, JSON-safe catalog for one presentation family.
+
+```typescript
+export interface CompiledPresentationScenarioFamily<
+  Case extends PresentationScenarioCase = PresentationScenarioCase,
+> {
+  readonly version: 1
+  readonly family: PresentationFamily
+  readonly scenarios: readonly CompiledPresentationScenario<Case>[]
+}
+```
+
+##### `PresentationScenarioCase` from `@llui/cli/presentation-scenarios`
+
+One stable, product-local state owned by a presentation family.
+
+```typescript
+export interface PresentationScenarioCase<
+  Input extends PresentationScenarioJson = PresentationScenarioJson,
+> {
+  readonly id: string
+  readonly label: string
+  readonly input: Input
+  readonly environmentAxes: readonly PresentationScenarioEnvironmentAxis[]
+  /** Registry copied artifacts this case supports; omitted means every owned artifact. */
+  readonly copiedArtifactNames?: readonly string[]
+}
+```
+
+##### `PresentationScenarioDefinition` from `@llui/cli/presentation-scenarios`
+
+All semantic cases declared for one ProductContract scenario identity.
+
+```typescript
+export interface PresentationScenarioDefinition<
+  Case extends PresentationScenarioCase = PresentationScenarioCase,
+> {
+  readonly defaultCaseId: string
+  readonly cases: readonly Case[]
+}
+```
+
+##### `PresentationScenarioSelection` from `@llui/cli/presentation-scenarios`
+
+Route-like request for one scenario case, renderer path, and environment.
+
+```typescript
+export interface PresentationScenarioSelection {
+  readonly productId: string
+  readonly caseId?: string
+  readonly path: PresentationScenarioPath
+  readonly environment?: Partial<PresentationScenarioEnvironment>
+  readonly copiedArtifact?: string
+}
+```
+
+##### `ResolvedPresentationScenarioSelection` from `@llui/cli/presentation-scenarios`
+
+Validated renderer input returned for a presentation selection.
+
+```typescript
+export interface ResolvedPresentationScenarioSelection<
+  Case extends PresentationScenarioCase = PresentationScenarioCase,
+> {
+  readonly productId: string
+  readonly scenarioId: string
+  readonly case: CompiledPresentationScenarioCase<Case>
+  readonly path: PresentationScenarioPath
+  readonly environment: PresentationScenarioEnvironment
+  readonly copiedArtifact?: {
+    readonly name: string
+    readonly scenarioId: string
+  }
+}
+```
+
+#### Classes
+
+##### `PresentationScenarioError` from `@llui/cli/presentation-scenarios`
+
+A stable, machine-readable protocol or selection failure.
+
+```typescript
+class PresentationScenarioError extends Error {
+  name
+  constructor(readonly code: PresentationScenarioErrorCode, readonly issues: readonly string[])
+}
+```
+
+#### Constants
+
+##### `DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT` from `@llui/cli/presentation-scenarios`
+
+Canonical environment used when a selection omits supported overrides.
+
+```typescript
+const DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT
+```
+
+##### `PRESENTATION_SCENARIO_ENVIRONMENT_VALUES` from `@llui/cli/presentation-scenarios`
+
+Stable values accepted by each composable presentation environment axis.
+
+```typescript
+const PRESENTATION_SCENARIO_ENVIRONMENT_VALUES
+```
+
+##### `PRESENTATION_SCENARIO_PATHS` from `@llui/cli/presentation-scenarios`
+
+Renderer paths joined by the protocol while remaining implementation-isolated.
+
+```typescript
+const PRESENTATION_SCENARIO_PATHS
+```
+
 <!-- auto-api:end -->
