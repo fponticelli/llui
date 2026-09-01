@@ -118,7 +118,7 @@ export const ChartContainer = classPart(
  *  plot radius by design, and the default clip would cut every one of them. */
 export const ChartSvg = classPart(
   svg,
-  'min-h-0 w-full flex-1 overflow-visible focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-md',
+  'min-h-0 w-full flex-1 overflow-visible focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-md [forced-color-adjust:none] forced-colors:bg-[Canvas]',
 )
 
 /**
@@ -144,23 +144,26 @@ export const ChartDesc: ElementHelper = svgDesc
  */
 export const ChartMark = classPart(
   path,
-  'transition-opacity data-dimmed:opacity-25 data-[mark=bar]:fill-(--mark-color) data-[mark=area]:fill-(--mark-color) data-[mark=area]:opacity-70 data-[mark=line]:fill-none data-[mark=line]:stroke-(--mark-color) data-[mark=line]:stroke-2 data-[mark=line]:[stroke-linecap:round] data-[mark=line]:[stroke-linejoin:round] data-active:opacity-100',
+  'transition-opacity data-dimmed:opacity-25 data-[mark=bar]:fill-(--mark-color) data-[mark=area]:fill-(--mark-color) data-[mark=area]:opacity-70 data-[mark=line]:fill-none data-[mark=line]:stroke-(--mark-color) data-[mark=line]:stroke-2 data-[mark=line]:[stroke-linecap:round] data-[mark=line]:[stroke-linejoin:round] data-active:opacity-100 motion-reduce:transition-none forced-colors:opacity-100! forced-colors:fill-[CanvasText]! forced-colors:stroke-[CanvasText]! forced-colors:stroke-2 forced-colors:data-[mark=line]:fill-none! forced-colors:data-[series-cue=solid]:[stroke-dasharray:none] forced-colors:data-[series-cue=short-dash]:[stroke-dasharray:8_3] forced-colors:data-[series-cue=dot]:[stroke-dasharray:2_3] forced-colors:data-[series-cue=long-dash]:[stroke-dasharray:14_4] forced-colors:data-[series-cue=dash-dot]:[stroke-dasharray:10_3_2_3]',
 )
 
 /** A vertex dot on a line or area series. Hidden until its row is active, which
  *  is what makes the keyboard cursor visible without a permanent dot layer. */
 export const ChartDot = classPart(
   circle,
-  'fill-(--mark-color) stroke-background stroke-2 opacity-0 transition-opacity data-active:opacity-100',
+  'fill-(--mark-color) stroke-background stroke-2 opacity-0 transition-opacity data-active:opacity-100 motion-reduce:transition-none forced-colors:opacity-100! forced-colors:fill-[CanvasText]! forced-colors:stroke-[Canvas]! forced-colors:data-[series-cue=solid]:[stroke-dasharray:none] forced-colors:data-[series-cue=short-dash]:[stroke-dasharray:8_3] forced-colors:data-[series-cue=dot]:[stroke-dasharray:2_3] forced-colors:data-[series-cue=long-dash]:[stroke-dasharray:14_4] forced-colors:data-[series-cue=dash-dot]:[stroke-dasharray:10_3_2_3]',
 )
 
 /** The value gridlines. */
-export const ChartGrid = classPart(path, 'fill-none stroke-border/50 stroke-1')
+export const ChartGrid = classPart(
+  path,
+  'fill-none stroke-border/50 stroke-1 forced-colors:stroke-[GrayText]',
+)
 
 /** An axis label — category names and value ticks. */
 export const ChartAxisLabel = classPart(
   svgText,
-  'fill-muted-foreground text-[10px] data-active:fill-foreground data-active:font-medium',
+  'fill-muted-foreground text-[10px] data-active:fill-foreground data-active:font-medium forced-colors:fill-[CanvasText]',
 )
 
 /** A `<g>` layer, so marks / dots / labels stack in a defined order. */
@@ -196,7 +199,7 @@ export const ChartTooltipName = classPart(span, 'text-muted-foreground')
 
 export const ChartTooltipValue = classPart(
   span,
-  'ml-auto font-mono font-medium tabular-nums text-foreground',
+  'ms-auto font-mono font-medium tabular-nums text-foreground',
 )
 
 // ── Legend (ported verbatim) ──────────────────────────────────────────────
@@ -207,7 +210,7 @@ export const ChartLegend = classPart(div, 'flex items-center justify-center gap-
  *  `aria-pressed`, and isolating a series must be reachable from the keyboard. */
 export const ChartLegendItem = classPart(
   button,
-  'flex cursor-pointer items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 text-xs text-muted-foreground transition-opacity data-dimmed:opacity-40 [&>svg]:h-3 [&>svg]:w-3',
+  'flex cursor-pointer items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 text-xs text-muted-foreground transition-opacity data-dimmed:opacity-40 motion-reduce:transition-none [&>svg]:h-3 [&>svg]:w-3',
 )
 
 export const ChartLegendSwatch = classPart(span, 'size-2 shrink-0 rounded-[2px] bg-(--mark-color)')

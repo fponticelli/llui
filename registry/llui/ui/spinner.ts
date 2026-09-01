@@ -14,5 +14,8 @@ import { LoaderIcon } from '@/ui/icons'
  */
 export function Spinner(props?: ElProps): Mountable {
   const { class: className, ...rest } = props ?? {}
-  return LoaderIcon({ ...rest, class: mergeClass('size-4 animate-spin', className) })
+  return LoaderIcon({
+    ...rest,
+    class: mergeClass('size-4 animate-spin motion-reduce:animate-none', className),
+  })
 }

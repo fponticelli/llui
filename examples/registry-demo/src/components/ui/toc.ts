@@ -14,13 +14,13 @@ import { classPart } from '../../lib/utils'
  * expand trigger is open/closed, not active.
  */
 export const Toc = classPart(div, 'flex flex-col gap-1 text-sm')
-export const TocList = classPart(ul, 'flex flex-col gap-0.5 border-l')
+export const TocList = classPart(ul, 'flex flex-col gap-0.5 border-s')
 export const TocItem = classPart(li, 'flex items-center gap-1')
 export const TocLink = classPart(
   a,
-  '-ml-px block border-l border-transparent py-1 pl-3 text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-active:border-primary data-active:font-medium data-active:text-foreground',
+  '-ms-px block border-s border-transparent py-1 ps-3 text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-active:border-primary data-active:font-medium data-active:text-foreground motion-reduce:transition-none forced-colors:data-active:underline',
 )
 export const TocExpandTrigger = classPart(
   button,
-  'inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-transform outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:rotate-90',
+  'inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-transform outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:rotate-90 motion-reduce:transition-none rtl:data-[state=open]:-rotate-90',
 )

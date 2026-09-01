@@ -149,6 +149,14 @@ describe('table reducer — selection', () => {
 })
 
 describe('table reducer — tri-state select-all', () => {
+  it('publishes an explicitly configured presentation density on the grid root', () => {
+    const compact = connect(rootSignal(), vi.fn(), { id: 'compact-table', density: 'compact' })
+    const comfortable = connect(rootSignal(), vi.fn(), { id: 'comfortable-table' })
+
+    expect(compact.root['data-density']).toBe('compact')
+    expect(comfortable.root['data-density']).toBeUndefined()
+  })
+
   it('isAllSelected true only when every row selected', () => {
     expect(isAllSelected(init({ columns: COLS, rows: ROWS, selection: ROWS }))).toBe(true)
     expect(isAllSelected(init({ columns: COLS, rows: ROWS, selection: ['r1'] }))).toBe(false)
@@ -324,6 +332,15 @@ describe('table reducer — focus / keyboard grid nav', () => {
 
 describe('table.connect — parts', () => {
   const p = connect(rootSignal(), vi.fn(), { id: 't1' })
+
+  it('owns the horizontal scroll viewport around the native grid root', () => {
+    expect(p.viewport).toEqual({
+      'data-scope': 'table',
+      'data-part': 'viewport',
+    })
+    expect(p.root['data-part']).toBe('root')
+    expect(p.root.role).toBe('grid')
+  })
 
   it('root role=grid', () => {
     expect(p.root.role).toBe('grid')

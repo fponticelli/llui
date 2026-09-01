@@ -7,7 +7,6 @@ import { chromium, type Browser } from 'playwright'
 
 const STYLES = resolve(import.meta.dirname, '../../src/styles')
 const semanticTokens = readFileSync(resolve(STYLES, 'semantic-tokens.css'), 'utf8')
-const disclosureNavigation = readFileSync(resolve(STYLES, 'disclosure-navigation.css'), 'utf8')
 const foundation = readFileSync(resolve(STYLES, 'foundation.css'), 'utf8')
 const menusOverlays = readFileSync(resolve(STYLES, 'menus-overlays.css'), 'utf8')
 const motion = readFileSync(resolve(STYLES, 'motion.css'), 'utf8')
@@ -21,37 +20,6 @@ describe('baseline physical coordinate contracts in Chromium', () => {
 
   afterAll(async () => {
     await browser?.close()
-  })
-
-  it("keeps tabs' physical offsetLeft coordinate unchanged in RTL", async () => {
-    const page = await browser.newPage()
-    await page.setContent(`<!doctype html>
-      <style>${semanticTokens}</style>
-      <style>${disclosureNavigation}</style>
-      <div id="list" data-scope="tabs" data-part="list" style="width: 400px; height: 20px">
-        <div
-          id="indicator"
-          data-scope="tabs"
-          data-part="indicator"
-          style="--indicator-left: 72px; --indicator-width: 48px"
-        ></div>
-      </div>`)
-
-    const offsets = await page.evaluate(() => {
-      const list = document.querySelector<HTMLElement>('#list')!
-      const indicator = document.querySelector<HTMLElement>('#indicator')!
-      const measure = (): number =>
-        indicator.getBoundingClientRect().left - list.getBoundingClientRect().left
-
-      list.dir = 'ltr'
-      const ltr = measure()
-      list.dir = 'rtl'
-      const rtl = measure()
-      return { ltr, rtl }
-    })
-    await page.close()
-
-    expect(offsets).toEqual({ ltr: 72, rtl: 72 })
   })
 
   it('positions and animates every drawer side from its physical edge in LTR and RTL', async () => {

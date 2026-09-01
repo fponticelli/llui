@@ -57,6 +57,20 @@ import type { Curve } from '../utils/path.js'
 
 export type { ChartCoord }
 export type MarkType = 'line' | 'area' | 'bar'
+export type ChartSeriesCue = 'solid' | 'short-dash' | 'dot' | 'long-dash' | 'dash-dot'
+
+const SERIES_CUES: readonly ChartSeriesCue[] = [
+  'solid',
+  'short-dash',
+  'dot',
+  'long-dash',
+  'dash-dot',
+]
+
+function seriesCue(state: ChartState, key: string): ChartSeriesCue {
+  const index = state.series.findIndex((series) => series.key === key)
+  return SERIES_CUES[index < 0 ? 0 : index % SERIES_CUES.length]!
+}
 
 /**
  * How the INDEPENDENT axis is allocated — and therefore which of a chart's two
@@ -318,6 +332,7 @@ export function update(state: ChartState, msg: ChartMsg): [ChartState, never[]] 
 /** A drawn mark: one series, one path. */
 export interface ChartMark {
   seriesKey: string
+  seriesCue: ChartSeriesCue
   label: string
   mark: MarkType
   /** The SVG path `d`. */
@@ -331,6 +346,7 @@ export interface ChartMark {
 /** A vertex on a line or area series, for the dot layer and hit feedback. */
 export interface ChartVertex {
   seriesKey: string
+  seriesCue: ChartSeriesCue
   index: number
   x: number
   y: number
@@ -517,6 +533,7 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
   const groupCount = state.stacked ? 1 : Math.max(1, barKeys.length)
 
   for (const s of state.series) {
+    const cue = seriesCue(state, s.key)
     const dimmed = state.activeSeries !== null && s.key !== state.activeSeries
     const pairs = offsets.get(s.key)!
 
@@ -539,6 +556,7 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
         if (slice === undefined || slice.share <= 0) continue
         marks.push({
           seriesKey: s.key,
+          seriesCue: cue,
           label: s.label,
           mark: 'bar',
           d: projection.band(slice.start, slice.end, v0, v1),
@@ -562,6 +580,7 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
         const u0 = bandStart + slot * width
         marks.push({
           seriesKey: s.key,
+          seriesCue: cue,
           label: s.label,
           mark: 'bar',
           d: projection.band(u0, u0 + width, normalize(base, domain), normalize(top, domain)),
@@ -583,6 +602,7 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
     const curve = s.curve ?? 'linear'
     marks.push({
       seriesKey: s.key,
+      seriesCue: cue,
       label: s.label,
       mark: s.mark,
       d: s.mark === 'area' ? projection.area(upper, lower, curve) : projection.line(upper, curve),
@@ -594,6 +614,7 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
       const p = projection.point(upper[i]!.u, upper[i]!.v)
       vertices.push({
         seriesKey: s.key,
+        seriesCue: cue,
         index: i,
         x: p.x,
         y: p.y,
@@ -783,6 +804,7 @@ export interface ChartParts {
     'data-scope': 'chart'
     'data-part': 'dot'
     'data-series': string
+    'data-series-cue': ChartSeriesCue
     'data-active': '' | undefined
     cx: number
     cy: number
@@ -792,6 +814,7 @@ export interface ChartParts {
     'data-scope': 'chart'
     'data-part': 'legend-item'
     'data-series': string
+    'data-series-cue': Signal<ChartSeriesCue>
     'data-dimmed': Signal<'' | undefined>
     'aria-pressed': Signal<boolean>
     onClick: (e: MouseEvent) => void
@@ -802,6 +825,7 @@ export interface ChartParts {
     'data-part': 'mark'
     'data-mark': 'line' | 'area' | 'bar'
     'data-series': string
+    'data-series-cue': ChartSeriesCue
     'data-active': '' | undefined
     'data-dimmed': '' | undefined
     d: string
@@ -944,6 +968,7 @@ export function connect(
       'data-scope': 'chart',
       'data-part': 'dot',
       'data-series': vertex.seriesKey,
+      'data-series-cue': vertex.seriesCue,
       'data-active': vertex.active ? '' : undefined,
       cx: vertex.x,
       cy: vertex.y,
@@ -953,6 +978,7 @@ export function connect(
       'data-scope': 'chart',
       'data-part': 'legend-item',
       'data-series': key,
+      'data-series-cue': state.map((s) => seriesCue(s, key)),
       'data-dimmed': state.map((s) =>
         s.activeSeries !== null && s.activeSeries !== key ? '' : undefined,
       ),
@@ -967,6 +993,7 @@ export function connect(
       'data-part': 'mark',
       'data-mark': mark.mark,
       'data-series': mark.seriesKey,
+      'data-series-cue': mark.seriesCue,
       'data-active': mark.active ? '' : undefined,
       'data-dimmed': mark.dimmed ? '' : undefined,
       d: mark.d,

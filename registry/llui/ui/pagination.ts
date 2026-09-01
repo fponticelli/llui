@@ -1,4 +1,4 @@
-import { a, li, nav, span, ul } from '@llui/dom'
+import { button, li, nav, span, ul } from '@llui/dom'
 import { ChevronLeftIcon, ChevronRightIcon } from '@/ui/icons'
 import { classPart } from '@/lib/utils'
 import { buttonVariants } from '@/ui/button'
@@ -12,11 +12,19 @@ import { type ChildNode, type ElProps, type Mountable } from '@llui/dom'
  * the button recipe is what keeps a pagination control looking like the rest of
  * the app's buttons; a hand-written copy drifts on the first button change.
  *
- * `@llui/components/pagination` marks the current page with `data-selected`, so
- * the variant is chosen from that rather than from an `isActive` prop.
+ * `@llui/components/pagination` publishes reactive `data-selected` and
+ * `aria-current` attributes. Page items stay real buttons: the machine's
+ * roving-focus helper deliberately addresses buttons, and pagination here is
+ * an in-app state change rather than document navigation.
  */
-export const Pagination = classPart(nav, 'mx-auto flex w-full justify-center')
-export const PaginationContent = classPart(ul, 'flex flex-row items-center gap-1')
+export const Pagination = classPart(
+  nav,
+  'group/pagination mx-auto flex min-w-0 w-full justify-center data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+)
+export const PaginationContent = classPart(
+  ul,
+  'flex max-w-full flex-row flex-wrap items-center justify-center gap-1',
+)
 export const PaginationItem = classPart(li, '')
 
 function paginationLink(
@@ -27,24 +35,23 @@ function paginationLink(
   return (a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable => {
     const { props, children } = splitArgs(a0, a1)
     const { class: className, ...rest } = props
-    // `data-selected` is a string attribute on the bag, so the variant is chosen
-    // here rather than as a `data-[selected]:` utility — `buttonVariants` picks a
-    // whole recipe, and Tailwind cannot swap one recipe for another by selector.
-    const selected = rest['data-selected'] !== undefined && rest['data-selected'] !== false
-    return a(
+    // Never inspect `data-selected` here: a machine part supplies a Signal, and
+    // any Signal object is truthy regardless of its live value. The state recipe
+    // is selector-driven so the original reactive attribute reaches the DOM.
+    return button(
       {
+        type: 'button',
         ...rest,
-        'aria-current': selected ? 'page' : undefined,
         class: mergeClass(
-          `${buttonVariants({ variant: selected ? 'outline' : 'ghost', size: defaultSize })} ${extra}`,
+          `${buttonVariants({ variant: 'ghost', size: defaultSize })} ${paginationSelectedRecipe} group-data-[disabled]/pagination:opacity-100 ${extra}`,
           className,
         ),
       },
       glyph === undefined
         ? children
         : glyph.at === 'start'
-          ? [glyph.icon({ class: 'size-4' }), ...children]
-          : [...children, glyph.icon({ class: 'size-4' })],
+          ? [glyph.icon({ class: 'size-4 rtl:rotate-180' }), ...children]
+          : [...children, glyph.icon({ class: 'size-4 rtl:rotate-180' })],
     )
   }
 }
@@ -52,8 +59,10 @@ function paginationLink(
 // Named `*Recipe` consts, not inline arguments: a class string passed as a
 // function ARGUMENT sits in no position the repo's Tailwind check reads, so
 // these went unverified until they were hoisted here.
-const paginationPreviousRecipe = 'gap-1 px-2.5 sm:pl-2.5'
-const paginationNextRecipe = 'gap-1 px-2.5 sm:pr-2.5'
+const paginationSelectedRecipe =
+  'data-selected:border data-selected:bg-background data-selected:shadow-xs data-selected:hover:bg-accent data-selected:hover:text-accent-foreground dark:data-selected:border-input dark:data-selected:bg-input/30 dark:data-selected:hover:bg-input/50 forced-colors:data-selected:outline-solid forced-colors:data-selected:outline-2 forced-colors:data-selected:outline-[Highlight] forced-colors:data-selected:-outline-offset-2'
+const paginationPreviousRecipe = 'gap-1 px-2.5 sm:ps-2.5'
+const paginationNextRecipe = 'gap-1 px-2.5 sm:pe-2.5'
 
 export const PaginationLink = paginationLink('icon')
 export const PaginationPrevious = paginationLink('default', paginationPreviousRecipe, {

@@ -17,6 +17,9 @@ export type SortDirection = 'asc' | 'desc'
 
 export type TableSelectionMode = 'none' | 'single' | 'multiple'
 
+/** Optional density of the styled grid root; table behavior remains unchanged. */
+export type TableDensity = 'comfortable' | 'compact'
+
 export interface TableColumn {
   /** Opaque column id. */
   id: string
@@ -419,6 +422,15 @@ export interface TableCheckboxParts {
 }
 
 export interface TableParts {
+  /**
+   * Place the native table carrying {@link root} directly inside this owned
+   * scroll viewport. Wide grids then scroll locally without changing the
+   * table's native layout/ARIA semantics or overflowing the page.
+   */
+  viewport: {
+    'data-scope': 'table'
+    'data-part': 'viewport'
+  }
   root: {
     role: 'grid'
     id: string
@@ -429,6 +441,7 @@ export interface TableParts {
     'data-scope': 'table'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
+    'data-density': TableDensity | undefined
   }
   columnHeader: (columnId: string) => TableColumnHeaderParts
   row: (id: string, index: number) => TableRowParts
@@ -456,6 +469,8 @@ export interface TableParts {
 
 export interface ConnectOptions {
   id: string
+  /** Presentation density published on the grid root for either skin to consume. */
+  density?: TableDensity
 }
 
 export function connect(
@@ -598,6 +613,10 @@ export function connect(
     })
 
   return {
+    viewport: {
+      'data-scope': 'table',
+      'data-part': 'viewport',
+    },
     root: {
       role: 'grid',
       id: rootId,
@@ -611,6 +630,7 @@ export function connect(
       'data-scope': 'table',
       'data-part': 'root',
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      'data-density': opts.density,
     },
     columnHeader: (columnId: string): TableColumnHeaderParts => ({
       role: 'columnheader',

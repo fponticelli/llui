@@ -78,6 +78,18 @@ const tableColumns = [
   { id: 'status', sortable: false },
 ]
 
+const carouselChevron = (direction: 'previous' | 'next'): Mountable =>
+  svg({ viewBox: '0 0 24 24', width: '16', height: '16', 'aria-hidden': 'true' }, [
+    path({
+      d: direction === 'previous' ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6',
+      fill: 'none',
+      stroke: 'currentColor',
+      'stroke-width': '2',
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+    }),
+  ])
+
 // ── Sortable list initial order. The consumer owns the array; the machine
 // only tracks the drag. We reorder `order` on `drop`. ────────────────────
 const sortableInitial = ['Inbox', 'Drafts', 'Sent', 'Archive', 'Trash']
@@ -182,8 +194,9 @@ export const init = (): [State, Effect[]] => [
       items: ['what', 'why', 'how'],
       value: ['what'],
       collapsible: true,
+      animated: true,
     }),
-    collapsible: collapsible.init({ open: false }),
+    collapsible: collapsible.init({ open: false, animated: true }),
     pagination: pagination.init({ total: 100, pageSize: 10, page: 3 }),
     steps: steps.init({ steps: ['Account', 'Profile', 'Review'], current: 0, linear: true }),
     carousel: carousel.init({ count: 4, current: 0, loop: true }),
@@ -322,7 +335,7 @@ function sparklineView(
 
     div({ ...sp.tooltip }, [
       text(sp.activeDot.map((d) => (d === null ? '' : String(d.value)))),
-      span({ class: 'ml-1 text-muted-foreground' }, [
+      span({ class: 'ms-1 text-muted-foreground' }, [
         text(sp.activeDot.map((d) => (d === null ? '' : sparkline.isoDay(d.at)))),
       ]),
     ]),
@@ -361,7 +374,13 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       id: 'coll-demo',
     },
   )
-  const pg = pagination.connect(state.at('pagination'), (m) => send({ type: 'pagination', msg: m }))
+  const pg = pagination.connect(
+    state.at('pagination'),
+    (m) => send({ type: 'pagination', msg: m }),
+    {
+      id: 'pagination-demo',
+    },
+  )
   const st = steps.connect(state.at('steps'), (m) => send({ type: 'steps', msg: m }), {
     label: 'Progress',
   })
@@ -396,7 +415,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           span([text(title)]),
           span(
             {
-              class: 'ml-2 transition-transform',
+              class: 'ms-2 transition-transform',
               'data-state': state
                 .at('accordion')
                 .map((a) => (a.value.includes(v) ? 'open' : 'closed')),
@@ -475,19 +494,19 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         span([text(label)]),
       ]),
       div(
-        { class: 'pl-4', hidden: state.at('treeView').map((tvs) => !tvs.expanded.includes(id)) },
+        { class: 'ps-4', hidden: state.at('treeView').map((tvs) => !tvs.expanded.includes(id)) },
         treeChildren,
       ),
     ])
   }
   const treeLeaf = (id: string, label: string, depth: number): Mountable => {
     const p = tv.item(id, depth, false)
-    return div({ ...p.item, class: 'pl-5' }, [span([text(label)])])
+    return div({ ...p.item, class: 'ps-5' }, [span([text(label)])])
   }
 
   // ── Table (static data grid: sortable headers + multiple selection) ────
   const sortGlyph = (colId: string): Mountable =>
-    span({ class: 'ml-1 text-xs text-muted-foreground' }, [
+    span({ class: 'ms-1 text-xs text-muted-foreground' }, [
       text(
         state
           .at('table.sort')
@@ -501,10 +520,16 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       {
         ...h,
         class: sortableCol
-          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-left text-sm font-semibold hover:bg-accent'
-          : 'border-b border-border px-3 py-2 text-left text-sm font-semibold',
+          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-start text-sm font-semibold hover:bg-accent'
+          : 'border-b border-border px-3 py-2 text-start text-sm font-semibold',
       },
-      [text(label), sortableCol ? sortGlyph(colId) : span([])],
+      [
+        ...(colId === 'name'
+          ? [span({ ...tbl.selectAllCheckbox(colId), class: 'me-2 inline-block' }, [text('✓')])]
+          : []),
+        text(label),
+        sortableCol ? sortGlyph(colId) : span([]),
+      ],
     )
   }
 
@@ -516,19 +541,19 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         class: 'cursor-pointer border-b border-border hover:bg-accent',
       },
       [
-        td({ class: 'px-3 py-2 text-sm' }, [
+        td({ ...tbl.cell(index, 0), class: 'px-3 py-2 text-sm' }, [
           span(
             {
               ...tbl.rowCheckbox(person.id, index),
               class:
-                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
+                'me-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
             },
             [text(state.at('table.selection').map((sel) => (sel.includes(person.id) ? '✓' : '')))],
           ),
           text(person.name),
         ]),
-        td({ class: 'px-3 py-2 text-sm' }, [text(person.role)]),
-        td({ class: 'px-3 py-2 text-sm' }, [text(person.status)]),
+        td({ ...tbl.cell(index, 1), class: 'px-3 py-2 text-sm' }, [text(person.role)]),
+        td({ ...tbl.cell(index, 2), class: 'px-3 py-2 text-sm' }, [text(person.status)]),
       ],
     )
   }
@@ -634,13 +659,20 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       {
         ...h,
         class: sortableCol
-          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-left text-sm font-semibold hover:bg-accent'
-          : 'border-b border-border px-3 py-2 text-left text-sm font-semibold',
+          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-start text-sm font-semibold hover:bg-accent'
+          : 'border-b border-border px-3 py-2 text-start text-sm font-semibold',
       },
       [
+        ...(colId === 'name'
+          ? [
+              span({ ...dt.table.selectAllCheckbox(colId), class: 'me-2 inline-block' }, [
+                text('✓'),
+              ]),
+            ]
+          : []),
         text(label),
         sortableCol
-          ? span({ class: 'ml-1 text-xs text-muted-foreground' }, [
+          ? span({ class: 'ms-1 text-xs text-muted-foreground' }, [
               text(
                 state
                   .at('dataTable.table.sort')
@@ -661,12 +693,12 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     const r = dt.table.row(rowId, idx)
     return [
       tr({ ...r, class: 'cursor-pointer border-b border-border hover:bg-accent' }, [
-        td({ class: 'px-3 py-2 text-sm' }, [
+        td({ ...dt.table.cell(idx, 0), class: 'px-3 py-2 text-sm' }, [
           span(
             {
               ...dt.table.rowCheckbox(rowId, idx),
               class:
-                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
+                'me-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
             },
             [
               text(
@@ -678,13 +710,20 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ),
           text(person ? person.name : rowId),
         ]),
-        td({ class: 'px-3 py-2 text-sm' }, [text(person ? person.role : '')]),
-        td({ class: 'px-3 py-2 text-sm' }, [text(person ? person.status : '')]),
+        td({ ...dt.table.cell(idx, 1), class: 'px-3 py-2 text-sm' }, [
+          text(person ? person.role : ''),
+        ]),
+        td({ ...dt.table.cell(idx, 2), class: 'px-3 py-2 text-sm' }, [
+          text(person ? person.status : ''),
+        ]),
       ]),
     ]
   }
 
   return [
+    ta.directionSync,
+    pg.directionSync,
+    cr.directionSync,
     // Placed so the sortable pointer-wiring onMount registers (discarded
     // onMount() is inert).
     sortableMount,
@@ -733,11 +772,15 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       ]),
       card('Carousel', [
         div({ ...cr.root }, [
-          div({ ...cr.viewport }, renderSlides()),
+          div({ ...cr.viewport }, [div({ ...cr.track }, renderSlides())]),
           div({ class: 'flex items-center justify-center gap-2' }, [
-            button({ ...cr.prevTrigger, class: 'btn btn-secondary btn-sm' }, [text('‹')]),
+            button({ ...cr.prevTrigger, class: 'btn btn-secondary btn-sm' }, [
+              carouselChevron('previous'),
+            ]),
             div({ ...cr.indicatorGroup }, renderIndicators()),
-            button({ ...cr.nextTrigger, class: 'btn btn-secondary btn-sm' }, [text('›')]),
+            button({ ...cr.nextTrigger, class: 'btn btn-secondary btn-sm' }, [
+              carouselChevron('next'),
+            ]),
           ]),
         ]),
       ]),
@@ -830,7 +873,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     ]),
     sectionGroup('Tables & sorting', [
       card('Table (data grid)', [
-        div({ class: 'overflow-x-auto' }, [
+        div({ ...tbl.viewport }, [
           tableEl({ ...tbl.root, class: 'w-full border-collapse' }, [
             thead([
               tr([
@@ -876,7 +919,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ]),
       ]),
       card('Data Table (paged · sortable · selectable)', [
-        div({ class: 'overflow-x-auto' }, [
+        div({ ...dt.table.viewport }, [
           tableEl({ ...dt.table.root, class: 'w-full border-collapse' }, [
             thead([
               tr([
@@ -923,7 +966,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             },
             [text('Next ›')],
           ),
-          span({ class: 'ml-3 text-sm text-muted-foreground' }, [
+          span({ class: 'ms-3 text-sm text-muted-foreground' }, [
             text('Selected: '),
             text(state.at('dataTable.table.selection').map((sel) => String(sel.length))),
           ]),

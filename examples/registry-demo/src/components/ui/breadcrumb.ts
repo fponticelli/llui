@@ -17,7 +17,7 @@ export const BreadcrumbList = classPart(
 export const BreadcrumbItem = classPart(li, 'inline-flex items-center gap-1.5')
 export const BreadcrumbLink = classPart(
   a,
-  'transition-colors hover:text-foreground data-[current]:pointer-events-none data-[current]:font-normal data-[current]:text-foreground',
+  'transition-colors hover:text-foreground data-[current]:pointer-events-none data-[current]:font-normal data-[current]:text-foreground forced-colors:data-[current]:underline forced-colors:data-[current]:decoration-2',
 )
 export const BreadcrumbPage = classPart(span, 'font-normal text-foreground')
 /** Defaults to a chevron, as shadcn's does; pass children for a different one
@@ -33,7 +33,7 @@ export function BreadcrumbSeparator(
       role: 'presentation',
       'aria-hidden': 'true',
       ...rest,
-      class: mergeClass('[&>svg]:size-3.5', className),
+      class: mergeClass('[&>svg]:size-3.5 rtl:[&>svg]:rotate-180', className),
     },
     children.length > 0 ? children : [ChevronRightIcon()],
   )

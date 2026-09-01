@@ -9,6 +9,9 @@ import type { Send, Signal } from '@llui/dom'
 
 export type ImageStatus = 'idle' | 'loading' | 'loaded' | 'error'
 
+/** Optional density of the styled avatar root; behavior remains unchanged. */
+export type AvatarDensity = 'comfortable' | 'compact'
+
 export interface AvatarState {
   status: ImageStatus
 }
@@ -49,6 +52,7 @@ export interface AvatarParts {
     'data-scope': 'avatar'
     'data-part': 'root'
     'data-status': Signal<ImageStatus>
+    'data-density': AvatarDensity | undefined
   }
   image: {
     'data-scope': 'avatar'
@@ -71,6 +75,8 @@ export interface AvatarParts {
 
 export interface ConnectOptions {
   alt?: string
+  /** Presentation density published on the root for either skin to consume. */
+  density?: AvatarDensity
 }
 
 export function connect(
@@ -84,6 +90,7 @@ export function connect(
       'data-scope': 'avatar',
       'data-part': 'root',
       'data-status': state.map((s) => s.status),
+      'data-density': opts.density,
     },
     image: {
       'data-scope': 'avatar',

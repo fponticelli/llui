@@ -62,7 +62,9 @@ describe('locale context override (finding 11)', () => {
           const car = carousel.connect(state.at('carousel'), noop<carousel.CarouselMsg>(), {
             id: 'car',
           })
-          const pag = pagination.connect(state.at('pagination'), noop<pagination.PaginationMsg>())
+          const pag = pagination.connect(state.at('pagination'), noop<pagination.PaginationMsg>(), {
+            id: 'locale-pagination',
+          })
           return [
             button({ ...srt.handle('x', 0) }, []),
             div({ ...car.slide(0).slide }, []),

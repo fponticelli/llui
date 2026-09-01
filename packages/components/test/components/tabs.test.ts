@@ -223,11 +223,23 @@ describe('tabs.connect', () => {
 
   it('setDir updates the reading direction', () => {
     const [s] = update(init({ items: ['a', 'b'] }), { type: 'setDir', dir: 'rtl' })
-    expect(s.dir).toBe('rtl')
+    expect(s).toMatchObject({ dir: 'rtl', dirSource: 'explicit' })
   })
 
   it('init defaults dir to ltr', () => {
-    expect(init({ items: ['a'] }).dir).toBe('ltr')
+    expect(init({ items: ['a'] })).toMatchObject({ dir: 'ltr', dirSource: 'dom' })
+    expect(init({ items: ['a'], dir: 'rtl' })).toMatchObject({
+      dir: 'rtl',
+      dirSource: 'explicit',
+    })
+  })
+
+  it('ignores observed direction after explicit initialization or public setDir', () => {
+    const explicit = init({ items: ['a'], dir: 'ltr' })
+    expect(update(explicit, { type: 'syncDomDir', dir: 'rtl' })[0]).toBe(explicit)
+    const [observed] = update(init({ items: ['a'] }), { type: 'syncDomDir', dir: 'rtl' })
+    const [configured] = update(observed, { type: 'setDir', dir: 'ltr' })
+    expect(update(configured, { type: 'syncDomDir', dir: 'rtl' })[0]).toBe(configured)
   })
 
   it('Home/End work in vertical orientation', () => {

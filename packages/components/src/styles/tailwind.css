@@ -87,19 +87,19 @@
 
 @keyframes accordion-down {
   from {
-    height: 0;
+    block-size: 0;
   }
   to {
-    height: var(--content-height, auto);
+    block-size: var(--llui-disclosure-block-size, var(--content-height, auto));
   }
 }
 
 @keyframes accordion-up {
   from {
-    height: var(--content-height, auto);
+    block-size: var(--llui-disclosure-block-size, var(--content-height, auto));
   }
   to {
-    height: 0;
+    block-size: 0;
   }
 }
 

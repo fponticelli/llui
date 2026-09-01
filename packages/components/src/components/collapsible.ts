@@ -1,5 +1,12 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
+import { retainedExit } from '../internal/retained-exit.js'
+import {
+  armDisclosureExit,
+  matchesArmedDisclosureExit,
+  measureDisclosureBlockSize,
+  type ArmedDisclosureExit,
+} from '../internal/disclosure-motion.js'
 
 /**
  * Collapsible — a single expandable/collapsible section. Simpler than
@@ -9,6 +16,12 @@ import type { Send, Signal } from '@llui/dom'
 export interface CollapsibleState {
   open: boolean
   disabled: boolean
+  /** Presentation-only retention while an opted-in exit animation runs. */
+  closing: boolean
+  /** Monotonic generation used to reject stale animation completion events. */
+  exitGeneration: number
+  /** Whether close waits for the content's own animation end/cancel event. */
+  animated: boolean
 }
 
 export type CollapsibleMsg =
@@ -20,27 +33,58 @@ export type CollapsibleMsg =
   | { type: 'close' }
   /** @intent("Set the panel's open state to a specific value") */
   | { type: 'setOpen'; open: boolean }
+  /** @humanOnly */
+  | { type: 'exitComplete'; generation: number }
 
 export interface CollapsibleInit {
   open?: boolean
   disabled?: boolean
+  /** Opt into retained exit motion. Defaults off to guarantee no event/no hang. */
+  animated?: boolean
 }
 
 export function init(opts: CollapsibleInit = {}): CollapsibleState {
-  return { open: opts.open ?? false, disabled: opts.disabled ?? false }
+  return {
+    open: opts.open ?? false,
+    disabled: opts.disabled ?? false,
+    closing: false,
+    exitGeneration: 0,
+    animated: opts.animated ?? false,
+  }
+}
+
+function withOpen(state: CollapsibleState, open: boolean): CollapsibleState {
+  const retained = retainedExit(
+    state.open,
+    open,
+    state.closing,
+    state.exitGeneration,
+    state.animated,
+  )
+  return {
+    ...state,
+    open,
+    closing: retained.exiting,
+    exitGeneration: retained.generation,
+  }
 }
 
 export function update(state: CollapsibleState, msg: CollapsibleMsg): [CollapsibleState, never[]] {
+  if (msg.type === 'exitComplete') {
+    return state.closing && state.exitGeneration === msg.generation
+      ? [{ ...state, closing: false }, []]
+      : [state, []]
+  }
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'toggle':
-      return [{ ...state, open: !state.open }, []]
+      return [withOpen(state, !state.open), []]
     case 'open':
-      return [{ ...state, open: true }, []]
+      return [withOpen(state, true), []]
     case 'close':
-      return [{ ...state, open: false }, []]
+      return [withOpen(state, false), []]
     case 'setOpen':
-      return [{ ...state, open: msg.open }, []]
+      return [withOpen(state, msg.open), []]
   }
 }
 
@@ -68,9 +112,14 @@ export interface CollapsibleParts {
     id: string
     'aria-labelledby': string
     hidden: Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<'open' | 'closing' | 'closed'>
     'data-scope': 'collapsible'
     'data-part': 'content'
+    'aria-hidden': Signal<'true' | undefined>
+    inert: Signal<boolean>
+    onAnimationStart: (e: AnimationEvent) => void
+    onAnimationEnd: (e: AnimationEvent) => void
+    onAnimationCancel: (e: AnimationEvent) => void
   }
 }
 
@@ -85,6 +134,31 @@ export function connect(
 ): CollapsibleParts {
   const triggerId = `${opts.id}:trigger`
   const contentId = `${opts.id}:content`
+  const armedExits = new WeakMap<EventTarget, ArmedDisclosureExit>()
+  const armExit = (e: AnimationEvent): void => {
+    const target = e.currentTarget
+    if (target === null || target !== e.target) return
+    const current = state.peek()
+    if (current.closing) {
+      const armed = armDisclosureExit(e, current.exitGeneration)
+      if (armed !== undefined) armedExits.set(target, armed)
+    } else {
+      measureDisclosureBlockSize(e)
+      armedExits.delete(target)
+    }
+  }
+  const completeExit = (e: AnimationEvent): void => {
+    const target = e.currentTarget
+    if (target === null) return
+    const current = state.peek()
+    if (
+      !current.closing ||
+      !matchesArmedDisclosureExit(e, current.exitGeneration, armedExits.get(target))
+    )
+      return
+    armedExits.delete(target)
+    send({ type: 'exitComplete', generation: current.exitGeneration })
+  }
 
   return {
     root: {
@@ -109,10 +183,15 @@ export function connect(
       role: 'region',
       id: contentId,
       'aria-labelledby': triggerId,
-      hidden: state.map((s) => !s.open),
-      'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
+      hidden: state.map((s) => !s.open && !s.closing),
+      'data-state': state.map((s) => (s.open ? 'open' : s.closing ? 'closing' : 'closed')),
       'data-scope': 'collapsible',
       'data-part': 'content',
+      'aria-hidden': state.map((s) => (s.open ? undefined : 'true')),
+      inert: state.map((s) => !s.open),
+      onAnimationStart: armExit,
+      onAnimationEnd: tagSend(send, ['exitComplete'], completeExit),
+      onAnimationCancel: tagSend(send, ['exitComplete'], completeExit),
     },
   }
 }

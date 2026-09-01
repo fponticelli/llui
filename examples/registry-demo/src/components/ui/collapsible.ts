@@ -11,6 +11,9 @@ import { classPart } from '../../lib/utils'
 export const Collapsible = classPart(div, 'flex flex-col gap-2')
 export const CollapsibleTrigger = classPart(
   button,
-  'flex items-center justify-between gap-2 rounded-md text-sm font-medium transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+  'flex items-center justify-between gap-2 rounded-md text-sm font-medium transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 motion-reduce:transition-none!',
 )
-export const CollapsibleContent = classPart(div, 'text-sm data-[state=closed]:hidden')
+export const CollapsibleContent = classPart(
+  div,
+  'overflow-hidden text-sm data-[state=closed]:hidden data-[state=closing]:pointer-events-none data-[state=closing]:[--llui-disclosure-exit-animation:accordion-up] data-[state=closing]:animate-accordion-up data-[state=open]:animate-accordion-down motion-reduce:data-[state=closing]:[animation-duration:0.01ms]! motion-reduce:data-[state=open]:[animation-duration:0.01ms]!',
+)

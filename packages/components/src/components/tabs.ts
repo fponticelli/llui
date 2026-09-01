@@ -1,6 +1,14 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
-import { flipArrow } from '../utils/direction.js'
+import type { Mountable, Send, Signal } from '@llui/dom'
+import {
+  directionSyncMount,
+  eventDirection,
+  flipArrow,
+  initDirection,
+  setDirection,
+  syncDomDirection,
+  type DirectionSource,
+} from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { firstEnabled, lastEnabled, nextEnabled } from '../utils/list-navigation.js'
 
@@ -30,6 +38,7 @@ export interface TabsState {
   deselectable: boolean
   /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
   dir: 'ltr' | 'rtl'
+  dirSource: DirectionSource
 }
 
 export type TabsMsg =
@@ -55,6 +64,8 @@ export type TabsMsg =
   | { type: 'activateFocused' }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: 'ltr' | 'rtl' }
 
 export interface TabsInit {
   value?: string
@@ -69,6 +80,7 @@ export interface TabsInit {
 
 export function init(opts: TabsInit = {}): TabsState {
   const items = opts.items ?? []
+  const direction = initDirection(opts.dir)
   return {
     value: opts.value ?? items[0] ?? '',
     items,
@@ -78,7 +90,7 @@ export function init(opts: TabsInit = {}): TabsState {
     focused: null,
     loopFocus: opts.loopFocus ?? true,
     deselectable: opts.deselectable ?? false,
-    dir: opts.dir ?? 'ltr',
+    ...direction,
   }
 }
 
@@ -166,7 +178,9 @@ export function update(state: TabsState, msg: TabsMsg): [TabsState, never[]] {
       return [{ ...state, value: deselectOrSelect(state, state.focused) }, []]
     }
     case 'setDir':
-      return [{ ...state, dir: msg.dir }, []]
+      return [setDirection(state, msg.dir), []]
+    case 'syncDomDir':
+      return [syncDomDirection(state, msg.dir), []]
   }
 }
 
@@ -203,6 +217,7 @@ export interface TabsItemParts {
 
 export interface TabsParts {
   root: {
+    id: string
     'data-scope': 'tabs'
     'data-part': 'root'
     'data-orientation': Signal<Orientation>
@@ -227,6 +242,8 @@ export interface TabsParts {
     'data-part': 'list'
   }
   item: (value: string) => TabsItemParts
+  /** Place once anywhere in the same build to keep automatic direction live. */
+  directionSync: Mountable
 }
 
 export interface ConnectOptions {
@@ -250,6 +267,7 @@ export function connect(
 
   return {
     root: {
+      id: opts.id,
       'data-scope': 'tabs',
       'data-part': 'root',
       'data-orientation': state.map((s) => s.orientation),
@@ -300,7 +318,7 @@ export function connect(
             ) as HTMLElement | null
             const orientation =
               (list?.getAttribute('aria-orientation') as Orientation | null) ?? 'horizontal'
-            const key = flipArrow(e.key, state.peek().dir)
+            const key = flipArrow(e.key, eventDirection(state.peek(), target))
             const nextKey = orientation === 'vertical' ? 'ArrowDown' : 'ArrowRight'
             const prevKey = orientation === 'vertical' ? 'ArrowUp' : 'ArrowLeft'
             // Move real DOM focus to the newly-focused trigger after the state
@@ -351,6 +369,7 @@ export function connect(
         'data-value': value,
       },
     }),
+    directionSync: directionSyncMount(opts.id, (dir) => send({ type: 'syncDomDir', dir })),
   }
 }
 

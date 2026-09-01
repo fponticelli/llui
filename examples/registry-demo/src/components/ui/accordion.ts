@@ -30,7 +30,7 @@ export function AccordionTrigger(
         type: 'button',
         ...rest,
         class: mergeClass(
-          'flex flex-1 items-start justify-between gap-4 rounded-md py-4 text-left text-sm font-medium transition-all outline-none hover:underline focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&[data-state=open]>svg]:rotate-180',
+          'flex flex-1 items-start justify-between gap-4 rounded-md py-4 text-start text-sm font-medium transition-all outline-none hover:underline focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 motion-reduce:transition-none [&[data-state=open]>svg]:rotate-180',
           className,
         ),
       },
@@ -38,7 +38,7 @@ export function AccordionTrigger(
         ...children,
         ChevronDownIcon({
           class:
-            'pointer-events-none size-4 shrink-0 translate-y-0.5 text-muted-foreground transition-transform duration-200',
+            'pointer-events-none size-4 shrink-0 translate-y-0.5 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none',
         }),
       ],
     ),
@@ -47,7 +47,7 @@ export function AccordionTrigger(
 
 export const AccordionContent = classPart(
   div,
-  'overflow-hidden text-sm data-[state=closed]:animate-accordion-up data-[state=open]:animate-accordion-down',
+  'overflow-hidden text-sm data-[state=closing]:pointer-events-none data-[state=closing]:[--llui-disclosure-exit-animation:accordion-up] data-[state=closing]:animate-accordion-up data-[state=open]:animate-accordion-down motion-reduce:data-[state=closing]:[animation-duration:0.01ms]! motion-reduce:data-[state=open]:[animation-duration:0.01ms]!',
 )
 /** The inner padding shadcn puts on a nested div, kept as its own part so the
  * animated height wrapper stays padding-free (padding on an animating element

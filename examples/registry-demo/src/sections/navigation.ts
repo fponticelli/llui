@@ -50,8 +50,8 @@ const TOOLS = ['bold', 'italic', 'underline']
 export const init = (): [State, never[]] => [
   {
     tabs: tabsC.init({ items: TABS.map((t) => t.value), value: 'account' }),
-    faq: accordionC.init({ items: FAQ.map((f) => f.value), value: ['own'] }),
-    details: collapsibleC.init({ open: false }),
+    faq: accordionC.init({ items: FAQ.map((f) => f.value), value: ['own'], animated: true }),
+    details: collapsibleC.init({ open: false, animated: true }),
     toolbar: toolbarC.init({ items: TOOLS }),
   },
   [],
@@ -87,6 +87,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   })
 
   return [
+    tabs.directionSync,
     section('Tabs, Accordion & Collapsible', 'Disclosure patterns.', [
       Tabs({ ...tabs.root }, [
         TabsList(
@@ -126,7 +127,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
           [text('Toggle details')],
         ),
         CollapsibleContent({ ...details.content, class: 'text-muted-foreground' }, [
-          text('The content stays in the DOM and is hidden by data-[state=closed].'),
+          text('The content stays mounted and inert through its closing animation.'),
         ]),
       ]),
     ]),

@@ -1,20 +1,19 @@
 import { caption, div, table as tableEl, tbody, td, th, thead, tr } from '@llui/dom'
-import { type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { classPart, customTag, splitArgs } from '@/lib/utils'
+import { classPart, customTag } from '@/lib/utils'
 
 /** Ported verbatim from shadcn/ui (MIT © 2023 shadcn). */
-const tableInner = classPart(tableEl, 'w-full caption-bottom text-sm')
+export const Table = classPart(
+  tableEl,
+  'group/table w-full caption-bottom text-sm data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+)
 
 /**
- * Table — wrapped in an `overflow-x-auto` div, as shadcn's is, so a wide table
- * scrolls inside its own box instead of scrolling the page. The wrapper is part
- * of the component rather than the caller's job: a table that overflows the
- * viewport is the default failure mode of every hand-rolled version of this.
+ * Owned table viewport. Spread `table.connect(...).viewport` here and place the
+ * native `Table` directly inside. Keeping the two public parts separate lets
+ * the headless contract own overflow without nesting a second scrollport inside
+ * the registry skin.
  */
-export function Table(a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable {
-  const { props, children } = splitArgs(a0, a1)
-  return div({ class: 'relative w-full overflow-x-auto' }, [tableInner(props, children)])
-}
+export const TableViewport = classPart(div, 'relative w-full overflow-x-auto')
 
 export const TableHeader = classPart(thead, '[&_tr]:border-b')
 export const TableBody = classPart(tbody, '[&_tr:last-child]:border-0')
@@ -25,14 +24,14 @@ export const TableFooter = classPart(
 )
 export const TableRow = classPart(
   tr,
-  'border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[state=selected]:bg-muted',
+  'border-b transition-colors hover:bg-muted/50 has-aria-expanded:bg-muted/50 data-[selected]:bg-muted aria-selected:bg-muted forced-colors:data-[selected]:outline-2 forced-colors:data-[selected]:outline-[Highlight] forced-colors:data-[selected]:-outline-offset-2 forced-colors:aria-selected:outline-2 forced-colors:aria-selected:outline-[Highlight] forced-colors:aria-selected:-outline-offset-2',
 )
 export const TableHead = classPart(
   th,
-  'h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
+  'h-10 px-2 text-start align-middle font-medium whitespace-nowrap text-foreground outline-none group-data-[density=compact]/table:h-8 group-data-[density=compact]/table:px-1.5 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50 forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[Highlight] forced-colors:focus-visible:-outline-offset-2 [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]',
 )
 export const TableCell = classPart(
   td,
-  'p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0 [&>[role=checkbox]]:translate-y-[2px]',
+  'p-2 text-start align-middle whitespace-nowrap outline-none group-data-[density=compact]/table:px-1.5 group-data-[density=compact]/table:py-1 focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/50 forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-[Highlight] forced-colors:focus-visible:-outline-offset-2 [&:has([role=checkbox])]:pe-0 [&>[role=checkbox]]:translate-y-[2px]',
 )
 export const TableCaption = classPart(caption, 'mt-4 text-sm text-muted-foreground')

@@ -1,6 +1,17 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { focusRovingItem } from '../utils/roving.js'
+import {
+  retainedExitGeneration,
+  retainedExits,
+  type RetainedExitGeneration,
+} from '../internal/retained-exit.js'
+import {
+  armDisclosureExit,
+  matchesArmedDisclosureExit,
+  measureDisclosureBlockSize,
+  type ArmedDisclosureExit,
+} from '../internal/disclosure-motion.js'
 
 /**
  * Accordion — a stack of expandable panels. Items are identified by a string
@@ -21,6 +32,14 @@ export interface AccordionState {
   disabled: boolean
   /** Ordered list of item values (for keyboard navigation). */
   items: string[]
+  /** Presentation-only items retained while their opted-in exit animation runs. */
+  closing: string[]
+  /** Monotonic exit generation per item, used to reject stale end events. */
+  exitGenerations: RetainedExitGeneration<string>[]
+  /** Monotonic source for collision-free exit generations; never grows by id. */
+  exitSequence: number
+  /** Whether closed content is retained until its own animation end/cancel event. */
+  animated: boolean
 }
 
 export type AccordionMsg =
@@ -42,6 +61,8 @@ export type AccordionMsg =
   | { type: 'focusFirst' }
   /** @humanOnly */
   | { type: 'focusLast' }
+  /** @humanOnly — sent by the retained content's own animation end/cancel event. */
+  | { type: 'exitComplete'; value: string; generation: number }
 
 export interface AccordionInit {
   value?: string[]
@@ -49,6 +70,11 @@ export interface AccordionInit {
   collapsible?: boolean
   disabled?: boolean
   items?: string[]
+  /**
+   * Retain closing content for an exit animation. Off by default so a missing
+   * stylesheet/event cannot leave hidden semantic content mounted forever.
+   */
+  animated?: boolean
 }
 
 export function init(opts: AccordionInit = {}): AccordionState {
@@ -58,6 +84,28 @@ export function init(opts: AccordionInit = {}): AccordionState {
     collapsible: opts.collapsible ?? true,
     disabled: opts.disabled ?? false,
     items: opts.items ?? [],
+    closing: [],
+    exitGenerations: [],
+    exitSequence: 0,
+    animated: opts.animated ?? false,
+  }
+}
+
+function withValue(state: AccordionState, value: string[]): AccordionState {
+  const retained = retainedExits(
+    state.value,
+    value,
+    state.closing,
+    state.exitGenerations,
+    state.exitSequence,
+    state.animated,
+  )
+  return {
+    ...state,
+    value,
+    closing: retained.exiting,
+    exitGenerations: retained.generations,
+    exitSequence: retained.sequence,
   }
 }
 
@@ -74,19 +122,40 @@ function toggleValue(state: AccordionState, value: string): string[] {
 }
 
 export function update(state: AccordionState, msg: AccordionMsg): [AccordionState, never[]] {
+  if (msg.type === 'exitComplete') {
+    if (
+      !state.closing.includes(msg.value) ||
+      retainedExitGeneration(state.exitGenerations, msg.value) !== msg.generation
+    )
+      return [state, []]
+    return [
+      {
+        ...state,
+        closing: state.closing.filter((value) => value !== msg.value),
+        exitGenerations: state.exitGenerations.filter((entry) => entry.value !== msg.value),
+      },
+      [],
+    ]
+  }
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'toggle':
-      return [{ ...state, value: toggleValue(state, msg.value) }, []]
+      return [withValue(state, toggleValue(state, msg.value)), []]
     case 'open':
-      if (state.value.includes(msg.value)) return [state, []]
-      return [{ ...state, value: state.multiple ? [...state.value, msg.value] : [msg.value] }, []]
+      if (state.value.includes(msg.value) && !state.closing.includes(msg.value)) return [state, []]
+      return [withValue(state, state.multiple ? [...state.value, msg.value] : [msg.value]), []]
     case 'close':
       if (!state.value.includes(msg.value)) return [state, []]
       if (!state.multiple && !state.collapsible) return [state, []]
-      return [{ ...state, value: state.value.filter((v) => v !== msg.value) }, []]
+      return [
+        withValue(
+          state,
+          state.value.filter((v) => v !== msg.value),
+        ),
+        [],
+      ]
     case 'setValue':
-      return [{ ...state, value: msg.value }, []]
+      return [withValue(state, msg.value), []]
     case 'setItems':
       return [{ ...state, items: msg.items }, []]
     // Focus messages don't mutate state but are emitted so user handlers can respond.
@@ -117,10 +186,15 @@ export interface AccordionItemParts {
     role: 'region'
     id: string
     'aria-labelledby': string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<'open' | 'closing' | 'closed'>
     'data-scope': 'accordion'
     'data-part': 'content'
     hidden: Signal<boolean>
+    'aria-hidden': Signal<'true' | undefined>
+    inert: Signal<boolean>
+    onAnimationStart: (e: AnimationEvent) => void
+    onAnimationEnd: (e: AnimationEvent) => void
+    onAnimationCancel: (e: AnimationEvent) => void
   }
   item: {
     'data-state': Signal<'open' | 'closed'>
@@ -157,6 +231,35 @@ export function connect(
   const base = opts.id
   const triggerId = (v: string): string => `${base}:trigger:${v}`
   const contentId = (v: string): string => `${base}:content:${v}`
+  const armedExits = new WeakMap<EventTarget, ArmedDisclosureExit>()
+  const armExit = (value: string, e: AnimationEvent): void => {
+    const target = e.currentTarget
+    if (target === null || target !== e.target) return
+    const current = state.peek()
+    if (current.closing.includes(value)) {
+      const armed = armDisclosureExit(
+        e,
+        retainedExitGeneration(current.exitGenerations, value) ?? 0,
+      )
+      if (armed !== undefined) armedExits.set(target, armed)
+    } else {
+      measureDisclosureBlockSize(e)
+      armedExits.delete(target)
+    }
+  }
+  const completeExit = (value: string, e: AnimationEvent): void => {
+    const target = e.currentTarget
+    if (target === null) return
+    const current = state.peek()
+    const generation = retainedExitGeneration(current.exitGenerations, value) ?? 0
+    if (
+      !current.closing.includes(value) ||
+      !matchesArmedDisclosureExit(e, generation, armedExits.get(target))
+    )
+      return
+    armedExits.delete(target)
+    send({ type: 'exitComplete', value, generation })
+  }
 
   return {
     root: {
@@ -226,10 +329,17 @@ export function connect(
         role: 'region',
         id: contentId(value),
         'aria-labelledby': triggerId(value),
-        'data-state': state.map((st) => (st.value.includes(value) ? 'open' : 'closed')),
+        'data-state': state.map((st) =>
+          st.value.includes(value) ? 'open' : st.closing.includes(value) ? 'closing' : 'closed',
+        ),
         'data-scope': 'accordion',
         'data-part': 'content',
-        hidden: state.map((st) => !st.value.includes(value)),
+        hidden: state.map((st) => !st.value.includes(value) && !st.closing.includes(value)),
+        'aria-hidden': state.map((st) => (st.value.includes(value) ? undefined : 'true')),
+        inert: state.map((st) => !st.value.includes(value)),
+        onAnimationStart: (e) => armExit(value, e),
+        onAnimationEnd: tagSend(send, ['exitComplete'], (e) => completeExit(value, e)),
+        onAnimationCancel: tagSend(send, ['exitComplete'], (e) => completeExit(value, e)),
       },
       item: {
         'data-state': state.map((st) => (st.value.includes(value) ? 'open' : 'closed')),

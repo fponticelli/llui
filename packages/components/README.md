@@ -88,6 +88,7 @@ const App = component<State, Msg, never>({
 
 accordion, checkbox, collapsible, editable, field, fieldset, number-input, password-input, pin-input, radio-group, rating-group, search-field, slider, switch, tabs, tags-input, toggle, toggle-group, toolbar
 
+- **accordion / collapsible exit motion** — Closing is synchronous by default, so a missing stylesheet or end event cannot strand content. Opt in with `init({ animated: true })`; the content then stays mounted as `data-state="closing"`, `aria-hidden`, and `inert` until its own `animationend`/`animationcancel`. Spread the complete content part so those completion handlers are preserved.
 - **field** — label/description/error ARIA wiring for a single control: derives stable control/label/description/error ids from one base id, exposes a `control` bag (id, `htmlFor`, `aria-labelledby`, reactive `aria-describedby`/`aria-invalid`/`aria-required`, `disabled`, `readOnly`) plus a `description` hint and a polite `errorText` live region — zero manual ids.
 - **fieldset** — group wiring: native `<fieldset>`/`<legend>` (role group, `aria-labelledby`), group-level `disabled` propagation (mirrored to `aria-disabled`), and an optional polite group error region for cross-field validation.
 - **toolbar** — roving-tabindex container for grouping buttons, toggles, and menu triggers. Single tab stop with arrow-key roving (orientation-aware), Home/End, separator/disabled skipping, optional focus wrap, and labelled groups. Interaction-agnostic: it only manages focus, items supply their own behavior.
@@ -106,6 +107,7 @@ alert-dialog, combobox, context-menu, dialog, drawer, hover-card, menu, menubar,
 async-list, avatar, breadcrumbs, carousel, cascade-select, listbox, meter, pagination, progress, qr-code, scroll-area, steps, table, toc, tree-view
 
 - **table** — Headless table / data-grid machine: sortable columns, row selection, and WAI-ARIA grid keyboard navigation — row DATA stays in the consumer (the machine tracks row IDs, sort, selection, and the focused cell only).
+- **The table viewport is part of the public structure.** Render the native table carrying `parts.root` directly inside an element carrying `parts.viewport`: `div({ ...parts.viewport }, [table({ ...parts.root }, rows)])`. The table remains the semantic grid; the owned viewport is the local horizontal scrollport that prevents a wide grid from overflowing the page.
 - Sorting cycles asc→desc→none (configurable via descFirst); the machine stores and emits sort state while the consumer performs the actual sort, so server-side sort works by feeding pre-sorted rows back in.
 - Single/multiple row selection with tri-state select-all checkbox and Shift+click range selection.
 - APG grid keyboard nav (arrows, Home/End, Ctrl+Home/End, PageUp/Down, Space to select the row, Enter to activate) with a single roving tab stop; works with rows rendered via each or virtualEach.
@@ -115,6 +117,7 @@ async-list, avatar, breadcrumbs, carousel, cascade-select, listbox, meter, pagin
 - Ctrl/Cmd+A is deliberately **not** bound. APG's "Control + A: selects all cells" is a cell-selection idiom; this grid selects _rows_ and `toggleAll` toggles rather than selects, so binding it would hijack the browser's select-all for different semantics.
 
 - **Breadcrumbs** — hierarchical navigation trail with WAI-ARIA landmark/list semantics, `aria-current="page"` on the active (last) item, and automatic middle-collapse to `first … last N items` (with an expandable ellipsis trigger) when `maxVisible` is exceeded.
+- **Carousel structure** — Put every slide directly inside the transform-bearing `parts.track`, and put that track inside `parts.viewport`. The viewport publishes the live `--carousel-drag-offset`; both baseline and registry skins consume it on the track so content follows the pointer before snapping or committing.
 - meter — role="meter" gauge for a scalar measurement within a known range (disk usage, battery, a lab result against its reference range), distinct from progressbar. Reports aria-valuemin/max/now plus a formatted aria-valuetext that NAMES the band the reading is in. State carries `bands` — N named regions, each with its own tone, laid out across the track and exposed as `parts.bands` / `parts.band(id)` with a `marker` at the reading; `low`/`high`/`optimum` are init options compiling to the native three segments. `data-state` is the current band's tone (`optimal` / `suboptimal` / `critical` / `neutral`). Read-only (no keyboard).
 
 ### Pickers

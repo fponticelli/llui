@@ -15,6 +15,8 @@ import * as avatarC from '@llui/components/avatar'
 import * as breadcrumbs from '@llui/components/breadcrumbs'
 import * as paginationC from '@llui/components/pagination'
 import * as stepsC from '@llui/components/steps'
+import * as tableC from '@llui/components/table'
+import * as dataTableC from '@llui/components/patterns/data-table'
 import { Badge } from '../components/ui/badge'
 import { Avatar, AvatarFallback } from '../components/ui/avatar'
 import { Progress, ProgressRange, ProgressTrack } from '../components/ui/progress'
@@ -61,6 +63,7 @@ import {
   TableHead,
   TableHeader,
   TableRow,
+  TableViewport,
 } from '../components/ui/table'
 import { row, section } from './shared'
 
@@ -74,7 +77,8 @@ export interface State {
   crumbs: breadcrumbs.BreadcrumbsState
   page: paginationC.PaginationState
   steps: stepsC.StepsState
-  tableStatus: TableStatus
+  table: tableC.TableState
+  dataTable: dataTableC.DataTableState
 }
 
 export type Msg =
@@ -83,6 +87,8 @@ export type Msg =
   | { type: 'crumbs'; msg: breadcrumbs.BreadcrumbsMsg }
   | { type: 'page'; msg: paginationC.PaginationMsg }
   | { type: 'steps'; msg: stepsC.StepsMsg }
+  | { type: 'table'; msg: tableC.TableMsg }
+  | { type: 'dataTable'; msg: dataTableC.DataTableMsg }
   | { type: 'tableStatus'; status: TableStatus }
 
 const CRUMBS = [
@@ -92,19 +98,65 @@ const CRUMBS = [
 ]
 const STEP_LABELS = ['Install', 'Configure', 'Add components']
 
-export const init = (): [State, never[]] => [
-  {
-    progress: progressC.init({ value: 62 }),
-    storage: meterC.init({ value: 78, min: 0, max: 100, low: 40, high: 75, optimum: 20 }),
-    rating: ratingGroup.init({ value: 4, count: 5 }),
-    avatar: avatarC.init(),
-    crumbs: breadcrumbs.init({ items: CRUMBS }),
-    page: paginationC.init({ page: 3, pageSize: 10, total: 96 }),
-    tableStatus: 'ready',
-    steps: stepsC.init({ steps: STEP_LABELS, current: 1, completed: [0] }),
-  },
-  [],
+const TABLE_COLUMNS = [
+  { id: 'item', sortable: true },
+  { id: 'kind', sortable: true },
+  { id: 'status', sortable: true },
 ]
+
+export const init = (): [State, never[]] => {
+  const dataTable = dataTableC.init({
+    columns: TABLE_COLUMNS,
+    selectionMode: 'multiple',
+    pageSize: 2,
+  })
+  const [loadedDataTable] = dataTableC.update(dataTable, {
+    type: 'pageLoaded',
+    queryId: dataTable.queryId,
+    rows: ROWS.slice(0, 2).map(({ item }) => item),
+    total: ROWS.length,
+  })
+  return [
+    {
+      progress: progressC.init({ value: 62 }),
+      storage: meterC.init({ value: 78, min: 0, max: 100, low: 40, high: 75, optimum: 20 }),
+      rating: ratingGroup.init({ value: 4, count: 5 }),
+      avatar: avatarC.init(),
+      crumbs: breadcrumbs.init({ items: CRUMBS }),
+      page: paginationC.init({ page: 3, pageSize: 10, total: 96 }),
+      steps: stepsC.init({ steps: STEP_LABELS, current: 1, completed: [0] }),
+      table: tableC.init({
+        columns: TABLE_COLUMNS,
+        rows: ROWS.map(({ item }) => item),
+        selectionMode: 'multiple',
+      }),
+      dataTable: loadedDataTable,
+    },
+    [],
+  ]
+}
+
+function resolveDataTable(
+  state: dataTableC.DataTableState,
+  msg: dataTableC.DataTableMsg,
+): dataTableC.DataTableState {
+  const [pending, effects] = dataTableC.update(state, msg)
+  const load = effects[0]
+  if (load === undefined) return pending
+  const sorted = [...ROWS]
+  if (load.sort !== null) {
+    const direction = load.sort.direction === 'asc' ? 1 : -1
+    const key = load.sort.columnId as keyof RegistryRow
+    sorted.sort((a, b) => String(a[key]).localeCompare(String(b[key])) * direction)
+  }
+  const start = (load.page - 1) * load.pageSize
+  return dataTableC.update(pending, {
+    type: 'pageLoaded',
+    queryId: load.queryId,
+    rows: sorted.slice(start, start + load.pageSize).map(({ item }) => item),
+    total: sorted.length,
+  })[0]
+}
 
 export function update(state: State, msg: Msg): [State, never[]] {
   switch (msg.type) {
@@ -118,8 +170,40 @@ export function update(state: State, msg: Msg): [State, never[]] {
       return [{ ...state, page: paginationC.update(state.page, msg.msg)[0] }, []]
     case 'steps':
       return [{ ...state, steps: stepsC.update(state.steps, msg.msg)[0] }, []]
-    case 'tableStatus':
-      return [{ ...state, tableStatus: msg.status }, []]
+    case 'table':
+      return [{ ...state, table: tableC.update(state.table, msg.msg)[0] }, []]
+    case 'dataTable':
+      return [{ ...state, dataTable: resolveDataTable(state.dataTable, msg.msg) }, []]
+    case 'tableStatus': {
+      const pending = dataTableC.update(state.dataTable, { type: 'reload' })[0]
+      if (msg.status === 'loading') return [{ ...state, dataTable: pending }, []]
+      if (msg.status === 'error') {
+        return [
+          {
+            ...state,
+            dataTable: dataTableC.update(pending, {
+              type: 'pageFailed',
+              queryId: pending.queryId,
+              error: 'Could not load rows.',
+            })[0],
+          },
+          [],
+        ]
+      }
+      const rows = msg.status === 'empty' ? [] : ROWS.slice(0, pending.pagination.pageSize)
+      return [
+        {
+          ...state,
+          dataTable: dataTableC.update(pending, {
+            type: 'pageLoaded',
+            queryId: pending.queryId,
+            rows: rows.map(({ item }) => item),
+            total: msg.status === 'empty' ? 0 : ROWS.length,
+          })[0],
+        },
+        [],
+      ]
+    }
   }
 }
 
@@ -149,7 +233,6 @@ const TSH = meterC.init({
 })
 
 export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[] {
-  const status = state.at('tableStatus')
   // `progress` and `meter` are READ-ONLY: their `connect` takes a `send` and
   // ignores it (`_send`), because neither produces a message. The parameter is
   // there so every component's `connect` has the same shape.
@@ -166,58 +249,110 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const rating = ratingGroup.connect(state.at('rating'), (m) => send({ type: 'rating', msg: m }))
   const avatar = avatarC.connect(state.at('avatar'), (m) => send({ type: 'avatar', msg: m }))
   const crumbs = breadcrumbs.connect(state.at('crumbs'), (m) => send({ type: 'crumbs', msg: m }))
-  const page = paginationC.connect(state.at('page'), (m) => send({ type: 'page', msg: m }))
+  const page = paginationC.connect(state.at('page'), (m) => send({ type: 'page', msg: m }), {
+    id: 'registry-pagination-demo',
+  })
   const steps = stepsC.connect(state.at('steps'), (m) => send({ type: 'steps', msg: m }))
+  const table = tableC.connect(state.at('table'), (msg) => send({ type: 'table', msg }), {
+    id: 'registry-table',
+  })
+  const dataTable = dataTableC.connect(
+    state.at('dataTable'),
+    (msg) => send({ type: 'dataTable', msg }),
+    { id: 'registry-data-table', paginationLabel: 'Registry data-table pages' },
+  )
+
+  const header = (parts: tableC.TableParts, columnId: string, label: string): Mountable =>
+    TableHead({ ...parts.columnHeader(columnId) }, [
+      ...(columnId === 'item'
+        ? [div({ ...parts.selectAllCheckbox(columnId), class: 'me-2 inline-block' }, [text('✓')])]
+        : []),
+      text(label),
+    ])
+
+  const machineRow = (
+    parts: tableC.TableParts,
+    rowValue: RegistryRow,
+    rowIndex: number,
+    selection: Signal<readonly string[]>,
+  ): Mountable =>
+    TableRow({ ...parts.row(rowValue.item, rowIndex) }, [
+      TableCell({ ...parts.cell(rowIndex, 0), class: 'font-medium' }, [
+        div({ ...parts.rowCheckbox(rowValue.item, rowIndex), class: 'me-2 inline-block' }, [
+          text(selection.map((selected) => (selected.includes(rowValue.item) ? '✓' : ''))),
+        ]),
+        text(rowValue.item),
+      ]),
+      TableCell({ ...parts.cell(rowIndex, 1), class: 'text-muted-foreground' }, [
+        text(rowValue.kind),
+      ]),
+      TableCell({ ...parts.cell(rowIndex, 2), class: 'text-end' }, [
+        Badge({ variant: rowValue.status === 'shipped' ? 'secondary' : 'outline' }, [
+          text(rowValue.status),
+        ]),
+      ]),
+    ])
 
   return [
+    page.directionSync,
+    dataTable.pagination.directionSync,
     section(
       'Table & Data Table',
-      'The three status surfaces belong to `patterns/data-table`; the grid stays the plain `Table`. Each carries its own reactive `hidden`, and the two live regions must stay MOUNTED — `show` would unmount them and announce nothing.',
+      'Both examples spread the live machine parts into the registry skin. The native grid is placed directly inside the machine-owned viewport, and the data-table keeps its status live regions mounted.',
       [
-        // ONE stacking context holding all four states, because that is what a
-        // data table actually is: the grid, the two surfaces that REPLACE it,
-        // and the overlay that sits OVER it.
-        //
-        // `relative` is the CONSUMER's — the overlay is `absolute inset-0` and
-        // only the app knows how much of the surface it should cover. Rendering
-        // the surfaces as siblings BELOW the table instead leaves a blank gap in
-        // the ready state and turns the overlay into an ordinary block.
+        TableViewport({ ...table.viewport }, [
+          Table({ ...table.root }, [
+            TableCaption([text('A live sortable and selectable grid.')]),
+            TableHeader([
+              TableRow([
+                header(table, 'item', 'Item'),
+                header(table, 'kind', 'Kind'),
+                header(table, 'status', 'Status'),
+              ]),
+            ]),
+            TableBody(
+              ROWS.map((registryRow, rowIndex) =>
+                machineRow(table, registryRow, rowIndex, state.at('table.selection')),
+              ),
+            ),
+          ]),
+        ]),
         div({ class: 'relative' }, [
-          // Hidden, not unmounted: a load that returns rows again should not
-          // rebuild the whole grid, and `hidden` keeps the reconciler's keyed
-          // rows intact.
-          div({ hidden: status.map((s) => s === 'empty' || s === 'error') }, [
-            Table([
-              TableCaption([text('A slice of the registry.')]),
+          TableViewport({ ...dataTable.table.viewport }, [
+            Table({ ...dataTable.table.root }, [
+              TableCaption([text('A machine-composed paged data table.')]),
               TableHeader([
                 TableRow([
-                  TableHead([text('Item')]),
-                  TableHead([text('Kind')]),
-                  TableHead({ class: 'text-right' }, [text('Status')]),
+                  header(dataTable.table, 'item', 'Item'),
+                  header(dataTable.table, 'kind', 'Kind'),
+                  header(dataTable.table, 'status', 'Status'),
                 ]),
               ]),
-              TableBody(
-                ROWS.map((r) =>
-                  TableRow([
-                    TableCell({ class: 'font-medium' }, [text(r.item)]),
-                    TableCell({ class: 'text-muted-foreground' }, [text(r.kind)]),
-                    TableCell({ class: 'text-right' }, [
-                      Badge({ variant: r.status === 'shipped' ? 'secondary' : 'outline' }, [
-                        text(r.status),
-                      ]),
-                    ]),
-                  ]),
-                ),
-              ),
+              TableBody([
+                each(state.at('dataTable.table.rows'), {
+                  key: (item) => item,
+                  render: (item, index) => {
+                    const itemId = item.peek()
+                    const rowIndex = index.peek()
+                    const registryRow = ROWS.find((candidate) => candidate.item === itemId)
+                    return registryRow === undefined
+                      ? []
+                      : [
+                          machineRow(
+                            dataTable.table,
+                            registryRow,
+                            rowIndex,
+                            state.at('dataTable.table.selection'),
+                          ),
+                        ]
+                  },
+                }),
+              ]),
             ]),
           ]),
           DataTableEmptyState(
             {
-              role: 'status',
-              'aria-live': 'polite',
-              'data-scope': 'data-table',
-              'data-part': 'empty-state',
-              hidden: status.map((s) => s !== 'empty'),
+              ...dataTable.emptyState,
               class: 'rounded-md border',
             },
             [
@@ -227,26 +362,28 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
           ),
           DataTableErrorState(
             {
-              role: 'alert',
-              'aria-live': 'polite',
-              'data-scope': 'data-table',
-              'data-part': 'error-state',
-              hidden: status.map((s) => s !== 'error'),
+              ...dataTable.errorState,
             },
             [text('Could not load rows.')],
           ),
-          // LAST, so it stacks over the grid without a z-index fight, and with
-          // its own `absolute inset-0` left alone — overriding that to `static`
-          // makes it an ordinary block and it stops being an overlay at all.
           DataTableLoadingOverlay(
             {
-              'data-scope': 'data-table',
-              'data-part': 'loading-overlay',
-              'aria-live': 'polite',
-              hidden: status.map((s) => s !== 'loading'),
+              ...dataTable.loadingOverlay,
             },
             [Spinner({ class: 'size-5' })],
           ),
+        ]),
+        Pagination({ ...dataTable.pagination.root }, [
+          PaginationContent([
+            PaginationItem([
+              PaginationPrevious({ ...dataTable.pagination.prevTrigger }, [text('Prev')]),
+            ]),
+            PaginationItem([PaginationLink({ ...dataTable.pagination.item(1) }, [text('1')])]),
+            PaginationItem([PaginationLink({ ...dataTable.pagination.item(2) }, [text('2')])]),
+            PaginationItem([
+              PaginationNext({ ...dataTable.pagination.nextTrigger }, [text('Next')]),
+            ]),
+          ]),
         ]),
         row(
           'Status',
@@ -341,11 +478,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
               return [
                 PaginationItem(
                   item.type === 'page'
-                    ? [
-                        PaginationLink({ ...page.item(item.page), href: '#' }, [
-                          text(String(item.page)),
-                        ]),
-                      ]
+                    ? [PaginationLink({ ...page.item(item.page) }, [text(String(item.page))])]
                     : [PaginationEllipsis([text('…')])],
                 ),
               ]
