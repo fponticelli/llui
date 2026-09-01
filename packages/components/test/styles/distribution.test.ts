@@ -359,7 +359,7 @@ describe('the baseline CSS distribution', () => {
     expect(formControls).not.toMatch(/:focus\s*\{[^}]*outline:\s*(?:none|0)\b/s)
     expect(formControls).toMatch(/:focus:not\(:focus-visible\)\s*\{[^}]*outline:\s*none/s)
     expect(formControls).toMatch(
-      /\[data-scope='switch'\][^{]+:dir\(rtl\)[^{]*\{[^}]*translateX\(-1\.25rem\)/s,
+      /\[data-scope='switch'\][^{]+:dir\(rtl\)[^{]*\{[^}]*translate\(-0\.875rem, -50%\)/s,
     )
   })
 })

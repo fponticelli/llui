@@ -196,6 +196,14 @@ function thumbPercent(state: SliderState, index: number): number {
   return ((v - state.min) / range) * 100
 }
 
+/** Map a normalized horizontal percentage onto the physical left-to-right
+ * track axis. RTL is a single mirror at this boundary: the same function maps
+ * a pointer's physical percentage back onto the value axis because mirroring
+ * is its own inverse. Vertical sliders never call it. */
+function horizontalPositionPercent(state: SliderState, percent: number): number {
+  return state.dir === 'rtl' ? 100 - percent : percent
+}
+
 export interface SliderThumbParts {
   thumb: {
     role: 'slider'
@@ -334,7 +342,8 @@ function handleThumbKey(
 function thumbStyle(state: SliderState, index: number): string {
   const pct = thumbPercent(state, index)
   if (state.orientation === 'horizontal') {
-    return `position:absolute;left:${pct}%;transform:translateX(-50%);`
+    const visualPct = horizontalPositionPercent(state, pct)
+    return `position:absolute;left:${visualPct}%;transform:translateX(-50%);`
   }
   return `position:absolute;bottom:${pct}%;transform:translateY(50%);`
 }
@@ -353,7 +362,11 @@ function rangeStyle(state: SliderState): string {
   const startPct = state.value.length === 1 ? 0 : ((low - state.min) / range) * 100
   const endPct = ((high - state.min) / range) * 100
   if (state.orientation === 'horizontal') {
-    return `position:absolute;left:${startPct}%;right:${100 - endPct}%;`
+    const startPosition = horizontalPositionPercent(state, startPct)
+    const endPosition = horizontalPositionPercent(state, endPct)
+    const left = Math.min(startPosition, endPosition)
+    const right = 100 - Math.max(startPosition, endPosition)
+    return `position:absolute;left:${left}%;right:${right}%;`
   }
   return `position:absolute;bottom:${startPct}%;top:${100 - endPct}%;`
 }
@@ -371,7 +384,8 @@ export function valueFromPoint(
   const { min, max, orientation } = state
   let pct: number
   if (orientation === 'horizontal') {
-    pct = (clientX - rect.left) / rect.width
+    const physicalPercent = ((clientX - rect.left) / rect.width) * 100
+    pct = horizontalPositionPercent(state, physicalPercent) / 100
   } else {
     pct = 1 - (clientY - rect.top) / rect.height
   }

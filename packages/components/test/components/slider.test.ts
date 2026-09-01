@@ -214,6 +214,20 @@ describe('valueFromPoint', () => {
     expect(valueFromPoint(s, rect, 50, 0)).toBe(50)
   })
 
+  it('rtl horizontal: left edge → max, right edge → min', () => {
+    const s = init({ min: 0, max: 100, dir: 'rtl' })
+    expect(valueFromPoint(s, rect, 0, 0)).toBe(100)
+    expect(valueFromPoint(s, rect, 100, 0)).toBe(0)
+    expect(valueFromPoint(s, rect, 25, 0)).toBe(75)
+  })
+
+  it('rtl horizontal preserves non-zero bounds', () => {
+    const s = init({ min: 20, max: 120, dir: 'rtl' })
+    expect(valueFromPoint(s, rect, 0, 0)).toBe(120)
+    expect(valueFromPoint(s, rect, 100, 0)).toBe(20)
+    expect(valueFromPoint(s, rect, 25, 0)).toBe(95)
+  })
+
   it('vertical: top → max, bottom → min', () => {
     const s = init({ min: 0, max: 100, orientation: 'vertical' })
     expect(valueFromPoint(s, rect, 0, 0)).toBe(100)
@@ -320,11 +334,44 @@ describe('slider.connect', () => {
     expect(style).toContain('left:50%')
   })
 
+  it('rtl thumb style mirrors the horizontal position', () => {
+    const p = connect(rootSignal(), vi.fn())
+    const style = read(p.thumb(0).thumb.style, init({ value: [25], min: 0, max: 100, dir: 'rtl' }))
+    expect(style).toContain('left:75%')
+  })
+
   it('range style spans between thumbs', () => {
     const p = connect(rootSignal(), vi.fn())
     const style = read(p.range.style, init({ value: [20, 80], min: 0, max: 100 }))
     expect(style).toContain('left:20%')
     expect(style).toContain('right:20%')
+  })
+
+  it('rtl range style fills a single-thumb slider from the right edge', () => {
+    const p = connect(rootSignal(), vi.fn())
+    const style = read(p.range.style, init({ value: [40], min: 0, max: 100, dir: 'rtl' }))
+    expect(style).toContain('left:60%')
+    expect(style).toContain('right:0%')
+  })
+
+  it('rtl range style mirrors distinct low and high thumbs exactly once', () => {
+    const p = connect(rootSignal(), vi.fn())
+    const style = read(p.range.style, init({ value: [10, 40], min: 0, max: 100, dir: 'rtl' }))
+    expect(style).toContain('left:60%')
+    expect(style).toContain('right:10%')
+  })
+
+  it('rtl pointer, thumb position, and keyboard direction describe the same value axis', () => {
+    const send = vi.fn()
+    const state = init({ value: [25], min: 0, max: 100, dir: 'rtl' })
+    const p = connect(signalOf(state), send)
+    const rect = { left: 0, top: 0, width: 100, height: 100 } as DOMRect
+
+    expect(read(p.thumb(0).thumb.style, state)).toContain('left:75%')
+    expect(valueFromPoint(state, rect, 75, 0)).toBe(25)
+
+    p.thumb(0).thumb.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    expect(send).toHaveBeenCalledWith({ type: 'decrement', index: 0 })
   })
 
   /**

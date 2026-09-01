@@ -5,8 +5,8 @@ import { classPart, createVariantsPart, splitArgs } from '@/lib/utils'
  * Ported from shadcn/ui (MIT © 2023 shadcn), with `data-slot` rewritten to
  * LLui's `data-part`.
  *
- * `border-l-0` on every child but the first — not a negative margin. That is
- * shadcn's approach and it matters: `-ml-px` overlaps the borders and leaves a
+ * `border-s-0` on every child but the first — not a negative margin. That is
+ * shadcn's approach and it matters: `-ms-px` overlaps the borders and leaves a
  * doubled edge visible at some zoom levels, while dropping the border removes
  * it outright.
  */
@@ -15,7 +15,7 @@ const group = createVariantsPart(div, {
   variants: {
     orientation: {
       horizontal:
-        '[&>*:not(:first-child)]:rounded-l-none [&>*:not(:first-child)]:border-l-0 [&>*:not(:last-child)]:rounded-r-none',
+        '[&>*:not(:first-child)]:rounded-s-none [&>*:not(:first-child)]:border-s-0 [&>*:not(:last-child)]:rounded-e-none',
       vertical:
         'flex-col [&>*:not(:first-child)]:rounded-t-none [&>*:not(:first-child)]:border-t-0 [&>*:not(:last-child)]:rounded-b-none',
     },

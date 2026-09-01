@@ -91,10 +91,9 @@ button[data-scope]:not(:disabled):not([data-disabled]):not([aria-disabled='true'
 
 /*
  * Control heights for `.btn` / `.btn-sm`, and NOTHING else. They live here
- * rather than in `tokens.css` because these two rules are their only readers:
- * every other baseline control sizes itself with a literal (`pin-input` 2.75rem,
- * `steps` trigger 2rem, …), and `tokens.css` is the file you import when you are
- * NOT using this stylesheet.
+ * rather than in `tokens.css` because these two rules are their only readers;
+ * family modules own their controls' sizes, and `tokens.css` is the file you
+ * import when you are NOT using this stylesheet.
  *
  * State the lever accurately: raising `--control-h` to 2.75rem gets you the 44px
  * WCAG 2.5.5 (AAA) / iOS HIG touch target ON BUTTONS. It does not resize the rest

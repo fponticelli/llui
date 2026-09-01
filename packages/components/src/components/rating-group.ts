@@ -27,9 +27,9 @@ export type RatingGroupMsg =
   /** @humanOnly */
   | { type: 'hover'; value: number | null }
   /** @humanOnly */
-  | { type: 'clickItem'; index: number; isLeftHalf: boolean }
+  | { type: 'clickItem'; index: number; isStartHalf: boolean }
   /** @humanOnly */
-  | { type: 'hoverItem'; index: number; isLeftHalf: boolean }
+  | { type: 'hoverItem'; index: number; isStartHalf: boolean }
   /** @intent("Increase the rating by step (default: 0.5 if allowHalf, else 1)") */
   | { type: 'incrementValue'; step?: number }
   /** @intent("Decrease the rating by step (default: 0.5 if allowHalf, else 1)") */
@@ -86,12 +86,12 @@ export function update(state: RatingGroupState, msg: RatingGroupMsg): [RatingGro
       return [{ ...state, hoveredValue: msg.value }, []]
     case 'clickItem': {
       const base = msg.index + 1
-      const v = state.allowHalf && msg.isLeftHalf ? base - 0.5 : base
+      const v = state.allowHalf && msg.isStartHalf ? base - 0.5 : base
       return [{ ...state, value: clamp(v, 0, state.count) }, []]
     }
     case 'hoverItem': {
       const base = msg.index + 1
-      const v = state.allowHalf && msg.isLeftHalf ? base - 0.5 : base
+      const v = state.allowHalf && msg.isStartHalf ? base - 0.5 : base
       return [{ ...state, hoveredValue: v }, []]
     }
     case 'incrementValue': {
@@ -152,6 +152,11 @@ export interface ConnectOptions {
   label?: string
 }
 
+function logicalInlineFraction(state: RatingGroupState, rect: DOMRect, clientX: number): number {
+  const physicalFraction = (clientX - rect.left) / rect.width
+  return state.dir === 'rtl' ? 1 - physicalFraction : physicalFraction
+}
+
 export function connect(
   state: Signal<RatingGroupState>,
   send: Send<RatingGroupMsg>,
@@ -185,13 +190,13 @@ export function connect(
         }),
         onClick: tagSend(send, ['clickItem'], (e) => {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-          const isLeftHalf = e.clientX - rect.left < rect.width / 2
-          send({ type: 'clickItem', index, isLeftHalf })
+          const isStartHalf = logicalInlineFraction(state.peek(), rect, e.clientX) < 0.5
+          send({ type: 'clickItem', index, isStartHalf })
         }),
         onPointerMove: tagSend(send, ['hoverItem'], (e) => {
           const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-          const isLeftHalf = e.clientX - rect.left < rect.width / 2
-          send({ type: 'hoverItem', index, isLeftHalf })
+          const isStartHalf = logicalInlineFraction(state.peek(), rect, e.clientX) < 0.5
+          send({ type: 'hoverItem', index, isStartHalf })
         }),
         onPointerLeave: tagSend(send, ['hover'], () => send({ type: 'hover', value: null })),
         onKeyDown: tagSend(send, ['incrementValue', 'decrementValue', 'setValue', 'toEnd'], (e) => {

@@ -427,7 +427,7 @@ describe('package-wide component-owned numeric message inventory (#214)', () => 
         )
         expectIgnored(
           rating,
-          ratingGroup.update(rating, { type: 'hoverItem', index: bad, isLeftHalf: false }),
+          ratingGroup.update(rating, { type: 'hoverItem', index: bad, isStartHalf: false }),
           'rating-group hoverItem',
         )
       }

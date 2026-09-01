@@ -127,4 +127,4 @@ export function FieldSeparator(
 
 export const FieldError = classPart(p, 'text-sm font-normal text-destructive')
 /** shadcn renders multiple validation messages as a disc list. */
-export const FieldErrorList = classPart(ul, 'ml-4 flex list-disc flex-col gap-1')
+export const FieldErrorList = classPart(ul, 'ms-4 flex list-disc flex-col gap-1')

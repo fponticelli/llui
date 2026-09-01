@@ -2,7 +2,8 @@ import { div, span } from '@llui/dom'
 import { classPart } from '../../lib/utils'
 
 /**
- * Ported verbatim from shadcn/ui (MIT © 2023 shadcn).
+ * Ported from shadcn/ui (MIT © 2023 shadcn); `forced-colors:` suffixes keep
+ * track, range, and thumb distinct with system colors.
  *
  * The thumb's `hover:ring-4` / `focus-visible:ring-4` is the mouse state — a
  * widening halo rather than a colour change, which is why the thumb declares
@@ -23,13 +24,13 @@ export const Slider = classPart(
 export const SliderControl = classPart(div, 'relative flex w-full grow items-center')
 export const SliderTrack = classPart(
   div,
-  'relative grow overflow-hidden rounded-full bg-muted data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5',
+  'relative grow overflow-hidden rounded-full bg-muted data-[orientation=horizontal]:h-1.5 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5 forced-colors:forced-color-adjust-none forced-colors:bg-[GrayText]',
 )
 export const SliderRange = classPart(
   div,
-  'absolute bg-primary data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full',
+  'absolute bg-primary data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full forced-colors:forced-color-adjust-none forced-colors:bg-[Highlight]',
 )
 export const SliderThumb = classPart(
   span,
-  'block size-4 shrink-0 rounded-full border border-primary bg-white shadow-sm ring-ring/50 transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50',
+  'block size-4 shrink-0 rounded-full border border-primary bg-white shadow-sm ring-ring/50 transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50 forced-colors:forced-color-adjust-none forced-colors:border-[Highlight] forced-colors:bg-[Canvas]',
 )
