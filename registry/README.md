@@ -68,7 +68,11 @@ identity—rather than pretending to be aliases. A canonical product's `scenario
 baseline and registry presentations; a copied artifact's `scenarioId` identifies that specific
 presentation target. Neither is a product-local case ID: families own cases and JSON inputs in
 the shared presentation-scenario catalog, while renderer functions stay in their own apps and
-are deliberately not named by either contract.
+are deliberately not named by either contract. Registry gallery code imports the protocol only
+from `@llui/cli/presentation-scenarios`; it must not import that browser-pure seam from the CLI
+root or add DOM, CSS, Tailwind or LLui runtime payloads to the catalog. Compiled cases are frozen
+semantic snapshots. A registry adapter receives a resolved case and owns its rendering entirely;
+family-local renderer helpers remain outside the serialized catalog and outside ProductContract.
 
 ## Fidelity to shadcn/ui
 

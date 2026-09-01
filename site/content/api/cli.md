@@ -248,90 +248,49 @@ function writeConfig(cwd: string, config: Config): Promise<string>
 
 ## Types
 
-### `ComposedPresentationCoverage`
-
-```typescript
-export type ComposedPresentationCoverage = z.infer<typeof ComposedPresentationCoverageSchema>
-```
-
 ### `Config`
 
 ```typescript
 export type Config = z.infer<typeof ConfigSchema>
 ```
 
-### `CopiedArtifact`
-
-```typescript
-export type CopiedArtifact = z.infer<typeof CopiedArtifactSchema>
-```
-
-### `MachineFree`
-
-```typescript
-export type MachineFree = z.infer<typeof MachineFreeSchema>
-```
-
-### `NotApplicablePresentationCoverage`
-
-```typescript
-export type NotApplicablePresentationCoverage = z.infer<
-  typeof NotApplicablePresentationCoverageSchema
->
-```
-
-### `PartialPresentationCoverage`
-
-```typescript
-export type PartialPresentationCoverage = z.infer<typeof PartialPresentationCoverageSchema>
-```
-
 ### `PresentationCoverage`
 
 ```typescript
-export type PresentationCoverage = z.infer<typeof PresentationCoverageSchema>
+export type PresentationCoverage =
+  | StyledPresentationCoverage
+  | PartialPresentationCoverage
+  | ComposedPresentationCoverage
+  | StylelessPresentationCoverage
+  | NotApplicablePresentationCoverage
 ```
 
 ### `PresentationFamily`
 
-```typescript
-export type PresentationFamily = z.infer<typeof PresentationFamilySchema>
-```
-
-### `ProductAlias`
+Single-owner visual-language cohort, independent of user-facing product category.
 
 ```typescript
-export type ProductAlias = z.infer<typeof ProductAliasSchema>
+export type PresentationFamily =
+  | 'forms-controls'
+  | 'navigation-data'
+  | 'menus-overlays'
+  | 'specialized-tools'
 ```
 
 ### `ProductCategory`
 
 ```typescript
-export type ProductCategory = z.infer<typeof ProductCategorySchema>
-```
-
-### `ProductContract`
-
-```typescript
-export type ProductContract = z.infer<typeof ProductContractSchema>
-```
-
-### `ProductEntry`
-
-```typescript
-export type ProductEntry = z.infer<typeof ProductEntrySchema>
-```
-
-### `ProductPresentation`
-
-```typescript
-export type ProductPresentation = z.infer<typeof ProductPresentationSchema>
-```
-
-### `PublicMachine`
-
-```typescript
-export type PublicMachine = z.infer<typeof PublicMachineSchema>
+export type ProductCategory =
+  | 'controls'
+  | 'forms'
+  | 'navigation'
+  | 'overlays'
+  | 'feedback'
+  | 'data-display'
+  | 'layout'
+  | 'media'
+  | 'patterns'
+  | 'utilities'
 ```
 
 ### `Registry`
@@ -374,24 +333,6 @@ export type ResolvedProductIdentity = {
 }
 ```
 
-### `StyledPresentationCoverage`
-
-```typescript
-export type StyledPresentationCoverage = z.infer<typeof StyledPresentationCoverageSchema>
-```
-
-### `StylelessPresentationCoverage`
-
-```typescript
-export type StylelessPresentationCoverage = z.infer<typeof StylelessPresentationCoverageSchema>
-```
-
-### `StylingSupport`
-
-```typescript
-export type StylingSupport = z.infer<typeof StylingSupportSchema>
-```
-
 ## Interfaces
 
 ### `AddOptions`
@@ -418,6 +359,140 @@ export interface AddResult {
   items: RegistryItem[]
   dependencies: string[]
   devDependencies: string[]
+}
+```
+
+### `ComposedPresentationCoverage`
+
+```typescript
+export interface ComposedPresentationCoverage {
+  mode: 'composed'
+  products: string[]
+  rationale: string
+}
+```
+
+### `CopiedArtifact`
+
+```typescript
+export interface CopiedArtifact {
+  name: string
+  displayName?: string
+  artifactKind: 'skin' | 'presentational' | 'pattern'
+  styling: StylingSupport
+  scenarioId?: string
+}
+```
+
+### `MachineFree`
+
+```typescript
+export interface MachineFree {
+  kind: 'none'
+  reason: 'presentational' | 'application-owned-state'
+}
+```
+
+### `NotApplicablePresentationCoverage`
+
+```typescript
+export interface NotApplicablePresentationCoverage {
+  mode: 'not-applicable'
+  rationale: string
+}
+```
+
+### `PartialPresentationCoverage`
+
+```typescript
+export interface PartialPresentationCoverage {
+  mode: 'partial'
+  rationale: string
+}
+```
+
+### `ProductAlias`
+
+```typescript
+export interface ProductAlias {
+  name: string
+  canonicalName: string
+}
+```
+
+### `ProductContract`
+
+Canonical v2 inventory. ProductContract remains the sole product-metadata owner.
+
+```typescript
+export interface ProductContract {
+  version: 2
+  entries: ProductEntry[]
+  aliases: ProductAlias[]
+}
+```
+
+### `ProductEntry`
+
+```typescript
+export interface ProductEntry {
+  name: string
+  displayName: string
+  category: ProductCategory
+  artifactKind: 'machine' | 'skin' | 'presentational' | 'pattern'
+  machine: PublicMachine | MachineFree
+  copiedArtifacts: CopiedArtifact[]
+  styling: StylingSupport
+  presentation: ProductPresentation
+  scenarioId: string
+}
+```
+
+### `ProductPresentation`
+
+```typescript
+export interface ProductPresentation {
+  family: PresentationFamily
+  baseline: PresentationCoverage
+  registryTailwind: PresentationCoverage
+}
+```
+
+### `PublicMachine`
+
+```typescript
+export interface PublicMachine {
+  kind: 'public'
+  importPath: string
+}
+```
+
+### `StyledPresentationCoverage`
+
+```typescript
+export interface StyledPresentationCoverage {
+  mode: 'styled'
+}
+```
+
+### `StylelessPresentationCoverage`
+
+```typescript
+export interface StylelessPresentationCoverage {
+  mode: 'styleless'
+  rationale: string
+}
+```
+
+### `StylingSupport`
+
+Browser-pure structural types for ProductContract and presentation tooling.
+
+```typescript
+export interface StylingSupport {
+  baseline: boolean
+  registryTailwind: boolean
+  styleless: boolean
 }
 ```
 
@@ -720,7 +795,12 @@ export function compileScenarioFamily<const Definitions extends PresentationScen
   contract: ProductContract,
   family: PresentationFamily,
   definitions: Definitions,
-): CompiledPresentationScenarioFamily<Definitions[keyof Definitions]['cases'][number]>
+): CompiledPresentationScenarioFamily<Definitions>
+export function compileScenarioFamily(
+  contract: ProductContract,
+  family: PresentationFamily,
+  definitions: unknown,
+): CompiledPresentationScenarioFamily
 ```
 
 ##### `resolveScenarioSelection()` from `@llui/cli/presentation-scenarios`
@@ -728,14 +808,73 @@ export function compileScenarioFamily<const Definitions extends PresentationScen
 Resolve one deterministic renderer input from a compiled family catalog.
 
 ```typescript
-export function resolveScenarioSelection<Case extends PresentationScenarioCase>(
+export function resolveScenarioSelection<Definitions extends PresentationScenarioDefinitions>(
   contract: ProductContract,
-  catalog: CompiledPresentationScenarioFamily<Case>,
+  catalog: CompiledPresentationScenarioFamily<Definitions>,
   selection: PresentationScenarioSelection,
-): ResolvedPresentationScenarioSelection<Case>
+): ResolvedPresentationScenarioSelection<Definitions>
+export function resolveScenarioSelection(
+  contract: ProductContract,
+  catalog: unknown,
+  selection: unknown,
+): ResolvedPresentationScenarioSelection
 ```
 
 #### Types
+
+##### `CompiledPresentationScenario` from `@llui/cli/presentation-scenarios`
+
+A definition-keyed discriminated union of compiled ProductContract joins.
+
+```typescript
+export type CompiledPresentationScenario<
+  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
+> =
+  string extends ScenarioId<Definitions>
+    ? ErasedCompiledPresentationScenario
+    : {
+        readonly [Id in ScenarioId<Definitions>]: {
+          readonly productId: string
+          readonly scenarioId: Id
+          readonly defaultCaseId: Definitions[Id]['defaultCaseId']
+          readonly cases: readonly CompiledPresentationScenarioCase<
+            DefinitionCase<Definitions, Id>
+          >[]
+        }
+      }[ScenarioId<Definitions>]
+```
+
+##### `CompiledPresentationScenarioCase` from `@llui/cli/presentation-scenarios`
+
+Canonical renderer input copied from a validated family case.
+
+```typescript
+export type CompiledPresentationScenarioCase<
+  Case extends PresentationScenarioCase = PresentationScenarioCase,
+> = Case extends PresentationScenarioCase
+  ? {
+      readonly id: Case['id']
+      readonly label: Case['label']
+      readonly input: Case['input']
+      readonly environmentAxes: Case['environmentAxes']
+      readonly copiedArtifactNames?: Case['copiedArtifactNames']
+    }
+  : never
+```
+
+##### `CompiledPresentationScenarioFamily` from `@llui/cli/presentation-scenarios`
+
+Deterministic, JSON-safe catalog for one presentation family.
+
+```typescript
+export type CompiledPresentationScenarioFamily<
+  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
+> = {
+  readonly version: 1
+  readonly family: PresentationFamily
+  readonly scenarios: readonly CompiledPresentationScenario<Definitions>[]
+}
+```
 
 ##### `PresentationScenarioDefinitions` from `@llui/cli/presentation-scenarios`
 
@@ -778,6 +917,7 @@ export type PresentationScenarioErrorCode =
   | 'invalid-environment'
   | 'invalid-copied-artifact'
   | 'invalid-catalog'
+  | 'invalid-selection'
   | 'invalid-path'
 ```
 
@@ -803,52 +943,17 @@ A renderer path whose availability is owned by ProductContract.
 export type PresentationScenarioPath = (typeof PRESENTATION_SCENARIO_PATHS)[number]
 ```
 
+##### `ResolvedPresentationScenarioSelection` from `@llui/cli/presentation-scenarios`
+
+Definition-correlated renderer input returned for a presentation selection.
+
+```typescript
+export type ResolvedPresentationScenarioSelection<
+  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
+> = ResolvedScenario<CompiledPresentationScenario<Definitions>>
+```
+
 #### Interfaces
-
-##### `CompiledPresentationScenario` from `@llui/cli/presentation-scenarios`
-
-One compiled product join without duplicated ProductContract metadata.
-
-```typescript
-export interface CompiledPresentationScenario<
-  Case extends PresentationScenarioCase = PresentationScenarioCase,
-> {
-  readonly productId: string
-  readonly scenarioId: string
-  readonly defaultCaseId: string
-  readonly cases: readonly CompiledPresentationScenarioCase<Case>[]
-}
-```
-
-##### `CompiledPresentationScenarioCase` from `@llui/cli/presentation-scenarios`
-
-Canonical renderer input copied from a validated family case.
-
-```typescript
-export interface CompiledPresentationScenarioCase<
-  Case extends PresentationScenarioCase = PresentationScenarioCase,
-> {
-  readonly id: Case['id']
-  readonly label: Case['label']
-  readonly input: Case['input']
-  readonly environmentAxes: Case['environmentAxes']
-  readonly copiedArtifactNames?: Case['copiedArtifactNames']
-}
-```
-
-##### `CompiledPresentationScenarioFamily` from `@llui/cli/presentation-scenarios`
-
-Deterministic, JSON-safe catalog for one presentation family.
-
-```typescript
-export interface CompiledPresentationScenarioFamily<
-  Case extends PresentationScenarioCase = PresentationScenarioCase,
-> {
-  readonly version: 1
-  readonly family: PresentationFamily
-  readonly scenarios: readonly CompiledPresentationScenario<Case>[]
-}
-```
 
 ##### `PresentationScenarioCase` from `@llui/cli/presentation-scenarios`
 
@@ -894,26 +999,6 @@ export interface PresentationScenarioSelection {
 }
 ```
 
-##### `ResolvedPresentationScenarioSelection` from `@llui/cli/presentation-scenarios`
-
-Validated renderer input returned for a presentation selection.
-
-```typescript
-export interface ResolvedPresentationScenarioSelection<
-  Case extends PresentationScenarioCase = PresentationScenarioCase,
-> {
-  readonly productId: string
-  readonly scenarioId: string
-  readonly case: CompiledPresentationScenarioCase<Case>
-  readonly path: PresentationScenarioPath
-  readonly environment: PresentationScenarioEnvironment
-  readonly copiedArtifact?: {
-    readonly name: string
-    readonly scenarioId: string
-  }
-}
-```
-
 #### Classes
 
 ##### `PresentationScenarioError` from `@llui/cli/presentation-scenarios`
@@ -923,7 +1008,9 @@ A stable, machine-readable protocol or selection failure.
 ```typescript
 class PresentationScenarioError extends Error {
   name
-  constructor(readonly code: PresentationScenarioErrorCode, readonly issues: readonly string[])
+  code: PresentationScenarioErrorCode
+  issues: readonly string[]
+  constructor(code: PresentationScenarioErrorCode, issues: readonly string[])
 }
 ```
 

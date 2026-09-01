@@ -66,6 +66,23 @@ defaults and rejects unsupported route selections.
 
 The compiled catalog is the only shared seam. Baseline and registry/Tailwind adapters consume
 the same resolved data but keep their DOM, CSS, selectors and LLui runtime code isolated.
+Compilation and resolution snapshot through own data descriptors and return deeply frozen
+values, so neither adapter can mutate the other adapter's cases, metadata or environment.
+Serialized callers may pass `unknown`; malformed definitions, catalogs and selections fail with
+sorted, path-qualified `PresentationScenarioError` diagnostics. Hidden properties, accessors,
+symbols, decorated arrays, noncanonical serialization/iteration hooks and over-budget payloads
+are rejected without invoking user code. The serialized boundary is capped at 64 nested levels,
+5,000 decoded nodes, 1,000 entries per array, 100,000 units per string, 1,000,000 total string
+units and 10,000 total own fields. Family-only fields such as renderer functions may live beside
+a source case, but the compiler never reads or emits them.
+
+The compiled TypeScript surface is a `scenarioId`-discriminated union: each scenario retains its
+literal default and case/input union, and resolver results narrow through that same discriminator.
+The direct subpath's declaration graph depends only on browser-pure structural ProductContract
+types—not the CLI's Zod schema or Node runtime.
+
+The package-boundary suite imports and repackages emitted files. Run `pnpm run build` before a
+direct `pnpm run test`; the workspace Turbo task encodes that own-package build edge automatically.
 
 ## `components.json`
 

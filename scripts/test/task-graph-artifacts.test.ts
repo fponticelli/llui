@@ -30,6 +30,8 @@ const TEST_TASKS = ['test', 'test:coverage'] as const
  *  exactly that. Over-approximating costs one redundant task edge; missing a
  *  case costs an empty-output failure nobody can read. */
 const OWN_DIST = '../dist/'
+/** Use this marker when a suite resolves dist through a computed absolute path. */
+const OWN_BUILD_MARKER = '@test-needs-own-build'
 
 interface TurboTask {
   dependsOn?: string[]
@@ -76,6 +78,14 @@ interface Offender {
   file: string
 }
 
+function ownBuildOutputUsers(pkgDir: string): string[] {
+  return filesUnder(join(pkgDir, 'test')).filter((file) => {
+    if (!file.endsWith('.ts')) return false
+    const source = readFileSync(file, 'utf8')
+    return source.includes(OWN_DIST) || source.includes(OWN_BUILD_MARKER)
+  })
+}
+
 function packagesRunningOwnBuildOutput(): Offender[] {
   const offenders: Offender[] = []
   for (const entry of readdirSync(packagesDir)) {
@@ -83,9 +93,7 @@ function packagesRunningOwnBuildOutput(): Offender[] {
     const manifest = join(pkgDir, 'package.json')
     if (!existsSync(manifest)) continue
     const pkg = readJson<PackageJson>(manifest)
-    const users = filesUnder(join(pkgDir, 'test')).filter(
-      (file) => file.endsWith('.ts') && readFileSync(file, 'utf8').includes(OWN_DIST),
-    )
+    const users = ownBuildOutputUsers(pkgDir)
     if (users.length === 0) continue
     for (const task of TEST_TASKS) {
       if (pkg.scripts?.[task] === undefined) continue
@@ -102,12 +110,17 @@ function packagesRunningOwnBuildOutput(): Offender[] {
 
 describe('test tasks declare the build they run (#97)', () => {
   it('finds the suites that execute their own dist/', () => {
-    // A broken scan would make the assertion below vacuous. `@llui/mcp` spawns
-    // its CLI from `dist/`, which is what made this class of defect visible.
-    const files = filesUnder(join(packagesDir, 'mcp', 'test')).filter((file) =>
-      readFileSync(file, 'utf8').includes(OWN_DIST),
-    )
-    expect(files.length).toBeGreaterThan(0)
+    // Exact equality makes both literal and marker scanning mutation-sensitive.
+    const files = readdirSync(packagesDir)
+      .flatMap((entry) => ownBuildOutputUsers(join(packagesDir, entry)))
+      .map((file) => relative(repoRoot, file))
+      .sort()
+    expect(files).toEqual([
+      'packages/cli/test/presentation-scenarios-package.test.ts',
+      'packages/mcp/test/doctor.test.ts',
+      'packages/mcp/test/http-transport.test.ts',
+      'packages/mcp/test/parent-watch.test.ts',
+    ])
   })
 
   it('declares `build` (not only `^build`) wherever a suite runs its own dist/', () => {

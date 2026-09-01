@@ -5,7 +5,6 @@ import {
   compileScenarioFamily,
   PresentationScenarioError,
   resolveScenarioSelection,
-  type CompiledPresentationScenarioFamily,
   type PresentationScenarioDefinitions,
 } from '../src/presentation-scenarios'
 
@@ -124,8 +123,8 @@ describe('compileScenarioFamily', () => {
       expect(error).toMatchObject({
         code: 'invalid-definitions',
         issues: [
-          'Missing definition for scenario "component:dialog" (product "dialog").',
-          'Stale definition for scenario "component:stale".',
+          '$["component:dialog"]: missing definition for product "dialog".',
+          '$["component:stale"]: stale definition for presentation family "menus-overlays".',
         ],
       })
     }
@@ -163,9 +162,9 @@ describe('compileScenarioFamily', () => {
       expect(error).toMatchObject({
         code: 'invalid-definitions',
         issues: [
-          'Default case "missing" does not exist in scenario "component:dialog".',
-          'Duplicate case id "open" in scenario "component:dialog".',
-          'Invalid case id "Open state" in scenario "component:dialog".',
+          '$["component:dialog"].cases[0].id: invalid case id "Open state".',
+          '$["component:dialog"].cases[2].id: duplicate case id "open".',
+          '$["component:dialog"].defaultCaseId: case "missing" does not exist.',
         ],
       })
     }
@@ -188,8 +187,8 @@ describe('compileScenarioFamily', () => {
       expect(error).toMatchObject({
         code: 'invalid-definitions',
         issues: [
-          'Default case "default" does not exist in scenario "component:dialog".',
-          'Scenario "component:dialog" must define at least one case.',
+          '$["component:dialog"].cases: must define at least one case.',
+          '$["component:dialog"].defaultCaseId: case "default" does not exist.',
         ],
       })
     }
@@ -215,8 +214,8 @@ describe('compileScenarioFamily', () => {
       expect(error).toMatchObject({
         code: 'invalid-definitions',
         issues: [
-          'Invalid case id "Open state" in scenario "component:dialog".',
-          'Invalid default case id "Open state" in scenario "component:dialog".',
+          '$["component:dialog"].cases[0].id: invalid case id "Open state".',
+          '$["component:dialog"].defaultCaseId: invalid case id "Open state".',
         ],
       })
     }
@@ -256,9 +255,9 @@ describe('compileScenarioFamily', () => {
       expect(error).toMatchObject({
         code: 'invalid-definitions',
         issues: [
-          'Case "default" in scenario "component:dialog" has an empty label.',
-          'Case "default" in scenario "component:dialog" has duplicate environment axis "theme".',
-          'Case "default" in scenario "component:dialog" has unknown environment axis "contrast".',
+          '$["component:dialog"].cases[0].environmentAxes[1]: duplicate environment axis "theme".',
+          '$["component:dialog"].cases[0].environmentAxes[2]: unknown environment axis "contrast".',
+          '$["component:dialog"].cases[0].label: must contain non-whitespace text.',
         ],
       })
     }
@@ -280,13 +279,8 @@ describe('compileScenarioFamily', () => {
 
   it.each([
     ['functions', () => undefined, '$.value', 'function values are not JSON-safe'],
-    ['dates', new Date('2026-01-01T00:00:00.000Z'), '$.value', 'only plain objects are JSON-safe'],
-    [
-      'runtime objects',
-      new (class RuntimeHandle {})(),
-      '$.value',
-      'only plain objects are JSON-safe',
-    ],
+    ['dates', new Date('2026-01-01T00:00:00.000Z'), '$.value', 'must be a plain object'],
+    ['runtime objects', new (class RuntimeHandle {})(), '$.value', 'must be a plain object'],
     ['cycles', cyclic, '$.value.self', 'cyclic references are not JSON-safe'],
     ['NaN', Number.NaN, '$.value', 'numbers must be finite and preserve their JSON value'],
     [
@@ -296,19 +290,19 @@ describe('compileScenarioFamily', () => {
       'numbers must be finite and preserve their JSON value',
     ],
     ['negative zero', -0, '$.value', 'numbers must be finite and preserve their JSON value'],
-    ['accessors', accessorInput, '$.value.dynamic', 'accessor properties are not JSON-safe'],
+    ['accessors', accessorInput, '$.value.dynamic', 'accessor properties are not supported'],
     [
       'non-enumerable data',
       hiddenInput,
       '$.value.hidden',
-      'non-enumerable properties are not JSON-safe',
+      'non-enumerable properties are not supported',
     ],
-    ['symbol keys', symbolInput, '$.value', 'symbol-keyed properties are not JSON-safe'],
+    ['symbol keys', symbolInput, '$.value', 'symbol-keyed properties are not supported'],
     [
       'decorated arrays',
       decoratedArray,
       '$.value.extra',
-      'non-index array properties are not JSON-safe',
+      'non-index array properties are not supported',
     ],
   ])('rejects non-JSON scenario input: %s', (_name, value, path, reason) => {
     const definitions = {
@@ -343,9 +337,7 @@ describe('compileScenarioFamily', () => {
       expect(error).toBeInstanceOf(PresentationScenarioError)
       expect(error).toMatchObject({
         code: 'invalid-definitions',
-        issues: [
-          `Invalid JSON input for case "default" in scenario "component:dialog" at ${path}: ${reason}.`,
-        ],
+        issues: [`$["component:dialog"].cases[0].input${path.slice(1)}: ${reason}.`],
       })
     }
   })
@@ -467,8 +459,8 @@ describe('compileScenarioFamily', () => {
       expect(error).toMatchObject({
         code: 'invalid-definitions',
         issues: [
-          'Case "open" in scenario "component:drawer" has duplicate copied-artifact target "sheet".',
-          'Case "open" in scenario "component:drawer" targets unknown copied artifact "unknown".',
+          '$["component:drawer"].cases[0].copiedArtifactNames[1]: duplicate copied artifact "sheet".',
+          '$["component:drawer"].cases[0].copiedArtifactNames[2]: unknown copied artifact "unknown".',
         ],
       })
     }
@@ -556,13 +548,13 @@ describe('resolveScenarioSelection', () => {
       'product',
       { productId: 'missing', caseId: 'open', path: 'baseline' as const },
       'unknown-product',
-      'Unknown product "missing" in compiled family "menus-overlays".',
+      '$.productId: unknown product "missing" in compiled family "menus-overlays".',
     ],
     [
       'case',
       { productId: 'dialog', caseId: 'missing', path: 'baseline' as const },
       'unknown-case',
-      'Unknown case "missing" for product "dialog".',
+      '$.caseId: unknown case "missing" for product "dialog".',
     ],
   ])('rejects an unknown %s with a typed error', (_name, selection, code, issue) => {
     const definition = {
@@ -616,7 +608,10 @@ describe('resolveScenarioSelection', () => {
       expect(error).toBeInstanceOf(PresentationScenarioError)
       expect(error).toMatchObject({
         code: 'invalid-catalog',
-        issues: ['Catalog contains stale scenario "component:dialog" for product "dialog".'],
+        issues: [
+          '$.scenarios[0].scenarioId: stale ProductContract scenario "component:dialog".',
+          '$.scenarios[1]: expected canonical ProductContract index 0.',
+        ],
       })
     }
   })
@@ -639,25 +634,26 @@ describe('resolveScenarioSelection', () => {
     const invalidCatalogs = [
       {
         catalog: { ...catalog, version: 2 },
-        issues: ['Catalog version "2" is unsupported; expected 1.'],
+        issues: ['$.version: must equal 1.'],
       },
       {
         catalog: { ...catalog, family: 'unknown-family' },
-        issues: ['Catalog family "unknown-family" has no ProductContract entries.'],
+        issues: ['$.family: unknown presentation family "unknown-family".'],
       },
       {
         catalog: { ...catalog, scenarios: [dialogScenario, dialogScenario] },
         issues: [
-          'Catalog contains duplicate product "dialog".',
-          'Catalog contains duplicate scenario "component:dialog".',
-          'Catalog is missing scenario "component:menu" for product "menu".',
+          '$.scenarios: missing scenario "component:menu" for product "menu".',
+          '$.scenarios[1].productId: duplicate product "dialog".',
+          '$.scenarios[1].scenarioId: duplicate scenario "component:dialog".',
+          '$.scenarios[1]: expected canonical ProductContract index 0.',
         ],
       },
       {
         catalog: { ...catalog, scenarios: [menuScenario, dialogScenario] },
         issues: [
-          'Catalog scenario "component:dialog" for product "dialog" is out of canonical order at index 1.',
-          'Catalog scenario "component:menu" for product "menu" is out of canonical order at index 0.',
+          '$.scenarios[0]: expected canonical ProductContract index 1.',
+          '$.scenarios[1]: expected canonical ProductContract index 0.',
         ],
       },
       {
@@ -677,10 +673,10 @@ describe('resolveScenarioSelection', () => {
           ],
         },
         issues: [
-          'Default case "missing" does not exist in scenario "component:dialog".',
-          'Duplicate case id "open" in scenario "component:dialog".',
-          'Invalid case id "Default state" in scenario "component:menu".',
-          'Invalid default case id "Default state" in scenario "component:menu".',
+          '$.scenarios[0].cases[1].id: duplicate case id "open".',
+          '$.scenarios[0].defaultCaseId: case "missing" does not exist.',
+          '$.scenarios[1].cases[0].id: invalid case id "Default state".',
+          '$.scenarios[1].defaultCaseId: invalid case id "Default state".',
         ],
       },
     ]
@@ -731,11 +727,11 @@ describe('resolveScenarioSelection', () => {
     const selections = [
       {
         selection: { productId: 'badge', path: 'gallery' },
-        issue: 'Unknown presentation path "gallery".',
+        issue: '$.path: unknown presentation path "gallery".',
       },
       {
         selection: { productId: 'badge', path: 'baseline' },
-        issue: 'Presentation path "baseline" is not applicable to product "badge".',
+        issue: '$.path: presentation path "baseline" is not applicable to product "badge".',
       },
     ]
 
@@ -788,9 +784,9 @@ describe('resolveScenarioSelection', () => {
       expect(error).toMatchObject({
         code: 'invalid-environment',
         issues: [
-          'Case "open" for product "dialog" does not support environment axis "motion".',
-          'Environment axis "contrast" is unknown.',
-          'Environment axis "theme" has unknown value "sepia".',
+          '$.environment.contrast: unknown environment axis "contrast".',
+          '$.environment.motion: case "open" does not support this environment axis.',
+          '$.environment.theme: unknown value "sepia".',
         ],
       })
     }
@@ -859,7 +855,7 @@ describe('resolveScenarioSelection', () => {
           path: 'baseline' as const,
           copiedArtifact: 'sheet',
         },
-        issue: 'Copied-artifact target "sheet" is invalid on the baseline path.',
+        issue: '$.copiedArtifact: target "sheet" is invalid on the baseline path.',
       },
       {
         selection: {
@@ -868,7 +864,7 @@ describe('resolveScenarioSelection', () => {
           path: 'registryTailwind' as const,
           copiedArtifact: 'unknown',
         },
-        issue: 'Product "drawer" does not own copied artifact "unknown".',
+        issue: '$.copiedArtifact: product "drawer" does not own target "unknown".',
       },
       {
         selection: {
@@ -877,7 +873,7 @@ describe('resolveScenarioSelection', () => {
           path: 'registryTailwind' as const,
           copiedArtifact: 'drawer',
         },
-        issue: 'Case "open" for product "drawer" does not support copied artifact "drawer".',
+        issue: '$.copiedArtifact: case "open" does not support target "drawer".',
       },
     ]
 
@@ -937,18 +933,17 @@ describe('resolveScenarioSelection', () => {
       },
     })
     const selections: readonly {
-      catalog: CompiledPresentationScenarioFamily
+      catalog: typeof ambiguousCatalog | typeof unavailableCatalog
       issue: string
     }[] = [
       {
         catalog: ambiguousCatalog,
         issue:
-          'Case "default" for product "picker" has multiple eligible copied artifacts; select one explicitly: "calendar", "date-picker".',
+          '$.copiedArtifact: case "default" has multiple eligible registry targets; select one of "calendar", "date-picker".',
       },
       {
         catalog: unavailableCatalog,
-        issue:
-          'Case "baseline-only" for product "picker" has no eligible copied artifact for the registryTailwind path.',
+        issue: '$.copiedArtifact: case "baseline-only" has no eligible registry target.',
       },
     ]
 
@@ -972,5 +967,38 @@ describe('resolveScenarioSelection', () => {
         copiedArtifact: 'calendar',
       }).copiedArtifact,
     ).toEqual({ name: 'calendar', scenarioId: 'registry:calendar' })
+  })
+
+  it('allows a naturally artifact-free styleless registry presentation', () => {
+    const rationale = 'The public machine is intentionally useful without owned visuals.'
+    const machineOnlyContract = ProductContractSchema.parse({
+      version: 2,
+      entries: [
+        {
+          ...product('tooltip'),
+          copiedArtifacts: [],
+          styling: { baseline: false, registryTailwind: false, styleless: true },
+          presentation: {
+            family: 'menus-overlays',
+            baseline: { mode: 'styleless', rationale },
+            registryTailwind: { mode: 'styleless', rationale },
+          },
+        },
+      ],
+      aliases: [],
+    })
+    const catalog = compileScenarioFamily(machineOnlyContract, 'menus-overlays', {
+      'component:tooltip': {
+        defaultCaseId: 'default',
+        cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
+      },
+    })
+
+    expect(
+      resolveScenarioSelection(machineOnlyContract, catalog, {
+        productId: 'tooltip',
+        path: 'registryTailwind',
+      }),
+    ).not.toHaveProperty('copiedArtifact')
   })
 })
