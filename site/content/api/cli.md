@@ -855,9 +855,9 @@ export type CompiledPresentationScenarioCase<
   ? {
       readonly id: Case['id']
       readonly label: Case['label']
-      readonly input: Case['input']
-      readonly environmentAxes: Case['environmentAxes']
-      readonly copiedArtifactNames?: Case['copiedArtifactNames']
+      readonly input: PresentationScenarioJsonSnapshot<Case['input']>
+      readonly environmentAxes: Readonly<Case['environmentAxes']>
+      readonly copiedArtifactNames?: Readonly<NonNullable<Case['copiedArtifactNames']>>
     }
   : never
 ```
@@ -933,6 +933,16 @@ export type PresentationScenarioJson =
   | string
   | readonly PresentationScenarioJson[]
   | { readonly [key: string]: PresentationScenarioJson }
+```
+
+##### `PresentationScenarioJsonSnapshot` from `@llui/cli/presentation-scenarios`
+
+Recursive readonly shape emitted for a validated JSON input snapshot.
+
+```typescript
+export type PresentationScenarioJsonSnapshot<
+  Value extends PresentationScenarioJson = PresentationScenarioJson,
+> = DeepReadonlyJson<Value>
 ```
 
 ##### `PresentationScenarioPath` from `@llui/cli/presentation-scenarios`
@@ -1022,6 +1032,14 @@ Canonical environment used when a selection omits supported overrides.
 
 ```typescript
 const DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT
+```
+
+##### `PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS` from `@llui/cli/presentation-scenarios`
+
+At most 100 issues (including truncation) and 16,384 UTF-16 units (including paths and separators).
+
+```typescript
+const PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS
 ```
 
 ##### `PRESENTATION_SCENARIO_ENVIRONMENT_VALUES` from `@llui/cli/presentation-scenarios`

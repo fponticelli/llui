@@ -73,6 +73,8 @@ from `@llui/cli/presentation-scenarios`; it must not import that browser-pure se
 root or add DOM, CSS, Tailwind or LLui runtime payloads to the catalog. Compiled cases are frozen
 semantic snapshots. A registry adapter receives a resolved case and owns its rendering entirely;
 family-local renderer helpers remain outside the serialized catalog and outside ProductContract.
+Source cases are exact JSON protocol records; registry renderer adapters are separate maps keyed
+by `scenarioId` and case `id`, never extra fields attached to a case.
 
 ## Fidelity to shadcn/ui
 

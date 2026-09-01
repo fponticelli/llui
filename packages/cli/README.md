@@ -69,15 +69,29 @@ the same resolved data but keep their DOM, CSS, selectors and LLui runtime code 
 Compilation and resolution snapshot through own data descriptors and return deeply frozen
 values, so neither adapter can mutate the other adapter's cases, metadata or environment.
 Serialized callers may pass `unknown`; malformed definitions, catalogs and selections fail with
-sorted, path-qualified `PresentationScenarioError` diagnostics. Hidden properties, accessors,
-symbols, decorated arrays, noncanonical serialization/iteration hooks and over-budget payloads
-are rejected without invoking user code. The serialized boundary is capped at 64 nested levels,
-5,000 decoded nodes, 1,000 entries per array, 100,000 units per string, 1,000,000 total string
-units and 10,000 total own fields. Family-only fields such as renderer functions may live beside
-a source case, but the compiler never reads or emits them.
+sorted, path-qualified `PresentationScenarioError` diagnostics. Ordinary same-realm,
+cross-realm and null-prototype data is inspected through own descriptors: getters, `toJSON`, and
+iteration hooks are never invoked. JavaScript proxies are deliberately outside that no-hook
+guarantee because standard reflection necessarily invokes their traps; throwing or mutating
+traps still produce typed failures, and all work after `ownKeys` returns is bounded. Hidden
+properties, accessors, symbols, decorated arrays, noncanonical serialization/iteration hooks and
+over-budget payloads are rejected.
+
+The serialized boundary is capped at 64 nested levels, 5,000 decoded nodes, 1,000 entries per
+array, 100,000 units per string, 1,000,000 total string units and 10,000 total own fields.
+Compiler/resolver failures additionally share one exported diagnostic policy: at most 100 issues
+and 16,384 UTF-16 units across the final `Error.message`, including newline separators and the
+explicit truncation diagnostic. Paths and quoted values are measured before they are rendered.
+
+Source case objects are exact protocol data: `id`, `label`, `input`, `environmentAxes`, and the
+optional `copiedArtifactNames` are the only fields. Renderer adapters live in each app as
+separate maps keyed by `scenarioId` and case `id`; functions or renderer metadata beside a case
+are rejected without reading their values.
 
 The compiled TypeScript surface is a `scenarioId`-discriminated union: each scenario retains its
 literal default and case/input union, and resolver results narrow through that same discriminator.
+JSON snapshots, environment-axis arrays, and copied-artifact arrays are recursively readonly even
+when a caller supplies ordinary mutable definitions without `as const`.
 The direct subpath's declaration graph depends only on browser-pure structural ProductContract
 types—not the CLI's Zod schema or Node runtime.
 

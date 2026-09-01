@@ -11,7 +11,7 @@ const MAX_STRING_LENGTH = 100_000
 const MAX_TOTAL_STRING_UNITS = 1_000_000
 const MAX_ARRAY_LENGTH = 1_000
 const MAX_FIELDS = 10_000
-const MAX_ISSUES = 100
+const DIAGNOSTIC_PATH_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 
 const THEME_VALUES = Object.freeze(['light', 'dark'] as const)
 const DIRECTION_VALUES = Object.freeze(['ltr', 'rtl'] as const)
@@ -28,13 +28,13 @@ export const PRESENTATION_SCENARIO_ENVIRONMENT_VALUES = Object.freeze({
   forcedColors: FORCED_COLOR_VALUES,
 })
 
-const ENVIRONMENT_AXES = new Set<string>([
-  'theme',
-  'direction',
-  'motion',
-  'viewport',
-  'forcedColors',
-])
+/** At most 100 issues (including truncation) and 16,384 UTF-16 units (including paths and separators). */
+export const PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS = Object.freeze({
+  issues: 100,
+  messageUnits: 16_384,
+} as const)
+
+const ENVIRONMENT_AXES = new Set<string>(Object.keys(PRESENTATION_SCENARIO_ENVIRONMENT_VALUES))
 const PRESENTATION_FAMILY_VALUES = [
   'forms-controls',
   'navigation-data',
@@ -60,6 +60,21 @@ export type PresentationScenarioJson =
   | readonly PresentationScenarioJson[]
   | { readonly [key: string]: PresentationScenarioJson }
 
+type DeepReadonlyJson<Value> = PresentationScenarioJson extends Value
+  ? PresentationScenarioJson
+  : Value extends null | boolean | number | string
+    ? Value
+    : Value extends readonly unknown[]
+      ? { readonly [Index in keyof Value]: DeepReadonlyJson<Value[Index]> }
+      : Value extends object
+        ? { readonly [Key in keyof Value]: DeepReadonlyJson<Value[Key]> }
+        : never
+
+/** Recursive readonly shape emitted for a validated JSON input snapshot. */
+export type PresentationScenarioJsonSnapshot<
+  Value extends PresentationScenarioJson = PresentationScenarioJson,
+> = DeepReadonlyJson<Value>
+
 /** One environment dimension a case explicitly supports varying. */
 export type PresentationScenarioEnvironmentAxis =
   keyof typeof PRESENTATION_SCENARIO_ENVIRONMENT_VALUES
@@ -81,7 +96,7 @@ export const DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT = Object.freeze({
 /** Renderer paths joined by the protocol while remaining implementation-isolated. */
 export const PRESENTATION_SCENARIO_PATHS = Object.freeze(['baseline', 'registryTailwind'] as const)
 
-const PRESENTATION_SCENARIO_PATH_SET = new Set<string>(['baseline', 'registryTailwind'])
+const PRESENTATION_SCENARIO_PATH_SET = new Set<string>(PRESENTATION_SCENARIO_PATHS)
 
 /** A renderer path whose availability is owned by ProductContract. */
 export type PresentationScenarioPath = (typeof PRESENTATION_SCENARIO_PATHS)[number]
@@ -118,9 +133,9 @@ export type CompiledPresentationScenarioCase<
   ? {
       readonly id: Case['id']
       readonly label: Case['label']
-      readonly input: Case['input']
-      readonly environmentAxes: Case['environmentAxes']
-      readonly copiedArtifactNames?: Case['copiedArtifactNames']
+      readonly input: PresentationScenarioJsonSnapshot<Case['input']>
+      readonly environmentAxes: Readonly<Case['environmentAxes']>
+      readonly copiedArtifactNames?: Readonly<NonNullable<Case['copiedArtifactNames']>>
     }
   : never
 
@@ -269,49 +284,231 @@ interface DecodedSelection {
   readonly copiedArtifact?: string
 }
 
-function childPath(path: string, key: string): string {
-  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key)
-    ? `${path}.${key}`
-    : `${path}[${JSON.stringify(key)}]`
+interface DiagnosticPropertySegment {
+  readonly kind: 'property'
+  readonly key: string
+  readonly identifier: boolean
 }
 
-function withPeriod(reason: string): string {
-  return reason.endsWith('.') ? reason : `${reason}.`
+interface DiagnosticIndexSegment {
+  readonly kind: 'index'
+  readonly index: number
 }
 
-/** The sole untrusted-data boundary for definitions, catalogs, selections, and JSON inputs. */
-class BoundaryDecoder {
+type DiagnosticPathSegment = DiagnosticPropertySegment | DiagnosticIndexSegment
+
+interface DiagnosticPath {
+  readonly parent?: DiagnosticPath
+  readonly segment?: DiagnosticPathSegment
+  /** Exact rendered units, saturated one unit beyond the public message budget. */
+  readonly units: number
+}
+
+interface QuotedDiagnosticPart {
+  readonly kind: 'quoted'
+  readonly value: string
+}
+
+type DiagnosticPart = string | number | QuotedDiagnosticPart
+
+const ROOT_DIAGNOSTIC_PATH: DiagnosticPath = Object.freeze({ units: 1 })
+const DIAGNOSTIC_UNIT_OVERFLOW = PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.messageUnits + 1
+const DIAGNOSTIC_TRUNCATION_ISSUE = `$: diagnostics truncated at ${PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.issues} issues or ${PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.messageUnits} aggregate message/path units.`
+
+function cappedDiagnosticUnits(units: number): number {
+  return Math.min(units, DIAGNOSTIC_UNIT_OVERFLOW)
+}
+
+function jsonQuotedUnits(value: string): number {
+  let units = 2
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index)
+    if (
+      code === 0x22 ||
+      code === 0x5c ||
+      code === 0x08 ||
+      code === 0x09 ||
+      code === 0x0a ||
+      code === 0x0c ||
+      code === 0x0d
+    ) {
+      units += 2
+    } else if (code <= 0x1f) {
+      units += 6
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1)
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        units += 2
+        index += 1
+      } else {
+        units += 6
+      }
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      units += 6
+    } else {
+      units += 1
+    }
+    if (units >= DIAGNOSTIC_UNIT_OVERFLOW) return DIAGNOSTIC_UNIT_OVERFLOW
+  }
+  return units
+}
+
+function integerUnits(value: number): number {
+  if (value === 0) return 1
+  return Math.floor(Math.log10(Math.abs(value))) + 1 + (value < 0 ? 1 : 0)
+}
+
+function propertyPath(parent: DiagnosticPath, key: string): DiagnosticPath {
+  const identifier = DIAGNOSTIC_PATH_IDENTIFIER.test(key)
+  const segmentUnits = identifier ? key.length + 1 : jsonQuotedUnits(key) + 2
+  return {
+    parent,
+    segment: { kind: 'property', key, identifier },
+    units: cappedDiagnosticUnits(parent.units + segmentUnits),
+  }
+}
+
+function indexPath(parent: DiagnosticPath, index: number): DiagnosticPath {
+  return {
+    parent,
+    segment: { kind: 'index', index },
+    units: cappedDiagnosticUnits(parent.units + integerUnits(index) + 2),
+  }
+}
+
+function renderDiagnosticPath(path: DiagnosticPath): string {
+  const segments: DiagnosticPathSegment[] = []
+  for (let current: DiagnosticPath | undefined = path; current?.segment !== undefined; ) {
+    segments.push(current.segment)
+    current = current.parent
+  }
+  const rendered = ['$']
+  for (let index = segments.length - 1; index >= 0; index -= 1) {
+    const segment = segments[index]!
+    if (segment.kind === 'index') rendered.push(`[${segment.index}]`)
+    else if (segment.identifier) rendered.push(`.${segment.key}`)
+    else rendered.push(`[${JSON.stringify(segment.key)}]`)
+  }
+  return rendered.join('')
+}
+
+function quoted(value: string): QuotedDiagnosticPart {
+  return { kind: 'quoted', value }
+}
+
+function diagnosticPartUnits(part: DiagnosticPart): number {
+  if (typeof part === 'string') return cappedDiagnosticUnits(part.length)
+  if (typeof part === 'number') return integerUnits(part)
+  return jsonQuotedUnits(part.value)
+}
+
+function renderDiagnosticPart(part: DiagnosticPart): string {
+  if (typeof part === 'string') return part
+  if (typeof part === 'number') return String(part)
+  return JSON.stringify(part.value)
+}
+
+function boundedSortedArtifactNames(
+  artifacts: readonly ProductContract['entries'][number]['copiedArtifacts'][number][],
+  limit = 8,
+): readonly string[] {
+  const names: string[] = []
+  for (const { name } of artifacts) {
+    const insertionIndex = names.findIndex((candidate) => name < candidate)
+    if (insertionIndex === -1) names.push(name)
+    else names.splice(insertionIndex, 0, name)
+    if (names.length > limit) names.pop()
+  }
+  return names
+}
+
+/** One lazy, total budget for every public protocol diagnostic phase. */
+class DiagnosticCollector {
   readonly #issues: string[] = []
+  #messageUnits = 0
+  #truncated = false
+
+  get hasIssues(): boolean {
+    return this.#issues.length > 0
+  }
+
+  add(path: DiagnosticPath, ...reason: readonly DiagnosticPart[]): void {
+    if (this.#truncated) return
+    if (this.#issues.length >= PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.issues - 1) {
+      this.#truncate()
+      return
+    }
+
+    let reasonUnits = 1 // terminal period
+    for (const part of reason) {
+      reasonUnits = cappedDiagnosticUnits(reasonUnits + diagnosticPartUnits(part))
+    }
+    const issueUnits = cappedDiagnosticUnits(path.units + 2 + reasonUnits)
+    const separatorUnits = this.#issues.length === 0 ? 0 : 1
+    const reservedMarkerUnits = DIAGNOSTIC_TRUNCATION_ISSUE.length + 1
+    if (
+      issueUnits >= DIAGNOSTIC_UNIT_OVERFLOW ||
+      this.#messageUnits + separatorUnits + issueUnits >
+        PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.messageUnits - reservedMarkerUnits
+    ) {
+      this.#truncate()
+      return
+    }
+
+    const issue = `${renderDiagnosticPath(path)}: ${reason.map(renderDiagnosticPart).join('')}.`
+    this.#issues.push(issue)
+    this.#messageUnits += separatorUnits + issue.length
+  }
+
+  result<T>(value: T | undefined, code: PresentationScenarioErrorCode): T {
+    if (value === undefined && !this.hasIssues) {
+      this.add(ROOT_DIAGNOSTIC_PATH, 'value could not be decoded')
+    }
+    this.throwIfAny(code)
+    return value!
+  }
+
+  throwIfAny(code: PresentationScenarioErrorCode): void {
+    if (this.hasIssues) throw new PresentationScenarioError(code, this.#issues)
+  }
+
+  error(code: PresentationScenarioErrorCode): PresentationScenarioError {
+    if (!this.hasIssues) this.add(ROOT_DIAGNOSTIC_PATH, 'operation failed')
+    return new PresentationScenarioError(code, this.#issues)
+  }
+
+  #truncate(): void {
+    if (this.#truncated) return
+    const separatorUnits = this.#issues.length === 0 ? 0 : 1
+    this.#issues.push(DIAGNOSTIC_TRUNCATION_ISSUE)
+    this.#messageUnits += separatorUnits + DIAGNOSTIC_TRUNCATION_ISSUE.length
+    this.#truncated = true
+  }
+}
+
+/** Descriptor-only decoder for ordinary definitions, catalogs, selections, and JSON inputs. */
+class BoundaryDecoder {
   #nodes = 0
   #fields = 0
   #stringUnits = 0
   #nodeLimitReported = false
   #fieldLimitReported = false
   #stringLimitReported = false
-  #issueLimitReported = false
 
-  constructor(private readonly code: PresentationScenarioErrorCode) {}
+  constructor(
+    private readonly code: PresentationScenarioErrorCode,
+    private readonly diagnostics: DiagnosticCollector,
+  ) {}
 
-  issue(path: string, reason: string): void {
-    if (this.#issues.length < MAX_ISSUES) {
-      this.#issues.push(`${path}: ${withPeriod(reason)}`)
-      return
-    }
-    if (!this.#issueLimitReported) {
-      this.#issueLimitReported = true
-      this.#issues.push(`$: issue limit of ${MAX_ISSUES} exceeded.`)
-    }
+  issue(path: DiagnosticPath, ...reason: readonly DiagnosticPart[]): void {
+    this.diagnostics.add(path, ...reason)
   }
 
   result<T>(value: T | undefined): T {
-    if (this.#issues.length > 0 || value === undefined) {
-      if (this.#issues.length === 0) this.issue('$', 'value could not be decoded')
-      throw new PresentationScenarioError(this.code, this.#issues)
-    }
-    return value
+    return this.diagnostics.result(value, this.code)
   }
 
-  #consumeNode(path: string): boolean {
+  #consumeNode(path: DiagnosticPath): boolean {
     this.#nodes += 1
     if (this.#nodes <= MAX_NODES) return true
     if (!this.#nodeLimitReported) {
@@ -321,7 +518,7 @@ class BoundaryDecoder {
     return false
   }
 
-  #consumeString(value: string, path: string): boolean {
+  #consumeString(value: string, path: DiagnosticPath): boolean {
     if (value.length > MAX_STRING_LENGTH) {
       this.issue(path, `string length limit of ${MAX_STRING_LENGTH} exceeded`)
       return false
@@ -335,7 +532,7 @@ class BoundaryDecoder {
     return false
   }
 
-  #isArray(value: object, path: string): boolean | undefined {
+  #isArray(value: object, path: DiagnosticPath): boolean | undefined {
     try {
       return Array.isArray(value)
     } catch {
@@ -344,7 +541,10 @@ class BoundaryDecoder {
     }
   }
 
-  #descriptors(value: object, path: string): Record<PropertyKey, PropertyDescriptor> | undefined {
+  #descriptors(
+    value: object,
+    path: DiagnosticPath,
+  ): Record<PropertyKey, PropertyDescriptor> | undefined {
     let keys: readonly PropertyKey[]
     try {
       keys = Reflect.ownKeys(value)
@@ -366,7 +566,7 @@ class BoundaryDecoder {
         if (key.length > MAX_STRING_LENGTH) {
           this.issue(path, `property-name length limit of ${MAX_STRING_LENGTH} exceeded`)
           keysValid = false
-        } else if (!this.#consumeString(key, childPath(path, key))) {
+        } else if (!this.#consumeString(key, path)) {
           keysValid = false
         }
       }
@@ -393,7 +593,7 @@ class BoundaryDecoder {
     return descriptors
   }
 
-  #canonicalObjectPrototype(prototype: object, path: string): boolean | undefined {
+  #canonicalObjectPrototype(prototype: object, path: DiagnosticPath): boolean | undefined {
     try {
       if (Object.getPrototypeOf(prototype) !== null) return false
       const constructor = Object.getOwnPropertyDescriptor(prototype, 'constructor')
@@ -428,7 +628,7 @@ class BoundaryDecoder {
     }
   }
 
-  #hasPlainPrototype(value: object, path: string): boolean | undefined {
+  #hasPlainPrototype(value: object, path: DiagnosticPath): boolean | undefined {
     try {
       const prototype = Object.getPrototypeOf(value) as object | null
       if (prototype === null) return true
@@ -439,7 +639,7 @@ class BoundaryDecoder {
     }
   }
 
-  #hasCanonicalArrayPrototype(value: object, path: string): boolean | undefined {
+  #hasCanonicalArrayPrototype(value: object, path: DiagnosticPath): boolean | undefined {
     try {
       const prototype = Object.getPrototypeOf(value) as object | null
       if (prototype === null) return true
@@ -492,7 +692,7 @@ class BoundaryDecoder {
     }
   }
 
-  record(value: unknown, path: string): InspectedRecord | undefined {
+  record(value: unknown, path: DiagnosticPath): InspectedRecord | undefined {
     if (!this.#consumeNode(path)) return undefined
     if (value === null || typeof value !== 'object') {
       this.issue(path, 'must be a plain object')
@@ -517,7 +717,7 @@ class BoundaryDecoder {
       }
       const descriptor = descriptors[key]!
       if (!descriptor.enumerable) {
-        this.issue(childPath(path, key), 'non-enumerable properties are not supported')
+        this.issue(propertyPath(path, key), 'non-enumerable properties are not supported')
         continue
       }
       keys.push(key)
@@ -526,7 +726,7 @@ class BoundaryDecoder {
     return { descriptors, keys }
   }
 
-  array(value: unknown, path: string): InspectedArray | undefined {
+  array(value: unknown, path: DiagnosticPath): InspectedArray | undefined {
     if (!this.#consumeNode(path)) return undefined
     if (value === null || typeof value !== 'object') {
       this.issue(path, 'must be an array')
@@ -554,12 +754,12 @@ class BoundaryDecoder {
       !Number.isSafeInteger(lengthDescriptor.value) ||
       lengthDescriptor.value < 0
     ) {
-      this.issue(`${path}.length`, 'must be a non-negative safe integer data property')
+      this.issue(propertyPath(path, 'length'), 'must be a non-negative safe integer data property')
       return undefined
     }
     const length = lengthDescriptor.value
     if (length > MAX_ARRAY_LENGTH) {
-      this.issue(`${path}.length`, `array length limit of ${MAX_ARRAY_LENGTH} exceeded`)
+      this.issue(propertyPath(path, 'length'), `array length limit of ${MAX_ARRAY_LENGTH} exceeded`)
       return undefined
     }
     const values = new Array<unknown>(length)
@@ -574,13 +774,13 @@ class BoundaryDecoder {
       if (key === 'length') continue
       if (!/^(?:0|[1-9][0-9]*)$/.test(key) || Number(key) >= length) {
         valid = false
-        this.issue(childPath(path, key), 'non-index array properties are not supported')
+        this.issue(propertyPath(path, key), 'non-index array properties are not supported')
       }
     }
     if (hasSymbol) this.issue(path, 'symbol-keyed properties are not supported')
     for (let index = 0; index < length; index += 1) {
       const descriptor = descriptors[String(index)]
-      const itemPath = `${path}[${index}]`
+      const itemPath = indexPath(path, index)
       if (descriptor === undefined) {
         valid = false
         this.issue(itemPath, 'sparse array entries are not supported')
@@ -600,17 +800,17 @@ class BoundaryDecoder {
   field(
     record: InspectedRecord | undefined,
     key: string,
-    path: string,
+    path: DiagnosticPath,
     required: boolean,
   ): { readonly present: boolean; readonly value?: unknown } {
     if (record === undefined) return { present: false }
     const descriptor = record.descriptors[key]
     if (descriptor === undefined || !descriptor.enumerable) {
-      if (required) this.issue(childPath(path, key), 'required field is missing')
+      if (required) this.issue(propertyPath(path, key), 'required field is missing')
       return { present: false }
     }
     if (!('value' in descriptor)) {
-      this.issue(childPath(path, key), 'accessor properties are not supported')
+      this.issue(propertyPath(path, key), 'accessor properties are not supported')
       return { present: false }
     }
     return { present: true, value: descriptor.value }
@@ -619,15 +819,15 @@ class BoundaryDecoder {
   exactFields(
     record: InspectedRecord | undefined,
     allowed: ReadonlySet<string>,
-    path: string,
+    path: DiagnosticPath,
   ): void {
     if (record === undefined) return
     for (const key of record.keys) {
-      if (!allowed.has(key)) this.issue(childPath(path, key), 'unexpected field')
+      if (!allowed.has(key)) this.issue(propertyPath(path, key), 'unexpected field')
     }
   }
 
-  string(value: unknown, path: string): string | undefined {
+  string(value: unknown, path: DiagnosticPath): string | undefined {
     if (!this.#consumeNode(path)) return undefined
     if (typeof value !== 'string') {
       this.issue(path, 'must be a string')
@@ -636,7 +836,7 @@ class BoundaryDecoder {
     return this.#consumeString(value, path) ? value : undefined
   }
 
-  literalOne(value: unknown, path: string): 1 | undefined {
+  literalOne(value: unknown, path: DiagnosticPath): 1 | undefined {
     if (!this.#consumeNode(path)) return undefined
     if (value !== 1) {
       this.issue(path, 'must equal 1')
@@ -645,7 +845,7 @@ class BoundaryDecoder {
     return 1
   }
 
-  json(value: unknown, rootPath: string): PresentationScenarioJson | undefined {
+  json(value: unknown, rootPath: DiagnosticPath): PresentationScenarioJson | undefined {
     type Assignment =
       | { readonly kind: 'root' }
       | {
@@ -661,7 +861,7 @@ class BoundaryDecoder {
     type ValueFrame = {
       readonly kind: 'value'
       readonly value: unknown
-      readonly path: string
+      readonly path: DiagnosticPath
       readonly depth: number
       readonly assignment: Assignment
     }
@@ -716,7 +916,7 @@ class BoundaryDecoder {
         continue
       }
       if (typeof item !== 'object') {
-        this.issue(frame.path, `${typeof item} values are not JSON-safe`)
+        this.issue(frame.path, typeof item, ' values are not JSON-safe')
         continue
       }
       if (active.has(item)) {
@@ -738,7 +938,7 @@ class BoundaryDecoder {
           stack.push({
             kind: 'value',
             value: inspected.values[index],
-            path: `${frame.path}[${index}]`,
+            path: indexPath(frame.path, index),
             depth: frame.depth + 1,
             assignment: { kind: 'array', target: output, index },
           })
@@ -754,7 +954,7 @@ class BoundaryDecoder {
       for (const key of inspected.keys) {
         const descriptor = inspected.descriptors[key]!
         if (!('value' in descriptor)) {
-          this.issue(childPath(frame.path, key), 'accessor properties are not supported')
+          this.issue(propertyPath(frame.path, key), 'accessor properties are not supported')
           continue
         }
         Object.defineProperty(output, key, {
@@ -773,7 +973,7 @@ class BoundaryDecoder {
         stack.push({
           kind: 'value',
           value: field.value,
-          path: childPath(frame.path, field.key),
+          path: propertyPath(frame.path, field.key),
           depth: frame.depth + 1,
           assignment: { kind: 'object', target: output, key: field.key },
         })
@@ -793,13 +993,13 @@ const SELECTION_FIELDS = new Set(['productId', 'caseId', 'path', 'environment', 
 function decodeStringArray(
   decoder: BoundaryDecoder,
   value: unknown,
-  path: string,
+  path: DiagnosticPath,
 ): readonly string[] | undefined {
   const inspected = decoder.array(value, path)
   if (inspected === undefined) return undefined
   const output: string[] = []
   for (let index = 0; index < inspected.values.length; index += 1) {
-    const item = decoder.string(inspected.values[index], `${path}[${index}]`)
+    const item = decoder.string(inspected.values[index], indexPath(path, index))
     if (item !== undefined) output.push(item)
   }
   return Object.freeze(output)
@@ -808,24 +1008,27 @@ function decodeStringArray(
 function decodeCase(
   decoder: BoundaryDecoder,
   value: unknown,
-  path: string,
-  allowFamilyFields: boolean,
+  path: DiagnosticPath,
 ): DecodedCase | undefined {
   const record = decoder.record(value, path)
-  if (!allowFamilyFields) decoder.exactFields(record, CASE_FIELDS, path)
+  decoder.exactFields(record, CASE_FIELDS, path)
   const idField = decoder.field(record, 'id', path, true)
   const labelField = decoder.field(record, 'label', path, true)
   const inputField = decoder.field(record, 'input', path, true)
   const axesField = decoder.field(record, 'environmentAxes', path, true)
   const targetsField = decoder.field(record, 'copiedArtifactNames', path, false)
-  const id = idField.present ? decoder.string(idField.value, `${path}.id`) : undefined
-  const label = labelField.present ? decoder.string(labelField.value, `${path}.label`) : undefined
-  const input = inputField.present ? decoder.json(inputField.value, `${path}.input`) : undefined
+  const id = idField.present ? decoder.string(idField.value, propertyPath(path, 'id')) : undefined
+  const label = labelField.present
+    ? decoder.string(labelField.value, propertyPath(path, 'label'))
+    : undefined
+  const input = inputField.present
+    ? decoder.json(inputField.value, propertyPath(path, 'input'))
+    : undefined
   const axes = axesField.present
-    ? decodeStringArray(decoder, axesField.value, `${path}.environmentAxes`)
+    ? decodeStringArray(decoder, axesField.value, propertyPath(path, 'environmentAxes'))
     : undefined
   const targets = targetsField.present
-    ? decodeStringArray(decoder, targetsField.value, `${path}.copiedArtifactNames`)
+    ? decodeStringArray(decoder, targetsField.value, propertyPath(path, 'copiedArtifactNames'))
     : undefined
   if (id === undefined || label === undefined || input === undefined || axes === undefined) {
     return undefined
@@ -842,26 +1045,26 @@ function decodeCase(
 function decodeDefinition(
   decoder: BoundaryDecoder,
   value: unknown,
-  path: string,
+  path: DiagnosticPath,
 ): DecodedDefinition | undefined {
   const record = decoder.record(value, path)
   decoder.exactFields(record, DEFINITION_FIELDS, path)
   const defaultField = decoder.field(record, 'defaultCaseId', path, true)
   const casesField = decoder.field(record, 'cases', path, true)
   const defaultCaseId = defaultField.present
-    ? decoder.string(defaultField.value, `${path}.defaultCaseId`)
+    ? decoder.string(defaultField.value, propertyPath(path, 'defaultCaseId'))
     : undefined
   const inspectedCases = casesField.present
-    ? decoder.array(casesField.value, `${path}.cases`)
+    ? decoder.array(casesField.value, propertyPath(path, 'cases'))
     : undefined
+  const casesPath = propertyPath(path, 'cases')
   const cases: DecodedCase[] = []
   if (inspectedCases !== undefined) {
     for (let index = 0; index < inspectedCases.values.length; index += 1) {
       const scenarioCase = decodeCase(
         decoder,
         inspectedCases.values[index],
-        `${path}.cases[${index}]`,
-        true,
+        indexPath(casesPath, index),
       )
       if (scenarioCase !== undefined) cases.push(scenarioCase)
     }
@@ -870,14 +1073,14 @@ function decodeDefinition(
   return Object.freeze({ defaultCaseId, cases: Object.freeze(cases) })
 }
 
-function decodeDefinitions(value: unknown): DecodedDefinitions {
-  const decoder = new BoundaryDecoder('invalid-definitions')
-  const root = decoder.record(value, '$')
+function decodeDefinitions(value: unknown, diagnostics: DiagnosticCollector): DecodedDefinitions {
+  const decoder = new BoundaryDecoder('invalid-definitions', diagnostics)
+  const root = decoder.record(value, ROOT_DIAGNOSTIC_PATH)
   const definitions = new Map<string, DecodedDefinition>()
   const scenarioIds: string[] = []
   if (root !== undefined) {
     for (const scenarioId of root.keys) {
-      const path = childPath('$', scenarioId)
+      const path = propertyPath(ROOT_DIAGNOSTIC_PATH, scenarioId)
       const descriptor = root.descriptors[scenarioId]!
       if (!('value' in descriptor)) {
         decoder.issue(path, 'accessor properties are not supported')
@@ -897,29 +1100,36 @@ function decodeDefinitions(value: unknown): DecodedDefinitions {
   return decoder.result({ definitions, scenarioIds: Object.freeze(scenarioIds) })
 }
 
-function decodeCatalog(value: unknown): DecodedCatalog {
-  const decoder = new BoundaryDecoder('invalid-catalog')
-  const root = decoder.record(value, '$')
-  decoder.exactFields(root, CATALOG_FIELDS, '$')
-  const versionField = decoder.field(root, 'version', '$', true)
-  const familyField = decoder.field(root, 'family', '$', true)
-  const scenariosField = decoder.field(root, 'scenarios', '$', true)
+function decodeCatalog(
+  value: unknown,
+  diagnostics: DiagnosticCollector,
+  code: PresentationScenarioErrorCode = 'invalid-catalog',
+): DecodedCatalog {
+  const decoder = new BoundaryDecoder(code, diagnostics)
+  const root = decoder.record(value, ROOT_DIAGNOSTIC_PATH)
+  decoder.exactFields(root, CATALOG_FIELDS, ROOT_DIAGNOSTIC_PATH)
+  const versionField = decoder.field(root, 'version', ROOT_DIAGNOSTIC_PATH, true)
+  const familyField = decoder.field(root, 'family', ROOT_DIAGNOSTIC_PATH, true)
+  const scenariosField = decoder.field(root, 'scenarios', ROOT_DIAGNOSTIC_PATH, true)
+  const versionPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'version')
+  const familyPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'family')
+  const scenariosPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'scenarios')
   const version = versionField.present
-    ? decoder.literalOne(versionField.value, '$.version')
+    ? decoder.literalOne(versionField.value, versionPath)
     : undefined
   const familyString = familyField.present
-    ? decoder.string(familyField.value, '$.family')
+    ? decoder.string(familyField.value, familyPath)
     : undefined
   if (familyString !== undefined && !PRESENTATION_FAMILIES.has(familyString)) {
-    decoder.issue('$.family', `unknown presentation family ${JSON.stringify(familyString)}`)
+    decoder.issue(familyPath, 'unknown presentation family ', quoted(familyString))
   }
   const inspectedScenarios = scenariosField.present
-    ? decoder.array(scenariosField.value, '$.scenarios')
+    ? decoder.array(scenariosField.value, scenariosPath)
     : undefined
   const scenarios: DecodedScenario[] = []
   if (inspectedScenarios !== undefined) {
     for (let index = 0; index < inspectedScenarios.values.length; index += 1) {
-      const path = `$.scenarios[${index}]`
+      const path = indexPath(scenariosPath, index)
       const record = decoder.record(inspectedScenarios.values[index], path)
       decoder.exactFields(record, SCENARIO_FIELDS, path)
       const productField = decoder.field(record, 'productId', path, true)
@@ -927,25 +1137,25 @@ function decodeCatalog(value: unknown): DecodedCatalog {
       const defaultField = decoder.field(record, 'defaultCaseId', path, true)
       const casesField = decoder.field(record, 'cases', path, true)
       const productId = productField.present
-        ? decoder.string(productField.value, `${path}.productId`)
+        ? decoder.string(productField.value, propertyPath(path, 'productId'))
         : undefined
       const scenarioId = scenarioField.present
-        ? decoder.string(scenarioField.value, `${path}.scenarioId`)
+        ? decoder.string(scenarioField.value, propertyPath(path, 'scenarioId'))
         : undefined
       const defaultCaseId = defaultField.present
-        ? decoder.string(defaultField.value, `${path}.defaultCaseId`)
+        ? decoder.string(defaultField.value, propertyPath(path, 'defaultCaseId'))
         : undefined
       const inspectedCases = casesField.present
-        ? decoder.array(casesField.value, `${path}.cases`)
+        ? decoder.array(casesField.value, propertyPath(path, 'cases'))
         : undefined
+      const casesPath = propertyPath(path, 'cases')
       const cases: DecodedCase[] = []
       if (inspectedCases !== undefined) {
         for (let caseIndex = 0; caseIndex < inspectedCases.values.length; caseIndex += 1) {
           const scenarioCase = decodeCase(
             decoder,
             inspectedCases.values[caseIndex],
-            `${path}.cases[${caseIndex}]`,
-            false,
+            indexPath(casesPath, caseIndex),
           )
           if (scenarioCase !== undefined) cases.push(scenarioCase)
         }
@@ -984,31 +1194,36 @@ function decodeCatalog(value: unknown): DecodedCatalog {
   )
 }
 
-function decodeSelection(value: unknown): DecodedSelection {
-  const decoder = new BoundaryDecoder('invalid-selection')
-  const root = decoder.record(value, '$')
-  decoder.exactFields(root, SELECTION_FIELDS, '$')
-  const productField = decoder.field(root, 'productId', '$', true)
-  const caseField = decoder.field(root, 'caseId', '$', false)
-  const pathField = decoder.field(root, 'path', '$', true)
-  const environmentField = decoder.field(root, 'environment', '$', false)
-  const artifactField = decoder.field(root, 'copiedArtifact', '$', false)
+function decodeSelection(value: unknown, diagnostics: DiagnosticCollector): DecodedSelection {
+  const decoder = new BoundaryDecoder('invalid-selection', diagnostics)
+  const root = decoder.record(value, ROOT_DIAGNOSTIC_PATH)
+  decoder.exactFields(root, SELECTION_FIELDS, ROOT_DIAGNOSTIC_PATH)
+  const productField = decoder.field(root, 'productId', ROOT_DIAGNOSTIC_PATH, true)
+  const caseField = decoder.field(root, 'caseId', ROOT_DIAGNOSTIC_PATH, false)
+  const pathField = decoder.field(root, 'path', ROOT_DIAGNOSTIC_PATH, true)
+  const environmentField = decoder.field(root, 'environment', ROOT_DIAGNOSTIC_PATH, false)
+  const artifactField = decoder.field(root, 'copiedArtifact', ROOT_DIAGNOSTIC_PATH, false)
+  const productPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'productId')
+  const casePath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'caseId')
+  const selectionPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'path')
+  const environmentPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'environment')
+  const artifactPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'copiedArtifact')
   const productId = productField.present
-    ? decoder.string(productField.value, '$.productId')
+    ? decoder.string(productField.value, productPath)
     : undefined
-  const caseId = caseField.present ? decoder.string(caseField.value, '$.caseId') : undefined
-  const path = pathField.present ? decoder.string(pathField.value, '$.path') : undefined
+  const caseId = caseField.present ? decoder.string(caseField.value, casePath) : undefined
+  const path = pathField.present ? decoder.string(pathField.value, selectionPath) : undefined
   const copiedArtifact = artifactField.present
-    ? decoder.string(artifactField.value, '$.copiedArtifact')
+    ? decoder.string(artifactField.value, artifactPath)
     : undefined
   const environmentRecord = environmentField.present
-    ? decoder.record(environmentField.value, '$.environment')
+    ? decoder.record(environmentField.value, environmentPath)
     : undefined
   const environment = Object.create(null) as Record<string, string>
   if (environmentRecord !== undefined) {
     for (const axis of environmentRecord.keys) {
       const descriptor = environmentRecord.descriptors[axis]!
-      const axisPath = childPath('$.environment', axis)
+      const axisPath = propertyPath(environmentPath, axis)
       if (!('value' in descriptor)) {
         decoder.issue(axisPath, 'accessor properties are not supported')
         continue
@@ -1038,19 +1253,19 @@ function decodeSelection(value: unknown): DecodedSelection {
   )
 }
 
-function caseIssues(
+function collectCaseIssues(
+  diagnostics: DiagnosticCollector,
   entry: ProductContract['entries'][number],
   definition: DecodedDefinition | DecodedScenario,
-  path: string,
-): string[] {
-  const issues: string[] = []
+  path: DiagnosticPath,
+): void {
+  const casesPath = propertyPath(path, 'cases')
+  const defaultPath = propertyPath(path, 'defaultCaseId')
   if (definition.cases.length === 0) {
-    issues.push(`${path}.cases: must define at least one case.`)
+    diagnostics.add(casesPath, 'must define at least one case')
   }
   if (!CASE_ID.test(definition.defaultCaseId)) {
-    issues.push(
-      `${path}.defaultCaseId: invalid case id ${JSON.stringify(definition.defaultCaseId)}.`,
-    )
+    diagnostics.add(defaultPath, 'invalid case id ', quoted(definition.defaultCaseId))
   }
 
   const caseIds = new Set<string>()
@@ -1058,60 +1273,66 @@ function caseIssues(
   for (const artifact of entry.copiedArtifacts) copiedArtifactNames.add(artifact.name)
   for (let index = 0; index < definition.cases.length; index += 1) {
     const scenarioCase = definition.cases[index]!
-    const casePath = `${path}.cases[${index}]`
+    const casePath = indexPath(casesPath, index)
+    const idPath = propertyPath(casePath, 'id')
     if (!CASE_ID.test(scenarioCase.id)) {
-      issues.push(`${casePath}.id: invalid case id ${JSON.stringify(scenarioCase.id)}.`)
+      diagnostics.add(idPath, 'invalid case id ', quoted(scenarioCase.id))
     }
     if (caseIds.has(scenarioCase.id)) {
-      issues.push(`${casePath}.id: duplicate case id ${JSON.stringify(scenarioCase.id)}.`)
+      diagnostics.add(idPath, 'duplicate case id ', quoted(scenarioCase.id))
     }
     caseIds.add(scenarioCase.id)
     if (scenarioCase.label.trim() === '') {
-      issues.push(`${casePath}.label: must contain non-whitespace text.`)
+      diagnostics.add(propertyPath(casePath, 'label'), 'must contain non-whitespace text')
     }
 
     const seenAxes = new Set<string>()
+    const axesPath = propertyPath(casePath, 'environmentAxes')
     for (let axisIndex = 0; axisIndex < scenarioCase.environmentAxes.length; axisIndex += 1) {
       const axis = scenarioCase.environmentAxes[axisIndex]!
-      const axisPath = `${casePath}.environmentAxes[${axisIndex}]`
+      const axisPath = indexPath(axesPath, axisIndex)
       if (!ENVIRONMENT_AXES.has(axis)) {
-        issues.push(`${axisPath}: unknown environment axis ${JSON.stringify(axis)}.`)
+        diagnostics.add(axisPath, 'unknown environment axis ', quoted(axis))
       }
       if (seenAxes.has(axis)) {
-        issues.push(`${axisPath}: duplicate environment axis ${JSON.stringify(axis)}.`)
+        diagnostics.add(axisPath, 'duplicate environment axis ', quoted(axis))
       }
       seenAxes.add(axis)
     }
 
     const seenTargets = new Set<string>()
     const targets = scenarioCase.copiedArtifactNames ?? []
+    const targetsPath = propertyPath(casePath, 'copiedArtifactNames')
     for (let targetIndex = 0; targetIndex < targets.length; targetIndex += 1) {
       const target = targets[targetIndex]!
-      const targetPath = `${casePath}.copiedArtifactNames[${targetIndex}]`
+      const targetPath = indexPath(targetsPath, targetIndex)
       if (!copiedArtifactNames.has(target)) {
-        issues.push(`${targetPath}: unknown copied artifact ${JSON.stringify(target)}.`)
+        diagnostics.add(targetPath, 'unknown copied artifact ', quoted(target))
       }
       if (seenTargets.has(target)) {
-        issues.push(`${targetPath}: duplicate copied artifact ${JSON.stringify(target)}.`)
+        diagnostics.add(targetPath, 'duplicate copied artifact ', quoted(target))
       }
       seenTargets.add(target)
     }
   }
   if (!caseIds.has(definition.defaultCaseId)) {
-    issues.push(
-      `${path}.defaultCaseId: case ${JSON.stringify(definition.defaultCaseId)} does not exist.`,
-    )
+    diagnostics.add(defaultPath, 'case ', quoted(definition.defaultCaseId), ' does not exist')
   }
-  return issues
 }
 
-function catalogIntegrityIssues(contract: ProductContract, catalog: DecodedCatalog): string[] {
-  const issues: string[] = []
+function collectCatalogIntegrityIssues(
+  diagnostics: DiagnosticCollector,
+  contract: ProductContract,
+  catalog: DecodedCatalog,
+): void {
   const entries = contract.entries.filter((entry) => entry.presentation.family === catalog.family)
   if (entries.length === 0) {
-    return [
-      `$.family: ProductContract has no entries for presentation family ${JSON.stringify(catalog.family)}.`,
-    ]
+    diagnostics.add(
+      propertyPath(ROOT_DIAGNOSTIC_PATH, 'family'),
+      'ProductContract has no entries for presentation family ',
+      quoted(catalog.family),
+    )
+    return
   }
 
   const entriesByScenario = new Map<string, (typeof entries)[number]>()
@@ -1123,79 +1344,101 @@ function catalogIntegrityIssues(contract: ProductContract, catalog: DecodedCatal
   }
   const seenProducts = new Set<string>()
   const seenScenarios = new Set<string>()
+  const scenariosPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'scenarios')
   for (let index = 0; index < catalog.scenarios.length; index += 1) {
     const scenario = catalog.scenarios[index]!
-    const path = `$.scenarios[${index}]`
+    const path = indexPath(scenariosPath, index)
     if (seenProducts.has(scenario.productId)) {
-      issues.push(`${path}.productId: duplicate product ${JSON.stringify(scenario.productId)}.`)
+      diagnostics.add(
+        propertyPath(path, 'productId'),
+        'duplicate product ',
+        quoted(scenario.productId),
+      )
     }
     seenProducts.add(scenario.productId)
     if (seenScenarios.has(scenario.scenarioId)) {
-      issues.push(`${path}.scenarioId: duplicate scenario ${JSON.stringify(scenario.scenarioId)}.`)
+      diagnostics.add(
+        propertyPath(path, 'scenarioId'),
+        'duplicate scenario ',
+        quoted(scenario.scenarioId),
+      )
     }
     seenScenarios.add(scenario.scenarioId)
 
     const entry = entriesByScenario.get(scenario.scenarioId)
     if (entry === undefined) {
-      issues.push(
-        `${path}.scenarioId: stale ProductContract scenario ${JSON.stringify(scenario.scenarioId)}.`,
+      diagnostics.add(
+        propertyPath(path, 'scenarioId'),
+        'stale ProductContract scenario ',
+        quoted(scenario.scenarioId),
       )
       continue
     }
     if (entry.name !== scenario.productId) {
-      issues.push(
-        `${path}.productId: expected ${JSON.stringify(entry.name)} for scenario ${JSON.stringify(scenario.scenarioId)}.`,
+      diagnostics.add(
+        propertyPath(path, 'productId'),
+        'expected ',
+        quoted(entry.name),
+        ' for scenario ',
+        quoted(scenario.scenarioId),
       )
       continue
     }
     const canonicalIndex = expectedIndex.get(scenario.scenarioId)!
     if (canonicalIndex !== index) {
-      issues.push(`${path}: expected canonical ProductContract index ${canonicalIndex}.`)
+      diagnostics.add(path, 'expected canonical ProductContract index ', canonicalIndex)
     }
-    issues.push(...caseIssues(entry, scenario, path))
+    collectCaseIssues(diagnostics, entry, scenario, path)
   }
 
   for (const entry of entries) {
     if (!seenScenarios.has(entry.scenarioId)) {
-      issues.push(
-        `$.scenarios: missing scenario ${JSON.stringify(entry.scenarioId)} for product ${JSON.stringify(entry.name)}.`,
+      diagnostics.add(
+        scenariosPath,
+        'missing scenario ',
+        quoted(entry.scenarioId),
+        ' for product ',
+        quoted(entry.name),
       )
     }
   }
-  return issues
 }
 
 function compiledCatalog(
   contract: ProductContract,
   family: PresentationFamily,
   decoded: DecodedDefinitions,
+  diagnostics: DiagnosticCollector,
 ): DecodedCatalog {
   const entries = contract.entries.filter((entry) => entry.presentation.family === family)
-  const issues: string[] = []
   if (entries.length === 0) {
-    issues.push(
-      `$.family: ProductContract has no entries for presentation family ${JSON.stringify(family)}.`,
+    diagnostics.add(
+      propertyPath(ROOT_DIAGNOSTIC_PATH, 'family'),
+      'ProductContract has no entries for presentation family ',
+      quoted(family),
     )
   }
   const expectedScenarioIds = new Set<string>()
   for (const entry of entries) expectedScenarioIds.add(entry.scenarioId)
   for (const entry of entries) {
     const definition = decoded.definitions.get(entry.scenarioId)
-    const path = childPath('$', entry.scenarioId)
+    const path = propertyPath(ROOT_DIAGNOSTIC_PATH, entry.scenarioId)
     if (definition === undefined) {
-      issues.push(`${path}: missing definition for product ${JSON.stringify(entry.name)}.`)
+      diagnostics.add(path, 'missing definition for product ', quoted(entry.name))
     } else {
-      issues.push(...caseIssues(entry, definition, path))
+      collectCaseIssues(diagnostics, entry, definition, path)
     }
   }
   for (const scenarioId of decoded.scenarioIds) {
     if (!expectedScenarioIds.has(scenarioId)) {
-      issues.push(
-        `${childPath('$', scenarioId)}: stale definition for presentation family ${JSON.stringify(family)}.`,
+      diagnostics.add(
+        propertyPath(ROOT_DIAGNOSTIC_PATH, scenarioId),
+        'stale definition for presentation family ',
+        quoted(family),
       )
     }
   }
-  if (issues.length > 0) throw new PresentationScenarioError('invalid-definitions', issues)
+  diagnostics.throwIfAny('invalid-definitions')
 
   const raw = {
     version: 1,
@@ -1218,11 +1461,9 @@ function compiledCatalog(
       }
     }),
   }
-  const catalog = decodeCatalog(raw)
-  const integrityIssues = catalogIntegrityIssues(contract, catalog)
-  if (integrityIssues.length > 0) {
-    throw new PresentationScenarioError('invalid-definitions', integrityIssues)
-  }
+  const catalog = decodeCatalog(raw, diagnostics, 'invalid-definitions')
+  collectCatalogIntegrityIssues(diagnostics, contract, catalog)
+  diagnostics.throwIfAny('invalid-definitions')
   return catalog
 }
 
@@ -1243,8 +1484,14 @@ export function compileScenarioFamily(
   family: PresentationFamily,
   definitions: unknown,
 ): CompiledPresentationScenarioFamily {
-  const decoded = decodeDefinitions(definitions)
-  return compiledCatalog(contract, family, decoded) as CompiledPresentationScenarioFamily
+  const diagnostics = new DiagnosticCollector()
+  const decoded = decodeDefinitions(definitions, diagnostics)
+  return compiledCatalog(
+    contract,
+    family,
+    decoded,
+    diagnostics,
+  ) as CompiledPresentationScenarioFamily
 }
 
 /** Resolve one deterministic renderer input from a compiled family catalog. */
@@ -1264,82 +1511,110 @@ export function resolveScenarioSelection(
   catalog: unknown,
   selection: unknown,
 ): ResolvedPresentationScenarioSelection {
-  const decodedCatalog = decodeCatalog(catalog)
-  const catalogIssues = catalogIntegrityIssues(contract, decodedCatalog)
-  if (catalogIssues.length > 0) {
-    throw new PresentationScenarioError('invalid-catalog', catalogIssues)
-  }
-  const decodedSelection = decodeSelection(selection)
+  const diagnostics = new DiagnosticCollector()
+  const decodedCatalog = decodeCatalog(catalog, diagnostics)
+  collectCatalogIntegrityIssues(diagnostics, contract, decodedCatalog)
+  diagnostics.throwIfAny('invalid-catalog')
+
+  const decodedSelection = decodeSelection(selection, diagnostics)
+  const productPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'productId')
+  const selectionPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'path')
+  const casePath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'caseId')
+  const artifactPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'copiedArtifact')
   const scenario = decodedCatalog.scenarios.find(
     ({ productId }) => productId === decodedSelection.productId,
   )
   if (scenario === undefined) {
-    throw new PresentationScenarioError('unknown-product', [
-      `$.productId: unknown product ${JSON.stringify(decodedSelection.productId)} in compiled family ${JSON.stringify(decodedCatalog.family)}.`,
-    ])
+    diagnostics.add(
+      productPath,
+      'unknown product ',
+      quoted(decodedSelection.productId),
+      ' in compiled family ',
+      quoted(decodedCatalog.family),
+    )
+    throw diagnostics.error('unknown-product')
   }
   const entry = contract.entries.find(({ name }) => name === decodedSelection.productId)!
   if (!PRESENTATION_SCENARIO_PATH_SET.has(decodedSelection.path)) {
-    throw new PresentationScenarioError('invalid-path', [
-      `$.path: unknown presentation path ${JSON.stringify(decodedSelection.path)}.`,
-    ])
+    diagnostics.add(selectionPath, 'unknown presentation path ', quoted(decodedSelection.path))
+    throw diagnostics.error('invalid-path')
   }
   const path = decodedSelection.path as PresentationScenarioPath
   if (entry.presentation[path].mode === 'not-applicable') {
-    throw new PresentationScenarioError('invalid-path', [
-      `$.path: presentation path ${JSON.stringify(path)} is not applicable to product ${JSON.stringify(decodedSelection.productId)}.`,
-    ])
+    diagnostics.add(
+      selectionPath,
+      'presentation path ',
+      quoted(path),
+      ' is not applicable to product ',
+      quoted(decodedSelection.productId),
+    )
+    throw diagnostics.error('invalid-path')
   }
   const caseId = decodedSelection.caseId ?? scenario.defaultCaseId
   const scenarioCase = scenario.cases.find(({ id }) => id === caseId)
   if (scenarioCase === undefined) {
-    throw new PresentationScenarioError('unknown-case', [
-      `$.caseId: unknown case ${JSON.stringify(caseId)} for product ${JSON.stringify(decodedSelection.productId)}.`,
-    ])
+    diagnostics.add(
+      casePath,
+      'unknown case ',
+      quoted(caseId),
+      ' for product ',
+      quoted(decodedSelection.productId),
+    )
+    throw diagnostics.error('unknown-case')
   }
 
-  const environmentIssues: string[] = []
+  const environmentPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'environment')
   for (const [axis, value] of Object.entries(decodedSelection.environment)) {
-    const axisPath = childPath('$.environment', axis)
+    const axisPath = propertyPath(environmentPath, axis)
     if (!ENVIRONMENT_AXES.has(axis)) {
-      environmentIssues.push(`${axisPath}: unknown environment axis ${JSON.stringify(axis)}.`)
+      diagnostics.add(axisPath, 'unknown environment axis ', quoted(axis))
       continue
     }
     const knownAxis = axis as PresentationScenarioEnvironmentAxis
     const allowedValues = PRESENTATION_SCENARIO_ENVIRONMENT_VALUES[knownAxis] as readonly string[]
     if (!allowedValues.includes(value)) {
-      environmentIssues.push(`${axisPath}: unknown value ${JSON.stringify(value)}.`)
+      diagnostics.add(axisPath, 'unknown value ', quoted(value))
     } else if (!scenarioCase.environmentAxes.includes(knownAxis)) {
-      environmentIssues.push(
-        `${axisPath}: case ${JSON.stringify(caseId)} does not support this environment axis.`,
-      )
+      diagnostics.add(axisPath, 'case ', quoted(caseId), ' does not support this environment axis')
     }
   }
-  if (environmentIssues.length > 0) {
-    throw new PresentationScenarioError('invalid-environment', environmentIssues)
-  }
+  diagnostics.throwIfAny('invalid-environment')
 
   if (decodedSelection.copiedArtifact !== undefined && path !== 'registryTailwind') {
-    throw new PresentationScenarioError('invalid-copied-artifact', [
-      `$.copiedArtifact: target ${JSON.stringify(decodedSelection.copiedArtifact)} is invalid on the baseline path.`,
-    ])
+    diagnostics.add(
+      artifactPath,
+      'target ',
+      quoted(decodedSelection.copiedArtifact),
+      ' is invalid on the baseline path',
+    )
+    throw diagnostics.error('invalid-copied-artifact')
   }
   if (
     decodedSelection.copiedArtifact !== undefined &&
     !entry.copiedArtifacts.some(({ name }) => name === decodedSelection.copiedArtifact)
   ) {
-    throw new PresentationScenarioError('invalid-copied-artifact', [
-      `$.copiedArtifact: product ${JSON.stringify(decodedSelection.productId)} does not own target ${JSON.stringify(decodedSelection.copiedArtifact)}.`,
-    ])
+    diagnostics.add(
+      artifactPath,
+      'product ',
+      quoted(decodedSelection.productId),
+      ' does not own target ',
+      quoted(decodedSelection.copiedArtifact),
+    )
+    throw diagnostics.error('invalid-copied-artifact')
   }
   if (
     decodedSelection.copiedArtifact !== undefined &&
     scenarioCase.copiedArtifactNames !== undefined &&
     !scenarioCase.copiedArtifactNames.includes(decodedSelection.copiedArtifact)
   ) {
-    throw new PresentationScenarioError('invalid-copied-artifact', [
-      `$.copiedArtifact: case ${JSON.stringify(caseId)} does not support target ${JSON.stringify(decodedSelection.copiedArtifact)}.`,
-    ])
+    diagnostics.add(
+      artifactPath,
+      'case ',
+      quoted(caseId),
+      ' does not support target ',
+      quoted(decodedSelection.copiedArtifact),
+    )
+    throw diagnostics.error('invalid-copied-artifact')
   }
 
   const eligibleArtifacts =
@@ -1354,18 +1629,25 @@ export function resolveScenarioSelection(
       : undefined
   if (path === 'registryTailwind' && selectedArtifactName === undefined) {
     if (scenarioCase.copiedArtifactNames !== undefined && eligibleArtifacts.length === 0) {
-      throw new PresentationScenarioError('invalid-copied-artifact', [
-        `$.copiedArtifact: case ${JSON.stringify(caseId)} has no eligible registry target.`,
-      ])
+      diagnostics.add(artifactPath, 'case ', quoted(caseId), ' has no eligible registry target')
+      throw diagnostics.error('invalid-copied-artifact')
     }
     if (eligibleArtifacts.length > 1) {
-      const names = eligibleArtifacts
-        .map(({ name }) => JSON.stringify(name))
-        .sort()
-        .join(', ')
-      throw new PresentationScenarioError('invalid-copied-artifact', [
-        `$.copiedArtifact: case ${JSON.stringify(caseId)} has multiple eligible registry targets; select one of ${names}.`,
-      ])
+      const names = boundedSortedArtifactNames(eligibleArtifacts)
+      const reason: DiagnosticPart[] = [
+        'case ',
+        quoted(caseId),
+        ' has multiple eligible registry targets; select one of ',
+      ]
+      for (let index = 0; index < names.length; index += 1) {
+        if (index > 0) reason.push(', ')
+        reason.push(quoted(names[index]!))
+      }
+      if (names.length < eligibleArtifacts.length) {
+        reason.push(', and ', eligibleArtifacts.length - names.length, ' more')
+      }
+      diagnostics.add(artifactPath, ...reason)
+      throw diagnostics.error('invalid-copied-artifact')
     }
   }
   const copiedArtifact = entry.copiedArtifacts.find(({ name }) => name === selectedArtifactName)

@@ -6,6 +6,8 @@ import { PRESENTATION_SCENARIO_ENVIRONMENT_VALUES as rootEnvironmentValues } fro
 // @ts-expect-error direct-subpath-only value
 import { DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT as rootDefaultEnvironment } from '../src/index.js'
 // @ts-expect-error direct-subpath-only value
+import { PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS as rootDiagnosticLimits } from '../src/index.js'
+// @ts-expect-error direct-subpath-only value
 import { PRESENTATION_SCENARIO_PATHS as rootPaths } from '../src/index.js'
 // @ts-expect-error direct-subpath-only value
 import { PresentationScenarioError as RootScenarioError } from '../src/index.js'
@@ -16,6 +18,8 @@ import { resolveScenarioSelection as rootResolve } from '../src/index.js'
 
 // @ts-expect-error direct-subpath-only type
 import type { PresentationScenarioJson as RootJson } from '../src/index.js'
+// @ts-expect-error direct-subpath-only type
+import type { PresentationScenarioJsonSnapshot as RootJsonSnapshot } from '../src/index.js'
 // @ts-expect-error direct-subpath-only type
 import type { PresentationScenarioEnvironmentAxis as RootAxis } from '../src/index.js'
 // @ts-expect-error direct-subpath-only type
@@ -44,6 +48,7 @@ import type { PresentationScenarioErrorCode as RootErrorCode } from '../src/inde
 void [
   rootEnvironmentValues,
   rootDefaultEnvironment,
+  rootDiagnosticLimits,
   rootPaths,
   RootScenarioError,
   rootCompile,
@@ -51,6 +56,7 @@ void [
 ]
 type RootTypes =
   | RootJson
+  | RootJsonSnapshot
   | RootAxis
   | RootEnvironment
   | RootPath

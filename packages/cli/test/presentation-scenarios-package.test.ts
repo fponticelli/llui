@@ -21,6 +21,7 @@ const DIRECT_EXPORTS = [
   'CompiledPresentationScenarioCase',
   'CompiledPresentationScenarioFamily',
   'DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT',
+  'PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS',
   'PRESENTATION_SCENARIO_ENVIRONMENT_VALUES',
   'PRESENTATION_SCENARIO_PATHS',
   'PresentationScenarioCase',
@@ -31,6 +32,7 @@ const DIRECT_EXPORTS = [
   'PresentationScenarioError',
   'PresentationScenarioErrorCode',
   'PresentationScenarioJson',
+  'PresentationScenarioJsonSnapshot',
   'PresentationScenarioPath',
   'PresentationScenarioSelection',
   'ResolvedPresentationScenarioSelection',
@@ -259,6 +261,7 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
     expect(Object.keys(direct).sort()).toEqual(
       [
         'DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT',
+        'PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS',
         'PRESENTATION_SCENARIO_ENVIRONMENT_VALUES',
         'PRESENTATION_SCENARIO_PATHS',
         'PresentationScenarioError',
@@ -302,6 +305,7 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
       consumerPath,
       `import {
         DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
+        PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS,
         PRESENTATION_SCENARIO_ENVIRONMENT_VALUES,
         PRESENTATION_SCENARIO_PATHS,
         PresentationScenarioError,
@@ -317,6 +321,7 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
       const resolved = {} as unknown as ResolvedPresentationScenarioSelection
       void [
         DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
+        PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS,
         PRESENTATION_SCENARIO_ENVIRONMENT_VALUES,
         PRESENTATION_SCENARIO_PATHS,
         PresentationScenarioError,
@@ -357,9 +362,12 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
       runtimeConsumerPath,
       `import {
         DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
+        PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS,
         PRESENTATION_SCENARIO_PATHS,
       } from '@llui/cli/presentation-scenarios'
       if (DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT.theme !== 'light') throw new Error('bad default')
+      if (PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.issues !== 100) throw new Error('bad diagnostic limits')
+      if (PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.messageUnits !== 16384) throw new Error('bad diagnostic units')
       if (PRESENTATION_SCENARIO_PATHS.join(',') !== 'baseline,registryTailwind') throw new Error('bad paths')
       `,
     )

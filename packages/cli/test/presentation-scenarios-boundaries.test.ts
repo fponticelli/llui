@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { ProductContractSchema, type ProductContract } from '../src/product-contract'
 import {
   DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
+  PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS,
   PRESENTATION_SCENARIO_ENVIRONMENT_VALUES,
   PRESENTATION_SCENARIO_PATHS,
   PresentationScenarioError,
@@ -13,6 +14,21 @@ import {
 } from '../src/presentation-scenarios'
 
 const styled = { mode: 'styled' as const }
+function expectBoundedDiagnostics(
+  error: PresentationScenarioError,
+  code: PresentationScenarioError['code'],
+  expectedIssueCount: number = PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.issues,
+): void {
+  expect(error.code).toBe(code)
+  expect(error.issues).toHaveLength(expectedIssueCount)
+  expect(error.message.length).toBeLessThanOrEqual(
+    PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.messageUnits,
+  )
+  expect(error.message.length).toBe(
+    error.issues.reduce((units, issue) => units + issue.length, error.issues.length - 1),
+  )
+  expect(error.issues.filter((issue) => issue.includes('diagnostics truncated'))).toHaveLength(1)
+}
 
 function productContract(): ProductContract {
   return ProductContractSchema.parse({
@@ -475,7 +491,7 @@ describe('presentation scenario boundary decoding', () => {
     })
   })
 
-  it('snapshots every own field descriptor once and ignores family-local case payloads', () => {
+  it('rejects extra source-case fields without reading their values', () => {
     let rendererReads = 0
     const scenarioCase = {
       id: 'open',
@@ -504,10 +520,15 @@ describe('presentation scenario boundary decoding', () => {
       },
     })
 
-    const catalog = compileScenarioFamily(productContract(), 'menus-overlays', proxiedDefinitions)
+    const error = errorFrom(() =>
+      compileScenarioFamily(productContract(), 'menus-overlays', proxiedDefinitions),
+    )
     expect(descriptorReads.get('component:dialog')).toBe(1)
     expect(rendererReads).toBe(0)
-    expect(catalog.scenarios[0]!.cases[0]).not.toHaveProperty('renderer')
+    expect(error).toMatchObject({
+      code: 'invalid-definitions',
+      issues: ['$["component:dialog"].cases[0].renderer: unexpected field.'],
+    })
   })
 
   it('returns typed deterministic limit failures instead of native recursion errors', () => {
@@ -582,6 +603,162 @@ describe('presentation scenario boundary decoding', () => {
     expect(propertyNameError.message.length).toBeLessThan(1_000)
   })
 
+  it('bounds structural-decoder diagnostics deterministically', () => {
+    const scenarioCase: Record<string, unknown> = {
+      id: 'open',
+      label: 'Open',
+      input: null,
+      environmentAxes: [],
+    }
+    for (let index = 0; index < 250; index += 1) {
+      scenarioCase[`metadata${index}`] = index
+    }
+    const invalidDefinitions = {
+      'component:dialog': { defaultCaseId: 'open', cases: [scenarioCase] },
+    }
+    const first = errorFrom(() =>
+      compileScenarioFamily(productContract(), 'menus-overlays', invalidDefinitions),
+    )
+    const second = errorFrom(() =>
+      compileScenarioFamily(productContract(), 'menus-overlays', invalidDefinitions),
+    )
+
+    expectBoundedDiagnostics(first, 'invalid-definitions')
+    expect(second.issues).toEqual(first.issues)
+  })
+
+  it('bounds case-semantic diagnostics from a maximum-size array', () => {
+    const environmentAxes = Array.from({ length: 1_000 }, (_, index) => `axis-${index}`)
+    const invalidDefinitions = {
+      'component:dialog': {
+        defaultCaseId: 'open',
+        cases: [{ id: 'open', label: 'Open', input: null, environmentAxes }],
+      },
+    }
+    const error = errorFrom(() =>
+      compileScenarioFamily(productContract(), 'menus-overlays', invalidDefinitions),
+    )
+
+    expectBoundedDiagnostics(error, 'invalid-definitions')
+  })
+
+  it('bounds catalog-integrity diagnostics independently of decoding', () => {
+    const catalog = compileScenarioFamily(productContract(), 'menus-overlays', definitions())
+    const invalidCatalog = {
+      ...catalog,
+      scenarios: Array.from({ length: 300 }, () => catalog.scenarios[0]!),
+    }
+    const error = errorFrom(() =>
+      resolveScenarioSelection(productContract(), invalidCatalog, {
+        productId: 'dialog',
+        path: 'baseline',
+      }),
+    )
+
+    expectBoundedDiagnostics(error, 'invalid-catalog')
+  })
+
+  it('bounds resolver-selection decoding independently of environment semantics', () => {
+    const catalog = compileScenarioFamily(productContract(), 'menus-overlays', definitions())
+    const selection: Record<string, unknown> = { productId: 'dialog', path: 'baseline' }
+    for (let index = 0; index < 250; index += 1) selection[`metadata${index}`] = index
+    const error = errorFrom(() => resolveScenarioSelection(productContract(), catalog, selection))
+
+    expectBoundedDiagnostics(error, 'invalid-selection')
+  })
+
+  it('bounds resolver environment diagnostics independently of selection decoding', () => {
+    const catalog = compileScenarioFamily(productContract(), 'menus-overlays', definitions())
+    const environment = Object.fromEntries(
+      Array.from({ length: 500 }, (_, index) => [`axis${index}`, 'unknown']),
+    )
+    const error = errorFrom(() =>
+      resolveScenarioSelection(productContract(), catalog, {
+        productId: 'dialog',
+        path: 'baseline',
+        environment,
+      }),
+    )
+
+    expectBoundedDiagnostics(error, 'invalid-environment')
+  })
+
+  it('bounds long diagnostic paths before rendering them', () => {
+    const longScenarioId = `stale-${'x'.repeat(20_000)}`
+    const definition = definitions()['component:dialog']!
+    const invalidDefinitions = {
+      'component:dialog': definition,
+      [longScenarioId]: definition,
+    }
+    const first = errorFrom(() =>
+      compileScenarioFamily(productContract(), 'menus-overlays', invalidDefinitions),
+    )
+    const second = errorFrom(() =>
+      compileScenarioFamily(productContract(), 'menus-overlays', invalidDefinitions),
+    )
+
+    expectBoundedDiagnostics(first, 'invalid-definitions', 1)
+    expect(first.issues).toEqual([
+      '$: diagnostics truncated at 100 issues or 16384 aggregate message/path units.',
+    ])
+    expect(second.issues).toEqual(first.issues)
+  })
+
+  it('types throwing, mutating, and huge proxy reflection as bounded boundary errors', () => {
+    const throwing = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error('ownKeys trap')
+        },
+      },
+    )
+    expect(
+      errorFrom(() => compileScenarioFamily(productContract(), 'menus-overlays', throwing)),
+    ).toMatchObject({
+      code: 'invalid-definitions',
+      issues: ['$: value could not be inspected safely.'],
+    })
+
+    const mutatingTarget = definitions() as Record<string, unknown>
+    const mutating = new Proxy(mutatingTarget, {
+      ownKeys(target) {
+        const keys = Reflect.ownKeys(target)
+        delete target['component:dialog']
+        return keys
+      },
+    })
+    expect(
+      errorFrom(() => compileScenarioFamily(productContract(), 'menus-overlays', mutating)),
+    ).toMatchObject({
+      code: 'invalid-definitions',
+      issues: ['$: own properties changed while being inspected.'],
+    })
+
+    let descriptorReads = 0
+    const huge = new Proxy(
+      {},
+      {
+        ownKeys() {
+          return Array.from({ length: 20_000 }, (_, index) => `key${index}`)
+        },
+        getOwnPropertyDescriptor() {
+          descriptorReads += 1
+          return { configurable: true, enumerable: true, value: null }
+        },
+      },
+    )
+    const hugeError = errorFrom(() =>
+      compileScenarioFamily(productContract(), 'menus-overlays', huge),
+    )
+    expect(hugeError).toMatchObject({
+      code: 'invalid-definitions',
+      issues: ['$: aggregate object-field limit of 10000 exceeded.'],
+    })
+    expect(hugeError.message.length).toBeLessThan(1_000)
+    expect(descriptorReads).toBe(0)
+  })
+
   it('deep-freezes constants, catalogs, resolver snapshots, and error diagnostics', () => {
     const source = { nested: { labels: ['Ada', 'Grace'] } }
     const sourceDefinitions = definitions(source) as unknown as {
@@ -596,6 +773,11 @@ describe('presentation scenario boundary decoding', () => {
     expect(Object.isFrozen(PRESENTATION_SCENARIO_ENVIRONMENT_VALUES.theme)).toBe(true)
     expect(Object.isFrozen(DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT)).toBe(true)
     expect(Object.isFrozen(PRESENTATION_SCENARIO_PATHS)).toBe(true)
+    expect(PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS).toEqual({
+      issues: 100,
+      messageUnits: 16_384,
+    })
+    expect(Object.isFrozen(PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS)).toBe(true)
     expect(() =>
       (PRESENTATION_SCENARIO_ENVIRONMENT_VALUES.theme as unknown as string[]).push('sepia'),
     ).toThrow(TypeError)

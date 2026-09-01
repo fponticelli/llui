@@ -3,6 +3,8 @@ import {
   compileScenarioFamily,
   resolveScenarioSelection,
   type CompiledPresentationScenario,
+  type PresentationScenarioDefinitions,
+  type PresentationScenarioJsonSnapshot,
   type ResolvedPresentationScenarioSelection,
 } from '../src/presentation-scenarios.js'
 
@@ -100,3 +102,43 @@ const erasedResolved = resolveScenarioSelection(contract, serializedCatalog, ser
 const erasedScenarioId: string = erasedCatalog.scenarios[0]!.scenarioId
 const erasedResolvedId: string = erasedResolved.scenarioId
 void [erasedScenarioId, erasedResolvedId]
+
+const mutableDefinitions = {
+  'component:dialog': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open',
+        input: { nested: { enabled: true, labels: ['Ada'] } },
+        environmentAxes: ['motion'],
+        copiedArtifactNames: ['dialog'],
+      },
+    ],
+  },
+} satisfies PresentationScenarioDefinitions
+
+const mutableCatalog = compileScenarioFamily(contract, 'menus-overlays', mutableDefinitions)
+const mutableCase = mutableCatalog.scenarios[0]!.cases[0]!
+// @ts-expect-error emitted JSON arrays are recursively readonly without requiring `as const`
+mutableCase.input.nested.labels.push('Grace')
+// @ts-expect-error emitted JSON objects are recursively readonly without requiring `as const`
+mutableCase.input.nested.enabled = false
+// @ts-expect-error emitted environment axes are normalized to readonly arrays
+mutableCase.environmentAxes.push('theme')
+// @ts-expect-error emitted copied-artifact targets are normalized to readonly arrays
+mutableCase.copiedArtifactNames!.push('sheet')
+
+const mutableResolved = resolveScenarioSelection(contract, mutableCatalog, {
+  productId: 'dialog',
+  path: 'baseline',
+})
+// @ts-expect-error resolver cases retain the catalog's recursive readonly snapshot
+mutableResolved.case.input.nested.labels.push('Lin')
+
+type ExplicitMutableSnapshot = PresentationScenarioJsonSnapshot<{
+  nested: { labels: string[] }
+}>
+declare const explicitMutableSnapshot: ExplicitMutableSnapshot
+// @ts-expect-error the exported snapshot helper is recursively readonly
+explicitMutableSnapshot.nested.labels.push('mutation')

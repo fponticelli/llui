@@ -376,7 +376,7 @@ describe('compileScenarioFamily', () => {
     expect(JSON.stringify(JSON.parse(encoded))).toBe(encoded)
   })
 
-  it('retains the family-owned case union while emitting only protocol fields', () => {
+  it('retains the family-owned case union for exact protocol cases', () => {
     const drawerContract = ProductContractSchema.parse({
       version: 2,
       entries: [product('drawer')],
@@ -391,7 +391,6 @@ describe('compileScenarioFamily', () => {
             label: 'Open',
             input: { state: 'open', focus: 'first' },
             environmentAxes: ['motion'],
-            renderer: () => 'must stay family-local',
           },
           {
             id: 'closed',
@@ -402,12 +401,19 @@ describe('compileScenarioFamily', () => {
         ],
       },
     } as const
+    const rendererAdapters = {
+      'component:drawer': {
+        open: () => 'family renderer',
+        closed: () => 'family renderer',
+      },
+    } as const
 
     const compiled = compileScenarioFamily(drawerContract, 'menus-overlays', definitions)
     const compiledCase = compiled.scenarios[0]!.cases[0]!
 
     expect(Object.keys(compiledCase)).toEqual(['id', 'label', 'input', 'environmentAxes'])
     expect(compiledCase).not.toHaveProperty('renderer')
+    expect(rendererAdapters['component:drawer'][compiledCase.id]()).toBe('family renderer')
     expectTypeOf(compiledCase.input).toEqualTypeOf<
       { readonly state: 'open'; readonly focus: 'first' } | { readonly state: 'closed' }
     >()
