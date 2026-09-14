@@ -124,6 +124,66 @@ export function findItem(items: MenuNode[], value: string): MenuNode | null {
   return null
 }
 
+/**
+ * The root-first chain of values from the top of the tree down to `value`,
+ * inclusive — i.e. the `openPath` under which `value`'s submenu is open.
+ * `null` when `value` is not in the tree.
+ *
+ * `openPath` is a PATH, and every consumer reads it as one: `openValues` turns
+ * it into a membership set driving `aria-expanded` on every subTrigger and
+ * `data-state` on every subContent, `closeSub` POPS it, and the hover-close
+ * guard compares against its LAST entry. Deriving the whole chain from the item
+ * tree is what keeps that invariant total (#271): opening a sibling REPLACES
+ * the branch open at that depth instead of nesting under it, and a request for
+ * a value whose ancestors are not open opens them rather than producing an
+ * array that is not a path at all. Truncating the existing array to the new
+ * value's DEPTH is not equivalent — it is only correct while the new value's
+ * parent already sits on the path, which nothing enforces.
+ */
+export function openPathTo(items: MenuNode[], value: string): string[] | null {
+  const walk = (list: MenuNode[], trail: readonly string[]): string[] | null => {
+    for (const it of list) {
+      const next = [...trail, it.value]
+      if (it.value === value) return next
+      if (it.children) {
+        const found = walk(it.children, next)
+        if (found) return found
+      }
+    }
+    return null
+  }
+  return walk(items, [])
+}
+
+/**
+ * The longest PREFIX of `openPath` that is still a real chain of sub-menus in
+ * `items`. Each step is matched against the DIRECT children of the level above
+ * it — not `findItem`, which would keep a path whose value was re-parented
+ * elsewhere in the tree and so is no longer a path at all.
+ *
+ * "Still a sub-menu" is the SAME predicate `openSub` opens on — a `children`
+ * array is present — deliberately not "and it is non-empty". A submenu whose
+ * children arrive later is filled by `setItems`, so closing it on an interim
+ * `setItems` that still carries `children: []` would collapse exactly the
+ * async case the message exists to serve.
+ */
+export function validOpenPrefix(items: MenuNode[], openPath: readonly string[]): string[] {
+  const out: string[] = []
+  let level = items
+  for (const value of openPath) {
+    const node = level.find((it) => it.value === value)
+    if (!node || !node.children) break
+    out.push(value)
+    level = node.children
+  }
+  return out
+}
+
+/** Whether two open-paths name the same chain. */
+function samePath(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i])
+}
+
 /** The list of items at a given level. `''` is the root; otherwise the children of that value. */
 export function levelItems(items: MenuNode[], level: string): MenuNode[] {
   if (level === '') return items
@@ -212,6 +272,42 @@ export function closedPatch(
   }
 }
 
+/**
+ * Open `value`'s submenu, REPLACING whatever branch is open beside it rather
+ * than nesting under it (#271). Shared by `openSub` and by `applySelect`'s
+ * parent branch, which were two copies of the same append.
+ *
+ * Highlights are pruned for every level the truncation closes, mirroring what
+ * `closeSub` already does for the one level it pops — otherwise `highlights`
+ * accumulates an entry per closed level in state the machine claims to own. The
+ * newly opened level is highlighted at its first navigable child; a level that
+ * was ALREADY open keeps its highlight, so re-opening an ancestor collapses the
+ * deeper branch without also losing the user's place at that level.
+ */
+function openSubmenu<S extends MenuTreeState>(
+  state: S,
+  value: string,
+  children: MenuNode[],
+): [S, never[]] {
+  const openPath = openPathTo(state.items, value)
+  if (openPath === null) return [state, []]
+  // Already exactly this chain: return the SAME reference so the reconciler
+  // skips the commit, and leave the level's highlight where the user left it.
+  if (samePath(state.openPath, openPath)) return [state, []]
+
+  const keep = new Set(openPath)
+  let highlights = state.highlights
+  const dropped = state.openPath.filter((v) => !keep.has(v))
+  if (dropped.length > 0) {
+    highlights = { ...highlights }
+    for (const v of dropped) delete highlights[v]
+  }
+  if (!state.openPath.includes(value)) {
+    highlights = setHighlight(highlights, value, firstNav(children))
+  }
+  return [{ ...state, openPath, highlights }, []]
+}
+
 /** Shared selection logic for `select` and `selectHighlighted`. */
 function applySelect<S extends MenuTreeState>(state: S, value: string): [S, never[]] {
   const item = findItem(state.items, value)
@@ -219,15 +315,7 @@ function applySelect<S extends MenuTreeState>(state: S, value: string): [S, neve
 
   // A parent with children opens its submenu rather than selecting.
   if (item.children && item.children.length > 0) {
-    if (state.openPath[state.openPath.length - 1] === value) return [state, []]
-    return [
-      {
-        ...state,
-        openPath: [...state.openPath, value],
-        highlights: setHighlight(state.highlights, value, firstNav(item.children)),
-      },
-      [],
-    ]
+    return openSubmenu(state, value, item.children)
   }
 
   if (item.kind === 'checkbox') {
@@ -329,14 +417,7 @@ export function reduceMenuTree<S extends MenuTreeState>(state: S, msg: MenuTreeM
       if (!state.open) return [state, []]
       const parent = findItem(state.items, msg.value)
       if (!parent || !parent.children || parent.disabled) return [state, []]
-      return [
-        {
-          ...state,
-          openPath: [...state.openPath, msg.value],
-          highlights: setHighlight(state.highlights, msg.value, firstNav(parent.children)),
-        },
-        [],
-      ]
+      return openSubmenu(state, msg.value, parent.children)
     }
     case 'closeSub': {
       if (state.openPath.length === 0) return [state, []]
@@ -352,8 +433,22 @@ export function reduceMenuTree<S extends MenuTreeState>(state: S, msg: MenuTreeM
     }
     case 'select':
       return applySelect(state, msg.value)
-    case 'setItems':
-      return [{ ...state, items: msg.items }, []]
+    case 'setItems': {
+      // `openPath` names values in the OLD tree. Left alone, a branch the new
+      // items no longer contain stays "open": `deepestMenuLevel` keeps naming
+      // it, so `levelItems` answers [] and every arrow key is inert while
+      // Escape pops a submenu nothing is rendering instead of closing the menu.
+      // Same class as #271 — the array stops being a path — reached by a
+      // different route, so it is truncated to the part that still is one.
+      const openPath = validOpenPrefix(msg.items, state.openPath)
+      if (openPath.length === state.openPath.length) {
+        return [{ ...state, items: msg.items }, []]
+      }
+      const keep = new Set(openPath)
+      const highlights = { ...state.highlights }
+      for (const v of state.openPath) if (!keep.has(v)) delete highlights[v]
+      return [{ ...state, items: msg.items, openPath, highlights }, []]
+    }
     case 'typeahead': {
       if (!state.open) return [state, []]
       const typeaheadExpiresAt = msg.now + TYPEAHEAD_TIMEOUT_MS
