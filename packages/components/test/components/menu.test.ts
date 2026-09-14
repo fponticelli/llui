@@ -500,6 +500,58 @@ describe('menu openPath stays a path (#271)', () => {
     expect(s2.openPath).toEqual(['view'])
   })
 
+  // `highlights` names values in the old tree too, and a level that survives
+  // can be left pointing at an item that did not — `aria-activedescendant`
+  // then names an id nothing renders, and `data-highlighted` sits on nothing.
+  it('setItems nulls a highlight whose item is gone from a surviving level', () => {
+    const s1 = run([{ type: 'openSub', value: 'view' }])
+    expect(s1.highlights['view']).toBe('dark')
+    const [s2] = update(
+      { ...s1, highlights: { ...s1.highlights, '': 'view' } },
+      {
+        type: 'setItems',
+        items: [{ value: 'view', kind: 'action', children: [{ value: 'zoom', kind: 'action' }] }],
+      },
+    )
+    // The root level survives and still holds `view`; the submenu level
+    // survives but its highlighted `dark` is gone.
+    expect(s2.openPath).toEqual(['view'])
+    expect(s2.highlights['']).toBe('view')
+    expect(s2.highlights['view']).toBeNull()
+  })
+
+  it('setItems nulls the ROOT highlight when its item is gone', () => {
+    const s1 = run([])
+    const [s2] = update(
+      { ...s1, highlights: { '': 'file' } },
+      { type: 'setItems', items: [{ value: 'other', kind: 'action' }] },
+    )
+    expect(s2.highlights['']).toBeNull()
+  })
+
+  // Dropped for the same reason `highlight` refuses to MOVE onto a disabled
+  // item: keeping it announces a target the machine will not let you select.
+  it('setItems nulls a highlight whose item became disabled or a separator', () => {
+    const s1 = run([])
+    const [disabled] = update(
+      { ...s1, highlights: { '': 'file' } },
+      { type: 'setItems', items: [{ value: 'file', kind: 'action', disabled: true }] },
+    )
+    expect(disabled.highlights['']).toBeNull()
+    const [separator] = update(
+      { ...s1, highlights: { '': 'file' } },
+      { type: 'setItems', items: [{ value: 'file', kind: 'separator' }] },
+    )
+    expect(separator.highlights['']).toBeNull()
+  })
+
+  it('setItems leaves a still-navigable highlight alone, by reference', () => {
+    const s1 = run([{ type: 'openSub', value: 'view' }])
+    const [s2] = update(s1, { type: 'setItems', items: branches })
+    expect(s2.highlights).toBe(s1.highlights)
+    expect(s2.openPath).toEqual(['view'])
+  })
+
   // The rendered half of the same bug: every value in `openPath` reports open,
   // so the append announced three expanded submenus to assistive tech and left
   // three sub-contents mounted over each other.

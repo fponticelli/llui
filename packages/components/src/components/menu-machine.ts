@@ -273,6 +273,46 @@ export function closedPatch(
 }
 
 /**
+ * `highlights` after an item-tree swap. Two repairs, because after `setItems`
+ * BOTH halves of a highlight entry can be stale: the LEVEL it is keyed on (the
+ * branch may be gone — pruned against the surviving `openPath`) and the VALUE
+ * it names (the item may be gone, or may have become a separator or disabled).
+ *
+ * An orphaned value is set to `null`, not re-pointed at the level's first item:
+ * the item the user was on has gone, and inventing a new virtual-focus target
+ * moves the user somewhere they never navigated to. `null` is a state
+ * `highlight` already models, `aria-activedescendant` then reports nothing, and
+ * the next ArrowDown lands on the first navigable item because `nextNav` reads
+ * a `null` cursor as "before the start".
+ *
+ * A value that merely became DISABLED is dropped for the same reason the
+ * `highlight` reducer refuses to move onto a disabled item — keeping it would
+ * leave `aria-activedescendant` and `data-highlighted` on something the machine
+ * would not let the user select.
+ *
+ * Returns the SAME reference when nothing changed, so an unrelated `setItems`
+ * does not dirty the `highlights` path for the reconciler.
+ */
+function repairHighlights(
+  items: MenuNode[],
+  openPath: readonly string[],
+  previousPath: readonly string[],
+  highlights: Record<string, string | null>,
+): Record<string, string | null> {
+  const keep = new Set(openPath)
+  const closed = previousPath.filter((v) => !keep.has(v) && v in highlights)
+  const orphaned = ['', ...openPath].filter((level) => {
+    const value = highlights[level] ?? null
+    return value !== null && !navigable(levelItems(items, level)).includes(value)
+  })
+  if (closed.length === 0 && orphaned.length === 0) return highlights
+  const next = { ...highlights }
+  for (const v of closed) delete next[v]
+  for (const level of orphaned) next[level] = null
+  return next
+}
+
+/**
  * Open `value`'s submenu, REPLACING whatever branch is open beside it rather
  * than nesting under it (#271). Shared by `openSub` and by `applySelect`'s
  * parent branch, which were two copies of the same append.
@@ -434,19 +474,19 @@ export function reduceMenuTree<S extends MenuTreeState>(state: S, msg: MenuTreeM
     case 'select':
       return applySelect(state, msg.value)
     case 'setItems': {
-      // `openPath` names values in the OLD tree. Left alone, a branch the new
-      // items no longer contain stays "open": `deepestMenuLevel` keeps naming
-      // it, so `levelItems` answers [] and every arrow key is inert while
-      // Escape pops a submenu nothing is rendering instead of closing the menu.
-      // Same class as #271 — the array stops being a path — reached by a
-      // different route, so it is truncated to the part that still is one.
+      // `openPath` and `highlights` both name values in the OLD tree, and both
+      // go stale here. Left alone, a branch the new items no longer contain
+      // stays "open": `deepestMenuLevel` keeps naming it, so `levelItems`
+      // answers [] and every arrow key is inert while Escape pops a submenu
+      // nothing is rendering instead of closing the menu. Same class as #271 —
+      // the array stops being a path — reached by a different route, so it is
+      // truncated to the part that still is one, and the highlights are
+      // repaired against the tree that actually arrived.
       const openPath = validOpenPrefix(msg.items, state.openPath)
-      if (openPath.length === state.openPath.length) {
+      const highlights = repairHighlights(msg.items, openPath, state.openPath, state.highlights)
+      if (openPath.length === state.openPath.length && highlights === state.highlights) {
         return [{ ...state, items: msg.items }, []]
       }
-      const keep = new Set(openPath)
-      const highlights = { ...state.highlights }
-      for (const v of state.openPath) if (!keep.has(v)) delete highlights[v]
       return [{ ...state, items: msg.items, openPath, highlights }, []]
     }
     case 'typeahead': {
