@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { init, update, connect, isPresent, type MenuItem } from '../../src/components/menu'
+import { deepestMenuLevel, levelItems } from '../../src/components/menu-machine'
 import { rootSignal, signalOf, read } from '../_signal'
 
 const flat: MenuItem[] = [
@@ -349,6 +350,224 @@ describe('menu submenu reducer', () => {
     s0.highlights[''] = 'apple'
     const [s] = update(s0, { type: 'typeahead', level: '', char: 'a', now: 1000 })
     expect(s.highlights['']).toBe('apricot')
+  })
+})
+
+// #271 — `openPath` is a PATH from the root, and every consumer reads it as
+// one: `openValues` makes it a membership set driving `aria-expanded` on every
+// subTrigger and `data-state` on every subContent, `closeSub` pops it, and the
+// hover-close guard compares its LAST entry. `openSub` used to APPEND
+// unconditionally, so sliding a pointer down a list of sibling branches left
+// every submenu it passed open and overlapping — the hover-close guard then
+// never fired for the shallower ones, because they were no longer last.
+describe('menu openPath stays a path (#271)', () => {
+  const branches: MenuItem[] = [
+    { value: 'file', kind: 'action', children: [{ value: 'open', kind: 'action' }] },
+    { value: 'edit', kind: 'action', children: [{ value: 'undo', kind: 'action' }] },
+    {
+      value: 'view',
+      kind: 'action',
+      children: [
+        { value: 'dark', kind: 'action' },
+        { value: 'zoom', kind: 'action', children: [{ value: 'in', kind: 'action' }] },
+      ],
+    },
+  ]
+
+  const openMenu = (): ReturnType<typeof init> => ({ ...init({ items: branches }), open: true })
+
+  const run = (msgs: readonly Parameters<typeof update>[1][]): ReturnType<typeof init> => {
+    let s = openMenu()
+    for (const m of msgs) s = update(s, m)[0]
+    return s
+  }
+
+  it('opening a sibling replaces the branch open at that depth', () => {
+    const s = run(
+      (['file', 'edit', 'view'] as const).map((value) => ({ type: 'openSub', value }) as const),
+    )
+    expect(s.openPath).toEqual(['view'])
+  })
+
+  it('selecting a sibling parent replaces it too', () => {
+    const s = run(
+      (['file', 'edit', 'view'] as const).map((value) => ({ type: 'select', value }) as const),
+    )
+    expect(s.openPath).toEqual(['view'])
+  })
+
+  // The append made `openSub` non-idempotent while `applySelect` guarded
+  // against it, and hover-then-click on one subTrigger sends it twice:
+  // `onPointerEnter` schedules `openSub` and `onClick` sends it. The duplicate
+  // then survived one `closeSub`, so the next Escape / ArrowLeft looked inert.
+  it('re-opening the deepest submenu is a no-op returning the same reference', () => {
+    const s1 = run([{ type: 'openSub', value: 'file' }])
+    const [s2] = update(s1, { type: 'openSub', value: 'file' })
+    expect(s2).toBe(s1)
+    const [s3] = update(s1, { type: 'select', value: 'file' })
+    expect(s3).toBe(s1)
+  })
+
+  it('one closeSub after switching siblings closes the menu back to the root', () => {
+    const s = run([
+      { type: 'openSub', value: 'file' },
+      { type: 'openSub', value: 'edit' },
+      { type: 'closeSub' },
+    ])
+    expect(s.openPath).toEqual([])
+  })
+
+  // Depth-truncation would answer `['file', 'zoom']` here — still not a path,
+  // and `view`'s subContent would then read `closed` while its own child read
+  // `open`. Deriving the chain from the tree is total.
+  it('opening a nested value whose ancestors are closed opens the whole chain', () => {
+    const s = run([
+      { type: 'openSub', value: 'file' },
+      { type: 'openSub', value: 'zoom' },
+    ])
+    expect(s.openPath).toEqual(['view', 'zoom'])
+  })
+
+  it('re-opening an ancestor collapses the deeper branch but keeps its own highlight', () => {
+    const s1 = run([{ type: 'openSub', value: 'zoom' }])
+    expect(s1.openPath).toEqual(['view', 'zoom'])
+    const s2 = update(
+      { ...s1, highlights: { ...s1.highlights, view: 'zoom' } },
+      {
+        type: 'openSub',
+        value: 'view',
+      },
+    )[0]
+    expect(s2.openPath).toEqual(['view'])
+    // The level that stayed open keeps the user's place; the closed one is
+    // pruned, exactly as `closeSub` prunes the level it pops.
+    expect(s2.highlights['view']).toBe('zoom')
+    expect(s2.highlights['zoom']).toBeUndefined()
+  })
+
+  it('switching siblings prunes the closed branch from highlights', () => {
+    const s = run([
+      { type: 'openSub', value: 'file' },
+      { type: 'openSub', value: 'edit' },
+    ])
+    expect(s.highlights['file']).toBeUndefined()
+    expect(s.highlights['edit']).toBe('undo')
+  })
+
+  // Same class, different route: `setItems` used to leave `openPath` naming
+  // values the new tree no longer contains, so `deepestMenuLevel` kept pointing
+  // at a level with no items — every arrow key inert, and Escape popping a
+  // submenu nothing was rendering instead of closing the menu.
+  it('setItems truncates openPath to the part that is still a path', () => {
+    const s1 = run([{ type: 'openSub', value: 'zoom' }])
+    expect(s1.openPath).toEqual(['view', 'zoom'])
+    // `zoom` is gone; `view` survives and still has children.
+    const [s2] = update(s1, {
+      type: 'setItems',
+      items: [{ value: 'view', kind: 'action', children: [{ value: 'dark', kind: 'action' }] }],
+    })
+    expect(s2.openPath).toEqual(['view'])
+    expect(s2.highlights['zoom']).toBeUndefined()
+    // The whole branch goes away.
+    const [s3] = update(s1, { type: 'setItems', items: [{ value: 'solo', kind: 'action' }] })
+    expect(s3.openPath).toEqual([])
+    expect(levelItems(s3.items, deepestMenuLevel(s3))).toEqual(s3.items)
+  })
+
+  // `openSub` opens on "has a `children` array", so `setItems` must not close
+  // on "has a NON-EMPTY one" — a submenu whose children are still loading is
+  // filled by exactly this message.
+  it('setItems keeps an open submenu whose children have not arrived yet', () => {
+    const s1 = run([{ type: 'openSub', value: 'view' }])
+    const [s2] = update(s1, {
+      type: 'setItems',
+      items: [{ value: 'view', kind: 'action', children: [] }],
+    })
+    expect(s2.openPath).toEqual(['view'])
+  })
+
+  // Direct children, not `findItem`: a value re-parented elsewhere in the tree
+  // is no longer on this path, so keeping it would keep a non-path.
+  it('setItems drops a value that moved under a different parent', () => {
+    const s1 = run([{ type: 'openSub', value: 'zoom' }])
+    const [s2] = update(s1, {
+      type: 'setItems',
+      items: [
+        { value: 'view', kind: 'action', children: [{ value: 'dark', kind: 'action' }] },
+        { value: 'zoom', kind: 'action', children: [{ value: 'in', kind: 'action' }] },
+      ],
+    })
+    expect(s2.openPath).toEqual(['view'])
+  })
+
+  // `highlights` names values in the old tree too, and a level that survives
+  // can be left pointing at an item that did not — `aria-activedescendant`
+  // then names an id nothing renders, and `data-highlighted` sits on nothing.
+  it('setItems nulls a highlight whose item is gone from a surviving level', () => {
+    const s1 = run([{ type: 'openSub', value: 'view' }])
+    expect(s1.highlights['view']).toBe('dark')
+    const [s2] = update(
+      { ...s1, highlights: { ...s1.highlights, '': 'view' } },
+      {
+        type: 'setItems',
+        items: [{ value: 'view', kind: 'action', children: [{ value: 'zoom', kind: 'action' }] }],
+      },
+    )
+    // The root level survives and still holds `view`; the submenu level
+    // survives but its highlighted `dark` is gone.
+    expect(s2.openPath).toEqual(['view'])
+    expect(s2.highlights['']).toBe('view')
+    expect(s2.highlights['view']).toBeNull()
+  })
+
+  it('setItems nulls the ROOT highlight when its item is gone', () => {
+    const s1 = run([])
+    const [s2] = update(
+      { ...s1, highlights: { '': 'file' } },
+      { type: 'setItems', items: [{ value: 'other', kind: 'action' }] },
+    )
+    expect(s2.highlights['']).toBeNull()
+  })
+
+  // Dropped for the same reason `highlight` refuses to MOVE onto a disabled
+  // item: keeping it announces a target the machine will not let you select.
+  it('setItems nulls a highlight whose item became disabled or a separator', () => {
+    const s1 = run([])
+    const [disabled] = update(
+      { ...s1, highlights: { '': 'file' } },
+      { type: 'setItems', items: [{ value: 'file', kind: 'action', disabled: true }] },
+    )
+    expect(disabled.highlights['']).toBeNull()
+    const [separator] = update(
+      { ...s1, highlights: { '': 'file' } },
+      { type: 'setItems', items: [{ value: 'file', kind: 'separator' }] },
+    )
+    expect(separator.highlights['']).toBeNull()
+  })
+
+  it('setItems leaves a still-navigable highlight alone, by reference', () => {
+    const s1 = run([{ type: 'openSub', value: 'view' }])
+    const [s2] = update(s1, { type: 'setItems', items: branches })
+    expect(s2.highlights).toBe(s1.highlights)
+    expect(s2.openPath).toEqual(['view'])
+  })
+
+  // The rendered half of the same bug: every value in `openPath` reports open,
+  // so the append announced three expanded submenus to assistive tech and left
+  // three sub-contents mounted over each other.
+  it('exactly one subTrigger reports aria-expanded after passing three branches', () => {
+    const parts = connect(rootSignal(), vi.fn(), { id: 'mp' })
+    const s = run(
+      (['file', 'edit', 'view'] as const).map((value) => ({ type: 'openSub', value }) as const),
+    )
+    const expanded = ['file', 'edit', 'view'].filter((v) =>
+      read(parts.subTrigger(v)['aria-expanded'], s),
+    )
+    expect(expanded).toEqual(['view'])
+    const open = ['file', 'edit', 'view'].filter(
+      (v) => read(parts.subContent(v)['data-state'], s) === 'open',
+    )
+    expect(open).toEqual(['view'])
   })
 })
 

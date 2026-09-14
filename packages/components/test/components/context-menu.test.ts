@@ -196,6 +196,20 @@ describe('context-menu submenu reducer', () => {
     expect(s.openPath).toEqual([])
   })
 
+  // #271 lives in the SHARED `reduceMenuTree`, so context-menu (and menubar,
+  // which routes through `menu.connect`) inherit the fix as well as the bug.
+  // Pinned here so a regression cannot be hidden behind menu's own suite.
+  it('opening a sibling submenu replaces the branch open at that depth', () => {
+    const siblings: ContextMenuItem[] = [
+      { value: 'p', kind: 'action', children: [{ value: 'p1', kind: 'action' }] },
+      { value: 'q', kind: 'action', children: [{ value: 'q1', kind: 'action' }] },
+    ]
+    let s = { ...init({ items: siblings }), open: true }
+    s = update(s, { type: 'openSub', value: 'p' })[0]
+    s = update(s, { type: 'openSub', value: 'q' })[0]
+    expect(s.openPath).toEqual(['q'])
+  })
+
   it('selecting a leaf in a submenu closes everything', () => {
     const s0 = { ...init({ items: tree }), open: true, openPath: ['more'] }
     const [s] = update(s0, { type: 'select', value: 'x' })
