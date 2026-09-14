@@ -7,6 +7,44 @@ description: Release history for LLui packages
 
 All notable changes to LLui packages are documented here. LLui is a pre-1.0 project — every release may include breaking changes, though we try to call them out explicitly.
 
+## 2026-09-14 — @llui/components@0.20.0
+
+**Released:** `@llui/components@0.20.0`; `@llui/cli@0.2.1`; `@llui/a2ui@0.3.6`; `@llui/devmode-annotate@0.4.6`; `@llui/devmode-annotate-editor@0.1.7`; `@llui/markdown-editor@0.8.7`
+
+The baseline stylesheet splits into per-family modules, `menu`'s `openPath` becomes a path again, and `@llui/cli` publishes the product contract that describes what every registry component ships.
+
+Four of the six bumps are cascade-only: `workspace:^` publishes as `^0.19.0`, which excludes `0.20.0`, so every dependent of `@llui/components` republishes to keep its peer range satisfiable. Nothing else changed in them.
+
+### Breaking
+
+- **`@llui/components` — `@llui/components/styles/theme-dark.css` is REMOVED.** The baseline stylesheet is now assembled from per-family modules, and the dark half is one of them: `theme.css` imports `semantic-tokens.css` + `semantic-tokens-dark.css` plus `foundation`, `form-controls`, `disclosure-navigation`, `menus-overlays`, `data-display`, `layout` and `motion`. A single `@import '@llui/components/styles/theme.css'` therefore already carries dark mode, which is what made the separate dark entry redundant — but the subpath is gone, so an explicit import of it now fails to resolve. Ten new subpath exports ship alongside for consumers who want one family rather than the aggregate.
+- **`@llui/components` — the optional `tailwindcss` peerDependency is dropped.** The baseline path never entered a Tailwind pipeline, and the copied-registry path takes Tailwind from the consumer's own app. Declaring it here only produced install noise.
+- **`@llui/components` `rating-group` — `clickItem` and `hoverItem` renamed their `isLeftHalf` field to `isStartHalf`.** The old name asserted a physical direction that is wrong under `dir="rtl"`, where the first half of an item is on the right. Behaviour is unchanged in LTR. Breaking only for code dispatching those messages directly; both are `@humanOnly`, so a consumer wiring `connect()`'s own part bag is unaffected.
+
+### Migration
+
+- Replace `import '@llui/components/styles/theme-dark.css'` with nothing — `theme.css` already includes it. If you were importing the pair to control order, import `theme.css` alone; if you were importing ONLY the dark half, import `@llui/components/styles/semantic-tokens-dark.css`.
+- Remove `tailwindcss` from your dependency list only if you installed it _because_ `@llui/components` asked for it. The copied-registry path still needs it.
+- If you dispatch `rating-group`'s `clickItem` / `hoverItem` yourself, rename `isLeftHalf` to `isStartHalf`.
+
+### `@llui/components@0.20.0`
+
+- **Fixed** `menu`'s `openSub` appended to `openPath` unconditionally, so opening a sibling branch NESTED under the one already open instead of replacing it ([#271](https://github.com/fponticelli/llui/issues/271)). Every consumer reads `openPath` as a path from the root — it drives `aria-expanded` on every subTrigger and `data-state` on every subContent, `closeSub` pops it, and the hover-close guard compares its last entry — so sliding a pointer down a list of branches left every submenu it passed expanded, announced and floating over the page, and the hover-close guard then never fired for the shallower ones because they were no longer last. The path is now DERIVED from the item tree rather than appended to; truncating to the new value's depth is not equivalent, because it is only correct while the new value's parent already sits on the path. The shared `reduceMenuTree` means this reached `menu`, `context-menu` and `menubar` alike.
+- **Fixed** `menu`'s `openSub` was not idempotent while `select` guarded against it, and hover-then-click on one subTrigger sends it twice (`onPointerEnter` schedules it, `onClick` sends it). The duplicate survived one `closeSub`, so the next Escape or ArrowLeft looked inert. Re-opening the deepest submenu now returns the same state reference.
+- **Fixed** `menu`'s `setItems` left `openPath` and `highlights` naming values the new tree no longer contains, so the deepest level had no items — every arrow key inert, and Escape popping a submenu nothing was rendering instead of closing the menu. Both are now repaired against the tree that arrived: `openPath` truncates to the longest surviving chain of direct children, and an orphaned highlight becomes `null` rather than being re-pointed at some item the user never navigated to.
+- **Fixed** `slider` did not mirror under `dir="rtl"`. The thumb and the filled range were positioned from the left edge regardless of direction, so an RTL horizontal slider drew its fill on the wrong side of the thumb. One mirror at the position boundary covers both, and the same function inverts a pointer's physical percentage because mirroring is its own inverse. Vertical sliders are unaffected.
+- **Added** ten new stylesheet subpath exports — `semantic-tokens.css`, `semantic-tokens-dark.css`, `foundation.css`, `form-controls.css`, `disclosure-navigation.css`, `menus-overlays.css`, `data-display.css`, `layout.css`, `motion.css`, `tailwind.css` — so a consumer can take one family instead of the whole baseline.
+- **Improved** baseline form-control styling across inputs, checkbox, radio, switch, toggle, slider, rating-group and the OTP and search fields, with the shared defaults moved into `form-controls.css` rather than repeated per component.
+- **Breaking** `theme-dark.css` removed, `tailwindcss` peer dropped, `rating-group` field renamed. See top of release block.
+
+### `@llui/cli@0.2.1`
+
+- **Added** the product contract: `ProductContractSchema` and its component schemas, `resolveProductIdentity`, `resolveCopiedArtifact` and `formatProductList`, describing for every registry item which machine it wraps, what artifact `llui add` copies, and how far its presentation coverage goes (styled, styleless, composed, partial, machine-free, or not applicable). Purely additive — no existing export changed.
+
+### Cascade only
+
+- **`@llui/a2ui@0.3.6`**, **`@llui/devmode-annotate@0.4.6`**, **`@llui/devmode-annotate-editor@0.1.7`**, **`@llui/markdown-editor@0.8.7`** — republished so their `@llui/components` peer range admits `0.20.0`. No source changes.
+
 ## 2026-08-30 — @llui/dom@0.14.0, @llui/components@0.19.0, @llui/compiler@0.14.0
 
 **Released:** `@llui/dom@0.14.0`; `@llui/components@0.19.0`; `@llui/compiler@0.14.0`; `@llui/compiler-ssr@0.13.1`; `@llui/agent@0.13.1`; `@llui/interactions@0.1.2`; `@llui/lexical@0.5.1`; `@llui/lexical-collab@0.4.1`; `@llui/lexical-loro@0.1.3`; `@llui/devmode-annotate@0.4.5`; `@llui/router@0.12.1`; `@llui/a2ui@0.3.5`; `@llui/markdown@0.13.1`; `@llui/markdown-editor@0.8.6`; `@llui/devmode-annotate-editor@0.1.6`; `@llui/test@0.13.1`; `@llui/transitions@0.12.1`; `@llui/vike@0.13.1`; `@llui/vite-plugin@0.12.2`; `@llui/mcp@0.15.1`; `llui-agent@0.11.2`

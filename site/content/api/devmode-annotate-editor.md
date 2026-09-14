@@ -7,7 +7,7 @@ description: 'Optional rich Markdown editor upgrade for the annotation HUD'
 
 <!-- package-version:start -->
 
-**Current package version:** `0.1.6`
+**Current package version:** `0.1.7`
 
 <!-- package-version:end -->
 
