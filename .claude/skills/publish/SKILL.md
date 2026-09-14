@@ -49,36 +49,23 @@ LAST_RELEASE=$(git log --grep='^release:' --format=%H -n 1)
 
 If no `release:` commit exists, treat all packages as changed.
 
-Discover the publishable package directories dynamically — every directory under `packages/` whose `package.json` lacks `private: true`:
+Then run the detector:
 
 ```bash
-PUBLISHABLE=$(node -e '
-const fs = require("fs");
-for (const dir of fs.readdirSync("packages")) {
-  const p = `packages/${dir}/package.json`;
-  if (!fs.existsSync(p)) continue;
-  const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
-  if (pkg.private) continue;
-  console.log(dir);
-}
-')
-
-for pkg in $PUBLISHABLE; do
-  if [ -n "$(git diff --name-only "$LAST_RELEASE"..HEAD -- "packages/$pkg/")" ]; then
-    name=$(node -e "console.log(require('./packages/$pkg/package.json').name)")
-    echo "CHANGED: $name"
-  fi
-done
+node scripts/changed-packages.mjs              # since the last `release:` commit
+node scripts/changed-packages.mjs <ref>        # since an explicit ref
+node scripts/changed-packages.mjs --json       # machine-readable
 ```
 
-Note: directory names don't always match the published package name. `agent-bridge/` publishes as `llui-agent`. The detection loop reads `package.json` for the name; downstream steps that reference the package use the directory name (since publish.sh and add-js-extensions.mjs operate on directories).
+It prints three groups, and **all three matter**:
 
-Also check root-level changes that affect all package build output:
+- **CHANGED (reaches the tarball)** — bump these.
+- **EXTERNAL BUILD INPUTS changed** — files outside `packages/` that still alter a tarball, each with the scope it affects. `ALL` means treat the release as `--all`; a named package list means bump exactly those. Per-package detection cannot see these, so they are the only way a change to `scripts/publish-component-styles.mjs` reaches the release.
+- **NOT published — no bump needed** — packages whose only changes were `test/`, `vitest.config.ts` or similar. **Do not bump these.** Nothing in them reaches a consumer, and for a package with dependents the bump is not free: `@llui/components`' dependents pin `^0.x`, so a needless minor there republishes four more packages for no change at all.
 
-- `scripts/add-js-extensions.mjs` or any `scripts/publish*.sh` — affects all packages
-- `tsconfig*.json` at the repo root — affects all packages
+**Do NOT reimplement this as a shell loop.** The previous version of this step was one, and it failed in the two worst ways a release gate can. It built its package list with `PUBLISHABLE=$(node -e '…')` and iterated `for pkg in $PUBLISHABLE`; under zsh the embedded quoting broke the command substitution, the list came back empty, and the loop printed nothing — indistinguishable from "no packages changed", and it would have shipped a release bumping nothing. It was caught only because the operator already knew which packages had changed. It also counted `test/` as a reason to republish. The logic now lives in `scripts/changed-packages.mjs`, where `pnpm check:scripts` type-checks it, `pnpm lint:scripts` lints it, and `scripts/test/changed-packages.test.ts` pins the predicate — including a tripwire that fails when a new `scripts/publish*` build step is named by neither the table nor its exemption list.
 
-If root build plumbing changed, all packages must be bumped and republished — treat that as `--all`.
+Note: directory names don't always match the published package name. `agent-bridge/` publishes as `llui-agent`. The detector prints both; downstream steps that reference the package use the directory name (since publish.sh and add-js-extensions.mjs operate on directories).
 
 If `--all` was passed on the command line, skip detection entirely.
 
@@ -383,9 +370,10 @@ pnpm -r --workspace-concurrency=2 run test
 pnpm test:scripts
 pnpm smoke:examples
 pnpm check:docs
-pnpm check:generated
 pnpm format:check
 ```
+
+**`pnpm check:generated` is deliberately NOT in that list — it CANNOT pass here, and running it now will send you chasing a failure that is not one.** It regenerates and then diffs the result against **HEAD** (`git diff --name-only` over `GENERATED_PATHS`), so during a release the freshly bumped version badges in `site/content/api/*.md`, `llms.txt` and `llms-full.txt` differ from HEAD _by construction_ — they are exactly what step 9 is about to commit. It reports them as "STALE" and exits 1. Run it in **step 9a**, after the commit, where it is a real check: it then proves the committed artifacts match what the generators produce.
 
 Turbo caches aggressively, so `--force` on the package build is required to actually rebuild with the new `package.json` metadata. The explicit site build is required even though the package build excludes `@llui/site`: it regenerates the docs once more, production-builds llui.dev, pre-renders every page, and bundles the example apps. If verify fails, stop — something about the version bump or generated docs broke something; fix it before continuing.
 
@@ -477,6 +465,19 @@ The commit message subject **MUST start with `release:`** — that's how step 2 
 
 **Do NOT create git tags.** This repo tracks releases via `release:` commits, not tags. Creating tags would be dead state that nobody reads.
 
+### 9a. Verify the generated artifacts, now that they are committed
+
+```bash
+pnpm check:generated
+git status --porcelain   # must be empty
+```
+
+This is the step 8 gate that could not run before the commit. `check-generated.mjs` regenerates and diffs against **HEAD**, so it only means anything once the bumped version badges ARE HEAD. Green here says the committed `site/content/api/*.md`, `llms.txt` and `llms-full.txt` are exactly what the generators produce from the bumped manifests — i.e. the docs you are about to deploy describe the release you are about to publish.
+
+If it reports files as stale now, that is a REAL failure: something regenerated differently than what you committed. Re-run `pnpm --filter @llui/site generate`, `pnpm format`, inspect the diff, and amend the release commit.
+
+A note on the ordering trap, since it bites every time: the generators emit UNFORMATTED text and `pnpm format` reformats it in place, so `pnpm verify` (which runs `format` FIRST, then builds, then `check:generated`) leaves the tree holding raw generator output while `format:check` wants the formatted form. If a step here leaves 100+ site files dirty, run `pnpm format` and re-check before concluding anything drifted — a clean tree afterwards means it was formatting, not content.
+
 ### 10. Push and verify llui.dev deployment
 
 ```bash
@@ -487,10 +488,21 @@ Pushing `main` does not deploy independently of verification. `.github/workflows
 runs from the successful `CI` `workflow_run`, checks out that exact release commit, rebuilds the
 site, and deploys it to GitHub Pages. After pushing:
 
-1. Wait for CI on the release SHA to succeed. If it fails or is cancelled, the docs correctly do
-   not deploy; stop and fix the release.
-2. Wait for the `Deploy docs` run triggered by that CI run to succeed. Confirm it deployed the same
-   release SHA, not merely the latest run on the branch.
+1. Wait for CI on the release SHA to succeed. If it FAILS, the docs correctly do not deploy; stop
+   and fix the release.
+
+   **`cancelled` is not `failed`, and the two want opposite responses.** `ci.yml` groups runs per
+   branch, so any later push to `main` — including a follow-up fix you make while watching — cancels
+   the in-progress run on the release SHA. That is the concurrency group doing its job, not a broken
+   release, and "stop and fix" is the wrong move: nothing is wrong. Check WHY it stopped before
+   reacting (`gh run view <id> --json conclusion`), and if a descendant commit superseded it, watch
+   that commit's run instead. Then, at step 3, verify the live CONTENT rather than trusting the
+   workflow — a descendant that contains the release commit deploys the same artifacts, but only
+   the content check proves it.
+
+2. Wait for the `Deploy docs` run triggered by that CI run to succeed. Confirm the SHA it deployed
+   either IS the release commit or is a descendant that contains it — never merely "the latest run
+   on the branch".
 3. Verify `https://llui.dev`, the API page for every bumped package, `https://llui.dev/llms.txt`,
    and `https://llui.dev/llms-full.txt`. Each bumped package and exact new version must be visible.
    A successful workflow without the new version is a failed release verification, usually a
@@ -556,5 +568,19 @@ not only DOM.
 the module-scoped render context, while two `@llui/interactions` installs split global overlay
 ownership. Overrides only hide the packaging error; the peer + dev pattern prevents it. The
 anti-pattern check in step 3 enforces both on every release.
+
+**Why `check:generated` runs after the commit and not in the step 8 matrix:** it regenerates and
+diffs against HEAD, so a release's own version-badge bumps read as "stale" until they ARE HEAD. Run
+before the commit it fails every time, on correct work — a gate that cries wolf on the happy path
+gets skipped, and then it is not a gate. After the commit it answers the question worth asking:
+does the committed generated output match what the generators produce from the bumped manifests?
+
+**Why change detection is a script and not a shell loop:** the loop it replaced returned an EMPTY
+list when its quoting broke, which is byte-identical to "nothing changed" — a release gate whose
+failure mode is a successful-looking empty answer. `scripts/changed-packages.mjs` is type-checked
+by `check:scripts`, linted by `lint:scripts`, and pinned by `scripts/test/changed-packages.test.ts`.
+It also answers the narrower and more useful question — did anything reach the TARBALL — so a
+test-only commit no longer demands a version bump, which for a package with dependents drags four
+more packages along with it.
 
 **Why pass the commit message via HEREDOC:** multi-line commit messages with `-m "..."` lose formatting. HEREDOC preserves the body exactly, which matters because the brace-expanded `release:` subject can get long and the body typically has a structured one-line summary.
