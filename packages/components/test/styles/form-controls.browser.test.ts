@@ -290,6 +290,17 @@ describe('baseline forms-controls parity in Chromium', () => {
     const rtlState = await darkPage.evaluate(async () => {
       const thumb = document.querySelector<HTMLElement>('#switch-thumb')!
       const offset = (): number => new DOMMatrix(getComputedStyle(thumb).transform).m41
+      // The thumb carries `transition: transform`, and what this asserts is the
+      // CASCADE (does `:dir(rtl)` mirror the translate) — not the animation. So
+      // kill transitions outright rather than waiting a fixed number of frames
+      // and hoping the move has landed: a sample taken mid-flight reads an
+      // intermediate offset, or the pre-transition one if the transition has
+      // not started yet, and BOTH are plausible-looking numbers. This passed on
+      // macOS purely because `reducedMotion: 'reduce'` collapsed the duration
+      // in time and failed in CI's Linux container, where it did not.
+      const freeze = document.createElement('style')
+      freeze.textContent = '*, *::before, *::after { transition: none !important }'
+      document.head.append(freeze)
       const settleDirection = async (): Promise<void> =>
         new Promise((resolveFrame) =>
           requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame())),
@@ -300,6 +311,7 @@ describe('baseline forms-controls parity in Chromium', () => {
       document.documentElement.dir = 'rtl'
       await settleDirection()
       const rtl = offset()
+      freeze.remove()
       const password = getComputedStyle(
         document.querySelector<HTMLElement>("[data-scope='password-input'][data-part='input']")!,
       )
