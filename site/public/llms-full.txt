@@ -11152,7 +11152,7 @@ const wsSendRunner: Runner
 
 # @llui/components
 
-**Current package version:** `0.20.0`
+**Current package version:** `0.20.1`
 
 66 headless UI components for [LLui](https://github.com/fponticelli/llui). Pure state machines with no DOM opinions -- you own the markup and styling via `data-scope` / `data-part` attributes. Component state is JSON-serializable: numeric inputs reject non-finite runtime values, use finite-or-absent bounds, and validate positive divisors such as pagination `pageSize` and numeric crop `aspectRatio`.
 

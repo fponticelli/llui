@@ -7,6 +7,17 @@ description: Release history for LLui packages
 
 All notable changes to LLui packages are documented here. LLui is a pre-1.0 project — every release may include breaking changes, though we try to call them out explicitly.
 
+## 2026-09-18 — @llui/components@0.20.1
+
+**Released:** `@llui/components@0.20.1`
+
+Any Iconify glyph as a reusable component, on both styling paths.
+
+### `@llui/components@0.20.1`
+
+- **Added** `@llui/components/icon` — `icon(name, props?)` renders any Iconify glyph (`'lucide:star'`, `'simple-icons:github'`; a bare name is Lucide) as a real `<svg>`, fetched at mount and batched to ONE request per prefix per tick. `name` may be a `Signal<string>`, in which case the glyph follows state: a change clears the box and paints the new body when it arrives, and a monotonic request token keeps a slow response for the previous name from landing over the next one. The response is untrusted markup and is rebuilt from an element/attribute allowlist, never assigned to `innerHTML`; a failed load is not cached, so a dropped connection retries on the next mount. `iconConfig.api` points at a self-hosted Iconify; `loadIcon(name)` warms the cache ahead of a mount. Also re-exported from the root barrel. Icons are async (an SSR render emits the sized empty box) and need the network — a CSP that blocks the API yields an empty box and one `console.warn`.
+- **Improved** the registry's `icons` item (`llui add icons`) is now a thin shadcn-shaped wrapper over `@llui/components/icon` — a factory per glyph (`CheckIcon()`, `icon('lucide:star')()`) with `tailwind-merge` on `class`. Same call sites, same rendered output; the item now lists `@llui/components` as a dependency. Not an npm change: the registry ships as source from llui.dev, so re-run `llui add icons --overwrite` to take it.
+
 ## 2026-09-14 — @llui/components@0.20.0
 
 **Released:** `@llui/components@0.20.0`; `@llui/cli@0.2.1`; `@llui/a2ui@0.3.6`; `@llui/devmode-annotate@0.4.6`; `@llui/devmode-annotate-editor@0.1.7`; `@llui/markdown-editor@0.8.7`
