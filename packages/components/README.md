@@ -218,6 +218,24 @@ Two caveats. **`inert` cannot be split from `aria-hidden`**, so an exempt region
 
 Escape is offered to the layers top-down until one **claims** it. A layer declines by setting `disableEscape` or returning `false` from its `onEscape` router; the key then falls through to the layer beneath instead of being swallowed.
 
+## Icons
+
+`@llui/components/icon` renders any [Iconify](https://iconify.design) glyph as a real
+`<svg>`, fetched by `prefix:name` and batched to one request per prefix per tick:
+
+```typescript
+import { icon } from '@llui/components/icon'
+
+icon('lucide:star', { class: 'size-5' })
+icon('simple-icons:github')
+```
+
+`name` may be a `Signal<string>`, in which case the glyph follows the state. The
+response is untrusted markup and is rebuilt from an element/attribute allowlist —
+never assigned to `innerHTML`. Icons are async (SSR emits the sized empty box)
+and need the network; point `iconConfig.api` at a self-hosted Iconify to drop the
+third-party dependency.
+
 ## Styling (opt-in)
 
 Components are fully headless by default. Two independent styling distributions are available; choose one for component parts.

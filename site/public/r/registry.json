@@ -3992,8 +3992,8 @@
       "name": "icons",
       "type": "registry:ui",
       "title": "Icons",
-      "description": "Icons loaded from Iconify by `prefix:name` — the Lucide glyphs shadcn/ui bakes into its components, plus any other Iconify set. Fetched from the public API by default; point `iconConfig.api` at a self-hosted Iconify to drop the third-party dependency.",
-      "dependencies": ["@llui/dom"],
+      "description": "The Lucide glyphs shadcn/ui bakes into its components, as icon factories over `@llui/components/icon` — which reaches any Iconify set by `prefix:name`. Fetched from the public API by default; point `iconConfig.api` at a self-hosted Iconify to drop the third-party dependency.",
+      "dependencies": ["@llui/dom", "@llui/components"],
       "registryDependencies": ["utils"],
       "files": [
         {

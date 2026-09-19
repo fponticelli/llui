@@ -6,3 +6,5 @@ export * from './format/index.js'
 export * from './utils/index.js'
 // Components
 export * from './components/index.js'
+// Iconify glyphs as real <svg> elements (also at @llui/components/icon).
+export { icon, iconConfig, loadIcon, type IconData } from './icon.js'

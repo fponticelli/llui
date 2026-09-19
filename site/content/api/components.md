@@ -2497,6 +2497,19 @@ export declare function getNestedLayers(
 ): Element[]
 ```
 
+##### `icon()` from `@llui/components`
+
+Render one Iconify glyph as a real `<svg>`.
+
+`name` is `prefix:name` (`'lucide:star'`, `'simple-icons:github'`; a bare
+name is a Lucide glyph) or a `Signal<string>` of one, in which case the glyph
+follows the signal. `props` spread onto the `<svg>`; `class` is passed through
+as given, so a caller sizes and colours the glyph from there.
+
+```typescript
+function icon(name: string | Signal<string>, props?: ElProps): Mountable
+```
+
 ##### `indexMap()` from `@llui/components`
 
 A position lookup over a state array: `positions(s.items).get(item)` in place
@@ -2605,6 +2618,17 @@ Straight segments through every point.
 
 ```typescript
 function linearPath(points: readonly Point[], closed = false): string
+```
+
+##### `loadIcon()` from `@llui/components`
+
+Resolve one glyph, batched: one HTTP request per PREFIX per tick, not one per
+icon. A page rendering a dozen chevrons asks Iconify once; the batch is
+flushed on a macrotask so every icon mounted during the same view build joins
+it. Exposed so a consumer can warm the cache ahead of a mount.
+
+```typescript
+function loadIcon(name: string): Promise<IconData | null>
 ```
 
 ##### `lockBodyScroll()` from `@llui/components`
@@ -8925,6 +8949,18 @@ export interface Hsv {
 }
 ```
 
+##### `IconData` from `@llui/components`
+
+One resolved glyph: its body markup and the box it was drawn in.
+
+```typescript
+export interface IconData {
+  body: string
+  width: number
+  height: number
+}
+```
+
 ##### `ImageCropperInit` from `@llui/components`
 
 ```typescript
@@ -13713,6 +13749,15 @@ const form
 
 ```typescript
 const hoverCard
+```
+
+##### `iconConfig` from `@llui/components`
+
+Where glyphs are fetched from. Point this at a self-hosted Iconify to drop
+the third-party CDN; the path shape is identical.
+
+```typescript
+const iconConfig
 ```
 
 ##### `imageCropper` from `@llui/components`
@@ -37834,6 +37879,59 @@ export interface ChartVertex {
 
 ```typescript
 const chart
+```
+
+### `@llui/components/icon`
+
+#### Functions
+
+##### `icon()` from `@llui/components/icon`
+
+Render one Iconify glyph as a real `<svg>`.
+
+`name` is `prefix:name` (`'lucide:star'`, `'simple-icons:github'`; a bare
+name is a Lucide glyph) or a `Signal<string>` of one, in which case the glyph
+follows the signal. `props` spread onto the `<svg>`; `class` is passed through
+as given, so a caller sizes and colours the glyph from there.
+
+```typescript
+function icon(name: string | Signal<string>, props?: ElProps): Mountable
+```
+
+##### `loadIcon()` from `@llui/components/icon`
+
+Resolve one glyph, batched: one HTTP request per PREFIX per tick, not one per
+icon. A page rendering a dozen chevrons asks Iconify once; the batch is
+flushed on a macrotask so every icon mounted during the same view build joins
+it. Exposed so a consumer can warm the cache ahead of a mount.
+
+```typescript
+function loadIcon(name: string): Promise<IconData | null>
+```
+
+#### Interfaces
+
+##### `IconData` from `@llui/components/icon`
+
+One resolved glyph: its body markup and the box it was drawn in.
+
+```typescript
+export interface IconData {
+  body: string
+  width: number
+  height: number
+}
+```
+
+#### Constants
+
+##### `iconConfig` from `@llui/components/icon`
+
+Where glyphs are fetched from. Point this at a self-hosted Iconify to drop
+the third-party CDN; the path shape is identical.
+
+```typescript
+const iconConfig
 ```
 
 <!-- auto-api:end -->

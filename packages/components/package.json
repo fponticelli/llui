@@ -337,6 +337,10 @@
     "./chart": {
       "types": "./dist/components/chart.d.ts",
       "import": "./dist/components/chart.js"
+    },
+    "./icon": {
+      "types": "./dist/icon.d.ts",
+      "import": "./dist/icon.js"
     }
   },
   "scripts": {

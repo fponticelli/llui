@@ -700,27 +700,47 @@ tooltip shows as a percentage.
 
 ## 8. Icons
 
-`llui add icons` gives you the glyphs shadcn/ui bakes into its own components —
-`SelectTrigger`'s chevron, `Checkbox`'s tick, `DialogClose`'s ✕ — plus a way to
-name any other one.
+Any [Iconify](https://iconify.design) glyph is one call away, on **both** styling
+paths, from `@llui/components/icon`:
+
+```ts
+import { icon } from '@llui/components/icon'
+
+icon('lucide:star', { class: 'size-5' })
+icon('simple-icons:github') // any Iconify set, by prefix
+icon(state.at('status').map((s) => (s === 'ok' ? 'lucide:check' : 'lucide:x')))
+```
+
+`name` is `prefix:name` (a bare name is a Lucide glyph) or a `Signal<string>`, in
+which case the glyph follows the state: a change clears the box and paints the new
+body when it arrives, and a slow response for the previous name never lands over
+the new one. `props` spread onto the `<svg>`; there is no recipe, so `class` is
+passed through as given.
+
+`llui add icons` layers the shadcn-shaped surface on top for the copied-registry
+path — the glyphs shadcn/ui bakes into its own components (`SelectTrigger`'s
+chevron, `Checkbox`'s tick, `DialogClose`'s ✕) as **factories**, the way a recipe
+renders `<CheckIcon />`, with the caller's `class` merged through `tailwind-merge`
+so an override beats a default:
 
 ```ts
 import { CheckIcon, icon } from '@/ui/icons'
 
 CheckIcon({ class: 'size-4' })
 icon('lucide:star')({ class: 'size-5' })
-icon('simple-icons:github')() // any Iconify set, by prefix
 ```
 
-Glyphs are fetched from the [Iconify](https://iconify.design) HTTP API by
-`prefix:name`, batched into **one request per prefix per tick**. What you get in
-the DOM is a real `<svg>` — not an `<img>` and not the `iconify-icon` web
-component, either of which would slip past the `[&_svg:not([class*='size-'])]:size-4`
-hook every recipe uses to size its icons.
+Glyphs are fetched from the Iconify HTTP API, batched into **one request per
+prefix per tick**; `loadIcon('lucide:star')` warms the cache ahead of a mount.
+What you get in the DOM is a real `<svg>` — not an `<img>` and not the
+`iconify-icon` web component, either of which would slip past the
+`[&_svg:not([class*='size-'])]:size-4` hook every recipe uses to size its icons.
 
-A glyph carries **no size of its own**. That is deliberate: the recipe sizes it,
-and passing `class: 'size-3'` lets you override that. Colour comes from
-`currentColor`, so it inherits from whatever it sits in.
+A glyph carries **no size and no paint of its own**. That is deliberate: the
+recipe (or your `class`) sizes it, and colour comes from `currentColor`, so it
+inherits from whatever it sits in. Iconify normalizes paint into the body —
+Lucide's elements carry `stroke="currentColor"`, a filled set's carry
+`fill="currentColor"` — so a default on the wrapper would ruin every other set.
 
 Two consequences worth planning for:
 

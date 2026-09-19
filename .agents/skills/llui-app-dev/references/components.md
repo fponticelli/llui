@@ -160,6 +160,33 @@ Full walkthrough with the trade-offs: **https://llui.dev/components**. What matt
   targeting `[data-part='positioner']` directly, which is exactly why this is invisible until
   an app moves to utilities.
 
+## Icons: `@llui/components/icon`
+
+Any Iconify glyph, on EITHER styling path, as a real `<svg>`:
+
+```ts
+import { icon } from '@llui/components/icon'
+
+icon('lucide:star', { class: 'size-5' }) // fixed glyph
+icon(state.at('kind').map(kindToIconName)) // follows state
+```
+
+`name` is `'prefix:name'` (bare = Lucide) or a `Signal<string>`. Fetched from
+`api.iconify.design` at mount, ONE request per prefix per tick, sanitized against an
+allowlist (never `innerHTML`). `iconConfig.api` self-hosts; `loadIcon(name)` pre-warms.
+The registry's `llui add icons` is a shadcn-shaped wrapper over it — factories
+(`CheckIcon()`, `icon('lucide:star')()`) with `tailwind-merge` on `class` — so a registry
+app has both spellings and neither is wrong. Review points:
+
+- **Icons are async and need the network.** SSR emits the sized empty `<svg>`; a CSP that
+  blocks the API yields an empty box plus one `console.warn`, not an error. Do not read a
+  blank icon in a test as a render bug before checking `fetch`.
+- **A glyph carries no size and no paint.** Size it from `class` (or the recipe's
+  `[&_svg]:size-4` hook); colour is `currentColor`. Do not put `fill`/`stroke` on the
+  wrapper — it breaks every filled set.
+- **Do not build one with `foreign()`** — it creates its host via `createElement`, so an
+  `<svg>` lands in the HTML namespace and never draws.
+
 ### Traps that look like framework bugs
 
 Each is silent, and each has cost real debugging time:
