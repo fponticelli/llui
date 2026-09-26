@@ -9,6 +9,7 @@ import {
   createVariantsAxisValueNames,
   cssScopeHasDensityOrSizeSelector,
   hasDensityOrSizeProperty,
+  typeAliasUnionLiteralMembers,
 } from './density-source-audit'
 import {
   applicableNavigationDataScenarios,
@@ -112,12 +113,30 @@ describe('navigation/data presentation contract', () => {
     expect(withCompactCase).toEqual(DENSITY_APPLICABLE_PRODUCT_IDS)
   })
 
-  it('every density-applicable product is capped at exactly TWO real skin levels, and sidebar/item real level-counts back the comment on DENSITY_APPLICABLE_PRODUCT_IDS (#264 review item 4)', () => {
-    // avatar/table's registry recipe DOES have a third `lg` rung, but the
-    // baseline stylesheet has only ONE `[data-density='compact']` override —
-    // no `lg`-equivalent — so a third scenario level would exercise
-    // registryTailwind only, breaking the family's "both paths render the
-    // same cases" contract.
+  it("backs each density-applicable product's real skin-level count on the machine TYPE, not the baseline stylesheet (#264 review item 6)", () => {
+    // Non-circular: avatar/table cap at two DENSITY levels because each
+    // machine's own `connect()` option is typed exactly `'comfortable' |
+    // 'compact'` — there is no third value to even construct. (The old
+    // rationale pointed at the baseline stylesheet's override count instead,
+    // which is a fact about styling coverage, not about what the machine can
+    // express; it is still true and still checked below, just not cited as
+    // the REASON.)
+    for (const [file, aliasName] of [
+      ['avatar', 'AvatarDensity'],
+      ['table', 'TableDensity'],
+    ] as const) {
+      const source = readFileSync(
+        resolve(ROOT, `packages/components/src/components/${file}.ts`),
+        'utf8',
+      )
+      expect(typeAliasUnionLiteralMembers(source, aliasName).sort(), aliasName).toEqual([
+        'comfortable',
+        'compact',
+      ])
+    }
+    // The baseline stylesheet fact, still checked (styling coverage, not the
+    // density cap's reason): only ONE `[data-density='compact']` override
+    // each, no `lg`-equivalent.
     for (const file of ['avatar', 'table']) {
       const css = readFileSync(
         resolve(ROOT, 'packages/components/src/styles/data-display.css'),
@@ -137,18 +156,29 @@ describe('navigation/data presentation contract', () => {
       )
       expect([...values], `${file} baseline density override values`).toEqual(['compact'])
     }
-    // item's OWN registry recipe genuinely has only two `size` rungs.
+    // item's OWN registry recipe genuinely has only two `size` rungs — it is
+    // registry-only (no machine), so there is no type alias to check instead.
     const itemSource = readFileSync(resolve(ROOT, 'registry/llui/ui/item.ts'), 'utf8')
     expect(createVariantsAxisValueNames(itemSource, 'size').sort()).toEqual(['default', 'sm'])
-    // sidebar's DOES have three — the comment above states this is a real,
-    // intentionally-untested gap, not an oversight; assert it stays true so
-    // the comment cannot go stale.
+    // sidebar is registry-only too, and genuinely DOES have three — exercised
+    // by a real `roomy` scenario case (#264 review item 6), not merely
+    // asserted here as a documented gap.
     const sidebarSource = readFileSync(resolve(ROOT, 'registry/llui/ui/sidebar.ts'), 'utf8')
     expect(createVariantsAxisValueNames(sidebarSource, 'size').sort()).toEqual([
       'default',
       'lg',
       'sm',
     ])
+    const sidebarScenario = NAVIGATION_DATA_DEFINITIONS['registry:sidebar']
+    expect(sidebarScenario.cases.map((c) => c.id)).toContain('roomy')
+    const roomyCase = sidebarScenario.cases.find((c) => c.id === 'roomy')!
+    expect(roomyCase.input.density).toBe('roomy')
+  })
+
+  it('typeAliasUnionLiteralMembers finds the exact union members (known-positive self-check)', () => {
+    const source = `export type Foo = 'a' | 'b' | 'c'`
+    expect(typeAliasUnionLiteralMembers(source, 'Foo').sort()).toEqual(['a', 'b', 'c'])
+    expect(typeAliasUnionLiteralMembers(source, 'Bar')).toEqual([])
   })
 
   it('registers exactly one specific density-N/A rationale per non-applicable product, each backed by a real absence of a density/size field in its checked sources', () => {

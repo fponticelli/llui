@@ -1055,9 +1055,17 @@ const sidebarAdapter: Adapter<SidebarCaseInput> = staticAdapter((input) =>
           SidebarContent([
             SidebarMenu([
               SidebarMenuItem([
-                SidebarMenuButton({ size: input.density === 'compact' ? 'sm' : 'default' }, [
-                  text(input.current),
-                ]),
+                SidebarMenuButton(
+                  {
+                    size:
+                      input.density === 'compact'
+                        ? 'sm'
+                        : input.density === 'roomy'
+                          ? 'lg'
+                          : 'default',
+                  },
+                  [text(input.current)],
+                ),
               ]),
             ]),
           ]),

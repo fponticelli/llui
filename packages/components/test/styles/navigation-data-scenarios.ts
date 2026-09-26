@@ -308,7 +308,13 @@ export interface SidebarCaseInput {
   readonly label: string
   readonly current: string
   readonly state: 'expanded' | 'collapsed' | 'offcanvas' | 'mobile'
-  readonly density: 'comfortable' | 'compact'
+  // Sidebar is the one product in this family with a genuinely tested THIRD
+  // real skin level (#264 review item 6): `roomy` exercises the registry
+  // `SidebarMenuButton` recipe's own `size: 'lg'` rung
+  // (`registry/llui/ui/sidebar.ts`, `h-12` vs `default`'s `h-8`), which
+  // `DENSITY_APPLICABLE_PRODUCT_IDS`'s comment used to document as an
+  // intentionally-untested gap rather than exercising it.
+  readonly density: 'comfortable' | 'compact' | 'roomy'
 }
 
 /**
@@ -1153,6 +1159,12 @@ export const NAVIGATION_DATA_DEFINITIONS = {
         environmentAxes: AX.none,
       },
       {
+        id: 'roomy',
+        label: 'Roomy sidebar navigation',
+        input: { label: 'Workspace', current: 'Overview', state: 'expanded', density: 'roomy' },
+        environmentAxes: AX.none,
+      },
+      {
         id: 'collapsed',
         label: 'Collapsed sidebar',
         input: {
@@ -1245,36 +1257,48 @@ export const FORCED_COLOR_CUES: Readonly<Record<NavigationDataScenarioId, Forced
 }
 
 /**
- * Products whose collection density (`comfortable`/`compact`) is a real,
- * distinct axis in their machine's `connect()` options or their skin's own
- * variant surface. Every other product is genuinely N/A: falsifiable by the
- * renderer-level test asserting no rendered case ever carries
- * `[data-density]` for it (`navigation-data-baseline-renderer.test.ts` /
- * `navigation-data-scenario-renderer.test.ts`), not merely asserted here.
+ * Products whose collection density (`comfortable`/`compact`[/`roomy`]) is a
+ * real, distinct axis in their machine's `connect()` options or their
+ * skin's own variant surface. Every other product is genuinely N/A:
+ * falsifiable by the renderer-level test asserting no rendered case ever
+ * carries `[data-density]` for it (`navigation-data-baseline-renderer.test.ts`
+ * / `navigation-data-scenario-renderer.test.ts`), not merely asserted here.
  *
- * Two-level, not three, for all five (#264 review item 4) — checked against
- * each product's REAL skin surface rather than assumed:
- * - `avatar` / `table`: the registry recipe's own Tailwind size scale genuinely
- *   has a third rung (`registry/llui/ui/avatar.ts`'s `data-[size=lg]`,
- *   shadcn's `lg` avatar), but the BASELINE stylesheet
- *   (`packages/components/src/styles/data-display.css`) has only ONE
- *   `[data-density='compact']` override each — no `lg`-equivalent rule
- *   exists there, so a third level would apply to registryTailwind only,
- *   breaking the family's own "both rendering paths exercise the same
- *   cases" contract. Two is the level BOTH skins actually share.
+ * Level count per product, checked against each product's REAL skin surface
+ * rather than assumed — and #264 review item 6 corrected a CIRCULAR
+ * rationale below: `avatar`/`table` were previously said to cap at two
+ * because "the baseline stylesheet has no `lg`-equivalent override", which
+ * justifies the cap by pointing at what a STYLESHEET happens to contain
+ * rather than at the machine's own declared TYPE — the deeper, prior fact
+ * that actually settles it, independent of any CSS file's contents:
+ * - `avatar` / `table`: genuinely TWO levels, because each machine's OWN
+ *   `connect()` option is typed exactly `'comfortable' | 'compact'`
+ *   (`AvatarDensity` / `TableDensity` in `packages/components/src/components/
+ *   {avatar,table}.ts`) — there is no THIRD density value to even construct,
+ *   let alone exercise. The registry recipe's `size: { default, sm, lg }`
+ *   scale (`registry/llui/ui/avatar.ts`'s `data-[size=lg]`, shadcn's `lg`
+ *   avatar) is a DIFFERENT, unrelated STATIC axis the machine's `density`
+ *   field cannot express at all — not a "third density level" that merely
+ *   went unexercised for lack of baseline CSS coverage. (The baseline
+ *   stylesheet fact is still true and still checked below, by the same test
+ *   that pins `item`'s and `sidebar`'s level counts — it just is not WHY the
+ *   cap is two.)
  * - `data-table`: forwards `density` straight to its composed `table`, so it
- *   inherits that limit.
- * - `item`: `registry/llui/ui/item.ts`'s `createVariants` genuinely defines
- *   only `size: { default, sm }` — there IS no third rung to exercise.
- * - `sidebar`: registry-only (no baseline counterpart at all), and its
- *   `SidebarMenuButton` recipe DOES define a third `lg` rung
- *   (`registry/llui/ui/sidebar.ts`) that this family's scenarios
- *   deliberately never reach. Left at two anyway, for symmetry with `item`
- *   — the family's OTHER registry-only presentational atom — rather than
- *   making sidebar alone a three-level product with no dual-skin
- *   counterpart to compare it against; `sidebar`'s unused `lg` rung is a
- *   real (if minor) skin/test-coverage gap, tracked here rather than
- *   silently invented into a mismatched third case.
+ *   inherits that same machine-level limit.
+ * - `item`: registry-only (no machine at all); `registry/llui/ui/item.ts`'s
+ *   `createVariants` genuinely defines only `size: { default, sm }` — there
+ *   IS no third rung to exercise.
+ * - `sidebar`: registry-only (no machine at all, and no baseline
+ *   counterpart to keep in lockstep with either), and its
+ *   `SidebarMenuButton` recipe's `size` variant genuinely has a THIRD `lg`
+ *   rung (`registry/llui/ui/sidebar.ts`, `h-12` vs `default`'s `h-8` and
+ *   `sm`'s `h-7`) with nothing else constraining it to two — unlike `item`,
+ *   whose own recipe simply has no third rung to reach. `sidebar` is
+ *   therefore the one product in this family with a genuinely tested THREE
+ *   real skin levels (`roomy`, added by #264 review item 6 — previously left
+ *   at two "for symmetry with `item`", which is exactly the kind of
+ *   assumed-rather-than-checked cap this comment now avoids for `item`
+ *   itself).
  */
 export const DENSITY_APPLICABLE_PRODUCT_IDS: readonly string[] = [
   'avatar',

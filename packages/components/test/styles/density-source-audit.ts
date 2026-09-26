@@ -155,6 +155,38 @@ export function createVariantsAxisValueNames(
   return names
 }
 
+/**
+ * The string-literal union members of a top-level `export type <name> = ...`
+ * alias (e.g. `type AvatarDensity = 'comfortable' | 'compact'` ->
+ * `['comfortable', 'compact']`) — the MACHINE-level ground truth for how many
+ * real density values a component's own `connect()` option can even
+ * construct, as opposed to a registry recipe's separate `size`/`createVariants`
+ * scale (#264 review item 6: citing "the baseline stylesheet has no
+ * lg-equivalent override" as the reason a density is capped at two is
+ * circular — it points at what a STYLESHEET happens to contain rather than
+ * at the type that actually settles the question). Returns an empty array
+ * (never throws) if no alias with that name exists, or its type is not a
+ * plain string-literal union.
+ */
+export function typeAliasUnionLiteralMembers(
+  source: string,
+  aliasName: string,
+  fileName = 'source.ts',
+): string[] {
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const members: string[] = []
+  for (const stmt of sf.statements) {
+    if (!ts.isTypeAliasDeclaration(stmt) || stmt.name.text !== aliasName) continue
+    if (!ts.isUnionTypeNode(stmt.type)) continue
+    for (const member of stmt.type.types) {
+      if (ts.isLiteralTypeNode(member) && ts.isStringLiteral(member.literal)) {
+        members.push(member.literal.text)
+      }
+    }
+  }
+  return members
+}
+
 /** True if the file declares ANY interface property or `createVariants` axis
  * named exactly `density` or `size` (case-insensitive on the whole name,
  * never a substring match). */

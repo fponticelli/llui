@@ -216,17 +216,24 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
       const sidebarCompact = rect(
         '[data-scenario-id="registry:sidebar"][data-scenario-case="compact"] button',
       )
-      return { itemComfortable, itemCompact, sidebarComfortable, sidebarCompact }
+      const sidebarRoomy = rect(
+        '[data-scenario-id="registry:sidebar"][data-scenario-case="roomy"] button',
+      )
+      return { itemComfortable, itemCompact, sidebarComfortable, sidebarCompact, sidebarRoomy }
     })
     await page.close()
 
     expect(geometry.itemCompact.height).toBeLessThan(geometry.itemComfortable.height)
     expect(geometry.itemCompact.height).toBeGreaterThanOrEqual(16)
-    // Sidebar's `size="sm"`/`size="default"` are fixed-height Tailwind
-    // classes (`h-7`/`h-8`), not padding around variable content, so their
-    // pixel heights are exact at the default 16px root font size.
+    // Sidebar's `size="sm"`/`size="default"`/`size="lg"` are fixed-height
+    // Tailwind classes (`h-7`/`h-8`/`h-12`), not padding around variable
+    // content, so their pixel heights are exact at the default 16px root
+    // font size. `lg` is sidebar's genuinely tested THIRD real skin level
+    // (#264 review item 6) — every other density-applicable product in this
+    // family stops at two.
     expect(geometry.sidebarCompact.height).toBeCloseTo(28, 0)
     expect(geometry.sidebarComfortable.height).toBeCloseTo(32, 0)
+    expect(geometry.sidebarRoomy.height).toBeCloseTo(48, 0)
   })
 
   it.each(['baseline', 'registryTailwind'] as const)(

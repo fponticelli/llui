@@ -596,6 +596,14 @@ function fixture(): string {
                               },
                               [text('Compact')],
                             ),
+                            SidebarMenuButton(
+                              {
+                                id: 'sidebar-menu-button-roomy',
+                                'data-density': 'roomy',
+                                size: 'lg',
+                              },
+                              [text('Roomy')],
+                            ),
                           ]),
                         ]),
                       ]),
@@ -800,6 +808,7 @@ describe('registry navigation/data presentation in Chromium', () => {
         sidebar: {
           comfortable: size('sidebar-menu-button'),
           compact: size('sidebar-menu-button-compact'),
+          roomy: size('sidebar-menu-button-roomy'),
         },
       }
     })
@@ -810,6 +819,15 @@ describe('registry navigation/data presentation in Chromium', () => {
       expect(geometryPair.compact.height).toBeGreaterThanOrEqual(24)
     }
     expect(geometry.dataTable.compact.height).toBe(geometry.table.compact.height)
+    // Sidebar is the ONE product in this family with a genuinely tested
+    // THIRD real skin level (#264 review item 6): its registry recipe's
+    // `size` variant has a `lg` rung (`h-12`, vs `default`'s `h-8` and
+    // `sm`'s `h-7`) with no baseline counterpart to keep in lockstep, unlike
+    // avatar/table (which stop at two because the BASELINE stylesheet has
+    // no `lg`-equivalent override — see DENSITY_APPLICABLE_PRODUCT_IDS's
+    // comment) and item/data-table (whose own recipes genuinely define no
+    // third rung at all).
+    expect(geometry.sidebar.roomy.height).toBeGreaterThan(geometry.sidebar.comfortable.height)
   })
 
   it('renders the canonical density, hierarchy, and selected/status states', async () => {
