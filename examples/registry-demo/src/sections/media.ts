@@ -1,4 +1,4 @@
-import { div, each, span, tbody, text, thead } from '@llui/dom'
+import { div, each, onMount, span, tbody, text, thead } from '@llui/dom'
 import type { Mountable, Send, Signal } from '@llui/dom'
 import * as carouselC from '@llui/components/carousel'
 import * as datePickerC from '@llui/components/date-picker'
@@ -177,10 +177,13 @@ export function update(state: State, msg: Msg): [State, never[]] {
           type: demo.type,
           title: demo.title,
           description: demo.description,
-          // Sticky. The countdown advances on `tick`, which needs a timer this
-          // section has no effect channel for — a duration nothing ticks would
-          // simply never fire, so the honest shape is an explicit dismiss.
-          duration: null,
+          // #265 finding 3: finite, and genuinely ticked (see the
+          // `toastTickMount` interval in `view` below) — a real
+          // create→tick→closing→animationEnd→removal lifecycle rather than
+          // an explicit-dismiss-only demo. `loading` stays sticky (`null`):
+          // nothing should time out a toast whose whole point is "still
+          // running" — it resolves via the Async button's `update` instead.
+          duration: demo.type === 'loading' ? null : 5000,
           dismissable: true,
         },
       })
@@ -210,8 +213,30 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const weeks = state.at('calendar').map((s) => datePickerC.weekRows(datePickerC.monthGrid(s)))
   const weekdays = state.at('calendar').map((s) => datePickerC.weekdayLabels(s.weekStartsOn))
 
+  // #265 finding 3: the toast machine owns no interval of its own (see
+  // `@llui/components/toast`'s header) — it expects the CONSUMER to drive
+  // `tick(id, elapsedMs)`. Without a real driver every finite-`duration`
+  // toast above would sit forever, so create→tick→closing→animationEnd→
+  // removal would only ever be demonstrated by an explicit dismiss.
+  const toastTickMount = onMount(() => {
+    let last = Date.now()
+    const id = setInterval(() => {
+      const now = Date.now()
+      const elapsedMs = now - last
+      last = now
+      for (const t of state.peek().toaster.toasts) {
+        if (t.duration !== null) {
+          send({ type: 'toaster', msg: { type: 'tick', id: t.id, elapsedMs } })
+        }
+      }
+    }, 250)
+    return () => clearInterval(id)
+  })
+
   return [
     car.directionSync,
+    // Placed so the toast-tick onMount registers (a discarded onMount() is inert).
+    toastTickMount,
     section(
       'Carousel',
       "shadcn wraps Embla and ships no dots; `@llui/components/carousel` owns the index, so the indicators are LLui's. Arrows, dots, drag and the APG tablist keyboard model all drive one `current`.",
@@ -379,6 +404,48 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
               [text(demo.label)],
             ),
           ),
+          Button(
+            {
+              variant: 'outline',
+              'data-toast-demo-type': 'async',
+              // #265 findings 3 & 8: create a real 'loading' toast, then PATCH
+              // the SAME mounted row's type/title/description to 'success' —
+              // proving the update contract live (reactive data-type/icon/
+              // color/text), never creating a second toast for the outcome.
+              onClick: () => {
+                const id = `t${Date.now()}`
+                send({
+                  type: 'toaster',
+                  msg: {
+                    type: 'create',
+                    toast: {
+                      id,
+                      type: 'loading',
+                      title: 'Deploying',
+                      description: 'Uploading the release bundle…',
+                      duration: null,
+                      dismissable: true,
+                    },
+                  },
+                })
+                setTimeout(() => {
+                  send({
+                    type: 'toaster',
+                    msg: {
+                      type: 'update',
+                      id,
+                      patch: {
+                        type: 'success',
+                        title: 'Deploy complete',
+                        description: 'The release is live.',
+                      },
+                    },
+                  })
+                }, 1200)
+              },
+            },
+            [text('Async (loading → success)')],
+          ),
           span({ class: 'text-xs text-muted-foreground' }, [
             text(`Capped at ${Object.keys(TOAST_DEMOS).length}.`),
           ]),
@@ -391,13 +458,20 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       each(state.at('toaster').at('toasts'), {
         key: (t: toastC.Toast) => t.id,
         render: (t: Signal<toastC.Toast>) => {
+          // `parts.root` already carries a REACTIVE `data-type` (see
+          // `@llui/components/toast`'s #265 fix) and `Toast()` reads type
+          // purely off that attribute — never a `variant` prop resolved from
+          // a one-shot peek — so an `update` patching a mounted toast's type
+          // repaints its color/border/icon with no rebuild. Title/description
+          // are bound the same way, never `.peek()`'d (#265 findings 3 & 8).
           const parts = toaster.toast(t)
-          const item = t.peek()
           return [
-            Toast({ ...parts.root, variant: item.type }, [
+            Toast({ ...parts.root }, [
               div({ class: 'flex flex-col gap-1' }, [
-                ToastTitle({ ...parts.title }, [text(item.title ?? '')]),
-                ToastDescription({ ...parts.description }, [text(item.description ?? '')]),
+                ToastTitle({ ...parts.title }, [text(t.map((toast) => toast.title ?? ''))]),
+                ToastDescription({ ...parts.description }, [
+                  text(t.map((toast) => toast.description ?? '')),
+                ]),
               ]),
               ToastClose({ ...parts.closeTrigger }, [XIcon({ class: 'size-4' })]),
             ]),
