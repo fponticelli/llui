@@ -176,7 +176,32 @@ describe('actual navigation/data demos in Chromium', () => {
         sectionsDir: resolve(repoRoot, 'examples/registry-demo/src/sections'),
       },
     ].flatMap((demo) => navigationDataOwnedSectionFiles(demo, tokens))
-    expect(files.length).toBeGreaterThan(0)
+    // EXACT set, never a floor (#264 review item 6): `length > 0` cannot
+    // detect OVER-collection — a token match too broad would silently pull
+    // in every section file and still pass. Pinned to the current derived
+    // membership; a token/section change that legitimately grows or shrinks
+    // this set updates the list below, same as any other exact-set guard in
+    // this repo.
+    expect(files.map((file) => relative(repoRoot, file)).sort()).toEqual(
+      [
+        'examples/components-demo/src/sections/charts.ts',
+        'examples/components-demo/src/sections/content.ts',
+        'examples/components-demo/src/sections/data.ts',
+        'examples/components-demo/src/sections/inputs.ts',
+        'examples/components-demo/src/sections/surfaces.ts',
+        'examples/components-demo/src/sections/time-inputs.ts',
+        'examples/registry-demo/src/sections/advanced.ts',
+        'examples/registry-demo/src/sections/charts.ts',
+        'examples/registry-demo/src/sections/data.ts',
+        'examples/registry-demo/src/sections/layout.ts',
+        'examples/registry-demo/src/sections/media.ts',
+        'examples/registry-demo/src/sections/navigation.ts',
+        'examples/registry-demo/src/sections/overlays.ts',
+        'examples/registry-demo/src/sections/patterns.ts',
+        'examples/registry-demo/src/sections/presentational.ts',
+        'examples/registry-demo/src/sections/shared.ts',
+      ].sort(),
+    )
 
     // Matches text-align, margin/padding (and their `x` shorthand), border
     // radius, border side, and — the addition #264 item 8 asks for — the
@@ -189,8 +214,17 @@ describe('actual navigation/data demos in Chromium', () => {
     // real comment in `charts.ts`) cannot match.
     const value = '(?:-?\\d[\\w./%]*|auto|full|px|\\[[^\\]]+\\]|\\([^)]+\\))'
     const leadingBoundary = '(?:^|[\\s"\'`])'
+    // A Tailwind VARIANT prefix (`sm:`, `hover:`, `rtl:`, a stacked
+    // `sm:hover:`, …) sits directly in front of the utility with no
+    // whitespace, so `hover:pl-2` or `rtl:ml-2` never followed the
+    // whitespace/quote `leadingBoundary` above and went entirely unscanned
+    // (#264 review item 6) — the utility itself is identical, only preceded
+    // by zero or more `word-chars:` segments. Captured as part of the match
+    // so a found string names the exact variant combination, never just the
+    // bare utility.
+    const variantPrefix = '(?:[\\w-]+:)*'
     const physicalUtility = new RegExp(
-      `${leadingBoundary}(text-(?:left|right)\\b|[mp][lr]-${value}|[mp][lr]x-${value}|border-[lr](?:-${value}|\\b)|rounded-[lr](?:-${value}|\\b)|(?:left|right)-${value}|inset-[lr]-${value})`,
+      `${leadingBoundary}(${variantPrefix}(?:text-(?:left|right)\\b|[mp][lr]-${value}|[mp][lr]x-${value}|border-[lr](?:-${value}|\\b)|rounded-[lr](?:-${value}|\\b)|(?:left|right)-${value}|inset-[lr]-${value}))`,
       'gm',
     )
 
