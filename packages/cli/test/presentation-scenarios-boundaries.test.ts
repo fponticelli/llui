@@ -966,6 +966,122 @@ describe('presentation scenario boundary decoding', () => {
     expect(replay.issues).toEqual(error.issues)
   })
 
+  describe('SCENARIO-LEVEL (wrapper) diagnostics stay distinguishable for two 250-char scenario ids differing only in the last character', () => {
+    // `protectedPath()` was applied only in `decodeCase` (the CASE root) — a scenario/definition
+    // -level diagnostic (a stale key, a missing/extra wrapper field, an unknown `defaultCaseId`)
+    // is reported at the SCENARIO KEY root, one level OUTWARD, and was still being head-clipped
+    // there. Fixed by marking the scenario-key path protected wherever it is built (the
+    // definitions root, the compiled-catalog wrapper, the stale-key report) and by rendering a
+    // protected LEAF whole too (`clipDiagnosticPath`'s `leafIsProtected`) — these diagnostics are
+    // reported directly AT the scenario key, with nothing past it, so the key IS the leaf.
+    const idA = `component:${'x'.repeat(239)}A` // 250 chars
+    const idB = `component:${'x'.repeat(239)}B` // 250 chars, differs only in the last character
+    const good = {
+      defaultCaseId: 'a',
+      cases: [{ id: 'a', label: 'A', input: 0, environmentAxes: [] as string[] }],
+    }
+
+    function twoLongIdContract(): ProductContract {
+      return ProductContractSchema.parse({
+        version: 2,
+        entries: [
+          {
+            name: 'dialog',
+            displayName: 'Dialog',
+            category: 'overlays',
+            artifactKind: 'machine',
+            machine: { kind: 'public', importPath: '@llui/components/dialog' },
+            copiedArtifacts: [
+              {
+                name: 'dialog',
+                artifactKind: 'skin',
+                styling: { baseline: false, registryTailwind: true, styleless: false },
+              },
+            ],
+            styling: { baseline: true, registryTailwind: true, styleless: true },
+            presentation: { family: 'menus-overlays', baseline: styled, registryTailwind: styled },
+            scenarioId: idA,
+          },
+          {
+            name: 'menu',
+            displayName: 'Menu',
+            category: 'overlays',
+            artifactKind: 'machine',
+            machine: { kind: 'public', importPath: '@llui/components/menu' },
+            copiedArtifacts: [
+              {
+                name: 'menu',
+                artifactKind: 'skin',
+                styling: { baseline: false, registryTailwind: true, styleless: false },
+              },
+            ],
+            styling: { baseline: true, registryTailwind: true, styleless: true },
+            presentation: { family: 'menus-overlays', baseline: styled, registryTailwind: styled },
+            scenarioId: idB,
+          },
+        ],
+        aliases: [],
+      })
+    }
+
+    it('stale definition key', () => {
+      const error = errorFrom(() =>
+        decodeScenarioFamily(productContract(), 'menus-overlays', {
+          'component:dialog': good,
+          [idA]: good,
+          [idB]: good,
+        }),
+      )
+      expect(error.code).toBe('invalid-definitions')
+      expect(error.issues).toEqual([
+        `$["${idA}"]: stale definition for presentation family "menus-overlays".`,
+        `$["${idB}"]: stale definition for presentation family "menus-overlays".`,
+      ])
+    })
+
+    it('missing wrapper field', () => {
+      const error = errorFrom(() =>
+        decodeScenarioFamily(twoLongIdContract(), 'menus-overlays', {
+          [idA]: { cases: good.cases },
+          [idB]: { cases: good.cases },
+        }),
+      )
+      expect(error.code).toBe('invalid-definitions')
+      expect(error.issues).toEqual([
+        `$["${idA}"].defaultCaseId: required field is missing.`,
+        `$["${idB}"].defaultCaseId: required field is missing.`,
+      ])
+    })
+
+    it('extra wrapper field', () => {
+      const error = errorFrom(() =>
+        decodeScenarioFamily(twoLongIdContract(), 'menus-overlays', {
+          [idA]: { ...good, z: 1 },
+          [idB]: { ...good, z: 1 },
+        }),
+      )
+      expect(error.code).toBe('invalid-definitions')
+      expect(error.issues).toEqual([
+        `$["${idA}"].z: unexpected field.`,
+        `$["${idB}"].z: unexpected field.`,
+      ])
+    })
+
+    it('unknown defaultCaseId', () => {
+      const error = errorFrom(() =>
+        decodeScenarioFamily(twoLongIdContract(), 'menus-overlays', {
+          [idA]: { ...good, defaultCaseId: 'q' },
+          [idB]: { ...good, defaultCaseId: 'q' },
+        }),
+      )
+      expect(error.code).toBe('invalid-definitions')
+      expect(error.issues).toEqual([
+        `$["${idA}"].defaultCaseId: case "q" does not exist.`,
+        `$["${idB}"].defaultCaseId: case "q" does not exist.`,
+      ])
+    })
+  })
+
   it('types throwing, mutating, and huge proxy reflection as bounded boundary errors', () => {
     const throwing = new Proxy(
       {},
@@ -1488,8 +1604,7 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
           },
         ],
         aliases: [],
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately bypasses Zod
-      } as any
+      }
     }
     const limit = PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.identifierLength
 
@@ -1774,12 +1889,9 @@ describe('array decoding cost is bounded by real own-key count, never by a claim
     })
 
     const error = errorFrom(() =>
-      decodeScenarioFamily(
-        productContract(),
-        'menus-overlays',
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deliberately malformed shape
-        { 'component:dialog': { defaultCaseId: 'a', cases: wideCases } } as any,
-      ),
+      decodeScenarioFamily(productContract(), 'menus-overlays', {
+        'component:dialog': { defaultCaseId: 'a', cases: wideCases },
+      }),
     )
 
     expect(error.code).toBe('invalid-definitions')

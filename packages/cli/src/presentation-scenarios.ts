@@ -608,16 +608,18 @@ function indexPath(parent: DiagnosticPath, index: number): DiagnosticPath {
 }
 
 /**
- * Marks `path` as the PROTOCOL-STRUCTURE boundary `clipDiagnosticPath` must never elide past —
- * the case/field root (a definition's `.cases[i]` or a compiled scenario's `.scenarios[i].cases[j]`)
- * — so that `$["<scenarioId>"].cases[i]` / `$.scenarios[i].cases[j]` always survives clipping in
- * full, and elision is confined to segments BUILT FROM IT (i.e. inside the case's own payload,
- * `input` chief among them). Every `propertyPath`/`indexPath` built from the returned path inherits
- * the same `protectedDepth`, so the marker only needs to be applied ONCE, at the case root itself:
- * without it, two issues that differ only near the SCAFFOLDING root
- * (which scenario, which case) but share a deep payload shape collapse to the same clipped path,
- * exactly the defect the leaf-clipping fix in `clipDiagnosticPath` closes one level in, for
- * payload-only siblings.
+ * Marks `path` as a PROTOCOL-STRUCTURE boundary `clipDiagnosticPath` must never elide past. Two
+ * call sites mark two different boundaries, and both matter: the SCENARIO KEY root (`$["<scenarioId
+ * or stale key>"]`, marked wherever a scenario/definition-level diagnostic is built — the
+ * definition root, the compiled-catalog wrapper, a stale-key report) and the CASE root one level
+ * further in (`.cases[i]` / `.scenarios[i].cases[j]`, marked in `decodeCase`). Every
+ * `propertyPath`/`indexPath` built from the returned path inherits the same `protectedDepth`, and
+ * marking the case root AFTER the scenario key root simply extends the protected span deeper — so
+ * the marker only needs to be applied ONCE at each boundary, not re-applied at every descendant.
+ * Without marking the scenario key: two issues that differ only in WHICH scenario they name (a
+ * stale key, a missing/extra wrapper field, an invalid `defaultCaseId`) but otherwise share an
+ * identical diagnostic shape collapse to the same clipped path the moment that key is long enough
+ * to need clipping — the same defect payload-only siblings have inside one case, one level out.
  */
 function protectedPath(path: DiagnosticPath): DiagnosticPath {
   return {
@@ -660,19 +662,22 @@ function renderDiagnosticPath(path: DiagnosticPath): string {
  * scenarios/cases can share a long, identical
  * PAYLOAD SHAPE while differing only near the root — the scaffolding segments a plain middle-clip
  * has no reason to prefer keeping — so eliding those away the same way collapses distinct
- * findings just as badly. `path.protectedDepth` (set once, at the case root, by
+ * findings just as badly. `path.protectedDepth` (set once, at a protocol boundary, by
  * `protectedPath()`) names the boundary: segments `[0, protectedDepth)` are the protocol prefix
  * and are ALWAYS rendered WHOLE — not merely un-elided, but never passed through the per-segment
  * `clipRenderedText` either, since that clips to a head-keep/tail-cut ~50-unit window and two
  * long scenario/stale-key identifiers differing only near their OWN tail would collapse to the
  * same clipped prefix — the same defect this whole mechanism exists to prevent, reintroduced one
- * level in. Each protocol segment is already bounded by a small, fixed ceiling
- * (`MAX_IDENTIFIER_LENGTH`, 256 units) regardless, so rendering it whole cannot reopen an
+ * level in. The SAME rule applies when the protected boundary reaches all the way to the LEAF —
+ * a diagnostic reported directly AT the protected segment itself (e.g. a stale scenario key, with
+ * no further path beyond it) has `protectedDepth > leafIndex`, and the leaf is then rendered
+ * whole too, for the identical reason. Each protocol segment is already bounded by a small, fixed
+ * ceiling (`MAX_IDENTIFIER_LENGTH`, 256 units) regardless, so rendering it whole cannot reopen an
  * unbounded-size hole — it can only, rarely, make ONE issue's rendered path exceed `limit`; the
  * aggregate message budget, not this per-issue heuristic, is what actually bounds total output.
- * Only PAYLOAD segments (from `protectedDepth` up to, but not including, the leaf) are eligible
- * for elision, and an individual payload segment that is itself too long to fit is clipped
- * internally via `clipRenderedText` rather than dropped whole.
+ * Only PAYLOAD segments (from `protectedDepth` up to, but not including, an UNPROTECTED leaf) are
+ * eligible for elision, and an individual payload segment that is itself too long to fit is
+ * clipped internally via `clipRenderedText` rather than dropped whole.
  */
 function clipDiagnosticPath(path: DiagnosticPath, limit: number): string {
   const segments = diagnosticPathSegments(path)
@@ -684,7 +689,13 @@ function clipDiagnosticPath(path: DiagnosticPath, limit: number): string {
   // room for `$`, the elision marker, and at least the leaf.
   const perSegmentLimit = Math.max(24, Math.floor(limit / 4))
   const leafIndex = segments.length - 1
-  const leaf = clipRenderedText(renderPathSegment(segments[leafIndex]!), perSegmentLimit)
+  // The leaf itself may fall INSIDE the protected span (a diagnostic reported directly at a
+  // protected segment, with nothing past it) — rendered whole then, for the same reason the
+  // prefix below is: see this function's doc.
+  const leafIsProtected = (path.protectedDepth ?? 0) > leafIndex
+  const leaf = leafIsProtected
+    ? renderPathSegment(segments[leafIndex]!)
+    : clipRenderedText(renderPathSegment(segments[leafIndex]!), perSegmentLimit)
 
   // The protocol prefix is never elided AND never per-segment clipped — rendered whole, exactly
   // as `renderDiagnosticPath` would render it (see this function's doc).
@@ -1132,12 +1143,11 @@ class BoundaryDecoder {
   }
 
   /**
-   * The two record-inspection roles differ in exactly TWO respects — how the own-key COUNT is
-   * bounded (an aggregate charge against the shared payload budget, or a fixed structural cap)
-   * and how an individual key's own LENGTH is bounded (`MAX_STRING_LENGTH`, or the much smaller
-   * `MAX_IDENTIFIER_LENGTH`) — everything else (shape/prototype checks, the key-list/descriptor
-   * phases, building `keys`) is identical, so ONE method takes the difference as data instead of
-   * two call paths that could silently drift apart.
+   * The ONE place the metered and structural record roles differ: `keyList`'s own-key COUNT is
+   * either charged against the aggregate payload budget or checked against a fixed structural cap,
+   * and an individual key's own LENGTH is bounded by `MAX_STRING_LENGTH` or the much smaller
+   * `MAX_IDENTIFIER_LENGTH`. Returns whether `value` may proceed to the (shared) descriptor
+   * phase — see `#recordWithPolicy`'s doc for why everything ELSE is one method, not two.
    */
   #recordPolicy(policy: RecordPolicy, keyList: KeyList, path: DiagnosticPath): boolean {
     if (policy.kind === 'metered') {
@@ -1166,6 +1176,14 @@ class BoundaryDecoder {
     return true
   }
 
+  /**
+   * The two record-inspection roles differ in exactly TWO respects — how the own-key COUNT is
+   * bounded (an aggregate charge against the shared payload budget, or a fixed structural cap)
+   * and how an individual key's own LENGTH is bounded (`MAX_STRING_LENGTH`, or the much smaller
+   * `MAX_IDENTIFIER_LENGTH`), both decided by `#recordPolicy` above — everything else here (shape
+   * /prototype checks, the key-list/descriptor phases, building `keys`) is identical, so ONE
+   * method takes the difference as data instead of two call paths that could silently drift apart.
+   */
   #recordWithPolicy(
     value: unknown,
     path: DiagnosticPath,
@@ -1257,11 +1275,11 @@ class BoundaryDecoder {
   }
 
   /**
-   * Reads JUST the `length` descriptor — an O(1) peek, unlike `#descriptors()` below, which calls
-   * `Reflect.ownKeys` and is O(length) even for an ordinary DENSE array with no other defect.
-   * Rejecting an over-long array here, before ever calling `#descriptors()`, is what keeps a
-   * dense array far past `MAX_ARRAY_LENGTH` from paying that enumeration cost at all (#270
-   * finding 2).
+   * Reads JUST the `length` descriptor — an O(1) peek, unlike `#safeKeyList`/`#safeDescriptorsFor`,
+   * which call `Reflect.ownKeys`/`Object.getOwnPropertyDescriptor` and are O(length) even for an
+   * ordinary DENSE array with no other defect. Rejecting an over-long array here, before ever
+   * reaching those, is what keeps a dense array far past `MAX_ARRAY_LENGTH` from paying that
+   * enumeration cost at all.
    */
   #arrayLength(value: object, path: DiagnosticPath): number | undefined {
     let lengthDescriptor: PropertyDescriptor | undefined
@@ -1772,7 +1790,9 @@ function decodeDefinitions(value: unknown, diagnostics: DiagnosticCollector): De
   const scenarioIds: string[] = []
   if (root !== undefined) {
     for (const scenarioId of root.keys) {
-      const path = propertyPath(ROOT_DIAGNOSTIC_PATH, scenarioId)
+      // Protected so a stale/oversized scenario key stays distinguishable from a sibling's after
+      // clipping — see `protectedPath()`'s doc.
+      const path = protectedPath(propertyPath(ROOT_DIAGNOSTIC_PATH, scenarioId))
       const descriptor = root.descriptors[scenarioId]!
       if (!('value' in descriptor)) {
         decoder.issue(path, 'accessor properties are not supported')
@@ -2146,7 +2166,9 @@ function compiledCatalog(
   for (const entry of entries) expectedScenarioIds.add(entry.scenarioId)
   for (const entry of entries) {
     const definition = decoded.definitions.get(entry.scenarioId)
-    const path = propertyPath(ROOT_DIAGNOSTIC_PATH, entry.scenarioId)
+    // Protected for the same reason as `decodeDefinitions`'s scenario key — see
+    // `protectedPath()`'s doc.
+    const path = protectedPath(propertyPath(ROOT_DIAGNOSTIC_PATH, entry.scenarioId))
     // `entry.name`/`entry.scenarioId` are ALREADY-TRUSTED contract data — never decoded through
     // `identifier()` — but they become this catalog's `productId`/`scenarioId` verbatim, which
     // ARE decoded through it on every later serialized re-decode. The SAME predicate
@@ -2173,8 +2195,11 @@ function compiledCatalog(
   }
   for (const scenarioId of decoded.scenarioIds) {
     if (!expectedScenarioIds.has(scenarioId)) {
+      // Protected: this diagnostic is reported directly AT the (possibly long, possibly stale)
+      // scenario key, with nothing past it — see `protectedPath()`'s doc, and the "protected
+      // LEAF" case in `clipDiagnosticPath`'s.
       diagnostics.add(
-        propertyPath(ROOT_DIAGNOSTIC_PATH, scenarioId),
+        protectedPath(propertyPath(ROOT_DIAGNOSTIC_PATH, scenarioId)),
         'stale definition for presentation family ',
         quoted(family),
       )

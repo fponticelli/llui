@@ -152,8 +152,7 @@ export const ProductEntrySchema = z
     // `.max(MAX_PRODUCT_IDENTIFIER_LENGTH)`: this `name` becomes a compiled catalog's
     // `productId`, which `BoundaryDecoder.identifier()` bounds to the SAME limit on every
     // serialized re-decode — bounding it here too, at parse time, is the earliest and cheapest
-    // place to catch a value that would otherwise compile but fail to round-trip (#270 finding 1,
-    // round four).
+    // place to catch a value that would otherwise compile but fail to round-trip.
     name: z.string().regex(PRODUCT_NAME).max(MAX_PRODUCT_IDENTIFIER_LENGTH),
     displayName: z.string().min(1),
     category: ProductCategorySchema,

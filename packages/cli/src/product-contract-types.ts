@@ -10,8 +10,7 @@
  * copies these fields into the catalog it builds without decoding them, since a `ProductContract`
  * is caller-trusted, already-validated data, not an untyped boundary — and then FAILS to
  * re-decode the very catalog `compileScenarioFamily` just produced, the moment it is serialized
- * (JSON round trip / `structuredClone`) and handed back through `decodeScenarioSelection` (#270
- * finding 1, round four).
+ * (JSON round trip / `structuredClone`) and handed back through `decodeScenarioSelection`.
  */
 export const MAX_PRODUCT_IDENTIFIER_LENGTH = 256
 
