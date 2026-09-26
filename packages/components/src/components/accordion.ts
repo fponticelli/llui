@@ -10,7 +10,6 @@ import {
 import {
   createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
-  watchForStalledDisclosureExit,
   type DisclosureExitWatchEntry,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
@@ -256,11 +255,6 @@ export function connect(
       generation: retainedExitGeneration(state.peek().exitGenerations, value) ?? 0,
       contentId: contentId(value),
     }))
-  // Dev-only, unconditional the moment `connect()` runs — independent of
-  // whether `exitCompletion` below is ever placed in the view, because
-  // nothing placement-gated can warn about its OWN absence (#264 review
-  // item 1).
-  watchForStalledDisclosureExit(exitWatchEntries, (value) => `Accordion item "${value}"`)
   const armExit = (value: string, e: MotionEvent): void => {
     const current = state.peek()
     exitTracker.armExit(e, {
@@ -315,6 +309,7 @@ export function connect(
         getElementByIdInScope,
         exitWatchEntries,
         (value, generation) => send({ type: 'exitComplete', value, generation }),
+        { describe: (value) => `Accordion item "${value}"` },
       ),
     ),
     item: (value: string): AccordionItemParts => ({

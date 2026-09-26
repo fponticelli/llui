@@ -292,7 +292,21 @@ describe('#264 — disclosure exit completion in Chromium', () => {
     ).toBe('closing')
   })
 
-  it('dev warning fires when `exitCompletion` is NOT placed and a programmatic close hangs on a no-motion skin', async () => {
+  it('hangs forever, with no warning, when `exitCompletion` is NOT placed at all (#264 review item 4)', async () => {
+    // The stall watchdog is now folded into the `exitCompletion` mount
+    // callback itself (see disclosure-motion.ts's "Why one watcher, not
+    // two"), so it only ever runs from THAT Mountable's own mount — a skin
+    // that never places `parts.exitCompletion` gets no diagnostic at all.
+    // This is an accepted trade-off for removing the leak a SEPARATE,
+    // eagerly-scheduled watcher used to be (a `setInterval` with no
+    // lifetime, started on every `connect()` call): the registry's root
+    // skins now make omitting `exitCompletion` a compile-time error (#264
+    // review item 2), so the remaining exposure is a hand-rolled skin,
+    // documented in packages/components/README.md. The content still
+    // genuinely hangs `closing` + `inert` forever either way — nothing
+    // resolves it without `exitCompletion` placed — which is what this test
+    // pins; the warning behaviour when it IS placed is covered by
+    // `disclosure-stall-watchdog.test.ts`'s fake-timer suite.
     const warnings: string[] = []
     page.on('console', (msg) => {
       if (msg.type() === 'warning' || msg.type() === 'error') warnings.push(msg.text())
@@ -300,8 +314,6 @@ describe('#264 — disclosure exit completion in Chromium', () => {
 
     await page.evaluate(() => window.__noPartSend!({ type: 'close', value: 'x' }))
 
-    // The content genuinely hangs `closing` + `inert` forever — nothing
-    // resolves it without `exitCompletion` placed.
     await page.evaluate(() => new Promise((r) => setTimeout(r, 200)))
     const stuck = await page.evaluate(() => {
       const el = document.querySelector<HTMLElement>("#host-no-part [data-part='content']")!
@@ -309,10 +321,8 @@ describe('#264 — disclosure exit completion in Chromium', () => {
     })
     expect(stuck).toEqual({ state: 'closing', inert: true })
 
-    // The dev-mode watchdog (independent of `exitCompletion` placement)
-    // warns once the deadline (1500ms) passes.
     await new Promise((r) => setTimeout(r, 2200))
-    expect(warnings.some((w) => w.includes('exitCompletion'))).toBe(true)
+    expect(warnings.some((w) => w.includes('exitCompletion'))).toBe(false)
   })
 
   it('never lets a canceled enter animation complete an unrelated exit under rapid open/close', async () => {

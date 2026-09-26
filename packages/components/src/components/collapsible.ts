@@ -4,7 +4,6 @@ import { retainedExit } from '../internal/retained-exit.js'
 import {
   createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
-  watchForStalledDisclosureExit,
   type DisclosureExitWatchEntry,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
@@ -157,11 +156,6 @@ export function connect(
       ? [{ key: 'root', closing: true, generation: current.exitGeneration, contentId }]
       : []
   }
-  // Dev-only, unconditional the moment `connect()` runs — independent of
-  // whether `exitCompletion` below is ever placed in the view, because
-  // nothing placement-gated can warn about its OWN absence (#264 review
-  // item 1).
-  watchForStalledDisclosureExit(exitWatchEntries, () => 'Collapsible')
   const armExit = (e: MotionEvent): void => {
     const current = state.peek()
     exitTracker.armExit(e, { closing: current.closing, generation: current.exitGeneration })
@@ -248,6 +242,7 @@ export function connect(
         getElementByIdInScope,
         exitWatchEntries,
         (_key, generation) => send({ type: 'exitComplete', generation }),
+        { describe: () => 'Collapsible' },
       ),
     ),
   }

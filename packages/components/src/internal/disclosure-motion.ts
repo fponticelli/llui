@@ -219,123 +219,149 @@ export interface DisclosureExitWatchEntry {
 
 /**
  * Root-scoped completion watcher, one per `connect()` call (#264 review item
- * 1). Resolves each closing entry's content element by ID
- * (`getElementByIdInScope`, never a scope-wide `[data-scope][data-part]`
- * query) so it cannot settle a SIBLING instance sharing the same onMount
- * build container — the container `onMount` hands a callback is the whole
- * enclosing BUILD, which is shared by every component placed inside one
- * parent view, not a box scoped to this one instance (see CLAUDE.md's
- * `onMount` invariant). Two accordions with an item sharing the same VALUE,
- * or an accordion and a collapsible both rendered inside one parent's view,
- * used to be settled by whichever container-wide query ran first, cutting a
- * running exit animation on the wrong instance.
+ * 1), that ALSO carries the dev-mode stalled-exit warning (#264 review item
+ * 4, folded in — previously a second, independently-scheduled watcher: see
+ * "Why one watcher, not two" below). Resolves each closing entry's content
+ * element by ID (`getElementByIdInScope`, never a scope-wide
+ * `[data-scope][data-part]` query) so it cannot settle a SIBLING instance
+ * sharing the same onMount build container — the container `onMount` hands a
+ * callback is the whole enclosing BUILD, which is shared by every component
+ * placed inside one parent view, not a box scoped to this one instance (see
+ * CLAUDE.md's `onMount` invariant). Two accordions with an item sharing the
+ * same VALUE, or an accordion and a collapsible both rendered inside one
+ * parent's view, used to be settled by whichever container-wide query ran
+ * first, cutting a running exit animation on the wrong instance.
  *
  * Returned as a `Mountable` meant for `connect()`'s own `exitCompletion`
  * part — it must be PLACED in the rendered view (as `parts.exitCompletion`)
  * for programmatic closes on a no-exit-motion skin to ever settle; a
  * click-driven close is still safety-netted synchronously inside the
  * trigger's own handler regardless of whether this is placed.
+ *
+ * **Why one watcher, not two (#264 review item 4).** The dev warning used to
+ * be a SEPARATE function, `watchForStalledDisclosureExit`, called eagerly
+ * from `connect()` itself (not from a mount callback) and scheduled with a
+ * recurring `setInterval` whose disposer every call site discarded. That
+ * cost four real defects, all fixed by folding it into THIS mount instead:
+ *   1. **Leak.** A `setInterval` started on every `connect()` call with no
+ *      lifetime tied to anything ran forever — `connect()` can be called
+ *      (and re-called) far more often than a component is actually mounted.
+ *   2. **`vi.runAllTimers()` hangs.** `setInterval` reschedules itself
+ *      forever, so a fake-timer test that runs the timer queue to
+ *      exhaustion never terminates. A one-shot `setTimeout` PER closing
+ *      TRANSITION (armed here, in `check()`, the moment an entry is seen
+ *      closing) does not reschedule itself and lets the queue drain.
+ *   3. **False warning after dispose / runs forever under SSR.** Tying the
+ *      timer to the SAME mount callback `exitCompletion` already owns means
+ *      the SAME cleanup (`() => { observer.disconnect(); ... }`) clears
+ *      every pending timeout, and SSR never runs a mount callback at all
+ *      (`runMounts` only fires client-side) — no separate guard needed.
+ *   4. **Bare `catch {}` shaped around a test double.** The old watcher
+ *      called `getEntries()` (which peeks the live `state` signal
+ *      `connect()` was given) from ITS OWN eagerly-started timer, so a
+ *      structural test calling `connect(rootSignal(), ...)` (this package's
+ *      OWN `rootSignal()` test double, which throws on `peek()` by design —
+ *      see `test/_signal.ts`) without ever mounting anything still threw,
+ *      forever, unless silently caught. Since this watcher only calls
+ *      `getEntries()` from INSIDE the mount callback, a test that never
+ *      mounts (every `rootSignal()` structural test in this package) never
+ *      calls it at all — nothing to catch.
+ * Folding also DEDUPES the "is anything still running" check: the old
+ * watcher reimplemented `completeIfUnanimated`'s `getAnimations` filter
+ * inline; this now reuses the one function directly.
  */
 export function createDisclosureExitCompletionMount(
   getElementByIdInScope: (root: Node, id: string) => HTMLElement | null,
   getEntries: () => readonly DisclosureExitWatchEntry[],
   onSettle: (key: string, generation: number) => void,
+  /** Dev-mode stall warning. Omit to disable the warning entirely (still
+   * settles programmatic closes); `describe` names an entry for the message. */
+  warn?: { describe: (key: string) => string; deadlineMs?: number },
 ): (container: Element) => (() => void) | void {
   return (container: Element) => {
+    const deadlineMs = warn?.deadlineMs ?? 1500
+    const devWarningsEnabled =
+      warn !== undefined && import.meta.env?.DEV === true && typeof setTimeout !== 'undefined'
+    const stallTimers = new Map<string, ReturnType<typeof setTimeout>>()
+    const warned = new Set<string>()
+
+    const clearStallTimer = (trackKey: string): void => {
+      const timer = stallTimers.get(trackKey)
+      if (timer !== undefined) {
+        clearTimeout(timer)
+        stallTimers.delete(trackKey)
+      }
+    }
+
+    const armStallTimer = (entry: DisclosureExitWatchEntry, trackKey: string): void => {
+      if (!devWarningsEnabled || stallTimers.has(trackKey) || warned.has(trackKey)) return
+      const timer = setTimeout(() => {
+        stallTimers.delete(trackKey)
+        // Re-read live entries rather than trusting the closure: the value
+        // may have reopened, or moved to a new generation, since the timer
+        // was armed.
+        const current = getEntries().find(
+          (candidate) => candidate.key === entry.key && candidate.generation === entry.generation,
+        )
+        if (current === undefined || !current.closing || warned.has(trackKey)) return
+        const el = getElementByIdInScope(container, current.contentId)
+        if (completeIfUnanimated(el, { closing: true, generation: current.generation })) {
+          onSettle(current.key, current.generation)
+          return
+        }
+        warned.add(trackKey)
+        // `warn` is defined whenever `devWarningsEnabled` is true.
+        console.warn(
+          `[llui/components] ${warn!.describe(entry.key)} has stayed "closing" for over ` +
+            `${deadlineMs}ms with no running exit animation/transition. This usually means the ` +
+            '`exitCompletion` connect() part was never placed in the rendered view, so a ' +
+            'programmatic close on a skin with no exit motion never settles. Place `parts.' +
+            "exitCompletion` in the component's view, or pass `animated: false` if no exit " +
+            'motion is intended.',
+        )
+      }, deadlineMs)
+      stallTimers.set(trackKey, timer)
+    }
+
     const check = (): void => {
+      const seen = new Set<string>()
       for (const entry of getEntries()) {
-        if (!entry.closing) continue
+        const trackKey = `${entry.key}\u0000${entry.generation}`
+        if (!entry.closing) {
+          clearStallTimer(trackKey)
+          continue
+        }
+        seen.add(trackKey)
         const content = getElementByIdInScope(container, entry.contentId)
         if (completeIfUnanimated(content, { closing: true, generation: entry.generation })) {
+          clearStallTimer(trackKey)
           onSettle(entry.key, entry.generation)
+          continue
         }
+        armStallTimer(entry, trackKey)
+      }
+      // A stale generation's timer (superseded before it ever fired) has no
+      // entry left to match in `getEntries()` at all — drop it too.
+      for (const trackKey of [...stallTimers.keys()]) {
+        if (!seen.has(trackKey)) clearStallTimer(trackKey)
       }
     }
     check()
-    if (typeof MutationObserver === 'undefined') return
+
+    const disposeStallTimers = (): void => {
+      for (const trackKey of [...stallTimers.keys()]) clearStallTimer(trackKey)
+    }
+    if (typeof MutationObserver === 'undefined') return disposeStallTimers
     const observer = new MutationObserver(check)
     observer.observe(container, {
       attributes: true,
       attributeFilter: ['data-state'],
       subtree: true,
     })
-    return () => observer.disconnect()
-  }
-}
-
-/**
- * Development-only safety net that does NOT depend on `exitCompletion` ever
- * being placed in the view (#264 review item 1). `@llui/dom`'s build-once
- * model runs no side effect that was not placed in the rendered tree, so a
- * forgotten `parts.exitCompletion` cannot be detected from anything that
- * itself requires placement — this instead polls plain `state.peek()` from
- * the moment `connect()` is called, entirely independent of what the
- * consumer does with its return value. It resolves the content element
- * through the GLOBAL `document` rather than `getElementByIdInScope`, which
- * is an accepted narrowing for a diagnostic-only path (a shadow-DOM-mounted
- * instance simply does not get the warning) since a plain poll has no live
- * root reference to scope through. Cost is bounded and DEV-only: each tick is
- * O(entries), the check short-circuits to nothing when nothing is closing,
- * and every key warns at most once.
- */
-export function watchForStalledDisclosureExit(
-  getEntries: () => readonly DisclosureExitWatchEntry[],
-  describe: (key: string) => string,
-  deadlineMs = 1500,
-): () => void {
-  if (import.meta.env?.DEV !== true || typeof setInterval === 'undefined') return () => {}
-  const firstSeen = new Map<string, number>()
-  const warned = new Set<string>()
-  let id: ReturnType<typeof setInterval> | undefined
-  const tick = (): void => {
-    // `getEntries` peeks the live signal `connect()` was called with. A
-    // structural/harness signal with no live value (`rootSignal()` in this
-    // package's own tests, per `test/_signal.ts`) throws on every peek —
-    // permanently, never a transient condition — so one throw here disarms
-    // this watchdog for good rather than leaving an uncaught-exception timer
-    // running forever in a process that will never mount this component for
-    // real. A REAL connect() call's `state.peek()` never throws.
-    let entries: readonly DisclosureExitWatchEntry[]
-    try {
-      entries = getEntries()
-    } catch {
-      if (id !== undefined) clearInterval(id)
-      return
+    return () => {
+      observer.disconnect()
+      disposeStallTimers()
     }
-    const now = Date.now()
-    const active = new Set<string>()
-    for (const entry of entries) {
-      if (!entry.closing) continue
-      const trackKey = `${entry.key}\u0000${entry.generation}`
-      active.add(trackKey)
-      const since = firstSeen.get(trackKey)
-      if (since === undefined) {
-        firstSeen.set(trackKey, now)
-        continue
-      }
-      if (now - since < deadlineMs || warned.has(trackKey)) continue
-      const el = typeof document === 'undefined' ? null : document.getElementById(entry.contentId)
-      const running =
-        el instanceof HTMLElement &&
-        typeof el.getAnimations === 'function' &&
-        el
-          .getAnimations({ subtree: false })
-          .some((a) => ['running', 'paused', 'pending'].includes(a.playState))
-      if (running) continue
-      warned.add(trackKey)
-      console.warn(
-        `[llui/components] ${describe(entry.key)} has stayed "closing" for over ${deadlineMs}ms ` +
-          'with no running exit animation/transition. This usually means the `exitCompletion` ' +
-          'connect() part was never placed in the rendered view, so a programmatic close on a ' +
-          "skin with no exit motion never settles. Place `parts.exitCompletion` in the component's " +
-          'view, or pass `animated: false` if no exit motion is intended.',
-      )
-    }
-    for (const key of [...firstSeen.keys()]) if (!active.has(key)) firstSeen.delete(key)
-  }
-  id = setInterval(tick, Math.max(100, Math.floor(deadlineMs / 3)))
-  return () => {
-    if (id !== undefined) clearInterval(id)
   }
 }
 
