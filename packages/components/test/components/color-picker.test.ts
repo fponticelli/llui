@@ -679,25 +679,41 @@ describe('eyedropper', () => {
   })
 
   it('a second click aborts the pending pick instead of stacking sends', async () => {
-    let firstController: AbortSignal | undefined
-    const opens: Array<() => void> = []
+    const calls: Array<{ signal?: AbortSignal; resolve: (r: { sRGBHex: string }) => void }> = []
     window.EyeDropper = class {
       async open(opts?: { signal?: AbortSignal }): Promise<{ sRGBHex: string }> {
-        firstController ??= opts?.signal
-        return new Promise((resolve, reject) => {
-          opens.push(() => {
-            if (opts?.signal?.aborted) reject(new DOMException('aborted', 'AbortError'))
-            else resolve({ sRGBHex: '#ffffff' })
-          })
+        return new Promise((resolve) => {
+          calls.push({ signal: opts?.signal, resolve })
         })
       }
     } as unknown as typeof window.EyeDropper
     const send = vi.fn()
     const pc = connect(signalOf(init()), send)
+
     pc.eyeDropperTrigger.onClick(new MouseEvent('click'))
-    expect(firstController?.aborted).toBe(false)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.signal?.aborted).toBe(false)
+
     pc.eyeDropperTrigger.onClick(new MouseEvent('click'))
-    expect(firstController?.aborted).toBe(true)
+    expect(calls).toHaveLength(2)
+    // The FIRST request's controller is aborted by the second click...
+    expect(calls[0]?.signal?.aborted).toBe(true)
+    expect(calls[1]?.signal?.aborted).toBe(false)
+
+    // ...and even if that first (superseded) EyeDropper call still resolves —
+    // a real implementation would reject on an aborted signal, but a hostile
+    // or buggy one might not — its STALE result must never reach `send`.
+    calls[0]?.resolve({ sRGBHex: '#111111' })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(send).not.toHaveBeenCalled()
+
+    // Only the SECOND (live) request's result reaches `send`.
+    calls[1]?.resolve({ sRGBHex: '#222222' })
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith({ type: 'setColor', color: '#222222' })
+    })
+    expect(send).toHaveBeenCalledTimes(1)
   })
 
   it('onClick is a no-op when disabled', () => {
