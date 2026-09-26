@@ -1,9 +1,20 @@
-import { button, li, nav, span, ul } from '@llui/dom'
+import {
+  button,
+  constant,
+  derived,
+  isSignalHandle,
+  li,
+  nav,
+  span,
+  ul,
+  type AttrValue,
+  type ChildNode,
+  type ElProps,
+  type Mountable,
+} from '@llui/dom'
 import { ChevronLeftIcon, ChevronRightIcon } from './icons'
-import { classPart } from '../../lib/utils'
+import { classPart, cn, splitArgs } from '../../lib/utils'
 import { buttonVariants } from './button'
-import { mergeClass, splitArgs } from '../../lib/utils'
-import { type ChildNode, type ElProps, type Mountable } from '@llui/dom'
 
 /**
  * Ported from shadcn/ui (MIT © 2023 shadcn), including the part people miss:
@@ -11,6 +22,21 @@ import { type ChildNode, type ElProps, type Mountable } from '@llui/dom'
  * with `ghost` or `outline` depending on whether the page is current. Reusing
  * the button recipe is what keeps a pagination control looking like the rest of
  * the app's buttons; a hand-written copy drifts on the first button change.
+ *
+ * shadcn picks the variant ONCE, in a plain render function (`isActive` is a
+ * boolean prop). `@llui/components/pagination` instead publishes `data-selected`
+ * as a reactive Signal, so the SAME choice — `buttonVariants({ variant: value
+ * === undefined ? 'ghost' : 'outline', size })` — has to be made inside a
+ * `derived(...)` binding rather than once at build time: build-once views never
+ * re-run, so a plain per-render `isActive ? … : …` would freeze the class at
+ * whatever the page happened to be at mount. This used to be worked around with
+ * a hand-typed `data-selected:`-prefixed copy of `outline`'s utility list (a
+ * CSS-variant trick, since Tailwind can only see a LITERAL class string) — which
+ * is exactly the copy that can drift the moment `outline` changes in `button.ts`
+ * and did not (the two are unrelated files with no shared source). Calling
+ * `buttonVariants` directly and swapping the WHOLE resolved string reactively
+ * keeps this byte-identical to `Button({ variant: 'outline' | 'ghost' })` by
+ * construction, with no separate literal to fall out of sync.
  *
  * `@llui/components/pagination` publishes reactive `data-selected` and
  * `aria-current` attributes. Page items stay real buttons: the machine's
@@ -32,20 +58,33 @@ function paginationLink(
   extra = '',
   glyph?: { at: 'start' | 'end'; icon: (props?: ElProps) => Mountable },
 ) {
+  const ghostClass = buttonVariants({ variant: 'ghost', size: defaultSize })
+  const outlineClass = buttonVariants({ variant: 'outline', size: defaultSize })
+  const staticExtra = `${paginationSelectedForcedColorsRecipe} group-data-[disabled]/pagination:opacity-100 ${extra}`
+
   return (a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable => {
     const { props, children } = splitArgs(a0, a1)
-    const { class: className, ...rest } = props
-    // Never inspect `data-selected` here: a machine part supplies a Signal, and
-    // any Signal object is truthy regardless of its live value. The state recipe
-    // is selector-driven so the original reactive attribute reaches the DOM.
+    const { class: className, 'data-selected': selected, ...rest } = props
+    // Both operands may independently be reactive (`selected` always is, from
+    // the machine; `className` is a caller override that could be too), so both
+    // are normalized to signals and combined with ONE `derived` binding rather
+    // than branching on which side is reactive — that would silently freeze the
+    // class the moment the untested combination showed up.
+    const selectedSignal = isSignalHandle(selected) ? selected : constant(selected)
+    const classNameSignal = isSignalHandle(className) ? className : constant(className)
+    const resolvedClass: AttrValue = derived(selectedSignal, classNameSignal, (value, override) =>
+      cn(
+        value === undefined ? ghostClass : outlineClass,
+        staticExtra,
+        typeof override === 'string' ? override : undefined,
+      ),
+    )
     return button(
       {
         type: 'button',
         ...rest,
-        class: mergeClass(
-          `${buttonVariants({ variant: 'ghost', size: defaultSize })} ${paginationSelectedRecipe} group-data-[disabled]/pagination:opacity-100 ${extra}`,
-          className,
-        ),
+        'data-selected': selected,
+        class: resolvedClass,
       },
       glyph === undefined
         ? children
@@ -59,8 +98,13 @@ function paginationLink(
 // Named `*Recipe` consts, not inline arguments: a class string passed as a
 // function ARGUMENT sits in no position the repo's Tailwind check reads, so
 // these went unverified until they were hoisted here.
-const paginationSelectedRecipe =
-  'data-selected:border data-selected:bg-background data-selected:shadow-xs data-selected:hover:bg-accent data-selected:hover:text-accent-foreground dark:data-selected:border-input dark:data-selected:bg-input/30 dark:data-selected:hover:bg-input/50 forced-colors:data-selected:outline-solid forced-colors:data-selected:outline-2 forced-colors:data-selected:outline-[Highlight] forced-colors:data-selected:-outline-offset-2'
+//
+// This is NOT a copy of anything in `button.ts` — it is pagination's OWN extra
+// affordance, an outline ring around the current page that survives forced-
+// colors mode even though `buttonVariants`'s outline/ghost swap above already
+// changes the system-drawn border on its own.
+const paginationSelectedForcedColorsRecipe =
+  'forced-colors:data-selected:outline-solid forced-colors:data-selected:outline-2 forced-colors:data-selected:outline-[Highlight] forced-colors:data-selected:-outline-offset-2'
 const paginationPreviousRecipe = 'gap-1 px-2.5 sm:ps-2.5'
 const paginationNextRecipe = 'gap-1 px-2.5 sm:pe-2.5'
 
