@@ -286,10 +286,25 @@ export function watchForStalledDisclosureExit(
   if (import.meta.env?.DEV !== true || typeof setInterval === 'undefined') return () => {}
   const firstSeen = new Map<string, number>()
   const warned = new Set<string>()
+  let id: ReturnType<typeof setInterval> | undefined
   const tick = (): void => {
+    // `getEntries` peeks the live signal `connect()` was called with. A
+    // structural/harness signal with no live value (`rootSignal()` in this
+    // package's own tests, per `test/_signal.ts`) throws on every peek —
+    // permanently, never a transient condition — so one throw here disarms
+    // this watchdog for good rather than leaving an uncaught-exception timer
+    // running forever in a process that will never mount this component for
+    // real. A REAL connect() call's `state.peek()` never throws.
+    let entries: readonly DisclosureExitWatchEntry[]
+    try {
+      entries = getEntries()
+    } catch {
+      if (id !== undefined) clearInterval(id)
+      return
+    }
     const now = Date.now()
     const active = new Set<string>()
-    for (const entry of getEntries()) {
+    for (const entry of entries) {
       if (!entry.closing) continue
       const trackKey = `${entry.key}\u0000${entry.generation}`
       active.add(trackKey)
@@ -318,8 +333,10 @@ export function watchForStalledDisclosureExit(
     }
     for (const key of [...firstSeen.keys()]) if (!active.has(key)) firstSeen.delete(key)
   }
-  const id = setInterval(tick, Math.max(100, Math.floor(deadlineMs / 3)))
-  return () => clearInterval(id)
+  id = setInterval(tick, Math.max(100, Math.floor(deadlineMs / 3)))
+  return () => {
+    if (id !== undefined) clearInterval(id)
+  }
 }
 
 /**
