@@ -326,6 +326,21 @@ describe('baseline navigation/data scenario renderer', () => {
           )
           if (mutatedValue === UNCHANGED) continue
           const mutatedInput = { ...scenarioCase.input, [field]: mutatedValue }
+          // A generic "did the whole projection change" diff can be MASKED by
+          // an unrelated renderer-added echo of the very field being mutated
+          // — a `data-*` attribute mirroring the mutated value, placed on a
+          // REAL `[data-part]` root, still registers as a projection
+          // difference even when the actual machine wiring is broken (#264
+          // review item 3). For dimensions with a known specific
+          // machine-published attribute, assert THAT directly rather than
+          // trusting the diff alone.
+          const targetedCheck = TARGETED_ATTRIBUTE_CHECKS[`${scenarioId}.${field}`]
+          if (targetedCheck !== undefined) {
+            const targetHost = document.createElement('div')
+            const targetHandle = typedAdapter(targetHost, mutatedInput, baseCtx)
+            targetedCheck(targetHost, mutatedInput as Record<string, unknown>)
+            targetHandle.dispose()
+          }
           const mutated = mountFor(typedAdapter, mutatedInput, baseCtx).projection
           const key = `${scenarioId}/${scenarioCase.id}.${field}`
           if (mutated === baseline) {
@@ -414,6 +429,38 @@ const INSENSITIVE_ENVIRONMENT_DIMENSIONS: Readonly<Record<string, string>> = {
   // skeleton/spinner are registry-only (not-applicable on the baseline path)
   // and never reach this loop here — their motion allowance lives in
   // registry/test/navigation-data-scenario-renderer.test.ts instead.
+}
+
+/**
+ * Per-`scenarioId.field` targeted assertions against the ACTUAL
+ * machine-published attribute/text, run alongside (never instead of) the
+ * generic projection diff above. The generic diff is fooled by a
+ * renderer-added echo of the mutated field on a real `[data-part]` element —
+ * measured directly: the reviewer's mutation harness added a
+ * `data-case-value` echo to `tabs`' root while simultaneously breaking the
+ * `value` wiring, and the generic diff still "passed" because the echo alone
+ * differs (#264 review item 3). Keying this off SPECIFIC part
+ * attributes/text — `[data-part='table']`'s `aria-label` for chart, the
+ * matching trigger's `aria-selected` / panel's `hidden` for tabs — cannot be
+ * fooled the same way, because those are read off the exact node the
+ * machine's own state drives, not an arbitrary echo elsewhere in the tree.
+ */
+const TARGETED_ATTRIBUTE_CHECKS: Readonly<
+  Record<string, (host: HTMLElement, mutatedInput: Record<string, unknown>) => void>
+> = {
+  'component:chart.label': (host, mutatedInput) => {
+    const table = host.querySelector('[data-part="table"]')
+    expect(table?.getAttribute('aria-label'), 'component:chart.label aria-label').toBe(
+      mutatedInput.label,
+    )
+  },
+  'component:tabs.value': (host, mutatedInput) => {
+    const value = mutatedInput.value as string
+    const trigger = host.querySelector(`[data-part="trigger"][data-value="${value}"]`)
+    const panel = host.querySelector(`[data-part="panel"][data-value="${value}"]`)
+    expect(trigger?.getAttribute('aria-selected'), 'component:tabs.value trigger').toBe('true')
+    expect(panel?.hasAttribute('hidden'), 'component:tabs.value panel').toBe(false)
+  },
 }
 
 /**

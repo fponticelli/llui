@@ -333,9 +333,15 @@ const chartAdapter: Adapter<ChartCaseInput> = (host, input, ctx) =>
     chart.update,
     (state, send) => {
       const parts = chart.connect(state, send, { id: `baseline-chart-${ctx.caseId}` })
+      // Read the machine's OWN resolved label (post-init), not the raw
+      // scenario input directly — otherwise a broken `chart.init({ label })`
+      // wiring is invisible to the dimension-mutation test, since the title
+      // text would still show the correct raw input regardless (#264 review
+      // item 3).
+      const resolvedLabel = state.peek().label
       return section({ ...parts.root }, [
         svg({ ...parts.svg }, [
-          svgTitle({ ...parts.title }, [text(input.label)]),
+          svgTitle({ ...parts.title }, [text(resolvedLabel)]),
           svgDesc({ ...parts.desc }, [text('Six-series chart (three bar, three area)')]),
           chartForcedColorPatterns(`baseline-chart-${ctx.caseId}`),
           g({ ...parts.layer }, [

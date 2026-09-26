@@ -451,9 +451,15 @@ const chartAdapter: Adapter<ChartCaseInput> = (host, input, ctx) =>
     chart.update,
     (state, send) => {
       const parts = chart.connect(state, send, { id: `registry-chart-${ctx.caseId}` })
+      // Read the machine's OWN resolved label (post-init), not the raw
+      // scenario input directly — otherwise a broken `chart.init({ label })`
+      // wiring is invisible to the dimension-mutation test, since the title
+      // text would still show the correct raw input regardless (#264 review
+      // item 3).
+      const resolvedLabel = state.peek().label
       return ChartContainer({ ...parts.root }, [
         ChartSvg({ ...parts.svg }, [
-          ChartTitle({ ...parts.title }, [text(input.label)]),
+          ChartTitle({ ...parts.title }, [text(resolvedLabel)]),
           ChartDesc({ ...parts.desc }, [text('Six-series chart (three bar, three area)')]),
           chartForcedColorPatterns(`registry-chart-${ctx.caseId}`),
           ChartLayer({ ...parts.layer }, [

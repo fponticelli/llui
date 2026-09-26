@@ -304,6 +304,21 @@ describe('registry navigation/data scenario renderer', () => {
           )
           if (mutatedValue === UNCHANGED) continue
           const mutatedInput = { ...scenarioCase.input, [field]: mutatedValue }
+          // A generic "did the whole projection change" diff can be MASKED by
+          // an unrelated renderer-added echo of the very field being mutated
+          // — a `data-*` attribute mirroring the mutated value, placed on a
+          // REAL `[data-part]` root, still registers as a projection
+          // difference even when the actual machine wiring is broken (#264
+          // review item 3). For dimensions with a known specific
+          // machine-published attribute, assert THAT directly rather than
+          // trusting the diff alone.
+          const targetedCheck = TARGETED_ATTRIBUTE_CHECKS[`${scenarioId}.${field}`]
+          if (targetedCheck !== undefined) {
+            const targetHost = document.createElement('div')
+            const targetHandle = typedAdapter(targetHost, mutatedInput, baseCtx)
+            targetedCheck(targetHost, mutatedInput as Record<string, unknown>)
+            targetHandle.dispose()
+          }
           const mutated = mountFor(typedAdapter, mutatedInput, baseCtx).projection
           const key = `${scenarioId}/${scenarioCase.id}.${field}`
           if (mutated === baseline) {
@@ -355,6 +370,29 @@ const ENV_AXIS_ALTERNATE: Readonly<
   motion: 'reduced',
   viewport: 'narrow',
   forcedColors: 'active',
+}
+
+/** See the baseline renderer test's identical table for the full reasoning
+ * (#264 review item 3): a generic projection diff is fooled by a
+ * renderer-added echo of the mutated field on a real `[data-part]` element,
+ * so these dimensions are additionally checked against the SPECIFIC
+ * machine-published attribute the mutation actually drives. */
+const TARGETED_ATTRIBUTE_CHECKS: Readonly<
+  Record<string, (host: HTMLElement, mutatedInput: Record<string, unknown>) => void>
+> = {
+  'component:chart.label': (host, mutatedInput) => {
+    const table = host.querySelector('[data-part="table"]')
+    expect(table?.getAttribute('aria-label'), 'component:chart.label aria-label').toBe(
+      mutatedInput.label,
+    )
+  },
+  'component:tabs.value': (host, mutatedInput) => {
+    const value = mutatedInput.value as string
+    const trigger = host.querySelector(`[data-part="trigger"][data-value="${value}"]`)
+    const panel = host.querySelector(`[data-part="panel"][data-value="${value}"]`)
+    expect(trigger?.getAttribute('aria-selected'), 'component:tabs.value trigger').toBe('true')
+    expect(panel?.hasAttribute('hidden'), 'component:tabs.value panel').toBe(false)
+  },
 }
 
 /** See the baseline renderer test's identical table for the full reasoning.
