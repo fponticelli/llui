@@ -974,6 +974,16 @@ textarea[data-scope='form-field'][data-part='control'] {
   border: 1px solid var(--border);
 }
 
+/* No content of its own (a plain swatch div), so without an explicit size it
+ * collapses to zero height — the preview never renders. */
+[data-scope='color-picker'][data-part='preview'] {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+  border-radius: var(--llui-radius-md);
+  border: 1px solid var(--border);
+}
+
 [data-scope='color-picker'][data-part='hex-input'] {
   flex: 1;
   padding: var(--llui-space-2) var(--llui-space-3);

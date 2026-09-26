@@ -267,6 +267,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   const oklchCanvasId = 'color-picker-oklch-canvas'
   const oklchCanvasBinding = colorPicker.areaCanvasBinding(state.at('colorPicker'), oklchCanvasId)
 
+  // Same seam for the gradient picker's embedded per-stop color picker — its
+  // OKLCH area canvas repaints from the SELECTED stop's derived color state.
+  const gpPickerOklchCanvasId = 'gradient-picker-stop-oklch-canvas'
+  const gpPickerCanvasBinding = colorPicker.areaCanvasBinding(
+    state.at('gradientPicker').map(gradientPicker.pickerStateOf),
+    gpPickerOklchCanvasId,
+  )
+
   // Eyedropper support: the machine owns feature-detection too — this mount
   // helper dispatches `setEyeDropperSupported` once, and `cp.eyeDropperTrigger`
   // already publishes `hidden`/`disabled`/`data-unsupported` from that state.
@@ -357,6 +365,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     splitterMount,
     // Same reason: a placed-but-unused Mountable is inert.
     ...oklchCanvasBinding,
+    ...gpPickerCanvasBinding,
     eyeDropperMount,
     sectionGroup('Pickers', [
       card('Date Picker', [
@@ -599,6 +608,25 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                     ),
                 ),
               ]),
+            ]),
+            div({ ...gp.picker.area }, [
+              canvas({
+                ...gp.picker.areaCanvas,
+                id: gpPickerOklchCanvasId,
+                width: 240,
+                height: 128,
+              }),
+              div({ ...gp.picker.areaThumb }, []),
+            ]),
+            div({ class: 'flex flex-col gap-1.5' }, [
+              label(
+                { class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold' },
+                [span([text('H')]), input({ ...gp.picker.hueSlider })],
+              ),
+              label(
+                { class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold' },
+                [span([text('A')]), input({ ...gp.picker.alphaSlider })],
+              ),
             ]),
           ]),
         ]),
