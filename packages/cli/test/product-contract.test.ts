@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  PresentationFamilySchema,
   ProductContractSchema,
   resolveCopiedArtifact,
   resolveProductIdentity,
 } from '../src/product-contract'
+import { PRESENTATION_FAMILY_VALUES } from '../src/product-contract-types'
 import { assertProductInventory } from './product-inventory'
 
 const registryStyling = {
@@ -366,5 +368,12 @@ describe('assertProductInventory', () => {
         registryItems: ['toggle'],
       }),
     ).toThrow(/Orphan registry item: toggle.*Unpublished copied artifact: switch/s)
+  })
+})
+
+describe('PresentationFamilySchema', () => {
+  it('derives its options from the one canonical PRESENTATION_FAMILY_VALUES tuple (#270 finding 8)', () => {
+    expect(PresentationFamilySchema.options).toEqual(PRESENTATION_FAMILY_VALUES)
+    expect(PresentationFamilySchema.options).toEqual([...PRESENTATION_FAMILY_VALUES])
   })
 })

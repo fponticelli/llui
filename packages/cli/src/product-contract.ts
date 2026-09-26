@@ -1,4 +1,33 @@
 import { z } from 'zod'
+import {
+  MAX_PRODUCT_IDENTIFIER_LENGTH,
+  PRESENTATION_FAMILY_VALUES,
+} from './product-contract-types.js'
+import type {
+  CopiedArtifact,
+  ProductAlias,
+  ProductContract,
+  ProductEntry,
+} from './product-contract-types.js'
+
+export type {
+  CopiedArtifact,
+  ComposedPresentationCoverage,
+  MachineFree,
+  NotApplicablePresentationCoverage,
+  PartialPresentationCoverage,
+  PresentationCoverage,
+  PresentationFamily,
+  ProductAlias,
+  ProductCategory,
+  ProductContract,
+  ProductEntry,
+  ProductPresentation,
+  PublicMachine,
+  StyledPresentationCoverage,
+  StylelessPresentationCoverage,
+  StylingSupport,
+} from './product-contract-types.js'
 
 const PRODUCT_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const PUBLIC_MACHINE_IMPORT = /^@llui\/components\/(?:patterns\/)?[a-z0-9]+(?:-[a-z0-9]+)*$/
@@ -24,13 +53,10 @@ export const ProductCategorySchema = z.enum([
   'utilities',
 ])
 
-/** Single-owner visual-language cohort. This is independent of the user-facing product category. */
-export const PresentationFamilySchema = z.enum([
-  'forms-controls',
-  'navigation-data',
-  'menus-overlays',
-  'specialized-tools',
-])
+/** Single-owner visual-language cohort. This is independent of the user-facing product category.
+ *  Derived from the one canonical tuple in `product-contract-types.ts` — do not restate the
+ *  literals here. */
+export const PresentationFamilySchema = z.enum(PRESENTATION_FAMILY_VALUES)
 
 const PresentationRationaleSchema = z
   .string()
@@ -123,7 +149,11 @@ export const CopiedArtifactSchema = z
 
 export const ProductEntrySchema = z
   .object({
-    name: z.string().regex(PRODUCT_NAME),
+    // `.max(MAX_PRODUCT_IDENTIFIER_LENGTH)`: this `name` becomes a compiled catalog's
+    // `productId`, which `BoundaryDecoder.identifier()` bounds to the SAME limit on every
+    // serialized re-decode — bounding it here too, at parse time, is the earliest and cheapest
+    // place to catch a value that would otherwise compile but fail to round-trip.
+    name: z.string().regex(PRODUCT_NAME).max(MAX_PRODUCT_IDENTIFIER_LENGTH),
     displayName: z.string().min(1),
     category: ProductCategorySchema,
     artifactKind: z.enum(['machine', 'skin', 'presentational', 'pattern']),
@@ -132,7 +162,7 @@ export const ProductEntrySchema = z
     styling: StylingSupportSchema,
     /** Aliases and copied artifacts inherit this canonical profile through resolution. */
     presentation: ProductPresentationSchema,
-    scenarioId: z.string().min(1),
+    scenarioId: z.string().min(1).max(MAX_PRODUCT_IDENTIFIER_LENGTH),
   })
   .strict()
 
@@ -584,21 +614,13 @@ export function resolveCopiedArtifact(
   return alias === undefined ? { canonical, artifact } : { canonical, artifact, alias }
 }
 
-export type StylingSupport = z.infer<typeof StylingSupportSchema>
-export type ProductCategory = z.infer<typeof ProductCategorySchema>
-export type PresentationFamily = z.infer<typeof PresentationFamilySchema>
-export type StyledPresentationCoverage = z.infer<typeof StyledPresentationCoverageSchema>
-export type PartialPresentationCoverage = z.infer<typeof PartialPresentationCoverageSchema>
-export type ComposedPresentationCoverage = z.infer<typeof ComposedPresentationCoverageSchema>
-export type StylelessPresentationCoverage = z.infer<typeof StylelessPresentationCoverageSchema>
-export type NotApplicablePresentationCoverage = z.infer<
-  typeof NotApplicablePresentationCoverageSchema
+type Equal<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+    ? true
+    : false
+type Assert<Value extends true> = Value
+
+// Keep the browser-pure structural boundary exactly aligned with the authoritative Zod schema.
+type _ProductContractSchemaMatchesStructuralType = Assert<
+  Equal<z.output<typeof ProductContractSchema>, ProductContract>
 >
-export type PresentationCoverage = z.infer<typeof PresentationCoverageSchema>
-export type ProductPresentation = z.infer<typeof ProductPresentationSchema>
-export type PublicMachine = z.infer<typeof PublicMachineSchema>
-export type MachineFree = z.infer<typeof MachineFreeSchema>
-export type CopiedArtifact = z.infer<typeof CopiedArtifactSchema>
-export type ProductEntry = z.infer<typeof ProductEntrySchema>
-export type ProductAlias = z.infer<typeof ProductAliasSchema>
-export type ProductContract = z.infer<typeof ProductContractSchema>

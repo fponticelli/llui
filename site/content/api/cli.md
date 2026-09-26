@@ -248,90 +248,43 @@ function writeConfig(cwd: string, config: Config): Promise<string>
 
 ## Types
 
-### `ComposedPresentationCoverage`
-
-```typescript
-export type ComposedPresentationCoverage = z.infer<typeof ComposedPresentationCoverageSchema>
-```
-
 ### `Config`
 
 ```typescript
 export type Config = z.infer<typeof ConfigSchema>
 ```
 
-### `CopiedArtifact`
-
-```typescript
-export type CopiedArtifact = z.infer<typeof CopiedArtifactSchema>
-```
-
-### `MachineFree`
-
-```typescript
-export type MachineFree = z.infer<typeof MachineFreeSchema>
-```
-
-### `NotApplicablePresentationCoverage`
-
-```typescript
-export type NotApplicablePresentationCoverage = z.infer<
-  typeof NotApplicablePresentationCoverageSchema
->
-```
-
-### `PartialPresentationCoverage`
-
-```typescript
-export type PartialPresentationCoverage = z.infer<typeof PartialPresentationCoverageSchema>
-```
-
 ### `PresentationCoverage`
 
 ```typescript
-export type PresentationCoverage = z.infer<typeof PresentationCoverageSchema>
+export type PresentationCoverage =
+  | StyledPresentationCoverage
+  | PartialPresentationCoverage
+  | ComposedPresentationCoverage
+  | StylelessPresentationCoverage
+  | NotApplicablePresentationCoverage
 ```
 
 ### `PresentationFamily`
 
 ```typescript
-export type PresentationFamily = z.infer<typeof PresentationFamilySchema>
-```
-
-### `ProductAlias`
-
-```typescript
-export type ProductAlias = z.infer<typeof ProductAliasSchema>
+export type PresentationFamily = (typeof PRESENTATION_FAMILY_VALUES)[number]
 ```
 
 ### `ProductCategory`
 
 ```typescript
-export type ProductCategory = z.infer<typeof ProductCategorySchema>
-```
-
-### `ProductContract`
-
-```typescript
-export type ProductContract = z.infer<typeof ProductContractSchema>
-```
-
-### `ProductEntry`
-
-```typescript
-export type ProductEntry = z.infer<typeof ProductEntrySchema>
-```
-
-### `ProductPresentation`
-
-```typescript
-export type ProductPresentation = z.infer<typeof ProductPresentationSchema>
-```
-
-### `PublicMachine`
-
-```typescript
-export type PublicMachine = z.infer<typeof PublicMachineSchema>
+export type ProductCategory =
+  | 'controls'
+  | 'forms'
+  | 'navigation'
+  | 'overlays'
+  | 'feedback'
+  | 'data-display'
+  | 'layout'
+  | 'media'
+  | 'patterns'
+  | 'utilities'
 ```
 
 ### `Registry`
@@ -374,24 +327,6 @@ export type ResolvedProductIdentity = {
 }
 ```
 
-### `StyledPresentationCoverage`
-
-```typescript
-export type StyledPresentationCoverage = z.infer<typeof StyledPresentationCoverageSchema>
-```
-
-### `StylelessPresentationCoverage`
-
-```typescript
-export type StylelessPresentationCoverage = z.infer<typeof StylelessPresentationCoverageSchema>
-```
-
-### `StylingSupport`
-
-```typescript
-export type StylingSupport = z.infer<typeof StylingSupportSchema>
-```
-
 ## Interfaces
 
 ### `AddOptions`
@@ -418,6 +353,138 @@ export interface AddResult {
   items: RegistryItem[]
   dependencies: string[]
   devDependencies: string[]
+}
+```
+
+### `ComposedPresentationCoverage`
+
+```typescript
+export interface ComposedPresentationCoverage {
+  mode: 'composed'
+  products: string[]
+  rationale: string
+}
+```
+
+### `CopiedArtifact`
+
+```typescript
+export interface CopiedArtifact {
+  name: string
+  displayName?: string
+  artifactKind: 'skin' | 'presentational' | 'pattern'
+  styling: StylingSupport
+  scenarioId?: string
+}
+```
+
+### `MachineFree`
+
+```typescript
+export interface MachineFree {
+  kind: 'none'
+  reason: 'presentational' | 'application-owned-state'
+}
+```
+
+### `NotApplicablePresentationCoverage`
+
+```typescript
+export interface NotApplicablePresentationCoverage {
+  mode: 'not-applicable'
+  rationale: string
+}
+```
+
+### `PartialPresentationCoverage`
+
+```typescript
+export interface PartialPresentationCoverage {
+  mode: 'partial'
+  rationale: string
+}
+```
+
+### `ProductAlias`
+
+```typescript
+export interface ProductAlias {
+  name: string
+  canonicalName: string
+}
+```
+
+### `ProductContract`
+
+Canonical v2 inventory. ProductContract remains the sole product-metadata owner.
+
+```typescript
+export interface ProductContract {
+  version: 2
+  entries: ProductEntry[]
+  aliases: ProductAlias[]
+}
+```
+
+### `ProductEntry`
+
+```typescript
+export interface ProductEntry {
+  name: string
+  displayName: string
+  category: ProductCategory
+  artifactKind: 'machine' | 'skin' | 'presentational' | 'pattern'
+  machine: PublicMachine | MachineFree
+  copiedArtifacts: CopiedArtifact[]
+  styling: StylingSupport
+  presentation: ProductPresentation
+  scenarioId: string
+}
+```
+
+### `ProductPresentation`
+
+```typescript
+export interface ProductPresentation {
+  family: PresentationFamily
+  baseline: PresentationCoverage
+  registryTailwind: PresentationCoverage
+}
+```
+
+### `PublicMachine`
+
+```typescript
+export interface PublicMachine {
+  kind: 'public'
+  importPath: string
+}
+```
+
+### `StyledPresentationCoverage`
+
+```typescript
+export interface StyledPresentationCoverage {
+  mode: 'styled'
+}
+```
+
+### `StylelessPresentationCoverage`
+
+```typescript
+export interface StylelessPresentationCoverage {
+  mode: 'styleless'
+  rationale: string
+}
+```
+
+### `StylingSupport`
+
+```typescript
+export interface StylingSupport {
+  baseline: boolean
+  registryTailwind: boolean
+  styleless: boolean
 }
 ```
 
@@ -488,6 +555,8 @@ const PresentationCoverageSchema
 ### `PresentationFamilySchema`
 
 Single-owner visual-language cohort. This is independent of the user-facing product category.
+Derived from the one canonical tuple in `product-contract-types.ts` — do not restate the
+literals here.
 
 ```typescript
 const PresentationFamilySchema
@@ -705,6 +774,333 @@ const RegistryItemSchema
 
 ```typescript
 const RegistrySchema
+```
+
+### `@llui/cli/presentation-scenarios`
+
+#### Functions
+
+##### `compileScenarioFamily()` from `@llui/cli/presentation-scenarios`
+
+Join family-owned semantic cases to ProductContract's canonical inventory. `definitions` must
+be statically known here — there is no `unknown` fallthrough, so a `Definitions` literal that
+fails to satisfy `PresentationScenarioDefinitions` (an extra field on a case, an unknown
+`environmentAxes` value, a function in `input`, …) is a COMPILE error, not a value silently
+degraded to `CompiledPresentationScenarioFamily`'s erased, `string`-keyed shape. For a
+definitions value received from an untyped/serialized boundary, decode it with
+`decodeScenarioFamily` instead.
+
+```typescript
+function compileScenarioFamily<const Definitions extends PresentationScenarioDefinitions>(
+  contract: ProductContract,
+  family: PresentationFamily,
+  definitions: ExactDefinitions<Definitions>,
+): CompiledPresentationScenarioFamily<Definitions>
+```
+
+##### `decodeScenarioFamily()` from `@llui/cli/presentation-scenarios`
+
+Validate and compile definitions received from an untyped serialized boundary (a network
+response, a `JSON.parse`, a dynamic import, …). Prefer `compileScenarioFamily` whenever the
+definitions are a statically-known literal — this is the deliberately erased escape hatch, not
+a more permissive alternative to it.
+
+```typescript
+function decodeScenarioFamily(
+  contract: ProductContract,
+  family: PresentationFamily,
+  definitions: unknown,
+): CompiledPresentationScenarioFamily
+```
+
+##### `decodeScenarioSelection()` from `@llui/cli/presentation-scenarios`
+
+Validate and resolve a catalog and selection received from serialized boundaries (a network
+response, a `JSON.parse`, a dynamic import, …). Prefer `resolveScenarioSelection` whenever the
+catalog is a statically-known compiled result — this is the deliberately erased escape hatch,
+not a more permissive alternative to it.
+
+```typescript
+function decodeScenarioSelection(
+  contract: ProductContract,
+  catalog: unknown,
+  selection: unknown,
+): ResolvedPresentationScenarioSelection
+```
+
+##### `resolveScenarioSelection()` from `@llui/cli/presentation-scenarios`
+
+Resolve one deterministic renderer input from a compiled family catalog. `catalog` must be
+statically known here — there is no `unknown` fallthrough, so a catalog or selection literal
+that fails to satisfy its typed shape is a COMPILE error rather than a value silently accepted
+and narrowed away to `string`. For a catalog or selection received from an
+untyped/serialized boundary, decode it with `decodeScenarioSelection` instead.
+
+```typescript
+function resolveScenarioSelection<Definitions extends PresentationScenarioDefinitions>(
+  contract: ProductContract,
+  catalog: CompiledPresentationScenarioFamily<Definitions>,
+  selection: PresentationScenarioSelection,
+): ResolvedPresentationScenarioSelection<Definitions>
+```
+
+#### Types
+
+##### `CompiledPresentationScenario` from `@llui/cli/presentation-scenarios`
+
+A definition-keyed discriminated union of compiled ProductContract joins.
+
+```typescript
+export type CompiledPresentationScenario<
+  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
+> =
+  string extends ScenarioId<Definitions>
+    ? ErasedCompiledPresentationScenario
+    : {
+        readonly [Id in ScenarioId<Definitions>]: {
+          readonly productId: string
+          readonly scenarioId: Id
+          readonly defaultCaseId: Definitions[Id]['defaultCaseId']
+          readonly cases: readonly CompiledPresentationScenarioCase<
+            DefinitionCase<Definitions, Id>
+          >[]
+        }
+      }[ScenarioId<Definitions>]
+```
+
+##### `CompiledPresentationScenarioCase` from `@llui/cli/presentation-scenarios`
+
+Canonical renderer input copied from a validated family case.
+
+```typescript
+export type CompiledPresentationScenarioCase<
+  Case extends PresentationScenarioCase = PresentationScenarioCase,
+> = Case extends PresentationScenarioCase
+  ? {
+      readonly id: Case['id']
+      readonly label: Case['label']
+      readonly input: PresentationScenarioJsonSnapshot<Case['input']>
+      readonly environmentAxes: Readonly<Case['environmentAxes']>
+      readonly copiedArtifactNames?: Readonly<NonNullable<Case['copiedArtifactNames']>>
+    }
+  : never
+```
+
+##### `CompiledPresentationScenarioFamily` from `@llui/cli/presentation-scenarios`
+
+Deterministic, JSON-safe catalog for one presentation family.
+
+```typescript
+export type CompiledPresentationScenarioFamily<
+  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
+> = {
+  readonly version: 1
+  readonly family: PresentationFamily
+  readonly scenarios: readonly CompiledPresentationScenario<Definitions>[]
+}
+```
+
+##### `PresentationScenarioDefinitions` from `@llui/cli/presentation-scenarios`
+
+Family-owned definitions keyed by ProductContract `scenarioId`.
+
+```typescript
+export type PresentationScenarioDefinitions = Readonly<
+  Record<string, PresentationScenarioDefinition>
+>
+```
+
+##### `PresentationScenarioEnvironment` from `@llui/cli/presentation-scenarios`
+
+Fully resolved environment supplied independently to either renderer path.
+
+```typescript
+export type PresentationScenarioEnvironment = {
+  readonly [Axis in PresentationScenarioEnvironmentAxis]: (typeof PRESENTATION_SCENARIO_ENVIRONMENT_VALUES)[Axis][number]
+}
+```
+
+##### `PresentationScenarioEnvironmentAxis` from `@llui/cli/presentation-scenarios`
+
+One environment dimension a case explicitly supports varying.
+
+```typescript
+export type PresentationScenarioEnvironmentAxis =
+  keyof typeof PRESENTATION_SCENARIO_ENVIRONMENT_VALUES
+```
+
+##### `PresentationScenarioErrorCode` from `@llui/cli/presentation-scenarios`
+
+Stable failure categories exposed to gallery routing and build tooling.
+
+```typescript
+export type PresentationScenarioErrorCode =
+  | 'invalid-definitions'
+  | 'unknown-product'
+  | 'unknown-case'
+  | 'invalid-environment'
+  | 'invalid-copied-artifact'
+  | 'invalid-catalog'
+  | 'invalid-selection'
+  | 'invalid-path'
+```
+
+##### `PresentationScenarioJson` from `@llui/cli/presentation-scenarios`
+
+Renderer-neutral data accepted as a scenario input.
+
+```typescript
+export type PresentationScenarioJson =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly PresentationScenarioJson[]
+  | { readonly [key: string]: PresentationScenarioJson }
+```
+
+##### `PresentationScenarioJsonSnapshot` from `@llui/cli/presentation-scenarios`
+
+Recursive readonly shape emitted for a validated JSON input snapshot.
+
+```typescript
+export type PresentationScenarioJsonSnapshot<
+  Value extends PresentationScenarioJson = PresentationScenarioJson,
+> = DeepReadonlyJson<Value>
+```
+
+##### `PresentationScenarioPath` from `@llui/cli/presentation-scenarios`
+
+A renderer path whose availability is owned by ProductContract.
+
+```typescript
+export type PresentationScenarioPath = (typeof PRESENTATION_SCENARIO_PATHS)[number]
+```
+
+##### `ResolvedPresentationScenarioSelection` from `@llui/cli/presentation-scenarios`
+
+Definition-correlated renderer input returned for a presentation selection.
+
+```typescript
+export type ResolvedPresentationScenarioSelection<
+  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
+> = ResolvedScenario<CompiledPresentationScenario<Definitions>>
+```
+
+#### Interfaces
+
+##### `PresentationScenarioCase` from `@llui/cli/presentation-scenarios`
+
+One stable, product-local state owned by a presentation family.
+
+```typescript
+export interface PresentationScenarioCase<
+  Input extends PresentationScenarioJson = PresentationScenarioJson,
+> {
+  readonly id: string
+  readonly label: string
+  readonly input: Input
+  readonly environmentAxes: readonly PresentationScenarioEnvironmentAxis[]
+  /** Registry copied artifacts this case supports; omitted means every owned artifact. */
+  readonly copiedArtifactNames?: readonly string[]
+}
+```
+
+##### `PresentationScenarioDefinition` from `@llui/cli/presentation-scenarios`
+
+All semantic cases declared for one ProductContract scenario identity.
+
+```typescript
+export interface PresentationScenarioDefinition<
+  Case extends PresentationScenarioCase = PresentationScenarioCase,
+> {
+  readonly defaultCaseId: string
+  readonly cases: readonly Case[]
+}
+```
+
+##### `PresentationScenarioSelection` from `@llui/cli/presentation-scenarios`
+
+Route-like request for one scenario case, renderer path, and environment.
+
+```typescript
+export interface PresentationScenarioSelection {
+  readonly productId: string
+  readonly caseId?: string
+  readonly path: PresentationScenarioPath
+  readonly environment?: Partial<PresentationScenarioEnvironment>
+  readonly copiedArtifact?: string
+}
+```
+
+#### Classes
+
+##### `PresentationScenarioError` from `@llui/cli/presentation-scenarios`
+
+A stable, machine-readable protocol or selection failure.
+
+```typescript
+class PresentationScenarioError extends Error {
+  name
+  code: PresentationScenarioErrorCode
+  issues: readonly string[]
+  constructor(code: PresentationScenarioErrorCode, issues: readonly string[])
+}
+```
+
+#### Constants
+
+##### `DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT` from `@llui/cli/presentation-scenarios`
+
+Canonical environment used when a selection omits supported overrides.
+
+```typescript
+const DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT
+```
+
+##### `PRESENTATION_SCENARIO_COMPLEXITY_LIMITS` from `@llui/cli/presentation-scenarios`
+
+Frozen boundary-decoding complexity budget. `familyNodes`/`familyFields`/`familyStringUnits`
+meter ONLY case payload content (never protocol scaffolding — see the constants above this
+export), summed across one family submission, sized with generous headroom against a
+realistic worst case of ~40 products x ~12 cases x a few-hundred-node payload each (see the
+sizing-basis constants above this export). `stringLength` and `arrayLength` bound one payload
+value at a time and are unaffected by family size. `depth` bounds payload nesting depth to keep
+the decoder's explicit stack bounded. `products`, `casesPerProduct`, and `identifierLength`
+bound the SEPARATE structural scaffolding dimensions — how many scenarios/cases a family may
+declare, and how long a `scenarioId`/`productId`/`family` identifier may be — entirely
+independent of the payload budgets, which is what makes a compiled catalog's scaffolding
+(absent from raw definitions) cost nothing against them. (`defaultCaseId` is NOT one of these:
+its string VALUE is shared, verbatim, between a raw definition and its compiled scenario, so it
+is metered payload content like any other case content, bounded by `stringLength`/
+`familyStringUnits` above — only the WRAPPER holding it is scaffolding.)
+
+```typescript
+const PRESENTATION_SCENARIO_COMPLEXITY_LIMITS
+```
+
+##### `PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS` from `@llui/cli/presentation-scenarios`
+
+At most 100 issues (including truncation) and 16,384 UTF-16 units (including paths and separators).
+
+```typescript
+const PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS
+```
+
+##### `PRESENTATION_SCENARIO_ENVIRONMENT_VALUES` from `@llui/cli/presentation-scenarios`
+
+Stable values accepted by each composable presentation environment axis.
+
+```typescript
+const PRESENTATION_SCENARIO_ENVIRONMENT_VALUES
+```
+
+##### `PRESENTATION_SCENARIO_PATHS` from `@llui/cli/presentation-scenarios`
+
+Renderer paths joined by the protocol while remaining implementation-isolated.
+
+```typescript
+const PRESENTATION_SCENARIO_PATHS
 ```
 
 <!-- auto-api:end -->
