@@ -42,10 +42,6 @@ export type TableProps = ElProps & {
   viewport?: ElProps
 }
 
-const TABLE_CONTAINER_RECIPE = 'relative w-full overflow-x-auto'
-const TABLE_RECIPE =
-  'group/table w-full caption-bottom text-sm data-[disabled]:pointer-events-none data-[disabled]:opacity-50'
-
 // `Table` deliberately does NOT accept the leading-children-array shorthand
 // every other part in this file does (`splitArgs`'s `tag(children)` form):
 // `Array.isArray` narrows a union member to `any[]`, and TypeScript will not
@@ -61,9 +57,26 @@ export function Table(props: TableProps = {}, children: readonly ChildNode[] = [
   return div(
     {
       ...viewportRest,
-      class: mergeClass(TABLE_CONTAINER_RECIPE, viewportClassName),
+      // Kept as a LITERAL string argument (never a named const) so
+      // `scripts/lib/registry-classes.mjs`'s AST extractor — which only
+      // reads recipes passed directly to a fixed set of call names — can
+      // still see it; a const reference here silently dropped it from the
+      // Tailwind dead-class/marker checks (#264 review item 7's own gate
+      // run caught this).
+      class: mergeClass('relative w-full overflow-x-auto', viewportClassName),
     },
-    [tableEl({ ...rest, class: mergeClass(TABLE_RECIPE, className) }, children)],
+    [
+      tableEl(
+        {
+          ...rest,
+          class: mergeClass(
+            'group/table w-full caption-bottom text-sm data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
+            className,
+          ),
+        },
+        children,
+      ),
+    ],
   )
 }
 

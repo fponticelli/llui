@@ -190,7 +190,7 @@ function fixture(): string {
             Avatar({ id: 'avatar', 'data-density': 'comfortable' }, [
               AvatarFallback({ id: 'avatar-fallback' }, [text('LL')]),
             ]),
-            Avatar({ id: 'avatar-compact', 'data-density': 'compact', 'data-size': 'sm' }, [
+            Avatar({ id: 'avatar-compact', 'data-density': 'compact' }, [
               AvatarFallback([text('LL')]),
             ]),
           ]),

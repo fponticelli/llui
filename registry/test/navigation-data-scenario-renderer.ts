@@ -332,23 +332,15 @@ const avatarAdapter: Adapter<AvatarCaseInput> = (host, input, ctx) =>
     (state, send) => {
       void ctx
       const parts = avatar.connect(state, send, { alt: input.label, density: input.density })
-      // `'data-size'` is NOT a decorative echo of the machine's own
-      // `data-density` (which this recipe never reads at all) — it is the
-      // REQUIRED adapter-level translation from the machine's generic
-      // `density` option to `avatar.ts`'s own shadcn-ported `data-size`
-      // convention, exactly as that file's own doc comment states
-      // (`@llui/components/avatar` does not publish `data-size` itself).
-      // Removing it as though it were redundant with `data-density` was a
-      // real regression this fix corrects (#264 review, caught by the
-      // Chromium geometry test: compact and default rendered the SAME
-      // pixel width once this line was gone).
-      return Avatar(
-        { ...parts.root, 'data-size': input.density === 'compact' ? 'sm' : 'default' },
-        [
-          AvatarImage({ ...parts.image, src: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }),
-          AvatarFallback({ ...parts.fallback }, [text(input.initials)]),
-        ],
-      )
+      // `registry/llui/ui/avatar.ts` now reads `data-density` directly
+      // (#264 review item 7) — the SAME attribute `parts.root` already
+      // carries, so a bare spread is the whole adapter. No translation to a
+      // separate `data-size` vocabulary is needed (or possible: upstream's
+      // `lg` rung has no `AvatarDensity` value to key off at all).
+      return Avatar({ ...parts.root }, [
+        AvatarImage({ ...parts.image, src: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }),
+        AvatarFallback({ ...parts.fallback }, [text(input.initials)]),
+      ])
     },
   )
 
