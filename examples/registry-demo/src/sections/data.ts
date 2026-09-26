@@ -62,6 +62,7 @@ import {
   TableBody,
   TableCaption,
   TableCell,
+  TableContainer,
   TableHead,
   TableHeader,
   TableRow,
@@ -356,28 +357,32 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'Table & Data Table',
       'Both examples spread the live machine parts into the registry skin. The native grid is placed directly inside the machine-owned viewport, and the data-table keeps its status live regions mounted.',
       [
-        Table({ viewport: table.viewport, ...table.root }, [
-          TableCaption([text('A live sortable and selectable grid.')]),
-          TableHeader([
-            TableRow([
-              header(table, 'item', 'Item'),
-              header(table, 'kind', 'Kind'),
-              header(table, 'status', 'Status'),
-            ]),
-          ]),
-          machineRows(table, state.at('table.rows')),
-        ]),
-        div({ class: 'relative' }, [
-          Table({ viewport: dataTable.table.viewport, ...dataTable.table.root }, [
-            TableCaption([text('A machine-composed paged data table.')]),
+        TableContainer({ ...table.viewport }, [
+          Table({ ...table.root }, [
+            TableCaption([text('A live sortable and selectable grid.')]),
             TableHeader([
               TableRow([
-                header(dataTable.table, 'item', 'Item'),
-                header(dataTable.table, 'kind', 'Kind'),
-                header(dataTable.table, 'status', 'Status'),
+                header(table, 'item', 'Item'),
+                header(table, 'kind', 'Kind'),
+                header(table, 'status', 'Status'),
               ]),
             ]),
-            machineRows(dataTable.table, state.at('dataTable.table.rows')),
+            machineRows(table, state.at('table.rows')),
+          ]),
+        ]),
+        div({ class: 'relative' }, [
+          TableContainer({ ...dataTable.table.viewport }, [
+            Table({ ...dataTable.table.root }, [
+              TableCaption([text('A machine-composed paged data table.')]),
+              TableHeader([
+                TableRow([
+                  header(dataTable.table, 'item', 'Item'),
+                  header(dataTable.table, 'kind', 'Kind'),
+                  header(dataTable.table, 'status', 'Status'),
+                ]),
+              ]),
+              machineRows(dataTable.table, state.at('dataTable.table.rows')),
+            ]),
           ]),
           DataTableEmptyState(
             {

@@ -142,7 +142,15 @@ import {
 } from '../llui/ui/sparkline'
 import { Spinner } from '../llui/ui/spinner'
 import { Steps, StepsItem, StepsSeparator, StepsTrigger } from '../llui/ui/steps'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../llui/ui/table'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../llui/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../llui/ui/tabs'
 import { Toc, TocExpandTrigger, TocItem, TocLink, TocList } from '../llui/ui/toc'
 import {
@@ -759,36 +767,38 @@ function tableUpdateWithResort(
 // `aria-rowindex`/`data-row-index` and the row's own checkbox dispatch stuck
 // at their ORIGINAL position forever (#264).
 function registryMachineTable(state: Signal<table.TableState>, parts: table.TableParts): Mountable {
-  return Table({ viewport: parts.viewport, ...parts.root }, [
-    TableHeader([
-      TableRow([
-        TableHead({ ...parts.columnHeader('name') }, [
-          (() => {
-            const selectAll = parts.selectAllCheckbox('name')
-            return span({ ...selectAll }, [tableCheckboxGlyph(selectAll['data-state'])])
-          })(),
-          text('Name'),
+  return TableContainer({ ...parts.viewport }, [
+    Table({ ...parts.root }, [
+      TableHeader([
+        TableRow([
+          TableHead({ ...parts.columnHeader('name') }, [
+            (() => {
+              const selectAll = parts.selectAllCheckbox('name')
+              return span({ ...selectAll }, [tableCheckboxGlyph(selectAll['data-state'])])
+            })(),
+            text('Name'),
+          ]),
+          TableHead({ ...parts.columnHeader('status') }, [text('Status')]),
         ]),
-        TableHead({ ...parts.columnHeader('status') }, [text('Status')]),
       ]),
-    ]),
-    TableBody([
-      each(state.at('rows'), {
-        key: (id) => id,
-        render: (idSignal, index) => {
-          const id = idSignal.peek()
-          const rowCheckbox = parts.rowCheckbox(id, index)
-          return [
-            TableRow({ ...parts.row(id, index) }, [
-              TableCell({ ...parts.cell(index, 0) }, [
-                span({ ...rowCheckbox }, [tableCheckboxGlyph(rowCheckbox['data-state'])]),
-                text(id),
+      TableBody([
+        each(state.at('rows'), {
+          key: (id) => id,
+          render: (idSignal, index) => {
+            const id = idSignal.peek()
+            const rowCheckbox = parts.rowCheckbox(id, index)
+            return [
+              TableRow({ ...parts.row(id, index) }, [
+                TableCell({ ...parts.cell(index, 0) }, [
+                  span({ ...rowCheckbox }, [tableCheckboxGlyph(rowCheckbox['data-state'])]),
+                  text(id),
+                ]),
+                TableCell({ ...parts.cell(index, 1) }, [text('Ready')]),
               ]),
-              TableCell({ ...parts.cell(index, 1) }, [text('Ready')]),
-            ]),
-          ]
-        },
-      }),
+            ]
+          },
+        }),
+      ]),
     ]),
   ])
 }
