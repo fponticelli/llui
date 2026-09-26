@@ -3,28 +3,23 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { decodeScenarioFamily } from '@llui/cli/presentation-scenarios'
+import { loadProductContract } from './navigation-data-contract-source'
 import {
   applicableNavigationDataScenarios,
-  navigationDataScenarios,
-  type NavigationDataContractEntry,
-  projectNavigationDataScenarios,
-  scenarioDensityProfile,
+  compileNavigationDataCatalog,
+  DENSITY_APPLICABLE_PRODUCT_IDS,
+  forcedColorScenarios,
+  joinNavigationDataScenarios,
+  NAVIGATION_DATA_DEFINITIONS,
   scenarioEnvironmentProductIds,
 } from './navigation-data-scenarios'
 
-type ContractEntry = NavigationDataContractEntry & {
-  machine: { kind: 'public' | 'none' }
-  styling: { baseline: boolean; registryTailwind: boolean }
-}
-
 const ROOT = resolve(import.meta.dirname, '../../../..')
-const contract = JSON.parse(readFileSync(resolve(ROOT, 'registry/registry.json'), 'utf8')) as {
-  productContract: { entries: ContractEntry[] }
-}
-const family = contract.productContract.entries.filter(
-  (entry) => entry.presentation.family === 'navigation-data',
-)
-const projected = projectNavigationDataScenarios(contract.productContract.entries)
+const contract = loadProductContract()
+const family = contract.entries.filter((entry) => entry.presentation.family === 'navigation-data')
+const catalog = compileNavigationDataCatalog(contract)
+const joined = joinNavigationDataScenarios(catalog, contract)
 
 const styleSources = ['disclosure-navigation.css', 'data-display.css'].map((file) =>
   readFileSync(resolve(ROOT, 'packages/components/src/styles', file), 'utf8'),
@@ -36,185 +31,83 @@ const ownedScopes = new Set(
 )
 
 describe('navigation/data presentation contract', () => {
-  it('uses ProductContract as the exact 29-product scenario inventory', () => {
+  it('compiles the family with the exact 29-product ProductContract inventory (zero missing, zero stale)', () => {
     const canonicalIds = family.map(({ name }) => name).sort()
     const canonicalScenarioIds = family.map(({ scenarioId }) => scenarioId).sort()
     expect(canonicalIds).toHaveLength(29)
-    expect(Object.keys(navigationDataScenarios).sort()).toEqual(canonicalScenarioIds)
-    expect(projected.map(({ productId }) => productId).sort()).toEqual(canonicalIds)
+    expect(Object.keys(NAVIGATION_DATA_DEFINITIONS).sort()).toEqual(canonicalScenarioIds)
+    expect(catalog.scenarios.map(({ productId }) => productId).sort()).toEqual(canonicalIds)
   })
 
-  it('derives renderer membership from visually applicable ProductContract modes', () => {
-    const entry = (
-      name: string,
-      mode: NavigationDataContractEntry['presentation']['baseline']['mode'],
-    ) => ({
-      name,
-      presentation: {
-        family: 'navigation-data',
-        baseline: { mode },
-        registryTailwind: { mode },
-      },
-    })
-    const entries = [
-      entry('styled', 'styled'),
-      entry('partial', 'partial'),
-      entry('composed', 'composed'),
-      entry('styleless', 'styleless'),
-      entry('not-applicable', 'not-applicable'),
-      {
-        name: 'other-family',
-        presentation: {
-          family: 'forms-controls',
-          baseline: { mode: 'styled' as const },
-          registryTailwind: { mode: 'styled' as const },
-        },
-      },
-    ]
-
-    const definitions = Object.fromEntries(
-      entries
-        .filter(({ presentation }) => presentation.family === 'navigation-data')
-        .map(({ name }) => [
-          `test:${name}`,
-          {
-            defaultCaseId: 'default',
-            cases: [
-              { id: 'default', label: 'Default', input: { state: name }, environmentAxes: [] },
-            ],
-          },
-        ]),
+  it('rejects a family missing a canonical scenario, and a family carrying a stale one', () => {
+    const { 'component:accordion': _omitted, ...missingAccordion } = NAVIGATION_DATA_DEFINITIONS
+    expect(() => decodeScenarioFamily(contract, 'navigation-data', missingAccordion)).toThrow(
+      /missing definition for product/i,
     )
-    const withScenarioIds: NavigationDataContractEntry[] = entries.map((item) => ({
-      ...item,
-      displayName: item.name,
-      scenarioId: `test:${item.name}`,
-      machine: { kind: 'none' },
-      copiedArtifacts: [],
-    }))
 
-    expect(
-      applicableNavigationDataScenarios(
-        projectNavigationDataScenarios(withScenarioIds, definitions),
-        'baseline',
-      ).map(({ productId }) => productId),
-    ).toEqual(['styled', 'partial', 'composed'])
-  })
-
-  it('projects path coverage and copied artifacts from ProductContract instead of duplicating them', () => {
-    for (const entry of family) {
-      const scenario = projected.find(({ productId }) => productId === entry.name)
-      expect(scenario, entry.name).toMatchObject({
-        displayName: entry.displayName,
-        scenarioId: entry.scenarioId,
-        presentation: entry.presentation,
-        copiedArtifacts: entry.copiedArtifacts,
-      })
-      expect(scenario?.cases[0]?.input.contract, entry.name).toEqual({
-        productId: entry.name,
-        displayName: entry.displayName,
-        copiedArtifacts: entry.copiedArtifacts.map(({ name }) => name),
-      })
+    const withStaleKey = {
+      ...NAVIGATION_DATA_DEFINITIONS,
+      'component:not-canonical': NAVIGATION_DATA_DEFINITIONS['component:accordion'],
     }
+    expect(() => decodeScenarioFamily(contract, 'navigation-data', withStaleKey)).toThrow(
+      /stale definition for presentation family/i,
+    )
   })
 
-  it('defines stable, nonempty semantic cases and orthogonal environment axes', () => {
-    for (const scenario of projected) {
+  it('derives renderer applicability from ProductContract presentation modes only', () => {
+    const baseline = applicableNavigationDataScenarios(joined, 'baseline')
+    const registryTailwind = applicableNavigationDataScenarios(joined, 'registryTailwind')
+    const expectedBaseline = family
+      .filter(({ presentation }) =>
+        ['styled', 'partial', 'composed'].includes(presentation.baseline.mode),
+      )
+      .map(({ name }) => name)
+      .sort()
+    const expectedRegistry = family
+      .filter(({ presentation }) =>
+        ['styled', 'partial', 'composed'].includes(presentation.registryTailwind.mode),
+      )
+      .map(({ name }) => name)
+      .sort()
+    expect(baseline.map(({ productId }) => productId).sort()).toEqual(expectedBaseline)
+    expect(registryTailwind.map(({ productId }) => productId).sort()).toEqual(expectedRegistry)
+  })
+
+  it('defines stable, nonempty semantic cases with a real default and no duplicate axes', () => {
+    for (const scenario of catalog.scenarios) {
       const caseIds = scenario.cases.map(({ id }) => id)
       expect(new Set(caseIds).size, scenario.productId).toBe(caseIds.length)
       expect(caseIds, scenario.productId).toContain(scenario.defaultCaseId)
       for (const scenarioCase of scenario.cases) {
         expect(scenarioCase.label.trim(), `${scenario.productId}/${scenarioCase.id}`).not.toBe('')
         expect(
-          Object.keys(scenarioCase.input),
-          `${scenario.productId}/${scenarioCase.id}`,
-        ).not.toEqual([])
-        expect(
-          new Set(scenarioCase.environmentAxes.map(({ axis, value }) => `${axis}:${String(value)}`))
-            .size,
+          new Set(scenarioCase.environmentAxes).size,
           `${scenario.productId}/${scenarioCase.id}`,
         ).toBe(scenarioCase.environmentAxes.length)
       }
     }
   })
 
-  it('classifies density once in family scenarios with concrete not-applicable rationales', () => {
-    const profiles = projected.map((scenario) => ({
-      productId: scenario.productId,
-      profile: scenarioDensityProfile(scenario),
-    }))
-    expect(
-      profiles
-        .filter(({ profile }) => profile.mode === 'applicable')
-        .map(({ productId }) => productId)
-        .sort(),
-    ).toEqual(['avatar', 'data-table', 'item', 'sidebar', 'table'])
-
-    for (const { productId, profile } of profiles) {
-      if (profile.mode === 'applicable') {
-        expect(profile.caseIds.length, productId).toBeGreaterThanOrEqual(2)
-        expect(profile.caseIds, productId).toContain('compact')
-      } else {
-        expect(profile.rationale, productId).toContain(
-          projected.find((scenario) => scenario.productId === productId)!.displayName,
-        )
-        expect(profile.rationale, productId).toMatch(/target size|information hierarchy/i)
-      }
-    }
+  it('classifies collection density on exactly the products with a real density axis', () => {
+    const withCompactCase = joined
+      .filter(({ cases }) => cases.some(({ id }) => id === 'compact'))
+      .map(({ productId }) => productId)
+      .sort()
+    expect(withCompactCase).toEqual(DENSITY_APPLICABLE_PRODUCT_IDS)
   })
 
-  it('pairs every forced-colors environment with a concrete non-colour cue', () => {
-    for (const scenario of projected) {
-      expect(
-        scenarioEnvironmentProductIds(projected, 'forcedColors', 'active').includes(
-          scenario.productId,
-        ),
-        `${scenario.productId} forced-colors environment`,
-      ).toBe(scenario.forcedColorCue !== undefined)
-    }
+  it('pairs every forced-colors-capable scenario with a concrete non-colour cue', () => {
+    const withForcedColors = scenarioEnvironmentProductIds(joined, 'forcedColors')
+    const cued = forcedColorScenarios(joined)
+    expect(cued.map(({ productId }) => productId)).toEqual(withForcedColors)
+    expect(cued.every(({ cue }) => typeof cue === 'string' && cue.length > 0)).toBe(true)
   })
 
-  it('rejects a missing or foreign family definition instead of creating a shadow inventory', () => {
-    const missing = { ...navigationDataScenarios }
-    delete (missing as Record<string, unknown>)[family[0]!.scenarioId]
-    expect(() => projectNavigationDataScenarios(contract.productContract.entries, missing)).toThrow(
-      /missing navigation\/data scenario definition/i,
-    )
-
-    expect(() =>
-      projectNavigationDataScenarios(contract.productContract.entries, {
-        ...navigationDataScenarios,
-        'component:not-canonical': navigationDataScenarios['component:accordion'],
-      }),
-    ).toThrow(/unknown navigation\/data scenario definition/i)
-  })
-
-  it('rejects duplicate case ids and a dangling default case at projection time', () => {
-    const original = navigationDataScenarios['component:accordion']
-    expect(() =>
-      projectNavigationDataScenarios(contract.productContract.entries, {
-        ...navigationDataScenarios,
-        'component:accordion': {
-          ...original,
-          cases: [original.cases[0]!, original.cases[0]!],
-        },
-      }),
-    ).toThrow(/duplicate case ids/i)
-
-    expect(() =>
-      projectNavigationDataScenarios(contract.productContract.entries, {
-        ...navigationDataScenarios,
-        'component:accordion': { ...original, defaultCaseId: 'missing' },
-      }),
-    ).toThrow(/default case missing does not exist/i)
-  })
-
-  it('ships a baseline selector surface for every styled or partial family product', () => {
+  it('ships a baseline selector surface for every styled-or-partial family product', () => {
     const expected = family
       .filter(({ presentation }) => ['styled', 'partial'].includes(presentation.baseline.mode))
       .map(({ name }) => name)
       .sort()
-
     expect([...ownedScopes].sort()).toEqual(expected)
   })
 
@@ -228,7 +121,7 @@ describe('navigation/data presentation contract', () => {
     expect(styleless).toEqual([])
   })
 
-  it('keeps machine-free registry products explicitly inapplicable on the package path', () => {
+  it('keeps machine-free registry products explicitly inapplicable on the baseline path, except chip', () => {
     const exceptions = family
       .filter(
         ({ machine, presentation }) =>
@@ -242,9 +135,11 @@ describe('navigation/data presentation contract', () => {
     )) {
       expect(entry.machine.kind, entry.name).toBe('none')
       expect(entry.styling.baseline, entry.name).toBe(false)
-      expect(entry.presentation.baseline.rationale, entry.name).toMatch(
-        /no baseline package artifact/i,
-      )
+      if (entry.presentation.baseline.mode === 'not-applicable') {
+        expect(entry.presentation.baseline.rationale, entry.name).toMatch(
+          /no baseline package artifact/i,
+        )
+      }
     }
   })
 
@@ -253,8 +148,10 @@ describe('navigation/data presentation contract', () => {
     expect(partial.map(({ name }) => name).sort()).toEqual(['data-table', 'marquee'])
     for (const entry of partial) {
       expect(entry.styling.baseline, entry.name).toBe(true)
-      expect(entry.presentation.baseline.rationale, entry.name).toMatch(/directly owns/i)
-      expect(entry.presentation.baseline.rationale, entry.name).toMatch(/consumer/i)
+      if (entry.presentation.baseline.mode === 'partial') {
+        expect(entry.presentation.baseline.rationale, entry.name).toMatch(/directly owns/i)
+        expect(entry.presentation.baseline.rationale, entry.name).toMatch(/consumer/i)
+      }
     }
   })
 })

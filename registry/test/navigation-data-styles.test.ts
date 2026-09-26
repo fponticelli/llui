@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { component, div, mountApp, path, svg, text } from '@llui/dom'
 import { chromium, type Browser } from 'playwright'
@@ -103,23 +101,19 @@ import {
   TypographyP,
   TypographyPre,
 } from '../llui/ui/typography'
+import { loadProductContract } from '../../packages/components/test/styles/navigation-data-contract-source'
 import {
   applicableNavigationDataScenarios,
+  compileNavigationDataCatalog,
   forcedColorScenarios,
-  type NavigationDataContractEntry,
-  projectNavigationDataScenarios,
+  joinNavigationDataScenarios,
   scenarioEnvironmentProductIds,
 } from '../../packages/components/test/styles/navigation-data-scenarios'
 
-const contract = JSON.parse(
-  readFileSync(resolve(import.meta.dirname, '../registry.json'), 'utf8'),
-) as {
-  productContract: { entries: NavigationDataContractEntry[] }
-}
-const registryScenarios = applicableNavigationDataScenarios(
-  projectNavigationDataScenarios(contract.productContract.entries),
-  'registryTailwind',
-)
+const contract = loadProductContract()
+const catalog = compileNavigationDataCatalog(contract)
+const joined = joinNavigationDataScenarios(catalog, contract)
+const registryScenarios = applicableNavigationDataScenarios(joined, 'registryTailwind')
 const registryProductIds = registryScenarios.map(({ productId }) => productId).sort()
 const carouselParts = carouselMachine.connect(rootSignal(), () => {}, { id: 'registry-browser' })
 const publishedDragOffset = (deltaX: number): string =>
@@ -979,13 +973,16 @@ describe('registry navigation/data presentation in Chromium', () => {
   })
 
   it('contains every narrow and responsive-affordance scenario at full width', async () => {
+    // The protocol's `viewport` axis is canonically two-valued
+    // (`wide`/`narrow`), so a case declaring it is exercised at one
+    // representative pixel width per side rather than three breakpoints.
     const directions = ['ltr', 'rtl'] as const
     const products: Record<string, NarrowProbe> = {}
-    const widths = [280, 640, 1024] as const
+    const widths = [280, 1024] as const
+    const productsSupportingViewport = scenarioEnvironmentProductIds(registryScenarios, 'viewport')
     for (const width of widths) {
       for (const direction of directions) {
-        const productsAtWidth = scenarioEnvironmentProductIds(registryScenarios, 'viewport', width)
-        for (const productId of productsAtWidth) {
+        for (const productId of productsSupportingViewport) {
           const page = await browser.newPage({ viewport: { width, height: 720 } })
           await page.setContent(
             `<!doctype html><html dir="${direction}"><style>${tailwind}</style><body>${html}</body></html>`,
@@ -1000,9 +997,7 @@ describe('registry navigation/data presentation in Chromium', () => {
       widths
         .flatMap((width) =>
           directions.flatMap((direction) =>
-            scenarioEnvironmentProductIds(registryScenarios, 'viewport', width).map(
-              (productId) => `${width}:${direction}:${productId}`,
-            ),
+            productsSupportingViewport.map((productId) => `${width}:${direction}:${productId}`),
           ),
         )
         .sort(),
@@ -1147,7 +1142,7 @@ describe('registry navigation/data presentation in Chromium', () => {
   })
 
   it('preserves every declared state hierarchy in dark mode', async () => {
-    const expected = scenarioEnvironmentProductIds(registryScenarios, 'theme', 'dark')
+    const expected = scenarioEnvironmentProductIds(registryScenarios, 'theme')
     const capture = async (dark: boolean) => {
       const context = await browser.newContext({ colorScheme: dark ? 'dark' : 'light' })
       const page = await context.newPage()
@@ -1243,7 +1238,7 @@ describe('registry navigation/data presentation in Chromium', () => {
     })
     await page.close()
 
-    const expected = scenarioEnvironmentProductIds(registryScenarios, 'direction', 'rtl')
+    const expected = scenarioEnvironmentProductIds(registryScenarios, 'direction')
     expect(Object.keys(got).sort()).toEqual(expected)
     expect(got.accordion.textAlign).toBe('start')
     expect(got.breadcrumbs.separator).toBe('180deg')
@@ -1264,7 +1259,7 @@ describe('registry navigation/data presentation in Chromium', () => {
   })
 
   it('removes decorative animation for reduced-motion users', async () => {
-    const expected = scenarioEnvironmentProductIds(registryScenarios, 'motion', 'reduce')
+    const expected = scenarioEnvironmentProductIds(registryScenarios, 'motion')
     const motion = await browser.newContext({ reducedMotion: 'no-preference' })
     const motionPage = await motion.newPage()
     await motionPage.setContent(`<!doctype html><style>${tailwind}</style>${html}`)
@@ -1300,7 +1295,7 @@ describe('registry navigation/data presentation in Chromium', () => {
     const got = await probeForcedColorCues(page, cases)
     await context.close()
 
-    const expected = scenarioEnvironmentProductIds(registryScenarios, 'forcedColors', 'active')
+    const expected = scenarioEnvironmentProductIds(registryScenarios, 'forcedColors')
     expect(cases.map(({ productId }) => productId)).toEqual(expected)
     expect(Object.keys(got).sort()).toEqual(expected)
     expect(Object.entries(got).filter(([, result]) => !result.passes)).toEqual([])

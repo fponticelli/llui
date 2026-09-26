@@ -28,6 +28,11 @@ import {
   type Send,
   type Signal,
 } from '@llui/dom'
+import type { ProductContract } from '@llui/cli'
+import {
+  resolveScenarioSelection,
+  type PresentationScenarioEnvironment,
+} from '@llui/cli/presentation-scenarios'
 import * as accordion from '../../src/components/accordion'
 import * as avatar from '../../src/components/avatar'
 import * as breadcrumbs from '../../src/components/breadcrumbs'
@@ -46,28 +51,53 @@ import * as tabs from '../../src/components/tabs'
 import * as toc from '../../src/components/toc'
 import * as treeView from '../../src/components/tree-view'
 import * as dataTable from '../../src/patterns/data-table'
-import type {
-  JsonObject,
-  JsonValue,
-  NavigationDataScenario,
-  NavigationDataScenarioCase,
+import {
+  applicableNavigationDataScenarios,
+  joinNavigationDataScenarios,
+  CHART_FIXTURE_ROWS,
+  CHART_FIXTURE_SERIES,
+  SPARKLINE_FIXTURE_BAND,
+  SPARKLINE_FIXTURE_POINTS,
+  TABLE_FIXTURE_COLUMNS,
+  type AvatarCaseInput,
+  type BreadcrumbsCaseInput,
+  type CarouselCaseInput,
+  type ChartCaseInput,
+  type DisclosureCaseInput,
+  type MarqueeCaseInput,
+  type MeterCaseInput,
+  type NavigationDataCatalog,
+  type NavigationDataDefinitions,
+  type NavigationDataJoinedScenario,
+  type NavigationDataScenarioId,
+  type PaginationCaseInput,
+  type ProgressCaseInput,
+  type SparklineCaseInput,
+  type StepsCaseInput,
+  type TableCaseInput,
+  type TabsCaseInput,
+  type TocCaseInput,
+  type DataTableCaseInput,
+  type TreeViewCaseInput,
+  type ChipCaseInput,
 } from './navigation-data-scenarios'
 
-interface Disposable {
+export interface Disposable {
   dispose(): void
 }
 
-type Adapter = (
-  host: HTMLElement,
-  scenario: NavigationDataScenario,
-  scenarioCase: NavigationDataScenarioCase,
-) => Disposable
+export interface RenderContext {
+  readonly scenarioId: NavigationDataScenarioId
+  readonly caseId: string
+  readonly environment: PresentationScenarioEnvironment
+}
 
-const stringValue = (input: Readonly<JsonObject>, key: string, fallback: string): string =>
-  typeof input[key] === 'string' ? input[key] : fallback
-const numberValue = (input: Readonly<JsonObject>, key: string, fallback: number): number =>
-  typeof input[key] === 'number' ? input[key] : fallback
-const boolValue = (input: Readonly<JsonObject>, key: string): boolean => input[key] === true
+/** An adapter renders ONE typed, product-specific input through the real
+ * machine -> connect -> baseline skin. It never reads case/environment data
+ * beyond what `RenderContext` states, so a dimension-mutation test can call
+ * it directly with a hand-mutated `input` and observe the same real output a
+ * resolved selection would have produced. */
+export type Adapter<Input> = (host: HTMLElement, input: Input, ctx: RenderContext) => Disposable
 
 function mountMachine<S, M extends { type: string }, E extends { type: string } = never>(
   host: HTMLElement,
@@ -90,109 +120,140 @@ function mountMachine<S, M extends { type: string }, E extends { type: string } 
   )
 }
 
-const accordionAdapter: Adapter = (host, _scenario, scenarioCase) => {
-  const { input } = scenarioCase
+/** Drives the REAL accordion reducer to the requested disclosure phase,
+ * including `closing` (#264 item C): `AccordionState.closing` is entered by
+ * opening the item with `animated: true` and then sending `close` — a real
+ * reducer transition, not a fabricated init value, so it is observable in
+ * jsdom with no animation timing involved. */
+function initDisclosureAccordion(
+  itemValue: string,
+  input: DisclosureCaseInput,
+): accordion.AccordionState {
+  const opened = accordion.init({
+    items: [itemValue],
+    value: [itemValue],
+    disabled: input.disabled,
+    animated: true,
+  })
+  if (input.state === 'open') return opened
+  if (input.state === 'closing')
+    return accordion.update(opened, { type: 'close', value: itemValue })[0]
+  return accordion.init({ items: [itemValue], value: [], disabled: input.disabled, animated: true })
+}
+
+function initDisclosureCollapsible(input: DisclosureCaseInput): collapsible.CollapsibleState {
+  const opened = collapsible.init({ open: true, disabled: input.disabled, animated: true })
+  if (input.state === 'open') return opened
+  if (input.state === 'closing') return collapsible.update(opened, { type: 'close' })[0]
+  return collapsible.init({ open: false, disabled: input.disabled, animated: true })
+}
+
+const accordionAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) => {
   const itemValue = 'item'
   return mountMachine(
     host,
     'BaselineAccordionScenario',
-    () =>
-      accordion.init({
-        items: [itemValue],
-        value: stringValue(input, 'state', 'closed') === 'open' ? [itemValue] : [],
-        disabled: boolValue(input, 'disabled'),
-        animated: true,
-      }),
+    () => initDisclosureAccordion(itemValue, input),
     accordion.update,
     (state, send) => {
-      const parts = accordion.connect(state, send, {
-        id: `baseline-accordion-${scenarioCase.id}`,
-      })
+      const parts = accordion.connect(state, send, { id: `baseline-accordion-${ctx.caseId}` })
       const item = parts.item(itemValue)
       return div({ ...parts.root }, [
         div({ ...item.item }, [
-          button({ ...item.trigger }, [text(stringValue(input, 'label', 'Disclosure'))]),
-          div({ ...item.content }, [text(stringValue(input, 'content', 'Disclosure content'))]),
+          button({ ...item.trigger }, [text(input.label)]),
+          div({ ...item.content }, [text(input.content)]),
         ]),
       ])
     },
   )
 }
 
-const avatarAdapter: Adapter = (host, _scenario, scenarioCase) => {
-  const status = stringValue(scenarioCase.input, 'state', 'fallback')
-  const density = stringValue(scenarioCase.input, 'density', 'comfortable')
-  return mountMachine(
+const collapsibleAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) =>
+  mountMachine(
     host,
-    'BaselineAvatarScenario',
-    () => ({
-      ...avatar.init(),
-      status:
-        status === 'loaded'
-          ? ('loaded' as const)
-          : status === 'loading'
-            ? ('loading' as const)
-            : ('error' as const),
-    }),
-    avatar.update,
+    'BaselineCollapsibleScenario',
+    () => initDisclosureCollapsible(input),
+    collapsible.update,
     (state, send) => {
-      const parts = avatar.connect(state, send, {
-        alt: stringValue(scenarioCase.input, 'imageAlt', 'Avatar'),
-        density: density === 'compact' ? 'compact' : 'comfortable',
-      })
+      const parts = collapsible.connect(state, send, { id: `baseline-collapsible-${ctx.caseId}` })
       return div({ ...parts.root }, [
-        img({ ...parts.image, src: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }),
-        span({ ...parts.fallback }, [text(stringValue(scenarioCase.input, 'initials', 'LL'))]),
+        button({ ...parts.trigger }, [text(input.label)]),
+        div({ ...parts.content }, [text(input.content)]),
       ])
     },
   )
-}
 
-const breadcrumbsAdapter: Adapter = (host, _scenario, scenarioCase) => {
+const avatarAdapter: Adapter<AvatarCaseInput> = (host, input, ctx) =>
+  mountMachine(
+    host,
+    'BaselineAvatarScenario',
+    () => ({ ...avatar.init(), status: input.status }),
+    avatar.update,
+    (state, send) => {
+      void ctx
+      const parts = avatar.connect(state, send, { alt: input.label, density: input.density })
+      return div({ ...parts.root }, [
+        img({ ...parts.image, src: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }),
+        span({ ...parts.fallback }, [text(input.initials)]),
+      ])
+    },
+  )
+
+const breadcrumbsAdapter: Adapter<BreadcrumbsCaseInput> = (host, input, ctx) => {
   const items = [
     { id: 'home', label: 'Home' },
-    { id: 'current', label: stringValue(scenarioCase.input, 'label', 'Current') },
+    { id: 'current', label: input.currentLabel },
   ]
   return mountMachine(
     host,
     'BaselineBreadcrumbsScenario',
-    () => breadcrumbs.init({ items, maxVisible: scenarioCase.id === 'collapsed' ? 1 : 4 }),
+    () => breadcrumbs.init({ items, maxVisible: input.maxVisible }),
     breadcrumbs.update,
     (state, send) => {
+      void ctx
       const parts = breadcrumbs.connect(state, send)
+      // Driven from the real `visibleItems(state)` projection — NOT a
+      // hardcoded [home, current, ellipsis] shape — so `maxVisible`
+      // genuinely gates whether the ellipsis renders at all (#264 item D).
       return nav({ ...parts.root }, [
         ol({ ...parts.list }, [
-          li({ ...parts.item('home') }, [
-            a({ ...parts.link('home'), href: '#home' }, [text('Home')]),
-          ]),
-          li({ ...parts.separator }, [text('/')]),
-          li({ ...parts.item('current') }, [
-            a({ ...parts.link('current'), href: '#current' }, [text(items[1]!.label)]),
-          ]),
-          li([button({ ...parts.ellipsisTrigger }, [text('…')])]),
+          each(state.map(breadcrumbs.visibleItems), {
+            key: (entry) => (entry.type === 'ellipsis' ? 'ellipsis' : entry.id),
+            render: (entry, index) => {
+              const value = entry.peek()
+              const separator = index.peek() > 0 ? [li({ ...parts.separator }, [text('/')])] : []
+              if (value.type === 'ellipsis') {
+                return [...separator, li([button({ ...parts.ellipsisTrigger }, [text('…')])])]
+              }
+              return [
+                ...separator,
+                li({ ...parts.item(value.id) }, [
+                  a({ ...parts.link(value.id), href: `#${value.id}` }, [text(value.label)]),
+                ]),
+              ]
+            },
+          }),
         ]),
       ])
     },
   )
 }
 
-const carouselAdapter: Adapter = (host, _scenario, scenarioCase) => {
-  const current = numberValue(scenarioCase.input, 'index', 0)
-  return mountMachine(
+const carouselAdapter: Adapter<CarouselCaseInput> = (host, input, ctx) =>
+  mountMachine(
     host,
     'BaselineCarouselScenario',
-    () => carousel.init({ count: 3, current, loop: true }),
+    () => carousel.init({ count: input.count, current: input.index, loop: input.loop }),
     carousel.update,
     (state, send) => {
-      const parts = carousel.connect(state, send, {
-        id: `baseline-carousel-${scenarioCase.id}`,
-      })
+      const parts = carousel.connect(state, send, { id: `baseline-carousel-${ctx.caseId}` })
+      const slides = Array.from({ length: input.count }, (_, index) => index)
       return section({ ...parts.root }, [
         parts.directionSync,
         div({ ...parts.viewport }, [
           div(
             { ...parts.track },
-            [0, 1, 2].map((index) =>
+            slides.map((index) =>
               div({ ...parts.slide(index).slide }, [text(`Slide ${index + 1}`)]),
             ),
           ),
@@ -200,62 +261,62 @@ const carouselAdapter: Adapter = (host, _scenario, scenarioCase) => {
         button({ ...parts.prevTrigger }, [text('Previous')]),
         div(
           { ...parts.indicatorGroup },
-          [0, 1, 2].map((index) => button({ ...parts.slide(index).indicator }, [])),
+          slides.map((index) => button({ ...parts.slide(index).indicator }, [])),
         ),
         button({ ...parts.nextTrigger }, [text('Next')]),
       ])
     },
   )
-}
 
-// THREE bar and THREE area series (#264): the redundant forced-colors cue
-// (a fill pattern per data-series-cue) only proves anything with enough
-// same-mark series that a flat `fill: CanvasText` would make them identical.
-const chartSeries = [
-  { key: 'bar1', label: 'Bar A', mark: 'bar' as const },
-  { key: 'bar2', label: 'Bar B', mark: 'bar' as const },
-  { key: 'bar3', label: 'Bar C', mark: 'bar' as const },
-  { key: 'area1', label: 'Area A', mark: 'area' as const },
-  { key: 'area2', label: 'Area B', mark: 'area' as const },
-  { key: 'area3', label: 'Area C', mark: 'area' as const },
-]
-const chartRows: chart.ChartRow[] = [
-  { label: 'Q1', values: { bar1: 12, bar2: 9, bar3: 6, area1: 14, area2: 10, area3: 7 } },
-  { label: 'Q2', values: { bar1: 18, bar2: 13, bar3: 8, area1: 20, area2: 15, area3: 9 } },
-]
-
-const chartAdapter: Adapter = (host, _scenario, scenarioCase) =>
+const chartAdapter: Adapter<ChartCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
     'BaselineChartScenario',
-    () =>
-      chart.init({
-        series: chartSeries,
-        rows: scenarioCase.id === 'empty' ? [] : chartRows,
-        label: stringValue(scenarioCase.input, 'label', 'Chart'),
-      }),
+    () => {
+      const initial = chart.init({
+        series: [...CHART_FIXTURE_SERIES],
+        rows: input.populated ? [...CHART_FIXTURE_ROWS] : [],
+        label: input.label,
+      })
+      // Real `setActiveSeries` message, not a fabricated dim/toggle one — a
+      // series is only ever "dimmed" as a DERIVED consequence of some OTHER
+      // series being active (`geometryOf` in chart.ts computes `dimmed` from
+      // `activeSeries`; there is no separate dim message).
+      return input.activeSeriesKey === null
+        ? initial
+        : chart.update(initial, { type: 'setActiveSeries', key: input.activeSeriesKey })[0]
+    },
     chart.update,
     (state, send) => {
-      const parts = chart.connect(state, send, { id: `baseline-chart-${scenarioCase.id}` })
+      const parts = chart.connect(state, send, { id: `baseline-chart-${ctx.caseId}` })
       return section({ ...parts.root }, [
         svg({ ...parts.svg }, [
-          svgTitle({ ...parts.title }, [text(stringValue(scenarioCase.input, 'label', 'Chart'))]),
+          svgTitle({ ...parts.title }, [text(input.label)]),
           svgDesc({ ...parts.desc }, [text('Six-series chart (three bar, three area)')]),
           chartForcedColorPatterns(),
           g({ ...parts.layer }, [
             each(parts.gridLines, {
               key: (line) => String(line.value),
-              render: (line) => [path({ ...parts.grid, d: line.peek().d })],
+              render: (line) => {
+                const l = line.peek()
+                return [path({ ...parts.grid, d: l.d })]
+              },
             }),
           ]),
           g({ ...parts.layer }, [
             each(parts.marks, {
               key: (mark) => `${mark.seriesKey}:${mark.index ?? 'series'}`,
-              render: (mark) => [path({ ...parts.markProps(mark.peek()) })],
+              render: (mark) => {
+                const m = mark.peek()
+                return [path({ ...parts.markProps(m) })]
+              },
             }),
             each(parts.vertices, {
               key: (vertex) => `${vertex.seriesKey}:${vertex.index}`,
-              render: (vertex) => [circle({ ...parts.dotProps(vertex.peek()), r: 3 })],
+              render: (vertex) => {
+                const v = vertex.peek()
+                return [circle({ ...parts.dotProps(v), r: 3 })]
+              },
             }),
           ]),
           each(parts.categoryTicks, {
@@ -265,7 +326,7 @@ const chartAdapter: Adapter = (host, _scenario, scenarioCase) =>
         ]),
         div({ ...parts.tooltip }, [text(parts.activeLabel)]),
         div(
-          chartSeries.map((series) =>
+          CHART_FIXTURE_SERIES.map((series) =>
             button({ ...parts.legendItem(series.key) }, [text(series.label)]),
           ),
         ),
@@ -274,57 +335,32 @@ const chartAdapter: Adapter = (host, _scenario, scenarioCase) =>
     },
   )
 
-const collapsibleAdapter: Adapter = (host, _scenario, scenarioCase) =>
+const marqueeAdapter: Adapter<MarqueeCaseInput> = (host, input, ctx) =>
   mountMachine(
-    host,
-    'BaselineCollapsibleScenario',
-    () =>
-      collapsible.init({
-        open: stringValue(scenarioCase.input, 'state', 'closed') === 'open',
-        disabled: boolValue(scenarioCase.input, 'disabled'),
-        animated: true,
-      }),
-    collapsible.update,
-    (state, send) => {
-      const parts = collapsible.connect(state, send, {
-        id: `baseline-collapsible-${scenarioCase.id}`,
-      })
-      return div({ ...parts.root }, [
-        button({ ...parts.trigger }, [text(stringValue(scenarioCase.input, 'label', 'Details'))]),
-        div({ ...parts.content }, [text(stringValue(scenarioCase.input, 'content', 'Content'))]),
-      ])
-    },
-  )
-
-const marqueeAdapter: Adapter = (host, _scenario, scenarioCase) => {
-  const direction = scenarioCase.id === 'vertical' ? ('down' as const) : ('left' as const)
-  return mountMachine(
     host,
     'BaselineMarqueeScenario',
     () =>
       marquee.init({
-        direction,
-        running: !boolValue(scenarioCase.input, 'paused'),
-        disabled: boolValue(scenarioCase.input, 'disabled'),
+        direction: input.direction,
+        running: input.running,
+        disabled: input.disabled,
         pauseOnHover: true,
       }),
     marquee.update,
     (state, send) => {
+      void ctx
       const parts = marquee.connect(state, send)
-      return div({ ...parts.root }, [
-        div({ ...parts.content }, [text('Alpha · Beta · Alpha · Beta')]),
-      ])
+      return div({ ...parts.root }, [div({ ...parts.content }, [text(input.label)])])
     },
   )
-}
 
-const meterAdapter: Adapter = (host, _scenario, scenarioCase) =>
+const meterAdapter: Adapter<MeterCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
     'BaselineMeterScenario',
     () =>
       meter.init({
-        value: numberValue(scenarioCase.input, 'value', 42),
+        value: input.value,
         min: 0,
         max: 100,
         bands: [
@@ -335,9 +371,8 @@ const meterAdapter: Adapter = (host, _scenario, scenarioCase) =>
       }),
     meter.update,
     (state, send) => {
-      const parts = meter.connect(state, send, {
-        label: stringValue(scenarioCase.input, 'label', 'Meter'),
-      })
+      void ctx
+      const parts = meter.connect(state, send, { label: input.label })
       return div({ ...parts.root }, [
         span({ ...parts.label }, [text(parts.valueText)]),
         div({ ...parts.track }, [
@@ -351,50 +386,52 @@ const meterAdapter: Adapter = (host, _scenario, scenarioCase) =>
     },
   )
 
-const paginationAdapter: Adapter = (host, _scenario, scenarioCase) =>
+const paginationAdapter: Adapter<PaginationCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
     'BaselinePaginationScenario',
     () =>
       pagination.init({
-        page: numberValue(scenarioCase.input, 'page', 1),
-        total: numberValue(scenarioCase.input, 'count', 10) * 10,
+        page: input.page,
+        total: input.total * 10,
         pageSize: 10,
-        disabled: boolValue(scenarioCase.input, 'disabled'),
+        disabled: input.disabled,
       }),
     pagination.update,
     (state, send) => {
-      const parts = pagination.connect(state, send, {
-        id: `baseline-pagination-${scenarioCase.id}`,
-      })
+      const parts = pagination.connect(state, send, { id: `baseline-pagination-${ctx.caseId}` })
+      // Driven from the real `pageItems(state)` projection — NOT a hardcoded
+      // [1, …, 2, …] shape — so `total`/`page` genuinely change which page
+      // buttons and ellipses render (#264 item D).
       return [
         parts.directionSync,
         nav({ ...parts.root }, [
           button({ ...parts.prevTrigger }, [text('Previous')]),
-          button({ ...parts.item(1) }, [text('1')]),
-          span({ ...parts.ellipsis('start') }, [text('…')]),
-          button({ ...parts.item(2) }, [text('2')]),
-          span({ ...parts.ellipsis('end') }, [text('…')]),
+          each(state.map(pagination.pageItems), {
+            key: (item) =>
+              item.type === 'page' ? `page-${item.page}` : `ellipsis-${item.position}`,
+            render: (item) => {
+              const value = item.peek()
+              return value.type === 'page'
+                ? [button({ ...parts.item(value.page) }, [text(String(value.page))])]
+                : [span({ ...parts.ellipsis(value.position) }, [text('…')])]
+            },
+          }),
           button({ ...parts.nextTrigger }, [text('Next')]),
         ]),
       ]
     },
   )
 
-const progressAdapter: Adapter = (host, _scenario, scenarioCase) =>
+const progressAdapter: Adapter<ProgressCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
     'BaselineProgressScenario',
-    () =>
-      progress.init({
-        value:
-          scenarioCase.id === 'indeterminate' ? null : numberValue(scenarioCase.input, 'value', 60),
-      }),
+    () => progress.init({ value: input.value }),
     progress.update,
     (state, send) => {
-      const parts = progress.connect(state, send, {
-        label: stringValue(scenarioCase.input, 'label', 'Progress'),
-      })
+      void ctx
+      const parts = progress.connect(state, send, { label: input.label })
       return div({ ...parts.root }, [
         span({ ...parts.label }, [text(parts.valueText)]),
         div({ ...parts.track }, [div({ ...parts.range })]),
@@ -402,28 +439,23 @@ const progressAdapter: Adapter = (host, _scenario, scenarioCase) =>
     },
   )
 
-const sparkPoints = [
-  { at: Date.UTC(2026, 0, 1), value: 4, grain: 'daily' },
-  { at: Date.UTC(2026, 0, 2), value: 9, grain: 'daily' },
-  { at: Date.UTC(2026, 0, 3), value: 6, grain: 'weekly' },
-  { at: Date.UTC(2026, 0, 4), value: 12, grain: 'weekly' },
-]
-
-const sparklineAdapter: Adapter = (host, _scenario, scenarioCase) =>
+const sparklineAdapter: Adapter<SparklineCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
     'BaselineSparklineScenario',
     () =>
       sparkline.init({
-        points: sparkPoints,
-        band: { low: 5, high: 10 },
-        now: Date.UTC(2026, 0, 5),
+        points: [...SPARKLINE_FIXTURE_POINTS],
+        band: { ...SPARKLINE_FIXTURE_BAND },
+        now:
+          SPARKLINE_FIXTURE_POINTS[SPARKLINE_FIXTURE_POINTS.length - 1]!.at +
+          input.nowOffsetDays * 24 * 60 * 60 * 1000,
       }),
     sparkline.update,
     (state, send) => {
       const parts = sparkline.connect(state, send, {
-        id: `baseline-sparkline-${scenarioCase.id}`,
-        label: stringValue(scenarioCase.input, 'label', 'Trend'),
+        id: `baseline-sparkline-${ctx.caseId}`,
+        label: input.label,
       })
       return div({ ...parts.root }, [
         svg({ ...parts.svg }, [
@@ -457,23 +489,24 @@ const sparklineAdapter: Adapter = (host, _scenario, scenarioCase) =>
     },
   )
 
-const stepsAdapter: Adapter = (host, _scenario, scenarioCase) =>
+const stepsAdapter: Adapter<StepsCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
     'BaselineStepsScenario',
     () => {
       const initial = steps.init({
         steps: ['Account', 'Configure', 'Review'],
-        current: scenarioCase.id === 'pending' ? 0 : 1,
-        completed: scenarioCase.id === 'completed' ? [0] : [],
-        disabled: boolValue(scenarioCase.input, 'disabled'),
+        current: input.current,
+        completed: [...input.completed],
+        disabled: input.disabled,
       })
-      return scenarioCase.id === 'error'
-        ? steps.update(initial, { type: 'markError', step: 1 })[0]
-        : initial
+      return input.errorStep === null
+        ? initial
+        : steps.update(initial, { type: 'markError', step: input.errorStep })[0]
     },
     steps.update,
     (state, send) => {
+      void ctx
       const parts = steps.connect(state, send)
       return div({ ...parts.root }, [
         ...[0, 1, 2].map((index) => {
@@ -489,28 +522,27 @@ const stepsAdapter: Adapter = (host, _scenario, scenarioCase) =>
     },
   )
 
-const tableAdapter: Adapter = (host, _scenario, scenarioCase) => {
-  const rows = scenarioCase.id === 'empty' ? [] : ['alpha', 'beta']
-  const density = stringValue(scenarioCase.input, 'density', 'comfortable')
-  return mountMachine(
+const tableAdapter: Adapter<TableCaseInput> = (host, input, ctx) =>
+  mountMachine(
     host,
     'BaselineTableScenario',
     () =>
       table.init({
-        columns: [
-          { id: 'name', sortable: true },
-          { id: 'status', sortable: true },
-        ],
-        rows,
+        columns: [...TABLE_FIXTURE_COLUMNS],
+        rows: [...input.rows],
         selectionMode: 'multiple',
-        selection: boolValue(scenarioCase.input, 'selected') ? ['alpha'] : [],
-        disabled: boolValue(scenarioCase.input, 'disabled'),
+        selection: [...input.selection],
+        sort:
+          input.sortColumnId === null
+            ? undefined
+            : { columnId: input.sortColumnId, direction: 'asc' },
+        disabled: input.disabled,
       }),
     table.update,
     (state, send) => {
       const parts = table.connect(state, send, {
-        id: `baseline-table-${scenarioCase.id}`,
-        density: density === 'compact' ? 'compact' : 'comfortable',
+        id: `baseline-table-${ctx.caseId}`,
+        density: input.density,
       })
       return div({ ...parts.viewport }, [
         tableElement({ ...parts.root }, [
@@ -524,7 +556,7 @@ const tableAdapter: Adapter = (host, _scenario, scenarioCase) => {
             ]),
           ]),
           tbody(
-            rows.map((id, rowIndex) =>
+            input.rows.map((id, rowIndex) =>
               tr({ ...parts.row(id, rowIndex) }, [
                 td({ ...parts.cell(rowIndex, 0) }, [
                   span({ ...parts.rowCheckbox(id, rowIndex) }, [text('✓')]),
@@ -538,23 +570,21 @@ const tableAdapter: Adapter = (host, _scenario, scenarioCase) => {
       ])
     },
   )
-}
 
-const tabsAdapter: Adapter = (host, _scenario, scenarioCase) => {
-  const active = scenarioCase.id === 'inactive' ? 'details' : 'summary'
-  return mountMachine(
+const tabsAdapter: Adapter<TabsCaseInput> = (host, input, ctx) =>
+  mountMachine(
     host,
     'BaselineTabsScenario',
     () =>
       tabs.init({
         items: ['summary', 'details'],
-        value: active,
-        orientation: scenarioCase.id === 'vertical' ? 'vertical' : 'horizontal',
-        disabledItems: boolValue(scenarioCase.input, 'disabled') ? ['summary'] : [],
+        value: input.value,
+        orientation: input.orientation,
+        disabledItems: [...input.disabledItems],
       }),
     tabs.update,
     (state, send) => {
-      const parts = tabs.connect(state, send, { id: `baseline-tabs-${scenarioCase.id}` })
+      const parts = tabs.connect(state, send, { id: `baseline-tabs-${ctx.caseId}` })
       return [
         parts.directionSync,
         div({ ...parts.root }, [
@@ -569,9 +599,8 @@ const tabsAdapter: Adapter = (host, _scenario, scenarioCase) => {
       ]
     },
   )
-}
 
-const tocAdapter: Adapter = (host, _scenario, scenarioCase) => {
+const tocAdapter: Adapter<TocCaseInput> = (host, input, ctx) => {
   const entries = [
     { id: 'overview', label: 'Overview', level: 1 },
     { id: 'api', label: 'API', level: 2 },
@@ -579,14 +608,10 @@ const tocAdapter: Adapter = (host, _scenario, scenarioCase) => {
   return mountMachine(
     host,
     'BaselineTocScenario',
-    () =>
-      toc.init({
-        items: entries,
-        activeId: scenarioCase.id === 'current' ? 'api' : 'overview',
-        expanded: scenarioCase.id === 'expanded' ? ['api'] : [],
-      }),
+    () => toc.init({ items: entries, activeId: input.activeId, expanded: [...input.expanded] }),
     toc.update,
     (state, send) => {
+      void ctx
       const parts = toc.connect(state, send)
       return nav({ ...parts.root }, [
         ol(
@@ -604,26 +629,24 @@ const tocAdapter: Adapter = (host, _scenario, scenarioCase) => {
   )
 }
 
-const treeViewAdapter: Adapter = (host, _scenario, scenarioCase) =>
+const treeViewAdapter: Adapter<TreeViewCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
     'BaselineTreeViewScenario',
     () => {
       let initial = treeView.init({
         visibleItems: ['src', 'index'],
-        expanded: boolValue(scenarioCase.input, 'expanded') ? ['src'] : [],
-        selected: boolValue(scenarioCase.input, 'selected') ? ['index'] : [],
+        expanded: [...input.expanded],
+        selected: [...input.selected],
         selectionMode: 'checkbox',
-        disabled: boolValue(scenarioCase.input, 'disabled'),
+        disabled: input.disabled,
       })
       initial = treeView.update(initial, { type: 'focus', id: 'src' })[0]
-      return boolValue(scenarioCase.input, 'busy')
-        ? treeView.update(initial, { type: 'loadingStart', id: 'src' })[0]
-        : initial
+      return input.busy ? treeView.update(initial, { type: 'loadingStart', id: 'src' })[0] : initial
     },
     treeView.update,
     (state, send) => {
-      const parts = treeView.connect(state, send, { id: `baseline-tree-${scenarioCase.id}` })
+      const parts = treeView.connect(state, send, { id: `baseline-tree-${ctx.caseId}` })
       const branch = parts.item('src', 0, true)
       const leaf = parts.item('index', 1, false, 'src')
       return div({ ...parts.root }, [
@@ -637,23 +660,18 @@ const treeViewAdapter: Adapter = (host, _scenario, scenarioCase) =>
     },
   )
 
-const dataTableAdapter: Adapter = (host, _scenario, scenarioCase) => {
-  const ids = scenarioCase.id === 'empty' ? [] : ['alpha', 'beta']
-  const density = stringValue(scenarioCase.input, 'density', 'comfortable')
-  return mountMachine(
+const dataTableAdapter: Adapter<DataTableCaseInput> = (host, input, ctx) =>
+  mountMachine(
     host,
     'BaselineDataTableScenario',
     () => {
       const initial = dataTable.init({
-        columns: [
-          { id: 'name', sortable: true },
-          { id: 'status', sortable: true },
-        ],
+        columns: [...TABLE_FIXTURE_COLUMNS],
         selectionMode: 'multiple',
         pageSize: 2,
       })
-      if (scenarioCase.id === 'loading') return dataTable.update(initial, { type: 'reload' })[0]
-      if (scenarioCase.id === 'error') {
+      if (input.phase === 'loading') return dataTable.update(initial, { type: 'reload' })[0]
+      if (input.phase === 'error') {
         const pending = dataTable.update(initial, { type: 'reload' })[0]
         return dataTable.update(pending, {
           type: 'pageFailed',
@@ -664,17 +682,17 @@ const dataTableAdapter: Adapter = (host, _scenario, scenarioCase) => {
       return dataTable.update(initial, {
         type: 'pageLoaded',
         queryId: initial.queryId,
-        rows: ids,
-        total: ids.length,
+        rows: [...input.rows],
+        total: input.rows.length,
       })[0]
     },
     dataTable.update,
     (state, send) => {
       const parts = dataTable.connect(state, send, {
-        id: `baseline-data-table-${scenarioCase.id}`,
-        density: density === 'compact' ? 'compact' : 'comfortable',
+        id: `baseline-data-table-${ctx.caseId}`,
+        density: input.density,
       })
-      return section({ 'data-density': density }, [
+      return section({ 'data-density': input.density }, [
         parts.pagination.directionSync,
         div({ ...parts.table.viewport }, [
           tableElement({ ...parts.table.root }, [
@@ -688,7 +706,7 @@ const dataTableAdapter: Adapter = (host, _scenario, scenarioCase) => {
               ]),
             ]),
             tbody(
-              ids.map((id, rowIndex) =>
+              input.rows.map((id, rowIndex) =>
                 tr({ ...parts.table.row(id, rowIndex) }, [
                   td({ ...parts.table.cell(rowIndex, 0) }, [
                     span({ ...parts.table.rowCheckbox(id, rowIndex) }, [text('✓')]),
@@ -712,60 +730,91 @@ const dataTableAdapter: Adapter = (host, _scenario, scenarioCase) => {
       ])
     },
   )
-}
 
-const chipAdapter: Adapter = (host, _scenario, scenarioCase) => {
+const chipAdapter: Adapter<ChipCaseInput> = (host, input, ctx) => {
+  void ctx
   const element = document.createElement('span')
   element.dataset.scope = 'chip'
   element.dataset.part = 'chip'
-  element.textContent = stringValue(scenarioCase.input, 'label', 'Chip')
-  if (typeof scenarioCase.input.hue === 'number') {
-    element.style.setProperty('--chip-hue', String(scenarioCase.input.hue))
-  }
+  element.textContent = input.label
+  if (input.hue !== null) element.style.setProperty('--chip-hue', String(input.hue))
   host.append(element)
   return { dispose: () => element.remove() }
 }
 
-const adapters = {
-  accordion: accordionAdapter,
-  avatar: avatarAdapter,
-  breadcrumbs: breadcrumbsAdapter,
-  carousel: carouselAdapter,
-  chart: chartAdapter,
-  chip: chipAdapter,
-  collapsible: collapsibleAdapter,
-  'data-table': dataTableAdapter,
-  marquee: marqueeAdapter,
-  meter: meterAdapter,
-  pagination: paginationAdapter,
-  progress: progressAdapter,
-  sparkline: sparklineAdapter,
-  steps: stepsAdapter,
-  table: tableAdapter,
-  tabs: tabsAdapter,
-  toc: tocAdapter,
-  'tree-view': treeViewAdapter,
-} as const satisfies Record<string, Adapter>
+/** Adapters for every product with a baseline presentation (18 of 29 — the 11
+ * registry-only atoms are `not-applicable` on this path and never resolved
+ * here; see `resolveScenarioSelection`'s own `invalid-path` guard). Keyed by
+ * `scenarioId`, kept SEPARATE from `NAVIGATION_DATA_DEFINITIONS`'s case data
+ * per the protocol's own "renderer adapters live in each app as separate
+ * maps" rule. */
+export const BASELINE_ADAPTERS = {
+  'component:accordion': accordionAdapter,
+  'component:avatar': avatarAdapter,
+  'component:breadcrumbs': breadcrumbsAdapter,
+  'component:carousel': carouselAdapter,
+  'component:chart': chartAdapter,
+  'component:collapsible': collapsibleAdapter,
+  'component:marquee': marqueeAdapter,
+  'component:meter': meterAdapter,
+  'component:pagination': paginationAdapter,
+  'component:progress': progressAdapter,
+  'component:sparkline': sparklineAdapter,
+  'component:steps': stepsAdapter,
+  'component:table': tableAdapter,
+  'component:tabs': tabsAdapter,
+  'component:toc': tocAdapter,
+  'component:tree-view': treeViewAdapter,
+  'pattern:data-table': dataTableAdapter,
+  'registry:chip': chipAdapter,
+} as const satisfies Partial<Record<NavigationDataScenarioId, Adapter<never>>>
 
-function assertBindings(scenarios: readonly NavigationDataScenario[]): void {
-  const productIds = scenarios.map(({ productId }) => productId).sort()
-  const bindingIds = Object.keys(adapters).sort()
-  if (JSON.stringify(productIds) !== JSON.stringify(bindingIds)) {
+function renderResolvedBaseline(
+  host: HTMLElement,
+  scenarioId: string,
+  caseId: string,
+  input: unknown,
+  environment: PresentationScenarioEnvironment,
+): Disposable {
+  const adapter = BASELINE_ADAPTERS[scenarioId as keyof typeof BASELINE_ADAPTERS]
+  if (adapter === undefined) {
+    throw new Error(`No baseline adapter registered for navigation-data scenario ${scenarioId}`)
+  }
+  return (adapter as Adapter<unknown>)(host, input, {
+    scenarioId: scenarioId as NavigationDataScenarioId,
+    caseId,
+    environment,
+  })
+}
+
+function assertBindings(scenarios: readonly NavigationDataJoinedScenario[]): void {
+  const scenarioIds = scenarios.map(({ scenarioId }) => scenarioId).sort()
+  const bindingIds = Object.keys(BASELINE_ADAPTERS).sort()
+  if (JSON.stringify(scenarioIds) !== JSON.stringify(bindingIds)) {
     throw new Error(
-      `Baseline navigation/data renderer bindings do not match applicable ProductContract products: expected ${productIds.join(', ')}; received ${bindingIds.join(', ')}`,
+      `Baseline navigation/data renderer bindings do not match applicable ProductContract scenarios: expected ${scenarioIds.join(', ')}; received ${bindingIds.join(', ')}`,
     )
   }
 }
 
 export function mountBaselineNavigationDataScenarios(
   container: HTMLElement,
-  scenarios: readonly NavigationDataScenario[],
+  contract: ProductContract,
+  catalog: NavigationDataCatalog,
+  scenarios: readonly NavigationDataJoinedScenario[] = applicableNavigationDataScenarios(
+    joinNavigationDataScenarios(catalog, contract),
+    'baseline',
+  ),
 ): Disposable {
   assertBindings(scenarios)
   const handles: Disposable[] = []
   for (const scenario of scenarios) {
-    const adapter = adapters[scenario.productId as keyof typeof adapters]
     for (const scenarioCase of scenario.cases) {
+      const resolved = resolveScenarioSelection<NavigationDataDefinitions>(contract, catalog, {
+        productId: scenario.productId,
+        caseId: scenarioCase.id,
+        path: 'baseline',
+      })
       const host = document.createElement('section')
       host.id = `baseline-${scenario.productId}${
         scenarioCase.id === scenario.defaultCaseId ? '' : `--${scenarioCase.id}`
@@ -775,28 +824,20 @@ export function mountBaselineNavigationDataScenarios(
       host.dataset.scenarioId = scenario.scenarioId
       host.dataset.scenarioCase = scenarioCase.id
       container.append(host)
-      handles.push(adapter(host, scenario, scenarioCase))
+      handles.push(
+        renderResolvedBaseline(
+          host,
+          resolved.scenarioId,
+          resolved.case.id,
+          resolved.case.input,
+          resolved.environment,
+        ),
+      )
     }
   }
   return {
     dispose: () => {
       for (let index = handles.length - 1; index >= 0; index -= 1) handles[index]!.dispose()
     },
-  }
-}
-
-export function mutateScenarioInput(
-  scenario: NavigationDataScenario,
-  caseId: string,
-  key: string,
-  value: JsonValue,
-): NavigationDataScenario {
-  return {
-    ...scenario,
-    cases: scenario.cases.map((scenarioCase) =>
-      scenarioCase.id === caseId
-        ? { ...scenarioCase, input: { ...scenarioCase.input, [key]: value } }
-        : scenarioCase,
-    ),
   }
 }

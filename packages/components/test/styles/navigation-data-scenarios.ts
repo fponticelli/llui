@@ -1,8 +1,1210 @@
-export type JsonValue = null | boolean | number | string | readonly JsonValue[] | JsonObject
-export interface JsonObject {
-  readonly [key: string]: JsonValue
+/**
+ * The ONE navigation-data family module (#264 phase 2, #270 protocol).
+ *
+ * `NAVIGATION_DATA_DEFINITIONS` owns every semantic case for the 29
+ * navigation-data ProductContract products, keyed by `scenarioId`. Each
+ * case's `input` is typed, product-specific JSON mirroring the product's real
+ * `init()`/state fields — never a generic `{state, label, ...}` bag. Cases
+ * declare the protocol's environment axes (`theme`/`direction`/`motion`/
+ * `viewport`/`forcedColors`) they support; the RESOLVER (`resolveScenarioSelection`)
+ * supplies the concrete axis value, so one case can be rendered under several
+ * environments rather than baking one axis value per case.
+ *
+ * `compileScenarioFamily` performs the exact join against ProductContract at
+ * compile time: a missing or stale scenarioId is a thrown
+ * `PresentationScenarioError`, not a silent gap.
+ *
+ * Two things this module deliberately does NOT own, because they are not
+ * protocol data: the forced-colors verification CUE (`FORCED_COLOR_CUES`,
+ * consumed only by the shared browser probes) and the density-N/A rationale
+ * text (`DENSITY_RATIONALES`) — both are family-local test metadata, kept in
+ * plain maps beside the compiled catalog rather than smuggled into a case's
+ * `input` (which would fail `compileScenarioFamily`'s exactness check the
+ * moment a definition carried anything beyond `id`/`label`/`input`/
+ * `environmentAxes`/`copiedArtifactNames`).
+ */
+import {
+  compileScenarioFamily,
+  type CompiledPresentationScenarioFamily,
+  type PresentationScenarioEnvironmentAxis,
+  type ResolvedPresentationScenarioSelection,
+} from '@llui/cli/presentation-scenarios'
+import type { ProductContract, ProductEntry } from '@llui/cli'
+
+// Individual named consts, never a `Record`-typed lookup object: indexing a
+// type with an index signature (`Record<string, T>`) widens every property
+// read to `T | undefined` under `noUncheckedIndexedAccess`, which then
+// silently poisons every case's `environmentAxes` field below with a spurious
+// `| undefined` and breaks `compileScenarioFamily`'s exactness check.
+const AX = {
+  theme: ['theme'] as readonly PresentationScenarioEnvironmentAxis[],
+  dir: ['direction'] as readonly PresentationScenarioEnvironmentAxis[],
+  motion: ['motion'] as readonly PresentationScenarioEnvironmentAxis[],
+  narrow: ['viewport'] as readonly PresentationScenarioEnvironmentAxis[],
+  forced: ['forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
+  themeForced: ['theme', 'forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
+  dirTheme: ['direction', 'theme'] as readonly PresentationScenarioEnvironmentAxis[],
+  dirForced: ['direction', 'forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
+  dirNarrow: ['direction', 'viewport'] as readonly PresentationScenarioEnvironmentAxis[],
+  dirMotion: ['direction', 'motion'] as readonly PresentationScenarioEnvironmentAxis[],
+  dirThemeForced: [
+    'direction',
+    'theme',
+    'forcedColors',
+  ] as readonly PresentationScenarioEnvironmentAxis[],
+  none: [] as readonly PresentationScenarioEnvironmentAxis[],
 }
 
+// ---------------------------------------------------------------------------
+// component:accordion / component:collapsible — real disclosure state,
+// including the `closing` phase driven from the actual reducer (#264 item C):
+// AccordionState.closing / CollapsibleState.closing are reducer-owned fields,
+// entered by opening then sending `close` with `animated: true` — no
+// animation timing involved, so the phase is observable in jsdom too.
+export interface DisclosureCaseInput {
+  readonly label: string
+  readonly content: string
+  readonly state: 'closed' | 'open' | 'closing'
+  readonly disabled: boolean
+}
+
+// component:avatar
+export interface AvatarCaseInput {
+  readonly label: string
+  readonly status: 'loading' | 'loaded' | 'error'
+  readonly initials: string
+  readonly density: 'comfortable' | 'compact'
+}
+
+// component:breadcrumbs
+export interface BreadcrumbsCaseInput {
+  readonly currentLabel: string
+  // No `current` flag: `breadcrumbs.ts` derives it structurally (the LAST
+  // item is always current), so there is no state a case could set it to.
+  readonly maxVisible: number
+}
+
+// component:carousel
+export interface CarouselCaseInput {
+  readonly index: number
+  readonly count: number
+  // No standalone "disabled" state: `carousel.ts` has no such init option —
+  // prev/next disability is DERIVED from `loop` and the current boundary
+  // (`canGoNext`/`canGoPrev`), so that real mechanism is what a case drives.
+  readonly loop: boolean
+}
+
+// component:chart
+export interface ChartCaseInput {
+  readonly label: string
+  readonly populated: boolean
+  /** Isolates one series via the real `setActiveSeries` message (null: show every series). */
+  readonly activeSeriesKey: string | null
+}
+
+/**
+ * The chart/sparkline/table FIXTURE data (the concrete series/rows/points a case merely
+ * parameterizes by key/index) lives here ONCE. Phase 1 had both renderers hand-maintain their own
+ * `chartSeries`/`chartRows`/`sparkPoints` consts, extended in lockstep on every change (#264 item
+ * B) — a single shared export is what the catalog's "data comes from the family once" promise
+ * requires for data too big or too structural to fit as a per-case scalar.
+ */
+export interface ChartFixtureSeries {
+  readonly key: string
+  readonly label: string
+  readonly mark: 'bar' | 'area'
+}
+export interface ChartFixtureRow {
+  readonly label: string
+  readonly values: Readonly<Record<string, number>>
+}
+
+// THREE bar and THREE area series (#264): the redundant forced-colors cue (a fill pattern per
+// data-series-cue) only proves anything with enough same-mark series that a flat
+// `fill: CanvasText` would make them identical.
+export const CHART_FIXTURE_SERIES: readonly ChartFixtureSeries[] = [
+  { key: 'bar1', label: 'Bar A', mark: 'bar' },
+  { key: 'bar2', label: 'Bar B', mark: 'bar' },
+  { key: 'bar3', label: 'Bar C', mark: 'bar' },
+  { key: 'area1', label: 'Area A', mark: 'area' },
+  { key: 'area2', label: 'Area B', mark: 'area' },
+  { key: 'area3', label: 'Area C', mark: 'area' },
+]
+export const CHART_FIXTURE_ROWS: readonly ChartFixtureRow[] = [
+  { label: 'Q1', values: { bar1: 12, bar2: 9, bar3: 6, area1: 14, area2: 10, area3: 7 } },
+  { label: 'Q2', values: { bar1: 18, bar2: 13, bar3: 8, area1: 20, area2: 15, area3: 9 } },
+]
+
+export interface SparklineFixturePoint {
+  readonly at: number
+  readonly value: number
+  readonly grain: 'daily' | 'weekly'
+}
+export const SPARKLINE_FIXTURE_POINTS: readonly SparklineFixturePoint[] = [
+  { at: Date.UTC(2026, 0, 1), value: 4, grain: 'daily' },
+  { at: Date.UTC(2026, 0, 2), value: 9, grain: 'daily' },
+  { at: Date.UTC(2026, 0, 3), value: 6, grain: 'weekly' },
+  { at: Date.UTC(2026, 0, 4), value: 12, grain: 'weekly' },
+]
+export const SPARKLINE_FIXTURE_BAND = Object.freeze({ low: 5, high: 10 })
+
+export interface TableFixtureColumn {
+  readonly id: string
+  readonly sortable: boolean
+}
+export const TABLE_FIXTURE_COLUMNS: readonly TableFixtureColumn[] = [
+  { id: 'name', sortable: true },
+  { id: 'status', sortable: true },
+]
+
+// component:marquee
+export interface MarqueeCaseInput {
+  readonly label: string
+  readonly direction: 'left' | 'right' | 'up' | 'down'
+  readonly running: boolean
+  readonly disabled: boolean
+}
+
+// component:meter
+export interface MeterCaseInput {
+  readonly label: string
+  readonly value: number
+}
+
+// component:pagination
+export interface PaginationCaseInput {
+  readonly page: number
+  readonly total: number
+  readonly disabled: boolean
+}
+
+// component:progress
+export interface ProgressCaseInput {
+  readonly label: string
+  readonly value: number | null
+}
+
+// component:sparkline
+export interface SparklineCaseInput {
+  readonly label: string
+  // Days AFTER the fixture's last point `now` denotes — sparkline.ts clamps
+  // `now` to never precede the last point, so "stale" is the only axis this
+  // field can meaningfully express (0 = fresh, >0 = stale by that much).
+  readonly nowOffsetDays: number
+}
+
+// component:steps
+export interface StepsCaseInput {
+  readonly current: number
+  readonly completed: readonly number[]
+  readonly errorStep: number | null
+  readonly disabled: boolean
+}
+
+// component:table
+export interface TableCaseInput {
+  readonly rows: readonly string[]
+  readonly selection: readonly string[]
+  readonly sortColumnId: string | null
+  readonly density: 'comfortable' | 'compact'
+  readonly disabled: boolean
+}
+
+// component:tabs
+export interface TabsCaseInput {
+  readonly value: 'summary' | 'details'
+  readonly orientation: 'horizontal' | 'vertical'
+  readonly disabledItems: readonly string[]
+}
+
+// component:toc
+export interface TocCaseInput {
+  readonly activeId: string
+  readonly expanded: readonly string[]
+}
+
+// component:tree-view
+export interface TreeViewCaseInput {
+  readonly expanded: readonly string[]
+  readonly selected: readonly string[]
+  readonly busy: boolean
+  readonly disabled: boolean
+}
+
+// pattern:data-table
+export interface DataTableCaseInput {
+  readonly phase: 'loading' | 'error' | 'populated'
+  readonly rows: readonly string[]
+  readonly density: 'comfortable' | 'compact'
+}
+
+// registry:chip
+export interface ChipCaseInput {
+  readonly label: string
+  readonly hue: number | null
+}
+
+// registry:alert
+export interface AlertCaseInput {
+  readonly title: string
+  readonly description: string
+  readonly variant: 'default' | 'destructive'
+}
+
+// registry:badge
+export interface BadgeCaseInput {
+  readonly label: string
+  readonly variant: 'default' | 'secondary' | 'destructive' | 'outline'
+}
+
+// registry:card
+export interface CardCaseInput {
+  readonly title: string
+  readonly description: string
+  readonly actionLabel: string | null
+  readonly sections: readonly string[]
+}
+
+// registry:empty
+export interface EmptyCaseInput {
+  readonly title: string
+  readonly description: string
+  readonly actionLabel: string | null
+}
+
+// registry:item
+export interface ItemCaseInput {
+  readonly title: string
+  readonly description: string
+  readonly variant: 'default' | 'outline' | 'muted'
+  readonly density: 'comfortable' | 'compact'
+}
+
+// registry:kbd
+export interface KbdCaseInput {
+  readonly keys: readonly string[]
+}
+
+// registry:separator
+export interface SeparatorCaseInput {
+  readonly orientation: 'horizontal' | 'vertical'
+  readonly decorative: boolean
+}
+
+// registry:skeleton / registry:spinner
+export interface BusyCaseInput {
+  readonly label: string
+}
+
+// registry:typography
+export interface TypographyCaseInput {
+  readonly title: string
+  readonly text: string
+  readonly code: string
+}
+
+// registry:sidebar
+export interface SidebarCaseInput {
+  readonly label: string
+  readonly current: string
+  readonly state: 'expanded' | 'collapsed' | 'offcanvas' | 'mobile'
+  readonly density: 'comfortable' | 'compact'
+}
+
+/**
+ * Every navigation-data case, product-typed, keyed by ProductContract
+ * `scenarioId`. Compiled through `compileScenarioFamily` below, which throws
+ * unless this object's key set is EXACTLY the family's 29 scenarioIds.
+ */
+export const NAVIGATION_DATA_DEFINITIONS = {
+  'component:accordion': {
+    defaultCaseId: 'closed',
+    cases: [
+      {
+        id: 'closed',
+        label: 'Closed item',
+        input: {
+          label: 'Account settings',
+          content: 'Profile details',
+          state: 'closed',
+          disabled: false,
+        },
+        environmentAxes: AX.dir,
+      },
+      {
+        id: 'open',
+        label: 'Open item',
+        input: {
+          label: 'Account settings',
+          content: 'Profile details',
+          state: 'open',
+          disabled: false,
+        },
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'closing',
+        label: 'Retained closing item',
+        input: {
+          label: 'Account settings',
+          content: 'Profile details',
+          state: 'closing',
+          disabled: false,
+        },
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'disabled',
+        label: 'Disabled item',
+        input: {
+          label: 'Archived settings',
+          content: 'Unavailable',
+          state: 'closed',
+          disabled: true,
+        },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:avatar': {
+    defaultCaseId: 'loaded',
+    cases: [
+      {
+        id: 'loading',
+        label: 'Loading image',
+        input: { label: 'Ada Lovelace', status: 'loading', initials: 'AL', density: 'comfortable' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'loaded',
+        label: 'Loaded image',
+        input: { label: 'Ada Lovelace', status: 'loaded', initials: 'AL', density: 'comfortable' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'fallback',
+        label: 'Initials fallback',
+        input: { label: 'Ada Lovelace', status: 'error', initials: 'AL', density: 'comfortable' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'compact',
+        label: 'Compact avatar',
+        input: { label: 'Ada Lovelace', status: 'error', initials: 'AL', density: 'compact' },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:breadcrumbs': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Breadcrumb trail',
+        input: { currentLabel: 'Projects', maxVisible: 4 },
+        environmentAxes: AX.dir,
+      },
+      {
+        id: 'current',
+        label: 'Current page',
+        input: { currentLabel: 'Alignment', maxVisible: 4 },
+        environmentAxes: AX.themeForced,
+      },
+      {
+        id: 'collapsed',
+        label: 'Collapsed ancestors',
+        input: { currentLabel: 'More ancestors', maxVisible: 1 },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'overflow',
+        label: 'Long page name',
+        input: {
+          currentLabel: 'A very long current page name that must truncate',
+          maxVisible: 4,
+        },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:carousel': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'First slide',
+        input: { index: 0, count: 3, loop: true },
+        environmentAxes: AX.dirNarrow,
+      },
+      {
+        id: 'active',
+        label: 'Selected indicator',
+        input: { index: 1, count: 3, loop: true },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'dragging',
+        label: 'Second slide',
+        input: { index: 1, count: 3, loop: true },
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'disabled',
+        label: 'Boundary controls disabled',
+        input: { index: 0, count: 3, loop: false },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:chart': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Six data series (three bar, three area)',
+        input: { label: 'Quarterly revenue', populated: true, activeSeriesKey: null },
+        environmentAxes: AX.themeForced,
+      },
+      {
+        id: 'active',
+        label: 'Active series',
+        input: { label: 'Revenue', populated: true, activeSeriesKey: 'bar1' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'dimmed',
+        label: 'Dimmed series',
+        input: { label: 'Forecast', populated: true, activeSeriesKey: 'area1' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'empty',
+        label: 'Empty chart',
+        input: { label: 'No chart data', populated: false, activeSeriesKey: null },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:collapsible': {
+    defaultCaseId: 'closed',
+    cases: [
+      {
+        id: 'closed',
+        label: 'Closed details',
+        input: { label: 'Details', content: 'Expanded content', state: 'closed', disabled: false },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'open',
+        label: 'Open details',
+        input: { label: 'Details', content: 'Expanded content', state: 'open', disabled: false },
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'closing',
+        label: 'Retained closing details',
+        input: { label: 'Details', content: 'Expanded content', state: 'closing', disabled: false },
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'disabled',
+        label: 'Disabled details',
+        input: { label: 'Details', content: 'Unavailable', state: 'closed', disabled: true },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:marquee': {
+    defaultCaseId: 'running',
+    cases: [
+      {
+        id: 'running',
+        label: 'Running row',
+        input: { label: 'Release updates', direction: 'left', running: true, disabled: false },
+        environmentAxes: AX.dirMotion,
+      },
+      {
+        id: 'paused',
+        label: 'Paused row',
+        input: { label: 'Release updates', direction: 'left', running: false, disabled: false },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'vertical',
+        label: 'Vertical column',
+        input: { label: 'Release updates', direction: 'up', running: true, disabled: false },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'disabled',
+        label: 'Disabled motion',
+        input: { label: 'Release updates', direction: 'left', running: true, disabled: true },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:meter': {
+    defaultCaseId: 'neutral',
+    cases: [
+      {
+        id: 'neutral',
+        label: 'Neutral value',
+        input: { label: 'Storage', value: 42 },
+        environmentAxes: AX.dir,
+      },
+      {
+        id: 'optimal',
+        label: 'Optimal value',
+        input: { label: 'Storage', value: 28 },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'suboptimal',
+        label: 'Suboptimal value',
+        input: { label: 'Storage', value: 68 },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'critical',
+        label: 'Critical value',
+        input: { label: 'Storage', value: 92 },
+        environmentAxes: AX.themeForced,
+      },
+    ],
+  },
+  'component:pagination': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Page controls',
+        input: { page: 1, total: 10, disabled: false },
+        environmentAxes: AX.dirNarrow,
+      },
+      {
+        id: 'current',
+        label: 'Current page',
+        input: { page: 2, total: 10, disabled: false },
+        environmentAxes: AX.themeForced,
+      },
+      {
+        id: 'ellipsis',
+        label: 'Collapsed page range',
+        input: { page: 5, total: 20, disabled: false },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'disabled',
+        label: 'Boundary disabled',
+        input: { page: 1, total: 1, disabled: true },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:progress': {
+    defaultCaseId: 'loading',
+    cases: [
+      {
+        id: 'loading',
+        label: 'Upload progress',
+        input: { label: 'Uploading', value: 60 },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'complete',
+        label: 'Completed progress',
+        input: { label: 'Complete', value: 100 },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'indeterminate',
+        label: 'Indeterminate progress',
+        input: { label: 'Loading', value: null },
+        environmentAxes: AX.motion,
+      },
+    ],
+  },
+  'component:sparkline': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Trend series',
+        input: { label: 'Weekly trend', nowOffsetDays: 0 },
+        environmentAxes: AX.themeForced,
+      },
+      {
+        id: 'stale',
+        label: 'Stale series',
+        input: { label: 'Weekly trend', nowOffsetDays: 1 },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:steps': {
+    defaultCaseId: 'current',
+    cases: [
+      {
+        id: 'pending',
+        label: 'Pending step',
+        input: { current: 0, completed: [], errorStep: null, disabled: false },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'current',
+        label: 'Current step',
+        input: { current: 1, completed: [0], errorStep: null, disabled: false },
+        environmentAxes: AX.dirThemeForced,
+      },
+      {
+        id: 'completed',
+        label: 'Completed step',
+        input: { current: 2, completed: [0, 1], errorStep: null, disabled: false },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'error',
+        label: 'Failed step',
+        input: { current: 1, completed: [0], errorStep: 1, disabled: false },
+        environmentAxes: AX.forced,
+      },
+      {
+        id: 'disabled',
+        label: 'Disabled step',
+        input: { current: 0, completed: [], errorStep: null, disabled: true },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:table': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Data grid',
+        input: {
+          rows: ['alpha', 'beta'],
+          selection: [],
+          sortColumnId: null,
+          density: 'comfortable',
+          disabled: false,
+        },
+        environmentAxes: AX.dirNarrow,
+      },
+      {
+        id: 'selected',
+        label: 'Selected row',
+        input: {
+          rows: ['alpha', 'beta'],
+          selection: ['alpha'],
+          sortColumnId: null,
+          density: 'comfortable',
+          disabled: false,
+        },
+        environmentAxes: AX.themeForced,
+      },
+      {
+        id: 'sorted',
+        label: 'Sorted column',
+        input: {
+          rows: ['alpha', 'beta'],
+          selection: [],
+          sortColumnId: 'name',
+          density: 'comfortable',
+          disabled: false,
+        },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'empty',
+        label: 'Empty rows',
+        input: {
+          rows: [],
+          selection: [],
+          sortColumnId: null,
+          density: 'comfortable',
+          disabled: false,
+        },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'disabled',
+        label: 'Disabled row',
+        input: {
+          rows: ['alpha', 'beta'],
+          selection: [],
+          sortColumnId: null,
+          density: 'comfortable',
+          disabled: true,
+        },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'compact',
+        label: 'Compact data grid',
+        input: {
+          rows: ['alpha', 'beta'],
+          selection: [],
+          sortColumnId: null,
+          density: 'compact',
+          disabled: false,
+        },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:tabs': {
+    defaultCaseId: 'active',
+    cases: [
+      {
+        id: 'inactive',
+        label: 'Inactive tab',
+        input: { value: 'summary', orientation: 'horizontal', disabledItems: [] },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'active',
+        label: 'Active tab',
+        input: { value: 'details', orientation: 'horizontal', disabledItems: [] },
+        environmentAxes: AX.dirThemeForced,
+      },
+      {
+        id: 'disabled',
+        label: 'Disabled tab',
+        input: { value: 'summary', orientation: 'horizontal', disabledItems: ['summary'] },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'vertical',
+        label: 'Vertical tabs',
+        input: { value: 'details', orientation: 'vertical', disabledItems: [] },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:toc': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Document outline',
+        input: { activeId: 'overview', expanded: [] },
+        environmentAxes: AX.dir,
+      },
+      {
+        id: 'current',
+        label: 'Current section',
+        input: { activeId: 'api', expanded: [] },
+        environmentAxes: AX.themeForced,
+      },
+      {
+        id: 'collapsed',
+        label: 'Collapsed branch',
+        input: { activeId: 'overview', expanded: [] },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'expanded',
+        label: 'Expanded branch',
+        input: { activeId: 'overview', expanded: ['api'] },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:tree-view': {
+    defaultCaseId: 'collapsed',
+    cases: [
+      {
+        id: 'collapsed',
+        label: 'Collapsed branch',
+        input: { expanded: [], selected: [], busy: false, disabled: false },
+        environmentAxes: AX.dir,
+      },
+      {
+        id: 'expanded',
+        label: 'Expanded branch',
+        input: { expanded: ['src'], selected: [], busy: false, disabled: false },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'selected',
+        label: 'Selected item',
+        input: { expanded: ['src'], selected: ['index'], busy: false, disabled: false },
+        environmentAxes: AX.themeForced,
+      },
+      {
+        id: 'loading',
+        label: 'Loading branch',
+        input: { expanded: [], selected: [], busy: true, disabled: false },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'disabled',
+        label: 'Disabled item',
+        input: { expanded: [], selected: [], busy: false, disabled: true },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'pattern:data-table': {
+    defaultCaseId: 'populated',
+    cases: [
+      {
+        id: 'loading',
+        label: 'Loading data',
+        input: { phase: 'loading', rows: [], density: 'comfortable' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'empty',
+        label: 'No results',
+        input: { phase: 'populated', rows: [], density: 'comfortable' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'error',
+        label: 'Load failed',
+        input: { phase: 'error', rows: [], density: 'comfortable' },
+        environmentAxes: AX.themeForced,
+      },
+      {
+        id: 'populated',
+        label: 'Loaded rows',
+        input: { phase: 'populated', rows: ['alpha', 'beta'], density: 'comfortable' },
+        environmentAxes: AX.narrow,
+      },
+      {
+        id: 'compact',
+        label: 'Compact loaded rows',
+        input: { phase: 'populated', rows: ['alpha', 'beta'], density: 'compact' },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'registry:chip': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Default chip',
+        input: { label: 'Lab', hue: null },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'categorical',
+        label: 'Categorical chip',
+        input: { label: 'Design', hue: 188.5 },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'registry:alert': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Information alert',
+        input: { title: 'Saved', description: 'Changes are live', variant: 'default' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'destructive',
+        label: 'Error alert',
+        input: { title: 'Sync failed', description: 'Try again', variant: 'destructive' },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'registry:badge': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Default badge',
+        input: { label: 'Stable', variant: 'default' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'secondary',
+        label: 'Secondary badge',
+        input: { label: 'Preview', variant: 'secondary' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'destructive',
+        label: 'Destructive badge',
+        input: { label: 'Failed', variant: 'destructive' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'outline',
+        label: 'Outline badge',
+        input: { label: 'Draft', variant: 'outline' },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'registry:card': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Content card',
+        input: { title: 'Release', description: 'Ready', actionLabel: null, sections: [] },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'with-action',
+        label: 'Card with action',
+        input: { title: 'Release', description: 'Ready', actionLabel: 'Open', sections: [] },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'divided',
+        label: 'Divided card',
+        input: {
+          title: 'Release',
+          description: 'Ready',
+          actionLabel: null,
+          sections: ['Summary', 'Details'],
+        },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'registry:empty': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Empty collection',
+        input: { title: 'Nothing here', description: 'Create the first item', actionLabel: null },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'with-action',
+        label: 'Empty collection action',
+        input: {
+          title: 'Nothing here',
+          description: 'Create the first item',
+          actionLabel: 'Add item',
+        },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'registry:item': {
+    defaultCaseId: 'default',
+    cases: [
+      {
+        id: 'default',
+        label: 'Content item',
+        input: {
+          title: 'Deployment',
+          description: 'Completed',
+          variant: 'default',
+          density: 'comfortable',
+        },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'interactive',
+        label: 'Interactive item',
+        input: {
+          title: 'Deployment',
+          description: 'Completed',
+          variant: 'outline',
+          density: 'comfortable',
+        },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'muted',
+        label: 'Muted item',
+        input: {
+          title: 'Deployment',
+          description: 'Completed',
+          variant: 'muted',
+          density: 'comfortable',
+        },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'compact',
+        label: 'Compact content item',
+        input: {
+          title: 'Deployment',
+          description: 'Completed',
+          variant: 'default',
+          density: 'compact',
+        },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'registry:kbd': {
+    defaultCaseId: 'single',
+    cases: [
+      { id: 'single', label: 'Single key', input: { keys: ['K'] }, environmentAxes: AX.none },
+      {
+        id: 'chord',
+        label: 'Keyboard chord',
+        input: { keys: ['Meta', 'K'] },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'registry:separator': {
+    defaultCaseId: 'horizontal',
+    cases: [
+      {
+        id: 'horizontal',
+        label: 'Horizontal separator',
+        input: { orientation: 'horizontal', decorative: true },
+        environmentAxes: AX.forced,
+      },
+      {
+        id: 'vertical',
+        label: 'Vertical separator',
+        input: { orientation: 'vertical', decorative: true },
+        environmentAxes: AX.forced,
+      },
+      {
+        id: 'semantic',
+        label: 'Semantic separator',
+        input: { orientation: 'horizontal', decorative: false },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'registry:skeleton': {
+    defaultCaseId: 'loading',
+    cases: [
+      {
+        id: 'loading',
+        label: 'Loading placeholder',
+        input: { label: 'Loading content' },
+        environmentAxes: AX.motion,
+      },
+    ],
+  },
+  'registry:spinner': {
+    defaultCaseId: 'loading',
+    cases: [
+      {
+        id: 'loading',
+        label: 'Loading spinner',
+        input: { label: 'Loading' },
+        environmentAxes: AX.motion,
+      },
+    ],
+  },
+  'registry:typography': {
+    defaultCaseId: 'body',
+    cases: [
+      {
+        id: 'headings',
+        label: 'Heading hierarchy',
+        input: { title: 'Navigation data', text: '', code: '' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'body',
+        label: 'Body copy',
+        input: { title: '', text: 'Readable body content', code: '' },
+        environmentAxes: AX.dir,
+      },
+      {
+        id: 'code',
+        label: 'Long code token',
+        input: {
+          title: '',
+          text: '',
+          code: 'veryLongUnbrokenIdentifierThatMustRemainLocallyScrollable',
+        },
+        environmentAxes: AX.narrow,
+      },
+      {
+        id: 'quote',
+        label: 'Block quotation',
+        input: { title: '', text: 'Clarity over cleverness', code: '' },
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'registry:sidebar': {
+    defaultCaseId: 'expanded',
+    cases: [
+      {
+        id: 'expanded',
+        label: 'Expanded sidebar',
+        input: {
+          label: 'Workspace',
+          current: 'Overview',
+          state: 'expanded',
+          density: 'comfortable',
+        },
+        environmentAxes: AX.dir,
+      },
+      {
+        id: 'compact',
+        label: 'Compact sidebar navigation',
+        input: { label: 'Workspace', current: 'Overview', state: 'expanded', density: 'compact' },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'collapsed',
+        label: 'Collapsed sidebar',
+        input: {
+          label: 'Workspace',
+          current: 'Overview',
+          state: 'collapsed',
+          density: 'comfortable',
+        },
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'offcanvas',
+        label: 'Off-canvas sidebar',
+        input: {
+          label: 'Workspace',
+          current: 'Overview',
+          state: 'offcanvas',
+          density: 'comfortable',
+        },
+        environmentAxes: AX.narrow,
+      },
+      {
+        id: 'mobile',
+        label: 'Mobile sidebar',
+        input: { label: 'Workspace', current: 'Overview', state: 'mobile', density: 'comfortable' },
+        environmentAxes: AX.narrow,
+      },
+    ],
+  },
+} as const
+
+export type NavigationDataDefinitions = typeof NAVIGATION_DATA_DEFINITIONS
+export type NavigationDataCatalog = CompiledPresentationScenarioFamily<NavigationDataDefinitions>
+export type NavigationDataScenario = NavigationDataCatalog['scenarios'][number]
+export type NavigationDataCase = NavigationDataScenario['cases'][number]
+export type NavigationDataResolved =
+  ResolvedPresentationScenarioSelection<NavigationDataDefinitions>
+export type NavigationDataScenarioId = keyof NavigationDataDefinitions & string
+export type NavigationDataPath = 'baseline' | 'registryTailwind'
+
+/** Compile the family catalog against a real ProductContract. Throws a
+ * `PresentationScenarioError` if the contract's navigation-data products and
+ * this module's keys are not in exact agreement (missing or stale). */
+export function compileNavigationDataCatalog(contract: ProductContract): NavigationDataCatalog {
+  return compileScenarioFamily(contract, 'navigation-data', NAVIGATION_DATA_DEFINITIONS)
+}
+
+/**
+ * Non-colour verification cue `probeForcedColorCues` (navigation-data-browser-probes.ts)
+ * uses to decide which structural signal proves a forced-colors case is still
+ * legible without relying on colour. Test metadata, not protocol data.
+ */
 export type ForcedColorCue =
   | 'outline-selection'
   | 'underline-current'
@@ -10,728 +1212,125 @@ export type ForcedColorCue =
   | 'series-distinction'
   | 'orientation'
 
-export type NavigationDataPath = 'baseline' | 'registryTailwind'
-export type PresentationMode = 'styled' | 'partial' | 'composed' | 'styleless' | 'not-applicable'
-
-export type ScenarioEnvironmentAxis =
-  | { readonly axis: 'theme'; readonly value: 'light' | 'dark' }
-  | { readonly axis: 'direction'; readonly value: 'ltr' | 'rtl' }
-  | { readonly axis: 'motion'; readonly value: 'no-preference' | 'reduce' }
-  | { readonly axis: 'viewport'; readonly value: 280 | 640 | 1024 }
-  | { readonly axis: 'forcedColors'; readonly value: 'none' | 'active' }
-
-export interface NavigationDataScenarioCase {
-  readonly id: string
-  readonly label: string
-  readonly input: Readonly<JsonObject>
-  readonly environmentAxes: readonly ScenarioEnvironmentAxis[]
+export const FORCED_COLOR_CUES: Readonly<Record<NavigationDataScenarioId, ForcedColorCue>> = {
+  'component:accordion': 'outline-selection',
+  'component:avatar': 'outline-selection',
+  'component:breadcrumbs': 'underline-current',
+  'component:carousel': 'outline-selection',
+  'component:chart': 'series-distinction',
+  'component:collapsible': 'outline-selection',
+  'component:marquee': 'orientation',
+  'component:meter': 'series-distinction',
+  'component:pagination': 'outline-selection',
+  'component:progress': 'orientation',
+  'component:sparkline': 'series-distinction',
+  'component:steps': 'status-error',
+  'component:table': 'outline-selection',
+  'component:tabs': 'outline-selection',
+  'component:toc': 'underline-current',
+  'component:tree-view': 'outline-selection',
+  'pattern:data-table': 'status-error',
+  'registry:chip': 'series-distinction',
+  'registry:alert': 'status-error',
+  'registry:badge': 'outline-selection',
+  'registry:card': 'outline-selection',
+  'registry:empty': 'outline-selection',
+  'registry:item': 'outline-selection',
+  'registry:kbd': 'outline-selection',
+  'registry:separator': 'orientation',
+  'registry:skeleton': 'orientation',
+  'registry:spinner': 'orientation',
+  'registry:typography': 'underline-current',
+  'registry:sidebar': 'outline-selection',
 }
-
-export interface NavigationDataScenarioDefinition {
-  readonly defaultCaseId: string
-  readonly cases: readonly NavigationDataScenarioCase[]
-  readonly forcedColorCue?: ForcedColorCue
-}
-
-export interface CopiedArtifact {
-  readonly name: string
-  readonly artifactKind: string
-  readonly displayName?: string
-  readonly styling: {
-    readonly baseline: boolean
-    readonly registryTailwind: boolean
-    readonly styleless: boolean
-  }
-}
-
-export interface NavigationDataContractEntry {
-  readonly name: string
-  readonly displayName: string
-  readonly scenarioId: string
-  readonly machine: { readonly kind: 'public' | 'none' }
-  readonly copiedArtifacts: readonly CopiedArtifact[]
-  readonly presentation: {
-    readonly family: string
-    readonly baseline: { readonly mode: PresentationMode; readonly rationale?: string }
-    readonly registryTailwind: { readonly mode: PresentationMode; readonly rationale?: string }
-  }
-}
-
-export interface NavigationDataScenario extends NavigationDataScenarioDefinition {
-  readonly productId: string
-  readonly displayName: string
-  readonly scenarioId: string
-  readonly copiedArtifacts: readonly CopiedArtifact[]
-  readonly presentation: NavigationDataContractEntry['presentation']
-}
-
-const axis = {
-  dark: { axis: 'theme', value: 'dark' },
-  rtl: { axis: 'direction', value: 'rtl' },
-  reduce: { axis: 'motion', value: 'reduce' },
-  narrow: { axis: 'viewport', value: 280 },
-  medium: { axis: 'viewport', value: 640 },
-  wide: { axis: 'viewport', value: 1024 },
-  forced: { axis: 'forcedColors', value: 'active' },
-} as const satisfies Record<string, ScenarioEnvironmentAxis>
-
-const caseOf = (
-  id: string,
-  label: string,
-  input: Readonly<JsonObject>,
-  environmentAxes: readonly ScenarioEnvironmentAxis[] = [],
-): NavigationDataScenarioCase => ({ id, label, input, environmentAxes })
-
-const define = (
-  defaultCaseId: string,
-  cases: readonly NavigationDataScenarioCase[],
-  forcedColorCue?: ForcedColorCue,
-): NavigationDataScenarioDefinition => ({
-  defaultCaseId,
-  cases,
-  ...(forcedColorCue === undefined ? {} : { forcedColorCue }),
-})
 
 /**
- * Family-owned semantic inputs keyed by ProductContract scenario id. Product
- * membership, labels, path coverage, and copied artifacts are projected from
- * ProductContract below; this object never acts as a second product catalog.
+ * Products whose collection density (`comfortable`/`compact`) is a real,
+ * distinct axis in their machine's `connect()` options or their skin's own
+ * variant surface. Every other product is genuinely N/A: falsifiable by the
+ * renderer-level test asserting no rendered case ever carries
+ * `[data-density]` for it (`navigation-data-baseline-renderer.test.ts` /
+ * `navigation-data-scenario-renderer.test.ts`), not merely asserted here.
  */
-export const navigationDataScenarios = {
-  'component:accordion': define('closed', [
-    caseOf('closed', 'Closed item', { state: 'closed', label: 'Account settings' }, [axis.rtl]),
-    caseOf(
-      'open',
-      'Open item',
-      { state: 'open', label: 'Account settings', content: 'Profile details' },
-      [axis.reduce],
-    ),
-    caseOf(
-      'closing',
-      'Retained closing item',
-      { state: 'closing', label: 'Account settings', content: 'Profile details' },
-      [axis.reduce],
-    ),
-    caseOf('disabled', 'Disabled item', {
-      state: 'closed',
-      disabled: true,
-      label: 'Archived settings',
-    }),
-  ]),
-  'component:avatar': define('loaded', [
-    caseOf('loading', 'Loading image', { state: 'loading', label: 'Ada Lovelace' }),
-    caseOf('loaded', 'Loaded image', {
-      state: 'loaded',
-      label: 'Ada Lovelace',
-      imageAlt: 'Ada Lovelace',
-      density: 'comfortable',
-    }),
-    caseOf('fallback', 'Initials fallback', {
-      state: 'fallback',
-      label: 'Ada Lovelace',
-      initials: 'AL',
-    }),
-    caseOf('compact', 'Compact avatar', {
-      state: 'fallback',
-      label: 'Ada Lovelace',
-      initials: 'AL',
-      density: 'compact',
-    }),
-  ]),
-  'component:breadcrumbs': define(
-    'default',
-    [
-      caseOf('default', 'Breadcrumb trail', { state: 'default', label: 'Projects' }, [axis.rtl]),
-      caseOf('current', 'Current page', { state: 'current', label: 'Alignment', current: true }, [
-        axis.dark,
-        axis.forced,
-      ]),
-      caseOf('collapsed', 'Collapsed ancestors', { state: 'collapsed', label: 'More ancestors' }),
-      caseOf('overflow', 'Long page name', {
-        state: 'overflow',
-        label: 'A very long current page name that must truncate',
-      }),
-    ],
-    'underline-current',
-  ),
-  'component:carousel': define('default', [
-    caseOf('default', 'First slide', { state: 'default', label: 'Slide 1', index: 0 }, [
-      axis.rtl,
-      axis.narrow,
-      axis.medium,
-      axis.wide,
-    ]),
-    caseOf('active', 'Selected indicator', {
-      state: 'active',
-      label: 'Slide 2',
-      index: 1,
-      selected: true,
-    }),
-    caseOf('dragging', 'Pointer drag', { state: 'dragging', label: 'Slide 2', dragOffset: 48 }, [
-      axis.reduce,
-    ]),
-    caseOf('disabled', 'Disabled controls', {
-      state: 'disabled',
-      label: 'Slide 2',
-      disabled: true,
-    }),
-  ]),
-  'component:chart': define(
-    'default',
-    [
-      caseOf(
-        'default',
-        'Six data series (three bar, three area)',
-        {
-          state: 'default',
-          label: 'Quarterly revenue',
-          series: ['Bar A', 'Bar B', 'Bar C', 'Area A', 'Area B', 'Area C'],
-        },
-        [axis.dark, axis.forced],
-      ),
-      caseOf('active', 'Active series', {
-        state: 'active',
-        label: 'Revenue',
-        activeSeries: 'Revenue',
-      }),
-      caseOf('dimmed', 'Dimmed series', { state: 'dimmed', label: 'Forecast', dimmed: true }),
-      caseOf('empty', 'Empty chart', { state: 'empty', label: 'No chart data', rows: [] }),
-    ],
-    'series-distinction',
-  ),
-  'component:collapsible': define('closed', [
-    caseOf('closed', 'Closed details', { state: 'closed', label: 'Details' }),
-    caseOf(
-      'open',
-      'Open details',
-      { state: 'open', label: 'Details', content: 'Expanded content' },
-      [axis.reduce],
-    ),
-    caseOf(
-      'closing',
-      'Retained closing details',
-      { state: 'closing', label: 'Details', content: 'Expanded content' },
-      [axis.reduce],
-    ),
-    caseOf('disabled', 'Disabled details', { state: 'closed', label: 'Details', disabled: true }),
-  ]),
-  'component:marquee': define('running', [
-    caseOf(
-      'running',
-      'Running row',
-      { state: 'running', label: 'Release updates', items: ['Alpha', 'Beta'] },
-      [axis.rtl, axis.reduce],
-    ),
-    caseOf('paused', 'Paused row', { state: 'paused', label: 'Release updates', paused: true }),
-    caseOf('vertical', 'Vertical column', {
-      state: 'vertical',
-      label: 'Release updates',
-      axis: 'vertical',
-    }),
-    caseOf('disabled', 'Disabled motion', {
-      state: 'disabled',
-      label: 'Release updates',
-      disabled: true,
-    }),
-  ]),
-  'component:meter': define(
-    'neutral',
-    [
-      caseOf('neutral', 'Neutral value', { state: 'neutral', label: 'Storage', value: 42 }, [
-        axis.rtl,
-      ]),
-      caseOf('optimal', 'Optimal value', { state: 'optimal', label: 'Storage', value: 28 }),
-      caseOf('suboptimal', 'Suboptimal value', {
-        state: 'suboptimal',
-        label: 'Storage',
-        value: 68,
-      }),
-      caseOf('critical', 'Critical value', { state: 'critical', label: 'Storage', value: 92 }, [
-        axis.dark,
-        axis.forced,
-      ]),
-    ],
-    'series-distinction',
-  ),
-  'component:pagination': define(
-    'default',
-    [
-      caseOf(
-        'default',
-        'Page controls',
-        { state: 'default', label: 'Pagination', page: 1, count: 10 },
-        [axis.rtl, axis.narrow],
-      ),
-      caseOf(
-        'current',
-        'Current page',
-        { state: 'current', label: 'Page 2', page: 2, current: true },
-        [axis.dark, axis.forced],
-      ),
-      caseOf('ellipsis', 'Collapsed page range', { state: 'ellipsis', label: 'More pages' }),
-      caseOf('disabled', 'Boundary disabled', {
-        state: 'disabled',
-        label: 'Previous page',
-        disabled: true,
-      }),
-    ],
-    'outline-selection',
-  ),
-  'component:progress': define('loading', [
-    caseOf('loading', 'Upload progress', { state: 'loading', label: 'Uploading', value: 60 }),
-    caseOf('complete', 'Completed progress', { state: 'complete', label: 'Complete', value: 100 }),
-    caseOf(
-      'indeterminate',
-      'Indeterminate progress',
-      { state: 'indeterminate', label: 'Loading' },
-      [axis.reduce],
-    ),
-  ]),
-  'component:sparkline': define(
-    'default',
-    [
-      caseOf(
-        'default',
-        'Trend series',
-        { state: 'default', label: 'Weekly trend', values: [4, 9, 6, 12] },
-        [axis.dark, axis.forced],
-      ),
-      caseOf('stale', 'Stale series', { state: 'stale', label: 'Weekly trend', stale: true }),
-      caseOf('above', 'Above threshold', { state: 'above', label: 'Above target', value: 12 }),
-      caseOf('below', 'Below threshold', { state: 'below', label: 'Below target', value: 4 }),
-    ],
-    'series-distinction',
-  ),
-  'component:steps': define(
-    'current',
-    [
-      caseOf('pending', 'Pending step', { state: 'pending', label: 'Review' }),
-      caseOf('current', 'Current step', { state: 'current', label: 'Configure', current: true }, [
-        axis.rtl,
-        axis.dark,
-        axis.forced,
-      ]),
-      caseOf('completed', 'Completed step', {
-        state: 'completed',
-        label: 'Account',
-        complete: true,
-      }),
-      caseOf(
-        'error',
-        'Failed step',
-        { state: 'error', label: 'Payment', error: 'Payment failed' },
-        [axis.forced],
-      ),
-      caseOf('disabled', 'Disabled step', { state: 'disabled', label: 'Publish', disabled: true }),
-    ],
-    'status-error',
-  ),
-  'component:table': define(
-    'default',
-    [
-      caseOf(
-        'default',
-        'Data grid',
-        {
-          state: 'default',
-          label: 'Projects',
-          columns: ['Name', 'Status'],
-          rows: ['Alpha', 'Beta'],
-          density: 'comfortable',
-        },
-        [axis.rtl, axis.narrow],
-      ),
-      caseOf('selected', 'Selected row', { state: 'selected', label: 'Alpha', selected: true }, [
-        axis.dark,
-        axis.forced,
-      ]),
-      caseOf('sorted', 'Sorted column', { state: 'sorted', label: 'Name', sort: 'ascending' }),
-      caseOf('empty', 'Empty rows', { state: 'empty', label: 'No projects', rows: [] }),
-      caseOf('disabled', 'Disabled row', { state: 'disabled', label: 'Archived', disabled: true }),
-      caseOf('compact', 'Compact data grid', {
-        state: 'default',
-        label: 'Projects',
-        columns: ['Name', 'Status'],
-        rows: ['Alpha', 'Beta'],
-        density: 'compact',
-      }),
-    ],
-    'outline-selection',
-  ),
-  'component:tabs': define(
-    'active',
-    [
-      caseOf('inactive', 'Inactive tab', { state: 'inactive', label: 'Summary' }),
-      caseOf('active', 'Active tab', { state: 'active', label: 'Details', selected: true }, [
-        axis.rtl,
-        axis.dark,
-        axis.forced,
-      ]),
-      caseOf('disabled', 'Disabled tab', { state: 'inactive', label: 'History', disabled: true }),
-      caseOf('vertical', 'Vertical tabs', {
-        state: 'active',
-        label: 'Details',
-        orientation: 'vertical',
-      }),
-    ],
-    'outline-selection',
-  ),
-  'component:toc': define(
-    'default',
-    [
-      caseOf('default', 'Document outline', { state: 'default', label: 'Overview' }, [axis.rtl]),
-      caseOf('current', 'Current section', { state: 'current', label: 'API', current: true }, [
-        axis.dark,
-        axis.forced,
-      ]),
-      caseOf('collapsed', 'Collapsed branch', {
-        state: 'collapsed',
-        label: 'Guides',
-        expanded: false,
-      }),
-      caseOf('expanded', 'Expanded branch', { state: 'expanded', label: 'Guides', expanded: true }),
-    ],
-    'underline-current',
-  ),
-  'component:tree-view': define(
-    'collapsed',
-    [
-      caseOf(
-        'collapsed',
-        'Collapsed branch',
-        { state: 'collapsed', label: 'src', expanded: false },
-        [axis.rtl],
-      ),
-      caseOf('expanded', 'Expanded branch', { state: 'expanded', label: 'src', expanded: true }),
-      caseOf(
-        'selected',
-        'Selected item',
-        { state: 'selected', label: 'index.ts', selected: true },
-        [axis.dark, axis.forced],
-      ),
-      caseOf('loading', 'Loading branch', { state: 'loading', label: 'packages', busy: true }),
-      caseOf('disabled', 'Disabled item', { state: 'disabled', label: 'archive', disabled: true }),
-    ],
-    'outline-selection',
-  ),
-  'pattern:data-table': define(
-    'populated',
-    [
-      caseOf('loading', 'Loading data', {
-        state: 'loading',
-        label: 'Loading projects',
-        busy: true,
-      }),
-      caseOf('empty', 'No results', { state: 'empty', label: 'No results', rows: [] }),
-      caseOf(
-        'error',
-        'Load failed',
-        { state: 'error', label: 'Could not load', error: 'Could not load' },
-        [axis.dark, axis.forced],
-      ),
-      caseOf(
-        'populated',
-        'Loaded rows',
-        {
-          state: 'populated',
-          label: 'Projects',
-          rows: ['Alpha', 'Beta'],
-          density: 'comfortable',
-        },
-        [axis.narrow],
-      ),
-      caseOf('compact', 'Compact loaded rows', {
-        state: 'populated',
-        label: 'Projects',
-        rows: ['Alpha', 'Beta'],
-        density: 'compact',
-      }),
-    ],
-    'status-error',
-  ),
-  'registry:alert': define('default', [
-    caseOf('default', 'Information alert', {
-      state: 'default',
-      title: 'Saved',
-      description: 'Changes are live',
-    }),
-    caseOf('destructive', 'Error alert', {
-      state: 'destructive',
-      title: 'Sync failed',
-      description: 'Try again',
-      error: true,
-    }),
-  ]),
-  'registry:badge': define('default', [
-    caseOf('default', 'Default badge', { state: 'default', label: 'Stable' }),
-    caseOf('secondary', 'Secondary badge', { state: 'secondary', label: 'Preview' }),
-    caseOf('destructive', 'Destructive badge', { state: 'destructive', label: 'Failed' }),
-    caseOf('outline', 'Outline badge', { state: 'outline', label: 'Draft' }),
-  ]),
-  'registry:card': define('default', [
-    caseOf('default', 'Content card', { state: 'default', title: 'Release', description: 'Ready' }),
-    caseOf('with-action', 'Card with action', {
-      state: 'with-action',
-      title: 'Release',
-      actionLabel: 'Open',
-    }),
-    caseOf('divided', 'Divided card', {
-      state: 'divided',
-      title: 'Release',
-      sections: ['Summary', 'Details'],
-    }),
-  ]),
-  'registry:chip': define('default', [
-    caseOf('default', 'Default chip', { state: 'default', label: 'Lab' }),
-    caseOf('categorical', 'Categorical chip', {
-      state: 'categorical',
-      label: 'Design',
-      hue: 188.5,
-    }),
-  ]),
-  'registry:empty': define('default', [
-    caseOf('default', 'Empty collection', {
-      state: 'default',
-      title: 'Nothing here',
-      description: 'Create the first item',
-    }),
-    caseOf('with-action', 'Empty collection action', {
-      state: 'with-action',
-      title: 'Nothing here',
-      actionLabel: 'Add item',
-    }),
-  ]),
-  'registry:item': define('default', [
-    caseOf('default', 'Content item', {
-      state: 'default',
-      title: 'Deployment',
-      description: 'Completed',
-      density: 'comfortable',
-    }),
-    caseOf('interactive', 'Interactive item', {
-      state: 'interactive',
-      title: 'Deployment',
-      interactive: true,
-    }),
-    caseOf('muted', 'Muted item', { state: 'muted', title: 'Deployment', muted: true }),
-    caseOf('compact', 'Compact content item', {
-      state: 'default',
-      title: 'Deployment',
-      description: 'Completed',
-      density: 'compact',
-    }),
-  ]),
-  'registry:kbd': define('single', [
-    caseOf('single', 'Single key', { state: 'single', keys: ['K'] }),
-    caseOf('chord', 'Keyboard chord', { state: 'chord', keys: ['Meta', 'K'] }),
-  ]),
-  'registry:separator': define(
-    'horizontal',
-    [
-      caseOf(
-        'horizontal',
-        'Horizontal separator',
-        { state: 'horizontal', orientation: 'horizontal' },
-        [axis.forced],
-      ),
-      caseOf('vertical', 'Vertical separator', { state: 'vertical', orientation: 'vertical' }, [
-        axis.forced,
-      ]),
-      caseOf('semantic', 'Semantic separator', {
-        state: 'semantic',
-        orientation: 'horizontal',
-        decorative: false,
-      }),
-    ],
-    'orientation',
-  ),
-  'registry:skeleton': define('loading', [
-    caseOf('loading', 'Loading placeholder', { state: 'loading', label: 'Loading content' }, [
-      axis.reduce,
-    ]),
-  ]),
-  'registry:spinner': define('loading', [
-    caseOf('loading', 'Loading spinner', { state: 'loading', label: 'Loading' }, [axis.reduce]),
-  ]),
-  'registry:typography': define('body', [
-    caseOf('headings', 'Heading hierarchy', { state: 'headings', title: 'Navigation data' }),
-    caseOf('body', 'Body copy', { state: 'body', text: 'Readable body content' }, [axis.rtl]),
-    caseOf(
-      'code',
-      'Long code token',
-      { state: 'code', code: 'veryLongUnbrokenIdentifierThatMustRemainLocallyScrollable' },
-      [axis.narrow],
-    ),
-    caseOf('quote', 'Block quotation', { state: 'quote', text: 'Clarity over cleverness' }),
-  ]),
-  'registry:sidebar': define('expanded', [
-    caseOf(
-      'expanded',
-      'Expanded sidebar',
-      {
-        state: 'expanded',
-        label: 'Workspace',
-        current: 'Overview',
-        density: 'comfortable',
-      },
-      [axis.rtl],
-    ),
-    caseOf('compact', 'Compact sidebar navigation', {
-      state: 'expanded',
-      label: 'Workspace',
-      current: 'Overview',
-      density: 'compact',
-    }),
-    caseOf('collapsed', 'Collapsed sidebar', { state: 'collapsed', label: 'Workspace' }),
-    caseOf('offcanvas', 'Off-canvas sidebar', { state: 'offcanvas', label: 'Workspace' }, [
-      axis.narrow,
-    ]),
-    caseOf('mobile', 'Mobile sidebar', { state: 'mobile', label: 'Workspace', open: true }, [
-      axis.narrow,
-    ]),
-  ]),
-} as const satisfies Record<string, NavigationDataScenarioDefinition>
+export const DENSITY_APPLICABLE_PRODUCT_IDS: readonly string[] = [
+  'avatar',
+  'table',
+  'data-table',
+  'item',
+  'sidebar',
+].sort()
 
-function isVisuallyApplicable(mode: PresentationMode): boolean {
-  return mode === 'styled' || mode === 'partial' || mode === 'composed'
+export function densityRationale(entry: ProductEntry): string {
+  return `${entry.displayName} has no collection-density input; its target size and information hierarchy remain invariant while viewport cases own spatial adaptation.`
 }
 
-export function projectNavigationDataScenarios(
-  entries: readonly NavigationDataContractEntry[],
-  definitions: Readonly<Record<string, NavigationDataScenarioDefinition>> = navigationDataScenarios,
-): NavigationDataScenario[] {
-  const family = entries.filter(({ presentation }) => presentation.family === 'navigation-data')
-  const canonicalScenarioIds = new Set(family.map(({ scenarioId }) => scenarioId))
+/** One navigation-data scenario joined with its ProductContract entry — the
+ * ergonomic shape browser-probe test files consume (`productId`,
+ * `presentation`, `copiedArtifacts` alongside the compiled cases). */
+export interface NavigationDataJoinedScenario {
+  readonly productId: string
+  readonly displayName: string
+  readonly scenarioId: NavigationDataScenarioId
+  readonly defaultCaseId: string
+  readonly cases: readonly NavigationDataCase[]
+  readonly presentation: ProductEntry['presentation']
+  readonly copiedArtifacts: ProductEntry['copiedArtifacts']
+  readonly machine: ProductEntry['machine']
+}
 
-  for (const entry of family) {
-    if (definitions[entry.scenarioId] === undefined) {
-      throw new Error(
-        `Missing navigation/data scenario definition ${entry.scenarioId} for ${entry.name}`,
-      )
+export function joinNavigationDataScenarios(
+  catalog: NavigationDataCatalog,
+  contract: ProductContract,
+): NavigationDataJoinedScenario[] {
+  const entryByName = new Map(contract.entries.map((entry) => [entry.name, entry]))
+  return catalog.scenarios.map((scenario) => {
+    const entry = entryByName.get(scenario.productId)
+    if (entry === undefined) {
+      throw new Error(`No ProductContract entry named ${scenario.productId}`)
     }
-  }
-  for (const scenarioId of Object.keys(definitions)) {
-    if (!canonicalScenarioIds.has(scenarioId)) {
-      throw new Error(`Unknown navigation/data scenario definition ${scenarioId}`)
-    }
-  }
-
-  return family.map((entry) => {
-    const definition = definitions[entry.scenarioId]!
-    const caseIds = definition.cases.map(({ id }) => id)
-    if (definition.cases.length === 0) {
-      throw new Error(`Navigation/data scenario ${entry.scenarioId} has no cases`)
-    }
-    if (new Set(caseIds).size !== caseIds.length) {
-      throw new Error(`Navigation/data scenario ${entry.scenarioId} has duplicate case ids`)
-    }
-    if (!caseIds.includes(definition.defaultCaseId)) {
-      throw new Error(
-        `Navigation/data scenario ${entry.scenarioId} default case ${definition.defaultCaseId} does not exist`,
-      )
-    }
-
-    const hasDensityCases = definition.cases.some(
-      ({ input }) => input['density'] === 'comfortable' || input['density'] === 'compact',
-    )
-    const cases = definition.cases.map((scenarioCase) => ({
-      ...scenarioCase,
-      input: {
-        ...scenarioCase.input,
-        ...(!hasDensityCases && scenarioCase.id === definition.defaultCaseId
-          ? {
-              density: 'not-applicable' as const,
-              densityRationale: `${entry.displayName} has no collection-density input; its target size and information hierarchy remain invariant while viewport cases own spatial adaptation.`,
-            }
-          : {}),
-        contract: {
-          productId: entry.name,
-          displayName: entry.displayName,
-          copiedArtifacts: entry.copiedArtifacts.map(({ name }) => name),
-        },
-      },
-    }))
-
     return {
-      productId: entry.name,
+      productId: scenario.productId,
       displayName: entry.displayName,
-      scenarioId: entry.scenarioId,
-      copiedArtifacts: entry.copiedArtifacts,
+      scenarioId: scenario.scenarioId as NavigationDataScenarioId,
+      defaultCaseId: scenario.defaultCaseId,
+      cases: scenario.cases,
       presentation: entry.presentation,
-      ...definition,
-      cases,
+      copiedArtifacts: entry.copiedArtifacts,
+      machine: entry.machine,
     }
   })
 }
 
-export type ScenarioDensityProfile =
-  | { readonly mode: 'applicable'; readonly caseIds: readonly string[] }
-  | { readonly mode: 'not-applicable'; readonly rationale: string }
-
-export function scenarioDensityProfile(scenario: NavigationDataScenario): ScenarioDensityProfile {
-  const densityCases = scenario.cases.filter(
-    ({ input }) => input['density'] === 'comfortable' || input['density'] === 'compact',
-  )
-  if (densityCases.length > 0) {
-    const values = new Set(densityCases.map(({ input }) => input['density']))
-    if (!values.has('comfortable') || !values.has('compact')) {
-      throw new Error(
-        `Navigation/data density scenario ${scenario.productId} needs comfortable and compact cases`,
-      )
-    }
-    return { mode: 'applicable', caseIds: densityCases.map(({ id }) => id) }
-  }
-
-  const input = scenario.cases.find(({ id }) => id === scenario.defaultCaseId)?.input
-  const rationale = input?.['densityRationale']
-  if (
-    input?.['density'] !== 'not-applicable' ||
-    typeof rationale !== 'string' ||
-    rationale.trim() === ''
-  ) {
-    throw new Error(`Navigation/data density scenario ${scenario.productId} needs an N/A rationale`)
-  }
-  return { mode: 'not-applicable', rationale }
+function isVisuallyApplicable(mode: string): boolean {
+  return mode === 'styled' || mode === 'partial' || mode === 'composed'
 }
 
 export function applicableNavigationDataScenarios(
-  scenarios: readonly NavigationDataScenario[],
+  joined: readonly NavigationDataJoinedScenario[],
   path: NavigationDataPath,
-): NavigationDataScenario[] {
-  return scenarios.filter(({ presentation }) => isVisuallyApplicable(presentation[path].mode))
+): NavigationDataJoinedScenario[] {
+  return joined.filter(({ presentation }) => isVisuallyApplicable(presentation[path].mode))
 }
 
-export function scenarioEnvironmentProductIds<Axis extends ScenarioEnvironmentAxis['axis']>(
-  scenarios: readonly NavigationDataScenario[],
-  axisName: Axis,
-  value: Extract<ScenarioEnvironmentAxis, { axis: Axis }>['value'],
+/** Product ids with at least one case declaring support for `axisName` — the
+ * concrete axis VALUE is supplied later, at resolve time, by the caller. */
+export function scenarioEnvironmentProductIds(
+  joined: readonly NavigationDataJoinedScenario[],
+  axisName: PresentationScenarioEnvironmentAxis,
 ): string[] {
-  return scenarios
-    .filter(({ cases }) =>
-      cases.some(({ environmentAxes }) =>
-        environmentAxes.some(({ axis, value: candidate }) =>
-          axis === axisName ? candidate === value : false,
-        ),
-      ),
-    )
+  return joined
+    .filter(({ cases }) => cases.some(({ environmentAxes }) => environmentAxes.includes(axisName)))
     .map(({ productId }) => productId)
     .sort()
 }
 
 export function forcedColorScenarios(
-  scenarios: readonly NavigationDataScenario[],
+  joined: readonly NavigationDataJoinedScenario[],
 ): { productId: string; cue: ForcedColorCue }[] {
-  return scenarios
+  return joined
     .filter(({ cases }) =>
-      cases.some(({ environmentAxes }) =>
-        environmentAxes.some(({ axis, value }) => axis === 'forcedColors' && value === 'active'),
-      ),
+      cases.some(({ environmentAxes }) => environmentAxes.includes('forcedColors')),
     )
-    .map(({ productId, forcedColorCue }) => {
-      if (forcedColorCue === undefined) {
-        throw new Error(`Missing forced-colors cue for navigation/data scenario ${productId}`)
-      }
-      return { productId, cue: forcedColorCue }
-    })
+    .map(({ productId, scenarioId }) => ({ productId, cue: FORCED_COLOR_CUES[scenarioId] }))
     .sort((left, right) => left.productId.localeCompare(right.productId))
 }

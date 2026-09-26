@@ -311,7 +311,6 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
     parts: tableC.TableParts,
     rowValue: RegistryRow,
     rowIndex: Reactive<number>,
-    selection: Signal<readonly string[]>,
   ): Mountable =>
     TableRow({ ...parts.row(rowValue.item, rowIndex) }, [
       TableCell({ ...parts.cell(rowIndex, 0), class: 'font-medium' }, [
@@ -338,7 +337,6 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const machineRows = (
     parts: tableC.TableParts,
     rowsSignal: Signal<readonly string[]>,
-    selection: Signal<readonly string[]>,
   ): Mountable =>
     TableBody([
       each(rowsSignal, {
@@ -346,7 +344,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
         render: (idSignal, index) => {
           const id = idSignal.peek()
           const registryRow = ROWS.find((candidate) => candidate.item === id)
-          return registryRow === undefined ? [] : [machineRow(parts, registryRow, index, selection)]
+          return registryRow === undefined ? [] : [machineRow(parts, registryRow, index)]
         },
       }),
     ])
@@ -367,7 +365,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
               header(table, 'status', 'Status'),
             ]),
           ]),
-          machineRows(table, state.at('table.rows'), state.at('table.selection')),
+          machineRows(table, state.at('table.rows')),
         ]),
         div({ class: 'relative' }, [
           Table({ viewport: dataTable.table.viewport, ...dataTable.table.root }, [
@@ -379,11 +377,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
                 header(dataTable.table, 'status', 'Status'),
               ]),
             ]),
-            machineRows(
-              dataTable.table,
-              state.at('dataTable.table.rows'),
-              state.at('dataTable.table.selection'),
-            ),
+            machineRows(dataTable.table, state.at('dataTable.table.rows')),
           ]),
           DataTableEmptyState(
             {

@@ -13,22 +13,20 @@ import {
   probeNarrowProduct,
   type NarrowProbe,
 } from './navigation-data-browser-probes'
+import { loadProductContract } from './navigation-data-contract-source'
 import {
   applicableNavigationDataScenarios,
+  compileNavigationDataCatalog,
   forcedColorScenarios,
-  type NavigationDataContractEntry,
-  projectNavigationDataScenarios,
+  joinNavigationDataScenarios,
   scenarioEnvironmentProductIds,
 } from './navigation-data-scenarios'
 
 const STYLES = resolve(import.meta.dirname, '../../src/styles')
-const contract = JSON.parse(
-  readFileSync(resolve(import.meta.dirname, '../../../../registry/registry.json'), 'utf8'),
-) as { productContract: { entries: NavigationDataContractEntry[] } }
-const baselineScenarios = applicableNavigationDataScenarios(
-  projectNavigationDataScenarios(contract.productContract.entries),
-  'baseline',
-)
+const contract = loadProductContract()
+const catalog = compileNavigationDataCatalog(contract)
+const joined = joinNavigationDataScenarios(catalog, contract)
+const baselineScenarios = applicableNavigationDataScenarios(joined, 'baseline')
 const baselineProductIds = baselineScenarios.map(({ productId }) => productId).sort()
 const carouselParts = carouselMachine.connect(rootSignal(), () => {}, { id: 'browser-carousel' })
 const publishedDragOffset = (deltaX: number): string =>
@@ -617,14 +615,18 @@ describe('navigation/data baseline presentation in Chromium', () => {
   })
 
   it('contains every narrow and responsive-affordance scenario at full width', async () => {
+    // The protocol's `viewport` axis is canonically two-valued
+    // (`wide`/`narrow`, see PRESENTATION_SCENARIO_ENVIRONMENT_VALUES) rather
+    // than a specific breakpoint list, so a case declaring the axis is
+    // exercised at one representative pixel width per side.
     const directions = ['ltr', 'rtl'] as const
     const products: Record<string, NarrowProbe> = {}
-    const widths = [280, 640, 1024] as const
+    const widths = [280, 1024] as const
+    const productsSupportingViewport = scenarioEnvironmentProductIds(baselineScenarios, 'viewport')
     for (const width of widths) {
       for (const direction of directions) {
         const context = await browser.newContext({ viewport: { width, height: 720 } })
-        const productsAtWidth = scenarioEnvironmentProductIds(baselineScenarios, 'viewport', width)
-        for (const productId of productsAtWidth) {
+        for (const productId of productsSupportingViewport) {
           const page = await pageWith(context, navigationFixture + dataFixture)
           await page.evaluate((dir) => {
             document.documentElement.dir = dir
@@ -640,9 +642,7 @@ describe('navigation/data baseline presentation in Chromium', () => {
       widths
         .flatMap((width) =>
           directions.flatMap((direction) =>
-            scenarioEnvironmentProductIds(baselineScenarios, 'viewport', width).map(
-              (productId) => `${width}:${direction}:${productId}`,
-            ),
+            productsSupportingViewport.map((productId) => `${width}:${direction}:${productId}`),
           ),
         )
         .sort(),
@@ -738,7 +738,7 @@ describe('navigation/data baseline presentation in Chromium', () => {
   })
 
   it('preserves every declared state hierarchy in dark mode', async () => {
-    const expected = scenarioEnvironmentProductIds(baselineScenarios, 'theme', 'dark')
+    const expected = scenarioEnvironmentProductIds(baselineScenarios, 'theme')
     const capture = async (dark: boolean) => {
       const context = await browser.newContext({ colorScheme: dark ? 'dark' : 'light' })
       const page = await pageWith(context, navigationFixture + dataFixture)
@@ -829,7 +829,7 @@ describe('navigation/data baseline presentation in Chromium', () => {
     })
     await context.close()
 
-    const expected = scenarioEnvironmentProductIds(baselineScenarios, 'direction', 'rtl')
+    const expected = scenarioEnvironmentProductIds(baselineScenarios, 'direction')
     expect(Object.keys(got).sort()).toEqual(expected)
     expect(got.accordion.textAlign).toBe('start')
     expect(got.breadcrumbs.separator).not.toBe('none')
@@ -848,7 +848,7 @@ describe('navigation/data baseline presentation in Chromium', () => {
   })
 
   it('suppresses decorative motion and preserves essential data colours in user modes', async () => {
-    const reducedExpected = scenarioEnvironmentProductIds(baselineScenarios, 'motion', 'reduce')
+    const reducedExpected = scenarioEnvironmentProductIds(baselineScenarios, 'motion')
     const motion = await browser.newContext({ reducedMotion: 'no-preference' })
     const motionPage = await pageWith(motion, navigationFixture + dataFixture)
     const motionResult = await probeEffectiveMotion(motionPage, reducedExpected)
@@ -879,11 +879,7 @@ describe('navigation/data baseline presentation in Chromium', () => {
     const forcedResult = await probeForcedColorCues(forcedPage, forcedCases)
     await forced.close()
 
-    const forcedExpected = scenarioEnvironmentProductIds(
-      baselineScenarios,
-      'forcedColors',
-      'active',
-    )
+    const forcedExpected = scenarioEnvironmentProductIds(baselineScenarios, 'forcedColors')
     expect(forcedCases.map(({ productId }) => productId)).toEqual(forcedExpected)
     expect(Object.keys(forcedResult).sort()).toEqual(forcedExpected)
     expect(Object.entries(forcedResult).filter(([, result]) => !result.passes)).toEqual([])
