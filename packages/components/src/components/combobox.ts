@@ -117,8 +117,25 @@ export type ComboboxMsg =
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
-  /** @humanOnly */
-  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /**
+   * @humanOnly
+   *
+   * Atomic replacement: `items` is required, and `groups`/`disabled` are
+   * OPTIONAL companions that replace their own state field when present
+   * (omitted ⇒ unchanged) — but every field the fresh `items` list makes
+   * inconsistent is reconciled in this SAME reducer step, never in a
+   * follow-up message. `value` (selection) and `highlightedValue` are
+   * dropped when they no longer name a value in the new `items` (after the
+   * new `disabled` is applied), so there is no instant where the machine
+   * reports a selected/highlighted option the fresh list does not carry.
+   */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
   /** @humanOnly */
   | { type: 'loadError'; requestId: number; error: string }
 
@@ -188,6 +205,39 @@ function computeFiltered(items: string[], query: string, allowCreate: boolean): 
 
 export function isCreateOption(value: string): boolean {
   return value === CREATE_OPTION_VALUE
+}
+
+/**
+ * A single, mutually-exclusive summary of the async load lifecycle, derived
+ * from `status` and whether any items are currently on hand. This exists so a
+ * consumer never has to reconcile independent booleans (`isLoading`,
+ * `isEmpty`, `hasError`) that can read true at the same time — exactly the
+ * defect #265 finding 11 named test-first. There are five states partitioning
+ * every reachable `(status, items.length)` pair:
+ *
+ * - `'initial-empty'` — nothing has ever loaded and none were given
+ *   synchronously (`status === 'idle'`, no items).
+ * - `'loading'` — a fetch is in flight and there is nothing yet to show (a
+ *   first-ever load).
+ * - `'stale-results'` — the STALE-WHILE-REVALIDATE state: a fetch is in
+ *   flight while a previous list is still on screen. `loadStart` never
+ *   clears `items`, so the previous results keep rendering, filterable and
+ *   selectable, until the matching `loadSuccess`/`loadError` lands.
+ * - `'success'` — the current items are the result of a completed load, or
+ *   were given synchronously and never superseded by a failed fetch.
+ * - `'error'` — the most recent fetch failed. Per the same policy, items from
+ *   an earlier successful load are left mounted and selectable; only the
+ *   live region / a consumer's own error slot communicate the failure, so
+ *   `'error'` is reported the same whether or not stale items remain.
+ */
+export type LoadProjection = 'initial-empty' | 'loading' | 'stale-results' | 'success' | 'error'
+
+export function loadProjection(state: Pick<ComboboxState, 'status' | 'items'>): LoadProjection {
+  if (state.status === 'error') return 'error'
+  if (state.status === 'loading') return state.items.length > 0 ? 'stale-results' : 'loading'
+  if (state.status === 'loaded') return 'success'
+  // 'idle': items supplied synchronously (or not at all) and never fetched.
+  return state.items.length > 0 ? 'success' : 'initial-empty'
 }
 
 /**
@@ -391,14 +441,31 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
     case 'loadStart':
       return [{ ...state, status: 'loading', requestId: msg.requestId, error: null }, []]
     case 'loadSuccess': {
-      // Drop responses from superseded requests (stale-response protection).
+      // Drop responses from superseded requests (stale-response protection,
+      // #265 finding 10): a partially-stale write is worse than a dropped one,
+      // so the whole message either applies as ONE swap or not at all.
       if (msg.requestId !== state.requestId) return [state, []]
+      const groups = msg.groups ?? state.groups
+      const disabledItems = msg.disabled ?? state.disabledItems
+      const filteredItems = computeFiltered(msg.items, state.inputValue, state.allowCreate)
+      // Atomic replacement: items/groups/disabled/selected/filtering/highlight
+      // all move together. A selection or highlight the fresh items (or the
+      // fresh disabled list) no longer support is dropped in this same step —
+      // never left dangling for a render in between.
+      const value = state.value.filter((v) => msg.items.includes(v) && !disabledItems.includes(v))
+      const highlightedValue =
+        state.highlightedValue !== null && filteredItems.includes(state.highlightedValue)
+          ? state.highlightedValue
+          : null
       return [
         {
           ...state,
           items: msg.items,
-          filteredItems: computeFiltered(msg.items, state.inputValue, state.allowCreate),
-          highlightedValue: null,
+          groups,
+          disabledItems,
+          value,
+          filteredItems,
+          highlightedValue,
           status: 'loaded',
           error: null,
         },
@@ -497,9 +564,17 @@ export interface ComboboxParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11) — see
+     * {@link LoadProjection}. Mirrors the top-level `loadState` signal. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'combobox'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'`. A single
+   * signal instead of independent `isLoading`/`isEmpty`/`hasError` booleans,
+   * so it can never contradict itself. See {@link LoadProjection}. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — it is NOT used for identity (highlight,
    * selection and ids are all value-keyed), so a reused row is never stale. */
@@ -646,9 +721,11 @@ export function connect(
       tabindex: -1,
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-status': state.map((s) => s.status),
+      'data-load-state': state.map(loadProjection),
       'data-scope': 'combobox',
       'data-part': 'content',
     },
+    loadState: state.map(loadProjection),
     item: (value: string): ComboboxItemParts => {
       const isCreate = value === CREATE_OPTION_VALUE
       return {

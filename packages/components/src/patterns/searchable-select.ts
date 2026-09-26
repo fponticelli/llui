@@ -8,11 +8,13 @@ import {
   init as comboboxInit,
   update as comboboxUpdate,
   connect as comboboxConnect,
+  loadProjection,
   type ComboboxState,
   type ComboboxMsg,
   type ComboboxGroup,
   type SelectionMode,
   type AsyncStatus,
+  type LoadProjection,
 } from '../components/combobox.js'
 
 /**
@@ -46,7 +48,7 @@ import {
  * ids retain combobox's stale-response protection unchanged.
  */
 
-export type { SelectionMode, AsyncStatus, ComboboxGroup }
+export type { SelectionMode, AsyncStatus, ComboboxGroup, LoadProjection }
 
 export interface SearchableSelectState {
   /** Whether the popup is open. Mirrors `combobox.open`; kept at the top level
@@ -95,8 +97,15 @@ export type SearchableSelectMsg =
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
-  /** @humanOnly */
-  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /** @humanOnly — atomic replacement passthrough to `combobox`; see its own
+   * `loadSuccess` doc for the reconciliation this performs in one step. */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
   /** @humanOnly */
   | { type: 'loadError'; requestId: number; error: string }
 
@@ -344,9 +353,20 @@ export interface SearchableSelectParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11); mirrors the
+     * top-level `loadState` signal. See `combobox`'s `LoadProjection`. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'searchable-select'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'` — never
+   * independent booleans that can contradict each other. Documents the
+   * stale-while-revalidate policy: `'stale-results'` means a fetch is in
+   * flight while the previous items are still mounted and selectable;
+   * `'error'` is reported the same whether or not stale items remain
+   * mounted underneath it. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */
@@ -452,7 +472,13 @@ export function connect(
         send({ type: 'loadStart', requestId: m.requestId })
         return
       case 'loadSuccess':
-        send({ type: 'loadSuccess', requestId: m.requestId, items: m.items })
+        send({
+          type: 'loadSuccess',
+          requestId: m.requestId,
+          items: m.items,
+          groups: m.groups,
+          disabled: m.disabled,
+        })
         return
       case 'loadError':
         send({ type: 'loadError', requestId: m.requestId, error: m.error })
@@ -551,9 +577,11 @@ export function connect(
       tabindex: -1,
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-status': cb.content['data-status'],
+      'data-load-state': state.map((s) => loadProjection(s.combobox)),
       'data-scope': SCOPE,
       'data-part': 'content',
     },
+    loadState: state.map((s) => loadProjection(s.combobox)),
     item: (value: string): SearchableSelectItemParts => {
       const inner = cb.item(value).item
       return {

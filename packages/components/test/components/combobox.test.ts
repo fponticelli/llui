@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import { init, update, connect, CREATE_OPTION_VALUE } from '../../src/components/combobox'
+import {
+  init,
+  update,
+  connect,
+  CREATE_OPTION_VALUE,
+  loadProjection,
+} from '../../src/components/combobox'
 import { rootSignal, read } from '../_signal'
 
 describe('combobox reducer', () => {
@@ -209,6 +215,127 @@ describe('combobox async loading', () => {
   it('liveRegion stays silent while loading', () => {
     const p = connect(rootSignal(), vi.fn(), { id: 'cb' })
     expect(read(p.liveRegion.text, { status: 'loading', filteredItems: [], error: null })).toBe('')
+  })
+
+  /**
+   * #265 finding 10 — `loadSuccess` must replace items/groups/disabled/selected/
+   * filtering/highlight as ONE atomic swap, never piecemeal, so there is no
+   * instant where `selected`/`highlighted` name a value the new `items` no
+   * longer carries.
+   */
+  it('loadSuccess atomically replaces items, groups, and disabled together', () => {
+    const s0 = init({
+      items: ['old-a', 'old-b'],
+      groups: [{ id: 'g1', label: 'G1', items: ['old-a', 'old-b'] }],
+      disabledItems: ['old-b'],
+    })
+    const [s1] = update(s0, { type: 'loadStart', requestId: 1 })
+    const [s2] = update(s1, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['new-a', 'new-b'],
+      groups: [{ id: 'g2', label: 'G2', items: ['new-a', 'new-b'] }],
+      disabled: ['new-b'],
+    })
+    expect(s2.items).toEqual(['new-a', 'new-b'])
+    expect(s2.groups).toEqual([{ id: 'g2', label: 'G2', items: ['new-a', 'new-b'] }])
+    expect(s2.disabledItems).toEqual(['new-b'])
+    expect(s2.filteredItems).toEqual(['new-a', 'new-b'])
+  })
+
+  it('loadSuccess drops a selected value the new items no longer carry (never a dangling selection)', () => {
+    const s0 = init({ items: ['old-a', 'old-b'], value: ['old-a'], selectionMode: 'multiple' })
+    const [s1] = update(s0, { type: 'loadStart', requestId: 1 })
+    const [s2] = update(s1, { type: 'loadSuccess', requestId: 1, items: ['new-a'] })
+    expect(s2.value).toEqual([])
+  })
+
+  it('loadSuccess drops a selected value the fresh disabled list now excludes', () => {
+    const s0 = init({ items: ['a', 'b'], value: ['a'], selectionMode: 'multiple' })
+    const [s1] = update(s0, { type: 'loadStart', requestId: 1 })
+    const [s2] = update(s1, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['a', 'b'],
+      disabled: ['a'],
+    })
+    expect(s2.value).toEqual([])
+    expect(s2.disabledItems).toEqual(['a'])
+  })
+
+  it('loadSuccess keeps a still-valid selection and highlight identity intact', () => {
+    let s: import('../../src/components/combobox').ComboboxState = init({
+      items: ['a', 'b'],
+      value: ['a'],
+      selectionMode: 'multiple',
+    })
+    ;[s] = update(s, { type: 'highlight', value: 'b' })
+    ;[s] = update(s, { type: 'loadStart', requestId: 1 })
+    ;[s] = update(s, { type: 'loadSuccess', requestId: 1, items: ['a', 'b', 'c'] })
+    expect(s.value).toEqual(['a'])
+    expect(s.highlightedValue).toBe('b')
+  })
+
+  it('a STALE loadSuccess cannot partially apply — items/groups/disabled/value are all untouched', () => {
+    const s0 = init({ items: ['a'], value: ['a'] })
+    const [s1] = update(s0, { type: 'loadStart', requestId: 2 })
+    const [s2] = update(s1, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['stale'],
+      groups: [{ id: 'g', label: 'G', items: ['stale'] }],
+      disabled: ['stale'],
+    })
+    expect(s2).toBe(s1)
+    expect(s2.items).toEqual(['a'])
+    expect(s2.groups).toEqual([])
+    expect(s2.value).toEqual(['a'])
+  })
+})
+
+describe('combobox load projection (#265 finding 11)', () => {
+  it('is initial-empty before anything has ever loaded', () => {
+    expect(loadProjection({ status: 'idle', items: [] })).toBe('initial-empty')
+  })
+
+  it('is success when items were supplied synchronously (idle, non-empty)', () => {
+    expect(loadProjection({ status: 'idle', items: ['a'] })).toBe('success')
+  })
+
+  it('is loading on a first-ever fetch with nothing yet to show', () => {
+    expect(loadProjection({ status: 'loading', items: [] })).toBe('loading')
+  })
+
+  it('is stale-results while revalidating with a previous list still on hand', () => {
+    expect(loadProjection({ status: 'loading', items: ['a', 'b'] })).toBe('stale-results')
+  })
+
+  it('is success once a load completes', () => {
+    expect(loadProjection({ status: 'loaded', items: ['a'] })).toBe('success')
+  })
+
+  it('is error on a failed fetch, regardless of stale items left on hand', () => {
+    expect(loadProjection({ status: 'error', items: [] })).toBe('error')
+    expect(loadProjection({ status: 'error', items: ['a'] })).toBe('error')
+  })
+
+  it('the five projections are exhaustive and mutually exclusive for every reachable (status, items) pair', () => {
+    const statuses = ['idle', 'loading', 'loaded', 'error'] as const
+    const itemCounts = [0, 1, 2]
+    for (const status of statuses) {
+      for (const n of itemCounts) {
+        const items = Array.from({ length: n }, (_, i) => `item-${i}`)
+        const p = loadProjection({ status, items })
+        expect(['initial-empty', 'loading', 'stale-results', 'success', 'error']).toContain(p)
+      }
+    }
+  })
+
+  it('content and the top-level loadState signal expose the same live projection', () => {
+    const p = connect(rootSignal(), vi.fn(), { id: 'cb' })
+    const state = { status: 'loading' as const, items: ['a'] }
+    expect(read(p.loadState, state)).toBe('stale-results')
+    expect(read(p.content['data-load-state'], state)).toBe('stale-results')
   })
 })
 

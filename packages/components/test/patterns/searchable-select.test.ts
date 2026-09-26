@@ -119,6 +119,32 @@ describe('searchableSelect reducer', () => {
     })
   })
 
+  /**
+   * #265 finding 10 (pattern-level): a fresh success must atomically replace
+   * items/groups/disabled/selected/filtering/highlight through the wrapper too
+   * — not just in the nested combobox machine directly.
+   */
+  it('loadSuccess atomically replaces items, groups, disabled, and drops a stale selection', () => {
+    let s = init({
+      items: ['old-a', 'old-b'],
+      value: ['old-a'],
+      groups: [{ id: 'g1', label: 'G1', items: ['old-a', 'old-b'] }],
+    })
+    s = apply(s, { type: 'loadStart', requestId: 1 })
+    s = apply(s, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['new-a', 'new-b'],
+      groups: [{ id: 'g2', label: 'G2', items: ['new-a', 'new-b'] }],
+      disabled: ['new-b'],
+    })
+    expect(s.combobox.items).toEqual(['new-a', 'new-b'])
+    expect(s.combobox.groups).toEqual([{ id: 'g2', label: 'G2', items: ['new-a', 'new-b'] }])
+    expect(s.combobox.disabledItems).toEqual(['new-b'])
+    // 'old-a' no longer exists in the fresh items — the stale selection is gone.
+    expect(s.combobox.value).toEqual([])
+  })
+
   describe('multiple mode', () => {
     it('toggles values and stays open', () => {
       let s = init({ items: ['Apple', 'Banana', 'Cherry'], selectionMode: 'multiple' })
@@ -226,6 +252,34 @@ describe('searchableSelect connect parts', () => {
     expect(read(parts.content['data-status'], failed)).toBe('error')
     expect(read(parts.content['aria-busy'], failed)).toBeUndefined()
     expect(read(parts.liveRegion.text, failed)).toBe('Could not load fruit')
+  })
+
+  /**
+   * #265 finding 11 — the pattern's load projection must stay truthful and
+   * mutually exclusive through the whole documented stale-while-revalidate
+   * lifecycle: initial-empty -> loading -> success -> (revalidate) ->
+   * stale-results -> success, and a failed revalidation reports 'error' even
+   * though the previous items are still mounted underneath it.
+   */
+  it('loadState walks initial-empty -> loading -> success -> stale-results -> error truthfully', () => {
+    let s = init({ items: [] })
+    expect(read(parts.loadState, s)).toBe('initial-empty')
+
+    s = apply(s, { type: 'loadStart', requestId: 1 })
+    expect(read(parts.loadState, s)).toBe('loading')
+
+    s = apply(s, { type: 'loadSuccess', requestId: 1, items: ['Apple', 'Banana'] })
+    expect(read(parts.loadState, s)).toBe('success')
+
+    // Revalidating: a fresh request starts while 'Apple'/'Banana' stay mounted.
+    s = apply(s, { type: 'loadStart', requestId: 2 })
+    expect(read(parts.loadState, s)).toBe('stale-results')
+    expect(s.combobox.items).toEqual(['Apple', 'Banana'])
+
+    s = apply(s, { type: 'loadError', requestId: 2, error: 'Network unavailable' })
+    expect(read(parts.loadState, s)).toBe('error')
+    // stale-while-revalidate: the previous items are untouched by the failure.
+    expect(s.combobox.items).toEqual(['Apple', 'Banana'])
   })
 
   it('item parts carry aria-selected wiring', () => {
