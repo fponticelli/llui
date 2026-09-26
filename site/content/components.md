@@ -755,6 +755,122 @@ The API response is third-party markup and is never assigned to `innerHTML`:
 every node is rebuilt from an element and attribute allowlist, so a `<script>`,
 an `onload` or an `href` in the response is dropped with its subtree.
 
+## 9. Color
+
+Two machines share one color engine (`@llui/components/utils/color`: a CSS Color 4
+parser, conversions, gamut mapping and spec-exact interpolation):
+
+- **`color-picker`** — one color, edited in HSV or OKLCH.
+- **`gradient-picker`** — linear, radial or conic gradients, with an embedded
+  `color-picker` for the selected stop.
+
+`llui add color-picker` / `llui add gradient-picker` copy the recipes; the baseline
+stylesheet styles the same parts.
+
+### The color picker
+
+```ts
+import * as colorPickerC from '@llui/components/color-picker'
+
+colorPickerC.init({ model: 'oklch', color: 'oklch(0.7 0.15 250)' })
+```
+
+`color` takes any CSS color (`#hex`, `rgb()`, `hsl()`, `lab()`, `oklch()`,
+`color(display-p3 …)`, named colors). The state stores the color **in the active
+model, as floats**, so nothing drifts: a hex round-trips exactly, and hue survives
+on grays (drag to black and back, and the hue is still where you left it).
+`setModel` converts between HSV and OKLCH.
+
+`toCss(state)` gives hex for HSV and an exact `oklch()` for OKLCH. An OKLCH color
+may sit outside sRGB; it stays exact in state and `root` publishes
+`data-out-of-gamut` so you can flag it. `maxChroma` (default `0.37`) bounds the
+chroma axis.
+
+Dragging the 2D area is built in; spread `area` and it tracks the pointer. Two
+things are **not** automatic — place both, or they do nothing:
+
+```ts
+const cp = colorPickerC.connect(state.at('color'), send)
+
+colorPickerC.eyeDropperSupportMount(send), // flips eyeDropperSupported after mount
+...colorPickerC.areaCanvasBinding(state.at('color'), 'my-canvas'), // repaints the OKLCH plane
+div({ ...cp.area }, [
+  canvas({ ...cp.areaCanvas, id: 'my-canvas', width: 240, height: 128 }),
+  div({ ...cp.areaThumb }),
+]),
+button({ ...cp.eyeDropperTrigger }, [text('Pick')]),
+```
+
+- **Eyedropper.** `eyeDropperSupported` starts `false` so the server and the first
+  client paint agree; the mount helper sets it where the browser has the EyeDropper
+  API (Chromium). Until then the trigger is `hidden`. Without the helper, it stays
+  hidden everywhere.
+- **OKLCH plane.** The sRGB boundary is irregular, so the area can't be a CSS
+  gradient. `areaCanvasBinding` paints it into the canvas with that id on every hue
+  change. The blank region is colors sRGB cannot show at that hue — expected.
+
+### The gradient picker
+
+```ts
+import * as gradientPickerC from '@llui/components/gradient-picker'
+
+gradientPickerC.init({ css: 'linear-gradient(90deg in oklch, #ff5f5b, #5b9bff)' })
+const gp = gradientPickerC.connect(state.at('gradient'), send, { id: 'bg' })
+
+gradientPickerC.toCss(state.peek().gradient) // → the CSS you ship
+```
+
+**Stops have ids.** Two stops can share a position, so a row key is `stop.id`,
+never an index:
+
+```ts
+div({ ...gp.track }, [
+  each(state.at('gradient.stops'), {
+    key: (s) => s.id,
+    render: (item) => [div({ ...gp.stop(item.peek().id) })],
+  }),
+]),
+```
+
+Pressing the empty track adds a stop and starts dragging it. Each stop is a
+`role="slider"`: arrows move it, Home/End jump, Delete removes it (never below
+`minStops`, default 2).
+
+**`gp.picker` is a full `color-picker` for the selected stop.** Place its parts like
+any color picker; edits change only the selected stop, in that stop's own model.
+There is no second state to sync.
+
+**The track shows the real gradient.** It uses the same serializer as `toCss`, hue
+method and repeat included, and a new stop takes exactly the color the browser
+paints at that spot (`colorAt`). The picker always writes an explicit
+`in <space>`; the default is `oklab`.
+
+**Show only what applies.** The center area only means something for radial and
+conic, shape and size only for radial. Place them under `show`/`branch` on
+`state.at('gradient.kind')`.
+
+### `parseGradient` refuses rather than guesses
+
+```ts
+gradientPickerC.parseGradient('linear-gradient(red 10px, blue)')
+// → { ok: false, reason: '…' }
+```
+
+Anything the model can't hold exactly is rejected with a reason: px lengths, color
+hints, fewer than two stops. Nothing is clamped or dropped — a wide-gamut
+`oklch()` stop stays exact. What it accepts keeps its meaning: `to top right` stays a corner keyword
+(its angle depends on the box), and a gradient with no `in <space>` is read the way
+browsers read it — sRGB when every stop is a legacy color, `oklab` otherwise.
+
+`cssInput` commits on Enter or blur, not per keystroke. A failure sets
+`aria-invalid` and fills `cssError`. Like a live region's `text`, `cssError`'s
+`visible` and `message` are signals, **not attributes** — don't spread the bag:
+
+```ts
+const { visible, message, ...errorAttrs } = gp.cssError
+show(visible, () => [div({ ...errorAttrs }, [text(message)])])
+```
+
 ## Gotchas
 
 These are the ones that have actually cost people time. Each is silent: the component works,
