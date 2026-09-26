@@ -452,14 +452,26 @@ export function connect(
    * focus. The reducer owns selection; this connector owns the DOM half and
    * addresses another bare indicator through the semantic part/index attrs it
    * already publishes. No renderer-specific wrapper or child is required.
+   *
+   * The search is scoped STRICTLY to this carousel's own indicator-group/root
+   * ancestor and never falls further out. An indicator carries only
+   * `data-scope`/`data-part`/`data-index` — nothing names WHICH carousel
+   * instance it belongs to — so a document-wide (or `origin`-relative bare
+   * element) fallback can match a DIFFERENT carousel's indicator sharing the
+   * same index. That is reachable in practice: a skin that renders its dot
+   * navigation without spreading `parts.indicatorGroup` (its own container,
+   * with no `data-part` at all) removes the one ancestor this search relies
+   * on, and two such carousels on the same page would steal keyboard focus
+   * into each other. If neither ancestor is found, this is a safe no-op — the
+   * reducer's `send` above has already moved selection; only the imperative
+   * "also move real DOM focus" convenience is skipped.
    */
   const focusIndicator = (origin: Element | null, index: number): void => {
     if (origin === null) return
-    const root: ParentNode =
+    const root =
       origin.closest('[data-scope="carousel"][data-part="indicator-group"]') ??
-      origin.closest('[data-scope="carousel"][data-part="root"]') ??
-      origin.ownerDocument ??
-      origin
+      origin.closest('[data-scope="carousel"][data-part="root"]')
+    if (root === null) return
     const target = root.querySelector(
       `[data-scope="carousel"][data-part="indicator"][data-index="${index}"]`,
     )

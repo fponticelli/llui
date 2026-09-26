@@ -116,6 +116,57 @@ describe('baseline carousel live DOM contract', () => {
   })
 })
 
+// Indicators carry only `data-scope`/`data-part`/`data-index` — nothing
+// identifies WHICH carousel instance they belong to unless the search that
+// resolves keyboard-driven focus is scoped to this carousel's own DOM subtree.
+// A skin that renders its dot navigation without spreading `parts.indicatorGroup`
+// (e.g. a custom container styled by hand) removes the one ancestor the old
+// scoping relied on; `focusIndicator` used to fall back to searching the WHOLE
+// document in that case, so two such carousels sharing a page could steal
+// keyboard focus into each other's indicators.
+function mountBareIndicators(id: string, host: HTMLElement): ReturnType<typeof mountApp> {
+  const definition = component<{ carousel: carousel.CarouselState }, carousel.CarouselMsg>({
+    name: 'BareIndicatorCarouselMachine',
+    init: () => [{ carousel: carousel.init({ count: SLIDES.length }) }, []],
+    update: (state, msg) => [{ carousel: carousel.update(state.carousel, msg)[0] }, []],
+    view: ({ state, send }): readonly Mountable[] => {
+      const parts = carousel.connect(state.at('carousel'), send, { id })
+      return SLIDES.map((_label, index) => button({ ...parts.slide(index).indicator }))
+    },
+  })
+  return mountApp(host, definition)
+}
+
+describe('carousel keyboard focus stays scoped to its own instance', () => {
+  it('never lets a bare (unwrapped) indicator set steal focus into a different carousel', () => {
+    const hostA = document.createElement('div')
+    const hostB = document.createElement('div')
+    document.body.append(hostA, hostB)
+    const appA = mountBareIndicators('bare-carousel-a', hostA)
+    const appB = mountBareIndicators('bare-carousel-b', hostB)
+
+    const indicatorsA = [...hostA.querySelectorAll<HTMLButtonElement>('[data-part="indicator"]')]
+    const indicatorsB = [...hostB.querySelectorAll<HTMLButtonElement>('[data-part="indicator"]')]
+
+    // Carousel A is earlier in document order, so a whole-document search for
+    // `[data-index="1"]` finds A's button first — pressing ArrowRight on B's
+    // OWN indicator must never move focus there.
+    indicatorsB[0].focus()
+    indicatorsB[0].dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    )
+
+    expect(indicatorsB[1].getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).not.toBe(indicatorsA[1])
+    expect(indicatorsA.includes(document.activeElement as HTMLButtonElement)).toBe(false)
+
+    appA.dispose()
+    appB.dispose()
+    hostA.remove()
+    hostB.remove()
+  })
+})
+
 interface AutoplayState {
   carousel: carousel.CarouselState
 }
