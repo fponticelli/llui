@@ -145,3 +145,33 @@
     color: var(--foreground);
   }
 }
+
+/*
+ * Forced-colors chart fill patterns, referenced by `ChartMark`'s
+ * `fill-(--llui-chart-fill-<cue>)` utilities (#264).
+ *
+ * These are declared as PLAIN CSS custom properties, not embedded directly
+ * as `fill-[url(#llui-chart-pattern-<cue>)]` Tailwind arbitrary values,
+ * because Tailwind v4's content scanner does not reliably candidate-detect
+ * an arbitrary value containing an unescaped `#` inside a long
+ * multi-variant chained utility (measured: the whole utility silently drops
+ * from the compiled output, and every bar/area series fell back to
+ * `fill: CanvasText` again — the exact bug this fix exists to close, this
+ * time hidden behind a passing `tailwind-classes.test.ts`, since that check
+ * compiles a candidate LIST directly rather than scanning it out of source).
+ * Percent-encoding the `#` (`url(%23...)`) sidesteps the scanner but breaks
+ * the CSS itself: an unquoted `url(%23id)` is a RELATIVE URL, not a
+ * same-document fragment reference, so the browser requests a nonexistent
+ * path instead of resolving the local `<pattern>`. Tailwind's `(--custom-
+ * property)` PAREN reference syntax (already used by `fill-(--mark-color)`
+ * in this same file) needs no bracket-content scanning at all — it just
+ * emits `var(--name)` — so the pattern reference lives here instead, in
+ * ordinary CSS the Tailwind build passes through unscanned.
+ */
+:root {
+  --llui-chart-fill-solid: CanvasText;
+  --llui-chart-fill-short-dash: url('#llui-chart-pattern-short-dash');
+  --llui-chart-fill-dot: url('#llui-chart-pattern-dot');
+  --llui-chart-fill-long-dash: url('#llui-chart-pattern-long-dash');
+  --llui-chart-fill-dash-dot: url('#llui-chart-pattern-dash-dot');
+}

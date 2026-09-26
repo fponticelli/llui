@@ -38,6 +38,7 @@ import {
 } from '@llui/dom'
 import type { Mountable, Renderable, Send, Signal } from '@llui/dom'
 import * as chartC from '@llui/components/chart'
+import { chartForcedColorPatterns } from '@llui/components/chart'
 import { sectionGroup, card } from '../shared/ui'
 
 /** The curve set, taken from the machine's own type so it cannot drift. */
@@ -281,6 +282,10 @@ function plot(
               // at, and what a screen reader announces for the whole chart.
               svgTitle({ ...parts.title }, [text(state.at('label'))]),
               svgDesc({ ...parts.desc }, [text(state.at('description'))]),
+              // Static, stateless <defs> — the forced-colors fill patterns
+              // bar/area marks reference by id (see data-display.css's
+              // matching comment on the same `data-series-cue` rules).
+              chartForcedColorPatterns(),
 
               // Grid UNDER the marks, labels OVER them. In polar the value axis
               // runs straight through the plot, so a label layer drawn first is

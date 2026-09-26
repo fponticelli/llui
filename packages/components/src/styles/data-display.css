@@ -743,14 +743,57 @@
   }
 
   [data-scope='chart'][data-part='mark'][data-mark='bar'],
-  [data-scope='chart'][data-part='mark'][data-mark='area'],
-  [data-scope='chart'][data-part='dot'] {
+  [data-scope='chart'][data-part='mark'][data-mark='area'] {
+    /* Fallback for a mark whose `data-series-cue` is absent or unrecognized —
+       every real cue below overrides this with its own PATTERN fill. */
     fill: CanvasText;
   }
 
   [data-scope='chart'][data-part='mark'][data-mark='line'] {
     fill: none;
     stroke: CanvasText;
+  }
+
+  /*
+   * `data-series-cue` is the ONE per-series-index vocabulary the chart
+   * machine assigns (`seriesCue()`), cycling five names. It already drives
+   * `stroke-dasharray` for LINE marks below — but a dash pattern on a
+   * `stroke` does nothing for a BAR/AREA mark, whose fill (not stroke) is
+   * what forced colors flattens to a uniform CanvasText: two bar series were
+   * genuinely indistinguishable (#264). Placing chartForcedColorPatterns()
+   * (from `@llui/components/chart`) once per mounted chart's `<svg>` defines
+   * five SVG `<pattern>` fills under these SAME cue names, so bar/area marks
+   * get a real redundant cue too — solid fill, two hatch angles, a dot
+   * pattern, and a crosshatch. A DOT marker instead varies (radius, filled vs
+   * hollow, stroke dash) — a fill pattern is illegible at marker size, so this
+   * is the "outline vs solid vs hatched" alternative the same accessibility
+   * requirement calls for, sized so five ADJACENT dots at typical chart mark
+   * spacing (Data Viz #1: the axis' `--llui-space-*` steps run 8px+) stay
+   * legible rather than overlapping.
+   */
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='solid'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='solid'] {
+    fill: CanvasText;
+  }
+
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='short-dash'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='short-dash'] {
+    fill: url(#llui-chart-pattern-short-dash);
+  }
+
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='dot'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='dot'] {
+    fill: url(#llui-chart-pattern-dot);
+  }
+
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='long-dash'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='long-dash'] {
+    fill: url(#llui-chart-pattern-long-dash);
+  }
+
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='dash-dot'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='dash-dot'] {
+    fill: url(#llui-chart-pattern-dash-dot);
   }
 
   [data-scope='chart'] [data-series-cue='solid'] {
@@ -771,6 +814,49 @@
 
   [data-scope='chart'] [data-series-cue='dash-dot'] {
     stroke-dasharray: 10 3 2 3;
+  }
+
+  /* A vertex/marker DOT: fill pattern is illegible at marker size, so the
+     redundant cue is (radius, filled vs hollow, stroke dash) instead — five
+     genuinely distinct treatments, not five shades of the same filled disc. */
+  [data-scope='chart'][data-part='dot'][data-series-cue='solid'] {
+    r: 4px;
+    fill: CanvasText;
+    stroke: Canvas;
+    stroke-width: 2px;
+    stroke-dasharray: none;
+  }
+
+  [data-scope='chart'][data-part='dot'][data-series-cue='short-dash'] {
+    r: 5px;
+    fill: CanvasText;
+    stroke: Canvas;
+    stroke-width: 2px;
+    stroke-dasharray: 2 2;
+  }
+
+  [data-scope='chart'][data-part='dot'][data-series-cue='dot'] {
+    r: 5px;
+    fill: Canvas;
+    stroke: CanvasText;
+    stroke-width: 2px;
+    stroke-dasharray: none;
+  }
+
+  [data-scope='chart'][data-part='dot'][data-series-cue='long-dash'] {
+    r: 6px;
+    fill: CanvasText;
+    stroke: Canvas;
+    stroke-width: 3px;
+    stroke-dasharray: none;
+  }
+
+  [data-scope='chart'][data-part='dot'][data-series-cue='dash-dot'] {
+    r: 3px;
+    fill: Canvas;
+    stroke: CanvasText;
+    stroke-width: 1.5px;
+    stroke-dasharray: 1 1;
   }
 
   [data-scope='chart'][data-part='grid'] {

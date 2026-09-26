@@ -15,6 +15,7 @@ import * as avatar from '@llui/components/avatar'
 import * as breadcrumbs from '@llui/components/breadcrumbs'
 import * as carousel from '@llui/components/carousel'
 import * as chart from '@llui/components/chart'
+import { chartForcedColorPatterns } from '@llui/components/chart'
 import * as collapsible from '@llui/components/collapsible'
 import * as marquee from '@llui/components/marquee'
 import * as meter from '@llui/components/meter'
@@ -324,13 +325,20 @@ const carouselAdapter: Adapter = (host, _scenario, scenarioCase) =>
     },
   )
 
+// THREE bar and THREE area series (#264): the redundant forced-colors cue
+// (a fill pattern per data-series-cue) only proves anything with enough
+// same-mark series that a flat `fill: CanvasText` would make them identical.
 const chartSeries = [
-  { key: 'revenue', label: 'Revenue', mark: 'bar' as const },
-  { key: 'cost', label: 'Cost', mark: 'line' as const },
+  { key: 'bar1', label: 'Bar A', mark: 'bar' as const },
+  { key: 'bar2', label: 'Bar B', mark: 'bar' as const },
+  { key: 'bar3', label: 'Bar C', mark: 'bar' as const },
+  { key: 'area1', label: 'Area A', mark: 'area' as const },
+  { key: 'area2', label: 'Area B', mark: 'area' as const },
+  { key: 'area3', label: 'Area C', mark: 'area' as const },
 ]
 const chartRows: chart.ChartRow[] = [
-  { label: 'Q1', values: { revenue: 12, cost: 8 } },
-  { label: 'Q2', values: { revenue: 18, cost: 11 } },
+  { label: 'Q1', values: { bar1: 12, bar2: 9, bar3: 6, area1: 14, area2: 10, area3: 7 } },
+  { label: 'Q2', values: { bar1: 18, bar2: 13, bar3: 8, area1: 20, area2: 15, area3: 9 } },
 ]
 
 const chartAdapter: Adapter = (host, _scenario, scenarioCase) =>
@@ -349,7 +357,8 @@ const chartAdapter: Adapter = (host, _scenario, scenarioCase) =>
       return ChartContainer({ ...parts.root }, [
         ChartSvg({ ...parts.svg }, [
           ChartTitle({ ...parts.title }, [text(stringValue(scenarioCase.input, 'label', 'Chart'))]),
-          ChartDesc({ ...parts.desc }, [text('Two-series chart')]),
+          ChartDesc({ ...parts.desc }, [text('Six-series chart (three bar, three area)')]),
+          chartForcedColorPatterns(),
           ChartLayer({ ...parts.layer }, [
             each(parts.gridLines, {
               key: (line) => String(line.value),

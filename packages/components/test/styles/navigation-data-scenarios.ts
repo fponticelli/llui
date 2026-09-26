@@ -181,8 +181,12 @@ export const navigationDataScenarios = {
     [
       caseOf(
         'default',
-        'Two data series',
-        { state: 'default', label: 'Quarterly revenue', series: ['Revenue', 'Cost'] },
+        'Six data series (three bar, three area)',
+        {
+          state: 'default',
+          label: 'Quarterly revenue',
+          series: ['Bar A', 'Bar B', 'Bar C', 'Area A', 'Area B', 'Area C'],
+        },
         [axis.dark, axis.forced],
       ),
       caseOf('active', 'Active series', {

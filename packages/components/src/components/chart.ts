@@ -1,5 +1,5 @@
-import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import { elNS, tagSend } from '@llui/dom'
+import type { Mountable, Send, Signal } from '@llui/dom'
 import { deriveOnce } from '../utils/derive.js'
 import { allFiniteNumbers, finiteBound, positiveFiniteOrDefault } from '../utils/number.js'
 import {
@@ -70,6 +70,52 @@ const SERIES_CUES: readonly ChartSeriesCue[] = [
 function seriesCue(state: ChartState, key: string): ChartSeriesCue {
   const index = state.series.findIndex((series) => series.key === key)
   return SERIES_CUES[index < 0 ? 0 : index % SERIES_CUES.length]!
+}
+
+/**
+ * Five SVG `<pattern>` fills, one per {@link ChartSeriesCue} name — the SAME
+ * cue vocabulary `data-series-cue` already carries on every mark. A skin's
+ * `forced-colors` rule maps `[data-mark='bar'][data-series-cue='dot']` (say)
+ * to `fill: url(#llui-chart-pattern-dot)`, so a bar/area mark gets a REAL
+ * redundant cue: `fill: CanvasText` alone makes every bar/area series under
+ * `forced-colors: active` paint identically, since forced colors flattens
+ * author colors uniformly (#264) — a dash pattern (already used for LINE
+ * marks) does nothing for a filled shape's fill.
+ *
+ * Pure, static, stateless markup — not part of `connect()`'s reactive parts,
+ * because it never varies with data or state. Place it once as the first
+ * child of `parts.svg` in either skin; both `@llui/components`'s baseline
+ * stylesheet and the registry's Tailwind recipe reference these exact ids, so
+ * neither depends on the other — both depend on this one shared, neutral
+ * definition. The five ids are stable across every mounted chart instance
+ * ON PURPOSE: their content never varies with data, so two chart instances
+ * both defining `id="llui-chart-pattern-dot"` resolve to visually identical
+ * patterns regardless of which instance's element the browser picks.
+ */
+export function chartForcedColorPatterns(): Mountable {
+  const swatch = (id: string, content: readonly Mountable[]): Mountable =>
+    elNS('pattern', { id, patternUnits: 'userSpaceOnUse', width: 8, height: 8 }, content)
+  const tile = (fill: string): Mountable => elNS('rect', { width: 8, height: 8, fill })
+  return elNS('defs', {}, [
+    swatch('llui-chart-pattern-solid', [tile('CanvasText')]),
+    swatch('llui-chart-pattern-short-dash', [
+      tile('Canvas'),
+      elNS('path', { d: 'M0 4H8', stroke: 'CanvasText', 'stroke-width': 2 }),
+    ]),
+    swatch('llui-chart-pattern-dot', [
+      tile('Canvas'),
+      elNS('circle', { cx: 2, cy: 2, r: 1.4, fill: 'CanvasText' }),
+      elNS('circle', { cx: 6, cy: 6, r: 1.4, fill: 'CanvasText' }),
+    ]),
+    swatch('llui-chart-pattern-long-dash', [
+      tile('Canvas'),
+      elNS('path', { d: 'M0 0L8 8', stroke: 'CanvasText', 'stroke-width': 3 }),
+    ]),
+    swatch('llui-chart-pattern-dash-dot', [
+      tile('Canvas'),
+      elNS('path', { d: 'M0 0L8 8M8 0L0 8', stroke: 'CanvasText', 'stroke-width': 1.5 }),
+    ]),
+  ])
 }
 
 /**
