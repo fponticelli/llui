@@ -5,37 +5,33 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { createServer, type Alias, type ViteDevServer } from 'vite'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { sourceAliasesFromExports } from '../../scripts/lib/vite-source-aliases.mjs'
 
 const repoRoot = resolve(import.meta.dirname, '../..')
-const componentsSource = resolve(repoRoot, 'packages/components/src')
 
+// DERIVED from each package's own `exports` map, never hand-copied (#264): a
+// hand-written `@llui/components/(.+)` -> `src/components/$1.ts` catch-all
+// assumed every subpath lived under `src/components/`, which broke silently
+// the moment `@llui/components/icon` shipped from `src/icon.ts` instead — Vite
+// resolved nothing and the six `registryTailwind` cases importing it (through
+// the registry's icon components) timed out rather than erroring. See
+// `scripts/lib/vite-source-aliases.mjs` for the derivation and its own tests.
 const sourceAliases: Alias[] = [
-  {
-    find: /^@llui\/components\/patterns\/(.+)$/,
-    replacement: `${componentsSource}/patterns/$1.ts`,
-  },
-  {
-    find: /^@llui\/components\/styles\/(.+)$/,
-    replacement: `${componentsSource}/styles/$1`,
-  },
-  {
-    find: '@llui/components/styles',
-    replacement: `${componentsSource}/styles/index.ts`,
-  },
-  {
-    find: /^@llui\/components\/utils$/,
-    replacement: `${componentsSource}/utils/index.ts`,
-  },
-  {
-    find: /^@llui\/components\/(.+)$/,
-    replacement: `${componentsSource}/components/$1.ts`,
-  },
-  { find: '@llui/components', replacement: `${componentsSource}/index.ts` },
-  { find: '@llui/dom', replacement: resolve(repoRoot, 'packages/dom/src/index.ts') },
-  {
-    find: '@llui/interactions',
-    replacement: resolve(repoRoot, 'packages/interactions/src/index.ts'),
-  },
+  ...sourceAliasesFromExports({
+    packageName: '@llui/components',
+    packageJsonPath: resolve(repoRoot, 'packages/components/package.json'),
+    srcDir: resolve(repoRoot, 'packages/components/src'),
+  }),
+  ...sourceAliasesFromExports({
+    packageName: '@llui/dom',
+    packageJsonPath: resolve(repoRoot, 'packages/dom/package.json'),
+    srcDir: resolve(repoRoot, 'packages/dom/src'),
+  }),
+  ...sourceAliasesFromExports({
+    packageName: '@llui/interactions',
+    packageJsonPath: resolve(repoRoot, 'packages/interactions/package.json'),
+    srcDir: resolve(repoRoot, 'packages/interactions/src'),
+  }),
 ]
 
 interface Demo {
