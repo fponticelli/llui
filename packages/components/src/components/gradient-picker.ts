@@ -20,9 +20,9 @@ import {
 import {
   update as colorPickerUpdate,
   connect as colorPickerConnect,
-  toCss as colorPickerToCss,
   cssColorToPickerColor,
   pickerColorToCssColor,
+  pickerColorToCss,
   DEFAULT_MAX_CHROMA,
 } from './color-picker.js'
 import type {
@@ -451,6 +451,10 @@ export function pickerStateOf(state: GradientPickerState): ColorPickerState {
     alpha: stop.alpha,
     disabled: state.disabled,
     maxChroma: state.maxChroma,
+    // The embedded picker's eyedropper isn't wired up by gradient-picker
+    // (its own review pass, not this lane's) — always "unsupported" so the
+    // derived state stays a valid ColorPickerState.
+    eyeDropperSupported: false,
   }
 }
 
@@ -583,13 +587,7 @@ export function update(
 // ── Pure rendering helpers: toCss / colorAt ─────────────────────────────────
 
 function formatStopColor(stop: { color: PickerColor; alpha: number }): string {
-  const shim: ColorPickerState = {
-    color: stop.color,
-    alpha: stop.alpha,
-    disabled: false,
-    maxChroma: DEFAULT_MAX_CHROMA,
-  }
-  return colorPickerToCss(shim)
+  return pickerColorToCss(stop.color, stop.alpha)
 }
 
 function fmtNum(n: number): string {

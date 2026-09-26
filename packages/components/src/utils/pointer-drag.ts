@@ -36,55 +36,79 @@ export interface PointerDragHandlers {
   onPointerMove: (e: PointerEvent) => void
   onPointerUp: (e: PointerEvent) => void
   onPointerCancel: (e: PointerEvent) => void
+  /** The browser can revoke pointer capture without ever firing `pointerup`/
+   * `pointercancel` (an OS-level interruption, a nested capture request, …).
+   * Left unwired, `dragging` would stay `true` forever and a later, UNRELATED
+   * pointer's `pointermove` would be misread as a continuation of this drag.
+   * Spread onto the same element as the other four. */
+  onLostPointerCapture: (e: PointerEvent) => void
 }
 
 /**
- * Build the four pointer handlers for one drag track. One call per live
- * `connect()` instance — `dragging` is closure-scoped per instance, the same
- * shape as this package's other per-instance mutable state (e.g.
- * `color-picker`'s eyedropper `pendingEyeDropper` AbortController).
+ * Build the five pointer handlers for one drag track. One call per live
+ * `connect()` instance — `dragging`/`activePointerId` are closure-scoped per
+ * instance, the same shape as this package's other per-instance mutable state
+ * (e.g. `color-picker`'s eyedropper `pendingEyeDropper` AbortController).
  *
- * - Primary button only (`e.button !== 0` on `pointerdown` is ignored —
- *   `pointermove`/`pointerup` never carry a meaningful `button`, so they are
- *   never re-checked; a drag that started validly keeps running).
+ * - Primary button only on `pointerdown` (`e.button !== 0` is ignored), AND
+ *   only when no drag is already live — a second finger/pointer touching
+ *   down mid-drag is ignored rather than hijacking `activePointerId`.
+ * - Every subsequent event (`pointermove`/`pointerup`/`pointercancel`/
+ *   `onLostPointerCapture`) is checked against `activePointerId`: a second
+ *   pointer's events never affect a drag it didn't start.
  * - `setPointerCapture` on `pointerdown`'s `currentTarget`, so `pointermove`
  *   keeps firing even once the pointer leaves the element's bounds — a
  *   plain drag with no capture stalls out at the track's edge instead of
  *   saturating like a native `<input type="range">`.
  * - Released on `pointerup`/`pointercancel`, guarded by `hasPointerCapture`
  *   so releasing twice (or without ever capturing) is a harmless no-op.
+ * - `dragging` is unconditionally reset on `onLostPointerCapture` for the
+ *   active pointer, even though that handler never calls `release()` itself
+ *   (capture is already gone by definition when this fires).
  */
 export function pointerDragHandlers(callbacks: PointerDragCallbacks): PointerDragHandlers {
   let dragging = false
+  let activePointerId: number | null = null
 
   const release = (e: PointerEvent): void => {
     const target = e.currentTarget as Element
     if (target.hasPointerCapture(e.pointerId)) target.releasePointerCapture(e.pointerId)
   }
 
+  const end = (e: PointerEvent): void => {
+    dragging = false
+    activePointerId = null
+    callbacks.onDragEnd?.(e)
+  }
+
+  const isActive = (e: PointerEvent): boolean => dragging && e.pointerId === activePointerId
+
   return {
     onPointerDown: (e) => {
-      if (callbacks.isDisabled() || e.button !== 0) return
+      if (dragging || callbacks.isDisabled() || e.button !== 0) return
       dragging = true
+      activePointerId = e.pointerId
       ;(e.currentTarget as Element).setPointerCapture(e.pointerId)
       callbacks.onDragStart?.(e)
       callbacks.onDrag(e)
     },
     onPointerMove: (e) => {
-      if (!dragging) return
+      if (!isActive(e)) return
       callbacks.onDrag(e)
     },
     onPointerUp: (e) => {
-      if (!dragging) return
-      dragging = false
+      if (!isActive(e)) return
       release(e)
-      callbacks.onDragEnd?.(e)
+      end(e)
     },
     onPointerCancel: (e) => {
-      if (!dragging) return
-      dragging = false
+      if (!isActive(e)) return
       release(e)
-      callbacks.onDragEnd?.(e)
+      end(e)
+    },
+    onLostPointerCapture: (e) => {
+      if (!isActive(e)) return
+      end(e)
     },
   }
 }

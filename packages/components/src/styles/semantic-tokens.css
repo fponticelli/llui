@@ -29,6 +29,11 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
+  /* A caution/attention cue distinct from `--destructive` (an error) and the
+   * `--chart-*` scale (no fixed meaning) — `color-picker`'s out-of-gamut
+   * indicator is its first consumer. Border/ring use only; not paired with a
+   * `-foreground` token, so it is outside `token-contrast.test.ts`'s scope. */
+  --warning: oklch(0.75 0.15 70);
 
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);

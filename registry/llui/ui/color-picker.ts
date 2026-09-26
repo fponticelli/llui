@@ -71,14 +71,17 @@ export const ColorPickerAlphaSlider = classPart(
 )
 export const ColorPickerHexInput = classPart(input, `${inputRecipe} font-mono uppercase`)
 /** Sits over a checkerboard (like the alpha track) so a translucent color
- * reads as transparent rather than as a lighter opaque one; ringed amber
+ * reads as transparent rather than as a lighter opaque one; ringed with the
+ * shared `--warning` token (never a raw Tailwind color like `amber-500` —
+ * a hardcoded accent can't follow a theme's own warning color, and this one
+ * already exists precisely for this kind of "notice, not an error" cue)
  * when the machine reports `data-out-of-gamut` (an OKLCH color outside
  * sRGB — the swatch itself is always gamut-mapped/clipped for display).
  * `data-out-of-gamut` is published on the ROOT, not on this element, hence
  * `group-data-out-of-gamut` rather than a plain `data-out-of-gamut` variant. */
 export const ColorPickerPreview = classPart(
   div,
-  'size-9 shrink-0 rounded-md border bg-[repeating-conic-gradient(#e5e5e5_0_25%,transparent_0_50%)] bg-[length:8px_8px] bg-clip-padding group-data-out-of-gamut/color-picker:ring-2 group-data-out-of-gamut/color-picker:ring-amber-500 group-data-out-of-gamut/color-picker:ring-offset-2 group-data-out-of-gamut/color-picker:ring-offset-background',
+  'size-9 shrink-0 rounded-md border bg-[repeating-conic-gradient(#e5e5e5_0_25%,transparent_0_50%)] bg-[length:8px_8px] bg-clip-padding group-data-out-of-gamut/color-picker:ring-2 group-data-out-of-gamut/color-picker:ring-warning group-data-out-of-gamut/color-picker:ring-offset-2 group-data-out-of-gamut/color-picker:ring-offset-background',
 )
 export const ColorPickerSwatchGroup = classPart(div, 'flex flex-wrap gap-1.5')
 export const ColorPickerSwatch = classPart(

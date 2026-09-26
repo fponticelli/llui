@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
+import { component, mountApp, button } from '@llui/dom'
 import {
   init,
   update,
@@ -16,12 +17,14 @@ import {
   oklchToHsvPreserving,
   supportsEyeDropper,
   openEyeDropper,
+  eyeDropperSupportMount,
   oklchPlanePixels,
   paintOklchPlane,
   DEFAULT_MAX_CHROMA,
   type ColorPickerState,
+  type ColorPickerMsg,
 } from '../../src/components/color-picker'
-import { hslToHsv, hsvToHsl } from '../../src/utils/color'
+import { hslToHsv, hsvToHsl, inSrgbGamut } from '../../src/utils/color'
 import { rootSignal, signalOf, read } from '../_signal'
 
 describe('color-picker reducer (HSV model, default)', () => {
@@ -706,6 +709,38 @@ describe('oklchPlanePixels', () => {
   it('is a safe no-op for a zero-sized plane', () => {
     expect(oklchPlanePixels(0, 0, 0)).toHaveLength(0)
   })
+
+  // Finding D: the per-row binary search (`gamutEdgeIndex`) assumes in-gamut
+  // chroma forms a PREFIX of the row and skips computing every pixel past the
+  // edge it finds. That assumption — and the search itself — is only worth
+  // trusting if it agrees with the naive "ask `inSrgbGamut` per pixel"
+  // ground truth everywhere, not just on the one hue the original bug report
+  // used. This checks alpha (in/out of gamut) byte for byte across a spread
+  // of hues, including ones outside the ~5/11880-row exception this file's
+  // `gamut mapping` describe block measures and documents.
+  it('the fast per-row edge search agrees with a naive per-pixel inSrgbGamut check (byte for byte, several hues)', () => {
+    const width = 64
+    const height = 64
+    const maxChroma = 0.37
+    for (const hue of [0, 30, 90, 145, 180, 243, 265, 300, 359]) {
+      const fast = oklchPlanePixels(hue, width, height, maxChroma)
+      for (let y = 0; y < height; y++) {
+        const l = 1 - y / (height - 1)
+        for (let x = 0; x < width; x++) {
+          const c = (x / (width - 1)) * maxChroma
+          const idx = (y * width + x) * 4
+          const expectedOpaque = inSrgbGamut({ l, c, h: hue })
+          const actualOpaque = fast[idx + 3] === 255
+          if (actualOpaque !== expectedOpaque) {
+            throw new Error(
+              `hue=${hue} x=${x} y=${y} l=${l.toFixed(4)} c=${c.toFixed(4)}: ` +
+                `fast said ${actualOpaque ? 'in' : 'out'}, naive said ${expectedOpaque ? 'in' : 'out'}`,
+            )
+          }
+        }
+      }
+    }
+  })
 })
 
 describe('paintOklchPlane', () => {
@@ -713,7 +748,7 @@ describe('paintOklchPlane', () => {
     const canvas = document.createElement('canvas')
     canvas.width = 0
     canvas.height = 0
-    expect(() => paintOklchPlane(canvas, 0)).not.toThrow()
+    expect(() => paintOklchPlane(canvas, init({ model: 'oklch' }))).not.toThrow()
   })
 
   it('paints into a real canvas 2D context when available', () => {
@@ -722,7 +757,17 @@ describe('paintOklchPlane', () => {
     canvas.height = 10
     // jsdom has no real 2D canvas context; guard so this suite still proves
     // the function is a no-op rather than a crash in that environment.
-    expect(() => paintOklchPlane(canvas, 0)).not.toThrow()
+    expect(() => paintOklchPlane(canvas, init({ model: 'oklch' }))).not.toThrow()
+  })
+
+  it('reads hue from the active model and maxChroma from state, not separate args', () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 4
+    canvas.height = 4
+    const state = init({ model: 'oklch', oklch: { l: 0.6, c: 0.1, h: 200 }, maxChroma: 0.2 })
+    // No throw either way; the real assertion is the call SHAPE (state, not
+    // hue/maxChroma positional args) compiling at all.
+    expect(() => paintOklchPlane(canvas, state)).not.toThrow()
   })
 })
 
@@ -783,6 +828,14 @@ describe('eyedropper', () => {
     await expect(openEyeDropper()).rejects.toThrow('boom')
   })
 
+  /** `eyeDropperSupported` is ALWAYS `false` from `init()` (finding E) — a
+   * test that needs the trigger enabled builds the state directly, the same
+   * way `eyeDropperSupportMount` would after a real mount. */
+  const supportedState = (opts: Parameters<typeof init>[0] = {}): ColorPickerState => ({
+    ...init(opts),
+    eyeDropperSupported: true,
+  })
+
   it('eyeDropperTrigger onClick opens the dropper and dispatches setColor on success', async () => {
     let resolveOpen: (v: { sRGBHex: string }) => void = () => {}
     window.EyeDropper = class {
@@ -793,7 +846,7 @@ describe('eyedropper', () => {
       }
     } as unknown as typeof window.EyeDropper
     const send = vi.fn()
-    const pc = connect(signalOf(init()), send)
+    const pc = connect(signalOf(supportedState()), send)
     pc.eyeDropperTrigger.onClick(new MouseEvent('click'))
     resolveOpen({ sRGBHex: '#00ff00' })
     await vi.waitFor(() => {
@@ -801,7 +854,7 @@ describe('eyedropper', () => {
     })
   })
 
-  it('a second click aborts the pending pick instead of stacking sends', async () => {
+  it('a second click CANCELS the pending pick (toggle-cancel) rather than restarting it', async () => {
     const calls: Array<{ signal?: AbortSignal; resolve: (r: { sRGBHex: string }) => void }> = []
     window.EyeDropper = class {
       async open(opts?: { signal?: AbortSignal }): Promise<{ sRGBHex: string }> {
@@ -811,39 +864,230 @@ describe('eyedropper', () => {
       }
     } as unknown as typeof window.EyeDropper
     const send = vi.fn()
-    const pc = connect(signalOf(init()), send)
+    const pc = connect(signalOf(supportedState()), send)
 
     pc.eyeDropperTrigger.onClick(new MouseEvent('click'))
     expect(calls).toHaveLength(1)
     expect(calls[0]?.signal?.aborted).toBe(false)
 
+    // Second click: CANCELS the pending pick. No second EyeDropper.open()
+    // call — a toggle button that reopens instead of closing would surprise
+    // a user who clicked it to back out.
     pc.eyeDropperTrigger.onClick(new MouseEvent('click'))
-    expect(calls).toHaveLength(2)
-    // The FIRST request's controller is aborted by the second click...
+    expect(calls).toHaveLength(1)
     expect(calls[0]?.signal?.aborted).toBe(true)
-    expect(calls[1]?.signal?.aborted).toBe(false)
 
-    // ...and even if that first (superseded) EyeDropper call still resolves —
-    // a real implementation would reject on an aborted signal, but a hostile
-    // or buggy one might not — its STALE result must never reach `send`.
+    // Even if the cancelled EyeDropper call still resolves — a real
+    // implementation rejects on an aborted signal, but a hostile or buggy
+    // one might not — its STALE result must never reach `send`.
     calls[0]?.resolve({ sRGBHex: '#111111' })
     await Promise.resolve()
     await Promise.resolve()
     expect(send).not.toHaveBeenCalled()
 
-    // Only the SECOND (live) request's result reaches `send`.
+    // A THIRD click starts a genuinely new pick.
+    pc.eyeDropperTrigger.onClick(new MouseEvent('click'))
+    expect(calls).toHaveLength(2)
     calls[1]?.resolve({ sRGBHex: '#222222' })
     await vi.waitFor(() => {
       expect(send).toHaveBeenCalledWith({ type: 'setColor', color: '#222222' })
     })
-    expect(send).toHaveBeenCalledTimes(1)
   })
 
   it('onClick is a no-op when disabled', () => {
     const send = vi.fn()
-    const pc = connect(signalOf(init({ disabled: true })), send)
+    const pc = connect(signalOf(supportedState({ disabled: true })), send)
     pc.eyeDropperTrigger.onClick(new MouseEvent('click'))
     expect(send).not.toHaveBeenCalled()
+  })
+
+  it('onClick is a no-op when unsupported (the default init() state)', () => {
+    window.EyeDropper = class {
+      async open(): Promise<{ sRGBHex: string }> {
+        return { sRGBHex: '#00ff00' }
+      }
+    } as unknown as typeof window.EyeDropper
+    const send = vi.fn()
+    const pc = connect(signalOf(init()), send)
+    pc.eyeDropperTrigger.onClick(new MouseEvent('click'))
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('a genuine failure (not AbortError) clears pending state and dispatches eyeDropperFailed, never an unhandled rejection', async () => {
+    window.EyeDropper = class {
+      async open(): Promise<{ sRGBHex: string }> {
+        throw new Error('permission denied')
+      }
+    } as unknown as typeof window.EyeDropper
+    const send = vi.fn()
+    const pc = connect(signalOf(supportedState()), send)
+    pc.eyeDropperTrigger.onClick(new MouseEvent('click'))
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith({
+        type: 'eyeDropperFailed',
+        message: expect.stringContaining('permission denied') as unknown as string,
+      })
+    })
+    // Pending was cleared — a THIRD click starts a fresh pick rather than
+    // reading as "cancel" (there is nothing left to cancel).
+    let opened = 0
+    window.EyeDropper = class {
+      async open(): Promise<{ sRGBHex: string }> {
+        opened++
+        return { sRGBHex: '#00ff00' }
+      }
+    } as unknown as typeof window.EyeDropper
+    pc.eyeDropperTrigger.onClick(new MouseEvent('click'))
+    await vi.waitFor(() => expect(opened).toBe(1))
+  })
+
+  it('update: eyeDropperFailed is an observable no-op (nothing to store)', () => {
+    const s = supportedState()
+    expect(update(s, { type: 'eyeDropperFailed', message: 'boom' })[0]).toBe(s)
+  })
+
+  it('update: eyeDropperFailed applies even while disabled', () => {
+    const s = supportedState({ disabled: true })
+    expect(update(s, { type: 'eyeDropperFailed', message: 'boom' })[0]).toBe(s)
+  })
+})
+
+describe('eyeDropperSupported (finding E: state, not consumer feature-detection)', () => {
+  it('init() always starts unsupported, regardless of the real browser', () => {
+    expect(init().eyeDropperSupported).toBe(false)
+  })
+
+  it('setEyeDropperSupported flips it, and is a no-op if already at that value', () => {
+    const s = init()
+    const [flipped] = update(s, { type: 'setEyeDropperSupported', supported: true })
+    expect(flipped.eyeDropperSupported).toBe(true)
+    const [same] = update(flipped, { type: 'setEyeDropperSupported', supported: true })
+    expect(same).toBe(flipped)
+  })
+
+  it('setEyeDropperSupported applies even while disabled', () => {
+    const s = init({ disabled: true })
+    const [flipped] = update(s, { type: 'setEyeDropperSupported', supported: true })
+    expect(flipped.eyeDropperSupported).toBe(true)
+  })
+
+  it('the trigger publishes hidden/disabled/data-unsupported from state, never from its own feature-detect', () => {
+    const p = connect(rootSignal(), vi.fn())
+    const unsupported = init()
+    const supported = { ...init(), eyeDropperSupported: true }
+    expect(read(p.eyeDropperTrigger.hidden, unsupported)).toBe(true)
+    expect(read(p.eyeDropperTrigger.disabled, unsupported)).toBe(true)
+    expect(read(p.eyeDropperTrigger['data-unsupported'], unsupported)).toBe('')
+    expect(read(p.eyeDropperTrigger.hidden, supported)).toBe(false)
+    expect(read(p.eyeDropperTrigger.disabled, supported)).toBe(false)
+    expect(read(p.eyeDropperTrigger['data-unsupported'], supported)).toBeUndefined()
+  })
+
+  it('the picker-level disabled flag ALSO disables the trigger even when supported', () => {
+    const p = connect(rootSignal(), vi.fn())
+    const s = { ...init({ disabled: true }), eyeDropperSupported: true }
+    expect(read(p.eyeDropperTrigger.disabled, s)).toBe(true)
+    expect(read(p.eyeDropperTrigger.hidden, s)).toBe(false)
+  })
+})
+
+describe('eyeDropperSupportMount (finding E: the one mount-time helper)', () => {
+  const originalEyeDropper = window.EyeDropper
+  afterEach(() => {
+    if (originalEyeDropper === undefined) Reflect.deleteProperty(window, 'EyeDropper')
+    else window.EyeDropper = originalEyeDropper
+  })
+
+  it('dispatches setEyeDropperSupported(true) once mounted when the browser supports it', async () => {
+    window.EyeDropper = class {
+      async open(): Promise<{ sRGBHex: string }> {
+        return { sRGBHex: '#000000' }
+      }
+    } as unknown as typeof window.EyeDropper
+    const send = vi.fn<(msg: ColorPickerMsg) => void>()
+    const def = component<ColorPickerState, ColorPickerMsg, never>({
+      name: 'EyeDropperSupportMountTest',
+      init: () => [init(), []],
+      update: (s, msg) => update(s, msg),
+      view: () => [eyeDropperSupportMount(send)],
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const app = mountApp(container, def)
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith({ type: 'setEyeDropperSupported', supported: true })
+    })
+    app.dispose()
+    container.remove()
+  })
+
+  it('dispatches setEyeDropperSupported(false) when unsupported', async () => {
+    Reflect.deleteProperty(window, 'EyeDropper')
+    const send = vi.fn()
+    const def = component<ColorPickerState, ColorPickerMsg, never>({
+      name: 'EyeDropperSupportMountTestFalse',
+      init: () => [init(), []],
+      update: (s, msg) => update(s, msg),
+      view: () => [eyeDropperSupportMount((msg) => send(msg) as never)],
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const app = mountApp(container, def)
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith({ type: 'setEyeDropperSupported', supported: false })
+    })
+    app.dispose()
+    container.remove()
+  })
+})
+
+describe('eyedropper: mounted disposal (finding F — mount, open, dispose, resolve -> no send)', () => {
+  const originalEyeDropper = window.EyeDropper
+  afterEach(() => {
+    if (originalEyeDropper === undefined) Reflect.deleteProperty(window, 'EyeDropper')
+    else window.EyeDropper = originalEyeDropper
+  })
+
+  it('a pick resolving AFTER the component is disposed never calls send', async () => {
+    let resolveOpen: (v: { sRGBHex: string }) => void = () => {}
+    window.EyeDropper = class {
+      async open(): Promise<{ sRGBHex: string }> {
+        return new Promise((resolve) => {
+          resolveOpen = resolve
+        })
+      }
+    } as unknown as typeof window.EyeDropper
+
+    const sends: ColorPickerMsg[] = []
+    const def = component<ColorPickerState, ColorPickerMsg, never>({
+      name: 'EyeDropperDisposalTest',
+      init: () => [{ ...init(), eyeDropperSupported: true }, []],
+      update: (s, msg) => update(s, msg),
+      view: ({ state, send }) => {
+        const parts = connect(state, (msg) => {
+          sends.push(msg)
+          send(msg)
+        })
+        return [button({ ...parts.eyeDropperTrigger })]
+      },
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const app = mountApp(container, def)
+    const trigger = container.querySelector('button')!
+    trigger.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+    // Mount, open (pending), DISPOSE — before the pick resolves.
+    app.dispose()
+    container.remove()
+    sends.length = 0
+
+    resolveOpen({ sRGBHex: '#00ff00' })
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(sends).toEqual([])
   })
 })
 

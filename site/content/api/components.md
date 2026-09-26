@@ -530,8 +530,9 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `alpha`                                                 | `number`                                              |
 | `disabled`                                              | `boolean`                                             |
 | `maxChroma`                                             | `number`                                              |
+| `eyeDropperSupported`                                   | `boolean`                                             |
 
-**Messages:** `setModel`, `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`, `setSv`, `nudgeSv`, `setColor`, `setOklch`, `setChroma`, `setOklchLightness`, `setLc`, `nudgeLc`
+**Messages:** `setModel`, `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`, `setSv`, `nudgeSv`, `setColor`, `setOklch`, `setChroma`, `setOklchLightness`, `setLc`, `nudgeLc`, `setEyeDropperSupported`, `eyeDropperFailed`
 
 **Init options:** `model?: ColorModel, color?: string, hsl?: Hsl, hsv?: Hsv, oklch?: Oklch, alpha?: number, disabled?: boolean, maxChroma?: number`
 
@@ -539,7 +540,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `root`, `modelToggle`, `hueSlider`, `saturationSlider`, `lightnessSlider`, `chromaSlider`, `oklchLightnessSlider`, `hexInput`, `preview`, `area`, `areaCanvas`, `areaThumb`, `alphaSlider`, `eyeDropperTrigger`, `swatchGroup`, `swatch`
 
-**Utilities:** `stateHsl()`, `stateHsv()`, `stateOklch()`, `isOutOfGamut()`, `toHex()`, `toHex8()`, `toCss()`, `colorFromPoint()`, `lcFromPoint()`, `hsvToOklchPreserving()`, `oklchToHsvPreserving()`, `supportsEyeDropper()`, `openEyeDropper()`, `oklchPlanePixels()`, `paintOklchPlane()`, `oklchHueRampGradient()`, `hslToHsv()`, `hsvToHsl()`, `sanitizeHsv()`, `sanitizeOklch()`, `pickerColorToCssColor()`, `cssColorToPickerColor()`
+**Utilities:** `stateHsl()`, `stateHsv()`, `stateOklch()`, `isOutOfGamut()`, `toHex()`, `toHex8()`, `toCss()`, `colorFromPoint()`, `lcFromPoint()`, `hsvToOklchPreserving()`, `oklchToHsvPreserving()`, `supportsEyeDropper()`, `openEyeDropper()`, `oklchPlanePixels()`, `paintOklchPlane()`, `oklchHueRampGradient()`, `hslToHsv()`, `hsvToHsl()`, `sanitizeHsv()`, `sanitizeOklch()`, `pickerColorToCssColor()`, `cssColorToPickerColor()`, `pickerColorToCss()`, `eyeDropperSupportMount()`, `areaCanvasBinding()`
 
 **Constants:** `DEFAULT_MAX_CHROMA`
 
@@ -2221,7 +2222,8 @@ function countCalendarTicks(
 ##### `cssColorAlpha()` from `@llui/components`
 
 Resolved alpha (`none` -> 1, CSS Color 4's used value for a missing
-alpha outside interpolation).
+alpha OUTSIDE interpolation). Inside {@link interpolateColor}, a missing
+alpha instead carries the OTHER endpoint's alpha — see its doc comment.
 
 ```typescript
 function cssColorAlpha(c: CssColor): number
@@ -2578,7 +2580,10 @@ simple-clipping the result into sRGB is perceptually indistinguishable
 (deltaEOK < the 0.02 JND) from the reduced color, then clip. Given an
 already-in-gamut color this returns it converted (and defensively clipped
 for float noise) rather than a no-op, so the result is always safe to hand
-straight to {@link srgbToRgb255}.
+straight to {@link srgbToRgb255}. `test/utils/color.test.ts` pins the
+converged chroma for a known out-of-gamut color as a regression value
+(this file's own binary search, not an independent oracle — see that
+test's comment for what it does and does not prove).
 
 ```typescript
 function gamutMapOklchToSrgb(ok: Oklch): Srgb
@@ -2607,7 +2612,7 @@ export declare function getNestedLayers(
 
 ##### `hslToHsv()` from `@llui/components`
 
-Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100).
+Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100), float.
 
 ```typescript
 function hslToHsv(hsl: Hsl): Hsv
@@ -2623,7 +2628,7 @@ function hslToRgb255(hsl: Hsl): Rgb255
 
 ##### `hsvToHsl()` from `@llui/components`
 
-Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100).
+Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100), float.
 
 ```typescript
 function hsvToHsl(hsv: Hsv): Hsl
@@ -2636,6 +2641,8 @@ function hsvToOklch(hsv: Hsv): Oklch
 ```
 
 ##### `hsvToRgb255()` from `@llui/components`
+
+HSV -> RGB255, via the DIRECT (not HSL-routed) float conversion.
 
 ```typescript
 function hsvToRgb255(hsv: Hsv): Rgb255
@@ -2675,10 +2682,16 @@ function inSrgbGamut(ok: Oklch, epsilon = 1e-4): boolean
 ##### `interpolateColor()` from `@llui/components`
 
 Interpolate between two colors per CSS Color 4 §12: convert both into
-`space`, resolve missing/powerless components (an achromatic endpoint's
-hue becomes the OTHER endpoint's hue), premultiply non-hue channels by
-alpha, lerp, then un-premultiply. `hueMethod` controls which way a
-hue-bearing space (`hsl`, `oklch`) rotates; ignored otherwise.
+`space`, resolve missing (`none`, or a cross-space-converted achromatic
+color's undefined) components — including alpha itself, which carries the
+OTHER endpoint's alpha when missing rather than defaulting to 1 (CSS Color
+4 §12.2's analogous-component rule applies to alpha too — `rgb(255 0 0 /
+none)` mixed with `rgb(0 0 255 / 0.2)` has alpha exactly 0.2 throughout,
+not a lerp toward 1; pinned in `test/utils/color.test.ts`) —
+premultiply non-hue channels by alpha, lerp, then un-premultiply.
+`hueMethod` controls which way a hue-bearing space (`hsl`, `oklch`)
+rotates, normalizing both hues to [0,360) FIRST (see {@link adjustHue});
+ignored for spaces with no hue.
 
 ```typescript
 function interpolateColor(
@@ -2994,11 +3007,13 @@ function oklchToSrgb(ok: Oklch): Srgb
 ##### `parseCssColor()` from `@llui/components`
 
 Parse a CSS color string into its typed model. Supports `#rgb`/`#rgba`/
-`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()` (legacy comma and modern
-space/slash, numbers and percentages), `hsl()`/`hsla()` (same two
-syntaxes), `oklch()`, `oklab()`, `none` components, `transparent`, and the
-148 CSS Color 4 named colors. Returns `null` on anything else — never
-throws.
+`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()`, `hsl()`/`hsla()` (both legacy comma
+and modern space/slash syntax, with the legacy grammar's `none`-forbidden
+and uniform-percentage-or-number rules enforced), `hwb()`, `oklch()`,
+`oklab()`, `lab()`, `lch()`, `color()` (predefined spaces `srgb`,
+`srgb-linear`, `display-p3`, `a98-rgb`, `prophoto-rgb`, `rec2020`, `xyz`,
+`xyz-d50`, `xyz-d65`), `none` components, `transparent`, and the 148 CSS
+Color 4 named colors. Returns `null` on anything else — never throws.
 
 ```typescript
 function parseCssColor(input: string): CssColor | null
@@ -3021,20 +3036,26 @@ function parseHexColor(hex: string): { rgb: Rgb255; alpha: number } | null
 
 ##### `pointerDragHandlers()` from `@llui/components`
 
-Build the four pointer handlers for one drag track. One call per live
-`connect()` instance — `dragging` is closure-scoped per instance, the same
-shape as this package's other per-instance mutable state (e.g.
-`color-picker`'s eyedropper `pendingEyeDropper` AbortController).
+Build the five pointer handlers for one drag track. One call per live
+`connect()` instance — `dragging`/`activePointerId` are closure-scoped per
+instance, the same shape as this package's other per-instance mutable state
+(e.g. `color-picker`'s eyedropper `pendingEyeDropper` AbortController).
 
-- Primary button only (`e.button !== 0` on `pointerdown` is ignored —
-  `pointermove`/`pointerup` never carry a meaningful `button`, so they are
-  never re-checked; a drag that started validly keeps running).
+- Primary button only on `pointerdown` (`e.button !== 0` is ignored), AND
+  only when no drag is already live — a second finger/pointer touching
+  down mid-drag is ignored rather than hijacking `activePointerId`.
+- Every subsequent event (`pointermove`/`pointerup`/`pointercancel`/
+  `onLostPointerCapture`) is checked against `activePointerId`: a second
+  pointer's events never affect a drag it didn't start.
 - `setPointerCapture` on `pointerdown`'s `currentTarget`, so `pointermove`
   keeps firing even once the pointer leaves the element's bounds — a
   plain drag with no capture stalls out at the track's edge instead of
   saturating like a native `<input type="range">`.
 - Released on `pointerup`/`pointercancel`, guarded by `hasPointerCapture`
   so releasing twice (or without ever capturing) is a harmless no-op.
+- `dragging` is unconditionally reset on `onLostPointerCapture` for the
+  active pointer, even though that handler never calls `release()` itself
+  (capture is already gone by definition when this fires).
 
 ```typescript
 function pointerDragHandlers(callbacks: PointerDragCallbacks): PointerDragHandlers
@@ -3253,13 +3274,15 @@ function resolveTheme(theme: Theme): ResolvedTheme
 
 ##### `rgb255ToHsl()` from `@llui/components`
 
-Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100, rounded).
+Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100), float.
 
 ```typescript
 function rgb255ToHsl(rgb: Rgb255): Hsl
 ```
 
 ##### `rgb255ToHsv()` from `@llui/components`
+
+RGB255 -> HSV, via the DIRECT (not HSL-routed) float conversion.
 
 ```typescript
 function rgb255ToHsv(rgb: Rgb255): Hsv
@@ -4021,6 +4044,10 @@ export type ColorPickerMsg =
   | { type: 'setLc'; c: number; l: number }
   /** @intent("Nudge chroma/lightness (OKLCH) by signed deltas — used by area arrow keys") */
   | { type: 'nudgeLc'; dc: number; dl: number }
+  /** @humanOnly */
+  | { type: 'setEyeDropperSupported'; supported: boolean }
+  /** @humanOnly */
+  | { type: 'eyeDropperFailed'; message: string }
 ```
 
 ##### `ComboboxAsyncStatus` from `@llui/components`
@@ -4176,11 +4203,9 @@ export type ContextMenuSubTriggerParts = MenuSubTriggerPartsOf<'context-menu'>
 
 ##### `CssColor` from `@llui/components`
 
-A color as CSS Color 4 sees it: one of five spaces, every component
-`number | null` (`null` = the `none` keyword). This is the type
-{@link parseCssColor} returns and {@link interpolateColor} operates on —
-the common currency between "a string the user typed" and "a color a
-gradient stop needs to render".
+A color as CSS Color 4 sees it. `lab()`/`lch()`/wide-gamut `color()` are
+NOT separate tags here — see the module doc — they resolve to `'oklch'` (or
+`'srgb'` for `color(srgb ...)`/`color(srgb-linear ...)`) at parse time.
 
 ```typescript
 export type CssColor =
@@ -7489,6 +7514,7 @@ export interface ColorPickerParts {
   modelToggle: {
     type: 'button'
     'aria-label': Signal<string>
+    disabled: Signal<boolean>
     'data-scope': 'color-picker'
     'data-part': 'model-toggle'
     'data-model': Signal<ColorModel>
@@ -7596,11 +7622,14 @@ export interface ColorPickerParts {
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
     onPointerCancel: (e: PointerEvent) => void
+    onLostPointerCapture: (e: PointerEvent) => void
   }
   /** Decorative `<canvas>` seam for the OKLCH area — headless, so the
-   * consumer owns creating and sizing the real `<canvas>` element and
-   * repainting it with {@link paintOklchPlane} on hue change (and on mount).
-   * Absent/inert in HSV mode. */
+   * consumer owns creating and sizing the real `<canvas>` element (give it
+   * an id and spread these props), but never its own repaint wiring: place
+   * {@link areaCanvasBinding}`(state, thatSameId)` anywhere in the view and
+   * it stays painted, on mount and on every hue/`maxChroma` change. Absent/
+   * inert in HSV mode. */
   areaCanvas: {
     'data-scope': 'color-picker'
     'data-part': 'area-canvas'
@@ -7608,10 +7637,12 @@ export interface ColorPickerParts {
   }
   /** The draggable thumb inside the 2D area. Keyboard-operable (arrows move
    * S/V or C/L depending on the active model; Shift = coarse) with
-   * role="slider" and a 2D aria-valuetext. */
+   * role="slider" and a 2D aria-valuetext. `aria-label` follows the ACTIVE
+   * model ("Saturation / Value" in HSV mode, "Chroma / Lightness" in OKLCH),
+   * not a fixed string — the axes it labels are literally different. */
   areaThumb: {
     role: 'slider'
-    'aria-label': string
+    'aria-label': Signal<string>
     'aria-valuemin': Signal<number>
     'aria-valuemax': Signal<number>
     'aria-valuenow': Signal<number>
@@ -7637,13 +7668,17 @@ export interface ColorPickerParts {
     'data-part': 'alpha-slider'
     onInput: (e: Event) => void
   }
-  /** EyeDropper API trigger. Always published; `supportsEyeDropper()` (a
-   * plain, SSR-safe function, not a `Signal` — see its doc comment) is how a
-   * consumer decides whether to show or disable it. */
+  /** EyeDropper API trigger. Always PLACED, but `hidden`/`disabled`/
+   * `data-unsupported` all derive from `state.eyeDropperSupported` — a
+   * consumer writes no feature-detect code of its own; see
+   * {@link eyeDropperSupportMount}. */
   eyeDropperTrigger: {
     type: 'button'
     'aria-label': string
     disabled: Signal<boolean>
+    hidden: Signal<boolean>
+    /** Bare boolean (package convention). */
+    'data-unsupported': Signal<'' | undefined>
     'data-scope': 'color-picker'
     'data-part': 'eyedropper-trigger'
     onClick: (e: MouseEvent) => void
@@ -7677,6 +7712,13 @@ export interface ColorPickerState {
    * Always finite and > 0 (`init` validates it; there is no setter — it is
    * fixed for the component's lifetime, like `slider`'s `min`/`max`). */
   maxChroma: number
+  /** Whether the browser's EyeDropper API is available. ALWAYS `false` at
+   * `init()` — this is what keeps SSR and the client's first paint identical
+   * (see the module doc on {@link eyeDropperSupportMount}, the ONLY thing
+   * that ever flips it, from a real mount-time feature check). A consumer
+   * never feature-detects on its own: placing that one Mountable is the
+   * whole contract. */
+  eyeDropperSupported: boolean
 }
 ```
 
@@ -9905,7 +9947,7 @@ export interface HoverCardState {
 
 ##### `Hsl` from `@llui/components`
 
-HSL color. `h` 0–360 degrees, `s`/`l` 0–100.
+HSL color. `h` 0–360 degrees, `s`/`l` 0–100. Float — see the module doc.
 
 ```typescript
 export interface Hsl {
@@ -9917,7 +9959,7 @@ export interface Hsl {
 
 ##### `Hsv` from `@llui/components`
 
-HSV color. `h` 0–360 degrees, `s`/`v` 0–100.
+HSV color. `h` 0–360 degrees, `s`/`v` 0–100. Float — see the module doc.
 
 ```typescript
 export interface Hsv {
@@ -10177,9 +10219,11 @@ export interface Locale {
     chroma: string
     oklchLightness: string
     hex: string
+    alpha: string
     eyeDropper: string
     switchToOklch: string
     switchToHsv: string
+    swatchGroup: string
   }
   combobox: { toggle: string; resultCount: (n: number) => string }
   dateInput: { clear: string }
@@ -11269,6 +11313,12 @@ export interface PointerDragHandlers {
   onPointerMove: (e: PointerEvent) => void
   onPointerUp: (e: PointerEvent) => void
   onPointerCancel: (e: PointerEvent) => void
+  /** The browser can revoke pointer capture without ever firing `pointerup`/
+   * `pointercancel` (an OS-level interruption, a nested capture request, …).
+   * Left unwired, `dragging` would stay `true` forever and a later, UNRELATED
+   * pointer's `pointermove` would be misread as a continuation of this drag.
+   * Spread onto the same element as the other four. */
+  onLostPointerCapture: (e: PointerEvent) => void
 }
 ```
 
@@ -15426,7 +15476,8 @@ function countCalendarTicks(
 ##### `cssColorAlpha()` from `@llui/components/utils`
 
 Resolved alpha (`none` -> 1, CSS Color 4's used value for a missing
-alpha outside interpolation).
+alpha OUTSIDE interpolation). Inside {@link interpolateColor}, a missing
+alpha instead carries the OTHER endpoint's alpha — see its doc comment.
 
 ```typescript
 function cssColorAlpha(c: CssColor): number
@@ -15717,7 +15768,10 @@ simple-clipping the result into sRGB is perceptually indistinguishable
 (deltaEOK < the 0.02 JND) from the reduced color, then clip. Given an
 already-in-gamut color this returns it converted (and defensively clipped
 for float noise) rather than a no-op, so the result is always safe to hand
-straight to {@link srgbToRgb255}.
+straight to {@link srgbToRgb255}. `test/utils/color.test.ts` pins the
+converged chroma for a known out-of-gamut color as a regression value
+(this file's own binary search, not an independent oracle — see that
+test's comment for what it does and does not prove).
 
 ```typescript
 function gamutMapOklchToSrgb(ok: Oklch): Srgb
@@ -15746,7 +15800,7 @@ export declare function getNestedLayers(
 
 ##### `hslToHsv()` from `@llui/components/utils`
 
-Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100).
+Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100), float.
 
 ```typescript
 function hslToHsv(hsl: Hsl): Hsv
@@ -15762,7 +15816,7 @@ function hslToRgb255(hsl: Hsl): Rgb255
 
 ##### `hsvToHsl()` from `@llui/components/utils`
 
-Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100).
+Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100), float.
 
 ```typescript
 function hsvToHsl(hsv: Hsv): Hsl
@@ -15775,6 +15829,8 @@ function hsvToOklch(hsv: Hsv): Oklch
 ```
 
 ##### `hsvToRgb255()` from `@llui/components/utils`
+
+HSV -> RGB255, via the DIRECT (not HSL-routed) float conversion.
 
 ```typescript
 function hsvToRgb255(hsv: Hsv): Rgb255
@@ -15801,10 +15857,16 @@ function inSrgbGamut(ok: Oklch, epsilon = 1e-4): boolean
 ##### `interpolateColor()` from `@llui/components/utils`
 
 Interpolate between two colors per CSS Color 4 §12: convert both into
-`space`, resolve missing/powerless components (an achromatic endpoint's
-hue becomes the OTHER endpoint's hue), premultiply non-hue channels by
-alpha, lerp, then un-premultiply. `hueMethod` controls which way a
-hue-bearing space (`hsl`, `oklch`) rotates; ignored otherwise.
+`space`, resolve missing (`none`, or a cross-space-converted achromatic
+color's undefined) components — including alpha itself, which carries the
+OTHER endpoint's alpha when missing rather than defaulting to 1 (CSS Color
+4 §12.2's analogous-component rule applies to alpha too — `rgb(255 0 0 /
+none)` mixed with `rgb(0 0 255 / 0.2)` has alpha exactly 0.2 throughout,
+not a lerp toward 1; pinned in `test/utils/color.test.ts`) —
+premultiply non-hue channels by alpha, lerp, then un-premultiply.
+`hueMethod` controls which way a hue-bearing space (`hsl`, `oklch`)
+rotates, normalizing both hues to [0,360) FIRST (see {@link adjustHue});
+ignored for spaces with no hue.
 
 ```typescript
 function interpolateColor(
@@ -16058,11 +16120,13 @@ function oklchToSrgb(ok: Oklch): Srgb
 ##### `parseCssColor()` from `@llui/components/utils`
 
 Parse a CSS color string into its typed model. Supports `#rgb`/`#rgba`/
-`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()` (legacy comma and modern
-space/slash, numbers and percentages), `hsl()`/`hsla()` (same two
-syntaxes), `oklch()`, `oklab()`, `none` components, `transparent`, and the
-148 CSS Color 4 named colors. Returns `null` on anything else — never
-throws.
+`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()`, `hsl()`/`hsla()` (both legacy comma
+and modern space/slash syntax, with the legacy grammar's `none`-forbidden
+and uniform-percentage-or-number rules enforced), `hwb()`, `oklch()`,
+`oklab()`, `lab()`, `lch()`, `color()` (predefined spaces `srgb`,
+`srgb-linear`, `display-p3`, `a98-rgb`, `prophoto-rgb`, `rec2020`, `xyz`,
+`xyz-d50`, `xyz-d65`), `none` components, `transparent`, and the 148 CSS
+Color 4 named colors. Returns `null` on anything else — never throws.
 
 ```typescript
 function parseCssColor(input: string): CssColor | null
@@ -16085,20 +16149,26 @@ function parseHexColor(hex: string): { rgb: Rgb255; alpha: number } | null
 
 ##### `pointerDragHandlers()` from `@llui/components/utils`
 
-Build the four pointer handlers for one drag track. One call per live
-`connect()` instance — `dragging` is closure-scoped per instance, the same
-shape as this package's other per-instance mutable state (e.g.
-`color-picker`'s eyedropper `pendingEyeDropper` AbortController).
+Build the five pointer handlers for one drag track. One call per live
+`connect()` instance — `dragging`/`activePointerId` are closure-scoped per
+instance, the same shape as this package's other per-instance mutable state
+(e.g. `color-picker`'s eyedropper `pendingEyeDropper` AbortController).
 
-- Primary button only (`e.button !== 0` on `pointerdown` is ignored —
-  `pointermove`/`pointerup` never carry a meaningful `button`, so they are
-  never re-checked; a drag that started validly keeps running).
+- Primary button only on `pointerdown` (`e.button !== 0` is ignored), AND
+  only when no drag is already live — a second finger/pointer touching
+  down mid-drag is ignored rather than hijacking `activePointerId`.
+- Every subsequent event (`pointermove`/`pointerup`/`pointercancel`/
+  `onLostPointerCapture`) is checked against `activePointerId`: a second
+  pointer's events never affect a drag it didn't start.
 - `setPointerCapture` on `pointerdown`'s `currentTarget`, so `pointermove`
   keeps firing even once the pointer leaves the element's bounds — a
   plain drag with no capture stalls out at the track's edge instead of
   saturating like a native `<input type="range">`.
 - Released on `pointerup`/`pointercancel`, guarded by `hasPointerCapture`
   so releasing twice (or without ever capturing) is a harmless no-op.
+- `dragging` is unconditionally reset on `onLostPointerCapture` for the
+  active pointer, even though that handler never calls `release()` itself
+  (capture is already gone by definition when this fires).
 
 ```typescript
 function pointerDragHandlers(callbacks: PointerDragCallbacks): PointerDragHandlers
@@ -16292,13 +16362,15 @@ export declare function resolveTextDirection(
 
 ##### `rgb255ToHsl()` from `@llui/components/utils`
 
-Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100, rounded).
+Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100), float.
 
 ```typescript
 function rgb255ToHsl(rgb: Rgb255): Hsl
 ```
 
 ##### `rgb255ToHsv()` from `@llui/components/utils`
+
+RGB255 -> HSV, via the DIRECT (not HSL-routed) float conversion.
 
 ```typescript
 function rgb255ToHsv(rgb: Rgb255): Hsv
@@ -16610,11 +16682,9 @@ export type CalendarUnit = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year
 
 ##### `CssColor` from `@llui/components/utils`
 
-A color as CSS Color 4 sees it: one of five spaces, every component
-`number | null` (`null` = the `none` keyword). This is the type
-{@link parseCssColor} returns and {@link interpolateColor} operates on —
-the common currency between "a string the user typed" and "a color a
-gradient stop needs to render".
+A color as CSS Color 4 sees it. `lab()`/`lch()`/wide-gamut `color()` are
+NOT separate tags here — see the module doc — they resolve to `'oklch'` (or
+`'srgb'` for `color(srgb ...)`/`color(srgb-linear ...)`) at parse time.
 
 ```typescript
 export type CssColor =
@@ -17027,7 +17097,7 @@ export interface Frame {
 
 ##### `Hsl` from `@llui/components/utils`
 
-HSL color. `h` 0–360 degrees, `s`/`l` 0–100.
+HSL color. `h` 0–360 degrees, `s`/`l` 0–100. Float — see the module doc.
 
 ```typescript
 export interface Hsl {
@@ -17039,7 +17109,7 @@ export interface Hsl {
 
 ##### `Hsv` from `@llui/components/utils`
 
-HSV color. `h` 0–360 degrees, `s`/`v` 0–100.
+HSV color. `h` 0–360 degrees, `s`/`v` 0–100. Float — see the module doc.
 
 ```typescript
 export interface Hsv {
@@ -17197,6 +17267,12 @@ export interface PointerDragHandlers {
   onPointerMove: (e: PointerEvent) => void
   onPointerUp: (e: PointerEvent) => void
   onPointerCancel: (e: PointerEvent) => void
+  /** The browser can revoke pointer capture without ever firing `pointerup`/
+   * `pointercancel` (an OS-level interruption, a nested capture request, …).
+   * Left unwired, `dragging` would stay `true` forever and a later, UNRELATED
+   * pointer's `pointermove` would be misread as a continuation of this drag.
+   * Spread onto the same element as the other four. */
+  onLostPointerCapture: (e: PointerEvent) => void
 }
 ```
 
@@ -17694,7 +17770,8 @@ const MAX_CALENDAR_TICKS
 ##### `cssColorAlpha()` from `@llui/components/utils/color`
 
 Resolved alpha (`none` -> 1, CSS Color 4's used value for a missing
-alpha outside interpolation).
+alpha OUTSIDE interpolation). Inside {@link interpolateColor}, a missing
+alpha instead carries the OTHER endpoint's alpha — see its doc comment.
 
 ```typescript
 function cssColorAlpha(c: CssColor): number
@@ -17776,7 +17853,10 @@ simple-clipping the result into sRGB is perceptually indistinguishable
 (deltaEOK < the 0.02 JND) from the reduced color, then clip. Given an
 already-in-gamut color this returns it converted (and defensively clipped
 for float noise) rather than a no-op, so the result is always safe to hand
-straight to {@link srgbToRgb255}.
+straight to {@link srgbToRgb255}. `test/utils/color.test.ts` pins the
+converged chroma for a known out-of-gamut color as a regression value
+(this file's own binary search, not an independent oracle — see that
+test's comment for what it does and does not prove).
 
 ```typescript
 function gamutMapOklchToSrgb(ok: Oklch): Srgb
@@ -17784,7 +17864,7 @@ function gamutMapOklchToSrgb(ok: Oklch): Srgb
 
 ##### `hslToHsv()` from `@llui/components/utils/color`
 
-Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100).
+Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100), float.
 
 ```typescript
 function hslToHsv(hsl: Hsl): Hsv
@@ -17798,9 +17878,17 @@ Convert HSL (h 0-360, s/l 0-100) to RGB (0-255 each, rounded).
 function hslToRgb255(hsl: Hsl): Rgb255
 ```
 
+##### `hslToSrgb()` from `@llui/components/utils/color`
+
+HSL -> sRGB, float, lossless.
+
+```typescript
+function hslToSrgb(hsl: Hsl): Srgb
+```
+
 ##### `hsvToHsl()` from `@llui/components/utils/color`
 
-Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100).
+Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100), float.
 
 ```typescript
 function hsvToHsl(hsv: Hsv): Hsl
@@ -17814,8 +17902,26 @@ function hsvToOklch(hsv: Hsv): Oklch
 
 ##### `hsvToRgb255()` from `@llui/components/utils/color`
 
+HSV -> RGB255, via the DIRECT (not HSL-routed) float conversion.
+
 ```typescript
 function hsvToRgb255(hsv: Hsv): Rgb255
+```
+
+##### `hsvToSrgb()` from `@llui/components/utils/color`
+
+HSV -> sRGB, DIRECT (not routed through HSL), float, lossless.
+
+```typescript
+function hsvToSrgb(hsv: Hsv): Srgb
+```
+
+##### `hwbToSrgb()` from `@llui/components/utils/color`
+
+HWB -> sRGB (CSS Color 4 §8.4).
+
+```typescript
+function hwbToSrgb(hwb: Hwb): Srgb
 ```
 
 ##### `inSrgbGamut()` from `@llui/components/utils/color`
@@ -17830,10 +17936,16 @@ function inSrgbGamut(ok: Oklch, epsilon = 1e-4): boolean
 ##### `interpolateColor()` from `@llui/components/utils/color`
 
 Interpolate between two colors per CSS Color 4 §12: convert both into
-`space`, resolve missing/powerless components (an achromatic endpoint's
-hue becomes the OTHER endpoint's hue), premultiply non-hue channels by
-alpha, lerp, then un-premultiply. `hueMethod` controls which way a
-hue-bearing space (`hsl`, `oklch`) rotates; ignored otherwise.
+`space`, resolve missing (`none`, or a cross-space-converted achromatic
+color's undefined) components — including alpha itself, which carries the
+OTHER endpoint's alpha when missing rather than defaulting to 1 (CSS Color
+4 §12.2's analogous-component rule applies to alpha too — `rgb(255 0 0 /
+none)` mixed with `rgb(0 0 255 / 0.2)` has alpha exactly 0.2 throughout,
+not a lerp toward 1; pinned in `test/utils/color.test.ts`) —
+premultiply non-hue channels by alpha, lerp, then un-premultiply.
+`hueMethod` controls which way a hue-bearing space (`hsl`, `oklch`)
+rotates, normalizing both hues to [0,360) FIRST (see {@link adjustHue});
+ignored for spaces with no hue.
 
 ```typescript
 function interpolateColor(
@@ -17843,6 +17955,26 @@ function interpolateColor(
   space: InterpolationSpace,
   hueMethod: HueInterpolationMethod = 'shorter',
 ): CssColor
+```
+
+##### `labToLch()` from `@llui/components/utils/color`
+
+```typescript
+function labToLch(lab: Lab): Lch
+```
+
+##### `labToXyzD50()` from `@llui/components/utils/color`
+
+Lab (D50) -> XYZ (D50).
+
+```typescript
+function labToXyzD50(lab: Lab): Xyz
+```
+
+##### `lchToLab()` from `@llui/components/utils/color`
+
+```typescript
+function lchToLab(lch: Lch): Lab
 ```
 
 ##### `linearSrgbToOklab()` from `@llui/components/utils/color`
@@ -17904,11 +18036,13 @@ function oklchToSrgb(ok: Oklch): Srgb
 ##### `parseCssColor()` from `@llui/components/utils/color`
 
 Parse a CSS color string into its typed model. Supports `#rgb`/`#rgba`/
-`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()` (legacy comma and modern
-space/slash, numbers and percentages), `hsl()`/`hsla()` (same two
-syntaxes), `oklch()`, `oklab()`, `none` components, `transparent`, and the
-148 CSS Color 4 named colors. Returns `null` on anything else — never
-throws.
+`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()`, `hsl()`/`hsla()` (both legacy comma
+and modern space/slash syntax, with the legacy grammar's `none`-forbidden
+and uniform-percentage-or-number rules enforced), `hwb()`, `oklch()`,
+`oklab()`, `lab()`, `lch()`, `color()` (predefined spaces `srgb`,
+`srgb-linear`, `display-p3`, `a98-rgb`, `prophoto-rgb`, `rec2020`, `xyz`,
+`xyz-d50`, `xyz-d65`), `none` components, `transparent`, and the 148 CSS
+Color 4 named colors. Returns `null` on anything else — never throws.
 
 ```typescript
 function parseCssColor(input: string): CssColor | null
@@ -17933,13 +18067,15 @@ function resolveNone(n: number | null): number
 
 ##### `rgb255ToHsl()` from `@llui/components/utils/color`
 
-Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100, rounded).
+Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100), float.
 
 ```typescript
 function rgb255ToHsl(rgb: Rgb255): Hsl
 ```
 
 ##### `rgb255ToHsv()` from `@llui/components/utils/color`
+
+RGB255 -> HSV, via the DIRECT (not HSL-routed) float conversion.
 
 ```typescript
 function rgb255ToHsv(rgb: Rgb255): Hsv
@@ -17949,6 +18085,30 @@ function rgb255ToHsv(rgb: Rgb255): Hsv
 
 ```typescript
 function srgb255ToSrgb(rgb: Rgb255): Srgb
+```
+
+##### `srgbToHsl()` from `@llui/components/utils/color`
+
+sRGB -> HSL, float, lossless (no byte quantization).
+
+```typescript
+function srgbToHsl(s: Srgb): Hsl
+```
+
+##### `srgbToHsv()` from `@llui/components/utils/color`
+
+sRGB -> HSV, DIRECT (not routed through HSL), float, lossless.
+
+```typescript
+function srgbToHsv(s: Srgb): Hsv
+```
+
+##### `srgbToHwb()` from `@llui/components/utils/color`
+
+sRGB -> HWB.
+
+```typescript
+function srgbToHwb(s: Srgb): Hwb
 ```
 
 ##### `srgbToLinear()` from `@llui/components/utils/color`
@@ -17978,15 +18138,34 @@ Rounds AND clamps into 0-255 — the boundary where an out-of-gamut float
 function srgbToRgb255(s: Srgb): Rgb255
 ```
 
+##### `xyzD50ToLab()` from `@llui/components/utils/color`
+
+XYZ (D50) -> Lab (D50).
+
+```typescript
+function xyzD50ToLab(xyz: Xyz): Lab
+```
+
+##### `xyzD65ToD50()` from `@llui/components/utils/color`
+
+XYZ (D65) -> XYZ (D50), Bradford chromatic adaptation. The inverse of
+{@link xyzD50ToD65} — not on this module's own parse/serialize path (every
+D50-native input, `lab()`/`lch()`/`color(xyz-d50 ...)`, converts TO D65 to
+reach OKLab), but exported as the natural symmetric counterpart for a
+caller that needs to go the other way (e.g. producing a `lab()`/`lch()`
+string from an OKLCH color).
+
+```typescript
+function xyzD65ToD50(xyz: Xyz): Xyz
+```
+
 #### Types
 
 ##### `CssColor` from `@llui/components/utils/color`
 
-A color as CSS Color 4 sees it: one of five spaces, every component
-`number | null` (`null` = the `none` keyword). This is the type
-{@link parseCssColor} returns and {@link interpolateColor} operates on —
-the common currency between "a string the user typed" and "a color a
-gradient stop needs to render".
+A color as CSS Color 4 sees it. `lab()`/`lch()`/wide-gamut `color()` are
+NOT separate tags here — see the module doc — they resolve to `'oklch'` (or
+`'srgb'` for `color(srgb ...)`/`color(srgb-linear ...)`) at parse time.
 
 ```typescript
 export type CssColor =
@@ -18017,11 +18196,23 @@ Interpolation / generic-conversion target spaces (CSS Color 4 §12).
 export type InterpolationSpace = 'srgb' | 'srgb-linear' | 'oklab' | 'oklch' | 'hsl'
 ```
 
+##### `PredefinedRgbSpace` from `@llui/components/utils/color`
+
+```typescript
+export type PredefinedRgbSpace =
+  | 'srgb'
+  | 'srgb-linear'
+  | 'display-p3'
+  | 'a98-rgb'
+  | 'prophoto-rgb'
+  | 'rec2020'
+```
+
 #### Interfaces
 
 ##### `Hsl` from `@llui/components/utils/color`
 
-HSL color. `h` 0–360 degrees, `s`/`l` 0–100.
+HSL color. `h` 0–360 degrees, `s`/`l` 0–100. Float — see the module doc.
 
 ```typescript
 export interface Hsl {
@@ -18033,13 +18224,50 @@ export interface Hsl {
 
 ##### `Hsv` from `@llui/components/utils/color`
 
-HSV color. `h` 0–360 degrees, `s`/`v` 0–100.
+HSV color. `h` 0–360 degrees, `s`/`v` 0–100. Float — see the module doc.
 
 ```typescript
 export interface Hsv {
   h: number
   s: number
   v: number
+}
+```
+
+##### `Hwb` from `@llui/components/utils/color`
+
+HWB color. `h` 0–360 degrees, `w` (whiteness)/`bk` (blackness) 0–100.
+
+```typescript
+export interface Hwb {
+  h: number
+  w: number
+  bk: number
+}
+```
+
+##### `Lab` from `@llui/components/utils/color`
+
+CIE Lab, D50-relative (CSS Color 4 `lab()`). `l` 0–100; `a`/`b` unbounded
+(CSS's reference range is ±125, but the value itself is not clamped).
+
+```typescript
+export interface Lab {
+  l: number
+  a: number
+  b: number
+}
+```
+
+##### `Lch` from `@llui/components/utils/color`
+
+CIE LCh, the polar form of {@link Lab}. `l` 0–100, `c` >= 0, `h` degrees.
+
+```typescript
+export interface Lch {
+  l: number
+  c: number
+  h: number
 }
 ```
 
@@ -18092,6 +18320,19 @@ export interface Srgb {
   r: number
   g: number
   b: number
+}
+```
+
+##### `Xyz` from `@llui/components/utils/color`
+
+CIE XYZ tristimulus values, relative to whichever white point the
+function producing them documents (D65 unless named otherwise).
+
+```typescript
+export interface Xyz {
+  x: number
+  y: number
+  z: number
 }
 ```
 
@@ -18832,7 +19073,8 @@ function countCalendarTicks(
 ##### `cssColorAlpha()` from `@llui/components/utils/index`
 
 Resolved alpha (`none` -> 1, CSS Color 4's used value for a missing
-alpha outside interpolation).
+alpha OUTSIDE interpolation). Inside {@link interpolateColor}, a missing
+alpha instead carries the OTHER endpoint's alpha — see its doc comment.
 
 ```typescript
 function cssColorAlpha(c: CssColor): number
@@ -19123,7 +19365,10 @@ simple-clipping the result into sRGB is perceptually indistinguishable
 (deltaEOK < the 0.02 JND) from the reduced color, then clip. Given an
 already-in-gamut color this returns it converted (and defensively clipped
 for float noise) rather than a no-op, so the result is always safe to hand
-straight to {@link srgbToRgb255}.
+straight to {@link srgbToRgb255}. `test/utils/color.test.ts` pins the
+converged chroma for a known out-of-gamut color as a regression value
+(this file's own binary search, not an independent oracle — see that
+test's comment for what it does and does not prove).
 
 ```typescript
 function gamutMapOklchToSrgb(ok: Oklch): Srgb
@@ -19152,7 +19397,7 @@ export declare function getNestedLayers(
 
 ##### `hslToHsv()` from `@llui/components/utils/index`
 
-Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100).
+Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100), float.
 
 ```typescript
 function hslToHsv(hsl: Hsl): Hsv
@@ -19168,7 +19413,7 @@ function hslToRgb255(hsl: Hsl): Rgb255
 
 ##### `hsvToHsl()` from `@llui/components/utils/index`
 
-Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100).
+Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100), float.
 
 ```typescript
 function hsvToHsl(hsv: Hsv): Hsl
@@ -19181,6 +19426,8 @@ function hsvToOklch(hsv: Hsv): Oklch
 ```
 
 ##### `hsvToRgb255()` from `@llui/components/utils/index`
+
+HSV -> RGB255, via the DIRECT (not HSL-routed) float conversion.
 
 ```typescript
 function hsvToRgb255(hsv: Hsv): Rgb255
@@ -19207,10 +19454,16 @@ function inSrgbGamut(ok: Oklch, epsilon = 1e-4): boolean
 ##### `interpolateColor()` from `@llui/components/utils/index`
 
 Interpolate between two colors per CSS Color 4 §12: convert both into
-`space`, resolve missing/powerless components (an achromatic endpoint's
-hue becomes the OTHER endpoint's hue), premultiply non-hue channels by
-alpha, lerp, then un-premultiply. `hueMethod` controls which way a
-hue-bearing space (`hsl`, `oklch`) rotates; ignored otherwise.
+`space`, resolve missing (`none`, or a cross-space-converted achromatic
+color's undefined) components — including alpha itself, which carries the
+OTHER endpoint's alpha when missing rather than defaulting to 1 (CSS Color
+4 §12.2's analogous-component rule applies to alpha too — `rgb(255 0 0 /
+none)` mixed with `rgb(0 0 255 / 0.2)` has alpha exactly 0.2 throughout,
+not a lerp toward 1; pinned in `test/utils/color.test.ts`) —
+premultiply non-hue channels by alpha, lerp, then un-premultiply.
+`hueMethod` controls which way a hue-bearing space (`hsl`, `oklch`)
+rotates, normalizing both hues to [0,360) FIRST (see {@link adjustHue});
+ignored for spaces with no hue.
 
 ```typescript
 function interpolateColor(
@@ -19464,11 +19717,13 @@ function oklchToSrgb(ok: Oklch): Srgb
 ##### `parseCssColor()` from `@llui/components/utils/index`
 
 Parse a CSS color string into its typed model. Supports `#rgb`/`#rgba`/
-`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()` (legacy comma and modern
-space/slash, numbers and percentages), `hsl()`/`hsla()` (same two
-syntaxes), `oklch()`, `oklab()`, `none` components, `transparent`, and the
-148 CSS Color 4 named colors. Returns `null` on anything else — never
-throws.
+`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()`, `hsl()`/`hsla()` (both legacy comma
+and modern space/slash syntax, with the legacy grammar's `none`-forbidden
+and uniform-percentage-or-number rules enforced), `hwb()`, `oklch()`,
+`oklab()`, `lab()`, `lch()`, `color()` (predefined spaces `srgb`,
+`srgb-linear`, `display-p3`, `a98-rgb`, `prophoto-rgb`, `rec2020`, `xyz`,
+`xyz-d50`, `xyz-d65`), `none` components, `transparent`, and the 148 CSS
+Color 4 named colors. Returns `null` on anything else — never throws.
 
 ```typescript
 function parseCssColor(input: string): CssColor | null
@@ -19491,20 +19746,26 @@ function parseHexColor(hex: string): { rgb: Rgb255; alpha: number } | null
 
 ##### `pointerDragHandlers()` from `@llui/components/utils/index`
 
-Build the four pointer handlers for one drag track. One call per live
-`connect()` instance — `dragging` is closure-scoped per instance, the same
-shape as this package's other per-instance mutable state (e.g.
-`color-picker`'s eyedropper `pendingEyeDropper` AbortController).
+Build the five pointer handlers for one drag track. One call per live
+`connect()` instance — `dragging`/`activePointerId` are closure-scoped per
+instance, the same shape as this package's other per-instance mutable state
+(e.g. `color-picker`'s eyedropper `pendingEyeDropper` AbortController).
 
-- Primary button only (`e.button !== 0` on `pointerdown` is ignored —
-  `pointermove`/`pointerup` never carry a meaningful `button`, so they are
-  never re-checked; a drag that started validly keeps running).
+- Primary button only on `pointerdown` (`e.button !== 0` is ignored), AND
+  only when no drag is already live — a second finger/pointer touching
+  down mid-drag is ignored rather than hijacking `activePointerId`.
+- Every subsequent event (`pointermove`/`pointerup`/`pointercancel`/
+  `onLostPointerCapture`) is checked against `activePointerId`: a second
+  pointer's events never affect a drag it didn't start.
 - `setPointerCapture` on `pointerdown`'s `currentTarget`, so `pointermove`
   keeps firing even once the pointer leaves the element's bounds — a
   plain drag with no capture stalls out at the track's edge instead of
   saturating like a native `<input type="range">`.
 - Released on `pointerup`/`pointercancel`, guarded by `hasPointerCapture`
   so releasing twice (or without ever capturing) is a harmless no-op.
+- `dragging` is unconditionally reset on `onLostPointerCapture` for the
+  active pointer, even though that handler never calls `release()` itself
+  (capture is already gone by definition when this fires).
 
 ```typescript
 function pointerDragHandlers(callbacks: PointerDragCallbacks): PointerDragHandlers
@@ -19698,13 +19959,15 @@ export declare function resolveTextDirection(
 
 ##### `rgb255ToHsl()` from `@llui/components/utils/index`
 
-Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100, rounded).
+Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100), float.
 
 ```typescript
 function rgb255ToHsl(rgb: Rgb255): Hsl
 ```
 
 ##### `rgb255ToHsv()` from `@llui/components/utils/index`
+
+RGB255 -> HSV, via the DIRECT (not HSL-routed) float conversion.
 
 ```typescript
 function rgb255ToHsv(rgb: Rgb255): Hsv
@@ -20016,11 +20279,9 @@ export type CalendarUnit = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year
 
 ##### `CssColor` from `@llui/components/utils/index`
 
-A color as CSS Color 4 sees it: one of five spaces, every component
-`number | null` (`null` = the `none` keyword). This is the type
-{@link parseCssColor} returns and {@link interpolateColor} operates on —
-the common currency between "a string the user typed" and "a color a
-gradient stop needs to render".
+A color as CSS Color 4 sees it. `lab()`/`lch()`/wide-gamut `color()` are
+NOT separate tags here — see the module doc — they resolve to `'oklch'` (or
+`'srgb'` for `color(srgb ...)`/`color(srgb-linear ...)`) at parse time.
 
 ```typescript
 export type CssColor =
@@ -20433,7 +20694,7 @@ export interface Frame {
 
 ##### `Hsl` from `@llui/components/utils/index`
 
-HSL color. `h` 0–360 degrees, `s`/`l` 0–100.
+HSL color. `h` 0–360 degrees, `s`/`l` 0–100. Float — see the module doc.
 
 ```typescript
 export interface Hsl {
@@ -20445,7 +20706,7 @@ export interface Hsl {
 
 ##### `Hsv` from `@llui/components/utils/index`
 
-HSV color. `h` 0–360 degrees, `s`/`v` 0–100.
+HSV color. `h` 0–360 degrees, `s`/`v` 0–100. Float — see the module doc.
 
 ```typescript
 export interface Hsv {
@@ -20603,6 +20864,12 @@ export interface PointerDragHandlers {
   onPointerMove: (e: PointerEvent) => void
   onPointerUp: (e: PointerEvent) => void
   onPointerCancel: (e: PointerEvent) => void
+  /** The browser can revoke pointer capture without ever firing `pointerup`/
+   * `pointercancel` (an OS-level interruption, a nested capture request, …).
+   * Left unwired, `dragging` would stay `true` forever and a later, UNRELATED
+   * pointer's `pointermove` would be misread as a continuation of this drag.
+   * Spread onto the same element as the other four. */
+  onLostPointerCapture: (e: PointerEvent) => void
 }
 ```
 
@@ -21767,20 +22034,26 @@ export interface Point {
 
 ##### `pointerDragHandlers()` from `@llui/components/utils/pointer-drag`
 
-Build the four pointer handlers for one drag track. One call per live
-`connect()` instance — `dragging` is closure-scoped per instance, the same
-shape as this package's other per-instance mutable state (e.g.
-`color-picker`'s eyedropper `pendingEyeDropper` AbortController).
+Build the five pointer handlers for one drag track. One call per live
+`connect()` instance — `dragging`/`activePointerId` are closure-scoped per
+instance, the same shape as this package's other per-instance mutable state
+(e.g. `color-picker`'s eyedropper `pendingEyeDropper` AbortController).
 
-- Primary button only (`e.button !== 0` on `pointerdown` is ignored —
-  `pointermove`/`pointerup` never carry a meaningful `button`, so they are
-  never re-checked; a drag that started validly keeps running).
+- Primary button only on `pointerdown` (`e.button !== 0` is ignored), AND
+  only when no drag is already live — a second finger/pointer touching
+  down mid-drag is ignored rather than hijacking `activePointerId`.
+- Every subsequent event (`pointermove`/`pointerup`/`pointercancel`/
+  `onLostPointerCapture`) is checked against `activePointerId`: a second
+  pointer's events never affect a drag it didn't start.
 - `setPointerCapture` on `pointerdown`'s `currentTarget`, so `pointermove`
   keeps firing even once the pointer leaves the element's bounds — a
   plain drag with no capture stalls out at the track's edge instead of
   saturating like a native `<input type="range">`.
 - Released on `pointerup`/`pointercancel`, guarded by `hasPointerCapture`
   so releasing twice (or without ever capturing) is a harmless no-op.
+- `dragging` is unconditionally reset on `onLostPointerCapture` for the
+  active pointer, even though that handler never calls `release()` itself
+  (capture is already gone by definition when this fires).
 
 ```typescript
 function pointerDragHandlers(callbacks: PointerDragCallbacks): PointerDragHandlers
@@ -21824,6 +22097,12 @@ export interface PointerDragHandlers {
   onPointerMove: (e: PointerEvent) => void
   onPointerUp: (e: PointerEvent) => void
   onPointerCancel: (e: PointerEvent) => void
+  /** The browser can revoke pointer capture without ever firing `pointerup`/
+   * `pointercancel` (an OS-level interruption, a nested capture request, …).
+   * Left unwired, `dragging` would stay `true` forever and a later, UNRELATED
+   * pointer's `pointermove` would be misread as a continuation of this drag.
+   * Spread onto the same element as the other four. */
+  onLostPointerCapture: (e: PointerEvent) => void
 }
 ```
 
@@ -30698,6 +30977,25 @@ const datePicker
 
 #### Functions
 
+##### `areaCanvasBinding()` from `@llui/components/color-picker`
+
+The component-owned repaint seam for the OKLCH area's `<canvas>` (finding
+E: a consumer writes ZERO `registerBinding`/`isSignalHandle`/`currentDoc`
+of its own). Renders a canvas element with `id={canvasId}` — carrying
+`areaCanvas`'s spread props — and PLACE this function's result anywhere in
+the same view; it paints once on mount and again whenever the hue or
+`maxChroma` changes, via {@link paintOklchPlane}.
+
+Mirrors `icon.ts`'s `nameBinding` + `onMount` pair: `registerBinding`'s
+commit can fire before the canvas element exists in the DOM (binding
+commits run before `runMounts`), so the FIRST paint happens from
+`onMount` (which hands back the real node), and only LATER hue/maxChroma
+changes repaint directly through the cached reference.
+
+```typescript
+function areaCanvasBinding(state: Signal<ColorPickerState>, canvasId: string): Renderable
+```
+
 ##### `colorFromPoint()` from `@llui/components/color-picker`
 
 Map a pointer position over the 2D saturation/value area to HSV S/V (0..100).
@@ -30731,6 +31029,21 @@ function cssColorToPickerColor(
   model: ColorModel,
   maxChroma: number,
 ): { color: PickerColor; alpha: number }
+```
+
+##### `eyeDropperSupportMount()` from `@llui/components/color-picker`
+
+Detect EyeDropper support ONCE, client-side, after mount, and dispatch the
+answer into state — the ONLY piece of environment detection a consumer
+wires up; place the returned `Mountable` anywhere in the view (it renders
+nothing) and `eyeDropperTrigger`'s `hidden`/`disabled`/`data-unsupported`
+follow automatically. Never runs during a render (SSR or the client's
+first paint), which is what keeps `eyeDropperSupported`'s `init()` default
+of `false` identical on both — a check made INLINE during render would
+make SSR and a supporting browser's client render disagree.
+
+```typescript
+function eyeDropperSupportMount(send: Send<ColorPickerMsg>): Mountable
 ```
 
 ##### `hsvToOklchPreserving()` from `@llui/components/color-picker`
@@ -30795,9 +31108,22 @@ fully transparent (alpha 0) rather than gamut-mapped, so a consumer can
 paint them hatched/checkered underneath if it wants a visible "no color
 here" cue instead of a silently-wrong one.
 
-O(width \* height) OKLCH->sRGB conversions, each potentially running the
-gamut-mapping binary search — keep the canvas modest (a few hundred
-pixels per side) and repaint only on hue change, not on every pointer move.
+PER-ROW BINARY SEARCH, not a full per-pixel gamut-mapping search: for a
+fixed lightness/hue, {@link inSrgbGamut} is true on a PREFIX of chroma
+values and false beyond it (moving out from the achromatic point along one
+ray only ever crosses the gamut boundary once — `color.test.ts`'s
+"gamut boundary is monotone per row" test sweeps a grid of hues/lightnesses
+and fails loudly if that stops holding for some hue this file didn't
+anticipate). Finding the edge costs `O(log width)` `inSrgbGamut` calls
+instead of running the full chroma-reduction search for every pixel;
+pixels before the edge need only the CHEAP unmapped conversion (already
+proven in-gamut), and pixels at/after it are skipped entirely (transparent,
+`r`/`g`/`b` left at the buffer's zero-fill). Measured on a 256x256 plane
+(median of 15 runs, warmed up) against the OLD full-gamut-map-every-pixel
+approach: hue 145 (the review's own reproduction case) went from 45.1ms to
+1.8ms (24.5x); hue 30 from 49.2ms to 1.3ms (37.9x); hue 265 from 49.2ms to
+2.0ms (24.8x) — see the mutation table / final report for the exact
+reproduction script.
 
 ```typescript
 function oklchPlanePixels(
@@ -30831,15 +31157,26 @@ function openEyeDropper(signal?: AbortSignal): Promise<string | null>
 ##### `paintOklchPlane()` from `@llui/components/color-picker`
 
 Paint {@link oklchPlanePixels} onto a canvas sized to its current
-`width`/`height`. A no-op on a zero-sized canvas or a context-less
+`width`/`height`, using the hue/maxChroma from `state` (not separate
+arguments — the ONE source of truth for both, matching how `connect()`
+itself reads them). A no-op on a zero-sized canvas or a context-less
 environment (jsdom without a 2D context polyfill).
 
 ```typescript
-function paintOklchPlane(
-  canvas: HTMLCanvasElement,
-  hue: number,
-  maxChroma: number = DEFAULT_MAX_CHROMA,
-): void
+function paintOklchPlane(canvas: HTMLCanvasElement, state: ColorPickerState): void
+```
+
+##### `pickerColorToCss()` from `@llui/components/color-picker`
+
+`toCss`'s rule (hex/hex8 for `hsv`, exact `oklch()` for `oklch` — see
+{@link toCss}'s own doc comment) for just a color + alpha, with none of
+`ColorPickerState`'s other fields needed. The seam a caller with a bare
+`PickerColor` (`gradient-picker`'s per-stop color, never wrapped in a full
+picker state) reaches for, instead of building a throwaway state shim just
+to call `toCss`.
+
+```typescript
+function pickerColorToCss(color: PickerColor, alpha: number): string
 ```
 
 ##### `pickerColorToCssColor()` from `@llui/components/color-picker`
@@ -30899,15 +31236,12 @@ function stateOklch(state: ColorPickerState): Oklch
 ##### `supportsEyeDropper()` from `@llui/components/color-picker`
 
 Whether the EyeDropper API is available. SSR-safe (`false` when there is
-no `window`) and STATIC — a plain function, not a `Signal`, so `connect()`
-never has to decide between two answers for the SAME render: the part bag
-it publishes is identical on the server and on the client's first paint
-(`eyeDropperTrigger` is always rendered enabled/visible from the machine's
-point of view). A consumer that wants to hide or disable the button on an
-unsupported browser calls this from its own `onMount` and sets the DOM
-attribute directly — the same pattern `theme-switch.ts`'s `resolveTheme`
-uses for `prefers-color-scheme`, and the only point in this package where
-a browser-only capability decides what renders.
+no `window`). Exported as a plain, synchronously-callable function for
+whatever else might want it, but `connect()`'s own `eyeDropperTrigger`
+does NOT call this directly — it reads `state.eyeDropperSupported`, which
+only {@link eyeDropperSupportMount} ever sets (see that function's doc
+comment for why: calling this INLINE during a render would make SSR and a
+supporting browser's client render disagree).
 
 ```typescript
 function supportsEyeDropper(): boolean
@@ -31009,6 +31343,10 @@ export type ColorPickerMsg =
   | { type: 'setLc'; c: number; l: number }
   /** @intent("Nudge chroma/lightness (OKLCH) by signed deltas — used by area arrow keys") */
   | { type: 'nudgeLc'; dc: number; dl: number }
+  /** @humanOnly */
+  | { type: 'setEyeDropperSupported'; supported: boolean }
+  /** @humanOnly */
+  | { type: 'eyeDropperFailed'; message: string }
 ```
 
 ##### `PickerColor` from `@llui/components/color-picker`
@@ -31067,6 +31405,7 @@ export interface ColorPickerParts {
   modelToggle: {
     type: 'button'
     'aria-label': Signal<string>
+    disabled: Signal<boolean>
     'data-scope': 'color-picker'
     'data-part': 'model-toggle'
     'data-model': Signal<ColorModel>
@@ -31174,11 +31513,14 @@ export interface ColorPickerParts {
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
     onPointerCancel: (e: PointerEvent) => void
+    onLostPointerCapture: (e: PointerEvent) => void
   }
   /** Decorative `<canvas>` seam for the OKLCH area — headless, so the
-   * consumer owns creating and sizing the real `<canvas>` element and
-   * repainting it with {@link paintOklchPlane} on hue change (and on mount).
-   * Absent/inert in HSV mode. */
+   * consumer owns creating and sizing the real `<canvas>` element (give it
+   * an id and spread these props), but never its own repaint wiring: place
+   * {@link areaCanvasBinding}`(state, thatSameId)` anywhere in the view and
+   * it stays painted, on mount and on every hue/`maxChroma` change. Absent/
+   * inert in HSV mode. */
   areaCanvas: {
     'data-scope': 'color-picker'
     'data-part': 'area-canvas'
@@ -31186,10 +31528,12 @@ export interface ColorPickerParts {
   }
   /** The draggable thumb inside the 2D area. Keyboard-operable (arrows move
    * S/V or C/L depending on the active model; Shift = coarse) with
-   * role="slider" and a 2D aria-valuetext. */
+   * role="slider" and a 2D aria-valuetext. `aria-label` follows the ACTIVE
+   * model ("Saturation / Value" in HSV mode, "Chroma / Lightness" in OKLCH),
+   * not a fixed string — the axes it labels are literally different. */
   areaThumb: {
     role: 'slider'
-    'aria-label': string
+    'aria-label': Signal<string>
     'aria-valuemin': Signal<number>
     'aria-valuemax': Signal<number>
     'aria-valuenow': Signal<number>
@@ -31215,13 +31559,17 @@ export interface ColorPickerParts {
     'data-part': 'alpha-slider'
     onInput: (e: Event) => void
   }
-  /** EyeDropper API trigger. Always published; `supportsEyeDropper()` (a
-   * plain, SSR-safe function, not a `Signal` — see its doc comment) is how a
-   * consumer decides whether to show or disable it. */
+  /** EyeDropper API trigger. Always PLACED, but `hidden`/`disabled`/
+   * `data-unsupported` all derive from `state.eyeDropperSupported` — a
+   * consumer writes no feature-detect code of its own; see
+   * {@link eyeDropperSupportMount}. */
   eyeDropperTrigger: {
     type: 'button'
     'aria-label': string
     disabled: Signal<boolean>
+    hidden: Signal<boolean>
+    /** Bare boolean (package convention). */
+    'data-unsupported': Signal<'' | undefined>
     'data-scope': 'color-picker'
     'data-part': 'eyedropper-trigger'
     onClick: (e: MouseEvent) => void
@@ -31255,6 +31603,13 @@ export interface ColorPickerState {
    * Always finite and > 0 (`init` validates it; there is no setter — it is
    * fixed for the component's lifetime, like `slider`'s `min`/`max`). */
   maxChroma: number
+  /** Whether the browser's EyeDropper API is available. ALWAYS `false` at
+   * `init()` — this is what keeps SSR and the client's first paint identical
+   * (see the module doc on {@link eyeDropperSupportMount}, the ONLY thing
+   * that ever flips it, from a real mount-time feature check). A consumer
+   * never feature-detects on its own: placing that one Mountable is the
+   * whole contract. */
+  eyeDropperSupported: boolean
 }
 ```
 
@@ -31301,7 +31656,7 @@ export interface EyeDropperResult {
 
 ##### `Hsl` from `@llui/components/color-picker`
 
-HSL color. `h` 0–360 degrees, `s`/`l` 0–100.
+HSL color. `h` 0–360 degrees, `s`/`l` 0–100. Float — see the module doc.
 
 ```typescript
 export interface Hsl {
@@ -31313,7 +31668,7 @@ export interface Hsl {
 
 ##### `Hsv` from `@llui/components/color-picker`
 
-HSV color. `h` 0–360 degrees, `s`/`v` 0–100.
+HSV color. `h` 0–360 degrees, `s`/`v` 0–100. Float — see the module doc.
 
 ```typescript
 export interface Hsv {

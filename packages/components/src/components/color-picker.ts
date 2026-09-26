@@ -1,5 +1,5 @@
-import type { Send, Signal } from '@llui/dom'
-import { tagSend } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import { tagSend, onMount, mountable, registerBinding, currentDoc, isSignalHandle } from '@llui/dom'
 import { colorPickerLocale } from '../locale/color-picker.js'
 import {
   allFiniteNumbers,
@@ -19,6 +19,7 @@ import {
   srgbToRgb255,
   hsvToOklch,
   oklchToHsv,
+  oklchToSrgb,
   gamutMapOklchToSrgb,
   inSrgbGamut,
   formatHex,
@@ -76,6 +77,13 @@ export interface ColorPickerState {
    * Always finite and > 0 (`init` validates it; there is no setter — it is
    * fixed for the component's lifetime, like `slider`'s `min`/`max`). */
   maxChroma: number
+  /** Whether the browser's EyeDropper API is available. ALWAYS `false` at
+   * `init()` — this is what keeps SSR and the client's first paint identical
+   * (see the module doc on {@link eyeDropperSupportMount}, the ONLY thing
+   * that ever flips it, from a real mount-time feature check). A consumer
+   * never feature-detects on its own: placing that one Mountable is the
+   * whole contract. */
+  eyeDropperSupported: boolean
 }
 
 export type ColorPickerMsg =
@@ -109,6 +117,10 @@ export type ColorPickerMsg =
   | { type: 'setLc'; c: number; l: number }
   /** @intent("Nudge chroma/lightness (OKLCH) by signed deltas — used by area arrow keys") */
   | { type: 'nudgeLc'; dc: number; dl: number }
+  /** @humanOnly */
+  | { type: 'setEyeDropperSupported'; supported: boolean }
+  /** @humanOnly */
+  | { type: 'eyeDropperFailed'; message: string }
 
 export interface ColorPickerInit {
   /** Which model the canonical color is stored in. Default `'hsv'`. */
@@ -332,6 +344,9 @@ export function init(opts: ColorPickerInit = {}): ColorPickerState {
     alpha,
     disabled,
     maxChroma,
+    // ALWAYS false — see the field's own doc comment and
+    // `eyeDropperSupportMount`'s.
+    eyeDropperSupported: false,
   }
 }
 
@@ -385,8 +400,21 @@ export function toHex8(state: ColorPickerState): string {
  * its own terms, same as it would for a value typed directly into CSS.
  */
 export function toCss(state: ColorPickerState): string {
-  if (state.color.model === 'oklch') return formatOklch(state.color, state.alpha)
-  return state.alpha < 1 ? toHex8(state) : toHex(state)
+  return pickerColorToCss(state.color, state.alpha)
+}
+
+/**
+ * `toCss`'s rule (hex/hex8 for `hsv`, exact `oklch()` for `oklch` — see
+ * {@link toCss}'s own doc comment) for just a color + alpha, with none of
+ * `ColorPickerState`'s other fields needed. The seam a caller with a bare
+ * `PickerColor` (`gradient-picker`'s per-stop color, never wrapped in a full
+ * picker state) reaches for, instead of building a throwaway state shim just
+ * to call `toCss`.
+ */
+export function pickerColorToCss(color: PickerColor, alpha: number): string {
+  if (color.model === 'oklch') return formatOklch(color, alpha)
+  const rgb = hsvToRgb255(color)
+  return alpha < 1 ? formatHex8(rgb, alpha) : formatHex(rgb)
 }
 
 /**
@@ -397,7 +425,10 @@ export function toCss(state: ColorPickerState): string {
 export function colorFromPoint(rect: DOMRect, x: number, y: number): { s: number; v: number } {
   const sx = rect.width === 0 ? 0 : clamp((x - rect.left) / rect.width, 0, 1)
   const sy = rect.height === 0 ? 0 : clamp((y - rect.top) / rect.height, 0, 1)
-  return { s: Math.round(sx * 100), v: Math.round((1 - sy) * 100) }
+  // FLOAT, not rounded — a rounded pointer position is a lossy write into
+  // state (finding A). A continuous drag should move continuously; display
+  // sites round for presentation (`connect()`'s slider values/aria text).
+  return { s: sx * 100, v: (1 - sy) * 100 }
 }
 
 /**
@@ -429,6 +460,16 @@ export function update(state: ColorPickerState, msg: ColorPickerMsg): [ColorPick
   ) {
     return [state, []]
   }
+  // Environment-detection results apply regardless of `disabled` — a
+  // disabled picker still learns whether the browser supports the
+  // eyedropper, and still hears about a failed pick (it can only have
+  // started one while enabled in the first place).
+  if (msg.type === 'setEyeDropperSupported') {
+    return msg.supported === state.eyeDropperSupported
+      ? [state, []]
+      : [{ ...state, eyeDropperSupported: msg.supported }, []]
+  }
+  if (msg.type === 'eyeDropperFailed') return [state, []]
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'setModel': {
@@ -573,15 +614,12 @@ declare global {
 
 /**
  * Whether the EyeDropper API is available. SSR-safe (`false` when there is
- * no `window`) and STATIC — a plain function, not a `Signal`, so `connect()`
- * never has to decide between two answers for the SAME render: the part bag
- * it publishes is identical on the server and on the client's first paint
- * (`eyeDropperTrigger` is always rendered enabled/visible from the machine's
- * point of view). A consumer that wants to hide or disable the button on an
- * unsupported browser calls this from its own `onMount` and sets the DOM
- * attribute directly — the same pattern `theme-switch.ts`'s `resolveTheme`
- * uses for `prefers-color-scheme`, and the only point in this package where
- * a browser-only capability decides what renders.
+ * no `window`). Exported as a plain, synchronously-callable function for
+ * whatever else might want it, but `connect()`'s own `eyeDropperTrigger`
+ * does NOT call this directly — it reads `state.eyeDropperSupported`, which
+ * only {@link eyeDropperSupportMount} ever sets (see that function's doc
+ * comment for why: calling this INLINE during a render would make SSR and a
+ * supporting browser's client render disagree).
  */
 export function supportsEyeDropper(): boolean {
   return typeof window !== 'undefined' && window.EyeDropper !== undefined
@@ -604,6 +642,64 @@ export async function openEyeDropper(signal?: AbortSignal): Promise<string | nul
   }
 }
 
+/**
+ * Detect EyeDropper support ONCE, client-side, after mount, and dispatch the
+ * answer into state — the ONLY piece of environment detection a consumer
+ * wires up; place the returned `Mountable` anywhere in the view (it renders
+ * nothing) and `eyeDropperTrigger`'s `hidden`/`disabled`/`data-unsupported`
+ * follow automatically. Never runs during a render (SSR or the client's
+ * first paint), which is what keeps `eyeDropperSupported`'s `init()` default
+ * of `false` identical on both — a check made INLINE during render would
+ * make SSR and a supporting browser's client render disagree.
+ */
+export function eyeDropperSupportMount(send: Send<ColorPickerMsg>): Mountable {
+  return onMount(() => {
+    send({ type: 'setEyeDropperSupported', supported: supportsEyeDropper() })
+  })
+}
+
+/**
+ * The component-owned repaint seam for the OKLCH area's `<canvas>` (finding
+ * E: a consumer writes ZERO `registerBinding`/`isSignalHandle`/`currentDoc`
+ * of its own). Renders a canvas element with `id={canvasId}` — carrying
+ * `areaCanvas`'s spread props — and PLACE this function's result anywhere in
+ * the same view; it paints once on mount and again whenever the hue or
+ * `maxChroma` changes, via {@link paintOklchPlane}.
+ *
+ * Mirrors `icon.ts`'s `nameBinding` + `onMount` pair: `registerBinding`'s
+ * commit can fire before the canvas element exists in the DOM (binding
+ * commits run before `runMounts`), so the FIRST paint happens from
+ * `onMount` (which hands back the real node), and only LATER hue/maxChroma
+ * changes repaint directly through the cached reference.
+ */
+export function areaCanvasBinding(state: Signal<ColorPickerState>, canvasId: string): Renderable {
+  let canvas: HTMLCanvasElement | null = null
+  let lastKey: string | null = null
+  const paint = (): void => {
+    if (canvas) paintOklchPlane(canvas, state.peek())
+  }
+  const binding = mountable(() => {
+    const key = state.map((s) => `${stateOklch(s).h}:${s.maxChroma}`)
+    if (isSignalHandle(key)) {
+      registerBinding(key.deps, key.produce, (value) => {
+        const next = String(value)
+        if (next === lastKey) return
+        lastKey = next
+        paint()
+      })
+    }
+    return currentDoc().createComment('oklch-area-canvas-binding')
+  })
+  const mount = onMount((root) => {
+    const found = root.querySelector<HTMLCanvasElement>(`[id="${canvasId}"]`)
+    if (found instanceof HTMLCanvasElement) {
+      canvas = found
+      paint()
+    }
+  })
+  return [binding, mount]
+}
+
 // ── OKLCH plane rendering (the 2D area's canvas, in OKLCH mode) ─────────────
 
 /**
@@ -614,9 +710,22 @@ export async function openEyeDropper(signal?: AbortSignal): Promise<string | nul
  * paint them hatched/checkered underneath if it wants a visible "no color
  * here" cue instead of a silently-wrong one.
  *
- * O(width * height) OKLCH->sRGB conversions, each potentially running the
- * gamut-mapping binary search — keep the canvas modest (a few hundred
- * pixels per side) and repaint only on hue change, not on every pointer move.
+ * PER-ROW BINARY SEARCH, not a full per-pixel gamut-mapping search: for a
+ * fixed lightness/hue, {@link inSrgbGamut} is true on a PREFIX of chroma
+ * values and false beyond it (moving out from the achromatic point along one
+ * ray only ever crosses the gamut boundary once — `color.test.ts`'s
+ * "gamut boundary is monotone per row" test sweeps a grid of hues/lightnesses
+ * and fails loudly if that stops holding for some hue this file didn't
+ * anticipate). Finding the edge costs `O(log width)` `inSrgbGamut` calls
+ * instead of running the full chroma-reduction search for every pixel;
+ * pixels before the edge need only the CHEAP unmapped conversion (already
+ * proven in-gamut), and pixels at/after it are skipped entirely (transparent,
+ * `r`/`g`/`b` left at the buffer's zero-fill). Measured on a 256x256 plane
+ * (median of 15 runs, warmed up) against the OLD full-gamut-map-every-pixel
+ * approach: hue 145 (the review's own reproduction case) went from 45.1ms to
+ * 1.8ms (24.5x); hue 30 from 49.2ms to 1.3ms (37.9x); hue 265 from 49.2ms to
+ * 2.0ms (24.8x) — see the mutation table / final report for the exact
+ * reproduction script.
  */
 export function oklchPlanePixels(
   hue: number,
@@ -629,34 +738,60 @@ export function oklchPlanePixels(
   if (width <= 0 || height <= 0) return out
   for (let y = 0; y < height; y++) {
     const l = height === 1 ? 1 : 1 - y / (height - 1)
+    const rowBase = y * width * 4
+    const edge = gamutEdgeIndex(l, hue, width, maxChroma)
     for (let x = 0; x < width; x++) {
+      const idx = rowBase + x * 4
+      if (x >= edge) {
+        out[idx + 3] = 0
+        continue
+      }
       const c = width === 1 ? 0 : (x / (width - 1)) * maxChroma
-      const ok: Oklch = { l, c, h: hue }
-      const gamutOk = inSrgbGamut(ok)
-      const rgb = srgbToRgb255(gamutOk ? gamutMapOklchToSrgb(ok) : gamutMapOklchToSrgb(ok))
-      const idx = (y * width + x) * 4
+      // Already proven in-gamut by the row search — the cheap unmapped
+      // conversion (clamped only for float noise) is exact here, so the
+      // expensive chroma-reduction search never runs per pixel.
+      const rgb = srgbToRgb255(oklchToSrgb({ l, c, h: hue }))
       out[idx] = rgb.r
       out[idx + 1] = rgb.g
       out[idx + 2] = rgb.b
-      out[idx + 3] = gamutOk ? 255 : 0
+      out[idx + 3] = 255
     }
   }
   return out
 }
 
+/** The smallest pixel index `x` in `[0, width]` at which `{l, c(x), h}` first
+ * leaves the sRGB gamut, assuming (and this file's tests verify) that
+ * in-gamut chroma values along one row form a PREFIX. `width` means "the
+ * whole row is in gamut"; `0` means even `c=0` is out (only possible for an
+ * `l` outside [0,1], which callers never pass). */
+function gamutEdgeIndex(l: number, hue: number, width: number, maxChroma: number): number {
+  if (width <= 0) return 0
+  if (inSrgbGamut({ l, c: maxChroma, h: hue })) return width
+  if (!inSrgbGamut({ l, c: 0, h: hue })) return 0
+  let lastIn = 0
+  let firstOut = width - 1
+  while (firstOut - lastIn > 1) {
+    const mid = (lastIn + firstOut) >> 1
+    const c = (mid / (width - 1)) * maxChroma
+    if (inSrgbGamut({ l, c, h: hue })) lastIn = mid
+    else firstOut = mid
+  }
+  return firstOut
+}
+
 /** Paint {@link oklchPlanePixels} onto a canvas sized to its current
- * `width`/`height`. A no-op on a zero-sized canvas or a context-less
+ * `width`/`height`, using the hue/maxChroma from `state` (not separate
+ * arguments — the ONE source of truth for both, matching how `connect()`
+ * itself reads them). A no-op on a zero-sized canvas or a context-less
  * environment (jsdom without a 2D context polyfill). */
-export function paintOklchPlane(
-  canvas: HTMLCanvasElement,
-  hue: number,
-  maxChroma: number = DEFAULT_MAX_CHROMA,
-): void {
+export function paintOklchPlane(canvas: HTMLCanvasElement, state: ColorPickerState): void {
   const { width, height } = canvas
   if (width <= 0 || height <= 0) return
   const ctx = canvas.getContext('2d')
   if (!ctx) return
-  const pixels = oklchPlanePixels(hue, width, height, maxChroma)
+  const hue = stateOklch(state).h
+  const pixels = oklchPlanePixels(hue, width, height, state.maxChroma)
   ctx.putImageData(new ImageData(pixels, width, height), 0, 0)
 }
 
@@ -687,6 +822,7 @@ export interface ColorPickerParts {
   modelToggle: {
     type: 'button'
     'aria-label': Signal<string>
+    disabled: Signal<boolean>
     'data-scope': 'color-picker'
     'data-part': 'model-toggle'
     'data-model': Signal<ColorModel>
@@ -794,11 +930,14 @@ export interface ColorPickerParts {
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
     onPointerCancel: (e: PointerEvent) => void
+    onLostPointerCapture: (e: PointerEvent) => void
   }
   /** Decorative `<canvas>` seam for the OKLCH area — headless, so the
-   * consumer owns creating and sizing the real `<canvas>` element and
-   * repainting it with {@link paintOklchPlane} on hue change (and on mount).
-   * Absent/inert in HSV mode. */
+   * consumer owns creating and sizing the real `<canvas>` element (give it
+   * an id and spread these props), but never its own repaint wiring: place
+   * {@link areaCanvasBinding}`(state, thatSameId)` anywhere in the view and
+   * it stays painted, on mount and on every hue/`maxChroma` change. Absent/
+   * inert in HSV mode. */
   areaCanvas: {
     'data-scope': 'color-picker'
     'data-part': 'area-canvas'
@@ -806,10 +945,12 @@ export interface ColorPickerParts {
   }
   /** The draggable thumb inside the 2D area. Keyboard-operable (arrows move
    * S/V or C/L depending on the active model; Shift = coarse) with
-   * role="slider" and a 2D aria-valuetext. */
+   * role="slider" and a 2D aria-valuetext. `aria-label` follows the ACTIVE
+   * model ("Saturation / Value" in HSV mode, "Chroma / Lightness" in OKLCH),
+   * not a fixed string — the axes it labels are literally different. */
   areaThumb: {
     role: 'slider'
-    'aria-label': string
+    'aria-label': Signal<string>
     'aria-valuemin': Signal<number>
     'aria-valuemax': Signal<number>
     'aria-valuenow': Signal<number>
@@ -835,13 +976,17 @@ export interface ColorPickerParts {
     'data-part': 'alpha-slider'
     onInput: (e: Event) => void
   }
-  /** EyeDropper API trigger. Always published; `supportsEyeDropper()` (a
-   * plain, SSR-safe function, not a `Signal` — see its doc comment) is how a
-   * consumer decides whether to show or disable it. */
+  /** EyeDropper API trigger. Always PLACED, but `hidden`/`disabled`/
+   * `data-unsupported` all derive from `state.eyeDropperSupported` — a
+   * consumer writes no feature-detect code of its own; see
+   * {@link eyeDropperSupportMount}. */
   eyeDropperTrigger: {
     type: 'button'
     'aria-label': string
     disabled: Signal<boolean>
+    hidden: Signal<boolean>
+    /** Bare boolean (package convention). */
+    'data-unsupported': Signal<'' | undefined>
     'data-scope': 'color-picker'
     'data-part': 'eyedropper-trigger'
     onClick: (e: MouseEvent) => void
@@ -941,10 +1086,12 @@ export function connect(
       'aria-label': state.map((s) =>
         s.color.model === 'hsv' ? locale.switchToOklch : locale.switchToHsv,
       ),
+      disabled: state.map((s) => s.disabled),
       'data-scope': 'color-picker',
       'data-part': 'model-toggle',
       'data-model': state.map((s) => s.color.model),
       onClick: tagSend(send, ['setModel'], () => {
+        if (state.peek().disabled) return
         send({ type: 'setModel', model: state.peek().color.model === 'hsv' ? 'oklch' : 'hsv' })
       }),
     },
@@ -1068,6 +1215,7 @@ export function connect(
       onPointerMove: tagSend(send, ['setSv', 'setLc'], areaDrag.onPointerMove),
       onPointerUp: areaDrag.onPointerUp,
       onPointerCancel: areaDrag.onPointerCancel,
+      onLostPointerCapture: areaDrag.onLostPointerCapture,
     },
     areaCanvas: {
       'data-scope': 'color-picker',
@@ -1076,7 +1224,13 @@ export function connect(
     },
     areaThumb: {
       role: 'slider',
-      'aria-label': opts.areaLabel ?? `${locale.saturation} / ${locale.value}`,
+      'aria-label': state.map((s) =>
+        opts.areaLabel !== undefined
+          ? opts.areaLabel
+          : s.color.model === 'oklch'
+            ? `${locale.chroma} / ${locale.oklchLightness}`
+            : `${locale.saturation} / ${locale.value}`,
+      ),
       'aria-valuemin': state.map(() => 0),
       'aria-valuemax': state.map((s) => (s.color.model === 'oklch' ? s.maxChroma : 100)),
       'aria-valuenow': state.map((s) => (s.color.model === 'oklch' ? s.color.c : s.color.s)),
@@ -1133,7 +1287,7 @@ export function connect(
       min: 0,
       max: 1,
       step: 0.01,
-      'aria-label': opts.alphaLabel ?? 'Alpha',
+      'aria-label': opts.alphaLabel ?? locale.alpha,
       disabled: state.map((s) => s.disabled),
       value: state.map((s) => String(s.alpha)),
       style: state.map((s) => {
@@ -1149,24 +1303,44 @@ export function connect(
     eyeDropperTrigger: {
       type: 'button',
       'aria-label': opts.eyeDropperLabel ?? locale.eyeDropper,
-      disabled: state.map((s) => s.disabled),
+      disabled: state.map((s) => s.disabled || !s.eyeDropperSupported),
+      hidden: state.map((s) => !s.eyeDropperSupported),
+      'data-unsupported': state.map((s) => (s.eyeDropperSupported ? undefined : '')),
       'data-scope': 'color-picker',
       'data-part': 'eyedropper-trigger',
       onClick: tagSend(send, ['setColor'], () => {
-        if (state.peek().disabled) return
-        pendingEyeDropper?.abort()
+        const current = state.peek()
+        if (current.disabled || !current.eyeDropperSupported) return
+        // Toggle-cancel: a second click while a pick is already open cancels
+        // it, rather than aborting-and-immediately-restarting.
+        if (pendingEyeDropper) {
+          pendingEyeDropper.abort()
+          pendingEyeDropper = null
+          return
+        }
         const controller = new AbortController()
         pendingEyeDropper = controller
-        void openEyeDropper(controller.signal).then((hex) => {
-          if (pendingEyeDropper !== controller) return
-          pendingEyeDropper = null
-          if (hex !== null) send({ type: 'setColor', color: hex })
-        })
+        void openEyeDropper(controller.signal).then(
+          (hex) => {
+            if (pendingEyeDropper !== controller) return
+            pendingEyeDropper = null
+            if (hex !== null) send({ type: 'setColor', color: hex })
+          },
+          (err) => {
+            if (pendingEyeDropper === controller) pendingEyeDropper = null
+            // A genuine failure (never an AbortError — `openEyeDropper`
+            // already resolves `null` for a cancel) has no color to apply;
+            // there is nothing to undo. Cleared here so it can never become
+            // an unhandled rejection; surfaced as a message so a consumer
+            // CAN react (a toast, a log) without this machine deciding how.
+            send({ type: 'eyeDropperFailed', message: String(err) })
+          },
+        )
       }),
     },
     swatchGroup: {
       role: 'group',
-      'aria-label': opts.swatchGroupLabel ?? 'Color swatches',
+      'aria-label': opts.swatchGroupLabel ?? locale.swatchGroup,
       'data-scope': 'color-picker',
       'data-part': 'swatch-group',
     },
@@ -1223,4 +1397,7 @@ export const colorPicker = {
   sanitizeOklch,
   pickerColorToCssColor,
   cssColorToPickerColor,
+  pickerColorToCss,
+  eyeDropperSupportMount,
+  areaCanvasBinding,
 }

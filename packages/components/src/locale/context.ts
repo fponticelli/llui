@@ -26,9 +26,11 @@ export interface Locale {
     chroma: string
     oklchLightness: string
     hex: string
+    alpha: string
     eyeDropper: string
     switchToOklch: string
     switchToHsv: string
+    swatchGroup: string
   }
   combobox: { toggle: string; resultCount: (n: number) => string }
   dateInput: { clear: string }

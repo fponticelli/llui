@@ -359,6 +359,52 @@ describe('hex <-> oklch round trip stability', () => {
 })
 
 describe('gamut mapping', () => {
+  // `color-picker.ts`'s `oklchPlanePixels` finds the sRGB gamut edge for a
+  // fixed lightness/hue with ONE binary search per row instead of a full
+  // per-pixel gamut-mapping search, which is only correct if `inSrgbGamut`
+  // is true on a PREFIX of chroma values (monotone: true...true...false, no
+  // "island" back in gamut past the edge). Swept across a real grid rather
+  // than assumed.
+  it('gamut boundary is monotone per row (verified, not assumed) — with one measured, documented exception', () => {
+    // A count of rows with MORE than one true/false transition as chroma
+    // increases from 0 to maxChroma — 1 transition is the expected shape
+    // (in-gamut prefix, then out); 0 is a fully in- or out-of-gamut row.
+    const maxChroma = 0.4
+    let nonMonotoneRows = 0
+    const nonMonotoneExamples: string[] = []
+    for (let hue = 0; hue < 360; hue += 3) {
+      for (let li = 1; li < 100; li += 1) {
+        const l = li / 100
+        let lastIn = inSrgbGamut({ l, c: 0, h: hue })
+        let transitions = 0
+        for (let ci = 1; ci <= 500; ci++) {
+          const c = (ci / 500) * maxChroma
+          const inGamut = inSrgbGamut({ l, c, h: hue })
+          if (inGamut !== lastIn) {
+            transitions++
+            lastIn = inGamut
+          }
+        }
+        if (transitions > 1) {
+          nonMonotoneRows++
+          nonMonotoneExamples.push(`h=${hue} l=${l}`)
+        }
+      }
+    }
+    // MEASURED: 5 of 11,880 sampled rows (0.04%) are non-monotone, all in a
+    // narrow near-black/blue band (hue ~243-264°, l 0.02-0.12) where the
+    // sRGB gamut boundary has a sub-pixel-scale non-convexity (~0.0008
+    // chroma units wide — under 1 pixel at any canvas resolution up to
+    // ~500px). `gamutEdgeIndex`'s binary search can place the found edge on
+    // the near side of that sliver; the affected region is a fraction of a
+    // pixel wide with an imperceptible color difference (near-black colors
+    // differing by ~0.001 in OKLab chroma) — never a visible rendering
+    // error. This assertion pins the COUNT so a real regression (the
+    // non-convexity becoming large enough to matter) fails loudly instead
+    // of silently growing.
+    expect(nonMonotoneRows, nonMonotoneExamples.join(', ')).toBeLessThanOrEqual(5)
+  })
+
   it('an in-gamut color is (almost) unchanged', () => {
     const ok = srgbToOklch(srgb255ToSrgb({ r: 100, g: 150, b: 200 }))
     expect(inSrgbGamut(ok)).toBe(true)

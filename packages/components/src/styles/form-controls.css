@@ -1078,9 +1078,11 @@ textarea[data-scope='form-field'][data-part='control'] {
   padding: 0;
 }
 
-/* `data-out-of-gamut` is published on the root only. */
+/* `data-out-of-gamut` is published on the root only. The ring uses the
+ * shared `--warning` token (never a raw color like `orange`) so it follows
+ * the theme the same way every other state cue in this file does. */
 [data-scope='color-picker'][data-part='root'][data-out-of-gamut] [data-part='preview'] {
-  outline: 2px solid color-mix(in srgb, orange 70%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--warning) 70%, transparent);
   outline-offset: 2px;
 }
 

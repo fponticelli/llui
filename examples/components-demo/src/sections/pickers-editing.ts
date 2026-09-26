@@ -9,10 +9,6 @@ import {
   canvas,
   each,
   onMount,
-  mountable,
-  registerBinding,
-  currentDoc,
-  isSignalHandle,
   branch,
   text,
 } from '@llui/dom'
@@ -251,34 +247,22 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     }
   })
 
-  // OKLCH area canvas: `areaCanvas` is a decorative, headless seam — the
-  // machine has no opinion on how it gets painted. `registerBinding` rides
-  // the same chunked-mask reconciler as every other prop (repaints only when
-  // the hue chunk is actually dirty); `onMount` finds the real canvas once.
+  // OKLCH area canvas: `areaCanvas` is a decorative, headless seam, but the
+  // machine now owns its own repaint-on-change wiring — `areaCanvasBinding`
+  // rides the same chunked-mask reconciler as every other prop (repaints only
+  // when the hue/maxChroma chunk is actually dirty) and finds the real canvas
+  // itself, so this view no longer touches `registerBinding`/`isSignalHandle`/
+  // `currentDoc` at all.
   const oklchCanvasId = 'color-picker-oklch-canvas'
-  let oklchCanvasEl: HTMLCanvasElement | null = null
-  const oklchHue = state.at('colorPicker').map((s) => (s.color.model === 'oklch' ? s.color.h : 0))
-  const oklchCanvasBinding = mountable(() => {
-    if (isSignalHandle(oklchHue)) {
-      registerBinding(oklchHue.deps, oklchHue.produce, (value) => {
-        if (oklchCanvasEl) colorPicker.paintOklchPlane(oklchCanvasEl, value as number)
-      })
-    }
-    return currentDoc().createComment('oklch-canvas-binding')
-  })
-  const oklchCanvasMount = onMount((root) => {
-    oklchCanvasEl = root.querySelector<HTMLCanvasElement>(`#${oklchCanvasId}`)
-    const cpState = state.peek().colorPicker
-    if (oklchCanvasEl) {
-      colorPicker.paintOklchPlane(
-        oklchCanvasEl,
-        cpState.color.model === 'oklch' ? cpState.color.h : 0,
-      )
-    }
-    return () => {
-      oklchCanvasEl = null
-    }
-  })
+  const oklchCanvasBinding = colorPicker.areaCanvasBinding(state.at('colorPicker'), oklchCanvasId)
+
+  // Eyedropper support: the machine owns feature-detection too — this mount
+  // helper dispatches `setEyeDropperSupported` once, and `cp.eyeDropperTrigger`
+  // already publishes `hidden`/`disabled`/`data-unsupported` from that state.
+  // This view writes zero feature-detect code of its own.
+  const eyeDropperMount = colorPicker.eyeDropperSupportMount((m) =>
+    send({ type: 'colorPicker', msg: m }),
+  )
 
   const dpGrid = (): Renderable => {
     const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
@@ -361,8 +345,8 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     // Placed so the splitter drag onMount registers (a discarded onMount() is inert).
     splitterMount,
     // Same reason: a placed-but-unused Mountable is inert.
-    oklchCanvasBinding,
-    oklchCanvasMount,
+    ...oklchCanvasBinding,
+    eyeDropperMount,
     sectionGroup('Pickers', [
       card('Date Picker', [
         div({ ...dp.root }, [

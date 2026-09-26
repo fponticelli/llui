@@ -169,4 +169,147 @@ describe('pointerDragHandlers', () => {
     h.onPointerDown(pointerEvent({ currentTarget: target }))
     expect(() => h.onPointerUp(pointerEvent({ currentTarget: target }))).not.toThrow()
   })
+
+  // ── Finding G: robustness — lost capture, multi-pointer isolation ────────
+
+  it('onLostPointerCapture ends an active drag even with no pointerup/pointercancel', () => {
+    const target = mockTarget(true)
+    const onDrag = vi.fn()
+    const onDragEnd = vi.fn()
+    const h = pointerDragHandlers({ isDisabled: () => false, onDrag, onDragEnd })
+    h.onPointerDown(pointerEvent({ currentTarget: target }))
+    onDrag.mockClear()
+    h.onLostPointerCapture(pointerEvent({ currentTarget: target }))
+    expect(onDragEnd).toHaveBeenCalledTimes(1)
+    // The flag is truly reset — a later move for the SAME pointer id is inert.
+    h.onPointerMove(pointerEvent({ currentTarget: target }))
+    expect(onDrag).not.toHaveBeenCalled()
+  })
+
+  it('onLostPointerCapture for an unrelated pointer id is ignored', () => {
+    const target = mockTarget(true)
+    const onDrag = vi.fn()
+    const onDragEnd = vi.fn()
+    const h = pointerDragHandlers({ isDisabled: () => false, onDrag, onDragEnd })
+    h.onPointerDown(pointerEvent({ currentTarget: target, pointerId: 1 }))
+    h.onLostPointerCapture(pointerEvent({ currentTarget: target, pointerId: 99 }))
+    expect(onDragEnd).not.toHaveBeenCalled()
+    // The original drag (pointerId 1) is still live.
+    onDrag.mockClear()
+    h.onPointerMove(pointerEvent({ currentTarget: target, pointerId: 1 }))
+    expect(onDrag).toHaveBeenCalledTimes(1)
+  })
+
+  it("a second pointer's pointermove/pointerup/pointercancel never affects the active drag", () => {
+    const target = mockTarget(true)
+    const onDrag = vi.fn()
+    const onDragEnd = vi.fn()
+    const h = pointerDragHandlers({ isDisabled: () => false, onDrag, onDragEnd })
+    h.onPointerDown(pointerEvent({ currentTarget: target, pointerId: 1 }))
+    onDrag.mockClear()
+    h.onPointerMove(pointerEvent({ currentTarget: target, pointerId: 2 }))
+    h.onPointerUp(pointerEvent({ currentTarget: target, pointerId: 2 }))
+    h.onPointerCancel(pointerEvent({ currentTarget: target, pointerId: 2 }))
+    expect(onDrag).not.toHaveBeenCalled()
+    expect(onDragEnd).not.toHaveBeenCalled()
+    // The real (pointerId 1) drag is unaffected.
+    h.onPointerMove(pointerEvent({ currentTarget: target, pointerId: 1 }))
+    expect(onDrag).toHaveBeenCalledTimes(1)
+  })
+
+  it('a second pointerdown while a drag is already live is ignored (no hijack)', () => {
+    const target = mockTarget(true)
+    const onDrag = vi.fn()
+    const onDragStart = vi.fn()
+    const h = pointerDragHandlers({ isDisabled: () => false, onDrag, onDragStart })
+    h.onPointerDown(pointerEvent({ currentTarget: target, pointerId: 1 }))
+    onDrag.mockClear()
+    onDragStart.mockClear()
+    target.setPointerCapture.mockClear()
+    h.onPointerDown(pointerEvent({ currentTarget: target, pointerId: 2 }))
+    expect(onDragStart).not.toHaveBeenCalled()
+    expect(onDrag).not.toHaveBeenCalled()
+    expect(target.setPointerCapture).not.toHaveBeenCalled()
+    // The original (pointerId 1) drag is still the active one.
+    h.onPointerMove(pointerEvent({ currentTarget: target, pointerId: 1 }))
+    expect(onDrag).toHaveBeenCalledTimes(1)
+    h.onPointerMove(pointerEvent({ currentTarget: target, pointerId: 2 }))
+    expect(onDrag).toHaveBeenCalledTimes(1)
+  })
+
+  // ── Finding G: mounted, real events (no `as unknown as Event` casts) ─────
+  //
+  // jsdom implements real `PointerEvent` construction and real
+  // `dispatchEvent`/`addEventListener`, but NOT `setPointerCapture`/
+  // `hasPointerCapture`/`releasePointerCapture` — those three are stubbed
+  // per-element below (documented, not hidden) because jsdom has no capture
+  // model at all; everything else here is a genuine DOM element receiving a
+  // genuine dispatched event, not a hand-built object cast to `PointerEvent`.
+  describe('mounted: real elements, real dispatched PointerEvents', () => {
+    function realTrackElement(): HTMLDivElement {
+      const el = document.createElement('div')
+      document.body.appendChild(el)
+      Object.assign(el, {
+        setPointerCapture: vi.fn(),
+        hasPointerCapture: vi.fn(() => true),
+        releasePointerCapture: vi.fn(),
+      })
+      return el
+    }
+
+    it('a real pointerdown -> pointermove -> pointerup sequence drives the handlers via addEventListener', () => {
+      const el = realTrackElement()
+      const positions: number[] = []
+      const h = pointerDragHandlers({
+        isDisabled: () => false,
+        onDrag: (e) => positions.push(e.clientX),
+      })
+      el.addEventListener('pointerdown', h.onPointerDown)
+      el.addEventListener('pointermove', h.onPointerMove)
+      el.addEventListener('pointerup', h.onPointerUp)
+
+      el.dispatchEvent(
+        new PointerEvent('pointerdown', { pointerId: 5, button: 0, clientX: 1, bubbles: true }),
+      )
+      el.dispatchEvent(
+        new PointerEvent('pointermove', { pointerId: 5, clientX: 42, bubbles: true }),
+      )
+      el.dispatchEvent(new PointerEvent('pointerup', { pointerId: 5, bubbles: true }))
+
+      expect(positions).toEqual([1, 42])
+      expect(
+        (el as unknown as { setPointerCapture: ReturnType<typeof vi.fn> }).setPointerCapture,
+      ).toHaveBeenCalledWith(5)
+      expect(
+        (el as unknown as { releasePointerCapture: ReturnType<typeof vi.fn> })
+          .releasePointerCapture,
+      ).toHaveBeenCalledWith(5)
+
+      // A pointermove dispatched AFTER pointerup is genuinely inert — proves
+      // the handler, not just a mock, ended the drag.
+      positions.length = 0
+      el.dispatchEvent(
+        new PointerEvent('pointermove', { pointerId: 5, clientX: 999, bubbles: true }),
+      )
+      expect(positions).toEqual([])
+    })
+
+    it('a real lostpointercapture event ends the drag through the actual DOM event name', () => {
+      const el = realTrackElement()
+      const onDragEnd = vi.fn()
+      const onDrag = vi.fn()
+      const h = pointerDragHandlers({ isDisabled: () => false, onDrag, onDragEnd })
+      el.addEventListener('pointerdown', h.onPointerDown)
+      el.addEventListener('lostpointercapture', h.onLostPointerCapture)
+      el.addEventListener('pointermove', h.onPointerMove)
+
+      el.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 7, button: 0, bubbles: true }))
+      el.dispatchEvent(new PointerEvent('lostpointercapture', { pointerId: 7, bubbles: true }))
+      expect(onDragEnd).toHaveBeenCalledTimes(1)
+
+      onDrag.mockClear()
+      el.dispatchEvent(new PointerEvent('pointermove', { pointerId: 7, bubbles: true }))
+      expect(onDrag).not.toHaveBeenCalled()
+    })
+  })
 })
