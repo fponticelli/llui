@@ -20,15 +20,36 @@ import { type AttrValue, type ChildNode, type ElProps, type Mountable } from '@l
  * `viewport?: ElProps` alongside `ElProps`'s index signature makes the
  * `viewport` KEY ITSELF a type error at every call site, regardless of how
  * the type is spelled (`extends` has the opposite, better-known failure mode:
- * it silently DROPS the index signature instead). The index signature here is
- * widened to `unknown` so `viewport`'s object value coexists with it; `rest`
- * is cast back to `ElProps` below since it is exactly that once `viewport`
- * and `class` are destructured out.
+ * it silently DROPS the index signature instead).
+ *
+ * It is also NOT `{...} & Record<string, unknown>`: `unknown` absorbs EVERY
+ * value, so `Table({ onClick: 42 })` compiled while the identical
+ * `TableRow({ onClick: 42 })` (whose props ARE plain `ElProps`, via
+ * `classPart`) correctly errored — the loose catch-all was silently a
+ * strictly WEAKER contract than every sibling part in this file (#264 item
+ * 2). `@llui/dom`'s `ElEventMap` (the mapped type backing `ElProps`'s precise
+ * `on*` handlers) is not part of the package's public surface, so it cannot
+ * be reused here directly; the fix instead adds a template-literal PATTERN
+ * index signature for every `on*`-shaped key requiring a handler function,
+ * alongside a second, more permissive index signature for everything else
+ * (attributes/`data-*`/`aria-*` as `AttrValue`, or `viewport` as `ElProps`).
+ * TypeScript allows a pattern index signature to coexist with a general
+ * string index signature as long as the pattern one's value type stays
+ * assignable to the general one's — which `(ev: any) => void` is, since it
+ * is already one of the general index signature's union members. `rest` is
+ * cast back to `ElProps` below since it is exactly that (module the widened
+ * `viewport`/`ElProps` union member, which is impossible once `viewport` has
+ * been destructured out) once `viewport` and `class` are destructured out.
  */
 export type TableProps = {
   viewport?: ElProps
   class?: AttrValue
-} & Record<string, unknown>
+} & {
+  [K in `on${string}`]?: (ev: any) => void // eslint-disable-line @typescript-eslint/no-explicit-any
+} & {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  [key: string]: AttrValue | ((ev: any) => void) | ElProps | undefined
+}
 
 export function Table(
   a0?: TableProps | readonly ChildNode[],
@@ -46,7 +67,7 @@ export function Table(
     [
       tableEl(
         {
-          ...(rest as ElProps),
+          ...rest,
           class: mergeClass(
             'group/table w-full caption-bottom text-sm data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
             className,
@@ -56,6 +77,24 @@ export function Table(
       ),
     ],
   )
+}
+
+/**
+ * Compile-time-only gate (#264 item 2), never called at runtime: pins
+ * `TableProps`' precision against a regression back to the `Record<string,
+ * unknown>` catch-all it replaced, which silently accepted a bogus value for
+ * a real handler prop. `pnpm check:registry` compiles this file, so a
+ * widening of `TableProps` that makes the `@ts-expect-error` below stop being
+ * an error fails the build (an unused `@ts-expect-error` is itself a `tsc`
+ * error); the control line beside it proves the same call form still
+ * compiles when the value is a real handler, so this is testing the TYPE,
+ * not merely that the call form is rejected outright.
+ */
+const _tableTypeGate = (): void => {
+  // @ts-expect-error TableProps must reject a non-function value for an `on*` key, exactly like TableRow/ElProps.
+  Table({ onClick: 42 })
+  // Control: a real handler for the same key compiles cleanly.
+  Table({ onClick: () => {} })
 }
 
 export const TableHeader = classPart(thead, '[&_tr]:border-b')
