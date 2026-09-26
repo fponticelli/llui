@@ -225,6 +225,21 @@ describe('gamut mapping', () => {
     const mapped = gamutMapOklchToSrgb(ok)
     expect(inSrgbGamut(srgbToOklch(mapped))).toBe(true)
   })
+
+  it('converges to the TIGHTEST in-gamut chroma, not just any in-gamut point', () => {
+    // A loose "is it in gamut" / "is it in [0,1]" assertion cannot tell a
+    // correct binary search from one that converges to the wrong point —
+    // both land in-gamut. Pin the actual converged chroma for a known
+    // out-of-gamut color: an algorithm that reduces chroma more than
+    // necessary (e.g. a mutated convergence test that treats "close enough"
+    // as "too far" or vice versa) changes this by several percent, measured.
+    const mapped = gamutMapOklchToSrgb({ l: 0.7, c: 0.4, h: 150 })
+    const effective = srgbToOklch(mapped)
+    expect(effective.c).toBeCloseTo(0.2104, 3)
+    expect(effective.l).toBeCloseTo(0.7091, 3)
+    expect(effective.h).toBeCloseTo(147.065, 2)
+    expect(srgbToRgb255(mapped)).toEqual({ r: 0, g: 194, b: 72 })
+  })
 })
 
 describe('hex formatting', () => {
@@ -450,6 +465,13 @@ describe('interpolateColor — reference midpoints', () => {
       // Straight lerp would give r=0.1; premultiplied un-mixing pulls r higher
       // because blue's contribution is weighted by its vanishing alpha.
       expect(near1.r).toBeGreaterThan(0.1)
+      // The B side is where premultiplication actually does its work here:
+      // blue's OWN channel (b=1) must be weighted by its OWN vanishing alpha
+      // (0) before mixing, giving exactly 0 rather than blue's un-premultiplied
+      // b=1 leaking through — asserting only `r` above cannot see a mutation
+      // that drops premultiplication on the B endpoint specifically, since
+      // red's `b` and blue's `r` are both already 0 either way.
+      expect(near1.b).toBeCloseTo(0, 6)
     }
   })
 
