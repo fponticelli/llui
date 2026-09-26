@@ -1,10 +1,15 @@
 // @vitest-environment node
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { decodeScenarioFamily } from '@llui/cli/presentation-scenarios'
 import { loadProductContract } from './navigation-data-contract-source'
+import {
+  createVariantsAxisValueNames,
+  cssScopeHasDensityOrSizeSelector,
+  hasDensityOrSizeProperty,
+} from './density-source-audit'
 import {
   applicableNavigationDataScenarios,
   compileNavigationDataCatalog,
@@ -30,6 +35,16 @@ const ownedScopes = new Set(
     [...css.matchAll(/\[data-scope='([^']+)'\]/g)].map((match) => match[1]!),
   ),
 )
+
+// Every baseline stylesheet, concatenated — a density-N/A product's own
+// rules could in principle live in ANY of them (not only the two
+// navigation-data-family files above), so the CSS half of the density-N/A
+// audit below reads the whole set.
+const stylesDir = resolve(ROOT, 'packages/components/src/styles')
+const allBaselineCss = readdirSync(stylesDir)
+  .filter((file) => file.endsWith('.css'))
+  .map((file) => readFileSync(resolve(stylesDir, file), 'utf8'))
+  .join('\n')
 
 describe('navigation/data presentation contract', () => {
   it('compiles the family with the exact 29-product ProductContract inventory (zero missing, zero stale)', () => {
@@ -97,6 +112,45 @@ describe('navigation/data presentation contract', () => {
     expect(withCompactCase).toEqual(DENSITY_APPLICABLE_PRODUCT_IDS)
   })
 
+  it('every density-applicable product is capped at exactly TWO real skin levels, and sidebar/item real level-counts back the comment on DENSITY_APPLICABLE_PRODUCT_IDS (#264 review item 4)', () => {
+    // avatar/table's registry recipe DOES have a third `lg` rung, but the
+    // baseline stylesheet has only ONE `[data-density='compact']` override —
+    // no `lg`-equivalent — so a third scenario level would exercise
+    // registryTailwind only, breaking the family's "both paths render the
+    // same cases" contract.
+    for (const file of ['avatar', 'table']) {
+      const css = readFileSync(
+        resolve(ROOT, 'packages/components/src/styles/data-display.css'),
+        'utf8',
+      )
+      // Distinct VALUES (not occurrences — a descendant selector rule
+      // repeats the same `[data-density='compact']` prefix a second time).
+      const values = new Set(
+        [
+          ...css.matchAll(
+            new RegExp(
+              `\\[data-scope='${file}'\\]\\[data-part='root'\\]\\[data-density='([^']+)'\\]`,
+              'g',
+            ),
+          ),
+        ].map((m) => m[1]),
+      )
+      expect([...values], `${file} baseline density override values`).toEqual(['compact'])
+    }
+    // item's OWN registry recipe genuinely has only two `size` rungs.
+    const itemSource = readFileSync(resolve(ROOT, 'registry/llui/ui/item.ts'), 'utf8')
+    expect(createVariantsAxisValueNames(itemSource, 'size').sort()).toEqual(['default', 'sm'])
+    // sidebar's DOES have three — the comment above states this is a real,
+    // intentionally-untested gap, not an oversight; assert it stays true so
+    // the comment cannot go stale.
+    const sidebarSource = readFileSync(resolve(ROOT, 'registry/llui/ui/sidebar.ts'), 'utf8')
+    expect(createVariantsAxisValueNames(sidebarSource, 'size').sort()).toEqual([
+      'default',
+      'lg',
+      'sm',
+    ])
+  })
+
   it('registers exactly one specific density-N/A rationale per non-applicable product, each backed by a real absence of a density/size field in its checked sources', () => {
     const applicableSet = new Set(DENSITY_APPLICABLE_PRODUCT_IDS)
     const naProductIds = family
@@ -117,8 +171,31 @@ describe('navigation/data presentation contract', () => {
       expect(rationale.checkedSources.length, productId).toBeGreaterThan(0)
       for (const relPath of rationale.checkedSources) {
         const source = readFileSync(resolve(ROOT, relPath), 'utf8')
-        expect(source, `${productId}: ${relPath}`).not.toMatch(/density/i)
+        // Structural, not textual (#264 review item 4): the OLD guard was
+        // `expect(source).not.toMatch(/density/i)`, a whole-file substring
+        // scan fooled in both directions — a prose comment merely CONTAINING
+        // "density" would false the guard, while a real `size` option (this
+        // family's other spelling for the same axis, e.g. avatar/table's
+        // registry `data-size` recipes) carries no such substring and would
+        // sail through undetected. Read the real declared property names via
+        // the TypeScript AST instead, matched EXACTLY against `density`/`size`.
+        expect(
+          hasDensityOrSizeProperty(source, relPath),
+          `${productId}: ${relPath} declares a density/size-named property`,
+        ).toBe(false)
       }
+      // The registry recipe file(s) among `checkedSources` are also `.ts`, so
+      // `hasDensityOrSizeProperty` above already covers a `createVariants({
+      // variants: { size: {...} } })` key structurally — no separate CSS-vs-
+      // TS branch is needed there. The baseline STYLESHEET half is checked
+      // independently: no rule scoped to this product's `[data-scope]` may
+      // carry a `[data-density...]`/`[data-size...]` attribute selector,
+      // across every baseline CSS file (not merely the two the family's other
+      // checks read).
+      expect(
+        cssScopeHasDensityOrSizeSelector(allBaselineCss, productId),
+        `${productId}: baseline stylesheet has a density/size-scoped selector`,
+      ).toBe(false)
     }
   })
 

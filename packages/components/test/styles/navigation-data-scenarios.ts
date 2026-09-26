@@ -1251,6 +1251,30 @@ export const FORCED_COLOR_CUES: Readonly<Record<NavigationDataScenarioId, Forced
  * renderer-level test asserting no rendered case ever carries
  * `[data-density]` for it (`navigation-data-baseline-renderer.test.ts` /
  * `navigation-data-scenario-renderer.test.ts`), not merely asserted here.
+ *
+ * Two-level, not three, for all five (#264 review item 4) — checked against
+ * each product's REAL skin surface rather than assumed:
+ * - `avatar` / `table`: the registry recipe's own Tailwind size scale genuinely
+ *   has a third rung (`registry/llui/ui/avatar.ts`'s `data-[size=lg]`,
+ *   shadcn's `lg` avatar), but the BASELINE stylesheet
+ *   (`packages/components/src/styles/data-display.css`) has only ONE
+ *   `[data-density='compact']` override each — no `lg`-equivalent rule
+ *   exists there, so a third level would apply to registryTailwind only,
+ *   breaking the family's own "both rendering paths exercise the same
+ *   cases" contract. Two is the level BOTH skins actually share.
+ * - `data-table`: forwards `density` straight to its composed `table`, so it
+ *   inherits that limit.
+ * - `item`: `registry/llui/ui/item.ts`'s `createVariants` genuinely defines
+ *   only `size: { default, sm }` — there IS no third rung to exercise.
+ * - `sidebar`: registry-only (no baseline counterpart at all), and its
+ *   `SidebarMenuButton` recipe DOES define a third `lg` rung
+ *   (`registry/llui/ui/sidebar.ts`) that this family's scenarios
+ *   deliberately never reach. Left at two anyway, for symmetry with `item`
+ *   — the family's OTHER registry-only presentational atom — rather than
+ *   making sidebar alone a three-level product with no dual-skin
+ *   counterpart to compare it against; `sidebar`'s unused `lg` rung is a
+ *   real (if minor) skin/test-coverage gap, tracked here rather than
+ *   silently invented into a mismatched third case.
  */
 export const DENSITY_APPLICABLE_PRODUCT_IDS: readonly string[] = [
   'avatar',
