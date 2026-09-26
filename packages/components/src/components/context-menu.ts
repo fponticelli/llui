@@ -21,8 +21,11 @@ import {
   firstNav,
   createMenuTreeParts,
   activeMenuHighlight,
+  watchSubmenuPositioning,
 } from './menu-machine.js'
 import { allFiniteNumbers } from '../utils/number.js'
+
+export { watchSubmenuPositioning, type SubmenuPositioningOptions } from './menu-machine.js'
 
 /**
  * Context menu — right-click (contextmenu) triggered menu positioned at the
@@ -362,4 +365,12 @@ export function overlay(opts: OverlayOptions): Mountable {
   })
 }
 
-export const contextMenu = { init, update, connect, overlay, isPresent, isMounted }
+export const contextMenu = {
+  init,
+  update,
+  connect,
+  overlay,
+  isPresent,
+  isMounted,
+  watchSubmenuPositioning,
+}

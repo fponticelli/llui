@@ -1,6 +1,6 @@
 import { button, div, span, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
 import { classPart, mergeClass, splitArgs } from '../../lib/utils'
-import { floatingOverlayMotionRecipe } from '../../lib/floating-motion'
+import { floatingOverlayMotionRecipe, floatingSyncMotionRecipe } from '../../lib/floating-motion'
 import { ChevronRightIcon } from './icons'
 
 /**
@@ -71,7 +71,24 @@ export function DropdownMenuSubTrigger(
   ])
 }
 
+/**
+ * A submenu LEVEL is a synchronous boolean machine — `subContent`'s own
+ * `data-state` is only ever `open`/`closed` (`openPath` membership), never
+ * `opening`/`closing` — unlike the top-level `DropdownMenuContent` above,
+ * which sits behind a real four-phase presence machine. `floatingSyncMotionRecipe`
+ * is the twin recipe scoped to exactly that reachable vocabulary (#265 finding 5).
+ */
 export const DropdownMenuSubContent = classPart(
   div,
-  `z-50 min-w-[8rem] shadow-lg ${dropdownMenuSurfaceRecipe} ${floatingOverlayMotionRecipe}`,
+  `z-50 min-w-[8rem] shadow-lg ${dropdownMenuSurfaceRecipe} ${floatingSyncMotionRecipe}`,
 )
+
+/**
+ * The positioning wrapper `watchSubmenuPositioning` (`@llui/components/menu`)
+ * attaches real floating geometry to — one per open submenu LEVEL, anchored to
+ * that level's own `subTrigger`. Bare on purpose: it carries no visual style
+ * of its own (`DropdownMenuSubContent` inside it is the surface), only the
+ * `position:absolute` the machine's `subPositioner` part bag already sets
+ * inline before the first layout pass.
+ */
+export const DropdownMenuSubPositioner = classPart(div, '')

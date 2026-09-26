@@ -24,7 +24,10 @@ import {
   setHighlight,
   createMenuTreeParts,
   activeMenuHighlight,
+  watchSubmenuPositioning,
 } from './menu-machine.js'
+
+export { watchSubmenuPositioning, type SubmenuPositioningOptions } from './menu-machine.js'
 
 /**
  * Menu — a dropdown of items triggered by a button. Supports submenus,
@@ -439,4 +442,13 @@ export function overlay(opts: OverlayOptions): Mountable {
   })
 }
 
-export const menu = { init, update, connect, overlay, isPresent, isMounted, floatingDir }
+export const menu = {
+  init,
+  update,
+  connect,
+  overlay,
+  isPresent,
+  isMounted,
+  floatingDir,
+  watchSubmenuPositioning,
+}

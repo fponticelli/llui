@@ -166,16 +166,54 @@ const arrowArtifacts = directFloatingArtifacts.flatMap((name) => {
   return exportedArrow ? [{ name, exportedArrow }] : []
 })
 
-/** Overlay machines with a real four-phase presence lifecycle; toast is not an
- * overlay and therefore stays outside this policy even though it is animated. */
+/**
+ * Overlay machines with a real four-phase presence lifecycle; toast is not an
+ * overlay and therefore stays outside this policy even though it is animated.
+ *
+ * `isPresenceAware` reads for the PRECISE signal — the machine imports
+ * `./presence.js` (every real `opening`/`open`/`closing`/`closed` reducer
+ * does: `menu.ts`/`context-menu.ts` via `presence`, `dialog.ts`/`popover.ts`/
+ * `hover-card.ts`/`tooltip.ts`/`drawer.ts` via `presenceOpen`/`presenceClose`/
+ * `presenceEnd`), or the machine wraps `dialogOverlay` (`alert-dialog.ts`,
+ * which reuses Dialog's own presence wholesale and therefore imports none of
+ * `presence.js`'s exports itself) — never a loose `source.includes('animated')`
+ * / `source.includes('skipAnimations')` substring match. That looser check
+ * false-positived on `menubar.ts`, whose ONLY occurrence of `skipAnimations`
+ * is a code COMMENT ("Keep `skipAnimations` at its default (true) …") on a
+ * machine that is a SYNCHRONOUS boolean (`open`/`closed` only, no `presence.js`
+ * import at all) — exactly the #265 finding 5 class of bug, one layer in: a
+ * test whose own derivation logic silently required a dead
+ * `data-[state=opening]/[state=closing]` vocabulary from a machine that can
+ * never reach those states.
+ *
+ * It ALSO requires the artifact to declare its OWN literal `*Content` recipe
+ * (the same signal `directFloatingArtifacts` above uses), which is what
+ * excludes `command`: `command-menu.ts` wraps `dialogOverlay` too (so it is
+ * genuinely presence-AWARE — Command is normally composed inside a Dialog),
+ * but `command.ts`'s registry artifact owns no Content/backdrop surface of
+ * its own to animate — that chrome belongs to whichever Dialog artifact the
+ * consumer composes it with, which is what this policy actually checks.
+ */
+const hasOwnContentExport = (name: string): boolean =>
+  /export const \w*Content\s*=\s*classPart(?:WithDefaults)?\s*\(/.test(artifactSource(name))
+
 const presenceArtifacts = familyEntries.flatMap((entry) => {
   if (entry.machine.kind !== 'public') return []
   const source = machineSource(entry.machine.importPath)
   const isOverlay = source.includes('createOverlay') || source.includes('dialogOverlay')
-  const isPresenceAware = source.includes('skipAnimations') || source.includes('animated')
+  const isPresenceAware =
+    source.includes("from './presence.js'") || source.includes('dialogOverlay')
   if (!isOverlay || !isPresenceAware) return []
-  return entry.copiedArtifacts.map((artifact) => artifact.name)
+  return entry.copiedArtifacts.flatMap((artifact) =>
+    hasOwnContentExport(artifact.name) ? [artifact.name] : [],
+  )
 })
+
+/** A registry artifact whose recipe applies EITHER the four-phase presence
+ * recipe or its synchronous (`open`/`closed`-only) twin — see
+ * `registry/llui/lib/floating-motion.ts`'s two exports. */
+const appliesSharedMotionRecipe = (source: string): boolean =>
+  source.includes('floatingOverlayMotionRecipe') || source.includes('floatingSyncMotionRecipe')
 
 const animatedArtifacts = [
   ...new Set(
@@ -185,7 +223,7 @@ const animatedArtifacts = [
         const source = readFileSync(file, 'utf8')
         const local = extractClassCandidates(file, source)
         return local.some((candidate) => candidate.includes('animate-')) ||
-          source.includes('floatingOverlayMotionRecipe')
+          appliesSharedMotionRecipe(source)
           ? [artifact.name]
           : []
       }),
@@ -247,10 +285,7 @@ describe('menus-overlays registry motion policy', () => {
     const violations: string[] = []
     for (const name of animatedArtifacts) {
       const source = artifactSource(name)
-      if (
-        !source.includes('floatingOverlayMotionRecipe') &&
-        !source.includes('overlayReducedMotionRecipe')
-      ) {
+      if (!appliesSharedMotionRecipe(source) && !source.includes('overlayReducedMotionRecipe')) {
         violations.push(`${name}: no shared reduced-motion recipe`)
       }
       const item = sourceRegistry.items.find((candidate) => candidate.name === name)
@@ -269,12 +304,48 @@ describe('menus-overlays registry motion policy', () => {
       if (!source.includes("from '@/lib/floating-motion'")) {
         violations.push(`${name}: missing floating-motion import`)
       }
-      if (!source.includes('floatingOverlayMotionRecipe')) {
-        violations.push(`${name}: shared recipe is not applied`)
+      // A REAL four-phase presence machine must apply the presence recipe
+      // (the one carrying `opening`/`closing`) to at least ONE of the
+      // recipes in this file; a synchronous (`open`/`closed`-only) one must
+      // apply the twin — never checked as file-exclusive, because one
+      // registry FILE can legitimately own two surfaces with different
+      // lifecycles (`dropdown-menu.ts` declares both `DropdownMenuContent`,
+      // behind Menu's real presence, and `DropdownMenuSubContent`, a
+      // synchronous submenu LEVEL — see #265 finding 7). The stricter,
+      // selector-level inverse (a synchronous surface must never declare an
+      // unreachable `opening`/`closing` selector) is its own test below.
+      const requiredRecipe = presenceArtifacts.includes(name)
+        ? 'floatingOverlayMotionRecipe'
+        : 'floatingSyncMotionRecipe'
+      if (!source.includes(requiredRecipe)) {
+        violations.push(`${name}: does not apply ${requiredRecipe}`)
       }
       const item = sourceRegistry.items.find((candidate) => candidate.name === name)
       if (!item?.registryDependencies?.includes('floating-motion')) {
         violations.push(`${name}: registryDependencies omits floating-motion`)
+      }
+    }
+    expect(violations).toEqual([])
+  })
+
+  it('never lets a SYNCHRONOUS (open/closed-only) skin declare an unreachable opening/closing selector', () => {
+    // The inverse of "keeps opening/closing machine truth…" below: every
+    // direct floating-content artifact that is NOT a real presence machine
+    // must carry neither `data-[state=opening]` nor `data-[state=closing]` —
+    // #265 finding 5's dead-selector regression, guarded directly rather than
+    // only by the recipe-name check above (which a hand-inlined selector
+    // could still bypass).
+    const syncArtifacts = directFloatingArtifacts.filter(
+      (name) => !presenceArtifacts.includes(name),
+    )
+    expect(syncArtifacts.length).toBeGreaterThan(0)
+    const violations: string[] = []
+    for (const name of syncArtifacts) {
+      const source = artifactSource(name)
+      if (source.includes('data-[state=opening]') || source.includes('data-[state=closing]')) {
+        violations.push(
+          `${name}: declares an opening/closing selector its own machine never reaches`,
+        )
       }
     }
     expect(violations).toEqual([])

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Submenu edge flip</title>
+    <style>
+      body {
+        margin: 0;
+        width: 480px;
+        height: 320px;
+        position: relative;
+      }
+      #trigger-left {
+        position: absolute;
+        left: 8px;
+        top: 8px;
+      }
+      #trigger-right {
+        position: absolute;
+        right: 8px;
+        top: 8px;
+      }
+      [data-part='content'],
+      [data-part='subcontent'] {
+        width: 140px;
+        background: white;
+        border: 1px solid black;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app"></main>
+    <script type="module" src="./submenu-edge-flip.fixture.ts"></script>
+  </body>
+</html>

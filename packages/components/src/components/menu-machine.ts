@@ -1,6 +1,7 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
-import { flipArrow, type TextDirection } from '../utils/direction.js'
+import { flipArrow, resolveDir, type TextDirection } from '../utils/direction.js'
+import { attachFloating, type Placement } from '../utils/floating.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
@@ -1035,5 +1036,117 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
       ),
     }),
     rootKeyNav,
+  }
+}
+
+// ---- real per-level submenu positioning ----
+
+export interface SubmenuPositioningOptions {
+  /** Cross-axis alignment against the subTrigger (default: 'start' — the top
+   * edge of the trigger, matching every other overlay's `*-start` default). */
+  align?: 'start' | 'end'
+  /** Gap between the subTrigger and its submenu, in px (default: 2, closing the
+   * visible seam a hovering pointer would otherwise have to cross). */
+  offset?: number
+  /** Flip to the opposite side when there isn't room (default: true). */
+  flip?: boolean
+  /** Shift along the cross axis to stay in view (default: true). */
+  shift?: boolean
+}
+
+/**
+ * The physical placement for a submenu opening off its subTrigger: away from
+ * the reading-direction inline-start edge, i.e. to the right under 'ltr' and
+ * to the left under 'rtl' — the one call site that turns reading direction
+ * into a physical side for this primitive (RTL itself is resolved by the
+ * shared `resolveDir`, never re-derived here).
+ */
+function submenuPlacement(dir: TextDirection, align: 'start' | 'end'): Placement {
+  const side = dir === 'rtl' ? 'left' : 'right'
+  return `${side}-${align}` as Placement
+}
+
+/**
+ * Attach REAL floating geometry to every currently-mounted submenu level
+ * inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
+ * named by its own `aria-labelledby` (never a hand-tracked map — the DOM
+ * relationship the machine already publishes is the source of truth), with
+ * flip/shift and a side chosen from the subTrigger's OWN resolved reading
+ * direction (`resolveDir`), so a submenu nested under an RTL ancestor still
+ * opens the correct way even if the root menu itself is LTR.
+ *
+ * A submenu level is a SYNCHRONOUS boolean machine, the same as
+ * select/combobox/searchable-select: `openPath` membership is its only mounted
+ * entry state, so — like those — the CALLER is expected to mount
+ * `subPositioner`/`subContent` only while the level is open (e.g. behind a
+ * `show(...)`) rather than keep it in the DOM and toggle `data-state`. This
+ * watcher therefore keys off DOM PRESENCE, not `data-state`: attaching floating
+ * to every subcontent node found, detaching (which restores every inline style
+ * `attachFloating` wrote) for any node it had attached that is no longer
+ * present. That is the "gating/exit cleanup" contract — a level that closes
+ * tears its floating attachment down in the same tick its node unmounts, never
+ * on a later poll.
+ *
+ * Call from `onMount` with the menu's build root, exactly like
+ * `tabs.watchTabIndicator` / `navigationMenu.watchNavMenuIndicator` — `onMount`
+ * hands the BUILD's root container, not the element the call sits inside, so
+ * forwarding whatever `onMount` gave you (rather than the menu's own root) is
+ * how two menus on one page end up positioning each other's submenus.
+ */
+export function watchSubmenuPositioning(
+  root: HTMLElement,
+  opts: SubmenuPositioningOptions = {},
+): () => void {
+  const align = opts.align ?? 'start'
+  const offset = opts.offset ?? 2
+  const flip = opts.flip !== false
+  const shift = opts.shift !== false
+
+  const attached = new Map<HTMLElement, () => void>()
+
+  const attach = (subContent: HTMLElement): void => {
+    if (attached.has(subContent)) return
+    const triggerId = subContent.getAttribute('aria-labelledby')
+    const trigger = triggerId ? document.getElementById(triggerId) : null
+    if (!trigger) return
+    const positioner = subContent.closest('[data-part="subpositioner"]') as HTMLElement | null
+    const floatingEl = positioner ?? subContent
+    const dir = resolveDir(trigger)
+    const stop = attachFloating({
+      anchor: trigger,
+      floating: floatingEl,
+      stateTarget: subContent,
+      placement: submenuPlacement(dir, align),
+      offset,
+      flip,
+      shift,
+      dir,
+    })
+    attached.set(subContent, stop)
+  }
+
+  const detach = (subContent: HTMLElement): void => {
+    const stop = attached.get(subContent)
+    if (!stop) return
+    stop()
+    attached.delete(subContent)
+  }
+
+  const sync = (): void => {
+    const live = new Set(root.querySelectorAll<HTMLElement>('[data-part="subcontent"]'))
+    for (const node of live) attach(node)
+    for (const node of Array.from(attached.keys())) {
+      if (!live.has(node)) detach(node)
+    }
+  }
+
+  sync()
+
+  const mo = new MutationObserver(sync)
+  mo.observe(root, { childList: true, subtree: true })
+
+  return () => {
+    mo.disconnect()
+    for (const node of Array.from(attached.keys())) detach(node)
   }
 }

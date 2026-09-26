@@ -50,6 +50,23 @@
 
 /* ─── Dialog / alert dialog ─── */
 
+/*
+ * The backdrop is the ONE element responsible for dimming the page — the
+ * positioner below carries no background of its own. Both it and `content`
+ * share the SAME explicit z-index token (`--llui-z-dialog`): an explicit
+ * z-index (even equal) starts a real stacking layer, so leaving `content`
+ * at its implicit `z-index: auto` while `backdrop` carries a POSITIVE
+ * z-index would paint the backdrop ABOVE the content regardless of DOM
+ * order — auto/0 always loses to any positive z-index in the same stacking
+ * context. With both explicit and equal, DOM order breaks the tie, which is
+ * why the consumer must render `backdrop` BEFORE `content` (see
+ * `docs/agents` / the registry's own `DialogBackdrop`/`DialogContent` pair,
+ * which uses the identical equal-z-index-plus-DOM-order pattern). This is
+ * #265 finding 4: a backdrop rendered with a higher effective stacking order
+ * than the content it is behind breaks hit-testing (the scrim intercepts
+ * clicks meant for the dialog) and focus (assistive tech reads the wrong
+ * paint order at the same z-level).
+ */
 [data-scope='dialog'][data-part='backdrop'],
 [data-scope='drawer'][data-part='backdrop'] {
   position: fixed;
@@ -65,6 +82,19 @@
   opacity: 1;
 }
 
+@media (forced-colors: active) {
+  /* Same specificity (`[data-scope][data-part][data-state]`, 0-3-0) as the
+     `[data-state='open']{opacity:1}` rule above, so this — coming later in
+     the cascade — wins the tie rather than losing to it: forced-colors
+     always renders the scrim at a fixed, translucent 0.5, in every presence
+     state that would otherwise be fully opaque. */
+  [data-scope='dialog'][data-part='backdrop'][data-state='open'],
+  [data-scope='drawer'][data-part='backdrop'][data-state='open'] {
+    background: CanvasText;
+    opacity: 0.5;
+  }
+}
+
 [data-scope='dialog'][data-part='positioner'] {
   position: fixed;
   inset: 0;
@@ -72,12 +102,21 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgb(0 0 0 / 0.4);
   padding: var(--llui-space-4);
+}
+
+/* Fallback scrim for a consumer who renders no `backdrop` part at all — a
+   BOX's own `background` always paints below every child regardless of
+   z-index, so this can never create the stacking hazard a sibling `backdrop`
+   ELEMENT can (#265 finding 4). `:has()` keeps it from DOUBLING with a real
+   `backdrop`'s own translucent layer once one is present. */
+[data-scope='dialog'][data-part='positioner']:not(:has([data-part='backdrop'])) {
+  background: rgb(0 0 0 / 0.4);
 }
 
 [data-scope='dialog'][data-part='content'] {
   position: relative;
+  z-index: var(--llui-z-dialog);
   width: 100%;
   max-width: 32rem;
   max-height: calc(100dvh - 2rem);
@@ -375,11 +414,19 @@
   position: fixed;
   inset: 0;
   z-index: var(--llui-z-dialog);
+}
+
+/* Fallback scrim — see the identical dialog positioner rule above. */
+[data-scope='drawer'][data-part='positioner']:not(:has([data-part='backdrop'])) {
   background: rgb(0 0 0 / 0.4);
 }
 
 [data-scope='drawer'][data-part='content'] {
   position: absolute;
+  /* Same equal-z-index-plus-DOM-order contract as the dialog above: the
+     backdrop dims the page and must render BEFORE this content, both at
+     `--llui-z-dialog`, so content always wins the paint order. */
+  z-index: var(--llui-z-dialog);
   max-width: 100vw;
   max-height: 100dvh;
   overflow: auto;
@@ -471,6 +518,22 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * All six ToastType values get a distinguishing background/border tint in
+ * light/dark mode AND a distinct `border-inline-start-style` under forced
+ * colors, where tints are suppressed to system colors (#265 finding 12). Two
+ * of the six (`info`/`custom`) used to fall through to the plain neutral
+ * `[data-part='root']` rule above — visually IDENTICAL to each other and to
+ * an untyped toast, in every color scheme. `registry/llui/ui/sonner.ts`
+ * mirrors this exact six-way split; `scripts/test/token-contrast.test.ts` and
+ * `registry/test/menus-overlays-styles.test.ts` both assert all six render
+ * distinctly (light/dark contrast; six distinct forced-colors border styles).
+ */
+[data-scope='toast'][data-part='root'][data-type='info'] {
+  background: color-mix(in srgb, rgb(14 165 233) 14%, var(--popover));
+  border-color: color-mix(in srgb, rgb(14 165 233) 40%, var(--popover));
+}
+
 [data-scope='toast'][data-part='root'][data-type='success'] {
   background: color-mix(in srgb, rgb(34 197 94) 14%, var(--popover));
   border-color: color-mix(in srgb, rgb(34 197 94) 40%, var(--popover));
@@ -488,6 +551,11 @@
 
 [data-scope='toast'][data-part='root'][data-type='loading'] {
   cursor: progress;
+}
+
+[data-scope='toast'][data-part='root'][data-type='custom'] {
+  background: color-mix(in srgb, rgb(139 92 246) 14%, var(--popover));
+  border-color: color-mix(in srgb, rgb(139 92 246) 40%, var(--popover));
 }
 
 [data-scope='toast'][data-part='title'] {
@@ -516,16 +584,11 @@
 }
 
 @media (forced-colors: active) {
-  /* These nodes are the modal scrim on the baseline path. Keep the system
-     foreground behind the Canvas surface even when the optional backdrop part
-     is omitted and the positioner owns the scrim. Do not disable forced-color
-     adjustment on the subtree: descendants must keep mapping to system colors. */
-  :is([data-scope='dialog'], [data-scope='drawer']):is(
-    [data-part='positioner'],
-    [data-part='backdrop']
-  ) {
-    background: CanvasText;
-  }
+  /* The positioner is a plain layout wrapper with no visual role (the
+     `backdrop` rule above owns the scrim, including its forced-colors
+     treatment) — it carries no background here on purpose. Do not disable
+     forced-color adjustment on the subtree: descendants must keep mapping to
+     system colors. */
 
   :is(
     [data-scope='dialog'],
@@ -619,14 +682,32 @@
     color: HighlightText;
   }
 
+  /*
+   * Every ToastType gets its own border-inline-start WIDTH + STYLE combination
+   * so the six types stay distinguishable once forced-colors strips all author
+   * color (background/border-color/color all collapse to the Canvas triad
+   * above). Width and style are independent axes precisely so no two types
+   * share an identical combination — 'info' and 'custom' both being 4px solid
+   * would be a real regression (a swapped recipe passes unnoticed): 'custom'
+   * is deliberately WIDER (8px) rather than a different style, since the four
+   * CSS border-style keywords Tailwind's registry twin can emit (solid /
+   * dashed / dotted / double) are already spoken for by info/error, warning,
+   * loading and success respectively.
+   */
+  [data-scope='toast'][data-part='root'][data-type='info'],
   [data-scope='toast'][data-part='root'][data-type='success'],
   [data-scope='toast'][data-part='root'][data-type='warning'],
   [data-scope='toast'][data-part='root'][data-type='error'],
-  [data-scope='toast'][data-part='root'][data-type='loading'] {
+  [data-scope='toast'][data-part='root'][data-type='loading'],
+  [data-scope='toast'][data-part='root'][data-type='custom'] {
     border-color: CanvasText;
     border-inline-start-width: 4px;
     background: Canvas;
     color: CanvasText;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='info'] {
+    border-inline-start-style: solid;
   }
 
   [data-scope='toast'][data-part='root'][data-type='success'] {
@@ -640,10 +721,17 @@
   [data-scope='toast'][data-part='root'][data-type='error'] {
     border-inline-start-style: solid;
     color: LinkText;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
   }
 
   [data-scope='toast'][data-part='root'][data-type='loading'] {
     border-inline-start-style: dotted;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='custom'] {
+    border-inline-start-style: solid;
+    border-inline-start-width: 8px;
   }
 
   [data-scope='tooltip']:is([data-part='content'], [data-part='arrow']) {

@@ -13,6 +13,7 @@ export {
   DropdownMenuShortcut as ContextMenuShortcut,
   DropdownMenuSubContent as ContextMenuSubContent,
   DropdownMenuSubTrigger as ContextMenuSubTrigger,
+  DropdownMenuSubPositioner as ContextMenuSubPositioner,
 } from '@/ui/dropdown-menu'
 
 /**

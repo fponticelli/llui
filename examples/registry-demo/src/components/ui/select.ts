@@ -9,7 +9,7 @@ import {
   type Mountable,
 } from '@llui/dom'
 import { classPart, mergeClass, splitArgs } from '../../lib/utils'
-import { floatingOverlayMotionRecipe } from '../../lib/floating-motion'
+import { floatingSyncMotionRecipe } from '../../lib/floating-motion'
 import { CheckIcon, ChevronDownIcon } from './icons'
 
 /**
@@ -62,9 +62,20 @@ export function SelectTrigger(
 /** The value span. `data-part` is what the trigger's `*:data-[part=select-value]`
  * rules target, so it is not optional decoration. */
 export const SelectValue = classPart(span, 'min-w-0 truncate')
+/**
+ * `@llui/components/select` is a SYNCHRONOUS boolean machine: its content's
+ * `data-state` is only ever `open`/`closed`, never `opening`/`closing` — there
+ * is no four-phase presence machine here the way there is for Dialog/Menu/
+ * Popover/Tooltip/HoverCard (each of which owns a real `PresenceStatus`
+ * reducer). `floatingSyncMotionRecipe` is the twin of the presence recipe
+ * (`floatingOverlayMotionRecipe`) scoped to exactly the two states this
+ * machine can reach, so no selector here can ever fail to match for lack of
+ * an event that never fires (#265 finding 5). `Combobox` re-exports THIS
+ * export (`ComboboxContent`, see `combobox.ts`), so the fix covers it too.
+ */
 export const SelectContent = classPart(
   div,
-  `relative z-50 min-w-[8rem] max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-x-hidden overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover text-popover-foreground shadow-md forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] ${floatingOverlayMotionRecipe}`,
+  `relative z-50 min-w-[8rem] max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-x-hidden overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover text-popover-foreground shadow-md forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] ${floatingSyncMotionRecipe}`,
 )
 export const SelectViewport = classPart(div, 'p-1')
 export const SelectItem = classPart(

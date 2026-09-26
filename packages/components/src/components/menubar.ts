@@ -17,7 +17,10 @@ import {
   type MenuMsg,
   type MenuItem,
   type MenuParts,
+  watchSubmenuPositioning,
 } from './menu.js'
+
+export { watchSubmenuPositioning, type SubmenuPositioningOptions } from './menu.js'
 
 /**
  * Menubar — a desktop-style application menu bar (File / Edit / View …).
@@ -529,4 +532,4 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
   })
 }
 
-export const menubar = { init, update, connect, overlay }
+export const menubar = { init, update, connect, overlay, watchSubmenuPositioning }
