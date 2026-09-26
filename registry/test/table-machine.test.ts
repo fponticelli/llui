@@ -1,15 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { component, mountApp, text, type Mountable } from '@llui/dom'
 import * as table from '@llui/components/table'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableViewport,
-} from '../llui/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../llui/ui/table'
 
 const COLUMNS = [{ id: 'name', sortable: true }, { id: 'status' }]
 const ROWS = ['alpha', 'beta']
@@ -31,28 +23,26 @@ function mount(): HTMLElement {
     view: ({ state, send }): readonly Mountable[] => {
       const parts = table.connect(state.at('table'), send, { id: 'registry-table' })
       return [
-        TableViewport({ ...parts.viewport }, [
-          Table({ ...parts.root }, [
-            TableHeader([
-              TableRow(
-                COLUMNS.map((column) =>
-                  TableHead({ ...parts.columnHeader(column.id) }, [text(column.id)]),
-                ),
-              ),
-            ]),
-            TableBody(
-              ROWS.map((row, rowIndex) =>
-                TableRow(
-                  { ...parts.row(row, rowIndex) },
-                  COLUMNS.map((_column, colIndex) =>
-                    TableCell({ ...parts.cell(rowIndex, colIndex) }, [
-                      text(`${rowIndex}:${colIndex}`),
-                    ]),
-                  ),
-                ),
+        Table({ viewport: parts.viewport, ...parts.root }, [
+          TableHeader([
+            TableRow(
+              COLUMNS.map((column) =>
+                TableHead({ ...parts.columnHeader(column.id) }, [text(column.id)]),
               ),
             ),
           ]),
+          TableBody(
+            ROWS.map((row, rowIndex) =>
+              TableRow(
+                { ...parts.row(row, rowIndex) },
+                COLUMNS.map((_column, colIndex) =>
+                  TableCell({ ...parts.cell(rowIndex, colIndex) }, [
+                    text(`${rowIndex}:${colIndex}`),
+                  ]),
+                ),
+              ),
+            ),
+          ),
         ]),
       ]
     },

@@ -24,7 +24,7 @@ import {
   svgDesc,
   svgTitle,
 } from '@llui/dom'
-import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Reactive, Mountable, Renderable } from '@llui/dom'
 import { tabs } from '@llui/components/tabs'
 import { accordion } from '@llui/components/accordion'
 import { collapsible } from '@llui/components/collapsible'
@@ -35,6 +35,7 @@ import { avatar } from '@llui/components/avatar'
 import { treeView } from '@llui/components/tree-view'
 import { listbox } from '@llui/components/listbox'
 import { table } from '@llui/components/table'
+import type { TableState } from '@llui/components/table'
 import { sortable } from '@llui/components/sortable'
 import { sparkline } from '@llui/components/sparkline'
 import type {
@@ -244,8 +245,30 @@ export const init = (): [State, Effect[]] => [
   ],
 ]
 
+/**
+ * `table.ts` tracks only sort STATE, by design — its own doc says the
+ * consumer "performs the actual data sort ... by feeding pre-sorted `rows`
+ * back in." Without this follow-up, `toggleSort` sets `aria-sort` on the
+ * header while every row stays in its original DOM position.
+ */
+function resolveTableSort(state: TableState): TableState {
+  const sort = state.sort
+  const sortedIds =
+    sort === null
+      ? tableRows.map((r) => r.id)
+      : [...tableRows]
+          .sort((a, b) => {
+            const key = sort.columnId as keyof Person
+            const cmp = String(a[key]).localeCompare(String(b[key]))
+            return sort.direction === 'asc' ? cmp : -cmp
+          })
+          .map((r) => r.id)
+  return table.update(state, { type: 'setRows', rows: sortedIds })[0]
+}
+
 // Custom glue: handle the sortable `drop` (reorder the consumer-owned array),
-// the `reorder` message, then fall through to the module composition.
+// the `reorder` message, the table's sort → resort follow-up, then fall
+// through to the generic module composition.
 const moduleUpdate = composeModules<State, Msg, Effect>(children)
 
 function sectionUpdate(state: State, msg: Msg): [State, Effect[]] | null {
@@ -257,6 +280,10 @@ function sectionUpdate(state: State, msg: Msg): [State, Effect[]] | null {
     const reordered = d ? sortable.reorder(state.order, d.startIndex, d.currentIndex) : state.order
     const [next] = sortable.update(state.sortable, msg.msg)
     return [{ ...state, sortable: next, order: reordered }, []]
+  }
+  if (msg.type === 'table' && (msg.msg.type === 'toggleSort' || msg.msg.type === 'setSort')) {
+    const [next] = table.update(state.table, msg.msg)
+    return [{ ...state, table: resolveTableSort(next) }, []]
   }
   return null
 }
@@ -504,7 +531,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     return div({ ...p.item, class: 'ps-5' }, [span([text(label)])])
   }
 
-  // ── Table (static data grid: sortable headers + multiple selection) ────
+  // ── Table (live sortable grid: sort actually reorders rows + multiple selection) ────
   const sortGlyph = (colId: string): Mountable =>
     span({ class: 'ms-1 text-xs text-muted-foreground' }, [
       text(
@@ -513,6 +540,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           .map((s) => (s && s.columnId === colId ? (s.direction === 'asc' ? '▲' : '▼') : '')),
       ),
     ])
+
+  // Both glyphs are rendered as ONE reactive text node, driven by the
+  // part's own `data-state` Signal — never a hardcoded "✓". The baseline
+  // stylesheet's `[data-state=checked|indeterminate]` rule only toggles
+  // COLOR (transparent → visible); it does not pick between glyphs, so the
+  // view is what has to answer "checked (✓), indeterminate (−), or neither".
+  const checkboxGlyph = (dataState: Signal<'checked' | 'unchecked' | 'indeterminate'>): Mountable =>
+    text(dataState.map((s) => (s === 'checked' ? '✓' : s === 'indeterminate' ? '−' : '')))
 
   const tableHeaderCell = (colId: string, label: string, sortableCol: boolean): Mountable => {
     const h = tbl.columnHeader(colId)
@@ -525,7 +560,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       },
       [
         ...(colId === 'name'
-          ? [span({ ...tbl.selectAllCheckbox(colId), class: 'me-2 inline-block' }, [text('✓')])]
+          ? (() => {
+              const selectAll = tbl.selectAllCheckbox(colId)
+              return [
+                span({ ...selectAll, class: 'me-2 inline-block' }, [
+                  checkboxGlyph(selectAll['data-state']),
+                ]),
+              ]
+            })()
           : []),
         text(label),
         sortableCol ? sortGlyph(colId) : span([]),
@@ -533,8 +575,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     )
   }
 
-  const tableBodyRow = (person: Person, index: number): Mountable => {
+  // `index` is `Reactive<number>` — a live Signal handle when the row comes
+  // from a keyed `each` (its only caller below), never `.peek()`'d. A keyed
+  // row is REUSED (moved, not rebuilt) on reorder, so freezing the index at
+  // build time would leave aria-rowindex/data-row-index and the row's own
+  // toggleRow/selectRange dispatch stuck at its ORIGINAL position forever.
+  const tableBodyRow = (person: Person, index: Reactive<number>): Mountable => {
     const r = tbl.row(person.id, index)
+    const rowCheckbox = tbl.rowCheckbox(person.id, index)
     return tr(
       {
         ...r,
@@ -544,11 +592,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         td({ ...tbl.cell(index, 0), class: 'px-3 py-2 text-sm' }, [
           span(
             {
-              ...tbl.rowCheckbox(person.id, index),
+              ...rowCheckbox,
               class:
                 'me-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
             },
-            [text(state.at('table.selection').map((sel) => (sel.includes(person.id) ? '✓' : '')))],
+            [checkboxGlyph(rowCheckbox['data-state'])],
           ),
           text(person.name),
         ]),
@@ -664,11 +712,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       },
       [
         ...(colId === 'name'
-          ? [
-              span({ ...dt.table.selectAllCheckbox(colId), class: 'me-2 inline-block' }, [
-                text('✓'),
-              ]),
-            ]
+          ? (() => {
+              const selectAll = dt.table.selectAllCheckbox(colId)
+              return [
+                span({ ...selectAll, class: 'me-2 inline-block' }, [
+                  checkboxGlyph(selectAll['data-state']),
+                ]),
+              ]
+            })()
           : []),
         text(label),
         sortableCol
@@ -686,34 +737,35 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     )
   }
 
+  // `index` stays the row's live Signal handle all the way through — never
+  // `.peek()`'d — for the same reason `tableBodyRow` above does: a keyed
+  // `each` REUSES this row on reorder, so freezing the index at build time
+  // would leave aria-rowindex/data-row-index and the row's own
+  // toggleRow/selectRange dispatch stuck at its ORIGINAL position forever.
+  // Only the row's IDENTITY (`rowId`) is a legitimate one-shot `.peek()`: a
+  // keyed row's id never changes for the life of that row instance.
   const dtBodyRow = (id: Signal<string>, index: Signal<number>): Mountable[] => {
     const rowId = id.peek()
-    const idx = index.peek()
     const person = dtById.get(rowId)
-    const r = dt.table.row(rowId, idx)
+    const r = dt.table.row(rowId, index)
+    const rowCheckbox = dt.table.rowCheckbox(rowId, index)
     return [
       tr({ ...r, class: 'cursor-pointer border-b border-border hover:bg-accent' }, [
-        td({ ...dt.table.cell(idx, 0), class: 'px-3 py-2 text-sm' }, [
+        td({ ...dt.table.cell(index, 0), class: 'px-3 py-2 text-sm' }, [
           span(
             {
-              ...dt.table.rowCheckbox(rowId, idx),
+              ...rowCheckbox,
               class:
                 'me-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
             },
-            [
-              text(
-                state
-                  .at('dataTable.table.selection')
-                  .map((sel) => (sel.includes(rowId) ? '✓' : '')),
-              ),
-            ],
+            [checkboxGlyph(rowCheckbox['data-state'])],
           ),
           text(person ? person.name : rowId),
         ]),
-        td({ ...dt.table.cell(idx, 1), class: 'px-3 py-2 text-sm' }, [
+        td({ ...dt.table.cell(index, 1), class: 'px-3 py-2 text-sm' }, [
           text(person ? person.role : ''),
         ]),
-        td({ ...dt.table.cell(idx, 2), class: 'px-3 py-2 text-sm' }, [
+        td({ ...dt.table.cell(index, 2), class: 'px-3 py-2 text-sm' }, [
           text(person ? person.status : ''),
         ]),
       ]),
@@ -882,7 +934,20 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 tableHeaderCell('status', 'Status', false),
               ]),
             ]),
-            tbody(tableRows.map((person, i) => tableBodyRow(person, i))),
+            tbody([
+              // Keyed over the machine's OWN row-id order (`table.rows`) —
+              // the authoritative display order after sort — rather than a
+              // fixed `tableRows.map`, which is what let `aria-sort` change
+              // while every row stayed exactly where it started.
+              each(state.at('table.rows'), {
+                key: (id) => id,
+                render: (idSignal, index) => {
+                  const id = idSignal.peek()
+                  const person = tableRows.find((candidate) => candidate.id === id)
+                  return person === undefined ? [] : [tableBodyRow(person, index)]
+                },
+              }),
+            ]),
           ]),
         ]),
         div({ class: 'mt-3 flex items-center gap-3 text-sm text-muted-foreground' }, [

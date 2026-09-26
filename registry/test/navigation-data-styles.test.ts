@@ -90,15 +90,7 @@ import {
 } from '../llui/ui/sparkline'
 import { Spinner } from '../llui/ui/spinner'
 import { Steps, StepsItem, StepsTrigger } from '../llui/ui/steps'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableViewport,
-} from '../llui/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../llui/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../llui/ui/tabs'
 import { Toc, TocLink, TocList } from '../llui/ui/toc'
 import { TreeView, TreeViewBranchTrigger, TreeViewItem } from '../llui/ui/tree-view'
@@ -258,13 +250,11 @@ function fixture(): string {
                 },
                 [text('Could not load')],
               ),
-              TableViewport([
-                Table({ 'data-density': 'compact' }, [
-                  TableHeader([
-                    TableRow([TableHead({ id: 'data-table-compact-head' }, [text('Name')])]),
-                  ]),
-                  TableBody([TableRow([TableCell([text('Alpha')])])]),
+              Table({ 'data-density': 'compact' }, [
+                TableHeader([
+                  TableRow([TableHead({ id: 'data-table-compact-head' }, [text('Name')])]),
                 ]),
+                TableBody([TableRow([TableCell([text('Alpha')])])]),
               ]),
             ],
           ),
@@ -625,8 +615,12 @@ function fixture(): string {
             ]),
           ]),
           div({ 'data-product': 'table', class: 'min-w-0' }, [
-            TableViewport({ 'data-scope': 'table', 'data-part': 'viewport' }, [
-              Table({ 'data-density': 'comfortable' }, [
+            Table(
+              {
+                viewport: { 'data-scope': 'table', 'data-part': 'viewport' },
+                'data-density': 'comfortable',
+              },
+              [
                 TableHeader([TableRow([TableHead({ id: 'table-head' }, [text('Name')])])]),
                 TableBody([
                   TableRow(
@@ -650,20 +644,27 @@ function fixture(): string {
                     [TableCell([text('LLui with a long unbroken cell value')])],
                   ),
                 ]),
-              ]),
-            ]),
-            TableViewport({ 'data-scope': 'table', 'data-part': 'viewport' }, [
-              Table({ 'data-density': 'compact' }, [
+              ],
+            ),
+            Table(
+              {
+                viewport: { 'data-scope': 'table', 'data-part': 'viewport' },
+                'data-density': 'compact',
+              },
+              [
                 TableHeader([TableRow([TableHead({ id: 'table-compact-head' }, [text('Name')])])]),
                 TableBody([TableRow([TableCell([text('Alpha')])])]),
-              ]),
-            ]),
+              ],
+            ),
           ]),
-          TableViewport({ 'data-scope': 'table', 'data-part': 'viewport' }, [
-            Table({ id: 'table-disabled', 'data-disabled': '' }, [
-              TableBody([TableRow([TableCell([text('Disabled')])])]),
-            ]),
-          ]),
+          Table(
+            {
+              viewport: { 'data-scope': 'table', 'data-part': 'viewport' },
+              id: 'table-disabled',
+              'data-disabled': '',
+            },
+            [TableBody([TableRow([TableCell([text('Disabled')])])])],
+          ),
           TreeView({ 'data-product': 'tree-view', role: 'tree' }, [
             TreeViewItem({ id: 'tree-regular', role: 'treeitem', 'data-forced-state': 'regular' }, [
               text('README.md'),

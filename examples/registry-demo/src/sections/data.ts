@@ -5,6 +5,7 @@ import {
   noSend,
   text,
   type Mountable,
+  type Reactive,
   type Send,
   type Signal,
 } from '@llui/dom'
@@ -18,6 +19,7 @@ import * as stepsC from '@llui/components/steps'
 import * as tableC from '@llui/components/table'
 import * as dataTableC from '@llui/components/patterns/data-table'
 import { Badge } from '../components/ui/badge'
+import { Checkbox, CheckboxIndicator } from '../components/ui/checkbox'
 import { Avatar, AvatarFallback } from '../components/ui/avatar'
 import { Progress, ProgressRange, ProgressTrack } from '../components/ui/progress'
 import {
@@ -63,7 +65,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  TableViewport,
 } from '../components/ui/table'
 import { row, section } from './shared'
 
@@ -136,6 +137,28 @@ export const init = (): [State, never[]] => {
   ]
 }
 
+/**
+ * `table.ts` (unlike `data-table.ts`) is NOT paged: it tracks only sort
+ * STATE, and the machine's own doc says so — "the consumer ... performs the
+ * actual data sort ... by feeding pre-sorted `rows` back in." A `toggleSort`
+ * that only flips `state.sort` without this follow-up would set `aria-sort`
+ * on the header while every row stayed in its original DOM position.
+ */
+function resolveTableSort(state: tableC.TableState): tableC.TableState {
+  const sort = state.sort
+  const sortedIds =
+    sort === null
+      ? ROWS.map((r) => r.item)
+      : [...ROWS]
+          .sort((a, b) => {
+            const key = sort.columnId as keyof RegistryRow
+            const cmp = String(a[key]).localeCompare(String(b[key]))
+            return sort.direction === 'asc' ? cmp : -cmp
+          })
+          .map((r) => r.item)
+  return tableC.update(state, { type: 'setRows', rows: sortedIds })[0]
+}
+
 function resolveDataTable(
   state: dataTableC.DataTableState,
   msg: dataTableC.DataTableMsg,
@@ -170,8 +193,12 @@ export function update(state: State, msg: Msg): [State, never[]] {
       return [{ ...state, page: paginationC.update(state.page, msg.msg)[0] }, []]
     case 'steps':
       return [{ ...state, steps: stepsC.update(state.steps, msg.msg)[0] }, []]
-    case 'table':
-      return [{ ...state, table: tableC.update(state.table, msg.msg)[0] }, []]
+    case 'table': {
+      const [next] = tableC.update(state.table, msg.msg)
+      const resorted =
+        msg.msg.type === 'toggleSort' || msg.msg.type === 'setSort' ? resolveTableSort(next) : next
+      return [{ ...state, table: resorted }, []]
+    }
     case 'dataTable':
       return [{ ...state, dataTable: resolveDataTable(state.dataTable, msg.msg) }, []]
     case 'tableStatus': {
@@ -262,24 +289,34 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
     { id: 'registry-data-table', paginationLabel: 'Registry data-table pages' },
   )
 
+  // The select-all header renders the SAME `Checkbox`/`CheckboxIndicator`
+  // pair used everywhere else in this registry: the machine's `data-state`
+  // (`checked`/`indeterminate`/`unchecked`) drives which glyph is visible in
+  // CSS, so this is never a hardcoded "✓" — a mixed selection genuinely shows
+  // the indeterminate dash, not a checkmark that lies about the state.
   const header = (parts: tableC.TableParts, columnId: string, label: string): Mountable =>
     TableHead({ ...parts.columnHeader(columnId) }, [
       ...(columnId === 'item'
-        ? [div({ ...parts.selectAllCheckbox(columnId), class: 'me-2 inline-block' }, [text('✓')])]
+        ? [Checkbox({ ...parts.selectAllCheckbox(columnId), class: 'me-2' }, [CheckboxIndicator()])]
         : []),
       text(label),
     ])
 
+  // `rowIndex` is `Reactive<number>` — a live Signal handle when the row comes
+  // from a keyed `each` (both tables below), never `.peek()`'d. A keyed row is
+  // REUSED (moved, not rebuilt) on reorder, so freezing the index at build
+  // time would leave aria-rowindex/data-row-index and the row's own
+  // toggleRow/selectRange dispatch stuck at its ORIGINAL position forever.
   const machineRow = (
     parts: tableC.TableParts,
     rowValue: RegistryRow,
-    rowIndex: number,
+    rowIndex: Reactive<number>,
     selection: Signal<readonly string[]>,
   ): Mountable =>
     TableRow({ ...parts.row(rowValue.item, rowIndex) }, [
       TableCell({ ...parts.cell(rowIndex, 0), class: 'font-medium' }, [
-        div({ ...parts.rowCheckbox(rowValue.item, rowIndex), class: 'me-2 inline-block' }, [
-          text(selection.map((selected) => (selected.includes(rowValue.item) ? '✓' : ''))),
+        Checkbox({ ...parts.rowCheckbox(rowValue.item, rowIndex), class: 'me-2' }, [
+          CheckboxIndicator(),
         ]),
         text(rowValue.item),
       ]),
@@ -293,6 +330,27 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       ]),
     ])
 
+  // Shared by both tables: resolve a row id to its display data and render it
+  // through `machineRow`, over a keyed `each` on the machine's OWN row-id
+  // order (`table.rows`) — the authoritative display order after sort, not a
+  // fixed `ROWS.map`, which is what let `aria-sort` change while every row
+  // stayed exactly where it started.
+  const machineRows = (
+    parts: tableC.TableParts,
+    rowsSignal: Signal<readonly string[]>,
+    selection: Signal<readonly string[]>,
+  ): Mountable =>
+    TableBody([
+      each(rowsSignal, {
+        key: (id) => id,
+        render: (idSignal, index) => {
+          const id = idSignal.peek()
+          const registryRow = ROWS.find((candidate) => candidate.item === id)
+          return registryRow === undefined ? [] : [machineRow(parts, registryRow, index, selection)]
+        },
+      }),
+    ])
+
   return [
     page.directionSync,
     dataTable.pagination.directionSync,
@@ -300,55 +358,32 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'Table & Data Table',
       'Both examples spread the live machine parts into the registry skin. The native grid is placed directly inside the machine-owned viewport, and the data-table keeps its status live regions mounted.',
       [
-        TableViewport({ ...table.viewport }, [
-          Table({ ...table.root }, [
-            TableCaption([text('A live sortable and selectable grid.')]),
-            TableHeader([
-              TableRow([
-                header(table, 'item', 'Item'),
-                header(table, 'kind', 'Kind'),
-                header(table, 'status', 'Status'),
-              ]),
+        Table({ viewport: table.viewport, ...table.root }, [
+          TableCaption([text('A live sortable and selectable grid.')]),
+          TableHeader([
+            TableRow([
+              header(table, 'item', 'Item'),
+              header(table, 'kind', 'Kind'),
+              header(table, 'status', 'Status'),
             ]),
-            TableBody(
-              ROWS.map((registryRow, rowIndex) =>
-                machineRow(table, registryRow, rowIndex, state.at('table.selection')),
-              ),
-            ),
           ]),
+          machineRows(table, state.at('table.rows'), state.at('table.selection')),
         ]),
         div({ class: 'relative' }, [
-          TableViewport({ ...dataTable.table.viewport }, [
-            Table({ ...dataTable.table.root }, [
-              TableCaption([text('A machine-composed paged data table.')]),
-              TableHeader([
-                TableRow([
-                  header(dataTable.table, 'item', 'Item'),
-                  header(dataTable.table, 'kind', 'Kind'),
-                  header(dataTable.table, 'status', 'Status'),
-                ]),
-              ]),
-              TableBody([
-                each(state.at('dataTable.table.rows'), {
-                  key: (item) => item,
-                  render: (item, index) => {
-                    const itemId = item.peek()
-                    const rowIndex = index.peek()
-                    const registryRow = ROWS.find((candidate) => candidate.item === itemId)
-                    return registryRow === undefined
-                      ? []
-                      : [
-                          machineRow(
-                            dataTable.table,
-                            registryRow,
-                            rowIndex,
-                            state.at('dataTable.table.selection'),
-                          ),
-                        ]
-                  },
-                }),
+          Table({ viewport: dataTable.table.viewport, ...dataTable.table.root }, [
+            TableCaption([text('A machine-composed paged data table.')]),
+            TableHeader([
+              TableRow([
+                header(dataTable.table, 'item', 'Item'),
+                header(dataTable.table, 'kind', 'Kind'),
+                header(dataTable.table, 'status', 'Status'),
               ]),
             ]),
+            machineRows(
+              dataTable.table,
+              state.at('dataTable.table.rows'),
+              state.at('dataTable.table.selection'),
+            ),
           ]),
           DataTableEmptyState(
             {

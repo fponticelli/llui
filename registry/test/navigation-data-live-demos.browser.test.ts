@@ -335,11 +335,31 @@ describe('actual navigation/data demos in Chromium', () => {
 
           const firstCell = cells[0]!
           const selectAllBefore = selectAll.getAttribute('aria-checked')
+          // The row-id order in DOM order, BEFORE sorting. `data-row` names
+          // the id the machine tracks; comparing this set/order against the
+          // post-sort snapshot below is what actually proves a sort moves the
+          // ROWS themselves, not just the header's `aria-sort` — a machine
+          // that only flips sort STATE without the consumer's resort
+          // follow-up passes every OTHER assertion here unchanged.
+          const rowIdsBefore = rows.map((row) => row.dataset['row'])
           press(firstCell, 'ArrowUp')
           const focusedHeader = document.activeElement as HTMLElement
           press(focusedHeader, 'ArrowRight')
           const rovedHeader = document.activeElement as HTMLElement
           headers[1]!.click()
+          const rowsAfterSort = [...root.querySelectorAll<HTMLElement>('[data-part="row"]')]
+          const rowIdsAfter = rowsAfterSort.map((row) => row.dataset['row'])
+          // Every row's `aria-rowindex`/`data-row-index` must reflect its
+          // CURRENT DOM position after the reorder above, not whatever it was
+          // built with — a frozen (`.peek()`'d) index would leave these
+          // stuck at their ORIGINAL position while the rows themselves moved.
+          const reactiveIndexMatchesDomPosition = rowsAfterSort.every((row, domIndex) => {
+            const cell = row.querySelector<HTMLElement>('[data-part="cell"]')
+            return (
+              row.getAttribute('aria-rowindex') === String(domIndex + 2) &&
+              cell?.dataset['rowIndex'] === String(domIndex)
+            )
+          })
           const liveFirstRow = root.querySelector<HTMLElement>('[data-part="row"]')!
           liveFirstRow.click()
 
@@ -370,11 +390,24 @@ describe('actual navigation/data demos in Chromium', () => {
                 direction === 'rtl' && textAlign !== 'left' && textAlign !== 'right',
             ) && logicalStyles.some(({ textAlign }) => textAlign === 'start')
 
+          // Exactly ONE viewport must own this table — never a second,
+          // redundant scrollport nested around the machine's own one (the
+          // split `Table`/`TableViewport` this registry used to ship as two
+          // components forced every consumer to nest the machine's viewport
+          // part INSIDE a second wrapper div).
+          let viewportCount = 0
+          for (
+            let ancestor = root.parentElement;
+            ancestor !== null;
+            ancestor = ancestor.parentElement
+          ) {
+            if (ancestor.matches('[data-scope="table"][data-part="viewport"]')) viewportCount++
+          }
+
           return {
             rootId,
             tag: root.tagName,
-            viewportCount: root.closest('section')?.querySelectorAll('[data-part="viewport"]')
-              .length,
+            viewportCount,
             headerCount: headers.length,
             rowCount: rows.length,
             cellCount: cells.length,
@@ -383,6 +416,9 @@ describe('actual navigation/data demos in Chromium', () => {
             rovedHeader: rovedHeader.dataset['colIndex'],
             sorted: headers[1]!.getAttribute('aria-sort'),
             selected: liveFirstRow.getAttribute('aria-selected'),
+            rowIdsBefore,
+            rowIdsAfter,
+            reactiveIndexMatchesDomPosition,
             selectAllBefore,
             selectAllAfter: selectAll.getAttribute('aria-checked'),
             overflow,
@@ -416,10 +452,21 @@ describe('actual navigation/data demos in Chromium', () => {
           selectAllBefore: 'false',
           selectAllAfter: 'mixed',
           overflow: { overflowX: 'auto', local: true, documentContained: true },
+          reactiveIndexMatchesDomPosition: true,
+          viewportCount: 1,
         })
         expect(candidate.rowCount).toBeGreaterThan(0)
         expect(candidate.cellCount).toBe(candidate.rowCount * candidate.headerCount)
+        // The sort click above must ACTUALLY reorder the rows in the DOM, not
+        // merely flip the header's `aria-sort` while every row stays exactly
+        // where it started.
+        expect(candidate.rowIdsAfter).not.toEqual(candidate.rowIdsBefore)
       }
+      // The plain (unpaginated) table always shows every row, so a resort
+      // must be the SAME set, reordered — unlike the paginated data-table
+      // below, where a resort can legitimately change which rows are on the
+      // CURRENT page.
+      expect([...result.table.rowIdsAfter].sort()).toEqual([...result.table.rowIdsBefore].sort())
       expect(result.dataTableStatusParts).toBe(true)
     },
   )

@@ -135,15 +135,7 @@ import {
 } from '../llui/ui/sparkline'
 import { Spinner } from '../llui/ui/spinner'
 import { Steps, StepsItem, StepsSeparator, StepsTrigger } from '../llui/ui/steps'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-  TableViewport,
-} from '../llui/ui/table'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../llui/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../llui/ui/tabs'
 import { Toc, TocExpandTrigger, TocItem, TocLink, TocList } from '../llui/ui/toc'
 import {
@@ -621,29 +613,27 @@ const stepsAdapter: Adapter = (host, _scenario, scenarioCase) =>
   )
 
 function registryMachineTable(parts: table.TableParts, ids: readonly string[]): Mountable {
-  return TableViewport({ ...parts.viewport }, [
-    Table({ ...parts.root }, [
-      TableHeader([
-        TableRow([
-          TableHead({ ...parts.columnHeader('name') }, [
-            span({ ...parts.selectAllCheckbox('name') }, [text('✓')]),
-            text('Name'),
-          ]),
-          TableHead({ ...parts.columnHeader('status') }, [text('Status')]),
+  return Table({ viewport: parts.viewport, ...parts.root }, [
+    TableHeader([
+      TableRow([
+        TableHead({ ...parts.columnHeader('name') }, [
+          span({ ...parts.selectAllCheckbox('name') }, [text('✓')]),
+          text('Name'),
         ]),
+        TableHead({ ...parts.columnHeader('status') }, [text('Status')]),
       ]),
-      TableBody(
-        ids.map((id, rowIndex) =>
-          TableRow({ ...parts.row(id, rowIndex) }, [
-            TableCell({ ...parts.cell(rowIndex, 0) }, [
-              span({ ...parts.rowCheckbox(id, rowIndex) }, [text('✓')]),
-              text(id),
-            ]),
-            TableCell({ ...parts.cell(rowIndex, 1) }, [text('Ready')]),
-          ]),
-        ),
-      ),
     ]),
+    TableBody(
+      ids.map((id, rowIndex) =>
+        TableRow({ ...parts.row(id, rowIndex) }, [
+          TableCell({ ...parts.cell(rowIndex, 0) }, [
+            span({ ...parts.rowCheckbox(id, rowIndex) }, [text('✓')]),
+            text(id),
+          ]),
+          TableCell({ ...parts.cell(rowIndex, 1) }, [text('Ready')]),
+        ]),
+      ),
+    ),
   ])
 }
 
