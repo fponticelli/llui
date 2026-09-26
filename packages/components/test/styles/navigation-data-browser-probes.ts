@@ -1,4 +1,5 @@
 import type { Page } from 'playwright'
+import { paintedSpatialSignature } from './pixel-probe'
 import type { ForcedColorCue } from './navigation-data-scenarios'
 
 export async function probeEffectiveMotion(
@@ -188,6 +189,7 @@ export async function probeDarkStateHierarchy(
 }
 
 interface ForcedColorStyleProbe {
+  readonly probeId: string
   readonly state: string | undefined
   readonly mode: string
   readonly color: string
@@ -208,7 +210,6 @@ interface ForcedColorStyleProbe {
   readonly height: string
   readonly contrast: number
   readonly labelled: boolean
-  readonly redundantCue: string
 }
 
 export interface ForcedColorProbe {
@@ -221,7 +222,31 @@ export async function probeForcedColorCues(
   page: Page,
   cases: readonly { readonly productId: string; readonly cue: ForcedColorCue }[],
 ): Promise<Record<string, ForcedColorProbe>> {
-  return page.evaluate((scenarioCases) => {
+  // Tag every candidate marker with a unique, stable selector BEFORE the
+  // in-page evaluation below runs, so the Node side can come back afterwards
+  // and take a REAL screenshot of each one (#264 review item 5): a marker's
+  // resolved `fill`/`backgroundImage`/`stroke-dasharray` computed-style TEXT
+  // is a proxy for "this looks different", and a mutation that collapses
+  // every series to a flat `CanvasText` fill can still leave those other
+  // CSS-property strings looking different from each other (a dot's radius,
+  // an unrelated border) without the marker's actual PAINTED PIXELS having
+  // changed at all. `redundantCue` below is therefore the element's own
+  // screenshot signature — the set of distinct painted colours it actually
+  // shows — which collapsing every fill to one flat colour makes IDENTICAL
+  // across same-mode markers, correctly failing the check.
+  await page.evaluate((scenarioCases: readonly { readonly productId: string }[]) => {
+    let counter = 0
+    for (const { productId } of scenarioCases) {
+      const roots = document.querySelectorAll<HTMLElement>(`[data-product="${productId}"]`)
+      for (const root of roots) {
+        for (const marker of root.querySelectorAll<HTMLElement>('[data-forced-state]')) {
+          marker.setAttribute('data-fc-probe-id', String(counter++))
+        }
+      }
+    }
+  }, cases)
+
+  const evaluated = await page.evaluate((scenarioCases) => {
     const rgb = (value: string): [number, number, number] | null => {
       const match = value.match(
         /rgba?\(\s*([\d.]+)[, ]+\s*([\d.]+)[, ]+\s*([\d.]+)(?:\s*[,/]\s*([\d.]+))?\s*\)/,
@@ -299,19 +324,35 @@ export async function probeForcedColorCues(
             background === null || paint.length === 0
               ? 1
               : Math.max(...paint.map((color) => contrast(color, background)))
-          const redundantCue = [
-            element.tagName,
-            element.dataset['mark'] ?? '',
-            element.dataset['forcedCue'] ?? '',
-            style.backgroundImage,
-            style.borderTopStyle,
-            style.borderTopWidth,
-            style.strokeDasharray,
-            style.strokeWidth,
-            style.width,
-            style.height,
-          ].join('|')
           return {
+            probeId: element.getAttribute('data-fc-probe-id') ?? '',
+            // Two markers of a DIFFERENT structural kind (a filled bar vs a
+            // thin stroked line) are already visibly distinct from their
+            // shape alone — grouping them together for the real pixel
+            // signature check below would fail on geometry the check was
+            // never meant to police. Grouping additionally by tag + mark
+            // scopes the real-pixel comparison to markers that share a base
+            // shape, which is exactly where a collapsed fill/pattern would
+            // otherwise go unnoticed.
+            kind: `${element.tagName}:${element.dataset['mark'] ?? ''}`,
+            // A supplementary, STRUCTURAL half of the redundancy check,
+            // alongside the real screenshot signature computed in Node: a
+            // genuinely small element (a sparkline dot a few pixels across)
+            // can carry a real, legitimate visual difference — a dashed vs
+            // solid stroke ring — too fine for a downsampled screenshot to
+            // resolve. Two markers pass the group check if EITHER their real
+            // pixels differ OR these structural properties do; collapsing a
+            // fill/pattern to one flat colour changes NEITHER on its own, so
+            // the flagged regression (#264 review item 5) still fails.
+            structuralSignature: [
+              style.borderTopStyle,
+              style.borderTopWidth,
+              style.strokeDasharray,
+              style.strokeWidth,
+              style.backgroundImage,
+              style.width,
+              style.height,
+            ].join('|'),
             state,
             mode,
             color: style.color,
@@ -332,7 +373,6 @@ export async function probeForcedColorCues(
             height: style.height,
             contrast: paintContrast,
             labelled,
-            redundantCue,
           }
         })
         const regular = styles.find(({ state }) => state === 'regular')
@@ -350,9 +390,10 @@ export async function probeForcedColorCues(
         const actualModes = new Set(styles.map(({ mode }) => mode))
         const groups = new Map<string, typeof styles>()
         for (const style of styles) {
-          const group = groups.get(style.mode) ?? []
+          const groupKey = `${style.mode}:${style.kind}`
+          const group = groups.get(groupKey) ?? []
           group.push(style)
-          groups.set(style.mode, group)
+          groups.set(groupKey, group)
         }
         const passes =
           cue === 'outline-selection'
@@ -376,22 +417,60 @@ export async function probeForcedColorCues(
                     error.borderWidth !== comparison.borderWidth ||
                     error.decoration !== comparison.decoration)
                 : cue === 'series-distinction'
-                  ? surfaces.length > 0 &&
+                  ? // The GROUP redundancy check (do same-mode markers actually
+                    // look pairwise different?) is proven from a real screenshot
+                    // signature in Node, after this evaluation returns — see
+                    // `probeForcedColorCues` below. A CSS-property string is a
+                    // proxy that a mutation collapsing every fill to one flat
+                    // colour can still satisfy via an unrelated property.
+                    surfaces.length > 0 &&
                     surfaces.every(
                       (surface) => getComputedStyle(surface).forcedColorAdjust === 'none',
                     ) &&
                     [...requiredModes].every((mode) => actualModes.has(mode)) &&
-                    styles.every(({ contrast, labelled }) => contrast >= 3 && labelled) &&
-                    [...groups.values()].every(
-                      (group) =>
-                        group.length === 1 ||
-                        new Set(group.map(({ redundantCue }) => redundantCue)).size ===
-                          group.length,
-                    )
+                    styles.every(({ contrast, labelled }) => contrast >= 3 && labelled)
                   : new Set(styles.map(({ width, height }) => `${width}|${height}`)).size ===
                     styles.length
-        return [productId, { cue, passes, styles }]
+        const groupIds = [...groups.values()].map((group) =>
+          group.map((s) => ({ probeId: s.probeId, structuralSignature: s.structuralSignature })),
+        )
+        const entry: {
+          cue: typeof cue
+          passes: boolean
+          styles: typeof styles
+          groupIds: { probeId: string; structuralSignature: string }[][]
+        } = { cue, passes, styles, groupIds }
+        return [productId, entry] as const
       }),
     )
   }, cases)
+
+  const result: Record<string, ForcedColorProbe> = {}
+  for (const [productId, entry] of Object.entries(evaluated)) {
+    let passes = entry.passes
+    if (entry.cue === 'series-distinction' && passes) {
+      // Real screenshot signature per marker (#264 review item 5): a
+      // mutation that collapses every series' fill/pattern to a flat
+      // `CanvasText` makes same-mode markers' ACTUAL PAINTED PIXELS
+      // identical, which this catches even when unrelated CSS properties
+      // (a dot radius, an incidental border) still differ as text.
+      for (const group of entry.groupIds) {
+        if (group.length <= 1) continue
+        const signatures = await Promise.all(
+          group.map(async ({ probeId, structuralSignature }) => {
+            const spatial = await paintedSpatialSignature(
+              page.locator(`[data-fc-probe-id="${probeId}"]`),
+            )
+            return `${spatial}::${structuralSignature}`
+          }),
+        )
+        if (new Set(signatures).size !== signatures.length) {
+          passes = false
+          break
+        }
+      }
+    }
+    result[productId] = { cue: entry.cue, passes, styles: entry.styles }
+  }
+  return result
 }

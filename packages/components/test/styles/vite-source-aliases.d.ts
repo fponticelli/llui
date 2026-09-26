@@ -16,3 +16,15 @@ declare module '*/scripts/lib/vite-source-aliases.mjs' {
     srcDir: string
   }): ViteSourceAlias[]
 }
+
+// Ambient types for `scripts/lib/oklch.mjs` (#264 review item 5's shared
+// pixel-contrast math), for the same reason as above: this package's
+// tsconfig has no `allowJs`/`checkJs`, unlike the root `tsconfig.scripts.json`
+// that already type-checks that file via its own JSDoc.
+declare module '*/scripts/lib/oklch.mjs' {
+  export function contrast(
+    linA: readonly [number, number, number],
+    linB: readonly [number, number, number],
+  ): number
+  export function srgb8ToLinear(rgb: readonly [number, number, number]): [number, number, number]
+}

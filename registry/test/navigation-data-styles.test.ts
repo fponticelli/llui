@@ -10,6 +10,11 @@ import {
   probeNarrowProduct,
   type NarrowProbe,
 } from '../../packages/components/test/styles/navigation-data-browser-probes'
+import {
+  paintedColors,
+  selfCheckPixelHarness,
+} from '../../packages/components/test/styles/pixel-probe'
+import { contrast, srgb8ToLinear } from '../../scripts/lib/oklch.mjs'
 import { compileCandidates, markerName } from '../../scripts/lib/tailwind-compile.mjs'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '../llui/ui/accordion'
 import { Alert, AlertDescription, AlertTitle } from '../llui/ui/alert'
@@ -121,6 +126,17 @@ const publishedDragOffset = (deltaX: number): string =>
     ...carouselMachine.init({ count: 2 }),
     dragging: { startX: 100, deltaX },
   })!
+
+// The active indicator's `aria-selected`/`data-active` are driven from the
+// REAL machine (#264 review item 5), never hand-typed `true`/`''` literals —
+// a drift in the real `indicator()` part's attribute pairing breaks this
+// fixture instead of leaving a correct-looking but stale assertion.
+const carouselTwoSlideState = carouselMachine.init({ count: 2 })
+const carouselActiveIndicator = carouselParts.slide(0).indicator
+const carouselActiveIndicatorAttrs = {
+  ariaSelected: read(carouselActiveIndicator['aria-selected'], carouselTwoSlideState),
+  dataActive: read(carouselActiveIndicator['data-active'], carouselTwoSlideState),
+}
 
 let app: ReturnType<typeof mountApp> | undefined
 
@@ -514,8 +530,8 @@ function fixture(): string {
               CarouselIndicatorGroup([
                 CarouselIndicator({
                   id: 'carousel-dot-active',
-                  'data-active': '',
-                  'aria-selected': true,
+                  'data-active': carouselActiveIndicatorAttrs.dataActive,
+                  'aria-selected': carouselActiveIndicatorAttrs.ariaSelected,
                   tabindex: 0,
                   'data-narrow-affordance': '',
                   'data-logical-side': 'flow',
@@ -1300,6 +1316,30 @@ describe('registry navigation/data presentation in Chromium', () => {
     const context = await browser.newContext({ forcedColors: 'active' })
     const page = await context.newPage()
     await page.setContent(`<!doctype html><style>${tailwind}</style>${html}`)
+
+    // Self-check the real pixel path before trusting it, and prove the
+    // repo's two standard contrast canaries through the SAME paint+readback
+    // path `probeForcedColorCues` uses (#264 review item 5) — never
+    // arithmetic on hand-typed constants.
+    await selfCheckPixelHarness(page)
+    const [black, white, midTone] = await paintedColors(page, [
+      '#000000',
+      '#ffffff',
+      'rgb(0 0 0 / 25%)',
+    ])
+    expect(
+      contrast(
+        srgb8ToLinear([black!.r, black!.g, black!.b]),
+        srgb8ToLinear([white!.r, white!.g, white!.b]),
+      ),
+    ).toBeCloseTo(21, 1)
+    expect(
+      contrast(
+        srgb8ToLinear([midTone!.r, midTone!.g, midTone!.b]),
+        srgb8ToLinear([white!.r, white!.g, white!.b]),
+      ),
+    ).toBeCloseTo(1.838893, 5)
+
     const cases = forcedColorScenarios(registryScenarios)
     const got = await probeForcedColorCues(page, cases)
     await context.close()

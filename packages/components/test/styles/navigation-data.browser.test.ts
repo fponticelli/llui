@@ -4,7 +4,10 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
+import * as accordionMachine from '../../src/components/accordion'
 import * as carouselMachine from '../../src/components/carousel'
+import * as chartMachine from '../../src/components/chart'
+import * as collapsibleMachine from '../../src/components/collapsible'
 import { read, rootSignal } from '../_signal'
 import {
   probeDarkStateHierarchy,
@@ -13,6 +16,8 @@ import {
   probeNarrowProduct,
   type NarrowProbe,
 } from './navigation-data-browser-probes'
+import { paintedColors, selfCheckPixelHarness } from './pixel-probe'
+import { contrast, srgb8ToLinear } from '../../../../scripts/lib/oklch.mjs'
 import { loadProductContract } from './navigation-data-contract-source'
 import {
   applicableNavigationDataScenarios,
@@ -34,6 +39,66 @@ const publishedDragOffset = (deltaX: number): string =>
     ...carouselMachine.init({ count: 2 }),
     dragging: { startX: 100, deltaX },
   })!
+
+// The `closing` disclosure phase is driven from the REAL reducer (#264
+// review item 5), never a hand-typed `data-state="closing"` literal: opening
+// with `animated: true` and then sending `close` is a real, observable
+// reducer transition — the same construction the baseline scenario renderer
+// uses — so a drift in the real machine's status vocabulary or its
+// `aria-hidden`/`inert` pairing breaks this fixture instead of silently
+// leaving it correct-looking.
+const accordionClosingParts = accordionMachine.connect(rootSignal(), () => {}, {
+  id: 'browser-accordion',
+})
+const accordionOpened = accordionMachine.init({
+  items: ['item'],
+  value: ['item'],
+  animated: true,
+})
+const accordionClosingState = accordionMachine.update(accordionOpened, {
+  type: 'close',
+  value: 'item',
+})[0]
+const accordionClosingContent = accordionClosingParts.item('item').content
+const accordionClosingAttrs = {
+  dataState: read(accordionClosingContent['data-state'], accordionClosingState),
+  ariaHidden: read(accordionClosingContent['aria-hidden'], accordionClosingState),
+  inert: read(accordionClosingContent.inert, accordionClosingState),
+}
+
+const collapsibleClosingParts = collapsibleMachine.connect(rootSignal(), () => {}, {
+  id: 'browser-collapsible',
+})
+const collapsibleOpened = collapsibleMachine.init({ open: true, animated: true })
+const collapsibleClosingState = collapsibleMachine.update(collapsibleOpened, { type: 'close' })[0]
+const collapsibleClosingContent = collapsibleClosingParts.content
+const collapsibleClosingAttrs = {
+  dataState: read(collapsibleClosingContent['data-state'], collapsibleClosingState),
+  ariaHidden: read(collapsibleClosingContent['aria-hidden'], collapsibleClosingState),
+  inert: read(collapsibleClosingContent.inert, collapsibleClosingState),
+}
+
+// The bar/line marks' `data-series-cue` values are driven from the REAL
+// `seriesCue()` assignment inside chart.ts's `connect()` (#264 review item
+// 5), never hand-typed 'solid'/'short-dash' literals: a mutation that
+// changed how the machine assigns cues (e.g. collapsing every series onto
+// the same cue) would otherwise leave this fixture looking correct while no
+// longer describing what the real machine emits.
+const chartCueState = chartMachine.init({
+  series: [
+    { key: 'revenue', label: 'Revenue', mark: 'bar' },
+    { key: 'cost', label: 'Cost', mark: 'line' },
+  ],
+  rows: [{ label: 'Q1', values: { revenue: 120, cost: 80 } }],
+})
+const chartCueParts = chartMachine.connect(rootSignal(), () => {}, { id: 'browser-chart' })
+const chartMarkCue = (seriesKey: string): string => {
+  const mark = chartMachine.geometry(chartCueState).marks.find((m) => m.seriesKey === seriesKey)
+  if (mark === undefined) throw new Error(`no mark for series ${seriesKey}`)
+  return read(chartCueParts.markProps(mark)['data-series-cue'], chartCueState)
+}
+const revenueCue = chartMarkCue('revenue')
+const costCue = chartMarkCue('cost')
 const css = [
   'semantic-tokens.css',
   'semantic-tokens-dark.css',
@@ -60,7 +125,7 @@ const navigationFixture = `
       <button id="accordion-closed" data-scope="accordion" data-part="trigger" data-state="closed">Closed <svg></svg></button>
       <button id="accordion-open" data-scope="accordion" data-part="trigger" data-state="open">Open <svg id="accordion-chevron"></svg></button>
       <div id="accordion-content" data-motion-state data-scope="accordion" data-part="content" data-state="open">Details</div>
-      <div id="accordion-content-closing" data-scope="accordion" data-part="content" data-state="closing" aria-hidden="true" inert>Closing details</div>
+      <div id="accordion-content-closing" data-scope="accordion" data-part="content" data-state="${accordionClosingAttrs.dataState}" ${accordionClosingAttrs.ariaHidden === undefined ? '' : `aria-hidden="${accordionClosingAttrs.ariaHidden}"`} ${accordionClosingAttrs.inert ? 'inert' : ''}>Closing details</div>
     </div>
     <div data-scope="accordion" data-part="item"></div>
   </div>
@@ -69,7 +134,7 @@ const navigationFixture = `
     <button data-scope="collapsible" data-part="trigger" data-state="closed">Toggle</button>
     <div id="collapsible-closed" data-scope="collapsible" data-part="content" data-state="closed">Closed content</div>
     <div id="collapsible-open" data-motion-state data-scope="collapsible" data-part="content" data-state="open">Open content</div>
-    <div id="collapsible-closing" data-scope="collapsible" data-part="content" data-state="closing" aria-hidden="true" inert>Closing content</div>
+    <div id="collapsible-closing" data-scope="collapsible" data-part="content" data-state="${collapsibleClosingAttrs.dataState}" ${collapsibleClosingAttrs.ariaHidden === undefined ? '' : `aria-hidden="${collapsibleClosingAttrs.ariaHidden}"`} ${collapsibleClosingAttrs.inert ? 'inert' : ''}>Closing content</div>
   </div>
 
   <nav data-product="breadcrumbs" data-scope="breadcrumbs" data-part="root" aria-label="Breadcrumb">
@@ -153,8 +218,8 @@ const dataFixture = `
   <div id="chart" data-forced-mode="cartesian" data-scope="chart" data-part="root" data-coord="cartesian" data-domain="value">
     <svg id="chart-svg" data-scope="chart" data-part="svg" role="img" tabindex="0" viewBox="0 0 300 150">
       <path id="chart-grid" data-scope="chart" data-part="grid" d="M20 40H280"></path>
-      <path id="chart-bar" data-forced-state="bar" data-scope="chart" data-part="mark" data-mark="bar" data-series="revenue" data-series-cue="solid" style="--mark-color:var(--chart-1)" d="M30 40H80V130H30Z"></path>
-      <path id="chart-line" data-forced-state="line" data-scope="chart" data-part="mark" data-mark="line" data-series="cost" data-series-cue="short-dash" style="--mark-color:var(--chart-2)" d="M30 100L150 50L270 80"></path>
+      <path id="chart-bar" data-forced-state="bar" data-scope="chart" data-part="mark" data-mark="bar" data-series="revenue" data-series-cue="${revenueCue}" style="--mark-color:var(--chart-1)" d="M30 40H80V130H30Z"></path>
+      <path id="chart-line" data-forced-state="line" data-scope="chart" data-part="mark" data-mark="line" data-series="cost" data-series-cue="${costCue}" style="--mark-color:var(--chart-2)" d="M30 100L150 50L270 80"></path>
       <path id="chart-dimmed" data-scope="chart" data-part="mark" data-mark="line" data-series="forecast" data-dimmed style="--mark-color:var(--chart-3)" d="M30 110L150 70L270 90"></path>
       <text id="chart-axis" data-scope="chart" data-part="axis-label">Q1</text>
     </svg>
@@ -167,8 +232,8 @@ const dataFixture = `
 
   <div data-forced-mode="polar" data-scope="chart" data-part="root" data-coord="polar" data-domain="value">
     <svg data-scope="chart" data-part="svg" role="img" tabindex="0" viewBox="0 0 300 150">
-      <path data-forced-state="bar" data-forced-mode="polar" data-scope="chart" data-part="mark" data-mark="bar" data-series="revenue" data-series-cue="solid" d="M150 75L150 15A60 60 0 0 1 210 75Z"></path>
-      <path data-forced-state="line" data-forced-mode="polar" data-scope="chart" data-part="mark" data-mark="line" data-series="cost" data-series-cue="short-dash" d="M150 15L210 75L150 135L90 75Z"></path>
+      <path data-forced-state="bar" data-forced-mode="polar" data-scope="chart" data-part="mark" data-mark="bar" data-series="revenue" data-series-cue="${revenueCue}" d="M150 75L150 15A60 60 0 0 1 210 75Z"></path>
+      <path data-forced-state="line" data-forced-mode="polar" data-scope="chart" data-part="mark" data-mark="line" data-series="cost" data-series-cue="${costCue}" d="M150 15L210 75L150 135L90 75Z"></path>
     </svg>
     <span data-forced-label="revenue">Revenue, polar bar series</span>
     <span data-forced-label="cost">Cost, dashed polar line series</span>
@@ -875,6 +940,34 @@ describe('navigation/data baseline presentation in Chromium', () => {
 
     const forced = await browser.newContext({ forcedColors: 'active' })
     const forcedPage = await pageWith(forced, navigationFixture + dataFixture)
+
+    // The pixel harness is self-checked BEFORE it is trusted (#264 review
+    // item 5): both directions of the two-tone/solid discriminator every
+    // `probeForcedColorCues` verdict now relies on, plus the repo's two
+    // standard contrast canaries read through the SAME real paint+readback
+    // path the verdict uses — never arithmetic on hand-typed constants.
+    await selfCheckPixelHarness(forcedPage)
+    const [black, white, midTone] = await paintedColors(forcedPage, [
+      '#000000',
+      '#ffffff',
+      'rgb(0 0 0 / 25%)',
+    ])
+    expect(
+      contrast(
+        srgb8ToLinear([black!.r, black!.g, black!.b]),
+        srgb8ToLinear([white!.r, white!.g, white!.b]),
+      ),
+    ).toBeCloseTo(21, 1)
+    // rgb(0 0 0 / 25%) painted over the page's white background composites to
+    // rgb(191,191,191) at 1.838893:1 (0.75 * 255 = 191.25, rounding
+    // unambiguously — the repo's own reason for 25%, not 50%, as this canary).
+    expect(
+      contrast(
+        srgb8ToLinear([midTone!.r, midTone!.g, midTone!.b]),
+        srgb8ToLinear([white!.r, white!.g, white!.b]),
+      ),
+    ).toBeCloseTo(1.838893, 5)
+
     const forcedCases = forcedColorScenarios(baselineScenarios)
     const forcedResult = await probeForcedColorCues(forcedPage, forcedCases)
     await forced.close()
