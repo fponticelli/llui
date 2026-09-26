@@ -435,7 +435,7 @@ function plot(
                           }),
                           span({ class: 'text-muted-foreground' }, [text(r.at('label'))]),
                           span(
-                            { class: 'ml-auto font-mono font-medium tabular-nums text-foreground' },
+                            { class: 'ms-auto font-mono font-medium tabular-nums text-foreground' },
                             [
                               text(
                                 r.map((v) =>
@@ -498,15 +498,15 @@ function plot(
         {
           ...parts.table,
           class: showTable.map((show) =>
-            show ? 'mt-3 w-full text-left text-xs text-muted-foreground' : 'sr-only',
+            show ? 'mt-3 w-full text-start text-xs text-muted-foreground' : 'sr-only',
           ),
         },
         [
           thead([
             tr([
-              th({ scope: 'col', class: 'pr-3 font-medium' }, [text(opts.rowHeading)]),
+              th({ scope: 'col', class: 'pe-3 font-medium' }, [text(opts.rowHeading)]),
               ...opts.columns.map((c) =>
-                th({ scope: 'col', class: 'pr-3 font-medium' }, [text(c.label)]),
+                th({ scope: 'col', class: 'pe-3 font-medium' }, [text(c.label)]),
               ),
             ]),
           ]),
@@ -515,9 +515,9 @@ function plot(
               key: (r: chartC.ChartRow) => r.label,
               render: (r: Signal<chartC.ChartRow>) => [
                 tr([
-                  th({ scope: 'row', class: 'pr-3 font-normal' }, [text(r.at('label'))]),
+                  th({ scope: 'row', class: 'pe-3 font-normal' }, [text(r.at('label'))]),
                   ...opts.columns.map((c) =>
-                    td({ class: 'pr-3 tabular-nums' }, [text(r.map(c.cell))]),
+                    td({ class: 'pe-3 tabular-nums' }, [text(r.map(c.cell))]),
                   ),
                 ]),
               ],
@@ -570,7 +570,7 @@ const shareOptions = (id: string): PlotOptions => ({
 
 function controlRow(label: string, children: Renderable): Mountable {
   const nodes: Mountable[] = [
-    span({ class: 'mr-1 text-xs font-medium text-muted-foreground' }, [text(label)]),
+    span({ class: 'me-1 text-xs font-medium text-muted-foreground' }, [text(label)]),
   ]
   for (const node of children) nodes.push(node)
   return div({ class: 'mt-3 flex flex-wrap items-center gap-2' }, nodes)

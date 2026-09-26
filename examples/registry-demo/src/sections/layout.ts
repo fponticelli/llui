@@ -98,7 +98,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
                     'block w-(--sidebar-width) shrink-0 overflow-hidden transition-[width] duration-200',
                 },
                 [
-                  SidebarInner({ class: 'border-r' }, [
+                  SidebarInner({ class: 'border-e' }, [
                     // The header keeps a MARK in the rail and hides only the
                     // wordmark. Hiding the whole header instead leaves the top
                     // of the rail empty, and the separator below then divides

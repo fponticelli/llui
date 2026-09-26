@@ -4,8 +4,17 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
 import { createServer, type Alias, type ViteDevServer } from 'vite'
 import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { relative, resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../scripts/lib/vite-source-aliases.mjs'
+import {
+  navigationDataDemoTokens,
+  navigationDataOwnedSectionFiles,
+} from '../../scripts/lib/navigation-data-demo-sections.mjs'
+import { loadProductContract } from '../../packages/components/test/styles/navigation-data-contract-source'
+import {
+  compileNavigationDataCatalog,
+  joinNavigationDataScenarios,
+} from '../../packages/components/test/styles/navigation-data-scenarios'
 
 const repoRoot = resolve(import.meta.dirname, '../..')
 
@@ -134,16 +143,135 @@ describe('actual navigation/data demos in Chromium', () => {
     await Promise.all(servers.map((server) => server.close()))
   })
 
-  it('keeps owned demo utilities logical instead of baking in LTR spacing or alignment', () => {
-    const sources = [
-      'examples/components-demo/src/sections/data.ts',
-      'examples/registry-demo/src/sections/data.ts',
-      'examples/registry-demo/src/sections/media.ts',
-      'examples/registry-demo/src/sections/navigation.ts',
-    ].map((file) => readFileSync(resolve(repoRoot, file), 'utf8'))
-    const physicalUtility =
-      /(?:^|\s)(?:text-(?:left|right)|[mp][lr]-|[mp][lr]x-|border-[lr](?:-|\b)|rounded-[lr](?:-|\b))/gm
-    expect(sources.flatMap((source) => source.match(physicalUtility) ?? [])).toEqual([])
+  // A per-FILE allowlist for genuinely VERBATIM-upstream shadcn recipe
+  // strings a demo section copies inline (never a bare attribute/class name,
+  // which would switch the whole file's check off — the same discipline
+  // `registry-attrs.test.ts` documents). Empty today: every physical utility
+  // this guard has ever found in an owned demo section was a defect to FIX,
+  // not a pattern to allow (#264 item 8). Closed at both ends by the
+  // assertions below — an entry that stops matching its file fails as
+  // obsolete, so this cannot silently rot into a bypass.
+  const PHYSICAL_UTILITY_ALLOWLIST: Readonly<
+    Record<string, readonly { readonly match: string; readonly reason: string }[]>
+  > = {}
+
+  it('keeps every demo section that actually renders a navigation-data product logically laid out', () => {
+    const contract = loadProductContract()
+    const catalog = compileNavigationDataCatalog(contract)
+    const joined = joinNavigationDataScenarios(catalog, contract)
+    const tokens = navigationDataDemoTokens(joined)
+
+    // DERIVED, never hand-picked (#264): every section file EITHER demo's own
+    // `app.ts` actually mounts, narrowed to the ones whose own import
+    // specifiers name a navigation-data family machine or copied skin. A
+    // hand-written 4-file list is exactly what let `charts.ts` — carrying
+    // `text-left`/`pr-3`/`ml-auto`/`mr-1` — go unscanned.
+    const files = [
+      {
+        appTsPath: resolve(repoRoot, 'examples/components-demo/src/app.ts'),
+        sectionsDir: resolve(repoRoot, 'examples/components-demo/src/sections'),
+      },
+      {
+        appTsPath: resolve(repoRoot, 'examples/registry-demo/src/app.ts'),
+        sectionsDir: resolve(repoRoot, 'examples/registry-demo/src/sections'),
+      },
+    ].flatMap((demo) => navigationDataOwnedSectionFiles(demo, tokens))
+    expect(files.length).toBeGreaterThan(0)
+
+    // Matches text-align, margin/padding (and their `x` shorthand), border
+    // radius, border side, and — the addition #264 item 8 asks for — the
+    // POSITIONAL utilities `left-*`/`right-*`/`inset-{l,r}-*`, each requiring
+    // a value so a bare prefix (`overflow-left`, which does not exist, or a
+    // class merely CONTAINING the substring) cannot match.
+    // A Tailwind utility VALUE: a number/fraction (optionally negative),
+    // `auto`/`full`/`px`, a bracketed arbitrary value, or a CSS-var
+    // parenthesis — never a bare word, so prose like "left-to-right" (a
+    // real comment in `charts.ts`) cannot match.
+    const value = '(?:-?\\d[\\w./%]*|auto|full|px|\\[[^\\]]+\\]|\\([^)]+\\))'
+    const leadingBoundary = '(?:^|[\\s"\'`])'
+    const physicalUtility = new RegExp(
+      `${leadingBoundary}(text-(?:left|right)\\b|[mp][lr]-${value}|[mp][lr]x-${value}|border-[lr](?:-${value}|\\b)|rounded-[lr](?:-${value}|\\b)|(?:left|right)-${value}|inset-[lr]-${value})`,
+      'gm',
+    )
+
+    for (const file of files) {
+      const relPath = relative(repoRoot, file)
+      const source = readFileSync(file, 'utf8')
+      const found = [...source.matchAll(physicalUtility)].map((m) => m[1]!)
+      const allowed = PHYSICAL_UTILITY_ALLOWLIST[relPath] ?? []
+      const allowedMatches = new Set(allowed.map((entry) => entry.match))
+      const unexpected = found.filter((match) => !allowedMatches.has(match))
+      expect(unexpected, relPath).toEqual([])
+      for (const entry of allowed) {
+        expect(
+          found.includes(entry.match),
+          `${relPath}: allowlisted "${entry.match}" (${entry.reason}) no longer appears in this file — remove the stale entry`,
+        ).toBe(true)
+      }
+    }
+  })
+
+  it('baseline mounts the charts section with logical alignment and spacing that mirror under rtl', async () => {
+    // Real Chromium proof that fixing `charts.ts`'s physical utilities
+    // (`text-left`/`pr-3`/`ml-auto`/`mr-1` -> `text-start`/`pe-3`/`ms-auto`/
+    // `me-1`, #264 item 8) actually produces mirrored LOGICAL layout, not
+    // merely a class rename the guard above happens to accept.
+    const demo = demos.find((candidate) => candidate.path === 'baseline')!
+    const page = await openDemo(browser, demo)
+    const result = await page.evaluate(async () => {
+      const toggle = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+        (button) => button.textContent === 'Show the data tables',
+      )
+      if (toggle === undefined) throw new Error('Missing the chart data-table toggle')
+      toggle.click()
+
+      const passFor = (dir: 'ltr' | 'rtl') => {
+        document.documentElement.dir = dir
+        const table = document.querySelector<HTMLTableElement>(
+          '[data-scope="chart"][data-part="table"]',
+        )
+        if (table === null) throw new Error('Missing chart accessible table')
+        // Not a `th`: the HTML UA stylesheet gives table headers their own
+        // unconditional `text-align: center`, which would report 'center'
+        // regardless of the table's own `text-start` class in EITHER
+        // direction — a `td` has no such override, so it actually reflects
+        // the inherited logical alignment.
+        const cell = table.querySelector<HTMLElement>('td')
+        if (cell === null) throw new Error('Missing chart accessible table cell')
+        const valueSpan = document.querySelector<HTMLElement>('.ms-auto')
+        if (valueSpan === null) throw new Error('Missing chart legend value span')
+        const row = valueSpan.parentElement
+        if (row === null) throw new Error('Missing chart legend row')
+        const rowRect = row.getBoundingClientRect()
+        const valueRect = valueSpan.getBoundingClientRect()
+        return {
+          cellDirection: getComputedStyle(cell).direction,
+          cellTextAlign: getComputedStyle(cell).textAlign,
+          // `margin-inline-start: auto` pushes the legend value to the
+          // TRAILING edge of its own row in either direction — the RIGHT
+          // physical edge in ltr, the LEFT physical edge in rtl.
+          valueAtRowTrailingEdge:
+            dir === 'ltr'
+              ? Math.abs(valueRect.right - rowRect.right) < 2
+              : Math.abs(valueRect.left - rowRect.left) < 2,
+        }
+      }
+
+      return { ltr: passFor('ltr'), rtl: passFor('rtl') }
+    })
+    await page.close()
+
+    // Chromium reports the LOGICAL keyword itself ('start'), never resolving
+    // it to a physical 'left'/'right' — proof the class is `text-start`, not
+    // a `text-left`/`text-right` pair swapped by direction. `direction`
+    // flipping alongside it is what proves the table is actually reading
+    // the live `dir`, not merely carrying an inert logical keyword.
+    expect(result.ltr.cellTextAlign).toBe('start')
+    expect(result.ltr.cellDirection).toBe('ltr')
+    expect(result.rtl.cellTextAlign).toBe('start')
+    expect(result.rtl.cellDirection).toBe('rtl')
+    expect(result.ltr.valueAtRowTrailingEdge).toBe(true)
+    expect(result.rtl.valueAtRowTrailingEdge).toBe(true)
   })
 
   it.each(['baseline', 'registryTailwind'] as const)(
