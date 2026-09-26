@@ -206,4 +206,66 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
       }
     },
   )
+
+  it.each(['baseline', 'registryTailwind'] as const)(
+    "%s gallery table sorts the REAL rows and keeps every row's index/checkbox reactive",
+    async (path) => {
+      const fixture = fixtures.find((candidate) => candidate.path === path)!
+      const page = await openMounted(fixture)
+      const result = await page.evaluate(() => {
+        const root = document.querySelector<HTMLElement>(
+          '[data-scenario-id="component:table"][data-scenario-case="default"] [data-scope="table"][data-part="root"]',
+        )
+        if (root === null) throw new Error('Missing component:table default case root')
+        const nameHeader = root.querySelector<HTMLElement>(
+          '[data-part="column-header"][data-sortable]',
+        )
+        if (nameHeader === null) throw new Error('Missing sortable column header')
+        const rowIdsBefore = [...root.querySelectorAll<HTMLElement>('[data-part="row"]')].map(
+          (row) => row.dataset['row'],
+        )
+        // Two clicks: ascending (already the seeded order, so a DOM diff
+        // alone would not prove anything moved) then descending — the
+        // second click is what actually reorders alpha/beta.
+        nameHeader.click()
+        nameHeader.click()
+        const rowsAfter = [...root.querySelectorAll<HTMLElement>('[data-part="row"]')]
+        const rowIdsAfter = rowsAfter.map((row) => row.dataset['row'])
+        const reactiveIndexMatchesDomPosition = rowsAfter.every((row, domIndex) => {
+          const cell = row.querySelector<HTMLElement>('[data-part="cell"]')
+          return (
+            row.getAttribute('aria-rowindex') === String(domIndex + 2) &&
+            cell?.getAttribute('aria-colindex') === '1'
+          )
+        })
+        const selectAllBefore = root
+          .querySelector('[data-part="select-all"]')
+          ?.getAttribute('aria-checked')
+        const firstRow = rowsAfter[0]
+        if (firstRow === undefined) throw new Error('No rows after sort')
+        firstRow.click()
+        const selectAllAfter = root
+          .querySelector('[data-part="select-all"]')
+          ?.getAttribute('aria-checked')
+        return {
+          sortAttr: nameHeader.getAttribute('aria-sort'),
+          rowIdsBefore,
+          rowIdsAfter,
+          reactiveIndexMatchesDomPosition,
+          selectAllBefore,
+          selectAllAfter,
+          firstRowChecked: firstRow.getAttribute('aria-selected'),
+        }
+      })
+      await page.close()
+
+      expect(result.rowIdsBefore).toEqual(['alpha', 'beta'])
+      expect(result.rowIdsAfter).toEqual(['beta', 'alpha'])
+      expect(result.sortAttr).toBe('descending')
+      expect(result.reactiveIndexMatchesDomPosition).toBe(true)
+      expect(result.selectAllBefore).toBe('false')
+      expect(result.selectAllAfter).toBe('mixed')
+      expect(result.firstRowChecked).toBe('true')
+    },
+  )
 })

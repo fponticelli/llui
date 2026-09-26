@@ -577,6 +577,40 @@ const stepsAdapter: Adapter<StepsCaseInput> = (host, input, ctx) =>
     },
   )
 
+// The glyph is ONE reactive text node driven by the part's own `data-state`
+// Signal, never a hardcoded "✓" — a literal glyph renders "checked" for a row
+// the machine reports as unchecked or indeterminate the moment selection
+// changes (#264). Shared shape with the registry renderer's identical need.
+function tableCheckboxGlyph(
+  dataState: Signal<'checked' | 'unchecked' | 'indeterminate'>,
+): Mountable {
+  return text(dataState.map((s) => (s === 'checked' ? '✓' : s === 'indeterminate' ? '−' : '')))
+}
+
+// `table.ts` tracks only sort STATE by design — its own doc says the
+// consumer "performs the actual data sort ... by feeding pre-sorted `rows`
+// back in" (see `examples/components-demo/src/sections/data.ts`'s identical
+// `resolveTableSort`). Without this follow-up, `toggleSort` flips
+// `aria-sort` on the header while every row stays in its original DOM
+// position — exactly the "gallery Table ignores sort" gap (#264). The
+// fixture's one sortable column ('name') is the row id itself.
+function resolveGalleryTableSort(state: table.TableState): table.TableState {
+  const sort = state.sort
+  if (sort === null || sort.columnId !== 'name') return state
+  const sortedIds = [...state.rows].sort((a, b) =>
+    sort.direction === 'asc' ? a.localeCompare(b) : b.localeCompare(a),
+  )
+  return table.update(state, { type: 'setRows', rows: sortedIds })[0]
+}
+
+function tableUpdateWithResort(
+  state: table.TableState,
+  msg: table.TableMsg,
+): [table.TableState, never[]] {
+  const [next] = table.update(state, msg)
+  return [resolveGalleryTableSort(next), []]
+}
+
 const tableAdapter: Adapter<TableCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
@@ -594,7 +628,7 @@ const tableAdapter: Adapter<TableCaseInput> = (host, input, ctx) =>
             : { columnId: input.sortColumnId, direction: 'asc' },
         disabled: input.disabled,
       }),
-    table.update,
+    tableUpdateWithResort,
     (state, send) => {
       const parts = table.connect(state, send, {
         id: `baseline-table-${ctx.caseId}`,
@@ -605,23 +639,41 @@ const tableAdapter: Adapter<TableCaseInput> = (host, input, ctx) =>
           thead([
             tr([
               th({ ...parts.columnHeader('name') }, [
-                span({ ...parts.selectAllCheckbox('name') }, [text('✓')]),
+                (() => {
+                  const selectAll = parts.selectAllCheckbox('name')
+                  return span({ ...selectAll }, [tableCheckboxGlyph(selectAll['data-state'])])
+                })(),
                 text('Name'),
               ]),
               th({ ...parts.columnHeader('status') }, [text('Status')]),
             ]),
           ]),
-          tbody(
-            input.rows.map((id, rowIndex) =>
-              tr({ ...parts.row(id, rowIndex) }, [
-                td({ ...parts.cell(rowIndex, 0) }, [
-                  span({ ...parts.rowCheckbox(id, rowIndex) }, [text('✓')]),
-                  text(id),
-                ]),
-                td({ ...parts.cell(rowIndex, 1) }, [text('Ready')]),
-              ]),
-            ),
-          ),
+          tbody([
+            // Rows are keyed over the machine's OWN row-id order
+            // (`state.at('rows')`) — the authoritative display order after a
+            // sort — rather than a fixed `input.rows.map`, and `index` is the
+            // live `Reactive<number>` a keyed `each` hands its `render`,
+            // never `.peek()`'d: a keyed row is REUSED (moved, not rebuilt)
+            // on reorder, so freezing the index at build time would leave
+            // `aria-rowindex`/`data-row-index` and the row's own checkbox
+            // dispatch stuck at their ORIGINAL position forever (#264).
+            each(state.at('rows'), {
+              key: (id) => id,
+              render: (idSignal, index) => {
+                const id = idSignal.peek()
+                const rowCheckbox = parts.rowCheckbox(id, index)
+                return [
+                  tr({ ...parts.row(id, index) }, [
+                    td({ ...parts.cell(index, 0) }, [
+                      span({ ...rowCheckbox }, [tableCheckboxGlyph(rowCheckbox['data-state'])]),
+                      text(id),
+                    ]),
+                    td({ ...parts.cell(index, 1) }, [text('Ready')]),
+                  ]),
+                ]
+              },
+            }),
+          ]),
         ]),
       ])
     },
@@ -759,23 +811,37 @@ const dataTableAdapter: Adapter<DataTableCaseInput> = (host, input, ctx) =>
             thead([
               tr([
                 th({ ...parts.table.columnHeader('name') }, [
-                  span({ ...parts.table.selectAllCheckbox('name') }, [text('✓')]),
+                  (() => {
+                    const selectAll = parts.table.selectAllCheckbox('name')
+                    return span({ ...selectAll }, [tableCheckboxGlyph(selectAll['data-state'])])
+                  })(),
                   text('Name'),
                 ]),
                 th({ ...parts.table.columnHeader('status') }, [text('Status')]),
               ]),
             ]),
-            tbody(
-              input.rows.map((id, rowIndex) =>
-                tr({ ...parts.table.row(id, rowIndex) }, [
-                  td({ ...parts.table.cell(rowIndex, 0) }, [
-                    span({ ...parts.table.rowCheckbox(id, rowIndex) }, [text('✓')]),
-                    text(id),
-                  ]),
-                  td({ ...parts.table.cell(rowIndex, 1) }, [text('Ready')]),
-                ]),
-              ),
-            ),
+            tbody([
+              // Same reactive-index/live-order requirement as the plain
+              // table adapter above (#264) — the data-table pattern wraps
+              // the SAME table machine, so its rows keyed over
+              // `state.at('table.rows')` reorder on sort exactly like it.
+              each(state.at('table.rows'), {
+                key: (id) => id,
+                render: (idSignal, index) => {
+                  const id = idSignal.peek()
+                  const rowCheckbox = parts.table.rowCheckbox(id, index)
+                  return [
+                    tr({ ...parts.table.row(id, index) }, [
+                      td({ ...parts.table.cell(index, 0) }, [
+                        span({ ...rowCheckbox }, [tableCheckboxGlyph(rowCheckbox['data-state'])]),
+                        text(id),
+                      ]),
+                      td({ ...parts.table.cell(index, 1) }, [text('Ready')]),
+                    ]),
+                  ]
+                },
+              }),
+            ]),
           ]),
         ]),
         div({ ...parts.loadingOverlay }, [text('Loading')]),

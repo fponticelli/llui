@@ -711,28 +711,79 @@ const stepsAdapter: Adapter<StepsCaseInput> = (host, input, ctx) =>
     },
   )
 
-function registryMachineTable(parts: table.TableParts, ids: readonly string[]): Mountable {
+// The glyph is ONE reactive text node driven by the part's own `data-state`
+// Signal, never a hardcoded "✓" — a literal glyph renders "checked" for a row
+// the machine reports as unchecked or indeterminate the moment selection
+// changes (#264). Shared with the baseline renderer's identical need.
+function tableCheckboxGlyph(
+  dataState: Signal<'checked' | 'unchecked' | 'indeterminate'>,
+): Mountable {
+  return text(dataState.map((s) => (s === 'checked' ? '✓' : s === 'indeterminate' ? '−' : '')))
+}
+
+// `table.ts` tracks only sort STATE by design — its own doc says the
+// consumer "performs the actual data sort ... by feeding pre-sorted `rows`
+// back in" (see `examples/registry-demo/src/sections/data.ts`'s identical
+// resort follow-up). Without this, `toggleSort` flips `aria-sort` on the
+// header while every row stays in its original DOM position — the "gallery
+// Table ignores sort" gap (#264). The fixture's one sortable column
+// ('name') is the row id itself.
+function resolveGalleryTableSort(state: table.TableState): table.TableState {
+  const sort = state.sort
+  if (sort === null || sort.columnId !== 'name') return state
+  const sortedIds = [...state.rows].sort((a, b) =>
+    sort.direction === 'asc' ? a.localeCompare(b) : b.localeCompare(a),
+  )
+  return table.update(state, { type: 'setRows', rows: sortedIds })[0]
+}
+
+function tableUpdateWithResort(
+  state: table.TableState,
+  msg: table.TableMsg,
+): [table.TableState, never[]] {
+  const [next] = table.update(state, msg)
+  return [resolveGalleryTableSort(next), []]
+}
+
+// Rows are keyed over the machine's OWN row-id order (`state.at('rows')`) —
+// the authoritative display order after a sort — rather than a fixed
+// `ids.map`, and `index` is the live `Reactive<number>` a keyed `each` hands
+// its `render`, never `.peek()`'d: a keyed row is REUSED (moved, not
+// rebuilt) on reorder, so freezing the index at build time would leave
+// `aria-rowindex`/`data-row-index` and the row's own checkbox dispatch stuck
+// at their ORIGINAL position forever (#264).
+function registryMachineTable(state: Signal<table.TableState>, parts: table.TableParts): Mountable {
   return Table({ viewport: parts.viewport, ...parts.root }, [
     TableHeader([
       TableRow([
         TableHead({ ...parts.columnHeader('name') }, [
-          span({ ...parts.selectAllCheckbox('name') }, [text('✓')]),
+          (() => {
+            const selectAll = parts.selectAllCheckbox('name')
+            return span({ ...selectAll }, [tableCheckboxGlyph(selectAll['data-state'])])
+          })(),
           text('Name'),
         ]),
         TableHead({ ...parts.columnHeader('status') }, [text('Status')]),
       ]),
     ]),
-    TableBody(
-      ids.map((id, rowIndex) =>
-        TableRow({ ...parts.row(id, rowIndex) }, [
-          TableCell({ ...parts.cell(rowIndex, 0) }, [
-            span({ ...parts.rowCheckbox(id, rowIndex) }, [text('✓')]),
-            text(id),
-          ]),
-          TableCell({ ...parts.cell(rowIndex, 1) }, [text('Ready')]),
-        ]),
-      ),
-    ),
+    TableBody([
+      each(state.at('rows'), {
+        key: (id) => id,
+        render: (idSignal, index) => {
+          const id = idSignal.peek()
+          const rowCheckbox = parts.rowCheckbox(id, index)
+          return [
+            TableRow({ ...parts.row(id, index) }, [
+              TableCell({ ...parts.cell(index, 0) }, [
+                span({ ...rowCheckbox }, [tableCheckboxGlyph(rowCheckbox['data-state'])]),
+                text(id),
+              ]),
+              TableCell({ ...parts.cell(index, 1) }, [text('Ready')]),
+            ]),
+          ]
+        },
+      }),
+    ]),
   ])
 }
 
@@ -753,11 +804,11 @@ const tableAdapter: Adapter<TableCaseInput> = (host, input, ctx) =>
             : { columnId: input.sortColumnId, direction: 'asc' },
         disabled: input.disabled,
       }),
-    table.update,
+    tableUpdateWithResort,
     (state, send) =>
       registryMachineTable(
+        state,
         table.connect(state, send, { id: `registry-table-${ctx.caseId}`, density: input.density }),
-        input.rows,
       ),
   )
 
@@ -891,7 +942,7 @@ const dataTableAdapter: Adapter<DataTableCaseInput> = (host, input, ctx) =>
       })
       return div([
         parts.pagination.directionSync,
-        registryMachineTable(parts.table, input.rows),
+        registryMachineTable(state.at('table'), parts.table),
         DataTableLoadingOverlay({ ...parts.loadingOverlay }, [text('Loading')]),
         DataTableEmptyState({ ...parts.emptyState }, [
           DataTableEmptyTitle([text('Empty')]),
