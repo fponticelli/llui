@@ -490,6 +490,28 @@ export function formatOklch(ok: Oklch, alpha = 1): string {
   return alpha >= 1 ? `oklch(${l} ${c} ${h})` : `oklch(${l} ${c} ${h} / ${round(alpha, 4)})`
 }
 
+/** `oklab(L A B)` / `oklab(L A B / A)`, same precision convention as
+ * {@link formatOklch} — `gradient-picker`'s `colorAt` needs this to stay
+ * exact when the interpolation space itself is `oklab` (interpolating in
+ * `oklch` and in `oklab` are different color spaces, and only one of them has
+ * a serializer here otherwise). */
+export function formatOklab(lab: Oklab, alpha = 1): string {
+  const l = lab.l.toFixed(4)
+  const a = lab.a.toFixed(4)
+  const b = lab.b.toFixed(4)
+  return alpha >= 1 ? `oklab(${l} ${a} ${b})` : `oklab(${l} ${a} ${b} / ${round(alpha, 4)})`
+}
+
+/** `hsl(H S% L%)` / `hsl(H S% L% / A)`. `gradient-picker`'s `colorAt` needs
+ * this so an `in hsl` interpolation result can be serialized without an extra
+ * (lossy) round trip through sRGB bytes. */
+export function formatHsl(hsl: Hsl, alpha = 1): string {
+  const h = round(normalizeHueDeg(hsl.h), 2)
+  const s = round(hsl.s, 2)
+  const l = round(hsl.l, 2)
+  return alpha >= 1 ? `hsl(${h} ${s}% ${l}%)` : `hsl(${h} ${s}% ${l}% / ${round(alpha, 4)})`
+}
+
 // ── Parsing ──────────────────────────────────────────────────────────────────
 
 interface ParsedComponent {

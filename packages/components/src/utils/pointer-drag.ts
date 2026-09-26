@@ -22,6 +22,13 @@ export interface PointerDragCallbacks {
   /** Fires on `pointerdown` (immediately after `onDragStart`) and again on
    * every `pointermove` while the drag is live. */
   onDrag: (e: PointerEvent) => void
+  /** Fires once on `pointerup`/`pointercancel`, but ONLY when a drag was
+   * actually live (never on a stray up/cancel with no matching down) — the
+   * counterpart to `onDragStart`, for a caller that tracks per-drag identity
+   * across the lifecycle (`gradient-picker`'s track drag creates a new stop
+   * on `pointerdown` and must stop targeting it once the drag ends). Runs
+   * AFTER pointer capture is released. */
+  onDragEnd?: (e: PointerEvent) => void
 }
 
 export interface PointerDragHandlers {
@@ -71,11 +78,13 @@ export function pointerDragHandlers(callbacks: PointerDragCallbacks): PointerDra
       if (!dragging) return
       dragging = false
       release(e)
+      callbacks.onDragEnd?.(e)
     },
     onPointerCancel: (e) => {
       if (!dragging) return
       dragging = false
       release(e)
+      callbacks.onDragEnd?.(e)
     },
   }
 }

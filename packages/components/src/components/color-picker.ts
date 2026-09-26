@@ -9,7 +9,7 @@ import {
 } from '../utils/number.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
 import { pointerDragHandlers } from '../utils/pointer-drag.js'
-import type { Hsl, Hsv, Oklch, Srgb } from '../utils/color.js'
+import type { Hsl, Hsv, Oklch, Srgb, CssColor } from '../utils/color.js'
 import {
   hslToHsv,
   hsvToHsl,
@@ -146,7 +146,9 @@ function normalizeHue(h: number): number {
   return ((h % 360) + 360) % 360
 }
 
-function sanitizeHsv(raw: Hsv): Hsv {
+/** Exported for `gradient-picker`, which sanitizes a stop's color the same
+ * way `init`/`setColor` do when projecting a parsed CSS color onto HSV. */
+export function sanitizeHsv(raw: Hsv): Hsv {
   return {
     h: finiteOrDefault(raw.h, 0),
     s: finiteOrDefault(raw.s, 100),
@@ -154,7 +156,8 @@ function sanitizeHsv(raw: Hsv): Hsv {
   }
 }
 
-function sanitizeOklch(raw: Oklch, maxChroma: number): Oklch {
+/** Exported for `gradient-picker`, same reason as {@link sanitizeHsv}. */
+export function sanitizeOklch(raw: Oklch, maxChroma: number): Oklch {
   return {
     l: clamp(finiteOrDefault(raw.l, 1), 0, 1),
     c: clamp(finiteOrDefault(raw.c, 0), 0, maxChroma),
@@ -177,7 +180,12 @@ export function oklchToHsvPreserving(ok: Oklch): Hsv {
   return isAchromaticOklch(ok) ? { ...hsv, h: normalizeHue(ok.h) } : hsv
 }
 
-type Color = ColorPickerState['color']
+/** The canonical stored color union — HSV or OKLCH, tagged by `model`.
+ * Exported as a named type for `gradient-picker`, whose stops each store one
+ * of these (never a hex string) so a gray stop keeps its hue and an
+ * out-of-gamut OKLCH stop stays exact. */
+export type PickerColor = ColorPickerState['color']
+type Color = PickerColor
 
 function colorToHsv(color: Color): Hsv {
   return color.model === 'hsv'
@@ -216,12 +224,19 @@ function withOklchProjection(color: Color, maxChroma: number, f: (ok: Oklch) => 
     : { model: 'hsv', ...oklchToHsvPreserving(next) }
 }
 
-function colorFromCssString(
-  input: string,
+/**
+ * Project an already-PARSED CssColor onto BOTH canonical models at once. The
+ * shared core of {@link colorFromCssString} (string input, via
+ * `parseCssColor`) and {@link cssColorToPickerColor} (an already-typed input
+ * that never touched a string — `gradient-picker`'s `colorAt` produces one
+ * straight from {@link interpolateColor}, and round-tripping THAT through a
+ * formatted string before storing it would be the exact hex-round-trip loss
+ * this module exists to avoid on a gray stop).
+ */
+function pickerProjectionsOfCssColor(
+  parsed: CssColor,
   maxChroma: number,
-): { hsv: Hsv; oklch: Oklch; alpha: number } | null {
-  const parsed = parseCssColor(input)
-  if (!parsed) return null
+): { hsv: Hsv; oklch: Oklch; alpha: number } {
   const alpha = cssColorAlpha(parsed)
   if (parsed.space === 'oklch') {
     const oklch = sanitizeOklch(
@@ -244,6 +259,45 @@ function colorFromCssString(
   const srgb = cssColorToSrgb(parsed)
   const hsv = sanitizeHsv(rgb255ToHsv(srgbToRgb255(srgb)))
   return { hsv, oklch: sanitizeOklch(hsvToOklchPreserving(hsv), maxChroma), alpha }
+}
+
+function colorFromCssString(
+  input: string,
+  maxChroma: number,
+): { hsv: Hsv; oklch: Oklch; alpha: number } | null {
+  const parsed = parseCssColor(input)
+  return parsed ? pickerProjectionsOfCssColor(parsed, maxChroma) : null
+}
+
+/**
+ * Convert an already-parsed {@link CssColor} into the canonical store for a
+ * given active `model`, exactly the way `setColor`/`setHex` project a typed
+ * color string — but for a caller (`gradient-picker`) that already has a
+ * `CssColor`, never a string, and must not round-trip through one.
+ */
+export function cssColorToPickerColor(
+  parsed: CssColor,
+  model: ColorModel,
+  maxChroma: number,
+): { color: PickerColor; alpha: number } {
+  const { hsv, oklch, alpha } = pickerProjectionsOfCssColor(parsed, maxChroma)
+  return {
+    color: model === 'oklch' ? { model: 'oklch', ...oklch } : { model: 'hsv', ...hsv },
+    alpha,
+  }
+}
+
+/**
+ * The inverse of {@link cssColorToPickerColor}: a canonical stored color plus
+ * alpha, as the shared {@link CssColor} model `interpolateColor` operates on.
+ * OKLCH stays OKLCH (exact, not gamut-mapped); HSV becomes `srgb`.
+ */
+export function pickerColorToCssColor(color: PickerColor, alpha: number): CssColor {
+  if (color.model === 'oklch') {
+    return { space: 'oklch', l: color.l, c: color.c, h: color.h, alpha }
+  }
+  const srgb = srgb255ToSrgb(hsvToRgb255(color))
+  return { space: 'srgb', r: srgb.r, g: srgb.g, b: srgb.b, alpha }
 }
 
 export function init(opts: ColorPickerInit = {}): ColorPickerState {
@@ -1165,4 +1219,8 @@ export const colorPicker = {
   hslToHsv,
   hsvToHsl,
   DEFAULT_MAX_CHROMA,
+  sanitizeHsv,
+  sanitizeOklch,
+  pickerColorToCssColor,
+  cssColorToPickerColor,
 }

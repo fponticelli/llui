@@ -6,6 +6,7 @@ import * as colorPicker from '../../src/components/color-picker'
 import * as datePicker from '../../src/components/date-picker'
 import * as fileUpload from '../../src/components/file-upload'
 import * as floatingPanel from '../../src/components/floating-panel'
+import * as gradientPicker from '../../src/components/gradient-picker'
 import * as imageCropper from '../../src/components/image-cropper'
 import * as marquee from '../../src/components/marquee'
 import * as meter from '../../src/components/meter'
@@ -92,6 +93,7 @@ function poisonedInits(bad: number): Array<[string, unknown]> {
     ['color-picker', colorPicker.init({ maxChroma: bad })],
     ['date-picker', datePicker.init({ months: bad })],
     ['file-upload', fileUpload.init({ maxFiles: bad, maxSize: bad, minFileSize: bad })],
+    ['gradient-picker', gradientPicker.init({ maxChroma: bad, minStops: bad, maxStops: bad })],
     [
       'floating-panel',
       floatingPanel.init({
@@ -141,6 +143,7 @@ function defaultInits(): Array<[string, unknown]> {
     ['color-picker', colorPicker.init()],
     ['date-picker', datePicker.init()],
     ['file-upload', fileUpload.init()],
+    ['gradient-picker', gradientPicker.init()],
     ['floating-panel', floatingPanel.init()],
     ['image-cropper', imageCropper.init()],
     ['marquee', marquee.init()],
@@ -291,6 +294,18 @@ describe('a dropped bound leaves the component still clamping (#177)', () => {
       expect(colorPicker.update(s, { type: 'setChroma', c: 999 })[0].color).toMatchObject({
         c: colorPicker.DEFAULT_MAX_CHROMA,
       })
+    }
+  })
+
+  it('gradient-picker falls back to DEFAULT_MAX_CHROMA and keeps clamping the embedded picker to it', () => {
+    for (const bad of [...NON_FINITE, 0, -0.5]) {
+      const s = gradientPicker.init({ model: 'oklch', maxChroma: bad })
+      expect(s.maxChroma).toBe(colorPicker.DEFAULT_MAX_CHROMA)
+      const [next] = gradientPicker.update(s, {
+        type: 'picker',
+        msg: { type: 'setChroma', c: 999 },
+      })
+      expect(next.stops[0]!.color).toMatchObject({ c: colorPicker.DEFAULT_MAX_CHROMA })
     }
   })
 

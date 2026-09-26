@@ -9,6 +9,7 @@ import * as contextMenu from '../../src/components/context-menu'
 import * as datePicker from '../../src/components/date-picker'
 import * as floatingPanel from '../../src/components/floating-panel'
 import * as fileUpload from '../../src/components/file-upload'
+import * as gradientPicker from '../../src/components/gradient-picker'
 import * as imageCropper from '../../src/components/image-cropper'
 import * as listbox from '../../src/components/listbox'
 import * as menu from '../../src/components/menu'
@@ -120,6 +121,10 @@ describe('non-bound numeric initialization uses documented defaults (#214)', () 
         ],
         ['color-picker.hsl', colorPicker.init({ hsl: { h: bad, s: bad, l: bad } })],
         [
+          'gradient-picker.angle/center',
+          gradientPicker.init({ angle: bad, center: { x: bad, y: bad } }),
+        ],
+        [
           'time-picker.value',
           timePicker.init({ value: { hours: bad, minutes: bad, seconds: bad } }),
         ],
@@ -196,6 +201,10 @@ describe('non-bound numeric initialization uses documented defaults (#214)', () 
       expect(colorPicker.init({ hsv: { h: bad, s: bad, v: bad }, alpha: bad })).toMatchObject({
         color: { model: 'hsv', h: 0, s: 100, v: 100 },
         alpha: 1,
+      })
+      expect(gradientPicker.init({ angle: bad, center: { x: bad, y: bad } })).toMatchObject({
+        angle: 90,
+        center: { x: 50, y: 50 },
       })
     })
   }
@@ -413,6 +422,23 @@ describe('package-wide component-owned numeric message inventory (#214)', () => 
         { type: 'nudgeSv' as const, ds: 1, dv: bad },
       ]) {
         expectIgnored(color, colorPicker.update(color, msg), `color-picker ${msg.type}`)
+      }
+
+      const gradient = gradientPicker.init({
+        stops: [
+          { position: 0, color: 'red' },
+          { position: 100, color: 'blue' },
+        ],
+      })
+      for (const msg of [
+        { type: 'addStop' as const, position: bad },
+        { type: 'moveStop' as const, id: gradient.stops[0]!.id, position: bad },
+        { type: 'nudgeStop' as const, id: gradient.stops[0]!.id, delta: bad },
+        { type: 'setAngle' as const, angle: bad },
+        { type: 'setCenter' as const, x: bad, y: 1 },
+        { type: 'setCenter' as const, x: 1, y: bad },
+      ]) {
+        expectIgnored(gradient, gradientPicker.update(gradient, msg), `gradient-picker ${msg.type}`)
       }
 
       for (const rating of [

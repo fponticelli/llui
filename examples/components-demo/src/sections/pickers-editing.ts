@@ -4,6 +4,8 @@ import {
   span,
   label,
   input,
+  select,
+  option,
   canvas,
   each,
   onMount,
@@ -18,6 +20,8 @@ import type { Send, Signal, Renderable } from '@llui/dom'
 import { datePicker, monthGrid, weekRows } from '@llui/components/date-picker'
 import { timePicker, formatTime } from '@llui/components/time-picker'
 import { colorPicker } from '@llui/components/color-picker'
+import { gradientPicker } from '@llui/components/gradient-picker'
+import { angleSlider, type AngleSliderMsg } from '@llui/components/angle-slider'
 import { editable } from '@llui/components/editable'
 import { clipboard, copyToClipboard } from '@llui/components/clipboard'
 import { fileUpload } from '@llui/components/file-upload'
@@ -34,6 +38,7 @@ const children = {
   datePicker,
   timePicker,
   colorPicker,
+  gradientPicker,
   editable,
   clipboard,
   fileUpload,
@@ -59,6 +64,14 @@ export const init = (): [State, Effect[]] => [
     datePicker: datePicker.init({ value: '2026-04-15' }),
     timePicker: timePicker.init({ value: { hours: 14, minutes: 30, seconds: 0 }, format: '12' }),
     colorPicker: colorPicker.init({ hsl: { h: 210, s: 70, l: 50 } }),
+    gradientPicker: gradientPicker.init({
+      angle: 90,
+      stops: [
+        { position: 0, color: 'oklch(0.65 0.2 25)' },
+        { position: 100, color: 'oklch(0.65 0.2 265)' },
+      ],
+      interpolation: { space: 'oklch', hue: 'shorter' },
+    }),
     editable: editable.init({ value: 'Click me to edit' }),
     clipboard: clipboard.init({ value: 'pnpm install @llui/components' }),
     fileUpload: fileUpload.init({ multiple: true, maxFiles: 3 }),
@@ -119,6 +132,70 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     },
   )
   const sp = splitter.connect(state.at('splitter'), (m) => send({ type: 'splitter', msg: m }))
+  const gp = gradientPicker.connect(
+    state.at('gradientPicker'),
+    (m) => send({ type: 'gradientPicker', msg: m }),
+    { id: 'gp-demo' },
+  )
+
+  // `angle-slider` composed over gradient-picker's OWN `angle` field — no
+  // separate stored state for it. A fresh `AngleSliderState` is derived from
+  // the live angle on every render; any message it produces (`setValue`,
+  // `increment`, …) is replayed through `angleSlider.update` and the
+  // resulting value is forwarded as gradient-picker's `setAngle`. This is
+  // the "trivially composable with angle-slider" case from the machine's
+  // own doc comment: gradient-picker publishes a plain `angleInput` range
+  // part, but any OTHER angle-editing UI (a circular drag control, here)
+  // works against the exact same field with zero glue beyond this translator.
+  const angleSliderSend = (m: AngleSliderMsg): void => {
+    const derived = angleSlider.init({ value: state.peek().gradientPicker.angle })
+    const [next] = angleSlider.update(derived, m)
+    send({ type: 'gradientPicker', msg: { type: 'setAngle', angle: next.value } })
+  }
+  const as = angleSlider.connect(
+    state.at('gradientPicker').map((s) => angleSlider.init({ value: s.angle })),
+    angleSliderSend,
+  )
+  // Same pointer-drag glue `time-inputs.ts`'s own Angle Slider card uses:
+  // the machine computes no pointer handling of its own (it leaves that to
+  // the consumer), so both cards install it identically.
+  const onAngleControlDown = (e: PointerEvent): void => {
+    const el = e.currentTarget as HTMLElement
+    el.setPointerCapture(e.pointerId)
+    const setFromPointer = (ev: PointerEvent): void => {
+      const rect = el.getBoundingClientRect()
+      const angle = angleSlider.angleFromPoint(rect, ev.clientX, ev.clientY)
+      angleSliderSend({ type: 'setValue', value: angle })
+    }
+    setFromPointer(e)
+    const onMove = (ev: PointerEvent): void => {
+      if (ev.pointerId === e.pointerId) setFromPointer(ev)
+    }
+    const onUp = (ev: PointerEvent): void => {
+      if (ev.pointerId !== e.pointerId) return
+      el.releasePointerCapture(e.pointerId)
+      el.removeEventListener('pointermove', onMove)
+      el.removeEventListener('pointerup', onUp)
+      el.removeEventListener('pointercancel', onUp)
+    }
+    el.addEventListener('pointermove', onMove)
+    el.addEventListener('pointerup', onUp)
+    el.addEventListener('pointercancel', onUp)
+  }
+
+  // Two READ-ONLY previews of the SAME stops/kind, differing only in
+  // `interpolation.space` — `srgb` (naive channel-average) vs `oklch`
+  // (perceptually-uniform) visibly diverge for saturated stops.
+  const interpolationCompare = state.at('gradientPicker').map((s) => ({
+    srgb: gradientPicker.toCss({
+      ...s,
+      interpolation: { space: 'srgb' as const, hue: 'shorter' as const },
+    }),
+    oklch: gradientPicker.toCss({
+      ...s,
+      interpolation: { space: 'oklch' as const, hue: 'shorter' as const },
+    }),
+  }))
 
   // Editable focus on edit
   const previewParts = { ...ed.preview }
@@ -392,6 +469,165 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('CSS: '),
           text(state.at('colorPicker').map((s) => colorPicker.toCss(s))),
+        ]),
+      ]),
+      card('Gradient Picker', [
+        div({ ...gp.root }, [
+          div({ ...gp.preview }, []),
+          div({ ...gp.track }, [
+            each(state.at('gradientPicker.stops'), {
+              key: (stop) => stop.id,
+              render: (item) => {
+                // A keyed row's id never changes across its own lifetime (a
+                // changed id tears down this row and builds a fresh one), so
+                // reading it once here — rather than inside the returned
+                // slot — is the deliberate one-shot case `peek-in-slot` asks
+                // for: snapshot in a block-body `const`, pass the plain
+                // value into `gp.stop`, which itself returns live Signals.
+                const stopId = item.peek().id
+                return [div({ ...gp.stop(stopId) }, [])]
+              },
+            }),
+          ]),
+          div({ class: 'flex items-center gap-2' }, [
+            // Icon-only (the machine already publishes an `aria-label`);
+            // `add-stop-button`/`remove-stop-button` are styled as small
+            // fixed-size square buttons — see form-controls.css.
+            button({ ...gp.addStopButton }, [text('+')]),
+            button({ ...gp.removeStopButton }, [text('−')]),
+            button({ ...gp.reverseButton }, [text('Reverse')]),
+            button({ ...gp.distributeButton }, [text('Distribute')]),
+          ]),
+          div({ class: 'flex items-center gap-2' }, [
+            button({ ...gp.kindToggle('linear') }, [text('Linear')]),
+            button({ ...gp.kindToggle('radial') }, [text('Radial')]),
+            button({ ...gp.kindToggle('conic') }, [text('Conic')]),
+            button({ ...gp.repeatingToggle }, [text('Repeating')]),
+          ]),
+          branch(
+            state.at('gradientPicker').map((s) => s.kind),
+            {
+              linear: () => [
+                label({ class: 'flex items-center gap-2 text-xs text-muted-foreground' }, [
+                  span([text('Angle')]),
+                  input({ ...gp.angleInput }),
+                ]),
+              ],
+              conic: () => [
+                label({ class: 'flex items-center gap-2 text-xs text-muted-foreground' }, [
+                  span([text('Angle')]),
+                  input({ ...gp.angleInput }),
+                ]),
+                div({ ...gp.centerArea }, [div({ ...gp.centerThumb }, [])]),
+              ],
+              radial: () => [
+                div({ class: 'flex items-center gap-2' }, [
+                  button({ ...gp.shapeOption('circle') }, [text('Circle')]),
+                  button({ ...gp.shapeOption('ellipse') }, [text('Ellipse')]),
+                ]),
+                div({ class: 'flex items-center gap-2' }, [
+                  button({ ...gp.sizeOption('closest-side') }, [text('Closest side')]),
+                  button({ ...gp.sizeOption('farthest-corner') }, [text('Farthest corner')]),
+                ]),
+                div({ ...gp.centerArea }, [div({ ...gp.centerThumb }, [])]),
+              ],
+            },
+          ),
+          div({ class: 'flex items-center gap-2' }, [
+            select({ ...gp.interpolationSpaceSelect }, [
+              option({ value: 'srgb' }, [text('sRGB')]),
+              option({ value: 'srgb-linear' }, [text('sRGB (linear)')]),
+              option({ value: 'hsl' }, [text('HSL')]),
+              option({ value: 'oklab' }, [text('OKLab')]),
+              option({ value: 'oklch' }, [text('OKLCH')]),
+            ]),
+            select({ ...gp.interpolationHueSelect }, [
+              option({ value: 'shorter' }, [text('shorter hue')]),
+              option({ value: 'longer' }, [text('longer hue')]),
+              option({ value: 'increasing' }, [text('increasing hue')]),
+              option({ value: 'decreasing' }, [text('decreasing hue')]),
+            ]),
+          ]),
+          div(
+            {
+              ...as.root,
+              'aria-label': 'Angle (angle-slider composition)',
+              class:
+                'flex items-center gap-3 text-xs text-muted-foreground rounded focus:outline focus:outline-2 focus:outline-blue-300',
+            },
+            [
+              span([text('Angle (angle-slider composition)')]),
+              div(
+                {
+                  ...as.control,
+                  class:
+                    'relative h-10 w-10 shrink-0 rounded-full border-2 border-border cursor-pointer touch-none',
+                  onPointerDown: onAngleControlDown,
+                },
+                [
+                  div(
+                    {
+                      ...as.thumb,
+                      class: 'absolute h-2 w-2 rounded-full bg-primary',
+                      style: state.at('gradientPicker').map((s) => {
+                        const { x, y } = angleSlider.pointFromAngle(s.angle)
+                        const r = 16
+                        return (
+                          `left:50%;top:50%;` +
+                          `transform:translate(calc(-50% + ${(x * r).toFixed(2)}px),calc(-50% + ${(y * r).toFixed(2)}px));`
+                        )
+                      }),
+                    },
+                    [],
+                  ),
+                ],
+              ),
+              span({ class: 'font-mono' }, [
+                text(state.at('gradientPicker').map((s) => `${Math.round(s.angle)}°`)),
+              ]),
+            ],
+          ),
+          input({ ...gp.cssInput, class: 'w-full' }),
+          div({ class: 'flex flex-col gap-1.5 border-t pt-2' }, [
+            span({ class: 'text-xs font-semibold text-muted-foreground' }, [
+              text('Selected stop (embedded color-picker)'),
+            ]),
+            div({ class: 'flex items-center gap-2' }, [
+              div({ ...gp.picker.preview }, []),
+              input({ ...gp.picker.hexInput, class: 'flex-1' }),
+              button({ ...gp.picker.modelToggle }, [
+                text(
+                  state
+                    .at('gradientPicker')
+                    .map((s) =>
+                      gradientPicker.pickerStateOf(s).color.model === 'hsv' ? 'OKLCH' : 'HSV',
+                    ),
+                ),
+              ]),
+            ]),
+          ]),
+        ]),
+        div({ class: 'mt-3 grid grid-cols-2 gap-2 text-xs text-muted-foreground' }, [
+          div([
+            text('in srgb'),
+            div(
+              {
+                class: 'mt-1 h-8 rounded-md border',
+                style: interpolationCompare.map((c) => `background:${c.srgb};`),
+              },
+              [],
+            ),
+          ]),
+          div([
+            text('in oklch'),
+            div(
+              {
+                class: 'mt-1 h-8 rounded-md border',
+                style: interpolationCompare.map((c) => `background:${c.oklch};`),
+              },
+              [],
+            ),
+          ]),
         ]),
       ]),
     ]),

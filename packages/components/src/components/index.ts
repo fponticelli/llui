@@ -66,6 +66,7 @@ export { breadcrumbs } from './breadcrumbs.js'
 export { searchField } from './search-field.js'
 export { table } from './table.js'
 export { menubar } from './menubar.js'
+export { gradientPicker } from './gradient-picker.js'
 
 export { validateSchema, validateSchemaAsync } from './form.js'
 export { reorder } from './sortable.js'
@@ -511,6 +512,7 @@ export type {
   ConnectOptions as ColorPickerConnectOptions,
   EyeDropperOpenOptions,
   EyeDropperResult,
+  PickerColor,
 } from './color-picker.js'
 export type { FieldState, FieldMsg, FieldInit, FieldParts, FieldConnectOptions } from './field.js'
 export type {
@@ -568,3 +570,22 @@ export type {
   MenubarTriggerParts,
   MenubarOverlayOptions,
 } from './menubar.js'
+export type {
+  GradientKind,
+  RadialShape,
+  RadialSize,
+  GradientCenter,
+  GradientInterpolation,
+  GradientStop,
+  GradientStopInit,
+  GradientPickerState,
+  GradientPickerMsg,
+  GradientPickerInit,
+  GradientPickerParts,
+  GradientStopParts,
+  ToggleItemParts,
+  ToggleItemPart,
+  ConnectOptions as GradientPickerConnectOptions,
+  ParsedGradient,
+  ParseGradientResult,
+} from './gradient-picker.js'

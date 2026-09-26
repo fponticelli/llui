@@ -11376,7 +11376,7 @@ Supported on: editable, number-input, tags-input, pin-input, file-upload.
 
 ## Component Reference
 
-All 68 components follow the same pattern:
+All 69 components follow the same pattern:
 
 ```typescript
 import { componentName } from '@llui/components/component-name'
@@ -11679,7 +11679,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `root`, `modelToggle`, `hueSlider`, `saturationSlider`, `lightnessSlider`, `chromaSlider`, `oklchLightnessSlider`, `hexInput`, `preview`, `area`, `areaCanvas`, `areaThumb`, `alphaSlider`, `eyeDropperTrigger`, `swatchGroup`, `swatch`
 
-**Utilities:** `stateHsl()`, `stateHsv()`, `stateOklch()`, `isOutOfGamut()`, `toHex()`, `toHex8()`, `toCss()`, `colorFromPoint()`, `lcFromPoint()`, `hsvToOklchPreserving()`, `oklchToHsvPreserving()`, `supportsEyeDropper()`, `openEyeDropper()`, `oklchPlanePixels()`, `paintOklchPlane()`, `oklchHueRampGradient()`, `hslToHsv()`, `hsvToHsl()`
+**Utilities:** `stateHsl()`, `stateHsv()`, `stateOklch()`, `isOutOfGamut()`, `toHex()`, `toHex8()`, `toCss()`, `colorFromPoint()`, `lcFromPoint()`, `hsvToOklchPreserving()`, `oklchToHsvPreserving()`, `supportsEyeDropper()`, `openEyeDropper()`, `oklchPlanePixels()`, `paintOklchPlane()`, `oklchHueRampGradient()`, `hslToHsv()`, `hsvToHsl()`, `sanitizeHsv()`, `sanitizeOklch()`, `pickerColorToCssColor()`, `cssColorToPickerColor()`
 
 **Constants:** `DEFAULT_MAX_CHROMA`
 
@@ -11985,6 +11985,41 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 **Parts:** `root`, `field`, `submit`
 
 **Utilities:** `validateSchema()`, `validateSchemaAsync()`
+
+---
+
+### Gradient Picker
+
+**State** (`GradientPickerState`):
+
+| Field | Type |
+|---|---|
+| `kind` | `GradientKind` |
+| `repeating` | `boolean` |
+| `angle` | `number` |
+| `center` | `GradientCenter` |
+| `shape` | `RadialShape` |
+| `size` | `RadialSize` |
+| `interpolation` | `GradientInterpolation` |
+| `stops` | `GradientStop[]` |
+| `selectedId` | `string` |
+| `nextId` | `number` |
+| `model` | `ColorModel` |
+| `maxChroma` | `number` |
+| `minStops` | `number` |
+| `maxStops` | `number` |
+| `disabled` | `boolean` |
+| `dir` | `'ltr' \| 'rtl'` |
+
+**Messages:** `addStop`, `removeStop`, `selectStop`, `moveStop`, `nudgeStop`, `setKind`, `setRepeating`, `setAngle`, `setCenter`, `setShape`, `setSize`, `setInterpolation`, `reverse`, `distribute`, `setGradient`, `picker`, `selectNextStop`, `selectPrevStop`, `setDir`
+
+**Init options:** `css?: string, stops?: GradientStopInit[], kind?: GradientKind, repeating?: boolean, angle?: number, center?: Partial<GradientCenter>, shape?: RadialShape, size?: RadialSize, interpolation?: Partial<GradientInterpolation>, model?: ColorModel, maxChroma?: number, minStops?: number, maxStops?: number, disabled?: boolean, dir?: 'ltr' | 'rtl'`
+
+**Connect options:** `ConnectOptions`
+
+**Parts:** `root`, `preview`, `track`, `stop`, `addStopButton`, `removeStopButton`, `kindToggle`, `repeatingToggle`, `angleInput`, `centerArea`, `centerThumb`, `shapeOption`, `sizeOption`, `interpolationSpaceSelect`, `interpolationHueSelect`, `reverseButton`, `distributeButton`, `cssInput`, `picker`
+
+**Utilities:** `toCss()`, `colorAt()`, `parseGradient()`, `pickerStateOf()`
 
 ---
 
@@ -15577,6 +15612,84 @@ update: (state, msg) => {
 export type FormStatus = 'idle' | 'submitting' | 'submitted' | 'error'
 ```
 
+##### `GradientKind` from `@llui/components`
+
+Gradient picker — CSS `linear-gradient()`/`radial-gradient()`/
+`conic-gradient()` (and their `repeating-` forms) authoring: a horizontal
+stop ramp plus per-kind controls, with a full `color-picker` embedded for
+whichever stop is selected.
+
+## The embedded picker is DERIVED, never stored
+
+There is exactly one color store per stop (`GradientStop.color`, the same
+`PickerColor` union `color-picker` itself uses) and exactly one place that
+projects it into a live `ColorPickerState`: {@link pickerStateOf}. Editing
+the picker sends `{ type: 'picker'; msg }`; `update()` runs
+`colorPicker.update` on that DERIVED state and writes the result's
+`color`/`alpha` back onto the SELECTED stop only (plus `state.model`, kept
+in sync whenever the picker's own `setModel` fires — see `pickerStateOf`'s
+doc comment). This is what keeps a gray stop's hue alive across a model
+switch: the stop never round-trips through a hex string, only through the
+same HSV<->OKLCH projections `color-picker` already uses to stay lossless.
+
+## The stop-position domain is always one cycle, 0–100
+
+`repeating` only changes the CSS `repeating-` prefix (how the SAME 0–100
+ramp tiles across the painted box) — it never changes what a stop's
+`position` number means. `colorAt`/`addStop` always read `position` as a
+percentage of one cycle, matching what {@link toCss}'s stop list expresses,
+regardless of `repeating`.
+
+```typescript
+export type GradientKind = 'linear' | 'radial' | 'conic'
+```
+
+##### `GradientPickerMsg` from `@llui/components`
+
+@intent group
+
+```typescript
+export type GradientPickerMsg =
+  /** @intent("Add a stop at `position` (0-100), colored EXACTLY what the gradient already renders there") */
+  | { type: 'addStop'; position: number }
+  /** @intent("Remove the stop with the given id. Refused below `minStops`; a removed selection reselects a neighbour") */
+  | { type: 'removeStop'; id: string }
+  /** @humanOnly */
+  | { type: 'selectStop'; id: string }
+  /** @intent("Move the stop with the given id to `position` (0-100, clamped), keeping sort order and selection") */
+  | { type: 'moveStop'; id: string; position: number }
+  /** @intent("Move the stop with the given id by a signed `delta` (0-100 units)") */
+  | { type: 'nudgeStop'; id: string; delta: number }
+  /** @intent("Switch the gradient kind (linear/radial/conic)") */
+  | { type: 'setKind'; kind: GradientKind }
+  /** @intent("Toggle the `repeating-` form of the current gradient kind") */
+  | { type: 'setRepeating'; repeating: boolean }
+  /** @intent("Set the angle in degrees — the linear direction, or the conic `from` angle. Normalized to [0,360)") */
+  | { type: 'setAngle'; angle: number }
+  /** @intent("Set the center position (percent 0-100 each axis) — radial and conic only") */
+  | { type: 'setCenter'; x: number; y: number }
+  /** @intent("Set the radial gradient's shape (circle/ellipse)") */
+  | { type: 'setShape'; shape: RadialShape }
+  /** @intent("Set the radial gradient's extent keyword") */
+  | { type: 'setSize'; size: RadialSize }
+  /** @intent("Set the color-interpolation-method: the space, and (polar spaces only) the hue method") */
+  | { type: 'setInterpolation'; space: InterpolationSpace; hue?: HueInterpolationMethod }
+  /** @intent("Reverse the stop order (mirrors every stop's position about the middle)") */
+  | { type: 'reverse' }
+  /** @intent("Space every stop evenly across 0-100, preserving relative order") */
+  | { type: 'distribute' }
+  /** @intent("Replace the whole gradient by parsing a CSS gradient string. Invalid input leaves the gradient unchanged") */
+  | { type: 'setGradient'; css: string }
+  /** @intent("Edit the color/alpha of the SELECTED stop through the embedded color-picker's own message set") */
+  | { type: 'picker'; msg: ColorPickerMsg }
+  /** @humanOnly */
+  | { type: 'selectNextStop' }
+  /** @humanOnly */
+  | { type: 'selectPrevStop' }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+```
+
 ##### `HoverCardMsg` from `@llui/components`
 
 ```typescript
@@ -15962,6 +16075,14 @@ export type PaginationMsg =
   | { type: 'setDir'; dir: TextDirection }
 ```
 
+##### `ParseGradientResult` from `@llui/components`
+
+```typescript
+export type ParseGradientResult =
+  | { ok: true; value: ParsedGradient }
+  | { ok: false; reason: string }
+```
+
 ##### `PasswordInputMsg` from `@llui/components`
 
 ```typescript
@@ -15972,6 +16093,17 @@ export type PasswordInputMsg =
   | { type: 'toggleVisibility' }
   /** @intent("Set the show/hide-password state to a specific value") */
   | { type: 'setVisible'; visible: boolean }
+```
+
+##### `PickerColor` from `@llui/components`
+
+The canonical stored color union — HSV or OKLCH, tagged by `model`.
+Exported as a named type for `gradient-picker`, whose stops each store one
+of these (never a hex string) so a gray stop keeps its hue and an
+out-of-gamut OKLCH stop stays exact.
+
+```typescript
+export type PickerColor = ColorPickerState['color']
 ```
 
 ##### `PinInputMsg` from `@llui/components`
@@ -16099,6 +16231,18 @@ export type QrCodeMsg =
   | { type: 'setMatrix'; matrix: boolean[][] }
   /** @intent("Change the QR error-correction level (L/M/Q/H)") */
   | { type: 'setErrorCorrection'; level: ErrorCorrectionLevel }
+```
+
+##### `RadialShape` from `@llui/components`
+
+```typescript
+export type RadialShape = 'circle' | 'ellipse'
+```
+
+##### `RadialSize` from `@llui/components`
+
+```typescript
+export type RadialSize = 'closest-side' | 'closest-corner' | 'farthest-side' | 'farthest-corner'
 ```
 
 ##### `RadioGroupMsg` from `@llui/components`
@@ -16853,6 +16997,12 @@ export type ToggleGroupMsg =
   | { type: 'focusItem'; value: string }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+```
+
+##### `ToggleItemPart` from `@llui/components`
+
+```typescript
+export type ToggleItemPart = 'kind-toggle' | 'shape-option' | 'size-option'
 ```
 
 ##### `ToggleMsg` from `@llui/components`
@@ -20323,6 +20473,340 @@ export interface Frame {
 }
 ```
 
+##### `GradientCenter` from `@llui/components`
+
+```typescript
+export interface GradientCenter {
+  x: number
+  y: number
+}
+```
+
+##### `GradientInterpolation` from `@llui/components`
+
+```typescript
+export interface GradientInterpolation {
+  space: InterpolationSpace
+  hue: HueInterpolationMethod
+}
+```
+
+##### `GradientPickerConnectOptions` from `@llui/components`
+
+```typescript
+export interface ConnectOptions {
+  id: string
+  trackLabel?: string
+  addStopLabel?: string
+  removeStopLabel?: string
+  kindLabels?: Partial<Record<GradientKind, string>>
+  repeatingLabel?: string
+  angleLabel?: string
+  centerLabel?: string
+  shapeLabels?: Partial<Record<RadialShape, string>>
+  sizeLabels?: Partial<Record<RadialSize, string>>
+  interpolationSpaceLabel?: string
+  interpolationHueLabel?: string
+  reverseLabel?: string
+  distributeLabel?: string
+  cssLabel?: string
+  /** Fine keyboard step for a stop / the center thumb (percent units).
+   * Default 1. */
+  step?: number
+  /** Coarse keyboard step when Shift is held. Default 10. */
+  coarseStep?: number
+  /** Forwarded to the embedded `color-picker`'s own `connect()` (labels,
+   * area-thumb step/coarseStep). */
+  pickerOptions?: ColorPickerConnectOptions
+}
+```
+
+##### `GradientPickerInit` from `@llui/components`
+
+```typescript
+export interface GradientPickerInit {
+  /** Parse an initial gradient from a CSS string (via {@link parseGradient}).
+   * Takes precedence over `stops`/`kind`/… below. Invalid CSS falls back to
+   * the `stops`/defaults path below, same as `color-picker`'s `color` option
+   * falling back on an unparsable string. */
+  css?: string
+  /** Explicit initial stops (ignored if `css` parses). Sorted by `position`
+   * on init; ids are assigned sequentially in the SORTED order. */
+  stops?: GradientStopInit[]
+  kind?: GradientKind
+  repeating?: boolean
+  angle?: number
+  center?: Partial<GradientCenter>
+  shape?: RadialShape
+  size?: RadialSize
+  interpolation?: Partial<GradientInterpolation>
+  model?: ColorModel
+  maxChroma?: number
+  minStops?: number
+  maxStops?: number
+  disabled?: boolean
+  dir?: 'ltr' | 'rtl'
+}
+```
+
+##### `GradientPickerParts` from `@llui/components`
+
+```typescript
+export interface GradientPickerParts {
+  root: {
+    'data-scope': 'gradient-picker'
+    'data-part': 'root'
+    'data-disabled': Signal<'' | undefined>
+    'data-kind': Signal<GradientKind>
+    'data-repeating': Signal<'' | undefined>
+  }
+  preview: {
+    'data-scope': 'gradient-picker'
+    'data-part': 'preview'
+    'aria-hidden': 'true'
+    style: Signal<string>
+  }
+  /** The horizontal stop ramp: a plain `in <space>` linear-90deg preview of
+   * the stop list, regardless of `state.kind` — a fixed, always-comparable
+   * frame to place/select/drag stops in. Pointerdown on the bare track (not
+   * on an existing stop, which calls `stopPropagation()`) adds a new stop at
+   * that position and starts dragging it immediately. */
+  track: {
+    'data-scope': 'gradient-picker'
+    'data-part': 'track'
+    style: Signal<string>
+    onPointerDown: (e: PointerEvent) => void
+    onPointerMove: (e: PointerEvent) => void
+    onPointerUp: (e: PointerEvent) => void
+    onPointerCancel: (e: PointerEvent) => void
+  }
+  stop: (id: string) => GradientStopParts
+  addStopButton: {
+    type: 'button'
+    'aria-label': string
+    disabled: Signal<boolean>
+    'data-scope': 'gradient-picker'
+    'data-part': 'add-stop-button'
+    onClick: (e: MouseEvent) => void
+  }
+  removeStopButton: {
+    type: 'button'
+    'aria-label': string
+    disabled: Signal<boolean>
+    'data-scope': 'gradient-picker'
+    'data-part': 'remove-stop-button'
+    onClick: (e: MouseEvent) => void
+  }
+  kindToggle: (kind: GradientKind) => ToggleItemParts
+  repeatingToggle: {
+    type: 'button'
+    'aria-label': string
+    'aria-pressed': Signal<boolean>
+    disabled: Signal<boolean>
+    'data-scope': 'gradient-picker'
+    'data-part': 'repeating-toggle'
+    'data-state': Signal<'on' | 'off'>
+    onClick: (e: MouseEvent) => void
+  }
+  angleInput: {
+    type: 'range'
+    min: 0
+    max: 360
+    step: 1
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    'data-scope': 'gradient-picker'
+    'data-part': 'angle-input'
+    onInput: (e: Event) => void
+  }
+  centerArea: {
+    'data-scope': 'gradient-picker'
+    'data-part': 'center-area'
+    onPointerDown: (e: PointerEvent) => void
+    onPointerMove: (e: PointerEvent) => void
+    onPointerUp: (e: PointerEvent) => void
+    onPointerCancel: (e: PointerEvent) => void
+  }
+  centerThumb: {
+    role: 'slider'
+    'aria-label': string
+    'aria-valuemin': 0
+    'aria-valuemax': 100
+    'aria-valuenow': Signal<number>
+    'aria-valuetext': Signal<string>
+    'aria-disabled': Signal<'true' | undefined>
+    tabindex: Signal<number>
+    'data-scope': 'gradient-picker'
+    'data-part': 'center-thumb'
+    style: Signal<string>
+    onKeyDown: (e: KeyboardEvent) => void
+  }
+  shapeOption: (shape: RadialShape) => ToggleItemParts
+  sizeOption: (size: RadialSize) => ToggleItemParts
+  interpolationSpaceSelect: {
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<InterpolationSpace>
+    'data-scope': 'gradient-picker'
+    'data-part': 'interpolation-space-select'
+    onInput: (e: Event) => void
+  }
+  interpolationHueSelect: {
+    'aria-label': string
+    /** Disabled when the current space has no hue (only `hsl`/`oklch` do). */
+    disabled: Signal<boolean>
+    value: Signal<HueInterpolationMethod>
+    'data-scope': 'gradient-picker'
+    'data-part': 'interpolation-hue-select'
+    onInput: (e: Event) => void
+  }
+  reverseButton: {
+    type: 'button'
+    'aria-label': string
+    disabled: Signal<boolean>
+    'data-scope': 'gradient-picker'
+    'data-part': 'reverse-button'
+    onClick: (e: MouseEvent) => void
+  }
+  distributeButton: {
+    type: 'button'
+    'aria-label': string
+    disabled: Signal<boolean>
+    'data-scope': 'gradient-picker'
+    'data-part': 'distribute-button'
+    onClick: (e: MouseEvent) => void
+  }
+  cssInput: {
+    type: 'text'
+    autocomplete: 'off'
+    spellcheck: 'false'
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    'data-scope': 'gradient-picker'
+    'data-part': 'css-input'
+    onInput: (e: Event) => void
+  }
+  /**
+   * The embedded `color-picker`'s FULL part bag, connected over the DERIVED
+   * `pickerStateOf(state)` — eyedropper, OKLCH canvas, model toggle, every
+   * slider, all included with zero glue. Messages are wrapped as
+   * `{ type: 'picker'; msg }` and unwrapped by this component's `update()`
+   * (see the module doc comment) — the same `{ type; msg }` shape the
+   * demo-level `composeModules` helper uses for embedding one component's
+   * messages in another's, applied here inside the reducer itself because
+   * writing back onto "whichever stop is selected" needs bespoke logic a
+   * generic by-key slice-replace can't express.
+   */
+  picker: ColorPickerParts
+}
+```
+
+##### `GradientPickerState` from `@llui/components`
+
+```typescript
+export interface GradientPickerState {
+  kind: GradientKind
+  repeating: boolean
+  /** Degrees. Linear: the gradient's own direction. Conic: the `from` angle. */
+  angle: number
+  /** Percent 0–100. Radial + conic only. */
+  center: GradientCenter
+  /** Radial only. */
+  shape: RadialShape
+  /** Radial only. */
+  size: RadialSize
+  interpolation: GradientInterpolation
+  /** Kept sorted by `position` ascending; ties keep insertion order. */
+  stops: GradientStop[]
+  selectedId: string
+  /** The next deterministic stop id counter (`` `s${nextId}` ``) — the reducer
+   * stays pure, so ids can never come from `Math.random()`/`crypto`. */
+  nextId: number
+  /** Which model the embedded picker edits in. Kept in sync with whatever
+   * model a `picker: { msg: { type: 'setModel' } }` last selected — see
+   * {@link pickerStateOf}. */
+  model: ColorModel
+  maxChroma: number
+  /** `removeStop` refuses to go below this many stops. Default 2. */
+  minStops: number
+  /**
+   * Upper bound on stop count, or ABSENT for unbounded. Follows the
+   * package's UNBOUNDED-CAPABLE idiom (CLAUDE.md #177, `breadcrumbs.
+   * maxVisible`): the key is OMITTED rather than holding `null`, so a
+   * `JSON.parse(JSON.stringify(state))` round trip is a key-for-key
+   * identity. (The brief this component was specified from spelled this
+   * field `number | null` — that is the one place this implementation
+   * deliberately diverges from it; see the final report.)
+   */
+  maxStops?: number
+  disabled: boolean
+  /** Reading direction. Under `rtl`, the track's physical left/right is
+   * mirrored — see the module doc comment on why this differs from
+   * `color-picker`'s (native-input) hue slider. */
+  dir: 'ltr' | 'rtl'
+}
+```
+
+##### `GradientStop` from `@llui/components`
+
+```typescript
+export interface GradientStop {
+  id: string
+  color: PickerColor
+  alpha: number
+  /** 0–100, one cycle — see the module doc comment. */
+  position: number
+}
+```
+
+##### `GradientStopInit` from `@llui/components`
+
+```typescript
+export interface GradientStopInit {
+  color?: PickerColor | string
+  alpha?: number
+  position: number
+}
+```
+
+##### `GradientStopParts` from `@llui/components`
+
+```typescript
+export interface GradientStopParts {
+  id: string
+  role: 'slider'
+  'aria-label': string
+  'aria-valuemin': 0
+  'aria-valuemax': 100
+  'aria-valuenow': Signal<number>
+  'aria-valuetext': Signal<string>
+  'aria-disabled': Signal<'true' | undefined>
+  /** Every stop is independently tabbable (never -1 while enabled) — the
+   * package's existing multi-thumb precedent (`slider.ts`'s `SliderThumbParts`)
+   * rather than a roving single-tab-stop composite: APG's roving-tabindex
+   * pattern is for ONE composite control with ONE conceptual focus (a
+   * toolbar, a listbox); a multi-stop gradient ramp is closer to several
+   * independent sliders, which is exactly the case `slider.ts` already
+   * chose this way for. Tab therefore visits stops in DOM order, which
+   * tracks position order since `each()` renders the reducer's own
+   * position-sorted `stops` array. */
+  tabindex: Signal<number>
+  'data-scope': 'gradient-picker'
+  'data-part': 'stop'
+  'data-value': string
+  'data-selected': Signal<'' | undefined>
+  style: Signal<string>
+  onPointerDown: (e: PointerEvent) => void
+  onPointerMove: (e: PointerEvent) => void
+  onPointerUp: (e: PointerEvent) => void
+  onPointerCancel: (e: PointerEvent) => void
+  onFocus: (e: FocusEvent) => void
+  onKeyDown: (e: KeyboardEvent) => void
+}
+```
+
 ##### `HoverCardInit` from `@llui/components`
 
 ```typescript
@@ -20712,6 +21196,29 @@ export interface Locale {
   drawer: { close: string }
   fileUpload: { remove: string; clear: string }
   floatingPanel: { label: string; minimize: string; maximize: string; close: string }
+  gradientPicker: {
+    track: string
+    stop: (index: number, count: number, color: string, position: number) => string
+    addStop: string
+    removeStop: string
+    linear: string
+    radial: string
+    conic: string
+    repeating: string
+    angle: string
+    center: string
+    shapeCircle: string
+    shapeEllipse: string
+    sizeClosestSide: string
+    sizeClosestCorner: string
+    sizeFarthestSide: string
+    sizeFarthestCorner: string
+    interpolationSpace: string
+    interpolationHue: string
+    reverse: string
+    distribute: string
+    css: string
+  }
   imageCropper: { reset: string }
   navigationMenu: { label: string }
   numberInput: { increment: string; decrement: string }
@@ -21587,6 +22094,21 @@ export interface ParsedDateValue {
 }
 ```
 
+##### `ParsedGradient` from `@llui/components`
+
+```typescript
+export interface ParsedGradient {
+  kind: GradientKind
+  repeating: boolean
+  angle: number
+  center: GradientCenter
+  shape: RadialShape
+  size: RadialSize
+  interpolation: GradientInterpolation
+  stops: Array<{ color: PickerColor; alpha: number; position: number }>
+}
+```
+
 ##### `PasswordInputInit` from `@llui/components`
 
 ```typescript
@@ -21731,6 +22253,13 @@ export interface PointerDragCallbacks {
   /** Fires on `pointerdown` (immediately after `onDragStart`) and again on
    * every `pointermove` while the drag is live. */
   onDrag: (e: PointerEvent) => void
+  /** Fires once on `pointerup`/`pointercancel`, but ONLY when a drag was
+   * actually live (never on a stray up/cancel with no matching down) — the
+   * counterpart to `onDragStart`, for a caller that tracks per-drag identity
+   * across the lifecycle (`gradient-picker`'s track drag creates a new stop
+   * on `pointerdown` and must stop targeting it once the drag ends). Runs
+   * AFTER pointer capture is released. */
+  onDragEnd?: (e: PointerEvent) => void
 }
 ```
 
@@ -24554,6 +25083,22 @@ export interface ToggleInit {
 }
 ```
 
+##### `ToggleItemParts` from `@llui/components`
+
+```typescript
+export interface ToggleItemParts {
+  type: 'button'
+  'aria-label': string
+  'aria-pressed': Signal<boolean>
+  'data-scope': 'gradient-picker'
+  'data-part': ToggleItemPart
+  'data-value': string
+  'data-state': Signal<'on' | 'off'>
+  disabled: Signal<boolean>
+  onClick: (e: MouseEvent) => void
+}
+```
+
 ##### `ToggleParts` from `@llui/components`
 
 ```typescript
@@ -25334,6 +25879,12 @@ const floatingPanel
 
 ```typescript
 const form
+```
+
+##### `gradientPicker` from `@llui/components`
+
+```typescript
+const gradientPicker
 ```
 
 ##### `hoverCard` from `@llui/components`
@@ -27519,6 +28070,13 @@ export interface PointerDragCallbacks {
   /** Fires on `pointerdown` (immediately after `onDragStart`) and again on
    * every `pointermove` while the drag is live. */
   onDrag: (e: PointerEvent) => void
+  /** Fires once on `pointerup`/`pointercancel`, but ONLY when a drag was
+   * actually live (never on a stray up/cancel with no matching down) — the
+   * counterpart to `onDragStart`, for a caller that tracks per-drag identity
+   * across the lifecycle (`gradient-picker`'s track drag creates a new stop
+   * on `pointerdown` and must stop targeting it once the drag ends). Runs
+   * AFTER pointer capture is released. */
+  onDragEnd?: (e: PointerEvent) => void
 }
 ```
 
@@ -28052,6 +28610,28 @@ function formatHex(rgb: Rgb255): string
 
 ```typescript
 function formatHex8(rgb: Rgb255, alpha: number): string
+```
+
+##### `formatHsl()` from `@llui/components/utils/color`
+
+`hsl(H S% L%)` / `hsl(H S% L% / A)`. `gradient-picker`'s `colorAt` needs
+this so an `in hsl` interpolation result can be serialized without an extra
+(lossy) round trip through sRGB bytes.
+
+```typescript
+function formatHsl(hsl: Hsl, alpha = 1): string
+```
+
+##### `formatOklab()` from `@llui/components/utils/color`
+
+`oklab(L A B)` / `oklab(L A B / A)`, same precision convention as
+{@link formatOklch} — `gradient-picker`'s `colorAt` needs this to stay
+exact when the interpolation space itself is `oklab` (interpolating in
+`oklch` and in `oklab` are different color spaces, and only one of them has
+a serializer here otherwise).
+
+```typescript
+function formatOklab(lab: Oklab, alpha = 1): string
 ```
 
 ##### `formatOklch()` from `@llui/components/utils/color`
@@ -30765,6 +31345,13 @@ export interface PointerDragCallbacks {
   /** Fires on `pointerdown` (immediately after `onDragStart`) and again on
    * every `pointermove` while the drag is live. */
   onDrag: (e: PointerEvent) => void
+  /** Fires once on `pointerup`/`pointercancel`, but ONLY when a drag was
+   * actually live (never on a stray up/cancel with no matching down) — the
+   * counterpart to `onDragStart`, for a caller that tracks per-drag identity
+   * across the lifecycle (`gradient-picker`'s track drag creates a new stop
+   * on `pointerdown` and must stop targeting it once the drag ends). Runs
+   * AFTER pointer capture is released. */
+  onDragEnd?: (e: PointerEvent) => void
 }
 ```
 
@@ -31917,6 +32504,13 @@ export interface PointerDragCallbacks {
   /** Fires on `pointerdown` (immediately after `onDragStart`) and again on
    * every `pointermove` while the drag is live. */
   onDrag: (e: PointerEvent) => void
+  /** Fires once on `pointerup`/`pointercancel`, but ONLY when a drag was
+   * actually live (never on a stray up/cancel with no matching down) — the
+   * counterpart to `onDragStart`, for a caller that tracks per-drag identity
+   * across the lifecycle (`gradient-picker`'s track drag creates a new stop
+   * on `pointerdown` and must stop targeting it once the drag ends). Runs
+   * AFTER pointer capture is released. */
+  onDragEnd?: (e: PointerEvent) => void
 }
 ```
 
@@ -40615,6 +41209,17 @@ function colorFromPoint(rect: DOMRect, x: number, y: number): { s: number; v: nu
 function connect(state: Signal<ColorPickerState>, send: Send<ColorPickerMsg>, opts: ConnectOptions = {}): ColorPickerParts
 ```
 
+##### `cssColorToPickerColor()` from `@llui/components/color-picker`
+
+Convert an already-parsed {@link CssColor} into the canonical store for a
+given active `model`, exactly the way `setColor`/`setHex` project a typed
+color string — but for a caller (`gradient-picker`) that already has a
+`CssColor`, never a string, and must not round-trip through one.
+
+```typescript
+function cssColorToPickerColor(parsed: CssColor, model: ColorModel, maxChroma: number): { color: PickerColor; alpha: number }
+```
+
 ##### `hsvToOklchPreserving()` from `@llui/components/color-picker`
 
 HSV -> OKLCH, keeping the HSV hue verbatim when the color is achromatic
@@ -40708,6 +41313,33 @@ environment (jsdom without a 2D context polyfill).
 
 ```typescript
 function paintOklchPlane(canvas: HTMLCanvasElement, hue: number, maxChroma: number = DEFAULT_MAX_CHROMA): void
+```
+
+##### `pickerColorToCssColor()` from `@llui/components/color-picker`
+
+The inverse of {@link cssColorToPickerColor}: a canonical stored color plus
+alpha, as the shared {@link CssColor} model `interpolateColor` operates on.
+OKLCH stays OKLCH (exact, not gamut-mapped); HSV becomes `srgb`.
+
+```typescript
+function pickerColorToCssColor(color: PickerColor, alpha: number): CssColor
+```
+
+##### `sanitizeHsv()` from `@llui/components/color-picker`
+
+Exported for `gradient-picker`, which sanitizes a stop's color the same
+way `init`/`setColor` do when projecting a parsed CSS color onto HSV.
+
+```typescript
+function sanitizeHsv(raw: Hsv): Hsv
+```
+
+##### `sanitizeOklch()` from `@llui/components/color-picker`
+
+Exported for `gradient-picker`, same reason as {@link sanitizeHsv}.
+
+```typescript
+function sanitizeOklch(raw: Oklch, maxChroma: number): Oklch
 ```
 
 ##### `stateHsl()` from `@llui/components/color-picker`
@@ -40850,6 +41482,17 @@ export type ColorPickerMsg =
   | { type: 'setLc'; c: number; l: number }
   /** @intent("Nudge chroma/lightness (OKLCH) by signed deltas — used by area arrow keys") */
   | { type: 'nudgeLc'; dc: number; dl: number }
+```
+
+##### `PickerColor` from `@llui/components/color-picker`
+
+The canonical stored color union — HSV or OKLCH, tagged by `model`.
+Exported as a named type for `gradient-picker`, whose stops each store one
+of these (never a hex string) so a gray stop keeps its hue and an
+out-of-gamut OKLCH stop stays exact.
+
+```typescript
+export type PickerColor = ColorPickerState['color']
 ```
 
 #### Interfaces
@@ -41200,6 +41843,572 @@ option.
 
 ```typescript
 const DEFAULT_MAX_CHROMA
+```
+
+### `@llui/components/gradient-picker`
+
+#### Functions
+
+##### `colorAt()` from `@llui/components/gradient-picker`
+
+The color the gradient renders at `position` (0–100, one cycle — see the
+module doc comment), computed the same way the browser would: an exact
+stop match returns that stop's own color; otherwise the two bracketing
+stops are interpolated in `state.interpolation`. `addStop` stores EXACTLY
+this string (round-tripped through `parseCssColor`), so a new stop is
+indistinguishable from the gradient it was picked off.
+
+```typescript
+function colorAt(state: GradientPickerState, position: number): string
+```
+
+##### `connect()` from `@llui/components/gradient-picker`
+
+```typescript
+function connect(state: Signal<GradientPickerState>, send: Send<GradientPickerMsg>, opts: ConnectOptions): GradientPickerParts
+```
+
+##### `init()` from `@llui/components/gradient-picker`
+
+```typescript
+function init(opts: GradientPickerInit = {}): GradientPickerState
+```
+
+##### `parseGradient()` from `@llui/components/gradient-picker`
+
+Parse a CSS `<gradient>` (`linear-gradient()`/`radial-gradient()`/
+`conic-gradient()`, `repeating-` included) into this component's shape.
+Accepts: angles in `deg`/`grad`/`rad`/`turn`, `to <side-or-corner>`,
+`at <position>` (percentages + `left`/`center`/`right`/`top`/`bottom`),
+radial shape/size keywords, `in <space> [<hue> hue]`, 0/1/2 stop positions
+(a 2-position stop expands to two stops) with missing positions filled per
+the CSS auto-positioning algorithm, and any color `parseCssColor` accepts.
+
+Explicitly REJECTS (with a `reason`, never silently dropping data):
+length-based stop positions (only `%` is supported), an explicit radial
+size LENGTH (`circle 40px` — only the four keyword extents), a length-based
+`at` position, and color hints (a bare percentage in the stop list with no
+color). `parseGradient(toCss(s))` reproduces `s` modulo stop ids — see the
+round-trip property test.
+
+```typescript
+function parseGradient(css: string): ParseGradientResult
+```
+
+##### `pickerStateOf()` from `@llui/components/gradient-picker`
+
+Build the `ColorPickerState` the embedded picker edits: the SELECTED
+stop's own color+alpha, projected onto `state.model` (lossless — the same
+`hsvToOklchPreserving`/`oklchToHsvPreserving` projections `color-picker`
+itself uses, so a gray stop's hue survives the projection). `state.model`
+— not each stop's own stored model — decides which model the picker shows,
+so switching stops never flips the picker's UI out from under the user;
+`update()`'s `'picker'` case is what keeps a freshly-projected color
+written back onto the stop, and keeps `state.model` itself in sync when
+the picker's `setModel` message is the one that arrived.
+
+```typescript
+function pickerStateOf(state: GradientPickerState): ColorPickerState
+```
+
+##### `toCss()` from `@llui/components/gradient-picker`
+
+Serialize to a real CSS `<gradient>` — always with an explicit
+`in <space>` (plus the hue method, only for a polar space and only when it
+is not the `shorter` default) so the string never depends on a browser's
+own default. Stop colors go through `color-picker`'s own `toCss` rule
+({@link formatStopColor}), so an out-of-gamut OKLCH stop stays exact
+instead of being silently gamut-mapped through a hex round trip.
+
+```typescript
+function toCss(state: GradientPickerState): string
+```
+
+##### `update()` from `@llui/components/gradient-picker`
+
+```typescript
+function update(state: GradientPickerState, msg: GradientPickerMsg): [GradientPickerState, never[]]
+```
+
+#### Types
+
+##### `GradientKind` from `@llui/components/gradient-picker`
+
+Gradient picker — CSS `linear-gradient()`/`radial-gradient()`/
+`conic-gradient()` (and their `repeating-` forms) authoring: a horizontal
+stop ramp plus per-kind controls, with a full `color-picker` embedded for
+whichever stop is selected.
+
+## The embedded picker is DERIVED, never stored
+
+There is exactly one color store per stop (`GradientStop.color`, the same
+`PickerColor` union `color-picker` itself uses) and exactly one place that
+projects it into a live `ColorPickerState`: {@link pickerStateOf}. Editing
+the picker sends `{ type: 'picker'; msg }`; `update()` runs
+`colorPicker.update` on that DERIVED state and writes the result's
+`color`/`alpha` back onto the SELECTED stop only (plus `state.model`, kept
+in sync whenever the picker's own `setModel` fires — see `pickerStateOf`'s
+doc comment). This is what keeps a gray stop's hue alive across a model
+switch: the stop never round-trips through a hex string, only through the
+same HSV<->OKLCH projections `color-picker` already uses to stay lossless.
+
+## The stop-position domain is always one cycle, 0–100
+
+`repeating` only changes the CSS `repeating-` prefix (how the SAME 0–100
+ramp tiles across the painted box) — it never changes what a stop's
+`position` number means. `colorAt`/`addStop` always read `position` as a
+percentage of one cycle, matching what {@link toCss}'s stop list expresses,
+regardless of `repeating`.
+
+```typescript
+export type GradientKind = 'linear' | 'radial' | 'conic'
+```
+
+##### `GradientPickerMsg` from `@llui/components/gradient-picker`
+
+@intent group
+
+```typescript
+export type GradientPickerMsg =
+  /** @intent("Add a stop at `position` (0-100), colored EXACTLY what the gradient already renders there") */
+  | { type: 'addStop'; position: number }
+  /** @intent("Remove the stop with the given id. Refused below `minStops`; a removed selection reselects a neighbour") */
+  | { type: 'removeStop'; id: string }
+  /** @humanOnly */
+  | { type: 'selectStop'; id: string }
+  /** @intent("Move the stop with the given id to `position` (0-100, clamped), keeping sort order and selection") */
+  | { type: 'moveStop'; id: string; position: number }
+  /** @intent("Move the stop with the given id by a signed `delta` (0-100 units)") */
+  | { type: 'nudgeStop'; id: string; delta: number }
+  /** @intent("Switch the gradient kind (linear/radial/conic)") */
+  | { type: 'setKind'; kind: GradientKind }
+  /** @intent("Toggle the `repeating-` form of the current gradient kind") */
+  | { type: 'setRepeating'; repeating: boolean }
+  /** @intent("Set the angle in degrees — the linear direction, or the conic `from` angle. Normalized to [0,360)") */
+  | { type: 'setAngle'; angle: number }
+  /** @intent("Set the center position (percent 0-100 each axis) — radial and conic only") */
+  | { type: 'setCenter'; x: number; y: number }
+  /** @intent("Set the radial gradient's shape (circle/ellipse)") */
+  | { type: 'setShape'; shape: RadialShape }
+  /** @intent("Set the radial gradient's extent keyword") */
+  | { type: 'setSize'; size: RadialSize }
+  /** @intent("Set the color-interpolation-method: the space, and (polar spaces only) the hue method") */
+  | { type: 'setInterpolation'; space: InterpolationSpace; hue?: HueInterpolationMethod }
+  /** @intent("Reverse the stop order (mirrors every stop's position about the middle)") */
+  | { type: 'reverse' }
+  /** @intent("Space every stop evenly across 0-100, preserving relative order") */
+  | { type: 'distribute' }
+  /** @intent("Replace the whole gradient by parsing a CSS gradient string. Invalid input leaves the gradient unchanged") */
+  | { type: 'setGradient'; css: string }
+  /** @intent("Edit the color/alpha of the SELECTED stop through the embedded color-picker's own message set") */
+  | { type: 'picker'; msg: ColorPickerMsg }
+  /** @humanOnly */
+  | { type: 'selectNextStop' }
+  /** @humanOnly */
+  | { type: 'selectPrevStop' }
+  /** @intent("Set the reading direction (ltr/rtl)") */
+  | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+```
+
+##### `ParseGradientResult` from `@llui/components/gradient-picker`
+
+```typescript
+export type ParseGradientResult =
+  | { ok: true; value: ParsedGradient }
+  | { ok: false; reason: string }
+```
+
+##### `RadialShape` from `@llui/components/gradient-picker`
+
+```typescript
+export type RadialShape = 'circle' | 'ellipse'
+```
+
+##### `RadialSize` from `@llui/components/gradient-picker`
+
+```typescript
+export type RadialSize = 'closest-side' | 'closest-corner' | 'farthest-side' | 'farthest-corner'
+```
+
+##### `ToggleItemPart` from `@llui/components/gradient-picker`
+
+```typescript
+export type ToggleItemPart = 'kind-toggle' | 'shape-option' | 'size-option'
+```
+
+#### Interfaces
+
+##### `ConnectOptions` from `@llui/components/gradient-picker`
+
+```typescript
+export interface ConnectOptions {
+  id: string
+  trackLabel?: string
+  addStopLabel?: string
+  removeStopLabel?: string
+  kindLabels?: Partial<Record<GradientKind, string>>
+  repeatingLabel?: string
+  angleLabel?: string
+  centerLabel?: string
+  shapeLabels?: Partial<Record<RadialShape, string>>
+  sizeLabels?: Partial<Record<RadialSize, string>>
+  interpolationSpaceLabel?: string
+  interpolationHueLabel?: string
+  reverseLabel?: string
+  distributeLabel?: string
+  cssLabel?: string
+  /** Fine keyboard step for a stop / the center thumb (percent units).
+   * Default 1. */
+  step?: number
+  /** Coarse keyboard step when Shift is held. Default 10. */
+  coarseStep?: number
+  /** Forwarded to the embedded `color-picker`'s own `connect()` (labels,
+   * area-thumb step/coarseStep). */
+  pickerOptions?: ColorPickerConnectOptions
+}
+```
+
+##### `GradientCenter` from `@llui/components/gradient-picker`
+
+```typescript
+export interface GradientCenter {
+  x: number
+  y: number
+}
+```
+
+##### `GradientInterpolation` from `@llui/components/gradient-picker`
+
+```typescript
+export interface GradientInterpolation {
+  space: InterpolationSpace
+  hue: HueInterpolationMethod
+}
+```
+
+##### `GradientPickerInit` from `@llui/components/gradient-picker`
+
+```typescript
+export interface GradientPickerInit {
+  /** Parse an initial gradient from a CSS string (via {@link parseGradient}).
+   * Takes precedence over `stops`/`kind`/… below. Invalid CSS falls back to
+   * the `stops`/defaults path below, same as `color-picker`'s `color` option
+   * falling back on an unparsable string. */
+  css?: string
+  /** Explicit initial stops (ignored if `css` parses). Sorted by `position`
+   * on init; ids are assigned sequentially in the SORTED order. */
+  stops?: GradientStopInit[]
+  kind?: GradientKind
+  repeating?: boolean
+  angle?: number
+  center?: Partial<GradientCenter>
+  shape?: RadialShape
+  size?: RadialSize
+  interpolation?: Partial<GradientInterpolation>
+  model?: ColorModel
+  maxChroma?: number
+  minStops?: number
+  maxStops?: number
+  disabled?: boolean
+  dir?: 'ltr' | 'rtl'
+}
+```
+
+##### `GradientPickerParts` from `@llui/components/gradient-picker`
+
+```typescript
+export interface GradientPickerParts {
+  root: {
+    'data-scope': 'gradient-picker'
+    'data-part': 'root'
+    'data-disabled': Signal<'' | undefined>
+    'data-kind': Signal<GradientKind>
+    'data-repeating': Signal<'' | undefined>
+  }
+  preview: {
+    'data-scope': 'gradient-picker'
+    'data-part': 'preview'
+    'aria-hidden': 'true'
+    style: Signal<string>
+  }
+  /** The horizontal stop ramp: a plain `in <space>` linear-90deg preview of
+   * the stop list, regardless of `state.kind` — a fixed, always-comparable
+   * frame to place/select/drag stops in. Pointerdown on the bare track (not
+   * on an existing stop, which calls `stopPropagation()`) adds a new stop at
+   * that position and starts dragging it immediately. */
+  track: {
+    'data-scope': 'gradient-picker'
+    'data-part': 'track'
+    style: Signal<string>
+    onPointerDown: (e: PointerEvent) => void
+    onPointerMove: (e: PointerEvent) => void
+    onPointerUp: (e: PointerEvent) => void
+    onPointerCancel: (e: PointerEvent) => void
+  }
+  stop: (id: string) => GradientStopParts
+  addStopButton: {
+    type: 'button'
+    'aria-label': string
+    disabled: Signal<boolean>
+    'data-scope': 'gradient-picker'
+    'data-part': 'add-stop-button'
+    onClick: (e: MouseEvent) => void
+  }
+  removeStopButton: {
+    type: 'button'
+    'aria-label': string
+    disabled: Signal<boolean>
+    'data-scope': 'gradient-picker'
+    'data-part': 'remove-stop-button'
+    onClick: (e: MouseEvent) => void
+  }
+  kindToggle: (kind: GradientKind) => ToggleItemParts
+  repeatingToggle: {
+    type: 'button'
+    'aria-label': string
+    'aria-pressed': Signal<boolean>
+    disabled: Signal<boolean>
+    'data-scope': 'gradient-picker'
+    'data-part': 'repeating-toggle'
+    'data-state': Signal<'on' | 'off'>
+    onClick: (e: MouseEvent) => void
+  }
+  angleInput: {
+    type: 'range'
+    min: 0
+    max: 360
+    step: 1
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    'data-scope': 'gradient-picker'
+    'data-part': 'angle-input'
+    onInput: (e: Event) => void
+  }
+  centerArea: {
+    'data-scope': 'gradient-picker'
+    'data-part': 'center-area'
+    onPointerDown: (e: PointerEvent) => void
+    onPointerMove: (e: PointerEvent) => void
+    onPointerUp: (e: PointerEvent) => void
+    onPointerCancel: (e: PointerEvent) => void
+  }
+  centerThumb: {
+    role: 'slider'
+    'aria-label': string
+    'aria-valuemin': 0
+    'aria-valuemax': 100
+    'aria-valuenow': Signal<number>
+    'aria-valuetext': Signal<string>
+    'aria-disabled': Signal<'true' | undefined>
+    tabindex: Signal<number>
+    'data-scope': 'gradient-picker'
+    'data-part': 'center-thumb'
+    style: Signal<string>
+    onKeyDown: (e: KeyboardEvent) => void
+  }
+  shapeOption: (shape: RadialShape) => ToggleItemParts
+  sizeOption: (size: RadialSize) => ToggleItemParts
+  interpolationSpaceSelect: {
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<InterpolationSpace>
+    'data-scope': 'gradient-picker'
+    'data-part': 'interpolation-space-select'
+    onInput: (e: Event) => void
+  }
+  interpolationHueSelect: {
+    'aria-label': string
+    /** Disabled when the current space has no hue (only `hsl`/`oklch` do). */
+    disabled: Signal<boolean>
+    value: Signal<HueInterpolationMethod>
+    'data-scope': 'gradient-picker'
+    'data-part': 'interpolation-hue-select'
+    onInput: (e: Event) => void
+  }
+  reverseButton: {
+    type: 'button'
+    'aria-label': string
+    disabled: Signal<boolean>
+    'data-scope': 'gradient-picker'
+    'data-part': 'reverse-button'
+    onClick: (e: MouseEvent) => void
+  }
+  distributeButton: {
+    type: 'button'
+    'aria-label': string
+    disabled: Signal<boolean>
+    'data-scope': 'gradient-picker'
+    'data-part': 'distribute-button'
+    onClick: (e: MouseEvent) => void
+  }
+  cssInput: {
+    type: 'text'
+    autocomplete: 'off'
+    spellcheck: 'false'
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    'data-scope': 'gradient-picker'
+    'data-part': 'css-input'
+    onInput: (e: Event) => void
+  }
+  /**
+   * The embedded `color-picker`'s FULL part bag, connected over the DERIVED
+   * `pickerStateOf(state)` — eyedropper, OKLCH canvas, model toggle, every
+   * slider, all included with zero glue. Messages are wrapped as
+   * `{ type: 'picker'; msg }` and unwrapped by this component's `update()`
+   * (see the module doc comment) — the same `{ type; msg }` shape the
+   * demo-level `composeModules` helper uses for embedding one component's
+   * messages in another's, applied here inside the reducer itself because
+   * writing back onto "whichever stop is selected" needs bespoke logic a
+   * generic by-key slice-replace can't express.
+   */
+  picker: ColorPickerParts
+}
+```
+
+##### `GradientPickerState` from `@llui/components/gradient-picker`
+
+```typescript
+export interface GradientPickerState {
+  kind: GradientKind
+  repeating: boolean
+  /** Degrees. Linear: the gradient's own direction. Conic: the `from` angle. */
+  angle: number
+  /** Percent 0–100. Radial + conic only. */
+  center: GradientCenter
+  /** Radial only. */
+  shape: RadialShape
+  /** Radial only. */
+  size: RadialSize
+  interpolation: GradientInterpolation
+  /** Kept sorted by `position` ascending; ties keep insertion order. */
+  stops: GradientStop[]
+  selectedId: string
+  /** The next deterministic stop id counter (`` `s${nextId}` ``) — the reducer
+   * stays pure, so ids can never come from `Math.random()`/`crypto`. */
+  nextId: number
+  /** Which model the embedded picker edits in. Kept in sync with whatever
+   * model a `picker: { msg: { type: 'setModel' } }` last selected — see
+   * {@link pickerStateOf}. */
+  model: ColorModel
+  maxChroma: number
+  /** `removeStop` refuses to go below this many stops. Default 2. */
+  minStops: number
+  /**
+   * Upper bound on stop count, or ABSENT for unbounded. Follows the
+   * package's UNBOUNDED-CAPABLE idiom (CLAUDE.md #177, `breadcrumbs.
+   * maxVisible`): the key is OMITTED rather than holding `null`, so a
+   * `JSON.parse(JSON.stringify(state))` round trip is a key-for-key
+   * identity. (The brief this component was specified from spelled this
+   * field `number | null` — that is the one place this implementation
+   * deliberately diverges from it; see the final report.)
+   */
+  maxStops?: number
+  disabled: boolean
+  /** Reading direction. Under `rtl`, the track's physical left/right is
+   * mirrored — see the module doc comment on why this differs from
+   * `color-picker`'s (native-input) hue slider. */
+  dir: 'ltr' | 'rtl'
+}
+```
+
+##### `GradientStop` from `@llui/components/gradient-picker`
+
+```typescript
+export interface GradientStop {
+  id: string
+  color: PickerColor
+  alpha: number
+  /** 0–100, one cycle — see the module doc comment. */
+  position: number
+}
+```
+
+##### `GradientStopInit` from `@llui/components/gradient-picker`
+
+```typescript
+export interface GradientStopInit {
+  color?: PickerColor | string
+  alpha?: number
+  position: number
+}
+```
+
+##### `GradientStopParts` from `@llui/components/gradient-picker`
+
+```typescript
+export interface GradientStopParts {
+  id: string
+  role: 'slider'
+  'aria-label': string
+  'aria-valuemin': 0
+  'aria-valuemax': 100
+  'aria-valuenow': Signal<number>
+  'aria-valuetext': Signal<string>
+  'aria-disabled': Signal<'true' | undefined>
+  /** Every stop is independently tabbable (never -1 while enabled) — the
+   * package's existing multi-thumb precedent (`slider.ts`'s `SliderThumbParts`)
+   * rather than a roving single-tab-stop composite: APG's roving-tabindex
+   * pattern is for ONE composite control with ONE conceptual focus (a
+   * toolbar, a listbox); a multi-stop gradient ramp is closer to several
+   * independent sliders, which is exactly the case `slider.ts` already
+   * chose this way for. Tab therefore visits stops in DOM order, which
+   * tracks position order since `each()` renders the reducer's own
+   * position-sorted `stops` array. */
+  tabindex: Signal<number>
+  'data-scope': 'gradient-picker'
+  'data-part': 'stop'
+  'data-value': string
+  'data-selected': Signal<'' | undefined>
+  style: Signal<string>
+  onPointerDown: (e: PointerEvent) => void
+  onPointerMove: (e: PointerEvent) => void
+  onPointerUp: (e: PointerEvent) => void
+  onPointerCancel: (e: PointerEvent) => void
+  onFocus: (e: FocusEvent) => void
+  onKeyDown: (e: KeyboardEvent) => void
+}
+```
+
+##### `ParsedGradient` from `@llui/components/gradient-picker`
+
+```typescript
+export interface ParsedGradient {
+  kind: GradientKind
+  repeating: boolean
+  angle: number
+  center: GradientCenter
+  shape: RadialShape
+  size: RadialSize
+  interpolation: GradientInterpolation
+  stops: Array<{ color: PickerColor; alpha: number; position: number }>
+}
+```
+
+##### `ToggleItemParts` from `@llui/components/gradient-picker`
+
+```typescript
+export interface ToggleItemParts {
+  type: 'button'
+  'aria-label': string
+  'aria-pressed': Signal<boolean>
+  'data-scope': 'gradient-picker'
+  'data-part': ToggleItemPart
+  'data-value': string
+  'data-state': Signal<'on' | 'off'>
+  disabled: Signal<boolean>
+  onClick: (e: MouseEvent) => void
+}
+```
+
+#### Constants
+
+##### `gradientPicker` from `@llui/components/gradient-picker`
+
+```typescript
+const gradientPicker
 ```
 
 ### `@llui/components/timer`

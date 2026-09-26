@@ -130,4 +130,43 @@ describe('pointerDragHandlers', () => {
     expect(() => h.onPointerDown(pointerEvent({ currentTarget: target }))).not.toThrow()
     expect(onDrag).toHaveBeenCalledTimes(1)
   })
+
+  it('onDragEnd fires once on pointerup, AFTER capture is released — added for gradient-picker', () => {
+    const target = mockTarget(true)
+    const order: string[] = []
+    target.releasePointerCapture.mockImplementation(() => order.push('release'))
+    const onDragEnd = vi.fn(() => order.push('end'))
+    const h = pointerDragHandlers({ isDisabled: () => false, onDrag: vi.fn(), onDragEnd })
+    const e = pointerEvent({ currentTarget: target })
+    h.onPointerDown(e)
+    h.onPointerUp(e)
+    expect(onDragEnd).toHaveBeenCalledTimes(1)
+    expect(onDragEnd).toHaveBeenCalledWith(e)
+    expect(order).toEqual(['release', 'end'])
+  })
+
+  it('onDragEnd fires once on pointercancel, same as pointerup', () => {
+    const target = mockTarget(true)
+    const onDragEnd = vi.fn()
+    const h = pointerDragHandlers({ isDisabled: () => false, onDrag: vi.fn(), onDragEnd })
+    h.onPointerDown(pointerEvent({ currentTarget: target }))
+    h.onPointerCancel(pointerEvent({ currentTarget: target }))
+    expect(onDragEnd).toHaveBeenCalledTimes(1)
+  })
+
+  it('onDragEnd is never called for a stray pointerup/pointercancel with no active drag', () => {
+    const target = mockTarget(true)
+    const onDragEnd = vi.fn()
+    const h = pointerDragHandlers({ isDisabled: () => false, onDrag: vi.fn(), onDragEnd })
+    h.onPointerUp(pointerEvent({ currentTarget: target }))
+    h.onPointerCancel(pointerEvent({ currentTarget: target }))
+    expect(onDragEnd).not.toHaveBeenCalled()
+  })
+
+  it('onDragEnd is optional — pointerup/pointercancel still work without it', () => {
+    const target = mockTarget(true)
+    const h = pointerDragHandlers({ isDisabled: () => false, onDrag: vi.fn() })
+    h.onPointerDown(pointerEvent({ currentTarget: target }))
+    expect(() => h.onPointerUp(pointerEvent({ currentTarget: target }))).not.toThrow()
+  })
 })

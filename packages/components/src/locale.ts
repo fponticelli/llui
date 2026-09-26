@@ -11,6 +11,7 @@ import { enDialog } from './locale/dialog.js'
 import { enDrawer } from './locale/drawer.js'
 import { enFileUpload } from './locale/file-upload.js'
 import { enFloatingPanel } from './locale/floating-panel.js'
+import { enGradientPicker } from './locale/gradient-picker.js'
 import { enImageCropper } from './locale/image-cropper.js'
 import { enNavigationMenu } from './locale/navigation-menu.js'
 import { enNumberInput } from './locale/number-input.js'
@@ -47,6 +48,7 @@ export const en: Locale = {
   drawer: enDrawer,
   fileUpload: enFileUpload,
   floatingPanel: enFloatingPanel,
+  gradientPicker: enGradientPicker,
   imageCropper: enImageCropper,
   navigationMenu: enNavigationMenu,
   numberInput: enNumberInput,

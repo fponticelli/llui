@@ -42,6 +42,29 @@ export interface Locale {
   drawer: { close: string }
   fileUpload: { remove: string; clear: string }
   floatingPanel: { label: string; minimize: string; maximize: string; close: string }
+  gradientPicker: {
+    track: string
+    stop: (index: number, count: number, color: string, position: number) => string
+    addStop: string
+    removeStop: string
+    linear: string
+    radial: string
+    conic: string
+    repeating: string
+    angle: string
+    center: string
+    shapeCircle: string
+    shapeEllipse: string
+    sizeClosestSide: string
+    sizeClosestCorner: string
+    sizeFarthestSide: string
+    sizeFarthestCorner: string
+    interpolationSpace: string
+    interpolationHue: string
+    reverse: string
+    distribute: string
+    css: string
+  }
   imageCropper: { reset: string }
   navigationMenu: { label: string }
   numberInput: { increment: string; decrement: string }

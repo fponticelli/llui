@@ -173,6 +173,10 @@
       "types": "./dist/components/color-picker.d.ts",
       "import": "./dist/components/color-picker.js"
     },
+    "./gradient-picker": {
+      "types": "./dist/components/gradient-picker.d.ts",
+      "import": "./dist/components/gradient-picker.js"
+    },
     "./timer": {
       "types": "./dist/components/timer.d.ts",
       "import": "./dist/components/timer.js"

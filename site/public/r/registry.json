@@ -919,6 +919,42 @@
         "copiedArtifacts": []
       },
       {
+        "name": "gradient-picker",
+        "displayName": "Gradient Picker",
+        "category": "controls",
+        "artifactKind": "machine",
+        "machine": {
+          "kind": "public",
+          "importPath": "@llui/components/gradient-picker"
+        },
+        "styling": {
+          "baseline": true,
+          "registryTailwind": true,
+          "styleless": true
+        },
+        "presentation": {
+          "family": "specialized-tools",
+          "baseline": {
+            "mode": "styled"
+          },
+          "registryTailwind": {
+            "mode": "styled"
+          }
+        },
+        "scenarioId": "component:gradient-picker",
+        "copiedArtifacts": [
+          {
+            "name": "gradient-picker",
+            "artifactKind": "skin",
+            "styling": {
+              "baseline": false,
+              "registryTailwind": true,
+              "styleless": false
+            }
+          }
+        ]
+      },
+      {
         "name": "hover-card",
         "displayName": "Hover Card",
         "category": "overlays",
@@ -3970,6 +4006,21 @@
           "path": "registry/llui/ui/form.ts",
           "type": "registry:ui",
           "target": "form.ts"
+        }
+      ]
+    },
+    {
+      "name": "gradient-picker",
+      "type": "registry:ui",
+      "title": "Gradient Picker",
+      "description": "Skin for @llui/components/gradient-picker — linear/radial/conic gradient authoring with a stop ramp, per-kind controls, and an embedded color-picker for the selected stop.",
+      "dependencies": ["@llui/dom", "@llui/components"],
+      "registryDependencies": ["color-picker", "input", "utils"],
+      "files": [
+        {
+          "path": "registry/llui/ui/gradient-picker.ts",
+          "type": "registry:ui",
+          "target": "gradient-picker.ts"
         }
       ]
     },

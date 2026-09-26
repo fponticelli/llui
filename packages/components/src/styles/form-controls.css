@@ -1084,6 +1084,173 @@ textarea[data-scope='form-field'][data-part='control'] {
   outline-offset: 2px;
 }
 
+/* ─── Gradient Picker ─── */
+
+[data-scope='gradient-picker'][data-part='root'] {
+  display: flex;
+  flex-direction: column;
+  gap: var(--llui-space-3);
+}
+
+[data-scope='gradient-picker'][data-part='preview'] {
+  height: 6rem;
+  border-radius: var(--llui-radius-md);
+  border: 1px solid var(--border);
+}
+
+[data-scope='gradient-picker'][data-part='track'] {
+  position: relative;
+  height: 2rem;
+  border-radius: var(--llui-radius-md);
+  border: 1px solid var(--border);
+  /* The machine owns pointer drag (pointerdown adds+drags a stop); without
+   * this a touch drag also pans/scrolls the page. */
+  touch-action: none;
+  cursor: copy;
+}
+
+[data-scope='gradient-picker'][data-part='stop'] {
+  position: absolute;
+  top: 50%;
+  width: 1rem;
+  height: 1rem;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  border: 2px solid var(--background);
+  outline: none;
+  box-shadow: var(--llui-shadow-sm);
+  cursor: grab;
+}
+
+[data-scope='gradient-picker'][data-part='stop'][data-selected] {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Icon-only (a bare "+"/"−" — the machine already publishes an
+ * `aria-label`), so these are fixed-size squares. */
+[data-scope='gradient-picker'][data-part='add-stop-button'],
+[data-scope='gradient-picker'][data-part='remove-stop-button'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border-radius: var(--llui-radius-md);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+}
+
+/* Text-labeled ("Reverse" / "Distribute") — auto width, never squeezed into
+ * the icon-button square above. */
+[data-scope='gradient-picker'][data-part='reverse-button'],
+[data-scope='gradient-picker'][data-part='distribute-button'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.25rem;
+  padding: 0 var(--llui-space-3);
+  border-radius: var(--llui-radius-md);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+[data-scope='gradient-picker'][data-part='kind-toggle'],
+[data-scope='gradient-picker'][data-part='shape-option'],
+[data-scope='gradient-picker'][data-part='size-option'],
+[data-scope='gradient-picker'][data-part='repeating-toggle'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2rem;
+  padding: 0 var(--llui-space-2);
+  border-radius: var(--llui-radius-md);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+[data-scope='gradient-picker'][data-part='kind-toggle'][data-state='on'],
+[data-scope='gradient-picker'][data-part='shape-option'][data-state='on'],
+[data-scope='gradient-picker'][data-part='size-option'][data-state='on'],
+[data-scope='gradient-picker'][data-part='repeating-toggle'][data-state='on'] {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+[data-scope='gradient-picker'][data-part='angle-input'] {
+  flex: 1;
+  height: 0.75rem;
+  appearance: none;
+  -webkit-appearance: none;
+  border-radius: var(--llui-radius-md);
+  outline: none;
+  cursor: pointer;
+  border: 1px solid var(--border);
+}
+
+[data-scope='gradient-picker'][data-part='angle-input']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: var(--popover);
+  border: 2px solid var(--primary);
+  cursor: grab;
+  box-shadow: var(--llui-shadow-sm);
+}
+
+[data-scope='gradient-picker'][data-part='center-area'] {
+  position: relative;
+  width: 7rem;
+  height: 7rem;
+  border-radius: var(--llui-radius-md);
+  border: 1px solid var(--border);
+  background: var(--muted);
+  touch-action: none;
+}
+
+[data-scope='gradient-picker'][data-part='center-thumb'] {
+  position: absolute;
+  width: 0.75rem;
+  height: 0.75rem;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  border: 2px solid var(--background);
+  background: var(--foreground);
+  outline: none;
+  box-shadow: var(--llui-shadow-sm);
+}
+
+[data-scope='gradient-picker'][data-part='interpolation-space-select'],
+[data-scope='gradient-picker'][data-part='interpolation-hue-select'] {
+  height: 2.25rem;
+  padding: 0 var(--llui-space-2);
+  border-radius: var(--llui-radius-md);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.875rem;
+}
+
+[data-scope='gradient-picker'][data-part='css-input'] {
+  flex: 1;
+  padding: var(--llui-space-2) var(--llui-space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--llui-radius-md);
+  font-size: 0.75rem;
+  font-family: monospace;
+}
+
 /* ─── Editable ─── */
 
 [data-scope='editable'][data-part='root'] {
