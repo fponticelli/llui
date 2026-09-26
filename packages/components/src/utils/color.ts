@@ -2,51 +2,96 @@
  * Shared color math — conversions, CSS Color 4 parsing/serialization, sRGB
  * gamut mapping, and interpolation. Pure, allocation-light, no DOM.
  *
- * `color-picker.ts` is the first consumer; the (planned) `gradient-picker`
- * is the second — this module exists so both read from ONE implementation of
- * the OKLCH math and the CSS Color 4 rules instead of drifting like every
+ * `color-picker.ts` is the first consumer; `gradient-picker.ts` is the
+ * second — this module exists so both read from ONE implementation of the
+ * OKLCH math and the CSS Color 4 rules instead of drifting like every
  * per-component copy in this package used to (see `utils/number.ts`'s header
  * for the shape of that failure mode).
  *
  * ## Conventions
  *
- * - `Hsl`/`Hsv`: `h` in degrees 0–360, `s`/`l`/`v` in 0–100 (matches the
- *   pre-existing `color-picker` scale, so the reducer's state and its tests
- *   keep their numbers).
+ * - `Hsl`/`Hsv`: `h` in degrees 0–360, `s`/`l`/`v` in 0–100 — FLOATS, not
+ *   rounded. Every conversion in this module (`rgb255ToHsl`, `hslToHsv`,
+ *   `hsvToHsl`, `hsvToRgb255`, `rgb255ToHsv`, `hsvToSrgb`, `srgbToHsv`,
+ *   `hslToSrgb`, `srgbToHsl`) is a lossless float round trip; rounding
+ *   happens ONLY at the byte boundary (`srgbToRgb255`) or when FORMATTING
+ *   for display (`formatHex`, a slider's displayed value, `aria-valuetext`).
+ *   A component storing an integer-rounded intermediate is a correctness
+ *   bug, not a style choice — `#123457` round-tripped through a rounding
+ *   HSV store used to come back `#123659` (measured).
  * - `Rgb255`: 0–255, integers after rounding.
  * - `Srgb`: 0–1 floats — the sRGB gamma-encoded value (what `#rrggbb` and
  *   `rgb()` describe).
  * - `Oklab`/`Oklch`: Björn Ottosson's OKLab, `L` 0–1, `h` in degrees. OKLCH
  *   values are NOT clamped to sRGB — `oklch(0.9 0.3 150)` is a valid CSS
  *   color outside sRGB, and only the sRGB/hex conversions gamut-map it.
+ * - `Lab`/`Lch`: CIE Lab (D50-relative, per CSS Color 4), `L` 0–100.
+ * - `Hwb`: `h` in degrees, `w`/`bk` (whiteness/blackness) 0–100.
+ * - Any wide-gamut CSS Color 4 syntax (`lab()`, `lch()`, `color()` with a
+ *   predefined space other than `srgb`/`srgb-linear`) is represented, once
+ *   parsed, as `{ space: 'oklch', ... }` — OKLCH is already this module's
+ *   exact, unbounded-chroma representation, so there is no need for `CssColor`
+ *   to grow a separate tag per source syntax. `color(srgb ...)` and
+ *   `color(srgb-linear ...)` become `{ space: 'srgb', ... }` directly.
  *
  * ## `none` components
  *
- * CSS Color 4 lets any component be the keyword `none`, and the "powerless
- * hue" case (an achromatic color has no meaningful hue) needs the same
- * representation so interpolation can tell "no hue" from "hue 0". Every
- * component of {@link CssColor} is therefore `number | null`, `null` standing
- * for `none`. Two rules apply everywhere a `null` reaches arithmetic:
+ * CSS Color 4 lets any component be the keyword `none`. Every component of
+ * {@link CssColor} is therefore `number | null`, `null` standing for `none`.
+ * Two rules apply everywhere a `null` reaches arithmetic:
  * 1. Outside interpolation, a missing component behaves as 0 (`resolveNone`).
- * 2. Inside {@link interpolateColor}, a missing component — hue or otherwise —
- *    takes the OTHER endpoint's value for that component (CSS Color 4 §12.2),
- *    which is what makes an achromatic stop take the other stop's hue.
+ * 2. Inside {@link interpolateColor}, a missing component — hue or otherwise
+ *    — takes the OTHER endpoint's value for that component (CSS Color 4
+ *    §12.2), which is what makes an achromatic stop take the other stop's
+ *    hue — but ONLY when the hue is actually missing (`none`, or produced as
+ *    such by a cross-space conversion of a genuinely achromatic color).
+ *    `oklch(1 0 90)` has an EXPLICIT hue of 90, not a missing one, and
+ *    interpolates as a real 90 rather than being replaced by the other
+ *    stop's hue — verified against real Chromium (a rendered
+ *    `linear-gradient(in oklch, oklch(1 0 90), oklch(0.6 0.2 200))`, pixels
+ *    read back and converted to OKLCH); see `test/utils/color.test.ts`'s
+ *    "powerless vs explicit hue" describe block for the exact numbers and
+ *    the repro. Only a CROSS-space conversion of an achromatic color (e.g.
+ *    projecting `white` into `hsl` for an `in hsl` interpolation) produces a
+ *    hue that did not exist before the conversion, and THAT is null.
  */
 
 // ── Basic types ─────────────────────────────────────────────────────────────
 
-/** HSL color. `h` 0–360 degrees, `s`/`l` 0–100. */
+/** HSL color. `h` 0–360 degrees, `s`/`l` 0–100. Float — see the module doc. */
 export interface Hsl {
   h: number
   s: number
   l: number
 }
 
-/** HSV color. `h` 0–360 degrees, `s`/`v` 0–100. */
+/** HSV color. `h` 0–360 degrees, `s`/`v` 0–100. Float — see the module doc. */
 export interface Hsv {
   h: number
   s: number
   v: number
+}
+
+/** HWB color. `h` 0–360 degrees, `w` (whiteness)/`bk` (blackness) 0–100. */
+export interface Hwb {
+  h: number
+  w: number
+  bk: number
+}
+
+/** CIE Lab, D50-relative (CSS Color 4 `lab()`). `l` 0–100; `a`/`b` unbounded
+ * (CSS's reference range is ±125, but the value itself is not clamped). */
+export interface Lab {
+  l: number
+  a: number
+  b: number
+}
+
+/** CIE LCh, the polar form of {@link Lab}. `l` 0–100, `c` >= 0, `h` degrees. */
+export interface Lch {
+  l: number
+  c: number
+  h: number
 }
 
 /** 8-bit-per-channel sRGB, 0–255 (integers once produced by this module). */
@@ -81,6 +126,14 @@ export interface Oklch {
   h: number
 }
 
+/** CIE XYZ tristimulus values, relative to whichever white point the
+ * function producing them documents (D65 unless named otherwise). */
+export interface Xyz {
+  x: number
+  y: number
+  z: number
+}
+
 function clamp01(n: number): number {
   return n < 0 ? 0 : n > 1 ? 1 : n
 }
@@ -94,10 +147,31 @@ export function resolveNone(n: number | null): number {
   return n ?? 0
 }
 
-// ── HSL / HSV / RGB ──────────────────────────────────────────────────────────
+// ── 3x3 matrix helper ────────────────────────────────────────────────────────
 
-/** Convert HSL (h 0-360, s/l 0-100) to RGB (0-255 each, rounded). */
-export function hslToRgb255(hsl: Hsl): Rgb255 {
+type Mat3 = readonly [
+  readonly [number, number, number],
+  readonly [number, number, number],
+  readonly [number, number, number],
+]
+
+function mulMat3(m: Mat3, v: readonly [number, number, number]): [number, number, number] {
+  return [
+    m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+    m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+    m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+  ]
+}
+
+// ── HSL / HSV / RGB — LOSSLESS float conversions ────────────────────────────
+//
+// Every function here works in floats end to end. Rounding happens only at
+// `srgbToRgb255` (the byte boundary) — never inside a conversion. HSV<->HSL
+// and HSV/HSL<->sRGB are exact bijections of the same RGB cylinder; the only
+// historical precision loss in this module was `Math.round` calls INSIDE
+// these functions, which compounded across a `hex -> hsv -> hex` round trip.
+
+function hslToSrgbFloat(hsl: Hsl): Srgb {
   const s = hsl.s / 100
   const l = hsl.l / 100
   const c = (1 - Math.abs(2 * l - 1)) * s
@@ -113,58 +187,145 @@ export function hslToRgb255(hsl: Hsl): Rgb255 {
   else if (h < 240) [r, g, b] = [0, x, c]
   else if (h < 300) [r, g, b] = [x, 0, c]
   else [r, g, b] = [c, 0, x]
-  return {
-    r: Math.round((r + m) * 255),
-    g: Math.round((g + m) * 255),
-    b: Math.round((b + m) * 255),
-  }
+  return { r: r + m, g: g + m, b: b + m }
 }
 
-/** Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100, rounded). */
-export function rgb255ToHsl(rgb: Rgb255): Hsl {
-  const rf = rgb.r / 255
-  const gf = rgb.g / 255
-  const bf = rgb.b / 255
-  const max = Math.max(rf, gf, bf)
-  const min = Math.min(rf, gf, bf)
+function srgbToHslFloat(s: Srgb): Hsl {
+  const max = Math.max(s.r, s.g, s.b)
+  const min = Math.min(s.r, s.g, s.b)
   const d = max - min
   let h = 0
   if (d !== 0) {
-    if (max === rf) h = ((gf - bf) / d) % 6
-    else if (max === gf) h = (bf - rf) / d + 2
-    else h = (rf - gf) / d + 4
+    if (max === s.r) h = ((s.g - s.b) / d) % 6
+    else if (max === s.g) h = (s.b - s.r) / d + 2
+    else h = (s.r - s.g) / d + 4
     h *= 60
     if (h < 0) h += 360
   }
   const l = (max + min) / 2
-  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1))
-  return { h: Math.round(h), s: Math.round(s * 100), l: Math.round(l * 100) }
+  const sat = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1))
+  return { h, s: sat * 100, l: l * 100 }
 }
 
-/** Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100). */
+function hsvToSrgbFloat(hsv: Hsv): Srgb {
+  const h = normalizeHueDeg(hsv.h)
+  const s = hsv.s / 100
+  const v = hsv.v / 100
+  const c = v * s
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1))
+  const m = v - c
+  let r: number
+  let g: number
+  let b: number
+  if (h < 60) [r, g, b] = [c, x, 0]
+  else if (h < 120) [r, g, b] = [x, c, 0]
+  else if (h < 180) [r, g, b] = [0, c, x]
+  else if (h < 240) [r, g, b] = [0, x, c]
+  else if (h < 300) [r, g, b] = [x, 0, c]
+  else [r, g, b] = [c, 0, x]
+  return { r: r + m, g: g + m, b: b + m }
+}
+
+function srgbToHsvFloat(s: Srgb): Hsv {
+  const max = Math.max(s.r, s.g, s.b)
+  const min = Math.min(s.r, s.g, s.b)
+  const d = max - min
+  let h = 0
+  if (d !== 0) {
+    if (max === s.r) h = ((s.g - s.b) / d) % 6
+    else if (max === s.g) h = (s.b - s.r) / d + 2
+    else h = (s.r - s.g) / d + 4
+    h *= 60
+    if (h < 0) h += 360
+  }
+  const v = max
+  const sat = max === 0 ? 0 : d / max
+  return { h, s: sat * 100, v: v * 100 }
+}
+
+/** HSL -> sRGB, float, lossless. */
+export function hslToSrgb(hsl: Hsl): Srgb {
+  return hslToSrgbFloat(hsl)
+}
+
+/** sRGB -> HSL, float, lossless (no byte quantization). */
+export function srgbToHsl(s: Srgb): Hsl {
+  return srgbToHslFloat(s)
+}
+
+/** HSV -> sRGB, DIRECT (not routed through HSL), float, lossless. */
+export function hsvToSrgb(hsv: Hsv): Srgb {
+  return hsvToSrgbFloat(hsv)
+}
+
+/** sRGB -> HSV, DIRECT (not routed through HSL), float, lossless. */
+export function srgbToHsv(s: Srgb): Hsv {
+  return srgbToHsvFloat(s)
+}
+
+/** Convert HSL (h 0-360, s/l 0-100) to RGB (0-255 each, rounded). */
+export function hslToRgb255(hsl: Hsl): Rgb255 {
+  return srgbToRgb255(hslToSrgbFloat(hsl))
+}
+
+/** Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100), float. */
+export function rgb255ToHsl(rgb: Rgb255): Hsl {
+  return srgbToHslFloat(srgb255ToSrgb(rgb))
+}
+
+/** Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100), float. */
 export function hslToHsv(hsl: Hsl): Hsv {
   const l = hsl.l / 100
   const sl = hsl.s / 100
   const v = l + sl * Math.min(l, 1 - l)
   const s = v === 0 ? 0 : 2 * (1 - l / v)
-  return { h: hsl.h, s: Math.round(s * 100), v: Math.round(v * 100) }
+  return { h: hsl.h, s: s * 100, v: v * 100 }
 }
 
-/** Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100). */
+/** Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100), float. */
 export function hsvToHsl(hsv: Hsv): Hsl {
   const v = hsv.v / 100
   const sv = hsv.s / 100
   const l = v * (1 - sv / 2)
   const s = l === 0 || l === 1 ? 0 : (v - l) / Math.min(l, 1 - l)
-  return { h: hsv.h, s: Math.round(s * 100), l: Math.round(l * 100) }
+  return { h: hsv.h, s: s * 100, l: l * 100 }
 }
 
+/** HSV -> RGB255, via the DIRECT (not HSL-routed) float conversion. */
 export function hsvToRgb255(hsv: Hsv): Rgb255 {
-  return hslToRgb255(hsvToHsl(hsv))
+  return srgbToRgb255(hsvToSrgbFloat(hsv))
 }
 
+/** RGB255 -> HSV, via the DIRECT (not HSL-routed) float conversion. */
 export function rgb255ToHsv(rgb: Rgb255): Hsv {
-  return hslToHsv(rgb255ToHsl(rgb))
+  return srgbToHsvFloat(srgb255ToSrgb(rgb))
+}
+
+// ── HWB ──────────────────────────────────────────────────────────────────────
+
+/** HWB -> sRGB (CSS Color 4 §8.4). */
+export function hwbToSrgb(hwb: Hwb): Srgb {
+  const w = hwb.w / 100
+  const bk = hwb.bk / 100
+  if (w + bk >= 1) {
+    const gray = w / (w + bk)
+    return { r: gray, g: gray, b: gray }
+  }
+  const rgb = hslToSrgbFloat({ h: hwb.h, s: 100, l: 50 })
+  const scale = 1 - w - bk
+  return {
+    r: rgb.r * scale + w,
+    g: rgb.g * scale + w,
+    b: rgb.b * scale + w,
+  }
+}
+
+/** sRGB -> HWB. */
+export function srgbToHwb(s: Srgb): Hwb {
+  const { h } = srgbToHsvFloat(s)
+  const max = Math.max(s.r, s.g, s.b)
+  const min = Math.min(s.r, s.g, s.b)
+  return { h, w: min * 100, bk: (1 - max) * 100 }
 }
 
 // ── sRGB float <-> 0-255 ─────────────────────────────────────────────────────
@@ -280,15 +441,222 @@ export function oklchToSrgb(ok: Oklch): Srgb {
   return oklabToSrgb(oklchToOklab(ok))
 }
 
-// ── Composite HSV <-> OKLCH (through sRGB) ──────────────────────────────────
+// ── Composite HSV <-> OKLCH (through sRGB, direct float path) ───────────────
 
 export function hsvToOklch(hsv: Hsv): Oklch {
-  return srgbToOklch(srgb255ToSrgb(hsvToRgb255(hsv)))
+  return srgbToOklch(hsvToSrgbFloat(hsv))
 }
 
 /** Gamut-maps into sRGB first — HSV cannot represent an out-of-gamut color. */
 export function oklchToHsv(ok: Oklch): Hsv {
-  return rgb255ToHsv(srgbToRgb255(gamutMapOklchToSrgb(ok)))
+  return srgbToHsvFloat(gamutMapOklchToSrgb(ok))
+}
+
+// ── CIE XYZ (D65) <-> linear sRGB, and the Bradford D50<->D65 bridge ────────
+//
+// These are the bridge every non-sRGB `color()` predefined space and every
+// `lab()`/`lch()` color crosses to reach OKLab. Matrices are transcribed from
+// the CSS Color 4 spec's own sample conversion code (the constants Björn
+// Ottosson/Lindbloom publish and every serious implementation reproduces).
+// IMPORTANT — verification honesty: this sandbox has no network access and no
+// reference color library (colorjs.io, culori, …) installed, so these
+// matrices could NOT be cross-checked against an independent numeric oracle
+// while writing this file. `test/utils/color.test.ts` instead pins: (1) the
+// D65/D50 white-point round trips (physical constants, not derived from these
+// matrices), (2) forward∘inverse identity for every matrix pair, and (3) a
+// handful of values that don't depend on the wide-gamut matrices at all
+// (`color(srgb ...)`, `color(srgb-linear ...)`). A transcription error in one
+// of the wide-gamut matrices (display-p3/a98-rgb/prophoto-rgb/rec2020) is the
+// most likely residual risk in this file — flag it to whoever can run this
+// against a real reference implementation.
+
+const LINEAR_SRGB_TO_XYZ_D65: Mat3 = [
+  [0.41239079926595934, 0.357584339383878, 0.1804807884018343],
+  [0.21263900587151027, 0.715168678767756, 0.07219231536073371],
+  [0.01933081871559182, 0.11919477979462598, 0.9505321522496607],
+]
+const XYZ_D65_TO_LINEAR_SRGB: Mat3 = [
+  [3.2409699419045226, -1.537383177570094, -0.4986107602930034],
+  [-0.9692436362808796, 1.8759675015077202, 0.04155505740717559],
+  [0.05563007969699366, -0.20397695888897652, 1.0569715142428786],
+]
+
+const BRADFORD_D65_TO_D50: Mat3 = [
+  [1.0479298208405488, 0.022946793341019088, -0.05019222954313557],
+  [0.029627815688159344, 0.990434484573249, -0.01707382502938514],
+  [-0.009243058152591178, 0.015055144896577895, 0.7518742899580008],
+]
+const BRADFORD_D50_TO_D65: Mat3 = [
+  [0.9554734527042182, -0.023098536874261423, 0.0632593086610217],
+  [-0.028369706963208136, 1.0099954580058226, 0.021041398966943008],
+  [0.012314001688319899, -0.020507696433477912, 1.3303659366080753],
+]
+
+function xyzD65ToLinearSrgb(xyz: Xyz): Srgb {
+  const [r, g, b] = mulMat3(XYZ_D65_TO_LINEAR_SRGB, [xyz.x, xyz.y, xyz.z])
+  return { r, g, b }
+}
+
+function xyzD65ToOklab(xyz: Xyz): Oklab {
+  return linearSrgbToOklab(xyzD65ToLinearSrgb(xyz))
+}
+
+function xyzD50ToD65(xyz: Xyz): Xyz {
+  const [x, y, z] = mulMat3(BRADFORD_D50_TO_D65, [xyz.x, xyz.y, xyz.z])
+  return { x, y, z }
+}
+
+/** XYZ (D65) -> XYZ (D50), Bradford chromatic adaptation. The inverse of
+ * {@link xyzD50ToD65} — not on this module's own parse/serialize path (every
+ * D50-native input, `lab()`/`lch()`/`color(xyz-d50 ...)`, converts TO D65 to
+ * reach OKLab), but exported as the natural symmetric counterpart for a
+ * caller that needs to go the other way (e.g. producing a `lab()`/`lch()`
+ * string from an OKLCH color). */
+export function xyzD65ToD50(xyz: Xyz): Xyz {
+  const [x, y, z] = mulMat3(BRADFORD_D65_TO_D50, [xyz.x, xyz.y, xyz.z])
+  return { x, y, z }
+}
+
+// ── CIE Lab / LCh (D50), per CSS Color 4 §9 ─────────────────────────────────
+
+/** D50 white point, computed the way the CSS Color 4 spec derives it
+ * (`xy` chromaticity (0.3457, 0.3585) -> XYZ), matching the spec's own
+ * sample code rather than a separately-rounded literal. */
+const D50_WHITE: Xyz = { x: 0.3457 / 0.3585, y: 1, z: (1 - 0.3457 - 0.3585) / 0.3585 }
+
+const LAB_KAPPA = 24389 / 27
+const LAB_EPSILON = 216 / 24389
+
+function labF(t: number): number {
+  return t > LAB_EPSILON ? Math.cbrt(t) : (LAB_KAPPA * t + 16) / 116
+}
+
+function labFInverse(t: number): number {
+  const t3 = t * t * t
+  return t3 > LAB_EPSILON ? t3 : (116 * t - 16) / LAB_KAPPA
+}
+
+/** Lab (D50) -> XYZ (D50). */
+export function labToXyzD50(lab: Lab): Xyz {
+  const fy = (lab.l + 16) / 116
+  const fx = fy + lab.a / 500
+  const fz = fy - lab.b / 200
+  return {
+    x: D50_WHITE.x * labFInverse(fx),
+    y: D50_WHITE.y * labFInverse(fy),
+    z: D50_WHITE.z * labFInverse(fz),
+  }
+}
+
+/** XYZ (D50) -> Lab (D50). */
+export function xyzD50ToLab(xyz: Xyz): Lab {
+  const fx = labF(xyz.x / D50_WHITE.x)
+  const fy = labF(xyz.y / D50_WHITE.y)
+  const fz = labF(xyz.z / D50_WHITE.z)
+  return { l: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) }
+}
+
+export function labToLch(lab: Lab): Lch {
+  const c = Math.sqrt(lab.a * lab.a + lab.b * lab.b)
+  const h = normalizeHueDeg((Math.atan2(lab.b, lab.a) * 180) / Math.PI)
+  return { l: lab.l, c, h }
+}
+
+export function lchToLab(lch: Lch): Lab {
+  const hRad = (lch.h * Math.PI) / 180
+  return { l: lch.l, a: lch.c * Math.cos(hRad), b: lch.c * Math.sin(hRad) }
+}
+
+function labToOklch(lab: Lab): Oklch {
+  return oklabToOklch(xyzD65ToOklab(xyzD50ToD65(labToXyzD50(lab))))
+}
+
+// ── `color()` predefined RGB spaces ──────────────────────────────────────────
+
+export type PredefinedRgbSpace =
+  | 'srgb'
+  | 'srgb-linear'
+  | 'display-p3'
+  | 'a98-rgb'
+  | 'prophoto-rgb'
+  | 'rec2020'
+
+interface PredefinedRgbSpaceInfo {
+  toXyz: Mat3
+  nativeWhite: 'd65' | 'd50'
+  toLinear: (encoded: number) => number
+}
+
+function powGamma(gamma: number): (c: number) => number {
+  return (c: number): number => Math.sign(c) * Math.abs(c) ** gamma
+}
+
+const A98_GAMMA = 563 / 256
+
+function prophotoToLinear(c: number): number {
+  const abs = Math.abs(c)
+  const Et2 = 16 / 512
+  return abs < Et2 ? c / 16 : Math.sign(c) * abs ** 1.8
+}
+
+const REC2020_ALPHA = 1.09929682680944
+const REC2020_BETA = 0.018053968510807
+
+function rec2020ToLinear(c: number): number {
+  const abs = Math.abs(c)
+  return abs < REC2020_BETA * 4.5
+    ? c / 4.5
+    : Math.sign(c) * ((abs + REC2020_ALPHA - 1) / REC2020_ALPHA) ** (1 / 0.45)
+}
+
+const PREDEFINED_RGB_SPACES: Record<Exclude<PredefinedRgbSpace, 'srgb'>, PredefinedRgbSpaceInfo> = {
+  'srgb-linear': { toXyz: LINEAR_SRGB_TO_XYZ_D65, nativeWhite: 'd65', toLinear: (c) => c },
+  'display-p3': {
+    toXyz: [
+      [0.4865709486482162, 0.26566769316909306, 0.19821728523436247],
+      [0.2289745640697488, 0.6917385218365064, 0.079286914093745],
+      [0.0, 0.04511338185890264, 1.043944368900976],
+    ],
+    nativeWhite: 'd65',
+    toLinear: srgbChannelToLinear,
+  },
+  'a98-rgb': {
+    toXyz: [
+      [0.5766690429101305, 0.1855582379065463, 0.1882286462349947],
+      [0.29734497525053605, 0.6273635662554661, 0.07529145849399788],
+      [0.02703136138641234, 0.07068885253582723, 0.9913375368376388],
+    ],
+    nativeWhite: 'd65',
+    toLinear: powGamma(A98_GAMMA),
+  },
+  'prophoto-rgb': {
+    toXyz: [
+      [0.7977604896723027, 0.13518583717574031, 0.0313493495815248],
+      [0.2880711282292934, 0.7118432178101014, 0.00008565396060525902],
+      [0.0, 0.0, 0.8251046025104601],
+    ],
+    nativeWhite: 'd50',
+    toLinear: prophotoToLinear,
+  },
+  rec2020: {
+    toXyz: [
+      [0.6369580483012914, 0.14461690358620832, 0.1688809751641721],
+      [0.2627002120112671, 0.6779980715188708, 0.05930171646986196],
+      [0.0, 0.028072693049087428, 1.060985057710791],
+    ],
+    nativeWhite: 'd65',
+    toLinear: rec2020ToLinear,
+  },
+}
+
+/** Any `color()` predefined RGB space -> OKLCH, exact (no gamut mapping). */
+function predefinedRgbToOklch(space: PredefinedRgbSpace, r: number, g: number, b: number): Oklch {
+  if (space === 'srgb') return srgbToOklch({ r, g, b })
+  const info = PREDEFINED_RGB_SPACES[space]
+  const lin: [number, number, number] = [info.toLinear(r), info.toLinear(g), info.toLinear(b)]
+  const [x, y, z] = mulMat3(info.toXyz, lin)
+  const xyz: Xyz = info.nativeWhite === 'd50' ? xyzD50ToD65({ x, y, z }) : { x, y, z }
+  return oklabToOklch(xyzD65ToOklab(xyz))
 }
 
 // ── sRGB gamut testing + CSS Color 4 gamut mapping ──────────────────────────
@@ -324,7 +692,10 @@ function deltaEOK(a: Oklab, b: Oklab): number {
  * (deltaEOK < the 0.02 JND) from the reduced color, then clip. Given an
  * already-in-gamut color this returns it converted (and defensively clipped
  * for float noise) rather than a no-op, so the result is always safe to hand
- * straight to {@link srgbToRgb255}.
+ * straight to {@link srgbToRgb255}. `test/utils/color.test.ts` pins the
+ * converged chroma for a known out-of-gamut color as a regression value
+ * (this file's own binary search, not an independent oracle — see that
+ * test's comment for what it does and does not prove).
  */
 export function gamutMapOklchToSrgb(ok: Oklch): Srgb {
   if (ok.l >= 1) return { r: 1, g: 1, b: 1 }
@@ -404,11 +775,9 @@ export function parseHexColor(hex: string): { rgb: Rgb255; alpha: number } | nul
 
 // ── rgb()/oklch()/etc. as a generic model ───────────────────────────────────
 
-/** A color as CSS Color 4 sees it: one of five spaces, every component
- * `number | null` (`null` = the `none` keyword). This is the type
- * {@link parseCssColor} returns and {@link interpolateColor} operates on —
- * the common currency between "a string the user typed" and "a color a
- * gradient stop needs to render". */
+/** A color as CSS Color 4 sees it. `lab()`/`lch()`/wide-gamut `color()` are
+ * NOT separate tags here — see the module doc — they resolve to `'oklch'` (or
+ * `'srgb'` for `color(srgb ...)`/`color(srgb-linear ...)`) at parse time. */
 export type CssColor =
   | { space: 'srgb'; r: number | null; g: number | null; b: number | null; alpha: number | null }
   | {
@@ -435,9 +804,7 @@ export function cssColorToSrgb(c: CssColor): Srgb {
     case 'srgb-linear':
       return linearToSrgb({ r: resolveNone(c.r), g: resolveNone(c.g), b: resolveNone(c.b) })
     case 'hsl':
-      return srgb255ToSrgb(
-        hslToRgb255({ h: resolveNone(c.h), s: resolveNone(c.s), l: resolveNone(c.l) }),
-      )
+      return hslToSrgbFloat({ h: resolveNone(c.h), s: resolveNone(c.s), l: resolveNone(c.l) })
     case 'oklab':
       return oklabToSrgb({ l: resolveNone(c.l), a: resolveNone(c.a), b: resolveNone(c.b) })
     case 'oklch':
@@ -446,7 +813,8 @@ export function cssColorToSrgb(c: CssColor): Srgb {
 }
 
 /** Resolved alpha (`none` -> 1, CSS Color 4's used value for a missing
- * alpha outside interpolation). */
+ * alpha OUTSIDE interpolation). Inside {@link interpolateColor}, a missing
+ * alpha instead carries the OTHER endpoint's alpha — see its doc comment. */
 export function cssColorAlpha(c: CssColor): number {
   return c.alpha ?? 1
 }
@@ -514,36 +882,42 @@ export function formatHsl(hsl: Hsl, alpha = 1): string {
 
 // ── Parsing ──────────────────────────────────────────────────────────────────
 
+/** CSS `<number>` production: optional sign, digits (with an optional
+ * fraction), optional exponent. Deliberately stricter than JS's `Number()`,
+ * which also accepts hex (`0x10`), `Infinity`, `NaN`, and `''` — all invalid
+ * CSS numbers that `Number()` would silently let through. */
+const CSS_NUMBER_RE = /^[+-]?(?:\d+\.\d+|\d+\.|\.\d+|\d+)(?:e[+-]?\d+)?$/i
+
+function parseCssNumber(token: string): number | null {
+  if (!CSS_NUMBER_RE.test(token)) return null
+  const n = Number(token)
+  return Number.isFinite(n) ? n : null
+}
+
 interface ParsedComponent {
   value: number | null
 }
 
-/** `none`, a bare number, or a percentage scaled onto `[0, percentScale]`
- * (or `[-percentScale, percentScale]` when `signed`, for oklab's a/b). */
-function parseComponent(
-  token: string,
-  percentScale: number,
-  signed = false,
-): ParsedComponent | null {
+/** `none`, a bare `<number>`, or a `<percentage>` scaled onto
+ * `[0, percentScale]`. */
+function parseComponent(token: string, percentScale: number): ParsedComponent | null {
   if (token === 'none') return { value: null }
   if (token.endsWith('%')) {
-    const n = Number(token.slice(0, -1))
-    if (!Number.isFinite(n)) return null
-    return { value: (n / 100) * percentScale }
+    const n = parseCssNumber(token.slice(0, -1))
+    return n === null ? null : { value: (n / 100) * percentScale }
   }
-  void signed
-  const n = Number(token)
-  return Number.isFinite(n) ? { value: n } : null
+  const n = parseCssNumber(token)
+  return n === null ? null : { value: n }
 }
 
-/** A hue component: bare number (degrees), `<number>deg|grad|rad|turn`, or
- * `none`. */
+/** A hue component: bare `<number>` (degrees), `<number>deg|grad|rad|turn`,
+ * or `none`. */
 function parseHueComponent(token: string): ParsedComponent | null {
   if (token === 'none') return { value: null }
-  const m = /^(-?[\d.]+(?:e-?\d+)?)(deg|grad|rad|turn)?$/i.exec(token)
+  const m = /^([+-]?(?:\d+\.\d+|\d+\.|\.\d+|\d+)(?:e[+-]?\d+)?)(deg|grad|rad|turn)?$/i.exec(token)
   if (!m) return null
-  const n = Number(m[1])
-  if (!Number.isFinite(n)) return null
+  const n = parseCssNumber(m[1]!)
+  if (n === null) return null
   const unit = m[2]?.toLowerCase()
   if (unit === 'grad') return { value: n * 0.9 }
   if (unit === 'rad') return { value: (n * 180) / Math.PI }
@@ -551,40 +925,83 @@ function parseHueComponent(token: string): ParsedComponent | null {
   return { value: n }
 }
 
-/** Split a CSS color function's argument list into its (up to 4) component
- * tokens and an optional alpha token, tolerating both legacy comma syntax
- * (`rgba(255, 0, 0, .5)`) and modern space/slash syntax
- * (`rgb(255 0 0 / 50%)`). */
-function splitComponents(body: string): { comps: string[]; alpha: string | null } {
-  let main = body
-  let alpha: string | null = null
-  const slashIdx = body.lastIndexOf('/')
-  if (slashIdx !== -1) {
-    main = body.slice(0, slashIdx)
-    alpha = body.slice(slashIdx + 1).trim()
-  }
-  const hasComma = main.includes(',')
-  const comps = (hasComma ? main.split(',') : main.split(/\s+/))
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0)
-  if (alpha === null && hasComma && comps.length === 4) {
-    alpha = comps.pop() ?? null
-  }
-  return { comps, alpha }
+/** Whether every one of `tokens` is a percentage (`%`-suffixed). Used to
+ * enforce the LEGACY `rgb()`/`rgba()` grammar's uniform-type rule
+ * (`rgb(<percentage>#{3})` or `rgb(<number>#{3})`, never mixed) — the modern
+ * space-separated syntax has no such restriction. */
+function allPercent(tokens: readonly string[]): boolean {
+  return tokens.every((t) => t.endsWith('%'))
+}
+function nonePercent(tokens: readonly string[]): boolean {
+  return tokens.every((t) => t !== 'none' && !t.endsWith('%'))
 }
 
-function parseAlpha(token: string | null): ParsedComponent | null {
+interface SplitResult {
+  comps: string[]
+  alpha: string | null
+  /** Legacy = comma-separated color args. The modern space-separated syntax
+   * and the legacy comma syntax have DIFFERENT grammars (`none` and mixed
+   * number/percentage args are modern-only; slash-alpha is modern-only) —
+   * every caller must branch on this, not just tolerate both spellings. */
+  legacy: boolean
+}
+
+/** Split a CSS color function's argument list into its component tokens and
+ * an optional alpha token, per CSS Color 4's two mutually exclusive
+ * grammars. Returns `null` for a combination the grammar does not allow:
+ * slash-alpha mixed into the legacy comma form, or a comma form with a
+ * component-count other than 3 (before an optional trailing alpha) or 4. */
+function splitComponents(body: string): SplitResult | null {
+  const slashIdx = body.lastIndexOf('/')
+  let main = body
+  let alphaToken: string | null = null
+  if (slashIdx !== -1) {
+    main = body.slice(0, slashIdx)
+    alphaToken = body.slice(slashIdx + 1).trim()
+  }
+  const hasComma = main.includes(',')
+  if (hasComma) {
+    // Legacy comma syntax has no slash-alpha spelling at all.
+    if (alphaToken !== null) return null
+    const comps = main
+      .split(',')
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0)
+    if (comps.length === 4) {
+      alphaToken = comps.pop() ?? null
+    } else if (comps.length !== 3) {
+      return null
+    }
+    return { comps, alpha: alphaToken, legacy: true }
+  }
+  const comps = main
+    .split(/\s+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0)
+  return { comps, alpha: alphaToken, legacy: false }
+}
+
+function parseAlpha(token: string | null, legacy: boolean): ParsedComponent | null {
   if (token === null) return { value: 1 }
+  // `none` is a modern-syntax-only keyword; a legacy comma form naming it
+  // (`rgba(255, 0, 0, none)`) is invalid, not "alpha 0".
+  if (legacy && token === 'none') return null
   return parseComponent(token, 1)
 }
 
 function parseRgbFunction(body: string): CssColor | null {
-  const { comps, alpha } = splitComponents(body)
-  if (comps.length !== 3) return null
+  const split = splitComponents(body)
+  if (!split || split.comps.length !== 3) return null
+  const { comps, alpha, legacy } = split
+  // Legacy grammar: `none` anywhere is invalid, and the three color args
+  // must be uniformly percentages or uniformly numbers.
+  if (legacy && (comps.some((t) => t === 'none') || !(allPercent(comps) || nonePercent(comps)))) {
+    return null
+  }
   const r = parseComponent(comps[0]!, 255)
   const g = parseComponent(comps[1]!, 255)
   const b = parseComponent(comps[2]!, 255)
-  const a = parseAlpha(alpha)
+  const a = parseAlpha(alpha, legacy)
   if (!r || !g || !b || !a) return null
   return {
     space: 'srgb',
@@ -596,36 +1013,142 @@ function parseRgbFunction(body: string): CssColor | null {
 }
 
 function parseHslFunction(body: string): CssColor | null {
-  const { comps, alpha } = splitComponents(body)
-  if (comps.length !== 3) return null
+  const split = splitComponents(body)
+  if (!split || split.comps.length !== 3) return null
+  const { comps, alpha, legacy } = split
+  if (legacy && comps.some((t) => t === 'none')) return null
   const h = parseHueComponent(comps[0]!)
   const s = parseComponent(comps[1]!, 100)
   const l = parseComponent(comps[2]!, 100)
-  const a = parseAlpha(alpha)
+  const a = parseAlpha(alpha, legacy)
   if (!h || !s || !l || !a) return null
   return { space: 'hsl', h: h.value, s: s.value, l: l.value, alpha: a.value }
 }
 
+/** `hwb()` has no legacy comma form at all — CSS Color 4 introduced it
+ * space-separated only. */
+function parseHwbFunction(body: string): CssColor | null {
+  const split = splitComponents(body)
+  if (!split || split.legacy || split.comps.length !== 3) return null
+  const h = parseHueComponent(split.comps[0]!)
+  const w = parseComponent(split.comps[1]!, 100)
+  const bk = parseComponent(split.comps[2]!, 100)
+  const a = parseAlpha(split.alpha, false)
+  if (!h || !w || !bk || !a) return null
+  const srgb = hwbToSrgb({
+    h: resolveNone(h.value),
+    w: resolveNone(w.value),
+    bk: resolveNone(bk.value),
+  })
+  return { space: 'srgb', r: srgb.r, g: srgb.g, b: srgb.b, alpha: a.value }
+}
+
 function parseOklchFunction(body: string): CssColor | null {
-  const { comps, alpha } = splitComponents(body)
-  if (comps.length !== 3) return null
-  const l = parseComponent(comps[0]!, 1)
-  const c = parseComponent(comps[1]!, 0.4)
-  const h = parseHueComponent(comps[2]!)
-  const a = parseAlpha(alpha)
+  const split = splitComponents(body)
+  if (!split || split.legacy || split.comps.length !== 3) return null
+  const l = parseComponent(split.comps[0]!, 1)
+  const c = parseComponent(split.comps[1]!, 0.4)
+  const h = parseHueComponent(split.comps[2]!)
+  const a = parseAlpha(split.alpha, false)
   if (!l || !c || !h || !a) return null
   return { space: 'oklch', l: l.value, c: c.value, h: h.value, alpha: a.value }
 }
 
 function parseOklabFunction(body: string): CssColor | null {
-  const { comps, alpha } = splitComponents(body)
-  if (comps.length !== 3) return null
-  const l = parseComponent(comps[0]!, 1)
-  const a1 = parseComponent(comps[1]!, 0.4, true)
-  const b1 = parseComponent(comps[2]!, 0.4, true)
-  const a = parseAlpha(alpha)
+  const split = splitComponents(body)
+  if (!split || split.legacy || split.comps.length !== 3) return null
+  const l = parseComponent(split.comps[0]!, 1)
+  const a1 = parseComponent(split.comps[1]!, 0.4)
+  const b1 = parseComponent(split.comps[2]!, 0.4)
+  const a = parseAlpha(split.alpha, false)
   if (!l || !a1 || !b1 || !a) return null
   return { space: 'oklab', l: l.value, a: a1.value, b: b1.value, alpha: a.value }
+}
+
+/** `lab()` — L 0-100 (or 0%-100%), a/b unbounded (reference range ±125 ==
+ * ±100%). No legacy comma form. Resolves to `'oklch'` — see the module doc. */
+function parseLabFunction(body: string): CssColor | null {
+  const split = splitComponents(body)
+  if (!split || split.legacy || split.comps.length !== 3) return null
+  const l = parseComponent(split.comps[0]!, 100)
+  const a1 = parseComponent(split.comps[1]!, 125)
+  const b1 = parseComponent(split.comps[2]!, 125)
+  const a = parseAlpha(split.alpha, false)
+  if (!l || !a1 || !b1 || !a) return null
+  const ok = labToOklch({
+    l: resolveNone(l.value),
+    a: resolveNone(a1.value),
+    b: resolveNone(b1.value),
+  })
+  return { space: 'oklch', l: ok.l, c: ok.c, h: ok.h, alpha: a.value }
+}
+
+/** `lch()` — L 0-100, C >= 0 (100% == 150), H degrees. No legacy comma form.
+ * Resolves to `'oklch'`. */
+function parseLchFunction(body: string): CssColor | null {
+  const split = splitComponents(body)
+  if (!split || split.legacy || split.comps.length !== 3) return null
+  const l = parseComponent(split.comps[0]!, 100)
+  const c = parseComponent(split.comps[1]!, 150)
+  const h = parseHueComponent(split.comps[2]!)
+  const a = parseAlpha(split.alpha, false)
+  if (!l || !c || !h || !a) return null
+  const ok = labToOklch(
+    lchToLab({ l: resolveNone(l.value), c: resolveNone(c.value), h: resolveNone(h.value) }),
+  )
+  return { space: 'oklch', l: ok.l, c: ok.c, h: ok.h, alpha: a.value }
+}
+
+const PREDEFINED_SPACE_NAMES: ReadonlySet<string> = new Set([
+  'srgb',
+  'srgb-linear',
+  'display-p3',
+  'a98-rgb',
+  'prophoto-rgb',
+  'rec2020',
+  'xyz',
+  'xyz-d50',
+  'xyz-d65',
+])
+
+/** `color(<space> c1 c2 c3 [/ alpha])`. No legacy comma form. `xyz` is an
+ * alias for `xyz-d65`. RGB predefined spaces resolve to `'srgb'` (native) or
+ * `'oklch'` (wide-gamut — never squashed into a bounded representation); the
+ * two XYZ spaces always resolve to `'oklch'`. */
+function parseColorFunction(body: string): CssColor | null {
+  const split = splitComponents(body)
+  if (!split || split.legacy || split.comps.length !== 4) return null
+  const spaceName = split.comps[0]!
+  if (!PREDEFINED_SPACE_NAMES.has(spaceName)) return null
+  const a = parseAlpha(split.alpha, false)
+  if (!a) return null
+
+  if (spaceName === 'xyz' || spaceName === 'xyz-d50' || spaceName === 'xyz-d65') {
+    const x = parseComponent(split.comps[1]!, 1)
+    const y = parseComponent(split.comps[2]!, 1)
+    const z = parseComponent(split.comps[3]!, 1)
+    if (!x || !y || !z) return null
+    let xyz: Xyz = { x: resolveNone(x.value), y: resolveNone(y.value), z: resolveNone(z.value) }
+    if (spaceName === 'xyz-d50') xyz = xyzD50ToD65(xyz)
+    const ok = oklabToOklch(xyzD65ToOklab(xyz))
+    return { space: 'oklch', l: ok.l, c: ok.c, h: ok.h, alpha: a.value }
+  }
+
+  const space = spaceName as PredefinedRgbSpace
+  const c1 = parseComponent(split.comps[1]!, 1)
+  const c2 = parseComponent(split.comps[2]!, 1)
+  const c3 = parseComponent(split.comps[3]!, 1)
+  if (!c1 || !c2 || !c3) return null
+  const r = resolveNone(c1.value)
+  const g = resolveNone(c2.value)
+  const b = resolveNone(c3.value)
+  if (space === 'srgb') return { space: 'srgb', r, g, b, alpha: a.value }
+  if (space === 'srgb-linear') {
+    const srgb = linearToSrgb({ r, g, b })
+    return { space: 'srgb', r: srgb.r, g: srgb.g, b: srgb.b, alpha: a.value }
+  }
+  const ok = predefinedRgbToOklch(space, r, g, b)
+  return { space: 'oklch', l: ok.l, c: ok.c, h: ok.h, alpha: a.value }
 }
 
 /** The 148 CSS Color 4 extended named colors (147 keywords, `gray`/`grey`
@@ -783,11 +1306,13 @@ const NAMED_COLORS: Readonly<Record<string, Rgb255>> = Object.freeze({
 
 /**
  * Parse a CSS color string into its typed model. Supports `#rgb`/`#rgba`/
- * `#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()` (legacy comma and modern
- * space/slash, numbers and percentages), `hsl()`/`hsla()` (same two
- * syntaxes), `oklch()`, `oklab()`, `none` components, `transparent`, and the
- * 148 CSS Color 4 named colors. Returns `null` on anything else — never
- * throws.
+ * `#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()`, `hsl()`/`hsla()` (both legacy comma
+ * and modern space/slash syntax, with the legacy grammar's `none`-forbidden
+ * and uniform-percentage-or-number rules enforced), `hwb()`, `oklch()`,
+ * `oklab()`, `lab()`, `lch()`, `color()` (predefined spaces `srgb`,
+ * `srgb-linear`, `display-p3`, `a98-rgb`, `prophoto-rgb`, `rec2020`, `xyz`,
+ * `xyz-d50`, `xyz-d65`), `none` components, `transparent`, and the 148 CSS
+ * Color 4 named colors. Returns `null` on anything else — never throws.
  */
 export function parseCssColor(input: string): CssColor | null {
   const s = input.trim().toLowerCase()
@@ -818,10 +1343,18 @@ export function parseCssColor(input: string): CssColor | null {
     case 'hsl':
     case 'hsla':
       return parseHslFunction(body)
+    case 'hwb':
+      return parseHwbFunction(body)
     case 'oklch':
       return parseOklchFunction(body)
     case 'oklab':
       return parseOklabFunction(body)
+    case 'lab':
+      return parseLabFunction(body)
+    case 'lch':
+      return parseLchFunction(body)
+    case 'color':
+      return parseColorFunction(body)
     default:
       return null
   }
@@ -831,11 +1364,18 @@ export function parseCssColor(input: string): CssColor | null {
 
 export type HueInterpolationMethod = 'shorter' | 'longer' | 'increasing' | 'decreasing'
 
-/** Adjust `h2` relative to `h1` per the hue interpolation method, returning
+/**
+ * Adjust `h2` relative to `h1` per the hue interpolation method, returning
  * `[h1, h2]` such that a plain `lerp` between them (then normalizing mod 360)
- * gives the correct path. `h1` is never adjusted. */
-function adjustHue(h1: number, h2raw: number, method: HueInterpolationMethod): [number, number] {
-  let h2 = h2raw
+ * gives the correct path. BOTH inputs are normalized to [0,360) FIRST — CSS
+ * Color 4 §12.4 requires this ("hue values ... must be constrained to fall
+ * within the range [0, 360) prior to interpolation"): an unnormalized
+ * `increasing` from 10 to 400 must behave exactly like 10 to 40 (midpoint
+ * 25), not lerp(10, 400) (midpoint 205) — pinned in `test/utils/color.test.ts`.
+ */
+function adjustHue(h1raw: number, h2raw: number, method: HueInterpolationMethod): [number, number] {
+  const h1 = normalizeHueDeg(h1raw)
+  let h2 = normalizeHueDeg(h2raw)
   const diff = h2 - h1
   switch (method) {
     case 'shorter':
@@ -864,12 +1404,13 @@ interface SpaceComponents {
   /** Non-hue components, in the space's own units — premultiplied by alpha
    * during interpolation. */
   channels: readonly (number | null)[]
-  /** The hue component (degrees), if this space has one. */
+  /** The hue component (degrees), if this space has one. `null` only when
+   * the color's OWN space has no hue (never happens for `hsl`/`oklch`
+   * themselves — a value copied from that space's own storage is used
+   * VERBATIM, explicit or `none`) or when a CROSS-space conversion produced
+   * one from a genuinely achromatic color, which has no hue to carry over —
+   * see the module doc's "powerless vs explicit hue" note. */
   hue: number | null
-  /** Whether the color is achromatic in this space (hue is "powerless" —
-   * CSS Color 4 §12.2 — and should be treated as missing for interpolation
-   * even when a concrete number is stored). */
-  achromatic: boolean
 }
 
 function toSpaceComponents(c: CssColor, space: InterpolationSpace): SpaceComponents {
@@ -877,46 +1418,42 @@ function toSpaceComponents(c: CssColor, space: InterpolationSpace): SpaceCompone
     switch (c.space) {
       case 'srgb':
       case 'srgb-linear':
-        return { channels: [c.r, c.g, c.b], hue: null, achromatic: false }
+        return { channels: [c.r, c.g, c.b], hue: null }
       case 'hsl':
-        return {
-          channels: [c.s, c.l],
-          hue: c.h,
-          achromatic: resolveNone(c.s) === 0,
-        }
+        return { channels: [c.s, c.l], hue: c.h }
       case 'oklab':
-        return { channels: [c.l, c.a, c.b], hue: null, achromatic: false }
+        return { channels: [c.l, c.a, c.b], hue: null }
       case 'oklch':
-        return {
-          channels: [c.l, c.c],
-          hue: c.h,
-          achromatic: resolveNone(c.c) === 0,
-        }
+        return { channels: [c.l, c.c], hue: c.h }
     }
   }
   // Cross-space: materialize through the fully-resolved math (a `none`
   // component here has already been treated as 0, which is the CSS Color 4
-  // rule for a value used outside the color's OWN space).
+  // rule for a value used outside the color's OWN space). An achromatic
+  // result's hue is genuinely UNDEFINED by this conversion (it did not exist
+  // in the source color), so it becomes `null` here — this is NOT the same
+  // rule as a same-space color's own explicit hue, which is never nulled by
+  // this function.
   switch (space) {
     case 'srgb': {
       const s = cssColorToSrgb(c)
-      return { channels: [s.r, s.g, s.b], hue: null, achromatic: false }
+      return { channels: [s.r, s.g, s.b], hue: null }
     }
     case 'srgb-linear': {
       const s = srgbToLinear(cssColorToSrgb(c))
-      return { channels: [s.r, s.g, s.b], hue: null, achromatic: false }
+      return { channels: [s.r, s.g, s.b], hue: null }
     }
     case 'hsl': {
-      const hsl = rgb255ToHsl(srgbToRgb255(cssColorToSrgb(c)))
-      return { channels: [hsl.s, hsl.l], hue: hsl.h, achromatic: hsl.s === 0 }
+      const hsl = srgbToHslFloat(cssColorToSrgb(c))
+      return { channels: [hsl.s, hsl.l], hue: hsl.s === 0 ? null : hsl.h }
     }
     case 'oklab': {
       const lab = srgbToOklab(cssColorToSrgb(c))
-      return { channels: [lab.l, lab.a, lab.b], hue: null, achromatic: false }
+      return { channels: [lab.l, lab.a, lab.b], hue: null }
     }
     case 'oklch': {
       const ok = srgbToOklch(cssColorToSrgb(c))
-      return { channels: [ok.l, ok.c], hue: ok.h, achromatic: ok.c < 1e-6 }
+      return { channels: [ok.l, ok.c], hue: ok.c < 1e-6 ? null : ok.h }
     }
   }
 }
@@ -943,10 +1480,16 @@ function fromSpaceComponents(
 
 /**
  * Interpolate between two colors per CSS Color 4 §12: convert both into
- * `space`, resolve missing/powerless components (an achromatic endpoint's
- * hue becomes the OTHER endpoint's hue), premultiply non-hue channels by
- * alpha, lerp, then un-premultiply. `hueMethod` controls which way a
- * hue-bearing space (`hsl`, `oklch`) rotates; ignored otherwise.
+ * `space`, resolve missing (`none`, or a cross-space-converted achromatic
+ * color's undefined) components — including alpha itself, which carries the
+ * OTHER endpoint's alpha when missing rather than defaulting to 1 (CSS Color
+ * 4 §12.2's analogous-component rule applies to alpha too — `rgb(255 0 0 /
+ * none)` mixed with `rgb(0 0 255 / 0.2)` has alpha exactly 0.2 throughout,
+ * not a lerp toward 1; pinned in `test/utils/color.test.ts`) —
+ * premultiply non-hue channels by alpha, lerp, then un-premultiply.
+ * `hueMethod` controls which way a hue-bearing space (`hsl`, `oklch`)
+ * rotates, normalizing both hues to [0,360) FIRST (see {@link adjustHue});
+ * ignored for spaces with no hue.
  */
 export function interpolateColor(
   a: CssColor,
@@ -957,8 +1500,15 @@ export function interpolateColor(
 ): CssColor {
   const ca = toSpaceComponents(a, space)
   const cb = toSpaceComponents(b, space)
-  const alphaA = cssColorAlpha(a)
-  const alphaB = cssColorAlpha(b)
+
+  // Missing alpha carries the OTHER endpoint's own alpha (CSS Color 4
+  // §12.2's analogous-component rule applies to alpha too, not just the
+  // space's own channels) — resolved PER SIDE, so premultiplication below
+  // uses the same substituted values the result alpha is computed from.
+  const rawAlphaA = a.alpha
+  const rawAlphaB = b.alpha
+  const alphaA = rawAlphaA ?? rawAlphaB ?? 1
+  const alphaB = rawAlphaB ?? rawAlphaA ?? 1
   const alpha = lerp(alphaA, alphaB, t)
 
   // Missing (null) non-hue channels take the OTHER endpoint's resolved value
@@ -976,10 +1526,12 @@ export function interpolateColor(
 
   let hue = 0
   if (ca.hue !== null || cb.hue !== null) {
-    // A `none`/powerless hue takes the other endpoint's hue; if both are
-    // missing, the hue is irrelevant (chroma/saturation is 0 throughout).
-    const hueA = ca.achromatic || ca.hue === null ? (cb.hue ?? 0) : ca.hue
-    const hueB = cb.achromatic || cb.hue === null ? (ca.hue ?? 0) : cb.hue
+    // A missing hue (this color's own space explicitly `none`, or a
+    // cross-space conversion of a genuinely achromatic color) takes the
+    // OTHER endpoint's hue; if both are missing, the hue is irrelevant
+    // (chroma/saturation is 0 throughout).
+    const hueA = ca.hue ?? cb.hue ?? 0
+    const hueB = cb.hue ?? ca.hue ?? 0
     const [h1, h2] = adjustHue(hueA, hueB, hueMethod)
     hue = lerp(h1, h2, t)
   }

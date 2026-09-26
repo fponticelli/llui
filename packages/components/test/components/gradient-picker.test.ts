@@ -411,7 +411,17 @@ describe('gradient-picker update', () => {
     expect(gray.model).toBe('oklch')
     expect((gray as { h: number }).h).toBeCloseTo(210, 5)
     const [back] = update(next, { type: 'picker', msg: { type: 'setModel', model: 'hsv' } })
-    expect(back.stops[0]!.color).toEqual({ model: 'hsv', h: 210, s: 0, v: 50 })
+    // Lossless HSV/HSL (color.ts stores floats, rounds only at format time —
+    // see its module doc) means this round trip is no longer rounded to a
+    // clean integer at each step; two hops through OKLab's cube roots leave
+    // ~1e-5-scale floating-point noise on s/v, many orders of magnitude
+    // below sRGB's own 8-bit precision floor (~0.4%). Hue is exact (the
+    // achromatic-preserving path sets it verbatim, never recomputes it).
+    const backColor = back.stops[0]!.color
+    expect(backColor.model).toBe('hsv')
+    expect((backColor as { h: number }).h).toBe(210)
+    expect((backColor as { s: number }).s).toBeCloseTo(0, 3)
+    expect((backColor as { v: number }).v).toBeCloseTo(50, 3)
   })
 
   it('selectNextStop / selectPrevStop move selection within bounds', () => {
