@@ -1,7 +1,11 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { retainedExit } from '../internal/retained-exit.js'
-import { createDisclosureExitTracker } from '../internal/disclosure-motion.js'
+import {
+  completeIfUnanimated,
+  createDisclosureExitTracker,
+  type MotionEvent,
+} from '../internal/disclosure-motion.js'
 import { getElementByIdInScope } from '../utils/root-scope.js'
 
 /**
@@ -116,6 +120,9 @@ export interface CollapsibleParts {
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
+    onTransitionStart: (e: TransitionEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
+    onTransitionCancel: (e: TransitionEvent) => void
   }
 }
 
@@ -131,11 +138,11 @@ export function connect(
   const triggerId = `${opts.id}:trigger`
   const contentId = `${opts.id}:content`
   const exitTracker = createDisclosureExitTracker()
-  const armExit = (e: AnimationEvent): void => {
+  const armExit = (e: MotionEvent): void => {
     const current = state.peek()
     exitTracker.armExit(e, { closing: current.closing, generation: current.exitGeneration })
   }
-  const completeExit = (e: AnimationEvent): void => {
+  const completeExit = (e: MotionEvent): void => {
     const current = state.peek()
     if (
       exitTracker.completeExit(e, { closing: current.closing, generation: current.exitGeneration })
@@ -208,8 +215,40 @@ export function connect(
       onAnimationStart: armExit,
       onAnimationEnd: tagSend(send, ['exitComplete'], completeExit),
       onAnimationCancel: tagSend(send, ['exitComplete'], completeExit),
+      onTransitionStart: armExit,
+      onTransitionEnd: tagSend(send, ['exitComplete'], completeExit),
+      onTransitionCancel: tagSend(send, ['exitComplete'], completeExit),
     },
   }
 }
 
-export const collapsible = { init, update, connect }
+/**
+ * Settle a close that entered `closing` from a message the trigger's own
+ * click handler never saw — a PROGRAMMATIC `close`/`toggle`/`setOpen` the
+ * host app sends directly (#264 review item 4b). See
+ * `accordion.watchExitCompletion`'s doc comment for the full rationale; this
+ * is the same idiom for collapsible's single content element.
+ */
+export function watchExitCompletion(
+  root: Element,
+  state: Signal<CollapsibleState>,
+  send: Send<CollapsibleMsg>,
+): () => void {
+  const check = (): void => {
+    const current = state.peek()
+    if (!current.closing) return
+    const content = root.querySelector<HTMLElement>(
+      '[data-scope="collapsible"][data-part="content"]',
+    )
+    if (completeIfUnanimated(content, { closing: true, generation: current.exitGeneration })) {
+      send({ type: 'exitComplete', generation: current.exitGeneration })
+    }
+  }
+
+  check()
+  const observer = new MutationObserver(check)
+  observer.observe(root, { attributes: true, attributeFilter: ['data-state'], subtree: true })
+  return () => observer.disconnect()
+}
+
+export const collapsible = { init, update, connect, watchExitCompletion }

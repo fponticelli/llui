@@ -7,7 +7,11 @@ import {
   retainedExits,
   type RetainedExitGeneration,
 } from '../internal/retained-exit.js'
-import { createDisclosureExitTracker } from '../internal/disclosure-motion.js'
+import {
+  completeIfUnanimated,
+  createDisclosureExitTracker,
+  type MotionEvent,
+} from '../internal/disclosure-motion.js'
 
 /**
  * Accordion — a stack of expandable panels. Items are identified by a string
@@ -185,12 +189,16 @@ export interface AccordionItemParts {
     'data-state': Signal<'open' | 'closing' | 'closed'>
     'data-scope': 'accordion'
     'data-part': 'content'
+    'data-value': string
     hidden: Signal<boolean>
     'aria-hidden': Signal<'true' | undefined>
     inert: Signal<boolean>
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
+    onTransitionStart: (e: TransitionEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
+    onTransitionCancel: (e: TransitionEvent) => void
   }
   item: {
     'data-state': Signal<'open' | 'closed'>
@@ -228,14 +236,14 @@ export function connect(
   const triggerId = (v: string): string => `${base}:trigger:${v}`
   const contentId = (v: string): string => `${base}:content:${v}`
   const exitTracker = createDisclosureExitTracker()
-  const armExit = (value: string, e: AnimationEvent): void => {
+  const armExit = (value: string, e: MotionEvent): void => {
     const current = state.peek()
     exitTracker.armExit(e, {
       closing: current.closing.includes(value),
       generation: retainedExitGeneration(current.exitGenerations, value) ?? 0,
     })
   }
-  const completeExit = (value: string, e: AnimationEvent): void => {
+  const completeExit = (value: string, e: MotionEvent): void => {
     const current = state.peek()
     const generation = retainedExitGeneration(current.exitGenerations, value) ?? 0
     if (exitTracker.completeExit(e, { closing: current.closing.includes(value), generation })) {
@@ -350,12 +358,16 @@ export function connect(
         ),
         'data-scope': 'accordion',
         'data-part': 'content',
+        'data-value': value,
         hidden: state.map((st) => !st.value.includes(value) && !st.closing.includes(value)),
         'aria-hidden': state.map((st) => (st.value.includes(value) ? undefined : 'true')),
         inert: state.map((st) => !st.value.includes(value)),
         onAnimationStart: (e) => armExit(value, e),
         onAnimationEnd: tagSend(send, ['exitComplete'], (e) => completeExit(value, e)),
         onAnimationCancel: tagSend(send, ['exitComplete'], (e) => completeExit(value, e)),
+        onTransitionStart: (e) => armExit(value, e),
+        onTransitionEnd: tagSend(send, ['exitComplete'], (e) => completeExit(value, e)),
+        onTransitionCancel: tagSend(send, ['exitComplete'], (e) => completeExit(value, e)),
       },
       item: {
         'data-state': state.map((st) => (st.value.includes(value) ? 'open' : 'closed')),
@@ -387,4 +399,49 @@ export function focusTarget(
   return items[(idx - 1 + items.length) % items.length]!
 }
 
-export const accordion = { init, update, connect, focusTarget }
+/**
+ * Settle every item that enters `closing` from a message the trigger's own
+ * click/keydown handlers never saw — a PROGRAMMATIC `close`/`toggle`/
+ * `setValue` the host app sends directly (#264 review item 4b). The
+ * in-handler safety net (`completeIfUnanimatedAfterToggle`, wired inside
+ * `connect()`) only runs for a user-initiated interaction, because that is
+ * the only place `content`'s live element is reachable without a fresh
+ * subscription. Wire this once via `onMount` alongside the mounted root,
+ * mirroring `tabs.watchTabIndicator`/`navigationMenu.watchNavMenuIndicator` —
+ * an opt-in observer over the rendered DOM, not a `connect()`-time hook,
+ * because `connect()` runs once per render pass with no lifecycle of its
+ * own.
+ *
+ * Root-scoped (never `document.getElementById`) so a shadow-DOM-mounted
+ * instance keeps working; each content element carries its own `data-value`
+ * so a value string containing characters unsafe in a CSS attribute selector
+ * never needs escaping.
+ */
+export function watchExitCompletion(
+  root: Element,
+  state: Signal<AccordionState>,
+  send: Send<AccordionMsg>,
+): () => void {
+  const check = (): void => {
+    const current = state.peek()
+    if (current.closing.length === 0) return
+    const contents = root.querySelectorAll<HTMLElement>(
+      '[data-scope="accordion"][data-part="content"]',
+    )
+    for (const content of contents) {
+      const value = content.dataset.value
+      if (value === undefined || !current.closing.includes(value)) continue
+      const generation = retainedExitGeneration(current.exitGenerations, value) ?? 0
+      if (completeIfUnanimated(content, { closing: true, generation })) {
+        send({ type: 'exitComplete', value, generation })
+      }
+    }
+  }
+
+  check()
+  const observer = new MutationObserver(check)
+  observer.observe(root, { attributes: true, attributeFilter: ['data-state'], subtree: true })
+  return () => observer.disconnect()
+}
+
+export const accordion = { init, update, connect, focusTarget, watchExitCompletion }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { button, component, div, mountApp, text, type Mountable } from '@llui/dom'
+import { button, component, div, mountApp, onMount, text, type Mountable } from '@llui/dom'
 import * as accordion from '../../src/components/accordion'
 import * as collapsible from '../../src/components/collapsible'
 
@@ -64,6 +64,16 @@ function mount(): HTMLElement {
             button({ ...col.trigger }, [text('Collapsible details')]),
             div({ ...col.content }, [text('Collapsible content')]),
           ]),
+          onMount((root) =>
+            accordion.watchExitCompletion(root, state.at('accordion'), (msg) =>
+              send({ type: 'accordion', msg }),
+            ),
+          ),
+          onMount((root) =>
+            collapsible.watchExitCompletion(root, state.at('collapsible'), (msg) =>
+              send({ type: 'collapsible', msg }),
+            ),
+          ),
         ]
       },
     }),
@@ -80,11 +90,21 @@ function animationEvent(type: string, animationName: string): Event {
   return event
 }
 
+function transitionEvent(type: string, propertyName: string): Event {
+  const event = new Event(type, { bubbles: true })
+  Object.defineProperty(event, 'propertyName', { value: propertyName })
+  return event
+}
+
 function declareExitAnimation(content: HTMLElement, scope: string): void {
   content.style.setProperty(
     '--llui-disclosure-exit-animation',
     scope === 'accordion' ? 'accordion-up' : 'collapse-up',
   )
+}
+
+function declareExitTransitionName(content: HTMLElement, name: string): void {
+  content.style.setProperty('--llui-disclosure-exit-animation', name)
 }
 
 describe('animated disclosure presence in actual DOM', () => {
@@ -308,6 +328,171 @@ describe('animated disclosure presence in actual DOM', () => {
       currentExit.playState = 'finished'
       content.dispatchEvent(animationEvent('animationend', exitName))
       expect(content.dataset.state).toBe('closed')
+    },
+  )
+
+  it.each(['accordion', 'collapsible'] as const)(
+    'completes a transition-only %s exit via transitionend, not just animationend (#264 item 4a)',
+    (scope) => {
+      const host = mount()
+      const trigger = part(host, scope, 'trigger') as HTMLButtonElement
+      const content = part(host, scope, 'content')
+      // A transition-only skin: getAnimations() reports the running
+      // CSSTransition (so the "nothing running" safety net correctly
+      // declines), but nothing ever fires animationstart/animationend for
+      // it — only transitionstart/transitionend.
+      const transition = { transitionProperty: 'opacity', playState: 'running' }
+      Object.defineProperty(content, 'getAnimations', {
+        configurable: true,
+        value: () => [transition],
+      })
+
+      trigger.click()
+      expect(content.dataset.state).toBe('closing')
+
+      content.dispatchEvent(transitionEvent('transitionstart', 'opacity'))
+      expect(content.dataset.state).toBe('closing')
+
+      // A real browser's CSSTransition has already moved past 'running' by
+      // the time `transitionend` actually fires.
+      transition.playState = 'finished'
+      content.dispatchEvent(transitionEvent('transitionend', 'opacity'))
+      expect(content.dataset.state).toBe('closed')
+      expect(content.hidden).toBe(true)
+      expect(content.hasAttribute('inert')).toBe(true)
+    },
+  )
+
+  it.each(['accordion', 'collapsible'] as const)(
+    'completes a transition-only %s exit via transitioncancel',
+    (scope) => {
+      const host = mount()
+      const trigger = part(host, scope, 'trigger') as HTMLButtonElement
+      const content = part(host, scope, 'content')
+      const transition = { transitionProperty: 'opacity', playState: 'running' }
+      Object.defineProperty(content, 'getAnimations', {
+        configurable: true,
+        value: () => [transition],
+      })
+
+      trigger.click()
+      content.dispatchEvent(transitionEvent('transitionstart', 'opacity'))
+      transition.playState = 'idle'
+      content.dispatchEvent(transitionEvent('transitioncancel', 'opacity'))
+      expect(content.dataset.state).toBe('closed')
+    },
+  )
+
+  it.each(['accordion', 'collapsible'] as const)(
+    'settles a PROGRAMMATIC %s close (a message sent outside the trigger click) via watchExitCompletion (#264 item 4b)',
+    (scope) => {
+      const host = mount()
+      const content = part(host, scope, 'content')
+      declareExitAnimation(content, scope)
+      // No real motion at all — the watcher's completeIfUnanimated should
+      // settle this the moment the MutationObserver sees data-state flip,
+      // with no click ever involved.
+      Object.defineProperty(content, 'getAnimations', { configurable: true, value: () => [] })
+
+      if (scope === 'accordion') {
+        app?.send({ type: 'accordion', msg: { type: 'close', value: 'details' } })
+      } else {
+        app?.send({ type: 'collapsible', msg: { type: 'close' } })
+      }
+
+      expect(content.dataset.state).toBe('closing')
+      // MutationObserver callbacks are microtask-scheduled, never
+      // synchronous with the mutation.
+      return Promise.resolve().then(() => {
+        expect(content.dataset.state).toBe('closed')
+        expect(content.hidden).toBe(true)
+        expect(content.hasAttribute('inert')).toBe(true)
+      })
+    },
+  )
+
+  it.each(['accordion', 'collapsible'] as const)(
+    'filters an unrelated transition by the declared exit name, then completes the real one (%s)',
+    (scope) => {
+      const host = mount()
+      const trigger = part(host, scope, 'trigger') as HTMLButtonElement
+      const content = part(host, scope, 'content')
+      declareExitTransitionName(content, 'opacity')
+
+      content.dispatchEvent(transitionEvent('transitionstart', 'transform'))
+      trigger.click()
+      expect(content.dataset.state).toBe('closing')
+
+      content.dispatchEvent(transitionEvent('transitioncancel', 'transform'))
+      expect(content.dataset.state).toBe('closing')
+
+      // An unrelated transition (wrong property name) must never be mistaken
+      // for the declared exit ('opacity') — this is the direction that
+      // regresses if a motion event's name is ever read off the wrong field
+      // (#264 review item 4a: TransitionEvent carries `propertyName`, not
+      // `animationName`).
+      content.dispatchEvent(transitionEvent('transitionstart', 'transform'))
+      content.dispatchEvent(transitionEvent('transitionend', 'transform'))
+      expect(content.dataset.state).toBe('closing')
+
+      content.dispatchEvent(transitionEvent('transitionstart', 'opacity'))
+      content.dispatchEvent(transitionEvent('transitionend', 'opacity'))
+      expect(content.dataset.state).toBe('closed')
+    },
+  )
+
+  it.each(['accordion', 'collapsible'] as const)(
+    'ignores a stale same-property %s transition-cancel after reopen and re-close',
+    (scope) => {
+      const host = mount()
+      const trigger = part(host, scope, 'trigger') as HTMLButtonElement
+      const content = part(host, scope, 'content')
+      declareExitTransitionName(content, 'opacity')
+      const oldExit = { transitionProperty: 'opacity', playState: 'running' }
+      const currentExit = { transitionProperty: 'opacity', playState: 'running' }
+      let transitions = [oldExit]
+      Object.defineProperty(content, 'getAnimations', {
+        configurable: true,
+        value: () => transitions,
+      })
+
+      trigger.click()
+      content.dispatchEvent(transitionEvent('transitionstart', 'opacity'))
+      trigger.click()
+      oldExit.playState = 'idle'
+      transitions = [currentExit]
+      trigger.click()
+      content.dispatchEvent(transitionEvent('transitionstart', 'opacity'))
+
+      content.dispatchEvent(transitionEvent('transitioncancel', 'opacity'))
+      expect(content.dataset.state).toBe('closing')
+
+      currentExit.playState = 'finished'
+      content.dispatchEvent(transitionEvent('transitionend', 'opacity'))
+      expect(content.dataset.state).toBe('closed')
+    },
+  )
+
+  it.each(['accordion', 'collapsible'] as const)(
+    'does NOT settle a programmatic %s close while a real exit animation is still running',
+    (scope) => {
+      const host = mount()
+      const content = part(host, scope, 'content')
+      declareExitAnimation(content, scope)
+      Object.defineProperty(content, 'getAnimations', {
+        configurable: true,
+        value: () => [{ animationName: 'irrelevant', playState: 'running' }],
+      })
+
+      if (scope === 'accordion') {
+        app?.send({ type: 'accordion', msg: { type: 'close', value: 'details' } })
+      } else {
+        app?.send({ type: 'collapsible', msg: { type: 'close' } })
+      }
+
+      return Promise.resolve().then(() => {
+        expect(content.dataset.state).toBe('closing')
+      })
     },
   )
 })

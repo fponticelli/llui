@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Disclosure exit completion (#264 item 4)</title>
+    <style>
+      [data-part='content'][hidden] {
+        display: none;
+      }
+
+      /* no-motion skin: deliberately NO animation/transition rule at all. */
+
+      /* custom animation skin: a real keyframes animation, WITHOUT the
+         --llui-disclosure-exit-animation custom property — proves a custom
+         skin that never opts into naming still completes. */
+      @keyframes disclosure-fade-out {
+        from {
+          opacity: 1;
+        }
+        to {
+          opacity: 0;
+        }
+      }
+      #host-anim [data-part='content'][data-state='closing'] {
+        animation: disclosure-fade-out 120ms;
+      }
+
+      /* transition-only skin: no @keyframes at all. */
+      #host-transition [data-part='content'] {
+        opacity: 1;
+        transition: opacity 120ms;
+      }
+      #host-transition [data-part='content'][data-state='closing'] {
+        opacity: 0;
+      }
+
+      /* reduced-motion skin: only animates when the OS has no reduced-motion
+         preference — under `prefers-reduced-motion: reduce` this genuinely
+         runs no motion at all, same as the no-motion skin. */
+      @media (prefers-reduced-motion: no-preference) {
+        #host-reduced [data-part='content'][data-state='closing'] {
+          animation: disclosure-fade-out 120ms;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="host-none"></div>
+    <div id="host-anim"></div>
+    <div id="host-transition"></div>
+    <div id="host-reduced"></div>
+    <div id="host-collapsible"></div>
+    <div id="host-shadow"></div>
+    <script type="module" src="./disclosure-exit.fixture.ts"></script>
+  </body>
+</html>
