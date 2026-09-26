@@ -1,5 +1,5 @@
-import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import { constant, derived, tagSend } from '@llui/dom'
+import type { Reactive, Send, Signal } from '@llui/dom'
 import { allFiniteNumbers, finiteBound } from '../utils/number.js'
 
 /**
@@ -386,7 +386,11 @@ export interface TableColumnHeaderParts {
 export interface TableRowParts {
   role: 'row'
   'aria-selected': Signal<boolean | undefined>
-  'aria-rowindex': number
+  /** Reactive: a row's DISPLAY position can change after sort/reorder without
+   * this row being rebuilt (`each` reuses rows by key), so the index this
+   * addresses must follow the row's live position rather than freeze at
+   * whatever it was when the row was first built. */
+  'aria-rowindex': Signal<number>
   'data-scope': 'table'
   'data-part': 'row'
   'data-row': string
@@ -400,9 +404,11 @@ export interface TableCellParts {
   tabindex: Signal<number>
   'data-scope': 'table'
   'data-part': 'cell'
-  /** 0-based row index — addresses the cell for roving DOM focus. */
-  'data-row-index': number
-  /** 0-based column index — addresses the cell for roving DOM focus. */
+  /** 0-based row index — addresses the cell for roving DOM focus. Reactive
+   * for the same reason `TableRowParts`'s `aria-rowindex` is. */
+  'data-row-index': Signal<number>
+  /** 0-based column index — addresses the cell for roving DOM focus. Columns
+   * do not reorder, so this stays a plain number. */
   'data-col-index': number
   'data-focused': Signal<'' | undefined>
   onFocus: (e: FocusEvent) => void
@@ -444,8 +450,19 @@ export interface TableParts {
     'data-density': TableDensity | undefined
   }
   columnHeader: (columnId: string) => TableColumnHeaderParts
-  row: (id: string, index: number) => TableRowParts
-  cell: (rowIndex: number, colIndex: number) => TableCellParts
+  /**
+   * `index` accepts a plain `number` OR a `Signal<number>` (the row handle
+   * `each`/`virtualEach` passes its render callback) — a keyed row is REUSED
+   * (moved, not rebuilt) on reorder, so a plain number captured at build time
+   * would freeze `aria-rowindex` and the row's own `toggleRow`/`selectRange`
+   * dispatch at the row's ORIGINAL position forever. Pass the row's reactive
+   * index handle whenever rows can reorder (sorting, filtering); a plain
+   * number is still accepted for a table that never reorders.
+   */
+  row: (id: string, index: Reactive<number>) => TableRowParts
+  /** `rowIndex` has the same `Reactive<number>` contract as {@link row}'s
+   * `index` — the column index does not reorder and stays a plain `number`. */
+  cell: (rowIndex: Reactive<number>, colIndex: number) => TableCellParts
   /**
    * The select-all checkbox, for the `columnheader` of `columnId`.
    *
@@ -464,7 +481,8 @@ export interface TableParts {
    * roving stop, and its header will not send `toggleAll` either.
    */
   selectAllCheckbox: (columnId: string) => TableCheckboxParts
-  rowCheckbox: (id: string, index: number) => TableCheckboxParts
+  /** Same `Reactive<number>` contract as {@link row}'s `index`. */
+  rowCheckbox: (id: string, index: Reactive<number>) => TableCheckboxParts
 }
 
 export interface ConnectOptions {
@@ -496,6 +514,18 @@ export function connect(
    * front, is also what keeps the two halves from drifting apart.
    */
   const selectAllColumns = new Set<string>()
+
+  /** Normalize `row`/`cell`/`rowCheckbox`'s `Reactive<number>` index to a
+   * live `Signal<number>` — a plain number becomes a constant handle so
+   * every call site can `.map()`/`.peek()` it uniformly.
+   *
+   * Narrowed with `typeof`, not `isSignalHandle`: the latter is declared
+   * `v is SignalHandle<unknown>`, which erases the element type on the true
+   * branch. `Reactive<T>` is a union with `T`, so `typeof` splits it
+   * correctly in both directions (the same reason `chip.ts`'s `hueAttr`
+   * does the same). */
+  const toIndexSignal = (index: Reactive<number>): Signal<number> =>
+    typeof index === 'number' ? constant(index) : index
 
   /** The messages every roving part may send. */
   const NAV_MSGS = [
@@ -561,18 +591,19 @@ export function connect(
     }
   }
 
-  const cellOnKeyDown = (rowIndex: number): ((e: KeyboardEvent) => void) =>
+  const cellOnKeyDown = (rowIndex: Signal<number>): ((e: KeyboardEvent) => void) =>
     tagSend(send, [...NAV_MSGS, 'toggleRow', 'activateRow'], (e) => {
       if (handleNavKey(e)) return
-      const id = state.peek().rows[rowIndex]
+      const index = rowIndex.peek()
+      const id = state.peek().rows[index]
       switch (e.key) {
         case ' ':
           e.preventDefault()
-          if (id !== undefined) send({ type: 'toggleRow', id, index: rowIndex })
+          if (id !== undefined) send({ type: 'toggleRow', id, index })
           return
         case 'Enter':
           e.preventDefault()
-          if (id !== undefined) send({ type: 'activateRow', id, index: rowIndex })
+          if (id !== undefined) send({ type: 'activateRow', id, index })
           return
       }
     })
@@ -680,44 +711,53 @@ export function connect(
       }),
       onKeyDown: headerOnKeyDown(columnId),
     }),
-    row: (id: string, index: number): TableRowParts => ({
-      role: 'row',
-      'aria-selected': state.map((s) =>
-        s.selectionMode === 'none' ? undefined : isRowSelected(s, id),
-      ),
-      // 1-based and header-row-offset (header occupies aria-rowindex 1).
-      'aria-rowindex': index + 2,
-      'data-scope': 'table',
-      'data-part': 'row',
-      'data-row': id,
-      'data-selected': state.map((s) => (isRowSelected(s, id) ? '' : undefined)),
-      onClick: tagSend(send, ['toggleRow', 'selectRange'], (e) => {
-        if (state.peek().selectionMode === 'none') return
-        if (e.shiftKey) send({ type: 'selectRange', index })
-        else send({ type: 'toggleRow', id, index })
-      }),
-    }),
-    cell: (rowIndex: number, colIndex: number): TableCellParts => ({
-      role: 'gridcell',
-      'aria-colindex': colIndex + 1,
-      tabindex: state.map((s) => {
-        if (s.focusedCell === null) return rowIndex === 0 && colIndex === 0 ? 0 : -1
-        return s.focusedCell.rowIndex === rowIndex && s.focusedCell.colIndex === colIndex ? 0 : -1
-      }),
-      'data-scope': 'table',
-      'data-part': 'cell',
-      'data-row-index': rowIndex,
-      'data-col-index': colIndex,
-      'data-focused': state.map((s) =>
-        s.focusedCell !== null &&
-        s.focusedCell.rowIndex === rowIndex &&
-        s.focusedCell.colIndex === colIndex
-          ? ''
-          : undefined,
-      ),
-      onFocus: tagSend(send, ['focusCell'], () => send({ type: 'focusCell', rowIndex, colIndex })),
-      onKeyDown: cellOnKeyDown(rowIndex),
-    }),
+    row: (id: string, index: Reactive<number>): TableRowParts => {
+      const indexSignal = toIndexSignal(index)
+      return {
+        role: 'row',
+        'aria-selected': state.map((s) =>
+          s.selectionMode === 'none' ? undefined : isRowSelected(s, id),
+        ),
+        // 1-based and header-row-offset (header occupies aria-rowindex 1).
+        'aria-rowindex': indexSignal.map((i) => i + 2),
+        'data-scope': 'table',
+        'data-part': 'row',
+        'data-row': id,
+        'data-selected': state.map((s) => (isRowSelected(s, id) ? '' : undefined)),
+        onClick: tagSend(send, ['toggleRow', 'selectRange'], (e) => {
+          if (state.peek().selectionMode === 'none') return
+          const index = indexSignal.peek()
+          if (e.shiftKey) send({ type: 'selectRange', index })
+          else send({ type: 'toggleRow', id, index })
+        }),
+      }
+    },
+    cell: (rowIndex: Reactive<number>, colIndex: number): TableCellParts => {
+      const rowIndexSignal = toIndexSignal(rowIndex)
+      return {
+        role: 'gridcell',
+        'aria-colindex': colIndex + 1,
+        tabindex: derived(state, rowIndexSignal, (s, ri) => {
+          if (s.focusedCell === null) return ri === 0 && colIndex === 0 ? 0 : -1
+          return s.focusedCell.rowIndex === ri && s.focusedCell.colIndex === colIndex ? 0 : -1
+        }),
+        'data-scope': 'table',
+        'data-part': 'cell',
+        'data-row-index': rowIndexSignal,
+        'data-col-index': colIndex,
+        'data-focused': derived(state, rowIndexSignal, (s, ri) =>
+          s.focusedCell !== null &&
+          s.focusedCell.rowIndex === ri &&
+          s.focusedCell.colIndex === colIndex
+            ? ''
+            : undefined,
+        ),
+        onFocus: tagSend(send, ['focusCell'], () =>
+          send({ type: 'focusCell', rowIndex: rowIndexSignal.peek(), colIndex }),
+        ),
+        onKeyDown: cellOnKeyDown(rowIndexSignal),
+      }
+    },
     selectAllCheckbox: (columnId: string): TableCheckboxParts => {
       // Placing the checkbox is what wires its header's Enter/Space to
       // `toggleAll` — see `selectAllColumns`.
@@ -760,37 +800,42 @@ export function connect(
         }),
       }
     },
-    rowCheckbox: (id: string, index: number): TableCheckboxParts => ({
-      role: 'checkbox',
-      'aria-checked': state.map((s) => (isRowSelected(s, id) ? 'true' : 'false')),
-      'data-scope': 'table',
-      'data-part': 'row-checkbox',
-      'data-state': state.map((s) => (isRowSelected(s, id) ? 'checked' : 'unchecked')),
-      // Out of the tab sequence. A tab stop per row would put N of them inside a
-      // `role="grid"`, which contradicts APG's single-tab-stop Grid pattern —
-      // and it is unnecessary: the enclosing gridcell's Space already toggles
-      // the row from the grid's one tab stop. The handler below stays for a
-      // programmatically-focused checkbox (#122).
-      tabindex: -1,
-      // The checkbox lives INSIDE the clickable row, which also toggles the row
-      // on click. Without stopping propagation the click would fire twice
-      // (checkbox + row), cancelling out to a no-op. Stop it here so a click on
-      // the checkbox toggles exactly once.
-      onClick: tagSend(send, ['toggleRow', 'selectRange'], (e) => {
-        e.stopPropagation()
-        if (e.shiftKey) send({ type: 'selectRange', index })
-        else send({ type: 'toggleRow', id, index })
-      }),
-      // The enclosing gridcell's own Space handler also toggles the row, so the
-      // same double-fire-cancels-out hazard applies to the keyboard.
-      onKeyDown: tagSend(send, ['toggleRow', 'selectRange'], (e) => {
-        if (e.key !== ' ') return
-        e.preventDefault()
-        e.stopPropagation()
-        if (e.shiftKey) send({ type: 'selectRange', index })
-        else send({ type: 'toggleRow', id, index })
-      }),
-    }),
+    rowCheckbox: (id: string, index: Reactive<number>): TableCheckboxParts => {
+      const indexSignal = toIndexSignal(index)
+      return {
+        role: 'checkbox',
+        'aria-checked': state.map((s) => (isRowSelected(s, id) ? 'true' : 'false')),
+        'data-scope': 'table',
+        'data-part': 'row-checkbox',
+        'data-state': state.map((s) => (isRowSelected(s, id) ? 'checked' : 'unchecked')),
+        // Out of the tab sequence. A tab stop per row would put N of them inside a
+        // `role="grid"`, which contradicts APG's single-tab-stop Grid pattern —
+        // and it is unnecessary: the enclosing gridcell's Space already toggles
+        // the row from the grid's one tab stop. The handler below stays for a
+        // programmatically-focused checkbox (#122).
+        tabindex: -1,
+        // The checkbox lives INSIDE the clickable row, which also toggles the row
+        // on click. Without stopping propagation the click would fire twice
+        // (checkbox + row), cancelling out to a no-op. Stop it here so a click on
+        // the checkbox toggles exactly once.
+        onClick: tagSend(send, ['toggleRow', 'selectRange'], (e) => {
+          e.stopPropagation()
+          const index = indexSignal.peek()
+          if (e.shiftKey) send({ type: 'selectRange', index })
+          else send({ type: 'toggleRow', id, index })
+        }),
+        // The enclosing gridcell's own Space handler also toggles the row, so the
+        // same double-fire-cancels-out hazard applies to the keyboard.
+        onKeyDown: tagSend(send, ['toggleRow', 'selectRange'], (e) => {
+          if (e.key !== ' ') return
+          e.preventDefault()
+          e.stopPropagation()
+          const index = indexSignal.peek()
+          if (e.shiftKey) send({ type: 'selectRange', index })
+          else send({ type: 'toggleRow', id, index })
+        }),
+      }
+    },
   }
 }
 
