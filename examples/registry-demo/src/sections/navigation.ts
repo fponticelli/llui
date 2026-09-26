@@ -88,10 +88,6 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
 
   return [
     tabs.directionSync,
-    // A PROGRAMMATIC close/toggle on a no-exit-motion skin never settles
-    // without these placed (#264 review item 1).
-    faq.exitCompletion,
-    details.exitCompletion,
     section('Tabs, Accordion & Collapsible', 'Disclosure patterns.', [
       Tabs({ ...tabs.root }, [
         TabsList(
@@ -106,7 +102,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       ]),
 
       Accordion(
-        { ...faq.root },
+        { ...faq.root, exitCompletion: faq.exitCompletion },
         FAQ.map((f) => {
           // `item(value)` returns a BAG OF BAGS — `{ trigger, content, item }`.
           // Spreading the wrapper emits `trigger="[object Object]"` and drops
@@ -119,7 +115,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
         }),
       ),
 
-      Collapsible({ ...details.root }, [
+      Collapsible({ ...details.root, exitCompletion: details.exitCompletion }, [
         // `CollapsibleTrigger` IS a <button>. Wrapping a `Button` in it nests one
         // button inside another — invalid HTML, and the inner one swallows the
         // click target. Borrow the button's LOOK via `buttonVariants` instead.

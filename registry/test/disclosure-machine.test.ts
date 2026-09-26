@@ -56,13 +56,13 @@ function mount(): HTMLElement {
         )
         const item = acc.item('details')
         return [
-          Accordion({ ...acc.root }, [
+          Accordion({ ...acc.root, exitCompletion: acc.exitCompletion }, [
             AccordionItem({ ...item.item }, [
               AccordionTrigger({ ...item.trigger }, [text('Accordion details')]),
               AccordionContent({ ...item.content }, [text('Accordion content')]),
             ]),
           ]),
-          Collapsible({ ...col.root }, [
+          Collapsible({ ...col.root, exitCompletion: col.exitCompletion }, [
             CollapsibleTrigger({ ...col.trigger }, [text('Collapsible details')]),
             CollapsibleContent({ ...col.content }, [text('Collapsible content')]),
           ]),
@@ -108,6 +108,44 @@ describe('registry disclosure skins consume retained machine presence', () => {
       content.dispatchEvent(animationEvent('animationend', animationName))
       expect(content.dataset.state).toBe('closed')
       expect(content.hidden).toBe(true)
+    },
+  )
+
+  // #264 review item 2: the registry's Accordion/Collapsible root skins must
+  // place `parts.exitCompletion` THEMSELVES, since only the root skin's own
+  // wrapper can make forgetting it a compile-time obligation rather than a
+  // convention a hand-rolled call site or a demo has to remember. This is
+  // NOT a re-test of the underlying machine (that lives in
+  // `@llui/components`' own `disclosure-presence.integration.test.ts`) — it
+  // is a test that the REGISTRY skin, used exactly as README.md documents
+  // (`Accordion({ ...parts.root, exitCompletion: parts.exitCompletion }, [...])`,
+  // nothing placed by hand alongside it), still settles a PROGRAMMATIC close
+  // sent directly (bypassing the trigger's click handler) when the content
+  // runs no exit motion at all — the shape a `display: none` ancestor
+  // produces in a real browser, simulated here the same way the components
+  // package's own suite does: `getAnimations` stubbed to report nothing
+  // running, so the exit-completion Mountable's MutationObserver-driven
+  // settle is the ONLY thing that can complete it.
+  it.each(['accordion', 'collapsible'] as const)(
+    '%s: the documented registry skin call settles a programmatic close with no running exit motion',
+    async (scope) => {
+      const host = mount()
+      const content = part(host, scope, 'content')
+      Object.defineProperty(content, 'getAnimations', { configurable: true, value: () => [] })
+
+      if (scope === 'accordion') {
+        app?.send({ type: 'accordion', msg: { type: 'close', value: 'details' } })
+      } else {
+        app?.send({ type: 'collapsible', msg: { type: 'close' } })
+      }
+
+      expect(content.dataset.state).toBe('closing')
+      // MutationObserver callbacks are microtask-scheduled, never
+      // synchronous with the mutation that triggers them.
+      await Promise.resolve()
+      expect(content.dataset.state).toBe('closed')
+      expect(content.hidden).toBe(true)
+      expect(content.hasAttribute('inert')).toBe(true)
     },
   )
 

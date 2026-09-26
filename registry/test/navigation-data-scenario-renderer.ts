@@ -304,7 +304,7 @@ const accordionAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) => {
     (state, send) => {
       const parts = accordion.connect(state, send, { id: `registry-accordion-${ctx.caseId}` })
       const item = parts.item(itemValue)
-      return Accordion({ ...parts.root }, [
+      return Accordion({ ...parts.root, exitCompletion: parts.exitCompletion }, [
         AccordionItem({ ...item.item }, [
           AccordionTrigger({ ...item.trigger }, [text(input.label)]),
           AccordionContent({ ...item.content }, [text(input.content)]),
@@ -323,7 +323,7 @@ const collapsibleAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) =>
     collapsible.update,
     (state, send) => {
       const parts = collapsible.connect(state, send, { id: `registry-collapsible-${ctx.caseId}` })
-      return Collapsible({ ...parts.root }, [
+      return Collapsible({ ...parts.root, exitCompletion: parts.exitCompletion }, [
         CollapsibleTrigger({ ...parts.trigger }, [text(input.label)]),
         CollapsibleContent({ ...parts.content }, [text(input.content)]),
       ])

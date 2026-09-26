@@ -1,6 +1,6 @@
 import { button, div, h3 } from '@llui/dom'
 import { type ChildNode, type ElProps, type Mountable } from '@llui/dom'
-import { classPart, mergeClass, splitArgs } from '@/lib/utils'
+import { classPart, mergeClass, splitArgs, withExitCompletion } from '@/lib/utils'
 import { ChevronDownIcon } from '@/ui/icons'
 
 /**
@@ -15,7 +15,7 @@ import { ChevronDownIcon } from '@/ui/icons'
  * in `@llui/components/styles/tokens.css`. They read `--content-height`; set it
  * on the content element for a height transition, or leave it for `auto`.
  */
-export const Accordion = classPart(div, '')
+export const Accordion = withExitCompletion(classPart(div, ''))
 export const AccordionItem = classPart(div, 'border-b last:border-b-0')
 
 export function AccordionTrigger(

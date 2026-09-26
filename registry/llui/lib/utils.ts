@@ -156,6 +156,47 @@ export function classPartWithDefaults(
 export type { ClassValue }
 
 /**
+ * A `classPart`-built root wrapper is a plain function; nothing stops a
+ * caller from constructing it without a machine's `exitCompletion` Mountable
+ * placed anywhere in the same build, and README.md used to claim "registry
+ * skins place it automatically" while `accordion.ts`/`collapsible.ts` were
+ * ordinary `classPart(div, ...)` wrappers that never touched it (#264 review
+ * item 2). `exitCompletion` settles a PROGRAMMATIC close/toggle/setValue on a
+ * skin with no exit motion — forgetting it hangs that item `closing` + inert
+ * forever, with only a dev-mode `console.warn` (never a build error) to say
+ * so. A root wrapper cannot forget to append what it is compile-time REQUIRED
+ * to accept: `exitCompletion` is a non-optional field on the props bag here,
+ * so `Accordion({ ...parts.root }, [...])` (the pre-#264 call shape, missing
+ * the field) is a type error, and `Accordion({ ...parts.root, exitCompletion:
+ * parts.exitCompletion }, [...])` both compiles and cannot omit the append.
+ */
+// An `interface X extends ElProps` silently DROPS `ElProps`'s index
+// signature (a known registry trap — see CLAUDE.md), so this is an
+// intersection TYPE, never an extended interface.
+export type DisclosureRootProps = ElProps & {
+  /** `parts.exitCompletion` from the machine's `connect()` — see
+   * `@llui/components`'s README ("A PROGRAMMATIC close/toggle/…"). */
+  exitCompletion: Mountable
+}
+
+/**
+ * Wrap a `classPart`-built disclosure root so it owns appending its own
+ * machine's `exitCompletion` Mountable, rather than leaving that to callers
+ * (demos included) to remember. `part` is still built via `classPart`
+ * (never a bespoke `tag(...)` call) so the recipe string stays visible to
+ * `scripts/lib/registry-classes.mjs`'s AST extractor, which only recognizes
+ * string-literal recipes passed to a fixed set of call names.
+ */
+export function withExitCompletion(
+  part: PartHelper,
+): (props: DisclosureRootProps, children?: readonly ChildNode[]) => Mountable {
+  return (props: DisclosureRootProps, children: readonly ChildNode[] = []): Mountable => {
+    const { exitCompletion, ...rest } = props
+    return part(rest as ElProps, [...children, exitCompletion])
+  }
+}
+
+/**
  * `classPart` with variants: a tag plus a `createVariants` recipe, where the
  * caller's variant keys are destructured out of the props bag before the rest is
  * spread onto the element.

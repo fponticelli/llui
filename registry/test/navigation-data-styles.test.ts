@@ -164,7 +164,7 @@ function fixture(): string {
             ]),
             TabsContent([text('Content')]),
           ]),
-          Accordion({ 'data-product': 'accordion' }, [
+          Accordion({ 'data-product': 'accordion', exitCompletion: text('') }, [
             AccordionItem([
               AccordionTrigger({ id: 'accordion-trigger', 'data-state': 'open' }, [text('Open')]),
               AccordionContent(
@@ -223,7 +223,7 @@ function fixture(): string {
             CardContent([text('Ready')]),
           ]),
           Chip({ 'data-product': 'chip', value: 'lab' }),
-          Collapsible({ 'data-product': 'collapsible' }, [
+          Collapsible({ 'data-product': 'collapsible', exitCompletion: text('') }, [
             CollapsibleTrigger({ id: 'collapsible-trigger', 'data-state': 'open' }, [
               text('Details'),
             ]),
