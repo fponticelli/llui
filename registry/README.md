@@ -133,6 +133,15 @@ across the top of the group instead of a rule between the panels. It compiled,
 it spread, the suite was green — a render is the only thing that shows it.
 Check what an attribute MEANS on both sides before pairing them.
 
+**`PaginationLink` is a `<button>`, not upstream's `<a>` (#264 review item 9).**
+This is a deliberate, explained deviation, not drift: `@llui/components/pagination`
+publishes reactive `data-selected`/`aria-current` state and its roving-focus
+helper addresses BUTTON elements specifically (`focusRovingItem`'s `itemPart`
+convention), and pagination here is an in-app state change (the page the
+machine tracks), never a document navigation to a different URL — there is no
+`href` a `<a>` would meaningfully carry. Reverting to `<a>` would leave the
+keyboard roving-focus wiring unable to find the element it moves focus to.
+
 ## Rules for anything added here
 
 1. **Route `class` through `mergeClass`, never `cn` directly.** `class` is

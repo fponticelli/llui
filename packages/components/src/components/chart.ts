@@ -72,46 +72,62 @@ function seriesCue(state: ChartState, key: string): ChartSeriesCue {
   return SERIES_CUES[index < 0 ? 0 : index % SERIES_CUES.length]!
 }
 
+/** `${id}:pattern-<cue>` for every non-`solid` cue (solid needs no pattern —
+ * it is a flat `CanvasText` fill). Shared by `chartForcedColorPatterns` (which
+ * DEFINES the patterns) and `connect()` (which points each mark's
+ * `fill` at its OWN chart's copy via an inline custom property) so the two
+ * can never name different ids for the same chart instance. */
+function patternId(id: string, cue: Exclude<ChartSeriesCue, 'solid'>): string {
+  return `${id}:pattern-${cue}`
+}
+
 /**
  * Five SVG `<pattern>` fills, one per {@link ChartSeriesCue} name — the SAME
  * cue vocabulary `data-series-cue` already carries on every mark. A skin's
- * `forced-colors` rule maps `[data-mark='bar'][data-series-cue='dot']` (say)
- * to `fill: url(#llui-chart-pattern-dot)`, so a bar/area mark gets a REAL
- * redundant cue: `fill: CanvasText` alone makes every bar/area series under
- * `forced-colors: active` paint identically, since forced colors flattens
- * author colors uniformly (#264) — a dash pattern (already used for LINE
- * marks) does nothing for a filled shape's fill.
+ * `forced-colors` rule reads `fill: var(--llui-chart-fill-dot)` (say), which
+ * `connect()` below sets to THIS chart's own `url('#<id>:pattern-dot')
+ * CanvasText`, so a bar/area mark gets a REAL redundant cue: `fill:
+ * CanvasText` alone makes every bar/area series under `forced-colors: active`
+ * paint identically, since forced colors flattens author colors uniformly
+ * (#264) — a dash pattern (already used for LINE marks) does nothing for a
+ * filled shape's fill.
  *
- * Pure, static, stateless markup — not part of `connect()`'s reactive parts,
- * because it never varies with data or state. Place it once as the first
- * child of `parts.svg` in either skin; both `@llui/components`'s baseline
- * stylesheet and the registry's Tailwind recipe reference these exact ids, so
- * neither depends on the other — both depend on this one shared, neutral
- * definition. The five ids are stable across every mounted chart instance
- * ON PURPOSE: their content never varies with data, so two chart instances
- * both defining `id="llui-chart-pattern-dot"` resolve to visually identical
- * patterns regardless of which instance's element the browser picks.
- */
-export function chartForcedColorPatterns(): Mountable {
-  const swatch = (id: string, content: readonly Mountable[]): Mountable =>
-    elNS('pattern', { id, patternUnits: 'userSpaceOnUse', width: 8, height: 8 }, content)
+ * Pure, static, stateless markup — not part of `connect()`'s REACTIVE parts
+ * (it never varies with data or state), but keyed by the SAME `id` `connect()`
+ * takes, and it MUST be. A fixed, globally-shared id (`id="llui-chart-pattern-
+ * dot"` on every chart instance) resolves a `url(#...)` reference to
+ * WHICHEVER same-named element the browser's id table happens to return —
+ * measured in real Chromium: when the first such element in the document sits
+ * inside a `display:none` ancestor (one hidden chart earlier on the page),
+ * every OTHER, visible chart's pattern-filled marks paint nothing, because a
+ * referenced paint server inside a non-rendered subtree does not paint even
+ * for a consumer outside it (#264 review item 3). Per-instance ids close the
+ * whole bug class rather than depending on document order: each chart only
+ * ever references its OWN copy. Place it once as the first child of
+ * `parts.svg` in either skin, passing the SAME `id` given to `connect()`. */
+export function chartForcedColorPatterns(id: string): Mountable {
+  const swatch = (patternElId: string, content: readonly Mountable[]): Mountable =>
+    elNS(
+      'pattern',
+      { id: patternElId, patternUnits: 'userSpaceOnUse', width: 8, height: 8 },
+      content,
+    )
   const tile = (fill: string): Mountable => elNS('rect', { width: 8, height: 8, fill })
   return elNS('defs', {}, [
-    swatch('llui-chart-pattern-solid', [tile('CanvasText')]),
-    swatch('llui-chart-pattern-short-dash', [
+    swatch(patternId(id, 'short-dash'), [
       tile('Canvas'),
       elNS('path', { d: 'M0 4H8', stroke: 'CanvasText', 'stroke-width': 2 }),
     ]),
-    swatch('llui-chart-pattern-dot', [
+    swatch(patternId(id, 'dot'), [
       tile('Canvas'),
       elNS('circle', { cx: 2, cy: 2, r: 1.4, fill: 'CanvasText' }),
       elNS('circle', { cx: 6, cy: 6, r: 1.4, fill: 'CanvasText' }),
     ]),
-    swatch('llui-chart-pattern-long-dash', [
+    swatch(patternId(id, 'long-dash'), [
       tile('Canvas'),
       elNS('path', { d: 'M0 0L8 8', stroke: 'CanvasText', 'stroke-width': 3 }),
     ]),
-    swatch('llui-chart-pattern-dash-dot', [
+    swatch(patternId(id, 'dash-dot'), [
       tile('Canvas'),
       elNS('path', { d: 'M0 0L8 8M8 0L0 8', stroke: 'CanvasText', 'stroke-width': 1.5 }),
     ]),
@@ -798,6 +814,9 @@ export interface ChartParts {
     'data-coord': Signal<'cartesian' | 'polar'>
     'data-domain': Signal<'value' | 'share'>
     'data-active': Signal<'' | undefined>
+    /** Per-instance forced-colors fill custom properties — see `connect()`'s
+     * own doc for why these must be per-chart rather than a shared global. */
+    style: string
   }
   /**
    * The `<svg>`. `role="img"` with a name and description is what a screen
@@ -961,6 +980,24 @@ export function connect(
     }
   }
 
+  // Per-instance forced-colors fill vars (#264 review item 3): each of these
+  // is a CSS custom property naming THIS chart's own pattern id, with an SVG
+  // paint-fallback token (`url(#…) CanvasText`) so a mark still paints solid
+  // if the reference somehow fails to resolve. Static (never varies with
+  // state), so it is computed once here rather than as a reactive binding.
+  // `--llui-chart-fill-solid` needs no per-instance id — solid is a flat
+  // fill with nothing to disambiguate — but is restated with the same
+  // fallback shape for symmetry.
+  const forcedColorFillVars = [
+    ['solid', 'CanvasText'],
+    ['short-dash', `url('#${patternId(opts.id, 'short-dash')}') CanvasText`],
+    ['dot', `url('#${patternId(opts.id, 'dot')}') CanvasText`],
+    ['long-dash', `url('#${patternId(opts.id, 'long-dash')}') CanvasText`],
+    ['dash-dot', `url('#${patternId(opts.id, 'dash-dot')}') CanvasText`],
+  ]
+    .map(([cue, value]) => `--llui-chart-fill-${cue}:${value}`)
+    .join(';')
+
   return {
     root: {
       'data-scope': 'chart',
@@ -968,6 +1005,7 @@ export function connect(
       'data-coord': state.map((s) => s.coord),
       'data-domain': state.map((s) => s.domain),
       'data-active': state.map((s) => (s.activeIndex !== null ? '' : undefined)),
+      style: forcedColorFillVars,
     },
     svg: {
       'data-scope': 'chart',

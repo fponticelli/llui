@@ -135,8 +135,16 @@ export function focusRovingItem(
   if (origin === null) return
   const itemPart = opts.itemPart ?? 'item'
   const attr = opts.attr ?? 'data-value'
-  const root: ParentNode =
-    origin.closest(`[data-scope="${scope}"][data-part="root"]`) ?? origin.ownerDocument ?? origin
+  // No whole-document fallback (#264 review, previous-finding partial): the
+  // doc comment above promises "sibling widgets of the same scope never
+  // cross-focus," which a document-wide search silently breaks the moment
+  // `closest()` fails to find a root (a differently-shaped root, a portal, a
+  // shadow boundary) — TWO instances of the same scope on one page could
+  // then focus into EACH OTHER'S items. Nothing to search without a root
+  // that actually scopes it, so this no-ops instead, exactly like the
+  // documented "no match" case.
+  const root = origin.closest(`[data-scope="${scope}"][data-part="root"]`)
+  if (root === null) return
   const sel = `[data-scope="${scope}"][data-part="${itemPart}"][${attr}="${cssEscape(value)}"]`
   const el = root.querySelector(sel)
   if (el instanceof HTMLElement) el.focus()

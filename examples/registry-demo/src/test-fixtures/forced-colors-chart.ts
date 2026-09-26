@@ -32,50 +32,71 @@ const ROWS: chartC.ChartRow[] = [
   { label: 'Q2', values: { bar1: 18, bar2: 13, bar3: 8, area1: 20, area2: 15, area3: 9 } },
 ]
 
-const definition = component<{ chart: chartC.ChartState }, chartC.ChartMsg>({
-  name: 'ForcedColorsChartFixture',
-  init: () => [{ chart: chartC.init({ series: SERIES, rows: ROWS, label: 'Series fixture' }) }, []],
-  update: (state, msg) => [{ chart: chartC.update(state.chart, msg)[0] }, []],
-  view: ({ state, send }): readonly Mountable[] => {
-    const parts = chartC.connect(state.at('chart'), send, { id: 'forced-colors-chart' })
-    return [
-      ChartContainer({ ...parts.root, id: 'chart-root' }, [
-        ChartSvg(
-          { ...parts.svg, id: 'chart-svg', style: 'width:600px;height:300px;display:block' },
-          [
-            ChartTitle({ ...parts.title }, [text('Series fixture')]),
-            ChartDesc({ ...parts.desc }, [text('Three bar, three area series')]),
-            chartForcedColorPatterns(),
-            ChartLayer({ ...parts.layer }, [
-              each(parts.gridLines, {
-                key: (line) => String(line.value),
-                render: (line) => {
-                  const l = line.peek()
-                  return [ChartGrid({ ...parts.grid, d: l.d })]
-                },
-              }),
-            ]),
-            ChartLayer({ ...parts.layer }, [
-              each(parts.marks, {
-                key: (mark) => `${mark.seriesKey}:${mark.index ?? 'series'}`,
-                render: (mark) => {
-                  const m = mark.peek()
-                  return [ChartMark({ ...parts.markProps(m), 'data-active': '' })]
-                },
-              }),
-              each(parts.vertices, {
-                key: (vertex) => `${vertex.seriesKey}:${vertex.index}`,
-                render: (vertex) => {
-                  const v = vertex.peek()
-                  return [ChartDot({ ...parts.dotProps(v), r: 4, 'data-active': '' })]
-                },
-              }),
-            ]),
-          ],
-        ),
-      ]),
-    ]
-  },
-})
+function chartFixture(
+  chartId: string,
+  domIdPrefix: string,
+): ReturnType<typeof component<{ chart: chartC.ChartState }, chartC.ChartMsg>> {
+  return component<{ chart: chartC.ChartState }, chartC.ChartMsg>({
+    name: 'ForcedColorsChartFixture',
+    init: () => [
+      { chart: chartC.init({ series: SERIES, rows: ROWS, label: 'Series fixture' }) },
+      [],
+    ],
+    update: (state, msg) => [{ chart: chartC.update(state.chart, msg)[0] }, []],
+    view: ({ state, send }): readonly Mountable[] => {
+      const parts = chartC.connect(state.at('chart'), send, { id: chartId })
+      return [
+        ChartContainer({ ...parts.root, id: `${domIdPrefix}-root` }, [
+          ChartSvg(
+            {
+              ...parts.svg,
+              id: `${domIdPrefix}-svg`,
+              style: 'width:600px;height:300px;display:block',
+            },
+            [
+              ChartTitle({ ...parts.title }, [text('Series fixture')]),
+              ChartDesc({ ...parts.desc }, [text('Three bar, three area series')]),
+              chartForcedColorPatterns(chartId),
+              ChartLayer({ ...parts.layer }, [
+                each(parts.gridLines, {
+                  key: (line) => String(line.value),
+                  render: (line) => {
+                    const l = line.peek()
+                    return [ChartGrid({ ...parts.grid, d: l.d })]
+                  },
+                }),
+              ]),
+              ChartLayer({ ...parts.layer }, [
+                each(parts.marks, {
+                  key: (mark) => `${mark.seriesKey}:${mark.index ?? 'series'}`,
+                  render: (mark) => {
+                    const m = mark.peek()
+                    return [ChartMark({ ...parts.markProps(m), 'data-active': '' })]
+                  },
+                }),
+                each(parts.vertices, {
+                  key: (vertex) => `${vertex.seriesKey}:${vertex.index}`,
+                  render: (vertex) => {
+                    const v = vertex.peek()
+                    return [ChartDot({ ...parts.dotProps(v), r: 4, 'data-active': '' })]
+                  },
+                }),
+              ]),
+            ],
+          ),
+        ]),
+      ]
+    },
+  })
+}
 
-mountApp(document.getElementById('app')!, definition)
+// A HIDDEN chart mounted FIRST, then the real, VISIBLE one — the exact
+// document order that used to blank every visible chart's pattern fills
+// under the old shared, global pattern id (#264 review item 3). Distinct
+// `chartId`s ('forced-colors-chart-hidden' / 'forced-colors-chart') prove
+// the fix: each instance's marks reference only its OWN patterns.
+mountApp(
+  document.getElementById('hidden-app')!,
+  chartFixture('forced-colors-chart-hidden', 'chart-hidden'),
+)
+mountApp(document.getElementById('app')!, chartFixture('forced-colors-chart', 'chart'))

@@ -2,6 +2,7 @@ import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { retainedExit } from '../internal/retained-exit.js'
 import { createDisclosureExitTracker } from '../internal/disclosure-motion.js'
+import { getElementByIdInScope } from '../utils/root-scope.js'
 
 /**
  * Collapsible — a single expandable/collapsible section. Simpler than
@@ -151,7 +152,11 @@ export function connect(
   // Mountable placement — see the README for what this covers (and does not).
   const completeIfUnanimatedAfterToggle = (e: { currentTarget: EventTarget | null }): void => {
     const trigger = e.currentTarget instanceof Element ? e.currentTarget : null
-    const content = trigger?.ownerDocument.getElementById(contentId) ?? null
+    // `getElementByIdInScope`, not `ownerDocument.getElementById` (#264
+    // review item 4): a shadow-root-mounted instance's `contentId` lives in
+    // the shadow root's OWN id scope, which `ownerDocument` cannot see —
+    // silently missing `content` and leaving it stuck `closing` forever.
+    const content = trigger === null ? null : getElementByIdInScope(trigger, contentId)
     // Unreachable in a unit test that dispatches a bare event with no
     // currentTarget, and there is nothing to check without an element:
     // avoid peeking so `rootSignal()`-backed structural tests (which have no

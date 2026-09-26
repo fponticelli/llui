@@ -13,7 +13,7 @@ import {
   type Mountable,
 } from '@llui/dom'
 import { ChevronLeftIcon, ChevronRightIcon } from '@/ui/icons'
-import { classPart, cn, splitArgs } from '@/lib/utils'
+import { classPart, cn, mergeClass, splitArgs } from '@/lib/utils'
 import { buttonVariants } from '@/ui/button'
 
 /**
@@ -60,7 +60,6 @@ function paginationLink(
 ) {
   const ghostClass = buttonVariants({ variant: 'ghost', size: defaultSize })
   const outlineClass = buttonVariants({ variant: 'outline', size: defaultSize })
-  const staticExtra = `${paginationSelectedForcedColorsRecipe} group-data-[disabled]/pagination:opacity-100 ${extra}`
 
   return (a0?: ElProps | readonly ChildNode[], a1?: readonly ChildNode[]): Mountable => {
     const { props, children } = splitArgs(a0, a1)
@@ -72,12 +71,35 @@ function paginationLink(
     // class the moment the untested combination showed up.
     const selectedSignal = isSignalHandle(selected) ? selected : constant(selected)
     const classNameSignal = isSignalHandle(className) ? className : constant(className)
-    const resolvedClass: AttrValue = derived(selectedSignal, classNameSignal, (value, override) =>
-      cn(
-        value === undefined ? ghostClass : outlineClass,
-        staticExtra,
-        typeof override === 'string' ? override : undefined,
-      ),
+    // `cn(...)` takes `paginationSelectedForcedColorsRecipe` and `extra`
+    // DIRECTLY as arguments (#264 review item 10) — the extractor reads
+    // recipes only from named positions (`cn`/`mergeClass`/`classPart`
+    // arguments, `createVariants`'s `base`/`variants`), never through a
+    // template literal built one level away and passed as a plain variable
+    // reference; the intermediate `staticExtra` string this used to build
+    // put both consts outside that reach. The override merge routes through
+    // the shared `mergeClass` instead of re-deriving `cn`'s own
+    // string-or-undefined normalization inline.
+    const resolvedClass: AttrValue = derived(
+      selectedSignal,
+      classNameSignal,
+      (value, override) =>
+        // `mergeClass`'s declared return type is the union `AttrValue` (it
+        // returns a MAPPED signal when its OWN `override` argument is itself
+        // reactive), but every value read out of a `derived` combiner is
+        // already a plain, resolved value — `override` here can never be a
+        // signal, so this call always takes `mergeClass`'s plain-string
+        // branch. The cast reflects that runtime guarantee; `derived`'s own
+        // combiner return type must be a plain value, not the wider union.
+        mergeClass(
+          cn(
+            value === undefined ? ghostClass : outlineClass,
+            paginationSelectedForcedColorsRecipe,
+            'group-data-[disabled]/pagination:opacity-100',
+            extra,
+          ),
+          override,
+        ) as string,
     )
     return button(
       {

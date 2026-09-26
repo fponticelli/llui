@@ -285,7 +285,7 @@ function plot(
               // Static, stateless <defs> — the forced-colors fill patterns
               // bar/area marks reference by id (see data-display.css's
               // matching comment on the same `data-series-cue` rules).
-              chartForcedColorPatterns(),
+              chartForcedColorPatterns(opts.id),
 
               // Grid UNDER the marks, labels OVER them. In polar the value axis
               // runs straight through the plot, so a label layer drawn first is

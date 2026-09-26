@@ -47,8 +47,11 @@ function arrow(position: string, glyph: (props?: ElProps) => Mountable) {
   }
 }
 
-export const CarouselPrevious = arrow('top-1/2 start-2 -translate-y-1/2', ChevronLeftIcon)
-export const CarouselNext = arrow('top-1/2 end-2 -translate-y-1/2', ChevronRightIcon)
+// Outside the carousel (`-start-12`/`-end-12`), matching shadcn's upstream
+// recipe verbatim (#264 review item 9) — `start-2`/`end-2` moved the arrows
+// INSIDE the frame, a deviation with no stated acceptance criterion.
+export const CarouselPrevious = arrow('top-1/2 -start-12 -translate-y-1/2', ChevronLeftIcon)
+export const CarouselNext = arrow('top-1/2 -end-12 -translate-y-1/2', ChevronRightIcon)
 export const CarouselIndicatorGroup = classPart(
   div,
   'mt-3 flex items-center justify-center gap-1.5',

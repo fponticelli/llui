@@ -89,6 +89,20 @@ describe('icon — the empty box before the glyph arrives', () => {
     const el = mount(icon('lucide:check', { 'data-part': 'indicator' }))
     expect(el.getAttribute('data-part')).toBe('indicator')
   })
+
+  // #264 review: a module-level counter rendered into the DOM (the old
+  // `data-icon="i<N>"` marker) is an SSR/hydration determinism hazard — two
+  // structurally identical mounts produce different markup, which corrupts
+  // any snapshot/diff-based test that assumes identical inputs render
+  // identically. The marker is gone; this pins both the absence and the
+  // determinism it restores.
+  it('carries no data-icon marker, and two identical mounts render byte-identical markup', () => {
+    fetchMock.mockResolvedValue(ok(lucide({})))
+    const first = mount(icon('lucide:check'))
+    expect(first.hasAttribute('data-icon')).toBe(false)
+    const second = mount(icon('lucide:check'))
+    expect(second.outerHTML).toBe(first.outerHTML)
+  })
 })
 
 describe('icon — loading', () => {

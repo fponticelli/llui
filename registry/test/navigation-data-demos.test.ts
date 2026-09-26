@@ -150,8 +150,17 @@ describe('actual navigation/data demo carousel compositions', () => {
     const page = await context.newPage()
     const styles = path === 'baseline' ? baselineCss : registryCss
     const carousel = path === 'baseline' ? baselineCarousel : registryCarousel
+    // PADDING, not margin (#264 review item 9): the registry recipe's
+    // previous/next now sit OUTSIDE the carousel frame at `-start-12`/
+    // `-end-12` (-48px), matching shadcn's upstream, offset from `root`'s
+    // OWN edge — a `margin-inline` on `available` moves `available` itself
+    // inward but leaves `root` flush against `available`'s edge, so the
+    // buttons still land BEFORE `available`'s box starts. `padding-inline`
+    // keeps `available` spanning the full viewport while insetting `root`
+    // (its child) far enough that the buttons land inside `available`'s own
+    // box instead of in the margin outside it.
     await page.setContent(
-      `<!doctype html><html dir="${direction}"><head><style>${styles}</style></head><body style="margin:0"><div id="available" style="inline-size:calc(100vw - 32px);margin-inline:16px">${carousel}</div></body></html>`,
+      `<!doctype html><html dir="${direction}"><head><style>${styles}</style></head><body style="margin:0"><div id="available" style="inline-size:100vw;padding-inline:64px;box-sizing:border-box">${carousel}</div></body></html>`,
     )
     const got = await page.evaluate(() => {
       const available = document.getElementById('available')!.getBoundingClientRect()
@@ -165,14 +174,24 @@ describe('actual navigation/data demo carousel compositions', () => {
       const icon = previous.querySelector('svg')!
       const iconStyle = getComputedStyle(icon)
       return {
-        utilization: rootRect.width / available.width,
+        // `available`'s OWN box now spans the full viewport (padding, not
+        // margin, provides the arrows' clearance — see the fixture HTML's
+        // own comment), so utilization is measured against its CONTENT box
+        // (excluding the 64px inline padding each side), not its border box.
+        utilization: rootRect.width / (available.width - 128),
         pageContained: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
         rootContained:
           rootRect.left >= available.left - 0.5 && rootRect.right <= available.right + 0.5,
+        // Contained by the outer AVAILABLE container, not `root`'s own box
+        // (#264 review item 9): shadcn's upstream previous/next sit OUTSIDE
+        // the carousel frame by design (`-start-12`/`-end-12`), so a real
+        // page's surrounding space is what has to contain them, never the
+        // carousel's own root — this is the same distinction
+        // `navigation-data-styles.test.ts`'s narrow-affordance probe makes.
         controls: [previousRect, nextRect].map((rect) => ({
           width: rect.width,
           height: rect.height,
-          contained: rect.left >= rootRect.left - 0.5 && rect.right <= rootRect.right + 0.5,
+          contained: rect.left >= available.left - 0.5 && rect.right <= available.right + 0.5,
         })),
         logical:
           direction === 'rtl'

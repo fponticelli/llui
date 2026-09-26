@@ -760,16 +760,29 @@
    * `stroke-dasharray` for LINE marks below — but a dash pattern on a
    * `stroke` does nothing for a BAR/AREA mark, whose fill (not stroke) is
    * what forced colors flattens to a uniform CanvasText: two bar series were
-   * genuinely indistinguishable (#264). Placing chartForcedColorPatterns()
-   * (from `@llui/components/chart`) once per mounted chart's `<svg>` defines
-   * five SVG `<pattern>` fills under these SAME cue names, so bar/area marks
-   * get a real redundant cue too — solid fill, two hatch angles, a dot
-   * pattern, and a crosshatch. A DOT marker instead varies (radius, filled vs
-   * hollow, stroke dash) — a fill pattern is illegible at marker size, so this
-   * is the "outline vs solid vs hatched" alternative the same accessibility
-   * requirement calls for, sized so five ADJACENT dots at typical chart mark
-   * spacing (Data Viz #1: the axis' `--llui-space-*` steps run 8px+) stay
-   * legible rather than overlapping.
+   * genuinely indistinguishable (#264). Placing chartForcedColorPatterns(id)
+   * (from `@llui/components/chart`, with the SAME `id` given to `connect()`)
+   * once per mounted chart's `<svg>` defines five SVG `<pattern>` fills under
+   * that chart's own ids, so bar/area marks get a real redundant cue too —
+   * solid fill, two hatch angles, a dot pattern, and a crosshatch. A DOT
+   * marker instead varies (radius, filled vs hollow, stroke dash) — a fill
+   * pattern is illegible at marker size, so this is the "outline vs solid vs
+   * hatched" alternative the same accessibility requirement calls for, sized
+   * so five ADJACENT dots at typical chart mark spacing (Data Viz #1: the
+   * axis' `--llui-space-*` steps run 8px+) stay legible rather than
+   * overlapping.
+   *
+   * Every non-solid rule reads `var(--llui-chart-fill-<cue>)` rather than a
+   * hardcoded `url(#llui-chart-pattern-<cue>)` (#264 review item 3):
+   * `connect()` sets that custom property, inherited from the chart's own
+   * root, to THIS instance's own pattern id plus a `CanvasText` paint
+   * fallback — a fixed, shared id resolves to whichever same-named element
+   * the browser's id table returns, and a `<pattern>` sitting inside a
+   * hidden (`display:none`) chart earlier in the document made every OTHER,
+   * visible chart's marks paint nothing. The fallback value here (used only
+   * if `connect()`'s own inline style were somehow absent — this baseline
+   * sheet does not load `tailwind.css`'s separate `:root` default at all) is
+   * the historical global id plus the same `CanvasText` fallback.
    */
   [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='solid'],
   [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='solid'] {
@@ -778,22 +791,22 @@
 
   [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='short-dash'],
   [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='short-dash'] {
-    fill: url(#llui-chart-pattern-short-dash);
+    fill: var(--llui-chart-fill-short-dash, url(#llui-chart-pattern-short-dash) CanvasText);
   }
 
   [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='dot'],
   [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='dot'] {
-    fill: url(#llui-chart-pattern-dot);
+    fill: var(--llui-chart-fill-dot, url(#llui-chart-pattern-dot) CanvasText);
   }
 
   [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='long-dash'],
   [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='long-dash'] {
-    fill: url(#llui-chart-pattern-long-dash);
+    fill: var(--llui-chart-fill-long-dash, url(#llui-chart-pattern-long-dash) CanvasText);
   }
 
   [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='dash-dot'],
   [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='dash-dot'] {
-    fill: url(#llui-chart-pattern-dash-dot);
+    fill: var(--llui-chart-fill-dash-dot, url(#llui-chart-pattern-dash-dot) CanvasText);
   }
 
   [data-scope='chart'] [data-series-cue='solid'] {

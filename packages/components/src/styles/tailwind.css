@@ -167,11 +167,22 @@
  * in this same file) needs no bracket-content scanning at all — it just
  * emits `var(--name)` — so the pattern reference lives here instead, in
  * ordinary CSS the Tailwind build passes through unscanned.
+ *
+ * These `:root` values are a FALLBACK ONLY (#264 review item 3): every real
+ * chart instance overrides all five inline, from `connect()`, with ids
+ * derived from ITS OWN `id` rather than this fixed, shared one — a fixed id
+ * shared by every chart on the page resolves a `url(#...)` reference to
+ * whichever same-named element the browser's id table returns, and a
+ * `<pattern>` sitting inside a hidden (`display:none`) chart earlier in the
+ * document makes every OTHER chart's reference paint nothing. The trailing
+ * `CanvasText` on each is the SVG paint-server fallback token (`url(#…)
+ * CanvasText`): if a reference still fails to resolve for any reason, the
+ * mark paints solid instead of invisible.
  */
 :root {
   --llui-chart-fill-solid: CanvasText;
-  --llui-chart-fill-short-dash: url('#llui-chart-pattern-short-dash');
-  --llui-chart-fill-dot: url('#llui-chart-pattern-dot');
-  --llui-chart-fill-long-dash: url('#llui-chart-pattern-long-dash');
-  --llui-chart-fill-dash-dot: url('#llui-chart-pattern-dash-dot');
+  --llui-chart-fill-short-dash: url('#llui-chart-pattern-short-dash') CanvasText;
+  --llui-chart-fill-dot: url('#llui-chart-pattern-dot') CanvasText;
+  --llui-chart-fill-long-dash: url('#llui-chart-pattern-long-dash') CanvasText;
+  --llui-chart-fill-dash-dot: url('#llui-chart-pattern-dash-dot') CanvasText;
 }

@@ -216,13 +216,29 @@ export interface RenderContext {
  * test can call it directly with a hand-mutated input. */
 export type Adapter<Input> = (host: HTMLElement, input: Input, ctx: RenderContext) => Disposable
 
+/** See `navigation-data-baseline-renderer.ts`'s identical doc: applies the
+ * resolved environment to the case's own mount host — `dir`/`data-theme`/
+ * `data-viewport`/`data-forced-colors` are universal, `motion` is wired
+ * per-product below where a machine has an `animated` option to gate. */
+function applyEnvironmentAttrs(
+  host: HTMLElement,
+  environment: PresentationScenarioEnvironment,
+): void {
+  host.setAttribute('dir', environment.direction)
+  host.dataset.theme = environment.theme
+  host.dataset.viewport = environment.viewport
+  host.dataset.forcedColors = environment.forcedColors
+}
+
 function mountMachine<S, M extends { type: string }, E extends { type: string } = never>(
   host: HTMLElement,
+  ctx: RenderContext,
   name: string,
   initial: () => S,
   update: (state: S, msg: M) => [S, E[]],
   view: (state: Signal<S>, send: Send<M>) => Mountable | readonly Mountable[],
 ): Disposable {
+  applyEnvironmentAttrs(host, ctx.environment)
   return mountApp(
     host,
     component<S, M, E>({
@@ -237,35 +253,44 @@ function mountMachine<S, M extends { type: string }, E extends { type: string } 
   )
 }
 
+/** `animated` follows the resolved `motion` axis — see the baseline renderer's
+ * identical doc for why. */
 function initDisclosureAccordion(
   itemValue: string,
   input: DisclosureCaseInput,
+  environment: PresentationScenarioEnvironment,
 ): accordion.AccordionState {
+  const animated = environment.motion !== 'reduced'
   const opened = accordion.init({
     items: [itemValue],
     value: [itemValue],
     disabled: input.disabled,
-    animated: true,
+    animated,
   })
   if (input.state === 'open') return opened
   if (input.state === 'closing')
     return accordion.update(opened, { type: 'close', value: itemValue })[0]
-  return accordion.init({ items: [itemValue], value: [], disabled: input.disabled, animated: true })
+  return accordion.init({ items: [itemValue], value: [], disabled: input.disabled, animated })
 }
 
-function initDisclosureCollapsible(input: DisclosureCaseInput): collapsible.CollapsibleState {
-  const opened = collapsible.init({ open: true, disabled: input.disabled, animated: true })
+function initDisclosureCollapsible(
+  input: DisclosureCaseInput,
+  environment: PresentationScenarioEnvironment,
+): collapsible.CollapsibleState {
+  const animated = environment.motion !== 'reduced'
+  const opened = collapsible.init({ open: true, disabled: input.disabled, animated })
   if (input.state === 'open') return opened
   if (input.state === 'closing') return collapsible.update(opened, { type: 'close' })[0]
-  return collapsible.init({ open: false, disabled: input.disabled, animated: true })
+  return collapsible.init({ open: false, disabled: input.disabled, animated })
 }
 
 const accordionAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) => {
   const itemValue = 'item'
   return mountMachine(
     host,
+    ctx,
     'RegistryAccordionScenario',
-    () => initDisclosureAccordion(itemValue, input),
+    () => initDisclosureAccordion(itemValue, input, ctx.environment),
     accordion.update,
     (state, send) => {
       const parts = accordion.connect(state, send, { id: `registry-accordion-${ctx.caseId}` })
@@ -283,8 +308,9 @@ const accordionAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) => {
 const collapsibleAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryCollapsibleScenario',
-    () => initDisclosureCollapsible(input),
+    () => initDisclosureCollapsible(input, ctx.environment),
     collapsible.update,
     (state, send) => {
       const parts = collapsible.connect(state, send, { id: `registry-collapsible-${ctx.caseId}` })
@@ -298,12 +324,23 @@ const collapsibleAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) =>
 const avatarAdapter: Adapter<AvatarCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryAvatarScenario',
     () => ({ ...avatar.init(), status: input.status }),
     avatar.update,
     (state, send) => {
       void ctx
       const parts = avatar.connect(state, send, { alt: input.label, density: input.density })
+      // `'data-size'` is NOT a decorative echo of the machine's own
+      // `data-density` (which this recipe never reads at all) — it is the
+      // REQUIRED adapter-level translation from the machine's generic
+      // `density` option to `avatar.ts`'s own shadcn-ported `data-size`
+      // convention, exactly as that file's own doc comment states
+      // (`@llui/components/avatar` does not publish `data-size` itself).
+      // Removing it as though it were redundant with `data-density` was a
+      // real regression this fix corrects (#264 review, caught by the
+      // Chromium geometry test: compact and default rendered the SAME
+      // pixel width once this line was gone).
       return Avatar(
         { ...parts.root, 'data-size': input.density === 'compact' ? 'sm' : 'default' },
         [
@@ -321,6 +358,7 @@ const breadcrumbsAdapter: Adapter<BreadcrumbsCaseInput> = (host, input, ctx) => 
   ]
   return mountMachine(
     host,
+    ctx,
     'RegistryBreadcrumbScenario',
     () => breadcrumbs.init({ items, maxVisible: input.maxVisible }),
     breadcrumbs.update,
@@ -362,6 +400,7 @@ const breadcrumbsAdapter: Adapter<BreadcrumbsCaseInput> = (host, input, ctx) => 
 const carouselAdapter: Adapter<CarouselCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryCarouselScenario',
     () => carousel.init({ count: input.count, current: input.index, loop: input.loop }),
     carousel.update,
@@ -393,6 +432,7 @@ const carouselAdapter: Adapter<CarouselCaseInput> = (host, input, ctx) =>
 const chartAdapter: Adapter<ChartCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryChartScenario',
     () => {
       const initial = chart.init({
@@ -414,7 +454,7 @@ const chartAdapter: Adapter<ChartCaseInput> = (host, input, ctx) =>
         ChartSvg({ ...parts.svg }, [
           ChartTitle({ ...parts.title }, [text(input.label)]),
           ChartDesc({ ...parts.desc }, [text('Six-series chart (three bar, three area)')]),
-          chartForcedColorPatterns(),
+          chartForcedColorPatterns(`registry-chart-${ctx.caseId}`),
           ChartLayer({ ...parts.layer }, [
             each(parts.gridLines, {
               key: (line) => String(line.value),
@@ -463,17 +503,18 @@ const chartAdapter: Adapter<ChartCaseInput> = (host, input, ctx) =>
 const marqueeAdapter: Adapter<MarqueeCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryMarqueeScenario',
     () =>
       marquee.init({
         direction: input.direction,
-        running: input.running,
+        // Reduced motion means the scroll never starts (#264 item 2f/5).
+        running: input.running && ctx.environment.motion !== 'reduced',
         disabled: input.disabled,
         pauseOnHover: true,
       }),
     marquee.update,
     (state, send) => {
-      void ctx
       const parts = marquee.connect(state, send)
       return Marquee({ ...parts.root }, [MarqueeContent({ ...parts.content }, [text(input.label)])])
     },
@@ -482,6 +523,7 @@ const marqueeAdapter: Adapter<MarqueeCaseInput> = (host, input, ctx) =>
 const meterAdapter: Adapter<MeterCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryMeterScenario',
     () =>
       meter.init({
@@ -514,6 +556,7 @@ const meterAdapter: Adapter<MeterCaseInput> = (host, input, ctx) =>
 const paginationAdapter: Adapter<PaginationCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryPaginationScenario',
     () =>
       pagination.init({
@@ -558,6 +601,7 @@ const paginationAdapter: Adapter<PaginationCaseInput> = (host, input, ctx) =>
 const progressAdapter: Adapter<ProgressCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryProgressScenario',
     () => progress.init({ value: input.value }),
     progress.update,
@@ -574,6 +618,7 @@ const progressAdapter: Adapter<ProgressCaseInput> = (host, input, ctx) =>
 const sparklineAdapter: Adapter<SparklineCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistrySparklineScenario',
     () =>
       sparkline.init({
@@ -631,6 +676,7 @@ const sparklineAdapter: Adapter<SparklineCaseInput> = (host, input, ctx) =>
 const stepsAdapter: Adapter<StepsCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryStepsScenario',
     () => {
       const initial = steps.init({
@@ -689,6 +735,7 @@ function registryMachineTable(parts: table.TableParts, ids: readonly string[]): 
 const tableAdapter: Adapter<TableCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryTableScenario',
     () =>
       table.init({
@@ -713,6 +760,7 @@ const tableAdapter: Adapter<TableCaseInput> = (host, input, ctx) =>
 const tabsAdapter: Adapter<TabsCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryTabsScenario',
     () =>
       tabs.init({
@@ -746,6 +794,7 @@ const tocAdapter: Adapter<TocCaseInput> = (host, input, ctx) => {
   ]
   return mountMachine(
     host,
+    ctx,
     'RegistryTocScenario',
     () => toc.init({ items: entries, activeId: input.activeId, expanded: [...input.expanded] }),
     toc.update,
@@ -771,6 +820,7 @@ const tocAdapter: Adapter<TocCaseInput> = (host, input, ctx) => {
 const treeViewAdapter: Adapter<TreeViewCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryTreeViewScenario',
     () => {
       let initial = treeView.init({
@@ -805,6 +855,7 @@ const treeViewAdapter: Adapter<TreeViewCaseInput> = (host, input, ctx) =>
 const dataTableAdapter: Adapter<DataTableCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'RegistryDataTableScenario',
     () => {
       const initial = dataTable.init({
@@ -834,7 +885,7 @@ const dataTableAdapter: Adapter<DataTableCaseInput> = (host, input, ctx) =>
         id: `registry-data-table-${ctx.caseId}`,
         density: input.density,
       })
-      return div({ 'data-density': input.density }, [
+      return div([
         parts.pagination.directionSync,
         registryMachineTable(parts.table, input.rows),
         DataTableLoadingOverlay({ ...parts.loadingOverlay }, [text('Loading')]),
@@ -856,8 +907,9 @@ const dataTableAdapter: Adapter<DataTableCaseInput> = (host, input, ctx) =>
   )
 
 function staticAdapter<Input>(render: (input: Input) => Mountable): Adapter<Input> {
-  return (host, input, ctx) =>
-    mountApp(
+  return (host, input, ctx) => {
+    applyEnvironmentAttrs(host, ctx.environment)
+    return mountApp(
       host,
       component<null, never, never>({
         name: `RegistryStatic${ctx.caseId}`,
@@ -866,6 +918,7 @@ function staticAdapter<Input>(render: (input: Input) => Mountable): Adapter<Inpu
         view: () => [render(input)],
       }),
     )
+  }
 }
 
 const chipAdapter: Adapter<ChipCaseInput> = staticAdapter((input) =>
@@ -905,7 +958,6 @@ const itemAdapter: Adapter<ItemCaseInput> = staticAdapter((input) =>
     {
       variant: input.variant,
       size: input.density === 'compact' ? 'sm' : 'default',
-      'data-density': input.density,
     },
     [ItemContent([ItemTitle([text(input.title)]), ItemDescription([text(input.description)])])],
   ),
@@ -933,7 +985,7 @@ const typographyAdapter: Adapter<TypographyCaseInput> = staticAdapter((input) =>
   ]),
 )
 const sidebarAdapter: Adapter<SidebarCaseInput> = staticAdapter((input) =>
-  SidebarProvider({ 'data-density': input.density }, [
+  SidebarProvider([
     Sidebar({ 'data-state': input.state }, [
       SidebarGap(),
       SidebarContainer([

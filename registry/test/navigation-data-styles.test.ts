@@ -488,36 +488,45 @@ function fixture(): string {
           Marquee({ id: 'marquee-disabled', 'data-axis': 'horizontal', 'data-disabled': '' }, [
             MarqueeContent([text('Paused')]),
           ]),
-          Carousel({ id: 'carousel', 'data-product': 'carousel' }, [
-            CarouselViewport({ id: 'carousel-viewport' }, [
-              CarouselContent({ id: 'carousel-track', 'data-motion-state': '' }, [text('Slide')]),
-            ]),
-            CarouselPrevious({
-              id: 'carousel-previous',
-              'data-narrow-probe': '',
-              'data-narrow-affordance': '',
-              'data-logical-side': 'start',
-            }),
-            CarouselNext({
-              id: 'carousel-next',
-              'data-narrow-affordance': '',
-              'data-logical-side': 'end',
-            }),
-            CarouselIndicatorGroup([
-              CarouselIndicator({
-                id: 'carousel-dot-active',
-                'data-active': '',
-                'aria-selected': true,
-                tabindex: 0,
+          // Wrapped in a padded container that carries `data-product`
+          // instead of `Carousel`'s own tight root (#264 review item 9):
+          // shadcn's upstream previous/next sit OUTSIDE the carousel frame
+          // (`-start-12`/`-end-12`), which a real app accommodates with
+          // surrounding space, exactly as this wrapper does — `Carousel`'s
+          // own box was never meant to be the containment boundary for
+          // affordances upstream deliberately places outside it.
+          div({ id: 'carousel-affordance-root', 'data-product': 'carousel', class: 'px-14' }, [
+            Carousel({ id: 'carousel' }, [
+              CarouselViewport({ id: 'carousel-viewport' }, [
+                CarouselContent({ id: 'carousel-track', 'data-motion-state': '' }, [text('Slide')]),
+              ]),
+              CarouselPrevious({
+                id: 'carousel-previous',
+                'data-narrow-probe': '',
                 'data-narrow-affordance': '',
-                'data-logical-side': 'flow',
+                'data-logical-side': 'start',
               }),
-              CarouselIndicator({
-                id: 'carousel-dot',
-                tabindex: -1,
+              CarouselNext({
+                id: 'carousel-next',
                 'data-narrow-affordance': '',
-                'data-logical-side': 'flow',
+                'data-logical-side': 'end',
               }),
+              CarouselIndicatorGroup([
+                CarouselIndicator({
+                  id: 'carousel-dot-active',
+                  'data-active': '',
+                  'aria-selected': true,
+                  tabindex: 0,
+                  'data-narrow-affordance': '',
+                  'data-logical-side': 'flow',
+                }),
+                CarouselIndicator({
+                  id: 'carousel-dot',
+                  tabindex: -1,
+                  'data-narrow-affordance': '',
+                  'data-logical-side': 'flow',
+                }),
+              ]),
             ]),
           ]),
           div({ 'data-product': 'separator', class: 'flex h-8 items-center gap-2' }, [
@@ -1185,14 +1194,14 @@ describe('registry navigation/data presentation in Chromium', () => {
           separator: getComputedStyle(document.querySelector('#breadcrumb-separator svg')!).rotate,
         },
         carousel: {
-          previousAtStart:
-            previous.left >= carousel.left &&
-            previous.right <= carousel.right &&
-            previous.left > next.left,
-          nextAtEnd:
-            next.left >= carousel.left &&
-            next.right <= carousel.right &&
-            next.right < previous.right,
+          // Outside the frame now (#264 review item 9: `-start-12`/`-end-12`,
+          // matching shadcn's upstream, not the previous `start-2`/`end-2`
+          // deviation that sat the arrows INSIDE it) — under `dir="rtl"`,
+          // logical `start` is the VISUAL RIGHT, so `previous` (at `-start-`)
+          // sits outside on the right and `next` (at `-end-`) outside on the
+          // left, the physical mirror of the LTR case.
+          previousAtStart: previous.left >= carousel.right - 1 && previous.left > next.left,
+          nextAtEnd: next.right <= carousel.left + 1 && next.right < previous.right,
           icons: [
             getComputedStyle(document.querySelector('#carousel-previous svg')!).rotate,
             getComputedStyle(document.querySelector('#carousel-next svg')!).rotate,

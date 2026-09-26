@@ -260,6 +260,11 @@ describe('carousel mounted autoplay contract', () => {
 
   it('does not schedule when autoplay is off', () => {
     const mounted = mountAutoplay({ count: 3, interval: 1000 })
+    // #264 review (previous-finding partial): assert no timer was ever
+    // scheduled at all, not merely that the slide never advanced — the
+    // latter could pass even if a timer were scheduled and simply never
+    // fired for an unrelated reason.
+    expect(mounted.timerCount()).toBe(0)
     vi.advanceTimersByTime(5000)
     expect(mounted.current()).toBe(0)
   })

@@ -282,7 +282,7 @@ function plot(
       ChartDesc({ ...parts.desc }, [text(state.at('description'))]),
       // Static, stateless <defs> — the forced-colors fill patterns bar/area
       // marks reference by id (see ChartMark's own comment).
-      chartForcedColorPatterns(),
+      chartForcedColorPatterns(id),
 
       // Grid UNDER the marks, labels OVER them — see the label layer at the
       // bottom. In polar the value axis runs straight through the plot, so a

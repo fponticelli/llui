@@ -232,8 +232,6 @@ function paint(host: SVGElement, data: IconData): void {
   host.replaceChildren(fragment)
 }
 
-let seq = 0
-
 /**
  * Render one Iconify glyph as a real `<svg>`.
  *
@@ -245,11 +243,18 @@ let seq = 0
 export function icon(name: string | Signal<string>, props?: ElProps): Mountable {
   // `onMount` hands a callback the BUILD's root container, NOT the element the
   // call sits inside — mounts are collected per build (a view, an arm, an
-  // `each` row) and every callback in one gets the same container. So this
-  // cannot just take the argument and treat it as the `<svg>`: it is whatever
-  // the enclosing component mounted into. A per-instance marker is how the
-  // element finds itself again.
-  const marker = `i${++seq}`
+  // `each` row) and every callback in one gets the same container. This used
+  // to be answered with a per-instance `data-icon="i<N>"` marker from a
+  // module-level counter, found again via `root.querySelector`. That marker
+  // was VISIBLE, rendered DOM (an SSR/hydration determinism hazard — two
+  // structurally identical mounts produced different markup, since the
+  // counter is a mutable module singleton with no relation to page content)
+  // and unnecessary: the comment node `nameBinding` below creates is already
+  // a live DOM node placed as a child of this `<svg>` by the time `onMount`
+  // runs (binding commits run before `runMounts`), so its OWN `.parentElement`
+  // finds the host directly — no selector, no marker, and no shared counter
+  // for two icons mounted in the same tick to collide on.
+  let commentAnchor: Comment | null = null
 
   // The two halves meet here. The name binding commits FIRST (binding commits
   // run before `runMounts`) and stores the current name; the mount callback
@@ -284,7 +289,8 @@ export function icon(name: string | Signal<string>, props?: ElProps): Mountable 
       host?.replaceChildren()
       request()
     })
-    return currentDoc().createComment('icon')
+    commentAnchor = currentDoc().createComment('icon')
+    return commentAnchor
   })
 
   return svg(
@@ -295,16 +301,14 @@ export function icon(name: string | Signal<string>, props?: ElProps): Mountable 
       // case and an odd-sized glyph settles on its first paint.
       viewBox: '0 0 24 24',
       ...props,
-      'data-icon': marker,
     },
     [
       nameBinding,
       // Placed in the child array, so it registers — a discarded `onMount`
       // Mountable registers nothing. Under SSR it is not registered at all,
       // which is what keeps `fetch` and `DOMParser` off the server.
-      onMount((root) => {
-        const selector = `svg[data-icon="${marker}"]`
-        const found = root.matches(selector) ? root : root.querySelector(selector)
+      onMount(() => {
+        const found = commentAnchor?.parentElement
         if (!(found instanceof SVGElement)) return
         host = found
         request()

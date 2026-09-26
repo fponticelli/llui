@@ -126,8 +126,18 @@ export async function probeNarrowProduct(page: Page, productId: string): Promise
         rect.top >= -0.5 &&
         rect.bottom <= innerHeight + 0.5,
       affordances,
+      // `overflow-x: visible` (the default) is NOT flagged (#264 review item
+      // 9's carousel fix surfaced this): unlike `hidden`/`clip`, `visible`
+      // never clips its overflowing content — an absolutely-positioned child
+      // escaping its relatively-positioned parent's own box (shadcn's
+      // carousel arrows, deliberately placed OUTSIDE the frame) stays fully
+      // painted and reachable with no scroll mechanism needed at all, so
+      // `scrollWidth > clientWidth` here describes normal, intentional
+      // layout rather than inaccessible content. Only a NON-auto/scroll
+      // overflow mode that actually CLIPS (`hidden`, `clip`) still flags.
       unusableOverflow: overflowing.filter(
-        ({ overflowX }) => overflowX !== 'auto' && overflowX !== 'scroll',
+        ({ overflowX }) =>
+          overflowX !== 'auto' && overflowX !== 'scroll' && overflowX !== 'visible',
       ),
     }
   }, productId)

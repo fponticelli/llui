@@ -58,9 +58,13 @@ function escapeRegExpLiteral(value) {
  * @returns {ViteSourceAlias[]}
  */
 export function sourceAliasesFromExports({ packageName, packageJsonPath, srcDir }) {
-  const pkg = /** @type {{ exports?: unknown }} */ (
-    JSON.parse(readFileSync(packageJsonPath, 'utf8'))
-  )
+  // `JSON.parse` returns `any`; a JSDoc cast directly on its call resolves the INNER expression
+  // to `any` for typescript-eslint's `no-unsafe-assignment` even though `tsc` itself accepts it —
+  // declaring the intermediate as `unknown` on its own line, then narrowing, is the one spelling
+  // that satisfies both (see CLAUDE.md's "any does not make an assertion vacuous" notes).
+  /** @type {unknown} */
+  const parsed = JSON.parse(readFileSync(packageJsonPath, 'utf8'))
+  const pkg = /** @type {{ exports?: unknown }} */ (parsed)
   const exportsMap = pkg.exports
   if (exportsMap === null || typeof exportsMap !== 'object') {
     throw new Error(`${packageJsonPath} has no "exports" map to derive source aliases from`)
@@ -99,7 +103,11 @@ export function sourceAliasesFromExports({ packageName, packageJsonPath, srcDir 
       if (segments.length !== 2 || !srcRelative.includes('*')) {
         throw new Error(`${packageJsonPath} export "${subpath}" uses an unsupported wildcard shape`)
       }
-      const [prefix, suffix] = segments
+      const prefix = segments[0]
+      const suffix = segments[1]
+      if (prefix === undefined || suffix === undefined) {
+        throw new Error(`${packageJsonPath} export "${subpath}" uses an unsupported wildcard shape`)
+      }
       const find = new RegExp(`^${escapeRegExpLiteral(prefix)}(.+)${escapeRegExpLiteral(suffix)}$`)
       const replacement = `${srcDir}/${srcRelative.replace('*', '$1')}`
       wildcardAliases.push({ find, replacement })

@@ -1,6 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { focusRovingItem } from '../utils/roving.js'
+import { getElementByIdInScope } from '../utils/root-scope.js'
 import {
   retainedExitGeneration,
   retainedExits,
@@ -242,25 +243,31 @@ export function connect(
     }
   }
   // Safety net for the "opted into animated exit, but the skin runs no exit
-  // animation at all" case — see collapsible.ts's identical comment and the
-  // README for what this covers (a user-initiated close via the trigger) and
-  // does not (a programmatic `close`/`setValue` message).
-  const completeIfUnanimatedAfterToggle = (value: string, origin: Element | null): void => {
-    const content = origin?.ownerDocument.getElementById(contentId(value)) ?? null
+  // animation at all" case — see collapsible.ts's identical comment. Checks
+  // EVERY value the just-applied transition put into `closing`, not only the
+  // clicked one: in SINGLE mode, opening item y while x was open closes x as
+  // a side effect of the SAME `toggle` message, and a caller that only
+  // safety-nets the clicked value (y) leaves x permanently stuck `closing` +
+  // `inert` whenever the skin runs no exit animation at all (#264 review
+  // item 4). `origin` is used only to resolve the enclosing DOM scope
+  // (`getElementByIdInScope`, so a shadow-root-mounted instance's ids
+  // resolve correctly rather than through the top-level `ownerDocument`,
+  // which cannot see into a shadow tree) — it is not tied to any one value's
+  // own element, so the same origin is reused for every closing value here.
+  const completeIfUnanimatedAfterToggle = (origin: Element | null): void => {
     // Unreachable in a unit test that invokes the handler directly with no
     // currentTarget, and there is nothing to check without an element: avoid
     // peeking so `rootSignal()`-backed structural tests (which have no live
     // state to peek) keep working unchanged.
-    if (content === null) return
+    if (origin === null) return
     const current = state.peek()
-    const generation = retainedExitGeneration(current.exitGenerations, value) ?? 0
-    if (
-      exitTracker.completeIfUnanimated(content, {
-        closing: current.closing.includes(value),
-        generation,
-      })
-    ) {
-      send({ type: 'exitComplete', value, generation })
+    for (const value of current.closing) {
+      const content = getElementByIdInScope(origin, contentId(value))
+      if (content === null) continue
+      const generation = retainedExitGeneration(current.exitGenerations, value) ?? 0
+      if (exitTracker.completeIfUnanimated(content, { closing: true, generation })) {
+        send({ type: 'exitComplete', value, generation })
+      }
     }
   }
 
@@ -285,7 +292,6 @@ export function connect(
         onClick: tagSend(send, ['toggle'], (e: MouseEvent) => {
           send({ type: 'toggle', value })
           completeIfUnanimatedAfterToggle(
-            value,
             e.currentTarget instanceof Element ? e.currentTarget : null,
           )
         }),
@@ -329,7 +335,7 @@ export function connect(
               case 'Enter':
                 e.preventDefault()
                 send({ type: 'toggle', value })
-                completeIfUnanimatedAfterToggle(value, origin)
+                completeIfUnanimatedAfterToggle(origin)
                 return
             }
           },

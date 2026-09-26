@@ -184,10 +184,16 @@ interface SeriesFill {
   readonly fill: string
 }
 
+// Scoped to `#chart-svg` (the VISIBLE chart), never `document` (#264 review
+// item 3): the fixture page also mounts a HIDDEN chart FIRST, reusing the
+// exact same series keys, so an unscoped query would silently read whichever
+// instance's elements happen to come first in document order.
 async function seriesFills(page: Page, markSelector: string): Promise<SeriesFill[]> {
   return page.evaluate((selector) => {
+    const root = document.getElementById('chart-svg')
+    if (root === null) throw new Error('missing #chart-svg')
     const bySeries = new Map<string, string>()
-    for (const el of document.querySelectorAll(selector)) {
+    for (const el of root.querySelectorAll(selector)) {
       const series = el.getAttribute('data-series')
       if (series === null || bySeries.has(series)) continue
       bySeries.set(series, getComputedStyle(el).fill)
@@ -201,14 +207,22 @@ interface DotSignature {
   readonly signature: string
 }
 
+// Scoped to `#chart-svg` for the same reason as `seriesFills` above.
 async function dotSignatures(page: Page, dotSelector: string): Promise<DotSignature[]> {
   return page.evaluate((selector) => {
+    const root = document.getElementById('chart-svg')
+    if (root === null) throw new Error('missing #chart-svg')
     const bySeries = new Map<string, string>()
-    for (const el of document.querySelectorAll(selector)) {
+    for (const el of root.querySelectorAll(selector)) {
       const series = el.getAttribute('data-series')
       if (series === null || bySeries.has(series)) continue
       const style = getComputedStyle(el)
-      const r = (el as SVGCircleElement).r.baseVal.value
+      // The forced-colors skin sets `r` via a CSS `[r:...]` arbitrary-value
+      // utility (#264 review item 11), so the SVG attribute's own `baseVal`
+      // (what the machine/view wrote before CSS ever ran) is the WRONG
+      // read — it is the computed style, not the DOM property, that
+      // reflects what actually painted.
+      const r = style.r
       bySeries.set(
         series,
         [r, style.fill, style.stroke, style.strokeWidth, style.strokeDasharray].join('|'),
@@ -299,8 +313,11 @@ describe('forced-colors chart series distinctness (real pixels, both paths)', ()
         page,
         '[data-scope="chart"][data-part="mark"][data-mark="area"]',
       )
-      expect(barFills.length).toBeGreaterThanOrEqual(3)
-      expect(areaFills.length).toBeGreaterThanOrEqual(3)
+      // Exact, not a floor (#264 review item 11): the fixture declares
+      // exactly 3 bar and 3 area series, so a floor could not catch a
+      // regression that silently dropped or duplicated one.
+      expect(barFills.length).toBe(3)
+      expect(areaFills.length).toBe(3)
 
       // 1. Each series' resolved fill differs from its same-mark siblings.
       expect(new Set(barFills.map((f) => f.fill)).size).toBe(barFills.length)
@@ -312,7 +329,11 @@ describe('forced-colors chart series distinctness (real pixels, both paths)', ()
       const patternIds = new Set(
         [...barFills, ...areaFills].map((f) => patternIdOf(f.fill)).filter((id) => id !== null),
       )
-      expect(patternIds.size).toBeGreaterThan(0)
+      // Exact (#264 review item 11): 6 series cycling 5 cues mod-5 means
+      // cue indices 0 and 5 both land on 'solid' (a literal CanvasText fill,
+      // no pattern reference), so exactly 4 of the 5 cue names are ever
+      // referenced by a pattern url() here — short-dash/dot/long-dash/dash-dot.
+      expect(patternIds.size).toBe(4)
       for (const id of patternIds) {
         const colorCount = await patternColorCount(page, id)
         expect(colorCount, `pattern #${id} should paint >= 2 colours`).toBeGreaterThanOrEqual(2)
@@ -332,8 +353,83 @@ describe('forced-colors chart series distinctness (real pixels, both paths)', ()
       await page.locator('#chart-svg').waitFor({ state: 'attached' })
 
       const dots = await dotSignatures(page, '[data-scope="chart"][data-part="dot"]')
-      expect(dots.length).toBeGreaterThanOrEqual(3)
+      // Exact (#264 review item 11): `geometry()` only pushes vertices for
+      // non-bar series (chart.ts's bar branch `continue`s before the vertex
+      // loop), so only the 3 area series carry a rendered dot in this
+      // fixture — a floor could not catch a regression dropping one.
+      expect(dots.length).toBe(3)
       expect(new Set(dots.map((d) => d.signature)).size).toBe(dots.length)
+
+      await context.close()
+    },
+  )
+
+  // #264 review item 3, the exact regression: the fixture page mounts a
+  // HIDDEN chart (`display:none`) FIRST and the real, visible one SECOND —
+  // both defining pattern ids. Under the old shared, global id design,
+  // `url(#llui-chart-pattern-dot)` on the VISIBLE chart's marks resolved to
+  // whichever same-named `<pattern>` the browser's id table returned, which
+  // was the HIDDEN chart's copy (first in document order) — and a paint
+  // server referenced from inside a non-rendered subtree does not paint even
+  // for a consumer outside it, so every visible bar/area mark went blank.
+  // Per-instance ids close the bug structurally: this proves the two
+  // instances never share an id at all, and that the visible chart still
+  // paints with real, multi-colour patterns despite the hidden one coming
+  // first.
+  it.each(['baseline', 'registryTailwind'] as const)(
+    '%s: a hidden chart mounted first does not blank the visible chart mounted second',
+    async (path) => {
+      const demo = demos.find((candidate) => candidate.path === path)!
+      const context: BrowserContext = await browser.newContext({ forcedColors: 'active' })
+      const page = await context.newPage()
+      await page.goto(demo.url)
+      await page.locator('#chart-svg').waitFor({ state: 'attached' })
+
+      // The hidden chart is really hidden, and really mounted before the
+      // visible one in document order.
+      const order = await page.evaluate(() => {
+        const hidden = document.getElementById('chart-hidden-svg')
+        const visible = document.getElementById('chart-svg')
+        if (hidden === null || visible === null) return null
+        return {
+          hiddenIsHidden: getComputedStyle(hidden.closest('#hidden-app') ?? hidden).display,
+          hiddenComesFirst:
+            (hidden.compareDocumentPosition(visible) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+        }
+      })
+      expect(order).not.toBeNull()
+      expect(order!.hiddenIsHidden).toBe('none')
+      expect(order!.hiddenComesFirst).toBe(true)
+
+      // No id collision between the two instances' patterns.
+      const [hiddenPatternIds, visiblePatternIds] = await page.evaluate(() => {
+        const idsIn = (svgId: string): string[] =>
+          [...(document.getElementById(svgId)?.querySelectorAll('pattern') ?? [])].map((p) => p.id)
+        return [idsIn('chart-hidden-svg'), idsIn('chart-svg')]
+      })
+      expect(hiddenPatternIds.length).toBeGreaterThan(0)
+      expect(visiblePatternIds.length).toBeGreaterThan(0)
+      expect(hiddenPatternIds.some((id) => visiblePatternIds.includes(id))).toBe(false)
+
+      // And the visible chart's own marks still paint with real,
+      // multi-colour patterns — the actual regression this closes.
+      const barFills = await seriesFills(
+        page,
+        '[data-scope="chart"][data-part="mark"][data-mark="bar"]',
+      )
+      const areaFills = await seriesFills(
+        page,
+        '[data-scope="chart"][data-part="mark"][data-mark="area"]',
+      )
+      const patternIds = new Set(
+        [...barFills, ...areaFills].map((f) => patternIdOf(f.fill)).filter((id) => id !== null),
+      )
+      expect(patternIds.size).toBe(4)
+      for (const id of patternIds) {
+        expect(visiblePatternIds, id).toContain(id)
+        const colorCount = await patternColorCount(page, id)
+        expect(colorCount, `pattern #${id} should paint >= 2 colours`).toBeGreaterThanOrEqual(2)
+      }
 
       await context.close()
     },

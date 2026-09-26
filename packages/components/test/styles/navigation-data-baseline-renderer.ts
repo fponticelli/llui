@@ -99,13 +99,39 @@ export interface RenderContext {
  * resolved selection would have produced. */
 export type Adapter<Input> = (host: HTMLElement, input: Input, ctx: RenderContext) => Disposable
 
+/**
+ * Applies the resolved environment to the case's own mount host, the same way
+ * a real app propagates it down from an ancestor (`<html dir>`,
+ * `[data-theme]`) rather than baking one axis value per case (#264 item
+ * D/5/2f — a dimension-mutation test that always resolves against `{}` never
+ * exercises these axes at all, and no adapter previously read `ctx.environment`
+ * regardless of what was passed). `dir`/`data-theme`/`data-viewport`/
+ * `data-forced-colors` are UNIVERSAL: every product's markup materially
+ * differs by exactly this attribute regardless of whether its own CSS reacts
+ * to it, so no allowance is needed for those four axes. `motion` is NOT
+ * universal — only `animated`-capable machines (accordion/collapsible) have
+ * anything to gate on it; every other product's own dimension-mutation
+ * allowance table documents that honestly instead of inventing an effect.
+ */
+function applyEnvironmentAttrs(
+  host: HTMLElement,
+  environment: PresentationScenarioEnvironment,
+): void {
+  host.setAttribute('dir', environment.direction)
+  host.dataset.theme = environment.theme
+  host.dataset.viewport = environment.viewport
+  host.dataset.forcedColors = environment.forcedColors
+}
+
 function mountMachine<S, M extends { type: string }, E extends { type: string } = never>(
   host: HTMLElement,
+  ctx: RenderContext,
   name: string,
   initial: () => S,
   update: (state: S, msg: M) => [S, E[]],
   view: (state: Signal<S>, send: Send<M>) => Mountable | readonly Mountable[],
 ): Disposable {
+  applyEnvironmentAttrs(host, ctx.environment)
   return mountApp(
     host,
     component<S, M, E>({
@@ -125,35 +151,48 @@ function mountMachine<S, M extends { type: string }, E extends { type: string } 
  * opening the item with `animated: true` and then sending `close` — a real
  * reducer transition, not a fabricated init value, so it is observable in
  * jsdom with no animation timing involved. */
+/** `animated` follows the resolved `motion` axis (#264 item 2f/5): reduced
+ * motion means no retained exit phase to animate, so the reducer transitions
+ * straight to fully closed rather than passing through `closing` — a real,
+ * observable difference the dimension-mutation test now exercises. The
+ * dedicated closing-phase test never overrides motion, so it stays on the
+ * default `full` and keeps seeing the retained `closing` phase. */
 function initDisclosureAccordion(
   itemValue: string,
   input: DisclosureCaseInput,
+  environment: PresentationScenarioEnvironment,
 ): accordion.AccordionState {
+  const animated = environment.motion !== 'reduced'
   const opened = accordion.init({
     items: [itemValue],
     value: [itemValue],
     disabled: input.disabled,
-    animated: true,
+    animated,
   })
   if (input.state === 'open') return opened
   if (input.state === 'closing')
     return accordion.update(opened, { type: 'close', value: itemValue })[0]
-  return accordion.init({ items: [itemValue], value: [], disabled: input.disabled, animated: true })
+  return accordion.init({ items: [itemValue], value: [], disabled: input.disabled, animated })
 }
 
-function initDisclosureCollapsible(input: DisclosureCaseInput): collapsible.CollapsibleState {
-  const opened = collapsible.init({ open: true, disabled: input.disabled, animated: true })
+function initDisclosureCollapsible(
+  input: DisclosureCaseInput,
+  environment: PresentationScenarioEnvironment,
+): collapsible.CollapsibleState {
+  const animated = environment.motion !== 'reduced'
+  const opened = collapsible.init({ open: true, disabled: input.disabled, animated })
   if (input.state === 'open') return opened
   if (input.state === 'closing') return collapsible.update(opened, { type: 'close' })[0]
-  return collapsible.init({ open: false, disabled: input.disabled, animated: true })
+  return collapsible.init({ open: false, disabled: input.disabled, animated })
 }
 
 const accordionAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) => {
   const itemValue = 'item'
   return mountMachine(
     host,
+    ctx,
     'BaselineAccordionScenario',
-    () => initDisclosureAccordion(itemValue, input),
+    () => initDisclosureAccordion(itemValue, input, ctx.environment),
     accordion.update,
     (state, send) => {
       const parts = accordion.connect(state, send, { id: `baseline-accordion-${ctx.caseId}` })
@@ -171,8 +210,9 @@ const accordionAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) => {
 const collapsibleAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineCollapsibleScenario',
-    () => initDisclosureCollapsible(input),
+    () => initDisclosureCollapsible(input, ctx.environment),
     collapsible.update,
     (state, send) => {
       const parts = collapsible.connect(state, send, { id: `baseline-collapsible-${ctx.caseId}` })
@@ -186,6 +226,7 @@ const collapsibleAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) =>
 const avatarAdapter: Adapter<AvatarCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineAvatarScenario',
     () => ({ ...avatar.init(), status: input.status }),
     avatar.update,
@@ -206,6 +247,7 @@ const breadcrumbsAdapter: Adapter<BreadcrumbsCaseInput> = (host, input, ctx) => 
   ]
   return mountMachine(
     host,
+    ctx,
     'BaselineBreadcrumbsScenario',
     () => breadcrumbs.init({ items, maxVisible: input.maxVisible }),
     breadcrumbs.update,
@@ -242,6 +284,7 @@ const breadcrumbsAdapter: Adapter<BreadcrumbsCaseInput> = (host, input, ctx) => 
 const carouselAdapter: Adapter<CarouselCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineCarouselScenario',
     () => carousel.init({ count: input.count, current: input.index, loop: input.loop }),
     carousel.update,
@@ -271,6 +314,7 @@ const carouselAdapter: Adapter<CarouselCaseInput> = (host, input, ctx) =>
 const chartAdapter: Adapter<ChartCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineChartScenario',
     () => {
       const initial = chart.init({
@@ -293,7 +337,7 @@ const chartAdapter: Adapter<ChartCaseInput> = (host, input, ctx) =>
         svg({ ...parts.svg }, [
           svgTitle({ ...parts.title }, [text(input.label)]),
           svgDesc({ ...parts.desc }, [text('Six-series chart (three bar, three area)')]),
-          chartForcedColorPatterns(),
+          chartForcedColorPatterns(`baseline-chart-${ctx.caseId}`),
           g({ ...parts.layer }, [
             each(parts.gridLines, {
               key: (line) => String(line.value),
@@ -338,17 +382,20 @@ const chartAdapter: Adapter<ChartCaseInput> = (host, input, ctx) =>
 const marqueeAdapter: Adapter<MarqueeCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineMarqueeScenario',
     () =>
       marquee.init({
         direction: input.direction,
-        running: input.running,
+        // A continuously-running marquee is exactly the WCAG 2.3.3 case
+        // reduced motion exists for: reduced means the scroll never starts,
+        // not merely a faster/instant version of it (#264 item 2f/5).
+        running: input.running && ctx.environment.motion !== 'reduced',
         disabled: input.disabled,
         pauseOnHover: true,
       }),
     marquee.update,
     (state, send) => {
-      void ctx
       const parts = marquee.connect(state, send)
       return div({ ...parts.root }, [div({ ...parts.content }, [text(input.label)])])
     },
@@ -357,6 +404,7 @@ const marqueeAdapter: Adapter<MarqueeCaseInput> = (host, input, ctx) =>
 const meterAdapter: Adapter<MeterCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineMeterScenario',
     () =>
       meter.init({
@@ -389,6 +437,7 @@ const meterAdapter: Adapter<MeterCaseInput> = (host, input, ctx) =>
 const paginationAdapter: Adapter<PaginationCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselinePaginationScenario',
     () =>
       pagination.init({
@@ -426,6 +475,7 @@ const paginationAdapter: Adapter<PaginationCaseInput> = (host, input, ctx) =>
 const progressAdapter: Adapter<ProgressCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineProgressScenario',
     () => progress.init({ value: input.value }),
     progress.update,
@@ -442,6 +492,7 @@ const progressAdapter: Adapter<ProgressCaseInput> = (host, input, ctx) =>
 const sparklineAdapter: Adapter<SparklineCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineSparklineScenario',
     () =>
       sparkline.init({
@@ -492,6 +543,7 @@ const sparklineAdapter: Adapter<SparklineCaseInput> = (host, input, ctx) =>
 const stepsAdapter: Adapter<StepsCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineStepsScenario',
     () => {
       const initial = steps.init({
@@ -525,6 +577,7 @@ const stepsAdapter: Adapter<StepsCaseInput> = (host, input, ctx) =>
 const tableAdapter: Adapter<TableCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineTableScenario',
     () =>
       table.init({
@@ -574,6 +627,7 @@ const tableAdapter: Adapter<TableCaseInput> = (host, input, ctx) =>
 const tabsAdapter: Adapter<TabsCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineTabsScenario',
     () =>
       tabs.init({
@@ -607,6 +661,7 @@ const tocAdapter: Adapter<TocCaseInput> = (host, input, ctx) => {
   ]
   return mountMachine(
     host,
+    ctx,
     'BaselineTocScenario',
     () => toc.init({ items: entries, activeId: input.activeId, expanded: [...input.expanded] }),
     toc.update,
@@ -632,6 +687,7 @@ const tocAdapter: Adapter<TocCaseInput> = (host, input, ctx) => {
 const treeViewAdapter: Adapter<TreeViewCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineTreeViewScenario',
     () => {
       let initial = treeView.init({
@@ -663,6 +719,7 @@ const treeViewAdapter: Adapter<TreeViewCaseInput> = (host, input, ctx) =>
 const dataTableAdapter: Adapter<DataTableCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
+    ctx,
     'BaselineDataTableScenario',
     () => {
       const initial = dataTable.init({
@@ -692,7 +749,7 @@ const dataTableAdapter: Adapter<DataTableCaseInput> = (host, input, ctx) =>
         id: `baseline-data-table-${ctx.caseId}`,
         density: input.density,
       })
-      return section({ 'data-density': input.density }, [
+      return section([
         parts.pagination.directionSync,
         div({ ...parts.table.viewport }, [
           tableElement({ ...parts.table.root }, [
@@ -732,7 +789,7 @@ const dataTableAdapter: Adapter<DataTableCaseInput> = (host, input, ctx) =>
   )
 
 const chipAdapter: Adapter<ChipCaseInput> = (host, input, ctx) => {
-  void ctx
+  applyEnvironmentAttrs(host, ctx.environment)
   const element = document.createElement('span')
   element.dataset.scope = 'chip'
   element.dataset.part = 'chip'

@@ -147,11 +147,16 @@ export const ChartDesc: ElementHelper = svgDesc
  * bar/area series identical under forced colors — a dash pattern on `stroke`
  * (below) does nothing for a FILLED shape's fill. The eight
  * `data-[mark=…]:data-[series-cue=…]:fill-(--llui-chart-fill-…)!` rules read
- * five CSS custom properties `tailwind.css` declares once, each an SVG
- * `url('#llui-chart-pattern-…')` reference into the `<pattern>` ids
- * `chartForcedColorPatterns()` (from `@llui/components/chart`) defines —
- * place it once as the first child of `parts.svg`. The pattern reference
- * lives in a custom property, not inline as `fill-[url('#…')]`, because
+ * five CSS custom properties, defaulted once in `tailwind.css`'s `:root` but
+ * overridden PER CHART INSTANCE by `connect()` itself (a fixed, shared
+ * pattern id resolves a `url(#...)` reference to whichever same-named
+ * element the browser's id table returns, so a hidden chart earlier on the
+ * page can blank every other chart's fill — #264 review item 3), each an SVG
+ * `url('#<id>:pattern-…') CanvasText` reference into the `<pattern>` ids
+ * `chartForcedColorPatterns(id)` (from `@llui/components/chart`, given the
+ * SAME `id` as `connect()`) defines — place it once as the first child of
+ * `parts.svg`. The pattern reference lives in a custom property, not inline
+ * as `fill-[url('#…')]`, because
  * Tailwind v4's content scanner does not reliably candidate-detect an
  * arbitrary value containing an unescaped `#` inside a long chained-variant
  * utility (measured: the whole utility silently dropped from the compiled

@@ -25,7 +25,7 @@ describe('sourceAliasesFromExports', () => {
   it('derives a literal alias for the root export', async () => {
     await withFixturePackageJson(
       { '.': { types: './dist/index.d.ts', import: './dist/index.js' } },
-      async (packageJsonPath) => {
+      (packageJsonPath) => {
         const aliases = sourceAliasesFromExports({
           packageName: '@llui/fixture',
           packageJsonPath,
@@ -46,7 +46,7 @@ describe('sourceAliasesFromExports', () => {
           import: './dist/components/toggle.js',
         },
       },
-      async (packageJsonPath) => {
+      (packageJsonPath) => {
         const aliases = sourceAliasesFromExports({
           packageName: '@llui/fixture',
           packageJsonPath,
@@ -67,7 +67,7 @@ describe('sourceAliasesFromExports', () => {
       {
         './styles/theme.css': './dist/styles/theme.css',
       },
-      async (packageJsonPath) => {
+      (packageJsonPath) => {
         const aliases = sourceAliasesFromExports({
           packageName: '@llui/fixture',
           packageJsonPath,
@@ -85,7 +85,7 @@ describe('sourceAliasesFromExports', () => {
       {
         './utils/*': { types: './dist/utils/*.d.ts', import: './dist/utils/*.js' },
       },
-      async (packageJsonPath) => {
+      (packageJsonPath) => {
         const aliases = sourceAliasesFromExports({
           packageName: '@llui/fixture',
           packageJsonPath,
@@ -93,6 +93,7 @@ describe('sourceAliasesFromExports', () => {
         })
         expect(aliases).toHaveLength(1)
         const [alias] = aliases
+        if (alias === undefined) throw new Error('unreachable: length asserted above')
         expect(alias.find).toBeInstanceOf(RegExp)
         expect((alias.find as RegExp).test('@llui/fixture/utils/derive')).toBe(true)
         expect((alias.find as RegExp).test('@llui/fixture/utilsx/derive')).toBe(false)
@@ -109,7 +110,7 @@ describe('sourceAliasesFromExports', () => {
         '.': { types: './dist/index.d.ts', import: './dist/index.js' },
         './icon': { types: './dist/icon.d.ts', import: './dist/icon.js' },
       },
-      async (packageJsonPath) => {
+      (packageJsonPath) => {
         const aliases = sourceAliasesFromExports({
           packageName: '@llui/fixture',
           packageJsonPath,
@@ -124,7 +125,7 @@ describe('sourceAliasesFromExports', () => {
   })
 
   it('throws when an export does not resolve to a dist/ target, rather than silently mis-routing', async () => {
-    await withFixturePackageJson({ './weird': './lib/weird.js' }, async (packageJsonPath) => {
+    await withFixturePackageJson({ './weird': './lib/weird.js' }, (packageJsonPath) => {
       expect(() =>
         sourceAliasesFromExports({
           packageName: '@llui/fixture',
@@ -141,7 +142,7 @@ describe('sourceAliasesFromExports', () => {
         '.': { types: './dist/index.d.ts', import: './dist/index.js' },
         './package.json': './package.json',
       },
-      async (packageJsonPath) => {
+      (packageJsonPath) => {
         const aliases = sourceAliasesFromExports({
           packageName: '@llui/fixture',
           packageJsonPath,
