@@ -112,22 +112,36 @@ constants beside it in `presentation-scenarios.ts` for the exact arithmetic, sin
 copy can drift and a test asserts it does not). The basis: ~40 products x ~12 cases x a
 few-hundred-node payload each, times a headroom multiplier — a real 30-product x 5-case x
 20-row-table family is comfortably inside it, where the flat 5,000-node cap an earlier revision
-shipped was not (#270).
+shipped was not (#270). Separately, and independent of that payload budget, a family may declare
+at most 80 products/scenarios and 24 cases per product, and any protocol identifier
+(`scenarioId`/`productId`/`family`) is bounded to 256 characters — see below for why these are
+kept apart from the payload numbers instead of folded into them.
 
-**One cost model governs a family's definitions and every catalog compiled from it.**
-`compileScenarioFamily` builds its catalog from ALREADY-decoded, already-budgeted definitions
-structurally — it does not re-decode its own output under a second, independent budget. But a
-compiled catalog is not merely definitions restated: it adds real scaffolding (`version`,
-`family`, and, per scenario, `productId`/`scenarioId`) that the raw definitions payload never
-contained. A caller can still hand that catalog back through the untyped boundary at any
-time — most commonly a `JSON.parse(JSON.stringify(catalog))` or `structuredClone`, but any
-serialize/deserialize round trip — and `decodeScenarioSelection` must decode it under the SAME
-family budget. To make that provably hold at the exact boundary, `decodeScenarioSelection`'s own
-decoder widens its budget by the catalog's EXACT scaffolding cost (never an estimate) once it
-knows the real scenario count, derived from the same constants. The result: a definitions
-payload that fits the family budget is guaranteed to still fit when the catalog built from it is
-later decoded from a genuinely untyped/serialized source — at any family size, not merely a small
-one (#270).
+**One cost model governs a family's definitions and every catalog compiled from it, BY
+CONSTRUCTION, not by a reservation computed to make it so.** `compileScenarioFamily` builds its
+catalog from ALREADY-decoded, already-budgeted definitions structurally — it does not re-decode
+its own output under a second, independent budget. A compiled catalog is not merely definitions
+restated: it adds real PROTOCOL SCAFFOLDING (the fixed schema keys `version`/`family`/`scenarios`
+at the root, and per scenario `productId`/`scenarioId`) that the raw definitions payload never
+contained — a raw definition has no `productId` field and no `version`/`family` wrapper at all. A
+caller can still hand that catalog back through the untyped boundary at any time — most commonly a
+`JSON.parse(JSON.stringify(catalog))` or `structuredClone`, but any serialize/deserialize round
+trip — and `decodeScenarioSelection` must decode it under a budget that agrees with the one
+`compileScenarioFamily` already checked the same content against. Two earlier revisions tried to
+make that hold by RECONCILING two different shapes against one shared number — first a flat cap
+too small for a real family, then a "reserve the estimated scaffolding delta" patch that
+undercounted several sources of scaffolding (the catalog's own schema-key string costs, the
+`scenarios` array's own length/index-key costs, and a `productId` sized by the caller's input
+rather than by its own bound) and could still fail a genuinely round-tripped catalog by 82–872
+string units. The fix is structural rather than arithmetic: the payload budgets above meter ONLY
+the content that is byte-identical in both shapes — each case's `id`/`label`/`input`/
+`environmentAxes`/`copiedArtifactNames`, decoded by the exact same function in both decoders — and
+protocol scaffolding is charged against NEITHER payload budget at all, bounded instead by the
+separate, small, explicit structural limits above (product/case counts, identifier length).
+Because the two decodes literally call the identical metering function the identical number of
+times for the identical content, "every successful compile decodes unchanged through a JSON round
+trip or `structuredClone`" holds for any family shape and any family size, not because a
+reservation was sized to match it.
 
 Compiler/resolver failures additionally share one exported diagnostic policy
 (`PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS`): at most 100 issues and 16,384 UTF-16 units across the

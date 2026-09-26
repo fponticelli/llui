@@ -399,16 +399,39 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
   })
 
   it('documents the exact PRESENTATION_SCENARIO_COMPLEXITY_LIMITS values in README.md (#270 finding 5)', () => {
-    // The prose in README.md quotes these numbers rather than deriving them, so they drift
-    // silently whenever the sizing-basis constants change — this is what caught "288,000 …
-    // own fields" (the actual `familyFields` is 576,000, 2x `familyNodes`) the first time.
+    // A bare `readme.includes(formatted)` ties a NUMBER to the README but not to which constant it
+    // is supposed to describe — it would pass just as happily if two numbers were swapped between
+    // dimensions, or if an unrelated number elsewhere happened to coincide. Each phrase below names
+    // its constant's own descriptive words AROUND the formatted value, generated from the live
+    // constant so the expectation itself can never drift out of sync with the code (#270, round
+    // three) — only the PROSE can drift out of sync with the phrase, which is exactly the failure
+    // this guards. This is what caught "288,000 … own fields" (the actual `familyFields` is
+    // 576,000, 2x `familyNodes`) the first time.
     const readme = readFileSync(resolve(PACKAGE_ROOT, 'README.md'), 'utf8')
+    const phraseFor: Record<
+      keyof typeof PRESENTATION_SCENARIO_COMPLEXITY_LIMITS,
+      (formatted: string) => string
+    > = {
+      depth: (n) => `up to ${n} nested levels`,
+      familyNodes: (n) => `${n} decoded nodes`,
+      familyFields: (n) => `${n} own fields`,
+      familyStringUnits: (n) => `${n} total string units`,
+      stringLength: (n) => `${n} units in any one string`,
+      arrayLength: (n) => `${n} entries in any one array`,
+      products: (n) => `at most ${n} products/scenarios`,
+      casesPerProduct: (n) => `${n} cases per product`,
+      identifierLength: (n) => `${n} characters`,
+    }
     for (const [name, value] of Object.entries(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS)) {
       const formatted = value.toLocaleString('en-US')
-      expect(readme.includes(formatted), `README.md must quote ${name} as "${formatted}"`).toBe(
-        true,
-      )
+      const phrase =
+        phraseFor[name as keyof typeof PRESENTATION_SCENARIO_COMPLEXITY_LIMITS](formatted)
+      expect(readme.includes(phrase), `README.md must document ${name} as "${phrase}"`).toBe(true)
     }
+    // Every key in the limits object has its own phrase above — if a new dimension is added and
+    // this map is not updated, `phraseFor[name]` throws (a phrase generator does not exist for an
+    // unmapped key) rather than silently skipping it.
+    expect(Object.keys(phraseFor)).toEqual(Object.keys(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS))
     // The diagnostic policy is documented separately (also asserted here so it cannot drift
     // silently either): 100 issues, 16,384 message units.
     expect(readme).toContain('100 issues and 16,384 UTF-16 units')

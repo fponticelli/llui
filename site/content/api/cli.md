@@ -1063,11 +1063,16 @@ const DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT
 ##### `PRESENTATION_SCENARIO_COMPLEXITY_LIMITS` from `@llui/cli/presentation-scenarios`
 
 Frozen boundary-decoding complexity budget. `familyNodes`/`familyFields`/`familyStringUnits`
-bound total work across one family submission (all scenarios and cases combined), sized with
-generous headroom against a realistic worst case of ~40 products x ~12 cases x a few-hundred-
-node payload each (see the sizing-basis constants above this export). `stringLength` and
-`arrayLength` bound one value at a time and are unaffected by family size. `depth` bounds
-nesting depth to keep the decoder's explicit stack bounded, independent of both.
+meter ONLY case payload content (never protocol scaffolding — see the constants above this
+export), summed across one family submission, sized with generous headroom against a
+realistic worst case of ~40 products x ~12 cases x a few-hundred-node payload each (see the
+sizing-basis constants above this export). `stringLength` and `arrayLength` bound one payload
+value at a time and are unaffected by family size. `depth` bounds payload nesting depth to keep
+the decoder's explicit stack bounded. `products`, `casesPerProduct`, and `identifierLength`
+bound the SEPARATE structural scaffolding dimensions — how many scenarios/cases a family may
+declare, and how long a `scenarioId`/`productId`/`defaultCaseId`/`family` identifier may be —
+entirely independent of the payload budgets, which is what makes a compiled catalog's
+scaffolding (absent from raw definitions) cost nothing against them.
 
 ```typescript
 const PRESENTATION_SCENARIO_COMPLEXITY_LIMITS

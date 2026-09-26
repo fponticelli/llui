@@ -211,6 +211,27 @@ const unionCaseDefinitions = {
 // @ts-expect-error an excess field on only one arm of a union-typed cases array is still rejected
 compileScenarioFamily(contract, 'menus-overlays', unionCaseDefinitions)
 
+// #270 finding 4, round three: `ExactDefinition` had the SAME hole ONE LEVEL UP from `ExactCase`
+// above — a bare `Definition extends {...}` distributes over a union `Definition` (the bad arm's
+// `never` silently vanishes via `T | never === T`), and a plain `keyof Definition` on a union is
+// the INTERSECTION of its members' keys, so an excess field on only ONE arm of a union-typed
+// DEFINITION (not case) used to be invisible to the exactness check — `Def | (Def & { render })`
+// compiled with no error. Mirrors `ExactCase`'s fix exactly: `[Definition] extends [...]`
+// suppresses distribution on the outer check, `UnionKeys` distributes on the inner one.
+type UnionDefinitionBase = {
+  readonly defaultCaseId: string
+  readonly cases: readonly PresentationScenarioCase[]
+}
+type UnionDefinitionWithExtra = UnionDefinitionBase & { readonly render: () => void }
+declare const unionDefinitionBase: UnionDefinitionBase
+declare const unionDefinitionWithExtra: UnionDefinitionBase | UnionDefinitionWithExtra
+// Passing control: the same (non-union) shape with no excess field compiles clean — proves the
+// gate below fires because of the excess field on the union's second arm, not because a
+// definition of this general shape is rejected outright.
+compileScenarioFamily(contract, 'menus-overlays', { 'component:dialog': unionDefinitionBase })
+// @ts-expect-error an excess field on only one arm of a union-typed definition is still rejected
+compileScenarioFamily(contract, 'menus-overlays', { 'component:dialog': unionDefinitionWithExtra })
+
 // #270 finding 4, round two: a KNOWN, undocumented-until-now residual gap — once a value is
 // WIDENED to (or simply annotated as) `PresentationScenarioCase`, its excess fields are
 // STRUCTURALLY invisible to any type-level exactness check: `keyof widened` equals

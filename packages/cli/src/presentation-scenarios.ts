@@ -54,27 +54,49 @@ const MAX_FIELDS = MAX_NODES * 2
 const DIAGNOSTIC_PATH_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 
 /**
- * Exact scaffolding `decodeCatalog` charges beyond what `decodeDefinitions` charges for
- * structurally-equivalent content, derived by comparing the two decode traces field-by-field
- * (worked in full in `test/presentation-scenarios-boundaries.test.ts`, "one cost model" describe
- * block). A catalog wraps raw definitions in `{version, family, scenarios}` — 3 nodes (version,
- * family, the `scenarios` array's own header — the catalog's root record itself is charged
- * identically to `decodeDefinitions`' root record, so it is NOT part of this delta) and 4 fields
- * (version, family, scenarios, and the `scenarios` array's own "length" field) ONCE — and each
- * scenario record adds `productId` and `scenarioId` as real, separately-charged field VALUES
- * (free in `decodeDefinitions`, respectively as an object key that costs no node and as an
- * argument this module already has) beside the same `defaultCaseId`/`cases` `decodeDefinitions`
- * already charges: 2 extra nodes and 2 extra fields per scenario (productId + scenarioId; the
- * `scenarios` array's own per-index field cost is the OTHER 1 field per scenario folded into the
- * `+2`). `decodeCatalog` reserves this once it knows how many scenarios it is decoding, so ONE
- * cost model governs a raw definitions payload and every catalog `compileScenarioFamily` derives
- * from it — a payload that fits the family budget always survives a later JSON round trip
- * through `decodeScenarioSelection` (#270 finding 1, round two).
+ * ONE cost model, BY CONSTRUCTION (#270, third review round): the payload budgets above
+ * (nodes/fields/string units/array length) meter ONLY the content that is byte-identical whether
+ * it is read from a raw definitions submission or from a catalog compiled from it — each case's
+ * `id`/`label`/`input`/`environmentAxes`/`copiedArtifactNames`, decoded by the SAME function
+ * (`decodeCase`) in both places. PROTOCOL SCAFFOLDING — the fixed schema keys (`version`,
+ * `family`, `scenarios`, `productId`, `scenarioId`, `defaultCaseId`, `cases`), the family name,
+ * and every product/scenario identifier — is NEVER charged to those budgets, because a compiled
+ * catalog's scaffolding literally does not exist in the raw definitions it was compiled from (no
+ * `productId` field, no `version`/`family` wrapper), so charging it against a SHARED budget can
+ * only ever be an ESTIMATE of the difference between the two shapes, not an exact figure — which
+ * is what two earlier revisions of this budget got wrong (a flat cap too small for a real family,
+ * then a "reserve the estimated scaffolding delta" patch that was still short by 82-872 string
+ * units for some family shapes). Scaffolding is instead bounded by its OWN separate, small,
+ * EXPLICIT structural limits below, entirely independent of the payload budgets. The result:
+ * "every successful compile decodes unchanged through a JSON round trip or `structuredClone`"
+ * holds BECAUSE the two decodes literally charge the identical function calls the identical
+ * amount for the identical content — not because a reservation was computed to make it so.
  */
-const CATALOG_SCAFFOLDING_ROOT_NODES = 3
-const CATALOG_SCAFFOLDING_ROOT_FIELDS = 4
-const CATALOG_SCAFFOLDING_PER_SCENARIO_NODES = 2
-const CATALOG_SCAFFOLDING_PER_SCENARIO_FIELDS = 2
+/** Hard cap on scenarios (= products) in one family — generous headroom over the largest real
+ *  family (29, #264 navigation-data) — AND the ceiling `productId`/`scenarioId` identifiers are
+ *  bounded by, since both are validated against `ProductContract`, whose own entries are what
+ *  this bounds. */
+const MAX_PRODUCTS_PER_FAMILY = REALISTIC_MAX_PRODUCTS_PER_FAMILY * COMPLEXITY_HEADROOM_MULTIPLIER
+/** Hard cap on cases per scenario/product. */
+const MAX_CASES_PER_PRODUCT = REALISTIC_MAX_CASES_PER_PRODUCT * COMPLEXITY_HEADROOM_MULTIPLIER
+/** Hard cap on any protocol IDENTIFIER string: a `scenarioId` (definitions object key or catalog
+ *  field), a `productId`, or a `family` name. These are short slugs by construction (`CASE_ID`-
+ *  shaped, or one of `PRESENTATION_FAMILY_VALUES`) — this is generous headroom over any realistic
+ *  identifier, not a payload-sized budget, and costs nothing against the payload string-unit
+ *  budget above. (`defaultCaseId` is NOT one of these: its string VALUE is shared, verbatim,
+ *  between a raw definition and its compiled scenario, so it stays on the metered `string()` path
+ *  like any other case content — only the WRAPPER holding it is scaffolding.) */
+const MAX_IDENTIFIER_LENGTH = 256
+/**
+ * Hard cap on the OWN-KEY COUNT of a fixed-schema scaffolding wrapper (a definition, a compiled
+ * scenario, or the catalog root) — generous headroom over the largest such schema in this file
+ * (4 keys, `SCENARIO_FIELDS`), so a caller's genuinely-mistaken extra field or two is reported
+ * individually by `exactFields` (its own diagnostic, at its own path) rather than discarding the
+ * whole wrapper. It exists only to keep an ADVERSARIAL flood of bogus keys on one wrapper from
+ * costing more than one bounded reflection pass (#270 finding 2, round three) — it is not, and
+ * must never become, an estimate of "the real schema size."
+ */
+const MAX_SCAFFOLDING_RECORD_KEYS = 32
 
 const THEME_VALUES = Object.freeze(['light', 'dark'] as const)
 const DIRECTION_VALUES = Object.freeze(['ltr', 'rtl'] as const)
@@ -99,11 +121,16 @@ export const PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS = Object.freeze({
 
 /**
  * Frozen boundary-decoding complexity budget. `familyNodes`/`familyFields`/`familyStringUnits`
- * bound total work across one family submission (all scenarios and cases combined), sized with
- * generous headroom against a realistic worst case of ~40 products x ~12 cases x a few-hundred-
- * node payload each (see the sizing-basis constants above this export). `stringLength` and
- * `arrayLength` bound one value at a time and are unaffected by family size. `depth` bounds
- * nesting depth to keep the decoder's explicit stack bounded, independent of both.
+ * meter ONLY case payload content (never protocol scaffolding — see the constants above this
+ * export), summed across one family submission, sized with generous headroom against a
+ * realistic worst case of ~40 products x ~12 cases x a few-hundred-node payload each (see the
+ * sizing-basis constants above this export). `stringLength` and `arrayLength` bound one payload
+ * value at a time and are unaffected by family size. `depth` bounds payload nesting depth to keep
+ * the decoder's explicit stack bounded. `products`, `casesPerProduct`, and `identifierLength`
+ * bound the SEPARATE structural scaffolding dimensions — how many scenarios/cases a family may
+ * declare, and how long a `scenarioId`/`productId`/`defaultCaseId`/`family` identifier may be —
+ * entirely independent of the payload budgets, which is what makes a compiled catalog's
+ * scaffolding (absent from raw definitions) cost nothing against them.
  */
 export const PRESENTATION_SCENARIO_COMPLEXITY_LIMITS = Object.freeze({
   depth: MAX_DEPTH,
@@ -112,6 +139,9 @@ export const PRESENTATION_SCENARIO_COMPLEXITY_LIMITS = Object.freeze({
   familyStringUnits: MAX_TOTAL_STRING_UNITS,
   stringLength: MAX_STRING_LENGTH,
   arrayLength: MAX_ARRAY_LENGTH,
+  products: MAX_PRODUCTS_PER_FAMILY,
+  casesPerProduct: MAX_CASES_PER_PRODUCT,
+  identifierLength: MAX_IDENTIFIER_LENGTH,
 } as const)
 
 const ENVIRONMENT_AXES = new Set<string>(Object.keys(PRESENTATION_SCENARIO_ENVIRONMENT_VALUES))
@@ -285,11 +315,21 @@ type ExactCase<Case> = [Case] extends [PresentationScenarioCase]
     : never
   : Case
 
-type ExactDefinition<Definition> = Definition extends {
-  readonly defaultCaseId: string
-  readonly cases: readonly unknown[]
-}
-  ? Exclude<keyof Definition, keyof PresentationScenarioDefinition> extends never
+// Same fix as `ExactCase` above, mirrored one level up (#270 finding 4, round three): a bare
+// `Definition extends {...}` distributes over a union `Definition` (silently dropping a bad
+// member via `X | never === X`, exactly the failure the one-tuple wrap on `ExactCase` exists to
+// prevent), and a plain `keyof Definition` on a union type is the INTERSECTION of its members'
+// keys — invisible to an excess field smuggled onto only ONE arm of a union
+// (`Def | (Def & { render: () => void })` compiled where it should not have). `[Definition]
+// extends [...]` suppresses distribution on the outer check; `UnionKeys` (already defined above,
+// for this exact reason) distributes deliberately on the inner one.
+type ExactDefinition<Definition> = [Definition] extends [
+  {
+    readonly defaultCaseId: string
+    readonly cases: readonly unknown[]
+  },
+]
+  ? Exclude<UnionKeys<Definition>, keyof PresentationScenarioDefinition> extends never
     ? {
         readonly defaultCaseId: Definition['defaultCaseId']
         readonly cases: {
@@ -486,6 +526,10 @@ type DiagnosticPathSegment = DiagnosticPropertySegment | DiagnosticIndexSegment
 interface DiagnosticPath {
   readonly parent?: DiagnosticPath
   readonly segment?: DiagnosticPathSegment
+  /** How many LEADING segments (counted from `$`) must never be elided by `clipDiagnosticPath` —
+   *  inherited from the nearest ancestor `protectedPath()` marked, all the way down to every leaf
+   *  built from it. See `protectedPath()`'s doc. */
+  readonly protectedDepth?: number
 }
 
 interface QuotedDiagnosticPart {
@@ -525,11 +569,35 @@ function clipRenderedText(text: string, limit: number): string {
 
 function propertyPath(parent: DiagnosticPath, key: string): DiagnosticPath {
   const identifier = DIAGNOSTIC_PATH_IDENTIFIER.test(key)
-  return { parent, segment: { kind: 'property', key, identifier } }
+  return {
+    parent,
+    segment: { kind: 'property', key, identifier },
+    protectedDepth: parent.protectedDepth,
+  }
 }
 
 function indexPath(parent: DiagnosticPath, index: number): DiagnosticPath {
-  return { parent, segment: { kind: 'index', index } }
+  return { parent, segment: { kind: 'index', index }, protectedDepth: parent.protectedDepth }
+}
+
+/**
+ * Marks `path` as the PROTOCOL-STRUCTURE boundary `clipDiagnosticPath` must never elide past —
+ * the case/field root (a definition's `.cases[i]` or a compiled scenario's `.scenarios[i].cases[j]`)
+ * — so that `$["<scenarioId>"].cases[i]` / `$.scenarios[i].cases[j]` always survives clipping in
+ * full, and elision is confined to segments BUILT FROM IT (i.e. inside the case's own payload,
+ * `input` chief among them). Every `propertyPath`/`indexPath` built from the returned path inherits
+ * the same `protectedDepth`, so the marker only needs to be applied ONCE, at the case root itself
+ * (#270 finding 3, round three): without it, two issues that differ only near the SCAFFOLDING root
+ * (which scenario, which case) but share a deep payload shape collapse to the same clipped path,
+ * exactly the defect this replaces one level up from where round two fixed it for payload-only
+ * siblings.
+ */
+function protectedPath(path: DiagnosticPath): DiagnosticPath {
+  return {
+    parent: path.parent,
+    segment: path.segment,
+    protectedDepth: diagnosticPathSegments(path).length,
+  }
 }
 
 /** Root-to-leaf ordered segment list for `path` — the shared basis for both a full render and a
@@ -555,15 +623,26 @@ function renderDiagnosticPath(path: DiagnosticPath): string {
 }
 
 /**
- * Renders `path` within `limit` UTF-16 units, eliding from the MIDDLE — never the head — so two
- * paths that differ only in their LEAF segment stay distinguishable after clipping. A plain
- * head-keep/tail-cut clip (as `clipRenderedText` does for free-form reason text) is wrong here
- * specifically because sibling issues typically share a long, identical PREFIX (the same deeply
- * nested scenario/case) and differ only in their final segment (which field is bad) — clipping
- * the tail away collapses every sibling to the same byte-identical, unhelpful path (#270 finding
- * 3, round two). Always keeps `$` and the leaf segment; an individual segment that is itself too
- * long to fit (e.g. a single 20,000-character key) is clipped internally via `clipRenderedText`
- * rather than being dropped whole.
+ * Renders `path` within `limit` UTF-16 units, eliding from the MIDDLE of the PAYLOAD portion —
+ * never the head, never the protocol prefix, never the leaf — so two paths that differ only in
+ * their leaf segment, or only in WHICH scenario/case they name, stay distinguishable after
+ * clipping. A plain head-keep/tail-cut clip (as `clipRenderedText` does for free-form reason
+ * text) is wrong here for two separate reasons, fixed in two separate rounds: sibling issues
+ * inside the SAME case typically share a long, identical payload prefix and differ only in their
+ * final segment, so clipping the tail away collapses them to the same byte-identical path (#270
+ * finding 3, round two); and issues from DIFFERENT scenarios/cases can share a long, identical
+ * PAYLOAD SHAPE while differing only near the root — the scaffolding segments a plain middle-clip
+ * has no reason to prefer keeping — so eliding those away the same way collapses distinct
+ * findings just as badly (#270 finding 3, round three). `path.protectedDepth` (set once, at the
+ * case root, by `protectedPath()`) names the boundary: segments `[0, protectedDepth)` are the
+ * protocol prefix and are ALWAYS rendered in full, never counted against the elision budget;
+ * only segments from `protectedDepth` up to (but not including) the leaf are eligible for
+ * elision. The protected prefix can now only ever be as long as `MAX_SCAFFOLDING_RECORD_KEYS`-many
+ * `MAX_IDENTIFIER_LENGTH`-bounded segments — a small, fixed ceiling — so on the rare input where
+ * it alone exceeds `limit`, this deliberately renders OVER budget rather than cut into it; the
+ * aggregate message budget, not this per-issue heuristic, is what actually bounds total output.
+ * An individual segment that is itself too long to fit is clipped internally via
+ * `clipRenderedText` rather than being dropped whole.
  */
 function clipDiagnosticPath(path: DiagnosticPath, limit: number): string {
   const segments = diagnosticPathSegments(path)
@@ -574,24 +653,35 @@ function clipDiagnosticPath(path: DiagnosticPath, limit: number): string {
   // No single segment (however long) may consume the whole budget by itself — leaves room for
   // `$`, the elision marker, and at least the leaf.
   const perSegmentLimit = Math.max(24, Math.floor(limit / 4))
-  const leaf = clipRenderedText(renderPathSegment(segments[segments.length - 1]!), perSegmentLimit)
+  const leafIndex = segments.length - 1
+  const leaf = clipRenderedText(renderPathSegment(segments[leafIndex]!), perSegmentLimit)
 
-  // Greedily keep as many segments as fit, working from the one closest to the LEAF back toward
-  // the root — segments nearer the leaf are typically the more specific/relevant ones.
+  // The protocol prefix is never elided, regardless of budget — see this function's doc.
+  const protectedDepth = Math.min(path.protectedDepth ?? 0, leafIndex)
+  const protectedText = segments
+    .slice(0, protectedDepth)
+    .map((segment) => clipRenderedText(renderPathSegment(segment), perSegmentLimit))
+    .join('')
+
+  // Greedily keep as many of the remaining (payload) segments as fit, working from the one
+  // closest to the LEAF back toward the protected boundary — segments nearer the leaf are
+  // typically the more specific/relevant ones.
   const kept: string[] = []
   let keptLength = 0
-  let index = segments.length - 2
-  for (; index >= 0; index -= 1) {
+  let index = leafIndex - 1
+  for (; index >= protectedDepth; index -= 1) {
     const text = clipRenderedText(renderPathSegment(segments[index]!), perSegmentLimit)
-    const elidedBefore = index // how many segments would remain unshown if we stop here
-    const markerLength = elidedBefore > 0 ? `…(${elidedBefore})`.length : 0
-    if (1 + markerLength + keptLength + text.length + leaf.length > limit) break
+    const elidedBefore = index - protectedDepth // payload segments that would remain unshown
+    const markerLength = elidedBefore > 0 ? `${ELISION_MARKER}(${elidedBefore})`.length : 0
+    if (1 + protectedText.length + markerLength + keptLength + text.length + leaf.length > limit) {
+      break
+    }
     kept.unshift(text)
     keptLength += text.length
   }
-  const elidedCount = index + 1
-  const marker = elidedCount > 0 ? `…(${elidedCount})` : ''
-  return `$${marker}${kept.join('')}${leaf}`
+  const elidedCount = index + 1 - protectedDepth
+  const marker = elidedCount > 0 ? `${ELISION_MARKER}(${elidedCount})` : ''
+  return `$${protectedText}${marker}${kept.join('')}${leaf}`
 }
 
 function quoted(value: string): QuotedDiagnosticPart {
@@ -687,6 +777,36 @@ class DiagnosticCollector {
   }
 }
 
+/**
+ * Raw, role-agnostic facts about one object's own keys — the output of the single expensive
+ * reflection step (`Reflect.ownKeys` + `Object.getOwnPropertyDescriptor` per key). It carries no
+ * opinion about which budget or cap applies: `totalKeyStringUnits`/`maxKeyLength` are read by
+ * EITHER a metered caller (against `MAX_STRING_LENGTH`/the payload string-unit budget) or a
+ * structural caller (against `MAX_IDENTIFIER_LENGTH`, charging nothing) — which is what lets one
+ * cached snapshot safely serve either role (#270 finding 2, round three).
+ */
+/**
+ * Phase one of reflection: JUST `Reflect.ownKeys` plus a cheap categorizing walk (typeof checks,
+ * length sums) — no `Object.getOwnPropertyDescriptor` calls. Cheap enough that callers check their
+ * OWN cap (an aggregate field charge, or a fixed structural `maxKeys`) against `stringKeys.length`
+ * BEFORE ever moving to the expensive phase two (`#safeDescriptorsFor`), so a value with an
+ * adversarially huge key count is rejected without paying for a single descriptor lookup — the
+ * property the original single-phase design had and a merged phase would have silently dropped
+ * (#270 finding 2, round three).
+ */
+interface KeyList {
+  readonly stringKeys: readonly string[]
+  readonly hasSymbol: boolean
+  readonly totalKeyStringUnits: number
+  readonly maxKeyLength: number
+}
+
+/** The cached, role-agnostic result of walking an array's real own keys once: validated
+ *  hole/accessor/symbol-free dense content, in order. */
+interface ArrayContentSnapshot {
+  readonly values: readonly unknown[]
+}
+
 /** Descriptor-only decoder for ordinary definitions, catalogs, selections, and JSON inputs. */
 class BoundaryDecoder {
   #nodes = 0
@@ -695,11 +815,27 @@ class BoundaryDecoder {
   #nodeLimitReported = false
   #fieldLimitReported = false
   #stringLimitReported = false
-  // Extra headroom above MAX_NODES/MAX_FIELDS/MAX_TOTAL_STRING_UNITS reserved via
-  // `reserveScaffolding` below — see that method's doc (#270 finding 1, round two).
-  #extraNodes = 0
-  #extraFields = 0
-  #extraStringUnits = 0
+  // Set once ANY payload budget (nodes/fields/string-units) is exhausted. Checked at the top of
+  // every method that does real inspection work, so a budget overrun stops ALL further reflection
+  // immediately rather than merely refusing to charge for it (#270 finding 2, round three) — the
+  // aggregate budgets alone do not bound WORK, only the accepted RESULT, and exhausting one used
+  // to leave every remaining node in the tree to still pay full Reflect.ownKeys /
+  // getOwnPropertyDescriptor cost on the way to being rejected anyway.
+  #fatal = false
+  // Per-object memoization of the expensive reflection step (#270 finding 2, round three): a value
+  // referenced many times from the tree pays `Reflect.ownKeys` / `getOwnPropertyDescriptor` ONCE,
+  // not once per reference. Charging still happens per OCCURRENCE (see `#chargeFields`), using the
+  // cached counts — so a shared object with K keys referenced R times still exhausts the field
+  // budget in O(R) cheap arithmetic operations after the first O(K) reflection, never O(R*K)
+  // reflection calls. `'unsafe'` remembers a value that failed reflection or descriptor lookup;
+  // repeat occurrences fail silently (no repeated diagnostic — the first occurrence already named
+  // the reason) rather than re-attempting the same failing reflection.
+  #keyListCache = new WeakMap<object, KeyList | 'unsafe'>()
+  #descriptorCache = new WeakMap<
+    object,
+    Readonly<Record<PropertyKey, PropertyDescriptor>> | 'unsafe'
+  >()
+  #arrayContentCache = new WeakMap<object, ArrayContentSnapshot | 'unsafe'>()
 
   constructor(
     private readonly code: PresentationScenarioErrorCode,
@@ -714,47 +850,59 @@ class BoundaryDecoder {
     return this.diagnostics.result(value, this.code)
   }
 
-  /**
-   * Widens this decode's own node/field/string-unit budget by EXACT amounts, so a single decoder
-   * can share one cost model with ANOTHER decode of structurally-related content it does not
-   * itself visit. `decodeCatalog` is the one caller: a compiled catalog wraps raw definitions in
-   * scaffolding (`version`/`family`/`scenarios` at the root, `productId`/`scenarioId` per
-   * scenario) that `decodeDefinitions` never had to charge for, because that scaffolding did not
-   * exist in the raw definitions payload. Without this, a definitions payload landing exactly at
-   * the family budget could fail a LATER decode of the catalog derived from it (a JSON round
-   * trip through `decodeScenarioSelection`) — the two decodes must charge the same total for the
-   * same real content, or one budget is fiction (#270). Reserving the EXACT amount (not an
-   * estimate) is what makes that hold regardless of how large the real content turns out to be:
-   * see the worked derivation in `decodeCatalog`.
-   */
-  reserveScaffolding(nodes: number, fields: number, stringUnits: number): void {
-    this.#extraNodes += nodes
-    this.#extraFields += fields
-    this.#extraStringUnits += stringUnits
-  }
-
   #consumeNode(path: DiagnosticPath): boolean {
+    if (this.#fatal) return false
     this.#nodes += 1
-    if (this.#nodes <= MAX_NODES + this.#extraNodes) return true
+    if (this.#nodes <= MAX_NODES) return true
     if (!this.#nodeLimitReported) {
       this.#nodeLimitReported = true
       this.issue(path, `node limit of ${MAX_NODES} exceeded`)
     }
+    this.#fatal = true
     return false
   }
 
   #consumeString(value: string, path: DiagnosticPath): boolean {
+    if (this.#fatal) return false
     if (value.length > MAX_STRING_LENGTH) {
       this.issue(path, `string length limit of ${MAX_STRING_LENGTH} exceeded`)
       return false
     }
     this.#stringUnits += value.length
-    if (this.#stringUnits <= MAX_TOTAL_STRING_UNITS + this.#extraStringUnits) return true
+    if (this.#stringUnits <= MAX_TOTAL_STRING_UNITS) return true
     if (!this.#stringLimitReported) {
       this.#stringLimitReported = true
       this.issue(path, `total string-unit limit of ${MAX_TOTAL_STRING_UNITS} exceeded`)
     }
+    this.#fatal = true
     return false
+  }
+
+  /** Charges an already-known key COUNT and string-unit total (from a cached or fresh
+   *  `KeyList`) against the aggregate payload budgets — the per-OCCURRENCE half of the
+   *  memoization scheme: cheap arithmetic every time, regardless of whether the list itself
+   *  was a cache hit. */
+  #chargeFields(count: number, stringUnits: number, path: DiagnosticPath): boolean {
+    if (this.#fatal) return false
+    this.#fields += count
+    if (this.#fields > MAX_FIELDS) {
+      if (!this.#fieldLimitReported) {
+        this.#fieldLimitReported = true
+        this.issue(path, `aggregate object-field limit of ${MAX_FIELDS} exceeded`)
+      }
+      this.#fatal = true
+      return false
+    }
+    this.#stringUnits += stringUnits
+    if (this.#stringUnits > MAX_TOTAL_STRING_UNITS) {
+      if (!this.#stringLimitReported) {
+        this.#stringLimitReported = true
+        this.issue(path, `total string-unit limit of ${MAX_TOTAL_STRING_UNITS} exceeded`)
+      }
+      this.#fatal = true
+      return false
+    }
+    return true
   }
 
   #isArray(value: object, path: DiagnosticPath): boolean | undefined {
@@ -766,44 +914,64 @@ class BoundaryDecoder {
     }
   }
 
-  #descriptors(
-    value: object,
-    path: DiagnosticPath,
-  ): Record<PropertyKey, PropertyDescriptor> | undefined {
+  /** Phase one (see `KeyList`'s doc): `Reflect.ownKeys` plus categorization, memoized per object
+   *  reference. Cheap relative to phase two, but still O(own key count), so a value referenced
+   *  many times still pays it only once. */
+  #safeKeyList(value: object, path: DiagnosticPath): KeyList | undefined {
+    const cached = this.#keyListCache.get(value)
+    if (cached === 'unsafe') return undefined
+    if (cached !== undefined) return cached
+
     let keys: readonly PropertyKey[]
     try {
       keys = Reflect.ownKeys(value)
     } catch {
       this.issue(path, 'value could not be inspected safely')
+      this.#keyListCache.set(value, 'unsafe')
       return undefined
     }
-    this.#fields += keys.length
-    if (this.#fields > MAX_FIELDS + this.#extraFields) {
-      if (!this.#fieldLimitReported) {
-        this.#fieldLimitReported = true
-        this.issue(path, `aggregate object-field limit of ${MAX_FIELDS} exceeded`)
-      }
-      return undefined
-    }
-    let keysValid = true
+    let hasSymbol = false
+    let totalKeyStringUnits = 0
+    let maxKeyLength = 0
+    const stringKeys: string[] = []
     for (const key of keys) {
-      if (typeof key === 'string') {
-        if (key.length > MAX_STRING_LENGTH) {
-          this.issue(path, `property-name length limit of ${MAX_STRING_LENGTH} exceeded`)
-          keysValid = false
-        } else if (!this.#consumeString(key, path)) {
-          keysValid = false
-        }
+      if (typeof key !== 'string') {
+        hasSymbol = true
+        continue
       }
+      totalKeyStringUnits += key.length
+      if (key.length > maxKeyLength) maxKeyLength = key.length
+      stringKeys.push(key)
     }
-    if (!keysValid) return undefined
+    const list: KeyList = { stringKeys, hasSymbol, totalKeyStringUnits, maxKeyLength }
+    this.#keyListCache.set(value, list)
+    return list
+  }
+
+  /**
+   * Phase two: `Object.getOwnPropertyDescriptor` for every STRING key phase one found (never a
+   * symbol key — nothing downstream ever reads a symbol-keyed descriptor, since a symbol key is
+   * always rejected on sight). Memoized separately from phase one and reached ONLY after a caller
+   * has already checked `keyList`'s cheap facts against its own cap, so an adversarially wide
+   * object that fails that cap never reaches this, the genuinely expensive step (#270 finding 2,
+   * round three).
+   */
+  #safeDescriptorsFor(
+    value: object,
+    path: DiagnosticPath,
+    keyList: KeyList,
+  ): Readonly<Record<PropertyKey, PropertyDescriptor>> | undefined {
+    const cached = this.#descriptorCache.get(value)
+    if (cached === 'unsafe') return undefined
+    if (cached !== undefined) return cached
 
     const descriptors = Object.create(null) as Record<PropertyKey, PropertyDescriptor>
     try {
-      for (const key of keys) {
+      for (const key of keyList.stringKeys) {
         const descriptor = Object.getOwnPropertyDescriptor(value, key)
         if (descriptor === undefined) {
           this.issue(path, 'own properties changed while being inspected')
+          this.#descriptorCache.set(value, 'unsafe')
           return undefined
         }
         Object.defineProperty(descriptors, key, {
@@ -813,8 +981,10 @@ class BoundaryDecoder {
       }
     } catch {
       this.issue(path, 'value could not be inspected safely')
+      this.#descriptorCache.set(value, 'unsafe')
       return undefined
     }
+    this.#descriptorCache.set(value, descriptors)
     return descriptors
   }
 
@@ -936,6 +1106,7 @@ class BoundaryDecoder {
   }
 
   #recordBody(value: unknown, path: DiagnosticPath): InspectedRecord | undefined {
+    if (this.#fatal) return undefined
     if (value === null || typeof value !== 'object') {
       this.issue(path, 'must be a plain object')
       return undefined
@@ -948,15 +1119,22 @@ class BoundaryDecoder {
       this.issue(path, 'must be a plain object')
       return undefined
     }
-    const descriptors = this.#descriptors(value, path)
+    const keyList = this.#safeKeyList(value, path)
+    if (keyList === undefined) return undefined
+    // Charged (and, on overflow, rejected) BEFORE ever building descriptors — an adversarially
+    // wide object pays only the cheap phase-one categorization, never the expensive per-key
+    // `getOwnPropertyDescriptor` walk (#270 finding 2, round three).
+    if (!this.#chargeFields(keyList.stringKeys.length, keyList.totalKeyStringUnits, path)) {
+      return undefined
+    }
+    if (keyList.maxKeyLength > MAX_STRING_LENGTH) {
+      this.issue(path, `property-name length limit of ${MAX_STRING_LENGTH} exceeded`)
+      return undefined
+    }
+    const descriptors = this.#safeDescriptorsFor(value, path, keyList)
     if (descriptors === undefined) return undefined
     const keys: string[] = []
-    let hasSymbol = false
-    for (const key of Reflect.ownKeys(descriptors)) {
-      if (typeof key === 'symbol') {
-        hasSymbol = true
-        continue
-      }
+    for (const key of keyList.stringKeys) {
       const descriptor = descriptors[key]!
       if (!descriptor.enumerable) {
         this.issue(propertyPath(path, key), 'non-enumerable properties are not supported')
@@ -964,8 +1142,81 @@ class BoundaryDecoder {
       }
       keys.push(key)
     }
-    if (hasSymbol) this.issue(path, 'symbol-keyed properties are not supported')
+    if (keyList.hasSymbol) this.issue(path, 'symbol-keyed properties are not supported')
     return { descriptors, keys }
+  }
+
+  /**
+   * A protocol SCAFFOLDING object (the root definitions container, a per-definition/per-scenario
+   * wrapper) — the same safety checks as `record()`, but charges NOTHING against the payload
+   * node/field/string-unit budgets, because this shape does not exist, verbatim, in both decode
+   * paths (#270 finding 1, round three; see the "ONE cost model" doc above
+   * `MAX_PRODUCTS_PER_FAMILY`). Bounded instead by an explicit `maxKeys` the caller names, and by
+   * `MAX_IDENTIFIER_LENGTH` per key — generous headroom for a short slug, never a payload-sized
+   * budget.
+   */
+  structuralRecord(
+    value: unknown,
+    path: DiagnosticPath,
+    maxKeys: number,
+  ): InspectedRecord | undefined {
+    if (this.#fatal) return undefined
+    if (value === null || typeof value !== 'object') {
+      this.issue(path, 'must be a plain object')
+      return undefined
+    }
+    const isArray = this.#isArray(value, path)
+    if (isArray === undefined) return undefined
+    const plainPrototype = isArray ? false : this.#hasPlainPrototype(value, path)
+    if (plainPrototype === undefined) return undefined
+    if (isArray || !plainPrototype) {
+      this.issue(path, 'must be a plain object')
+      return undefined
+    }
+    const keyList = this.#safeKeyList(value, path)
+    if (keyList === undefined) return undefined
+    // Checked BEFORE descriptors: an adversarial flood of bogus keys on a scaffolding wrapper is
+    // rejected on the cheap phase-one categorization alone (#270 finding 2, round three).
+    if (keyList.stringKeys.length > maxKeys) {
+      this.issue(path, `own-key limit of ${maxKeys} exceeded`)
+      return undefined
+    }
+    if (keyList.maxKeyLength > MAX_IDENTIFIER_LENGTH) {
+      this.issue(path, `identifier length limit of ${MAX_IDENTIFIER_LENGTH} exceeded`)
+      return undefined
+    }
+    const descriptors = this.#safeDescriptorsFor(value, path, keyList)
+    if (descriptors === undefined) return undefined
+    const keys: string[] = []
+    for (const key of keyList.stringKeys) {
+      const descriptor = descriptors[key]!
+      if (!descriptor.enumerable) {
+        this.issue(propertyPath(path, key), 'non-enumerable properties are not supported')
+        continue
+      }
+      keys.push(key)
+    }
+    if (keyList.hasSymbol) this.issue(path, 'symbol-keyed properties are not supported')
+    return { descriptors, keys }
+  }
+
+  /** A protocol scaffolding IDENTIFIER (`family`, `productId`, `scenarioId`) — unlike `string()`,
+   *  charges nothing against the payload string-unit budget, since none of these exist, verbatim,
+   *  in the raw definitions this decode was budgeted against (#270 finding 1, round three).
+   *  Bounded instead by `MAX_IDENTIFIER_LENGTH`; `productId`/`scenarioId` are additionally
+   *  validated against the `ProductContract` downstream, which is the real bound on their
+   *  content. */
+  identifier(value: unknown, path: DiagnosticPath): string | undefined {
+    if (this.#fatal) return undefined
+    if (typeof value !== 'string') {
+      this.issue(path, 'must be a string')
+      return undefined
+    }
+    if (value.length > MAX_IDENTIFIER_LENGTH) {
+      this.issue(path, `identifier length limit of ${MAX_IDENTIFIER_LENGTH} exceeded`)
+      return undefined
+    }
+    return value
   }
 
   /**
@@ -1008,7 +1259,91 @@ class BoundaryDecoder {
     return this.#arrayBody(value, path)
   }
 
+  /**
+   * Walks an array's real own keys ONCE, validating hole/accessor/non-index/symbol-freedom and
+   * collecting values in order — memoized per object reference (#270 finding 2, round three), so
+   * a shared array referenced many times pays this walk once, not once per reference. Shared with
+   * `structuralArray()`: the walk itself has no opinion about which length CAP applies (that is
+   * checked by the caller, from the cheap O(1) `#arrayLength` peek, before this is ever reached),
+   * so one cached result safely serves either role. Builds `values` incrementally rather than
+   * pre-allocating `new Array(length)` up front, since a rejected (non-dense) array never needs
+   * the full-length backing store at all.
+   */
+  #inspectArrayContents(
+    value: object,
+    path: DiagnosticPath,
+    length: number,
+  ): ArrayContentSnapshot | undefined {
+    const cachedContents = this.#arrayContentCache.get(value)
+    if (cachedContents === 'unsafe') return undefined
+    if (cachedContents !== undefined) return cachedContents
+
+    const keyList = this.#safeKeyList(value, path)
+    if (keyList === undefined) {
+      this.#arrayContentCache.set(value, 'unsafe')
+      return undefined
+    }
+    const descriptors = this.#safeDescriptorsFor(value, path, keyList)
+    if (descriptors === undefined) {
+      this.#arrayContentCache.set(value, 'unsafe')
+      return undefined
+    }
+    const values: unknown[] = []
+    let valid = true
+    let expectedIndex = 0
+    let holeReported = false
+    // ECMA-262 OrdinaryOwnPropertyKeys returns integer-index keys in ascending numeric order
+    // first, then other string keys, then symbols — so walking this list once and comparing each
+    // index key to the RUNNING expected value finds the position of the FIRST hole in time
+    // proportional to the array's REAL own-key count, never to `length`. A mostly-or-fully sparse
+    // array — the adversarial shape, since a shared reference to one costs `length` work at EVERY
+    // occurrence if scanned naively — is thereby rejected in O(1), not O(length) (#270 finding 2).
+    for (const key of keyList.stringKeys) {
+      if (key === 'length') continue
+      if (!/^(?:0|[1-9][0-9]*)$/.test(key) || Number(key) >= length) {
+        valid = false
+        this.issue(propertyPath(path, key), 'non-index array properties are not supported')
+        continue
+      }
+      const index = Number(key)
+      if (!holeReported && index !== expectedIndex) {
+        this.issue(indexPath(path, expectedIndex), 'sparse array entries are not supported')
+        valid = false
+        holeReported = true
+      }
+      if (!holeReported) {
+        const descriptor = descriptors[key]!
+        if (!('value' in descriptor)) {
+          valid = false
+          this.issue(indexPath(path, index), 'accessor properties are not supported')
+        } else if (!descriptor.enumerable) {
+          valid = false
+          this.issue(indexPath(path, index), 'non-enumerable properties are not supported')
+        } else {
+          values.push(descriptor.value)
+        }
+      }
+      expectedIndex = index + 1
+    }
+    if (!holeReported && expectedIndex !== length) {
+      this.issue(indexPath(path, expectedIndex), 'sparse array entries are not supported')
+      valid = false
+    }
+    if (keyList.hasSymbol) {
+      this.issue(path, 'symbol-keyed properties are not supported')
+      valid = false
+    }
+    if (!valid) {
+      this.#arrayContentCache.set(value, 'unsafe')
+      return undefined
+    }
+    const contents: ArrayContentSnapshot = { values }
+    this.#arrayContentCache.set(value, contents)
+    return contents
+  }
+
   #arrayBody(value: unknown, path: DiagnosticPath): InspectedArray | undefined {
+    if (this.#fatal) return undefined
     if (value === null || typeof value !== 'object') {
       this.issue(path, 'must be an array')
       return undefined
@@ -1031,57 +1366,54 @@ class BoundaryDecoder {
       this.issue(propertyPath(path, 'length'), `array length limit of ${MAX_ARRAY_LENGTH} exceeded`)
       return undefined
     }
-    const descriptors = this.#descriptors(value, path)
-    if (descriptors === undefined) return undefined
-    const values = new Array<unknown>(length)
-    let valid = true
-    let hasSymbol = false
-    let expectedIndex = 0
-    let holeReported = false
-    // ECMA-262 OrdinaryOwnPropertyKeys returns integer-index keys in ascending numeric order
-    // first, then other string keys, then symbols — so walking this list once and comparing each
-    // index key to the RUNNING expected value finds the position of the FIRST hole in time
-    // proportional to the array's REAL own-key count, never to `length`. A mostly-or-fully sparse
-    // array — the adversarial shape, since a shared reference to one costs `length` work at EVERY
-    // occurrence if scanned naively — is thereby rejected in O(1), not O(length) (#270 finding 2).
-    for (const key of Reflect.ownKeys(descriptors)) {
-      if (typeof key === 'symbol') {
-        hasSymbol = true
-        valid = false
-        continue
-      }
-      if (key === 'length') continue
-      if (!/^(?:0|[1-9][0-9]*)$/.test(key) || Number(key) >= length) {
-        valid = false
-        this.issue(propertyPath(path, key), 'non-index array properties are not supported')
-        continue
-      }
-      const index = Number(key)
-      if (!holeReported && index !== expectedIndex) {
-        this.issue(indexPath(path, expectedIndex), 'sparse array entries are not supported')
-        valid = false
-        holeReported = true
-      }
-      if (!holeReported) {
-        const descriptor = descriptors[key]!
-        if (!('value' in descriptor)) {
-          valid = false
-          this.issue(indexPath(path, index), 'accessor properties are not supported')
-        } else if (!descriptor.enumerable) {
-          valid = false
-          this.issue(indexPath(path, index), 'non-enumerable properties are not supported')
-        } else {
-          values[index] = descriptor.value
-        }
-      }
-      expectedIndex = index + 1
+    const keyList = this.#safeKeyList(value, path)
+    if (keyList === undefined) return undefined
+    if (!this.#chargeFields(keyList.stringKeys.length, keyList.totalKeyStringUnits, path)) {
+      return undefined
     }
-    if (!holeReported && expectedIndex !== length) {
-      this.issue(indexPath(path, expectedIndex), 'sparse array entries are not supported')
-      valid = false
+    const contents = this.#inspectArrayContents(value, path, length)
+    if (contents === undefined) return undefined
+    return { source: value, values: contents.values }
+  }
+
+  /**
+   * The array-scaffolding counterpart of `structuralRecord()` — used for `scenarios` (bounded by
+   * `MAX_PRODUCTS_PER_FAMILY`) and `cases` (bounded by `MAX_CASES_PER_PRODUCT`). Bounds LENGTH by
+   * the caller-supplied `maxLength` rather than `MAX_ARRAY_LENGTH`, and charges nothing against
+   * the payload node/field/string-unit budgets — the array header itself (its length, its index
+   * keys) is protocol structure, not case content (#270 finding 1, round three).
+   */
+  structuralArray(
+    value: unknown,
+    path: DiagnosticPath,
+    maxLength: number,
+  ): InspectedArray | undefined {
+    if (this.#fatal) return undefined
+    if (value === null || typeof value !== 'object') {
+      this.issue(path, 'must be an array')
+      return undefined
     }
-    if (hasSymbol) this.issue(path, 'symbol-keyed properties are not supported')
-    return valid ? { source: value, values } : undefined
+    const isArray = this.#isArray(value, path)
+    if (isArray === undefined) return undefined
+    if (!isArray) {
+      this.issue(path, 'must be an array')
+      return undefined
+    }
+    const canonicalPrototype = this.#hasCanonicalArrayPrototype(value, path)
+    if (canonicalPrototype === undefined) return undefined
+    if (!canonicalPrototype) {
+      this.issue(path, 'must use a canonical array prototype or a null prototype')
+      return undefined
+    }
+    const length = this.#arrayLength(value, path)
+    if (length === undefined) return undefined
+    if (length > maxLength) {
+      this.issue(propertyPath(path, 'length'), `array length limit of ${maxLength} exceeded`)
+      return undefined
+    }
+    const contents = this.#inspectArrayContents(value, path, length)
+    if (contents === undefined) return undefined
+    return { source: value, values: contents.values }
   }
 
   field(
@@ -1123,8 +1455,11 @@ class BoundaryDecoder {
     return this.#consumeString(value, path) ? value : undefined
   }
 
+  /** `version` exists only in a compiled catalog — raw definitions carry no version marker at
+   *  all — so, like `identifier()`, it charges nothing against the shared payload budget (#270
+   *  finding 1, round three). */
   literalOne(value: unknown, path: DiagnosticPath): 1 | undefined {
-    if (!this.#consumeNode(path)) return undefined
+    if (this.#fatal) return undefined
     if (value !== 1) {
       this.issue(path, 'must equal 1')
       return undefined
@@ -1305,8 +1640,12 @@ function decodeStringArray(
 function decodeCase(
   decoder: BoundaryDecoder,
   value: unknown,
-  path: DiagnosticPath,
+  rawPath: DiagnosticPath,
 ): DecodedCase | undefined {
+  // The case root — `$["<scenarioId>"].cases[i]` or `$.scenarios[i].cases[j]` — is the protocol
+  // boundary every diagnostic below it must keep intact when clipped (#270 finding 3, round
+  // three): see `protectedPath()`'s doc.
+  const path = protectedPath(rawPath)
   const record = decoder.record(value, path)
   decoder.exactFields(record, CASE_FIELDS, path)
   const idField = decoder.field(record, 'id', path, true)
@@ -1344,7 +1683,13 @@ function decodeDefinition(
   value: unknown,
   path: DiagnosticPath,
 ): DecodedDefinition | undefined {
-  const record = decoder.record(value, path)
+  // The definition WRAPPER (`defaultCaseId`/`cases`) is protocol scaffolding: a compiled catalog's
+  // per-scenario wrapper carries two MORE fixed keys (`productId`/`scenarioId`), so charging
+  // either wrapper's own key count against a budget shared with the other would already be
+  // asymmetric between the two decode paths before a single byte of real content is considered
+  // (#270 finding 1, round three). `defaultCaseId`'s STRING VALUE and each case's CONTENT
+  // (`decodeCase` below) are the shared payload and stay fully metered.
+  const record = decoder.structuralRecord(value, path, MAX_SCAFFOLDING_RECORD_KEYS)
   decoder.exactFields(record, DEFINITION_FIELDS, path)
   const defaultField = decoder.field(record, 'defaultCaseId', path, true)
   const casesField = decoder.field(record, 'cases', path, true)
@@ -1352,7 +1697,7 @@ function decodeDefinition(
     ? decoder.string(defaultField.value, propertyPath(path, 'defaultCaseId'))
     : undefined
   const inspectedCases = casesField.present
-    ? decoder.array(casesField.value, propertyPath(path, 'cases'))
+    ? decoder.structuralArray(casesField.value, propertyPath(path, 'cases'), MAX_CASES_PER_PRODUCT)
     : undefined
   const casesPath = propertyPath(path, 'cases')
   const cases: DecodedCase[] = []
@@ -1372,7 +1717,11 @@ function decodeDefinition(
 
 function decodeDefinitions(value: unknown, diagnostics: DiagnosticCollector): DecodedDefinitions {
   const decoder = new BoundaryDecoder('invalid-definitions', diagnostics)
-  const root = decoder.record(value, ROOT_DIAGNOSTIC_PATH)
+  // The root object's OWN KEYS are `scenarioId`s — protocol scaffolding, bounded by
+  // `MAX_PRODUCTS_PER_FAMILY` (how many scenarios/products a family may declare) and
+  // `MAX_IDENTIFIER_LENGTH` per key, never charged against the payload budgets (#270 finding 1,
+  // round three).
+  const root = decoder.structuralRecord(value, ROOT_DIAGNOSTIC_PATH, MAX_PRODUCTS_PER_FAMILY)
   const definitions = new Map<string, DecodedDefinition>()
   const scenarioIds: string[] = []
   if (root !== undefined) {
@@ -1381,10 +1730,6 @@ function decodeDefinitions(value: unknown, diagnostics: DiagnosticCollector): De
       const descriptor = root.descriptors[scenarioId]!
       if (!('value' in descriptor)) {
         decoder.issue(path, 'accessor properties are not supported')
-        continue
-      }
-      if (scenarioId.length > MAX_STRING_LENGTH) {
-        decoder.issue(path, `property-name length limit of ${MAX_STRING_LENGTH} exceeded`)
         continue
       }
       const definition = decodeDefinition(decoder, descriptor.value, path)
@@ -1403,7 +1748,10 @@ function decodeCatalog(
   code: PresentationScenarioErrorCode = 'invalid-catalog',
 ): DecodedCatalog {
   const decoder = new BoundaryDecoder(code, diagnostics)
-  const root = decoder.record(value, ROOT_DIAGNOSTIC_PATH)
+  // The catalog root (`version`/`family`/`scenarios`) exists ONLY in a compiled catalog — raw
+  // definitions have no such wrapper at all — so it is protocol scaffolding through and through:
+  // structurally validated, charged against nothing (#270 finding 1, round three).
+  const root = decoder.structuralRecord(value, ROOT_DIAGNOSTIC_PATH, MAX_SCAFFOLDING_RECORD_KEYS)
   decoder.exactFields(root, CATALOG_FIELDS, ROOT_DIAGNOSTIC_PATH)
   const versionField = decoder.field(root, 'version', ROOT_DIAGNOSTIC_PATH, true)
   const familyField = decoder.field(root, 'family', ROOT_DIAGNOSTIC_PATH, true)
@@ -1415,55 +1763,54 @@ function decodeCatalog(
     ? decoder.literalOne(versionField.value, versionPath)
     : undefined
   const familyString = familyField.present
-    ? decoder.string(familyField.value, familyPath)
+    ? decoder.identifier(familyField.value, familyPath)
     : undefined
   if (familyString !== undefined && !isPresentationFamily(familyString)) {
     decoder.issue(familyPath, 'unknown presentation family ', quoted(familyString))
   }
+  // The `scenarios` array is itself scaffolding (raw definitions use a MAP keyed by scenarioId,
+  // never an array) — bounded by `MAX_PRODUCTS_PER_FAMILY`, the SAME structural cap the root
+  // record above is bounded by in `decodeDefinitions`, so a family that round-trips through both
+  // shapes is held to one consistent ceiling on scenario COUNT (#270 finding 1, round three).
   const inspectedScenarios = scenariosField.present
-    ? decoder.array(scenariosField.value, scenariosPath)
+    ? decoder.structuralArray(scenariosField.value, scenariosPath, MAX_PRODUCTS_PER_FAMILY)
     : undefined
-  if (inspectedScenarios !== undefined) {
-    // Exact, not an estimate: see CATALOG_SCAFFOLDING_* above. Reserved once, before any
-    // per-scenario charge below, so every charge this loop makes is checked against the SAME
-    // widened budget consistently (#270 finding 1, round two).
-    decoder.reserveScaffolding(
-      CATALOG_SCAFFOLDING_ROOT_NODES +
-        inspectedScenarios.values.length * CATALOG_SCAFFOLDING_PER_SCENARIO_NODES,
-      CATALOG_SCAFFOLDING_ROOT_FIELDS +
-        inspectedScenarios.values.length * CATALOG_SCAFFOLDING_PER_SCENARIO_FIELDS,
-      0, // string units reserved per scenario below, once each productId's real length is known
-    )
-  }
   const scenarios: DecodedScenario[] = []
   if (inspectedScenarios !== undefined) {
     for (let index = 0; index < inspectedScenarios.values.length; index += 1) {
       const path = indexPath(scenariosPath, index)
-      const record = decoder.record(inspectedScenarios.values[index], path)
+      // The per-scenario WRAPPER (`productId`/`scenarioId`/`defaultCaseId`/`cases`) is scaffolding
+      // too — see `decodeDefinition`'s doc for why it cannot share a budget with the definition
+      // wrapper it round-trips against.
+      const record = decoder.structuralRecord(
+        inspectedScenarios.values[index],
+        path,
+        MAX_SCAFFOLDING_RECORD_KEYS,
+      )
       decoder.exactFields(record, SCENARIO_FIELDS, path)
       const productField = decoder.field(record, 'productId', path, true)
       const scenarioField = decoder.field(record, 'scenarioId', path, true)
       const defaultField = decoder.field(record, 'defaultCaseId', path, true)
       const casesField = decoder.field(record, 'cases', path, true)
-      // `productId` has no equivalent charge in `decodeDefinitions` at all (it is a brand-new
-      // field the catalog adds, copied from `ProductContract`, which is always a short slug in
-      // practice) — reserve exactly its own length before charging it, capped at the same
-      // per-string ceiling every string is already held to, so this can never itself become an
-      // unbounded amplifier.
-      if (typeof productField.value === 'string') {
-        decoder.reserveScaffolding(0, 0, Math.min(productField.value.length, MAX_STRING_LENGTH))
-      }
+      // `productId` has NO equivalent in raw definitions at all — it is a field the catalog adds,
+      // copied from `ProductContract` — so it is an `identifier()`, not a `string()`: unmetered,
+      // bounded by `MAX_IDENTIFIER_LENGTH`, and further validated against the `ProductContract`
+      // downstream, which is the real bound on its content (#270 finding 1, round three).
       const productId = productField.present
-        ? decoder.string(productField.value, propertyPath(path, 'productId'))
+        ? decoder.identifier(productField.value, propertyPath(path, 'productId'))
         : undefined
       const scenarioId = scenarioField.present
-        ? decoder.string(scenarioField.value, propertyPath(path, 'scenarioId'))
+        ? decoder.identifier(scenarioField.value, propertyPath(path, 'scenarioId'))
         : undefined
       const defaultCaseId = defaultField.present
         ? decoder.string(defaultField.value, propertyPath(path, 'defaultCaseId'))
         : undefined
       const inspectedCases = casesField.present
-        ? decoder.array(casesField.value, propertyPath(path, 'cases'))
+        ? decoder.structuralArray(
+            casesField.value,
+            propertyPath(path, 'cases'),
+            MAX_CASES_PER_PRODUCT,
+          )
         : undefined
       const casesPath = propertyPath(path, 'cases')
       const cases: DecodedCase[] = []
@@ -1776,15 +2123,18 @@ function compiledCatalog(
   // family-wide complexity budget. Re-decoding this derived, already-typed structure through
   // `decodeCatalog` here would be pure repeated work for data the caller already had validated,
   // so it is built directly from decoded values instead. The compile-to-decode integrity
-  // invariant holds not just because this path skips a redundant decode, but because BOTH ends
-  // now share ONE cost model: `decodeCatalog`'s own budget check (used by `resolveScenarioSelection`
-  // for a genuinely serialized/untyped catalog, e.g. a JSON round trip of this very catalog) is
-  // widened by the catalog's EXACT scaffolding overhead over raw definitions
-  // (`CATALOG_SCAFFOLDING_*`, reserved via `BoundaryDecoder.reserveScaffolding` once the real
-  // scenario count is known) — so a definitions payload that fits the family budget here is
-  // GUARANTEED to still fit when `decodeCatalog` later re-derives and validates the catalog
-  // built from it, at any size, not merely for a small compiled family (#270 finding 1, round
-  // two). See the "one cost model" tests for the worked derivation and the boundary proof.
+  // invariant holds not because the two decodes' budgets are RECONCILED against each other, but
+  // because they no longer NEED reconciling: `decodeCatalog`'s payload budgets (nodes/fields/
+  // string units) meter ONLY case content — decoded by the exact same `decodeCase` this file
+  // already ran above — and the scaffolding this function adds (`version`/`family`, and each
+  // scenario's `productId`/`scenarioId`) is charged against NEITHER decode's payload budget at
+  // all, bounded instead by the separate structural limits (`products`, `casesPerProduct`,
+  // `identifierLength`) both decodes apply identically. So a definitions payload that fits the
+  // family budget here is GUARANTEED to still fit when `decodeCatalog` later re-derives and
+  // validates a genuinely serialized/untyped copy of the catalog built from it (a JSON round trip
+  // or `structuredClone` through `resolveScenarioSelection`), at any family size — by
+  // construction, not by an estimate sized to match it (#270 finding 1, round three). See the
+  // "one cost model" tests for the worked boundary proof, one budget dimension at a time.
   const catalog: DecodedCatalog = Object.freeze({
     version: 1,
     family,
@@ -1921,6 +2271,11 @@ function resolveScenarioSelectionUnknown(
   }
 
   const environmentPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'environment')
+  // Built incrementally, ONE validated axis at a time, rather than validating the whole object
+  // for side effect and casting the ORIGINAL decoded object to `PresentationScenarioEnvironment`
+  // afterward — a merely decoded string never becomes a public typed value except through one of
+  // these guards (#270 finding 7 / "also", round three).
+  const validatedEnvironment: Partial<PresentationScenarioEnvironment> = {}
   for (const [axis, value] of Object.entries(decodedSelection.environment)) {
     const axisPath = propertyPath(environmentPath, axis)
     if (!isPresentationScenarioEnvironmentAxis(axis)) {
@@ -1933,6 +2288,13 @@ function resolveScenarioSelectionUnknown(
       diagnostics.add(axisPath, 'unknown value ', quoted(value))
     } else if (!scenarioCase.environmentAxes.includes(knownAxis)) {
       diagnostics.add(axisPath, 'case ', quoted(caseId), ' does not support this environment axis')
+    } else {
+      // `allowedValues.has(value)` just confirmed `value` is one of THIS axis's own declared
+      // literals (`ENVIRONMENT_AXIS_VALUE_SETS` is built from the very
+      // `PRESENTATION_SCENARIO_ENVIRONMENT_VALUES` the type is derived from) — `ReadonlySet.has`
+      // does not narrow on its own, so this is the guard's own result restated as a type, applied
+      // to exactly the one axis it was just checked against, not a bulk cast of the whole object.
+      ;(validatedEnvironment as Record<string, string>)[knownAxis] = value
     }
   }
   diagnostics.throwIfAny('invalid-environment')
@@ -2008,10 +2370,10 @@ function resolveScenarioSelectionUnknown(
     }
   }
   const copiedArtifact = entry.copiedArtifacts.find(({ name }) => name === selectedArtifactName)
-  const environment = Object.freeze({
+  const environment: PresentationScenarioEnvironment = Object.freeze({
     ...DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
-    ...decodedSelection.environment,
-  }) as PresentationScenarioEnvironment
+    ...validatedEnvironment,
+  })
   const result = Object.freeze({
     productId: scenario.productId,
     scenarioId: scenario.scenarioId,

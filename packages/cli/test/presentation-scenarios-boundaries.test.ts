@@ -697,10 +697,18 @@ describe('presentation scenario boundary decoding', () => {
   })
 
   it('bounds catalog-integrity diagnostics independently of decoding', () => {
+    // Capped at `PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.products` (a STRUCTURAL cap on scenario
+    // COUNT, #270 finding 1 round three) rather than an arbitrarily large count: every repeat past
+    // the first reports BOTH a duplicate-product and a duplicate-scenario issue (see the loop
+    // above), so this still comfortably exceeds the 100-issue diagnostic cap while staying inside
+    // the decode-time array-length limit.
     const catalog = decodeScenarioFamily(productContract(), 'menus-overlays', definitions())
     const invalidCatalog = {
       ...catalog,
-      scenarios: Array.from({ length: 300 }, () => catalog.scenarios[0]!),
+      scenarios: Array.from(
+        { length: PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.products },
+        () => catalog.scenarios[0]!,
+      ),
     }
     const error = errorFrom(() =>
       decodeScenarioSelection(productContract(), invalidCatalog, {
@@ -738,12 +746,14 @@ describe('presentation scenario boundary decoding', () => {
   })
 
   it('clips one oversized diagnostic path instead of collapsing the whole report to the truncation marker (#270)', () => {
-    const longScenarioId = `stale-${'x'.repeat(20_000)}`
-    const definition = definitions()['component:dialog']!
-    const invalidDefinitions = {
-      'component:dialog': definition,
-      [longScenarioId]: definition,
-    }
+    // Protocol IDENTIFIERS (a `scenarioId` key, a `productId`) are now bounded to
+    // `MAX_IDENTIFIER_LENGTH` (256) — see the "one cost model" describe block below — so an
+    // oversized PATH segment can no longer come from scaffolding at all; it can only come from
+    // inside a case's own PAYLOAD (`input`), which stays on the metered `string()`/`json()` path
+    // and is bounded only by `MAX_STRING_LENGTH` (100,000). This is deliberately that shape: one
+    // absurdly long property KEY inside `input`, holding a value that is not JSON-safe.
+    const longKey = `bad-${'x'.repeat(20_000)}`
+    const invalidDefinitions = definitions({ [longKey]: () => 0 })
     const first = errorFrom(() =>
       decodeScenarioFamily(productContract(), 'menus-overlays', invalidDefinitions),
     )
@@ -752,12 +762,20 @@ describe('presentation scenario boundary decoding', () => {
     )
 
     // The first (and only) issue survives with its clipped, marked path — it does NOT collapse
-    // to the pathless truncation marker, which is the bad behaviour this replaces.
+    // to the pathless truncation marker, which is the bad behaviour this replaces. The PROTOCOL
+    // PREFIX (`$["component:dialog"].cases[0]`, the case root `protectedPath()` marks) survives in
+    // full and unclipped; only the oversized payload key (the leaf) is internally clipped (#270
+    // finding 3, round three).
     expect(first.code).toBe('invalid-definitions')
     expect(first.issues).toHaveLength(1)
     expect(first.issues[0]).not.toContain('diagnostics truncated')
-    expect(first.issues[0]).toMatch(/^\$\["stale-x*…\(\d+\): stale definition for /)
-    expect(first.issues[0]).toContain('stale definition for presentation family "menus-overlays"')
+    // `clipRenderedText` clips the LEAF segment's own rendered text (including its closing
+    // bracket/quote) from the tail, keeping only its own pre-clip length in the marker — so the
+    // closing `"]` never survives clipping, same as the leaf-clip shape round two's test used.
+    expect(first.issues[0]).toMatch(
+      /^\$\["component:dialog"\]\.cases\[0\]\.input\["bad-x*…\(\d+\): /,
+    )
+    expect(first.issues[0]).toContain('function values are not JSON-safe')
     expect(first.issues[0]!.length).toBeLessThan(500)
     expect(first.message.length).toBeLessThanOrEqual(
       PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.messageUnits,
@@ -768,22 +786,15 @@ describe('presentation scenario boundary decoding', () => {
   })
 
   it('still survives many oversized issues together, each clipped, up to the issue-count cap', () => {
-    const definitions: Record<string, unknown> = {}
+    // Same shift as the test above: many oversized PAYLOAD keys inside ONE case's `input`, rather
+    // than many oversized scaffolding scenarioIds (now capped at `MAX_IDENTIFIER_LENGTH`).
+    const input: Record<string, unknown> = {}
     for (let index = 0; index < PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.issues + 20; index += 1) {
-      definitions[`stale-${index}-${'y'.repeat(6_000)}`] = {
-        defaultCaseId: 'open',
-        cases: [{ id: 'open', label: 'Open', input: null, environmentAxes: [] }],
-      }
+      input[`bad-${index}-${'y'.repeat(2_000)}`] = () => 0
     }
 
     const error = errorFrom(() =>
-      decodeScenarioFamily(productContract(), 'menus-overlays', {
-        'component:dialog': definitions['component:dialog'] ?? {
-          defaultCaseId: 'open',
-          cases: [{ id: 'open', label: 'Open', input: { open: true }, environmentAxes: ['theme'] }],
-        },
-        ...definitions,
-      }),
+      decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
     )
 
     // Each issue's own oversized path is bounded by the PER-ISSUE clip, so many of them coexist
@@ -800,11 +811,11 @@ describe('presentation scenario boundary decoding', () => {
     )
     expect(truncationMarkers).toHaveLength(1)
     // Every SURVIVING issue (i.e. every one but the truncation marker — `issues` is sorted, so
-    // it is not necessarily last) still names its own stale key, clipped — none of them were
-    // swallowed by any one oversized sibling.
+    // it is not necessarily last) still names its own protected case-root prefix IN FULL plus its
+    // own clipped bad key — none of them were swallowed by any one oversized sibling.
     for (const issue of error.issues) {
       if (issue.includes('diagnostics truncated')) continue
-      expect(issue).toMatch(/^\$\["stale-\d+-y*…\(\d+\): stale definition for /)
+      expect(issue).toMatch(/^\$\["component:dialog"\]\.cases\[0\]\.input\["bad-\d+-y*…\(\d+\): /)
     }
   })
 
@@ -852,6 +863,54 @@ describe('presentation scenario boundary decoding', () => {
     expect(replay.issues).toEqual(error.issues)
   })
 
+  it('two issues differing only NEAR THE ROOT (which case, not which leaf) stay distinguishable after clipping (#270 finding 3, round three)', () => {
+    // Same defect class as the test above, one level OUTWARD: round two's fix keeps the LEAF
+    // distinguishable when siblings inside the SAME case differ only in their final segment; it
+    // says nothing about two issues from DIFFERENT cases whose payload SHAPE is identical and
+    // which therefore differ only near the scaffolding root (`cases[0]` vs `cases[1]`) — exactly
+    // the segments a plain middle-elision has no reason to prefer keeping over the payload's own
+    // deep, long names. `protectedPath()` (applied once, at the case root, in `decodeCase`) is
+    // what keeps `cases[i]` itself unconditionally intact through clipping.
+    function deepBadInput(depth: number): unknown {
+      let value: unknown = () => 0
+      for (let index = 0; index < depth; index += 1) {
+        value = { [`level-with-a-long-descriptive-name-${index}`]: value }
+      }
+      return value
+    }
+    const twoCaseDefinitions = {
+      'component:dialog': {
+        defaultCaseId: 'open',
+        cases: [
+          { id: 'open', label: 'Open', input: deepBadInput(10), environmentAxes: [] },
+          { id: 'closed', label: 'Closed', input: deepBadInput(10), environmentAxes: [] },
+        ],
+      },
+    }
+
+    const error = errorFrom(() =>
+      decodeScenarioFamily(productContract(), 'menus-overlays', twoCaseDefinitions),
+    )
+
+    expect(error.code).toBe('invalid-definitions')
+    expect(error.issues).toHaveLength(2)
+    // Every issue is distinct — the ROOT-CAUSE requirement, and the only one that would fail if
+    // the case index got elided away.
+    expect(new Set(error.issues).size).toBe(error.issues.length)
+    const case0Issue = error.issues.find((issue) => issue.includes('.cases[0]'))
+    const case1Issue = error.issues.find((issue) => issue.includes('.cases[1]'))
+    expect(case0Issue).toBeDefined()
+    expect(case1Issue).toBeDefined()
+    // Both start with their OWN full, unelided case root.
+    expect(case0Issue).toMatch(/^\$\["component:dialog"\]\.cases\[0\]/)
+    expect(case1Issue).toMatch(/^\$\["component:dialog"\]\.cases\[1\]/)
+    // Deterministic: replaying renders byte-identical clipped issues.
+    const replay = errorFrom(() =>
+      decodeScenarioFamily(productContract(), 'menus-overlays', twoCaseDefinitions),
+    )
+    expect(replay.issues).toEqual(error.issues)
+  })
+
   it('types throwing, mutating, and huge proxy reflection as bounded boundary errors', () => {
     const throwing = new Proxy(
       {},
@@ -883,8 +942,12 @@ describe('presentation scenario boundary decoding', () => {
       issues: ['$: own properties changed while being inspected.'],
     })
 
+    // The ROOT definitions object's own key COUNT is now a STRUCTURAL cap
+    // (`PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.products` — #270 finding 1, round three), checked
+    // from the cheap `Reflect.ownKeys`-only phase alone, so a huge proxy is rejected WITHOUT ever
+    // reading a single property descriptor (#270 finding 2, round three).
     let descriptorReads = 0
-    const hugeKeyCount = PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyFields + 1
+    const hugeKeyCount = PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.products + 1
     const huge = new Proxy(
       {},
       {
@@ -902,9 +965,7 @@ describe('presentation scenario boundary decoding', () => {
     )
     expect(hugeError).toMatchObject({
       code: 'invalid-definitions',
-      issues: [
-        `$: aggregate object-field limit of ${PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyFields} exceeded.`,
-      ],
+      issues: [`$: own-key limit of ${PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.products} exceeded.`],
     })
     expect(hugeError.message.length).toBeLessThan(1_000)
     expect(descriptorReads).toBe(0)
@@ -1046,64 +1107,279 @@ describe('presentation scenario boundary decoding', () => {
   })
 })
 
-describe('one cost model governs compileScenarioFamily and every catalog derived from it (#270)', () => {
-  // root(1) + definition overhead(record 1 + defaultCaseId 1 + cases-array-header 1 = 3) +
-  // case overhead(record 1 + id 1 + label 1 = 3) + environmentAxes ['theme'] (header 1 + item
-  // 1 = 2) + the input object's own node (1)
-  const FIXED_DECODE_OVERHEAD_NODES = 10
+/**
+ * Binary-searches the largest `n` for which `build(n)` compiles successfully via
+ * `decodeScenarioFamily`, on the assumption that `build` is MONOTONE (larger `n` never uses less
+ * of the budget being probed) — mirrors the reviewer's own probe methodology (round three) rather
+ * than hand-deriving a fixed per-shape overhead constant, which is exactly the class of arithmetic
+ * mistake the earlier `reserveScaffolding` design made three times over. `hi` must already fail.
+ */
+function maxFittingN(build: (n: number) => unknown, lo: number, hi: number): number {
+  const fits = (n: number): boolean => {
+    try {
+      decodeScenarioFamily(productContract(), 'menus-overlays', definitions(build(n)))
+      return true
+    } catch {
+      return false
+    }
+  }
+  if (fits(hi)) throw new Error('maxFittingN: hi must already fail to fit')
+  let low = lo
+  let high = hi
+  while (high - low > 1) {
+    const mid = low + Math.floor((high - low) / 2)
+    if (fits(mid)) low = mid
+    else high = mid
+  }
+  return low
+}
 
-  function flatInputAtNodeCount(totalNodes: number): Record<string, null> {
-    const fieldCount = totalNodes - FIXED_DECODE_OVERHEAD_NODES
+describe('one cost model governs compileScenarioFamily and every catalog derived from it (#270, round three)', () => {
+  function flatNullInput(fieldCount: number): Record<string, null> {
     const input: Record<string, null> = {}
     for (let index = 0; index < fieldCount; index += 1) input[`field${index}`] = null
     return input
   }
 
-  it('succeeds for a family definitions payload landing exactly at the family node budget, and it does not re-decode its own rebuilt catalog under a fresh budget', () => {
-    const input = flatInputAtNodeCount(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyNodes)
+  // Two-level nested single-element arrays (`[[[]], [[]], ...]`) push the FIELDS:NODES ratio much
+  // closer to `MAX_FIELDS`'s own 2x-of-nodes sizing than a flat object can: a flat object's own
+  // fields can never exceed its own nodes (each key implies exactly one value node), so a flat
+  // shape alone can never approach the fields budget without first blowing the (half the size)
+  // node budget. Depth stays at 3 — far under `MAX_DEPTH` (64) — regardless of `pairCount`.
+  function nestedPairsInput(pairCount: number): { rows: readonly unknown[] } {
+    return { rows: Array.from({ length: pairCount }, () => [[]]) }
+  }
 
-    const catalog = decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input))
-
-    expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
-  })
-
-  it('rejects a family definitions payload exactly one node past the family budget, citing the caller-written path', () => {
-    const input = flatInputAtNodeCount(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyNodes + 1)
-
-    const error = errorFrom(() =>
-      decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
+  describe('NODES', () => {
+    const boundary = maxFittingN(
+      flatNullInput,
+      0,
+      PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyNodes,
     )
 
-    expect(error.code).toBe('invalid-definitions')
-    expect(error.issues).toHaveLength(1)
-    // A caller-written path: somewhere under the case the caller actually authored, never a
-    // rebuilt-structure path like `$.scenarios[0]...` that only compiledCatalog's internals know.
-    expect(error.issues[0]).toMatch(/^\$\["component:dialog"\]\.cases\[0\]\./)
-    expect(error.issues[0]).toContain('node limit of')
-    expect(error.issues[0]).not.toMatch(/^\$\.scenarios/)
+    it('compiles and round-trips exactly at the node budget', () => {
+      const input = flatNullInput(boundary)
+      const contract = productContract()
+      const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
+      expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
+
+      const selection = { productId: 'dialog', path: 'baseline' as const }
+      const viaJson = decodeScenarioSelection(
+        contract,
+        JSON.parse(JSON.stringify(catalog)) as unknown,
+        selection,
+      )
+      expect(viaJson.case.input).toEqual(input)
+      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
+      expect(viaClone.case.input).toEqual(input)
+    })
+
+    it('rejects one past the node budget, citing the caller-written path', () => {
+      const input = flatNullInput(boundary + 1)
+      const error = errorFrom(() =>
+        decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
+      )
+      expect(error.code).toBe('invalid-definitions')
+      expect(error.issues).toHaveLength(1)
+      // A caller-written path: somewhere under the case the caller actually authored, never a
+      // rebuilt-structure path like `$.scenarios[0]...` that only compiledCatalog's internals know.
+      expect(error.issues[0]).toMatch(/^\$\["component:dialog"\]\.cases\[0\]\./)
+      expect(error.issues[0]).toContain('node limit of')
+      expect(error.issues[0]).not.toMatch(/^\$\.scenarios/)
+    })
   })
 
-  it('a catalog compiled exactly at the family budget survives a JSON round trip AND a structuredClone through decodeScenarioSelection (#270 finding 1, round two)', () => {
-    // A catalog adds scaffolding (version/family/productId/scenarioId) beyond what the raw
-    // definitions payload contained. Before the fix, decodeCatalog charged that scaffolding
-    // against a FRESH copy of the SAME budget, so a definitions payload landing exactly at the
-    // limit compiled successfully but its own compiled catalog failed to re-decode — an
-    // untrusted/serialized copy of a catalog `compileScenarioFamily` had JUST produced was
-    // rejected with an internal `$.scenarios[...]` path the caller never wrote. One cost model
-    // (`decodeCatalog` reserves the EXACT scaffolding overhead once it knows the real scenario
-    // count) is what makes this invariant hold at any size, not merely for a small family.
-    const input = flatInputAtNodeCount(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyNodes)
-    const contract = productContract()
-    const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
-    const selection = { productId: 'dialog', path: 'baseline' as const }
+  describe('FIELDS', () => {
+    const boundary = maxFittingN(
+      nestedPairsInput,
+      0,
+      PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyFields,
+    )
 
-    const serialized = JSON.parse(JSON.stringify(catalog)) as unknown
-    const viaJson = decodeScenarioSelection(contract, serialized, selection)
-    expect(viaJson.case.input).toEqual(input)
+    it('compiles and round-trips exactly at the field budget', () => {
+      const input = nestedPairsInput(boundary)
+      const contract = productContract()
+      const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
+      expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
 
-    const cloned = structuredClone(catalog)
-    const viaStructuredClone = decodeScenarioSelection(contract, cloned, selection)
-    expect(viaStructuredClone.case.input).toEqual(input)
+      const selection = { productId: 'dialog', path: 'baseline' as const }
+      const viaJson = decodeScenarioSelection(
+        contract,
+        JSON.parse(JSON.stringify(catalog)) as unknown,
+        selection,
+      )
+      expect(viaJson.case.input).toEqual(input)
+      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
+      expect(viaClone.case.input).toEqual(input)
+    })
+
+    it('rejects one past the field budget, citing the caller-written path', () => {
+      // A single flat object wide enough to exceed `MAX_FIELDS` outright reports the field limit
+      // in ONE issue: the container's own field charge is a single upfront batch (all its own
+      // keys at once), which fails and short-circuits before any child node is ever visited — so
+      // this, unlike the nested-pairs shape above, needs no binary search to land cleanly past
+      // the boundary with no other diagnostic mixed in.
+      const input = flatNullInput(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyFields + 1)
+      const error = errorFrom(() =>
+        decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
+      )
+      expect(error.code).toBe('invalid-definitions')
+      expect(error.issues).toHaveLength(1)
+      expect(error.issues[0]).toMatch(/^\$\["component:dialog"\]\.cases\[0\]\./)
+      expect(error.issues[0]).toContain('aggregate object-field limit of')
+    })
+  })
+
+  describe('STRING UNITS', () => {
+    // One field per unit of granularity, each holding a string just under the PER-STRING cap, so
+    // the search is over how many such fields fit — never anywhere near the node/field budgets.
+    const unitSize = 10_000
+    function stringUnitsInput(fieldCount: number): Record<string, string> {
+      const input: Record<string, string> = {}
+      for (let index = 0; index < fieldCount; index += 1) input[`f${index}`] = 'x'.repeat(unitSize)
+      return input
+    }
+    const boundaryFields = maxFittingN(
+      stringUnitsInput,
+      0,
+      Math.ceil(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyStringUnits / unitSize) + 1,
+    )
+
+    it('compiles and round-trips exactly at the string-unit budget', () => {
+      const input = stringUnitsInput(boundaryFields)
+      const contract = productContract()
+      const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
+      expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
+
+      const selection = { productId: 'dialog', path: 'baseline' as const }
+      const viaJson = decodeScenarioSelection(
+        contract,
+        JSON.parse(JSON.stringify(catalog)) as unknown,
+        selection,
+      )
+      expect(viaJson.case.input).toEqual(input)
+      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
+      expect(viaClone.case.input).toEqual(input)
+    })
+
+    it('rejects one field past the string-unit budget, citing the caller-written path', () => {
+      const input = stringUnitsInput(boundaryFields + 1)
+      const error = errorFrom(() =>
+        decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
+      )
+      expect(error.code).toBe('invalid-definitions')
+      expect(
+        error.issues.some(
+          (issue) =>
+            issue.startsWith('$["component:dialog"].cases[0].') &&
+            issue.includes('total string-unit limit of'),
+        ),
+      ).toBe(true)
+    })
+  })
+
+  describe('ARRAY LENGTH', () => {
+    it('compiles and round-trips a single array exactly at the array-length budget', () => {
+      const input = Array.from(
+        { length: PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.arrayLength },
+        (_, index) => index,
+      )
+      const contract = productContract()
+      const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
+      expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
+
+      const selection = { productId: 'dialog', path: 'baseline' as const }
+      const viaJson = decodeScenarioSelection(
+        contract,
+        JSON.parse(JSON.stringify(catalog)) as unknown,
+        selection,
+      )
+      expect(viaJson.case.input).toEqual(input)
+      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
+      expect(viaClone.case.input).toEqual(input)
+    })
+
+    it('rejects an array one past the array-length budget, citing the caller-written path', () => {
+      const input = Array.from(
+        { length: PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.arrayLength + 1 },
+        (_, index) => index,
+      )
+      const error = errorFrom(() =>
+        decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
+      )
+      expect(error.code).toBe('invalid-definitions')
+      expect(error.issues).toEqual([
+        `$["component:dialog"].cases[0].input.length: array length limit of ${PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.arrayLength} exceeded.`,
+      ])
+    })
+  })
+
+  describe('DEPTH', () => {
+    function chainOfDepth(depth: number): unknown {
+      let value: unknown = true
+      for (let index = 0; index < depth; index += 1) value = { child: value }
+      return value
+    }
+
+    it('compiles and round-trips a value exactly at the depth budget', () => {
+      // `json()`'s root value is depth 0, so a chain of `depth` wrappers reaches exactly `depth`.
+      const input = chainOfDepth(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.depth)
+      const contract = productContract()
+      const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
+      expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
+
+      const selection = { productId: 'dialog', path: 'baseline' as const }
+      const viaJson = decodeScenarioSelection(
+        contract,
+        JSON.parse(JSON.stringify(catalog)) as unknown,
+        selection,
+      )
+      expect(viaJson.case.input).toEqual(input)
+      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
+      expect(viaClone.case.input).toEqual(input)
+    })
+
+    it('rejects a value one past the depth budget, citing the caller-written path', () => {
+      const input = chainOfDepth(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.depth + 1)
+      const error = errorFrom(() =>
+        decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
+      )
+      expect(error.code).toBe('invalid-definitions')
+      // The protected prefix is `$["component:dialog"].cases[0]` — its own render, with no
+      // trailing literal `.`, since a long `.child.child...` run right after it is exactly what
+      // gets elided (no synthetic separator is inserted between the protected prefix and an
+      // elision marker that immediately follows it).
+      expect(
+        error.issues.some(
+          (issue) =>
+            issue.startsWith('$["component:dialog"].cases[0]') &&
+            issue.includes(
+              `depth limit of ${PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.depth} exceeded`,
+            ),
+        ),
+      ).toBe(true)
+    })
+  })
+
+  describe('PRODUCTS (structural, not payload)', () => {
+    it('a family at exactly the max product count round-trips through JSON and structuredClone', () => {
+      const productCount = PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.products
+      const contract = manyProductsContract(productCount)
+      const defs = manyCaseDefinitions(productCount, 1, 1)
+
+      const catalog = decodeScenarioFamily(contract, 'menus-overlays', defs)
+      expect(catalog.scenarios).toHaveLength(productCount)
+
+      const selection = { productId: 'product-0', path: 'baseline' as const }
+      const viaJson = decodeScenarioSelection(
+        contract,
+        JSON.parse(JSON.stringify(catalog)) as unknown,
+        selection,
+      )
+      expect(viaJson.case.input).toEqual(rowInput(1))
+      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
+      expect(viaClone.case.input).toEqual(rowInput(1))
+    })
   })
 })
 
@@ -1141,13 +1417,63 @@ describe('array decoding cost is bounded by real own-key count, never by a claim
     expect(
       error.issues.some((issue) => issue.includes('sparse array entries are not supported')),
     ).toBe(true)
-    // Fixed, small per-occurrence cost (a handful of reflection calls each) — nowhere near
-    // `occurrences * arrayLength`, which is what the OLD, unbounded per-index scan would cost
-    // (50 * 2000 = 100,000 just for this one array's real content, before even counting the
-    // 50 outer-row element visits).
-    const maxCallsPerOccurrence = 6
-    expect(ownKeysCalls).toBeLessThanOrEqual(occurrences * maxCallsPerOccurrence)
-    expect(descriptorCalls).toBeLessThanOrEqual(occurrences * maxCallsPerOccurrence)
+    // These bounds must be TIGHT ENOUGH to fail on the pre-memoization code (#270 finding 2,
+    // round three): a bound merely proportional to `occurrences` (e.g. `occurrences * 6 = 300`)
+    // is satisfied by 50 real `ownKeys` calls just as easily as by 1, so it cannot tell "O(1) per
+    // occurrence" apart from "memoized once, total" — exactly the gap the reviewer measured
+    // against this same test. `ownKeys` is called ONLY when the per-object key-list cache misses
+    // (`#safeKeyList`), so a SHARED reference across `occurrences` places pays it ONCE, not once
+    // per occurrence: bounded by a small constant, independent of `occurrences`.
+    expect(ownKeysCalls).toBeLessThanOrEqual(2)
+    // `getOwnPropertyDescriptor` is NOT fully memoized to 1: `#arrayLength` peeks the `length`
+    // descriptor directly (an O(1) operation deliberately left uncached, since caching an
+    // already-O(1) read buys nothing) once per OCCURRENCE — so this scales with `occurrences`,
+    // plus a small constant for the one real (cached) descriptor-building pass.
+    expect(descriptorCalls).toBeLessThanOrEqual(occurrences + 5)
+  })
+
+  it('inspects a wide shared object referenced many times in O(1) reflection calls, not O(references) (#270 finding 2, round three)', () => {
+    // The reviewer's own reproduction: a shared object with K non-recursed-into (here: primitive)
+    // own keys, referenced R times — not sparse, not over-length, just WIDE and SHARED. Every
+    // occurrence used to re-run `Reflect.ownKeys` + `Object.getOwnPropertyDescriptor` for all K
+    // keys before charging a single budget, costing 10-47s measured. Memoizing the reflection
+    // step per OBJECT REFERENCE (`#safeKeyList`/`#safeDescriptorsFor`) makes it pay that cost
+    // ONCE: `ownKeys` exactly once total, `getOwnPropertyDescriptor` exactly once per the shared
+    // object's OWN key (K), never once per (key x reference).
+    let ownKeysCalls = 0
+    let descriptorCalls = 0
+    const keyCount = 500
+    const target: Record<string, number> = {}
+    for (let index = 0; index < keyCount; index += 1) target[`k${index}`] = index
+    const shared = new Proxy(target, {
+      ownKeys(t) {
+        ownKeysCalls += 1
+        return Reflect.ownKeys(t)
+      },
+      getOwnPropertyDescriptor(t, key) {
+        descriptorCalls += 1
+        return Reflect.getOwnPropertyDescriptor(t, key)
+      },
+    })
+    const referenceCount = 1_999
+    const refs = Array.from({ length: referenceCount }, () => shared)
+
+    const started = Date.now()
+    const error = errorFrom(() =>
+      decodeScenarioFamily(productContract(), 'menus-overlays', definitions(refs)),
+    )
+    const elapsedMs = Date.now() - started
+
+    expect(error.code).toBe('invalid-definitions')
+    // This test's OWN mutation check: a deterministic, discriminating bound that fails on the
+    // pre-memoization code (which would report `ownKeysCalls` in the THOUSANDS here — one per
+    // reference, not one total) rather than a bound wide enough to pass either way.
+    expect(ownKeysCalls).toBeLessThanOrEqual(2)
+    expect(descriptorCalls).toBeLessThanOrEqual(keyCount + 10)
+    // Wall-clock is NOT the discriminating assertion above (a slow CI runner should never flip a
+    // correctness test), but it is worth recording as a coarse sanity floor: this used to be
+    // reported at 10-47 seconds and is now well under one, on the same shape.
+    expect(elapsedMs).toBeLessThan(5_000)
   })
 
   it('rejects an over-long array before ever enumerating its keys', () => {
