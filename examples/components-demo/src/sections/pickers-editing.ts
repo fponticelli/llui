@@ -1,4 +1,19 @@
-import { div, button, span, label, input, each, onMount, text } from '@llui/dom'
+import {
+  div,
+  button,
+  span,
+  label,
+  input,
+  canvas,
+  each,
+  onMount,
+  mountable,
+  registerBinding,
+  currentDoc,
+  isSignalHandle,
+  branch,
+  text,
+} from '@llui/dom'
 import type { Send, Signal, Renderable } from '@llui/dom'
 import { datePicker, monthGrid, weekRows } from '@llui/components/date-picker'
 import { timePicker, formatTime } from '@llui/components/time-picker'
@@ -159,6 +174,49 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     }
   })
 
+  // OKLCH area canvas: `areaCanvas` is a decorative, headless seam — the
+  // machine has no opinion on how it gets painted. `registerBinding` rides
+  // the same chunked-mask reconciler as every other prop (repaints only when
+  // the hue chunk is actually dirty); `onMount` finds the real canvas once.
+  const oklchCanvasId = 'color-picker-oklch-canvas'
+  let oklchCanvasEl: HTMLCanvasElement | null = null
+  const oklchHue = state.at('colorPicker').map((s) => (s.color.model === 'oklch' ? s.color.h : 0))
+  const oklchCanvasBinding = mountable(() => {
+    if (isSignalHandle(oklchHue)) {
+      registerBinding(oklchHue.deps, oklchHue.produce, (value) => {
+        if (oklchCanvasEl) colorPicker.paintOklchPlane(oklchCanvasEl, value as number)
+      })
+    }
+    return currentDoc().createComment('oklch-canvas-binding')
+  })
+  const oklchCanvasMount = onMount((root) => {
+    oklchCanvasEl = root.querySelector<HTMLCanvasElement>(`#${oklchCanvasId}`)
+    const cpState = state.peek().colorPicker
+    if (oklchCanvasEl) {
+      colorPicker.paintOklchPlane(
+        oklchCanvasEl,
+        cpState.color.model === 'oklch' ? cpState.color.h : 0,
+      )
+    }
+    return () => {
+      oklchCanvasEl = null
+    }
+  })
+
+  // Click-to-pick on the 2D area — the machine owns the thumb's keyboard
+  // handling (arrow keys already work via `areaThumb.onKeyDown`); the view
+  // owns pointer position, per `colorFromPoint`/`lcFromPoint`'s doc comments.
+  const onAreaClick = (e: MouseEvent): void => {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    if (state.peek().colorPicker.color.model === 'oklch') {
+      const { c, l } = colorPicker.lcFromPoint(rect, e.clientX, e.clientY)
+      send({ type: 'colorPicker', msg: { type: 'setLc', c, l } })
+    } else {
+      const { s, v } = colorPicker.colorFromPoint(rect, e.clientX, e.clientY)
+      send({ type: 'colorPicker', msg: { type: 'setSv', s, v } })
+    }
+  }
+
   const dpGrid = (): Renderable => {
     const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     // The baked theme applies `display: grid; grid-template-columns: repeat(7, 1fr)`
@@ -239,6 +297,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   return [
     // Placed so the splitter drag onMount registers (a discarded onMount() is inert).
     splitterMount,
+    // Same reason: a placed-but-unused Mountable is inert.
+    oklchCanvasBinding,
+    oklchCanvasMount,
     sectionGroup('Pickers', [
       card('Date Picker', [
         div({ ...dp.root }, [
@@ -279,23 +340,72 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       card('Color Picker', [
         div({ ...cp.root }, [
           div({ class: 'flex items-center gap-2' }, [
-            div({ ...cp.swatch }, []),
-            input({ ...cp.hexInput }),
+            div({ ...cp.preview }, []),
+            input({ ...cp.hexInput, class: 'flex-1' }),
+            button({ ...cp.eyeDropperTrigger, class: 'btn btn-secondary btn-sm' }, [text('◎')]),
+            button({ ...cp.modelToggle, class: 'btn btn-secondary btn-sm' }, [
+              text(state.at('colorPicker').map((s) => (s.color.model === 'hsv' ? 'OKLCH' : 'HSV'))),
+            ]),
+          ]),
+          div({ ...cp.area, onClick: onAreaClick }, [
+            canvas({ ...cp.areaCanvas, id: oklchCanvasId, width: 240, height: 128 }),
+            div({ ...cp.areaThumb }, []),
           ]),
           div({ class: 'flex flex-col gap-1.5' }, [
-            label(
-              { class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold' },
-              [span([text('H')]), input({ ...cp.hueSlider })],
+            branch(
+              state.at('colorPicker').map((s) => s.color.model),
+              {
+                hsv: () => [
+                  label(
+                    {
+                      class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold',
+                    },
+                    [span([text('H')]), input({ ...cp.hueSlider })],
+                  ),
+                  label(
+                    {
+                      class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold',
+                    },
+                    [span([text('S')]), input({ ...cp.saturationSlider })],
+                  ),
+                  label(
+                    {
+                      class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold',
+                    },
+                    [span([text('L')]), input({ ...cp.lightnessSlider })],
+                  ),
+                ],
+                oklch: () => [
+                  label(
+                    {
+                      class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold',
+                    },
+                    [span([text('H')]), input({ ...cp.hueSlider })],
+                  ),
+                  label(
+                    {
+                      class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold',
+                    },
+                    [span([text('C')]), input({ ...cp.chromaSlider })],
+                  ),
+                  label(
+                    {
+                      class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold',
+                    },
+                    [span([text('L')]), input({ ...cp.oklchLightnessSlider })],
+                  ),
+                ],
+              },
             ),
             label(
               { class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold' },
-              [span([text('S')]), input({ ...cp.saturationSlider })],
-            ),
-            label(
-              { class: 'flex items-center gap-2 text-xs text-muted-foreground font-semibold' },
-              [span([text('L')]), input({ ...cp.lightnessSlider })],
+              [span([text('A')]), input({ ...cp.alphaSlider })],
             ),
           ]),
+        ]),
+        div({ class: 'mt-3 text-sm text-muted-foreground' }, [
+          text('CSS: '),
+          text(state.at('colorPicker').map((s) => colorPicker.toCss(s))),
         ]),
       ]),
     ]),

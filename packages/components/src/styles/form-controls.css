@@ -985,7 +985,9 @@ textarea[data-scope='form-field'][data-part='control'] {
 
 [data-scope='color-picker'][data-part='hue-slider'],
 [data-scope='color-picker'][data-part='saturation-slider'],
-[data-scope='color-picker'][data-part='lightness-slider'] {
+[data-scope='color-picker'][data-part='lightness-slider'],
+[data-scope='color-picker'][data-part='chroma-slider'],
+[data-scope='color-picker'][data-part='oklch-lightness-slider'] {
   flex: 1;
   height: 0.75rem;
   appearance: none;
@@ -998,7 +1000,9 @@ textarea[data-scope='form-field'][data-part='control'] {
 
 [data-scope='color-picker'][data-part='hue-slider']::-webkit-slider-thumb,
 [data-scope='color-picker'][data-part='saturation-slider']::-webkit-slider-thumb,
-[data-scope='color-picker'][data-part='lightness-slider']::-webkit-slider-thumb {
+[data-scope='color-picker'][data-part='lightness-slider']::-webkit-slider-thumb,
+[data-scope='color-picker'][data-part='chroma-slider']::-webkit-slider-thumb,
+[data-scope='color-picker'][data-part='oklch-lightness-slider']::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 1rem;
   height: 1rem;
@@ -1011,6 +1015,70 @@ textarea[data-scope='form-field'][data-part='control'] {
 
 [data-scope='color-picker'][data-part='hue-slider'] {
   background: linear-gradient(to right, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
+}
+
+/* `data-model` is published on the root (and `area`), not on every part — a
+ * descendant selector from the root is how the hue ramp answers it. */
+[data-scope='color-picker'][data-part='root'][data-model='oklch'] [data-part='hue-slider'] {
+  background: linear-gradient(in oklch longer hue, oklch(0.75 0.15 0), oklch(0.75 0.15 360));
+}
+
+/* The 2D area/thumb/canvas were never styled here before OKLCH mode needed a
+ * positioning context for `area-canvas` — filling that gap for all three
+ * together, rather than leaving `area-canvas` positioned against whatever
+ * ancestor happens to be positioned. */
+[data-scope='color-picker'][data-part='area'] {
+  position: relative;
+  height: 8rem;
+  border-radius: var(--llui-radius-md);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  cursor: crosshair;
+}
+
+[data-scope='color-picker'][data-part='area-canvas'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+[data-scope='color-picker'][data-part='area-thumb'] {
+  position: absolute;
+  width: 1rem;
+  height: 1rem;
+  transform: translate(-50%, -50%);
+  border-radius: 9999px;
+  border: 2px solid var(--background);
+  outline: none;
+  box-shadow: var(--llui-shadow-sm);
+}
+
+[data-scope='color-picker'][data-part='model-toggle'],
+[data-scope='color-picker'][data-part='eyedropper-trigger'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.25rem;
+  padding: 0 var(--llui-space-2);
+  border-radius: var(--llui-radius-md);
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+[data-scope='color-picker'][data-part='eyedropper-trigger'] {
+  width: 2.25rem;
+  padding: 0;
+}
+
+/* `data-out-of-gamut` is published on the root only. */
+[data-scope='color-picker'][data-part='root'][data-out-of-gamut] [data-part='preview'] {
+  outline: 2px solid color-mix(in srgb, orange 70%, transparent);
+  outline-offset: 2px;
 }
 
 /* ─── Editable ─── */

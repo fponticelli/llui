@@ -11665,19 +11665,22 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 | Field | Type |
 |---|---|
-| `hsv` | `Hsv` |
+| `color` | `\| { model: 'hsv'; h: number; s: number; v: number }
+    \| { model: 'oklch'; l: number; c: number; h: number }` |
 | `alpha` | `number` |
 | `disabled` | `boolean` |
 
-**Messages:** `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`, `setSv`, `nudgeSv`, `setColor`
+**Messages:** `setModel`, `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`, `setSv`, `nudgeSv`, `setColor`, `setOklch`, `setChroma`, `setOklchLightness`, `setLc`, `nudgeLc`
 
-**Init options:** `hsl?: Hsl, hsv?: Hsv, alpha?: number, disabled?: boolean`
+**Init options:** `model?: ColorModel, color?: string, hsl?: Hsl, hsv?: Hsv, oklch?: Oklch, alpha?: number, disabled?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `hueSlider`, `saturationSlider`, `lightnessSlider`, `hexInput`, `preview`, `area`, `areaThumb`, `alphaSlider`, `swatchGroup`, `swatch`
+**Parts:** `root`, `modelToggle`, `hueSlider`, `saturationSlider`, `lightnessSlider`, `chromaSlider`, `oklchLightnessSlider`, `hexInput`, `preview`, `area`, `areaCanvas`, `areaThumb`, `alphaSlider`, `eyeDropperTrigger`, `swatchGroup`, `swatch`
 
-**Utilities:** `stateHsl()`, `toHex()`, `toHex8()`, `hexToHsl()`, `hslToRgb()`, `hslToHsv()`, `hsvToHsl()`, `colorFromPoint()`, `parseColor()`
+**Utilities:** `stateHsl()`, `stateHsv()`, `stateOklch()`, `isOutOfGamut()`, `toHex()`, `toHex8()`, `toCss()`, `colorFromPoint()`, `lcFromPoint()`, `hsvToOklchPreserving()`, `oklchToHsvPreserving()`, `supportsEyeDropper()`, `openEyeDropper()`, `oklchPlanePixels()`, `paintOklchPlane()`, `oklchHueRampGradient()`, `hslToHsv()`, `hsvToHsl()`
+
+**Constants:** `DEFAULT_MAX_CHROMA`
 
 ---
 
@@ -13294,6 +13297,34 @@ throws; the axis is simply unlabelled at the end of time.
 function countCalendarTicks(start: number, end: number, step: CalendarStep, opts: CalendarOptions = {}): number
 ```
 
+##### `cssColorAlpha()` from `@llui/components`
+
+Resolved alpha (`none` -> 1, CSS Color 4's used value for a missing
+alpha outside interpolation).
+
+```typescript
+function cssColorAlpha(c: CssColor): number
+```
+
+##### `cssColorToHex()` from `@llui/components`
+
+Gamut-map (if needed) and convert to a displayable hex string.
+`#rrggbb` when alpha is (resolved to) 1, `#rrggbbaa` otherwise.
+
+```typescript
+function cssColorToHex(c: CssColor): string
+```
+
+##### `cssColorToSrgb()` from `@llui/components`
+
+Convert any {@link CssColor} into fully-resolved (non-null) `Srgb`,
+treating `none` as 0 and NOT gamut-mapping (an oklch/oklab input outside
+sRGB stays outside [0,1]).
+
+```typescript
+function cssColorToSrgb(c: CssColor): Srgb
+```
+
 ##### `curvePath()` from `@llui/components`
 
 Join a run of points with the named curve. `closed` applies to `linear`
@@ -13534,6 +13565,18 @@ function formatDisplayName(value: string, type: DisplayNameType, opts: FormatDis
 function formatFileSize(value: number | bigint, opts: FormatFileSizeOptions = {}): string
 ```
 
+##### `formatHex()` from `@llui/components`
+
+```typescript
+function formatHex(rgb: Rgb255): string
+```
+
+##### `formatHex8()` from `@llui/components`
+
+```typescript
+function formatHex8(rgb: Rgb255, alpha: number): string
+```
+
 ##### `formatList()` from `@llui/components`
 
 ```typescript
@@ -13544,6 +13587,16 @@ function formatList(value: string[], opts: FormatListOptions = {}): string
 
 ```typescript
 function formatNumber(value: number, opts: FormatNumberOptions = {}): string
+```
+
+##### `formatOklch()` from `@llui/components`
+
+`oklch(L C H)` / `oklch(L C H / A)`. Fixed precision: `L` as a 0–1
+fraction at 4 dp, `C` at 4 dp, `H` at 2 dp — chosen so the string is stable
+and round-trips through {@link parseCssColor} without drifting.
+
+```typescript
+function formatOklch(ok: Oklch, alpha = 1): string
 ```
 
 ##### `formatPlural()` from `@llui/components`
@@ -13558,10 +13611,29 @@ function formatPlural(value: number, messages: PluralMessages, opts: FormatPlura
 function formatRelativeTime(value: number, unit: RelativeTimeUnit, opts: FormatRelativeTimeOptions = {}): string
 ```
 
+##### `formatRgb()` from `@llui/components`
+
+```typescript
+function formatRgb(rgb: Rgb255, alpha = 1): string
+```
+
 ##### `formatTime()` from `@llui/components`
 
 ```typescript
 function formatTime(value: DateValue, opts: FormatTimeOptions = {}): string
+```
+
+##### `gamutMapOklchToSrgb()` from `@llui/components`
+
+CSS Color 4 §13.2 gamut mapping: reduce OKLCH chroma by binary search until
+simple-clipping the result into sRGB is perceptually indistinguishable
+(deltaEOK < the 0.02 JND) from the reduced color, then clip. Given an
+already-in-gamut color this returns it converted (and defensively clipped
+for float noise) rather than a no-op, so the result is always safe to hand
+straight to {@link srgbToRgb255}.
+
+```typescript
+function gamutMapOklchToSrgb(ok: Oklch): Srgb
 ```
 
 ##### `getFocusables()` from `@llui/components`
@@ -13580,6 +13652,42 @@ the module comment); without one, the flat, layer-agnostic answer.
 
 ```typescript
 export declare function getNestedLayers(aspect?: NestedLayerAspect, within?: NestedLayerScope): Element[];
+```
+
+##### `hslToHsv()` from `@llui/components`
+
+Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100).
+
+```typescript
+function hslToHsv(hsl: Hsl): Hsv
+```
+
+##### `hslToRgb255()` from `@llui/components`
+
+Convert HSL (h 0-360, s/l 0-100) to RGB (0-255 each, rounded).
+
+```typescript
+function hslToRgb255(hsl: Hsl): Rgb255
+```
+
+##### `hsvToHsl()` from `@llui/components`
+
+Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100).
+
+```typescript
+function hsvToHsl(hsv: Hsv): Hsl
+```
+
+##### `hsvToOklch()` from `@llui/components`
+
+```typescript
+function hsvToOklch(hsv: Hsv): Oklch
+```
+
+##### `hsvToRgb255()` from `@llui/components`
+
+```typescript
+function hsvToRgb255(hsv: Hsv): Rgb255
 ```
 
 ##### `icon()` from `@llui/components`
@@ -13602,6 +13710,27 @@ of `s.items.indexOf(item)`. First occurrence wins, matching `indexOf`.
 
 ```typescript
 function indexMap<T>(): (values: readonly T[] | null | undefined) => ReadonlyMap<T, number>
+```
+
+##### `inSrgbGamut()` from `@llui/components`
+
+Whether `ok`, converted to sRGB, falls inside [0,1] on every channel
+(within `epsilon` — floating-point round-trip noise).
+
+```typescript
+function inSrgbGamut(ok: Oklch, epsilon = 1e-4): boolean
+```
+
+##### `interpolateColor()` from `@llui/components`
+
+Interpolate between two colors per CSS Color 4 §12: convert both into
+`space`, resolve missing/powerless components (an achromatic endpoint's
+hue becomes the OTHER endpoint's hue), premultiply non-hue channels by
+alpha, lerp, then un-premultiply. `hueMethod` controls which way a
+hue-bearing space (`hsl`, `oklch`) rotates; ignored otherwise.
+
+```typescript
+function interpolateColor(a: CssColor, b: CssColor, t: number, space: InterpolationSpace, hueMethod: HueInterpolationMethod = 'shorter'): CssColor
 ```
 
 ##### `isAllSelected()` from `@llui/components`
@@ -13692,6 +13821,18 @@ Straight segments through every point.
 
 ```typescript
 function linearPath(points: readonly Point[], closed = false): string
+```
+
+##### `linearSrgbToOklab()` from `@llui/components`
+
+```typescript
+function linearSrgbToOklab(s: Srgb): Oklab
+```
+
+##### `linearToSrgb()` from `@llui/components`
+
+```typescript
+function linearToSrgb(s: Srgb): Srgb
 ```
 
 ##### `loadIcon()` from `@llui/components`
@@ -13823,10 +13964,76 @@ not a crash or a NaN in a path string.
 function normalize(value: number, domain: Domain): number
 ```
 
+##### `oklabToLinearSrgb()` from `@llui/components`
+
+```typescript
+function oklabToLinearSrgb(lab: Oklab): Srgb
+```
+
+##### `oklabToOklch()` from `@llui/components`
+
+```typescript
+function oklabToOklch(lab: Oklab): Oklch
+```
+
+##### `oklabToSrgb()` from `@llui/components`
+
+NOT gamut-mapped — may return channels outside [0,1] for an OKLab/OKLCH
+color outside sRGB. Use {@link gamutMapOklchToSrgb} for a displayable
+result.
+
+```typescript
+function oklabToSrgb(lab: Oklab): Srgb
+```
+
+##### `oklchToHsv()` from `@llui/components`
+
+Gamut-maps into sRGB first — HSV cannot represent an out-of-gamut color.
+
+```typescript
+function oklchToHsv(ok: Oklch): Hsv
+```
+
+##### `oklchToOklab()` from `@llui/components`
+
+```typescript
+function oklchToOklab(ok: Oklch): Oklab
+```
+
+##### `oklchToSrgb()` from `@llui/components`
+
+NOT gamut-mapped. See {@link oklabToSrgb}.
+
+```typescript
+function oklchToSrgb(ok: Oklch): Srgb
+```
+
+##### `parseCssColor()` from `@llui/components`
+
+Parse a CSS color string into its typed model. Supports `#rgb`/`#rgba`/
+`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()` (legacy comma and modern
+space/slash, numbers and percentages), `hsl()`/`hsla()` (same two
+syntaxes), `oklch()`, `oklab()`, `none` components, `transparent`, and the
+148 CSS Color 4 named colors. Returns `null` on anything else — never
+throws.
+
+```typescript
+function parseCssColor(input: string): CssColor | null
+```
+
 ##### `parseDateValue()` from `@llui/components`
 
 ```typescript
 function parseDateValue(value: DateValue): ParsedDateValue
+```
+
+##### `parseHexColor()` from `@llui/components`
+
+Parse `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`. Returns `null` on anything
+else, never throws.
+
+```typescript
+function parseHexColor(hex: string): { rgb: Rgb255; alpha: number } | null
 ```
 
 ##### `polarPoint()` from `@llui/components`
@@ -13974,6 +14181,14 @@ Returns 'rtl' or 'ltr' (default).
 export declare function resolveDir(el: Element): TextDirection;
 ```
 
+##### `resolveNone()` from `@llui/components`
+
+A `null` (CSS `none`) component behaves as 0 outside interpolation.
+
+```typescript
+function resolveNone(n: number | null): number
+```
+
 ##### `resolvePluralCategory()` from `@llui/components`
 
 ```typescript
@@ -14010,6 +14225,20 @@ Resolve a theme preference to the actual theme to apply. Returns 'dark' or
 
 ```typescript
 function resolveTheme(theme: Theme): ResolvedTheme
+```
+
+##### `rgb255ToHsl()` from `@llui/components`
+
+Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100, rounded).
+
+```typescript
+function rgb255ToHsl(rgb: Rgb255): Hsl
+```
+
+##### `rgb255ToHsv()` from `@llui/components`
+
+```typescript
+function rgb255ToHsv(rgb: Rgb255): Hsv
 ```
 
 ##### `rovingTabStop()` from `@llui/components`
@@ -14147,6 +14376,39 @@ function snapToStep(value: number, step: number, origin = 0): number
 
 ```typescript
 function sortDirectionFor(state: TableState, columnId: string): SortDirection | null
+```
+
+##### `srgb255ToSrgb()` from `@llui/components`
+
+```typescript
+function srgb255ToSrgb(rgb: Rgb255): Srgb
+```
+
+##### `srgbToLinear()` from `@llui/components`
+
+```typescript
+function srgbToLinear(s: Srgb): Srgb
+```
+
+##### `srgbToOklab()` from `@llui/components`
+
+```typescript
+function srgbToOklab(s: Srgb): Oklab
+```
+
+##### `srgbToOklch()` from `@llui/components`
+
+```typescript
+function srgbToOklch(s: Srgb): Oklch
+```
+
+##### `srgbToRgb255()` from `@llui/components`
+
+Rounds AND clamps into 0-255 — the boundary where an out-of-gamut float
+(an un-mapped OKLCH conversion) must finally become a displayable byte.
+
+```typescript
+function srgbToRgb255(s: Srgb): Rgb255
 ```
 
 ##### `stepBy()` from `@llui/components`
@@ -14656,28 +14918,65 @@ export type CollapsibleMsg =
   | { type: 'setOpen'; open: boolean }
 ```
 
+##### `ColorModel` from `@llui/components`
+
+Color picker — HSV and OKLCH color selection.
+
+The canonical color lives in whichever model is ACTIVE (`state.color.model`)
+and is lossless within that model. Every message that edits the color goes
+through a PROJECTION into the model it naturally operates in (HSV, HSL, or
+OKLCH), applies the edit there, then converts the result into the active
+model — so `setSaturation` (an HSL concept) and `setChroma` (an OKLCH
+concept) both work regardless of which model is currently active, and
+`setHue` sets the hue of whichever model IS active (HSV hue and OKLCH hue
+are numerically different rulers for the same wheel).
+
+HUE STABILITY ON ACHROMATIC COLORS is the reason HSV was chosen as the
+original canonical store (S or V at 0 loses no information about hue,
+unlike HSL's black/white axis) and it is preserved across the HSV<->OKLCH
+boundary too: {@link hsvToOklchPreserving}/{@link oklchToHsvPreserving}
+carry the stored hue straight across whenever the color is achromatic in
+the SOURCE model, rather than recomputing an arbitrary hue-of-zero-chroma.
+`setModel` and every cross-model projection route through these two.
+
+```typescript
+export type ColorModel = 'hsv' | 'oklch'
+```
+
 ##### `ColorPickerMsg` from `@llui/components`
 
 ```typescript
 export type ColorPickerMsg =
+  /** @intent("Switch the active color model, converting the stored color and keeping its hue stable if it is achromatic") */
+  | { type: 'setModel'; model: ColorModel }
   /** @intent("Set the full HSL color at once") */
   | { type: 'setHsl'; hsl: Hsl }
-  /** @intent("Set the hue channel (0–360)") */
+  /** @intent("Set the hue of the ACTIVE model (0–360)") */
   | { type: 'setHue'; h: number }
-  /** @intent("Set the saturation channel (0–100)") */
+  /** @intent("Set the HSL saturation channel (0–100)") */
   | { type: 'setSaturation'; s: number }
-  /** @intent("Set the lightness channel (0–100)") */
+  /** @intent("Set the HSL lightness channel (0–100)") */
   | { type: 'setLightness'; l: number }
   /** @intent("Set the alpha channel (0–1)") */
   | { type: 'setAlpha'; alpha: number }
-  /** @intent("Set the color from a hex string (#RRGGBB or #RGB)") */
+  /** @intent("Set the color from any CSS color string (hex, rgb(), hsl(), oklch(), oklab(), a named color)") */
   | { type: 'setHex'; hex: string }
   /** @intent("Set saturation and value (HSV, 0–100 each) from the 2D area") */
   | { type: 'setSv'; s: number; v: number }
   /** @intent("Nudge saturation/value (HSV) by signed deltas — used by area arrow keys") */
   | { type: 'nudgeSv'; ds: number; dv: number }
-  /** @intent("Set the color from a swatch or hex string (#RGB, #RRGGBB, or #RRGGBBAA)") */
+  /** @intent("Set the color from a swatch, an eyedropper pick, or any CSS color string") */
   | { type: 'setColor'; color: string }
+  /** @intent("Set the full OKLCH color at once (L 0–1, C >= 0, H degrees)") */
+  | { type: 'setOklch'; l: number; c: number; h: number }
+  /** @intent("Set the OKLCH chroma channel") */
+  | { type: 'setChroma'; c: number }
+  /** @intent("Set the OKLCH lightness channel (0–1)") */
+  | { type: 'setOklchLightness'; l: number }
+  /** @intent("Set chroma and lightness (OKLCH, x/y of the 2D area) at once") */
+  | { type: 'setLc'; c: number; l: number }
+  /** @intent("Nudge chroma/lightness (OKLCH) by signed deltas — used by area arrow keys") */
+  | { type: 'nudgeLc'; dc: number; dl: number }
 ```
 
 ##### `ComboboxAsyncStatus` from `@llui/components`
@@ -14829,6 +15128,29 @@ export type ContextMenuSubPositionerParts = MenuSubPositionerPartsOf<'context-me
 
 ```typescript
 export type ContextMenuSubTriggerParts = MenuSubTriggerPartsOf<'context-menu'>
+```
+
+##### `CssColor` from `@llui/components`
+
+A color as CSS Color 4 sees it: one of five spaces, every component
+`number | null` (`null` = the `none` keyword). This is the type
+{@link parseCssColor} returns and {@link interpolateColor} operates on —
+the common currency between "a string the user typed" and "a color a
+gradient stop needs to render".
+
+```typescript
+export type CssColor =
+  | { space: 'srgb'; r: number | null; g: number | null; b: number | null; alpha: number | null }
+  | {
+      space: 'srgb-linear'
+      r: number | null
+      g: number | null
+      b: number | null
+      alpha: number | null
+    }
+  | { space: 'hsl'; h: number | null; s: number | null; l: number | null; alpha: number | null }
+  | { space: 'oklab'; l: number | null; a: number | null; b: number | null; alpha: number | null }
+  | { space: 'oklch'; l: number | null; c: number | null; h: number | null; alpha: number | null }
 ```
 
 ##### `Curve` from `@llui/components`
@@ -15246,6 +15568,12 @@ export type HoverCardMsg =
   | { type: 'transitionEnd' }
 ```
 
+##### `HueInterpolationMethod` from `@llui/components`
+
+```typescript
+export type HueInterpolationMethod = 'shorter' | 'longer' | 'increasing' | 'decreasing'
+```
+
 ##### `ImageCropperMsg` from `@llui/components`
 
 ```typescript
@@ -15282,6 +15610,14 @@ loading placeholder.
 
 ```typescript
 export type ImageStatus = 'idle' | 'loading' | 'loaded' | 'error'
+```
+
+##### `InterpolationSpace` from `@llui/components`
+
+Interpolation / generic-conversion target spaces (CSS Color 4 §12).
+
+```typescript
+export type InterpolationSpace = 'srgb' | 'srgb-linear' | 'oklab' | 'oklch' | 'hsl'
 ```
 
 ##### `InViewMsg` from `@llui/components`
@@ -17921,14 +18257,52 @@ export interface CollapsibleState {
 }
 ```
 
+##### `ColorPickerConnectOptions` from `@llui/components`
+
+```typescript
+export interface ConnectOptions {
+  hueLabel?: string
+  saturationLabel?: string
+  lightnessLabel?: string
+  chromaLabel?: string
+  oklchLightnessLabel?: string
+  hexLabel?: string
+  eyeDropperLabel?: string
+  /** aria-label for the 2D area thumb. */
+  areaLabel?: string
+  /** aria-label for the alpha slider. */
+  alphaLabel?: string
+  /** aria-label for the swatch group container. */
+  swatchGroupLabel?: string
+  /** Fine keyboard step for the area thumb (S/V units, or the OKLCH
+   * equivalent scaled by `maxChroma`). Default 1. */
+  step?: number
+  /** Coarse keyboard step for the area thumb when Shift is held. Default 10. */
+  coarseStep?: number
+  /** Upper bound the OKLCH chroma slider/area render up to. Rendering-only —
+   * see {@link DEFAULT_MAX_CHROMA}'s doc comment for how this relates to the
+   * reducer's own chroma ceiling. Default {@link DEFAULT_MAX_CHROMA}. */
+  maxChroma?: number
+}
+```
+
 ##### `ColorPickerInit` from `@llui/components`
 
 ```typescript
 export interface ColorPickerInit {
-  /** Initial color as HSL (converted to the canonical HSV store). */
+  /** Which model the canonical color is stored in. Default `'hsv'`. */
+  model?: ColorModel
+  /** Initial color as any CSS color string the shared parser accepts (hex,
+   * `rgb()`, `hsl()`, `oklch()`, `oklab()`, a named color). Takes precedence
+   * over `hsl`/`hsv`/`oklch` below, and over `alpha` for the color's own
+   * alpha component (an explicit `alpha` option still wins). */
+  color?: string
+  /** Initial color as HSL (converted into the canonical store). */
   hsl?: Hsl
-  /** Initial color as HSV (takes precedence over `hsl`). */
+  /** Initial color as HSV. Takes precedence over `hsl`. */
   hsv?: Hsv
+  /** Initial color as OKLCH. Takes precedence over `hsl`/`hsv`. */
+  oklch?: Oklch
   alpha?: number
   disabled?: boolean
 }
@@ -17942,6 +18316,20 @@ export interface ColorPickerParts {
     'data-scope': 'color-picker'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
+    'data-model': Signal<ColorModel>
+    /** Bare boolean (package convention): present when the current OKLCH
+     * color falls outside sRGB. Always absent in HSV mode (an HSV color is
+     * an sRGB parameterization by construction). */
+    'data-out-of-gamut': Signal<'' | undefined>
+  }
+  /** Cycles the active model between `'hsv'` and `'oklch'`. */
+  modelToggle: {
+    type: 'button'
+    'aria-label': Signal<string>
+    'data-scope': 'color-picker'
+    'data-part': 'model-toggle'
+    'data-model': Signal<ColorModel>
+    onClick: (e: MouseEvent) => void
   }
   hueSlider: {
     type: 'range'
@@ -17981,6 +18369,34 @@ export interface ColorPickerParts {
     'data-part': 'lightness-slider'
     onInput: (e: Event) => void
   }
+  /** OKLCH chroma, `0..maxChroma`. */
+  chromaSlider: {
+    type: 'range'
+    min: 0
+    max: number
+    step: number
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    style: Signal<string>
+    'data-scope': 'color-picker'
+    'data-part': 'chroma-slider'
+    onInput: (e: Event) => void
+  }
+  /** OKLCH perceptual lightness, `0..1`. */
+  oklchLightnessSlider: {
+    type: 'range'
+    min: 0
+    max: 1
+    step: number
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    style: Signal<string>
+    'data-scope': 'color-picker'
+    'data-part': 'oklch-lightness-slider'
+    onInput: (e: Event) => void
+  }
   hexInput: {
     type: 'text'
     autocomplete: 'off'
@@ -17998,22 +18414,34 @@ export interface ColorPickerParts {
     'aria-hidden': 'true'
     style: Signal<string>
   }
-  /** The 2D saturation/value area track. The view owns pointer events and
-   * calls `colorFromPoint(track.getBoundingClientRect(), x, y)` to derive S/V. */
+  /** The 2D area track. In HSV mode the view owns pointer events and calls
+   * `colorFromPoint(...)`; in OKLCH mode, `lcFromPoint(...)`. */
   area: {
     'data-scope': 'color-picker'
     'data-part': 'area'
+    'data-model': Signal<ColorModel>
+    // HSV-mode hue backdrop only; empty in OKLCH mode, where `areaCanvas`
+    // paints the plane instead (the sRGB gamut boundary is not expressible
+    // as a CSS gradient).
     style: Signal<string>
   }
+  /** Decorative `<canvas>` seam for the OKLCH area — headless, so the
+   * consumer owns creating and sizing the real `<canvas>` element and
+   * repainting it with {@link paintOklchPlane} on hue change (and on mount).
+   * Absent/inert in HSV mode. */
+  areaCanvas: {
+    'data-scope': 'color-picker'
+    'data-part': 'area-canvas'
+    'aria-hidden': 'true'
+  }
   /** The draggable thumb inside the 2D area. Keyboard-operable (arrows move
-   * S/V; Shift = coarse) with role="slider" and a 2D aria-valuetext. */
+   * S/V or C/L depending on the active model; Shift = coarse) with
+   * role="slider" and a 2D aria-valuetext. */
   areaThumb: {
     role: 'slider'
     'aria-label': string
-    /** ARIA 1.2 lists this as a REQUIRED property of `slider`, and the
-     * `aria-valuetext` definition says authors must also specify it. The area
-     * is 2D, so it reports the horizontal axis (saturation) numerically and
-     * leaves both axes to `aria-valuetext`. */
+    'aria-valuemin': Signal<number>
+    'aria-valuemax': Signal<number>
     'aria-valuenow': Signal<number>
     'aria-valuetext': Signal<string>
     'aria-disabled': Signal<'true' | undefined>
@@ -18037,6 +18465,17 @@ export interface ColorPickerParts {
     'data-part': 'alpha-slider'
     onInput: (e: Event) => void
   }
+  /** EyeDropper API trigger. Always published; `supportsEyeDropper()` (a
+   * plain, SSR-safe function, not a `Signal` — see its doc comment) is how a
+   * consumer decides whether to show or disable it. */
+  eyeDropperTrigger: {
+    type: 'button'
+    'aria-label': string
+    disabled: Signal<boolean>
+    'data-scope': 'color-picker'
+    'data-part': 'eyedropper-trigger'
+    onClick: (e: MouseEvent) => void
+  }
   /** Container for the preset swatch buttons. */
   swatchGroup: {
     role: 'group'
@@ -18053,12 +18492,9 @@ export interface ColorPickerParts {
 
 ```typescript
 export interface ColorPickerState {
-  /**
-   * Canonical color, stored in HSV so the 2D saturation/value area preserves
-   * S and V independently (HSL collapses both at the black/white axis). HSL is
-   * derived on demand via `stateHsl()` / `hsvToHsl()` for hex output + sliders.
-   */
-  hsv: Hsv
+  color:
+    | { model: 'hsv'; h: number; s: number; v: number }
+    | { model: 'oklch'; l: number; c: number; h: number }
   /** Alpha channel 0..1. */
   alpha: number
   disabled: boolean
@@ -19107,6 +19543,22 @@ export interface EditableState {
 }
 ```
 
+##### `EyeDropperOpenOptions` from `@llui/components`
+
+```typescript
+export interface EyeDropperOpenOptions {
+  signal?: AbortSignal
+}
+```
+
+##### `EyeDropperResult` from `@llui/components`
+
+```typescript
+export interface EyeDropperResult {
+  sRGBHex: string
+}
+```
+
 ##### `FieldConnectOptions` from `@llui/components`
 
 ```typescript
@@ -19933,8 +20385,7 @@ export interface HoverCardState {
 
 ##### `Hsl` from `@llui/components`
 
-Color picker — HSL/HSV color selection. Tracks hue (0-360), saturation
-(0-100), and lightness (0-100). Emits hex strings for convenience.
+HSL color. `h` 0–360 degrees, `s`/`l` 0–100.
 
 ```typescript
 export interface Hsl {
@@ -19946,7 +20397,7 @@ export interface Hsl {
 
 ##### `Hsv` from `@llui/components`
 
-HSV color (h 0-360, s/v 0-100). The 2D area picker operates in HSV space.
+HSV color. `h` 0–360 degrees, `s`/`v` 0–100.
 
 ```typescript
 export interface Hsv {
@@ -20200,7 +20651,18 @@ export interface Locale {
   }
   cascadeSelect: { clear: string }
   clipboard: { copy: string }
-  colorPicker: { hue: string; saturation: string; lightness: string; hex: string }
+  colorPicker: {
+    hue: string
+    saturation: string
+    lightness: string
+    value: string
+    chroma: string
+    oklchLightness: string
+    hex: string
+    eyeDropper: string
+    switchToOklch: string
+    switchToHsv: string
+  }
   combobox: { toggle: string; resultCount: (n: number) => string }
   dateInput: { clear: string }
   datePicker: {
@@ -20959,6 +21421,32 @@ export interface NumericGrid {
   min?: number
   max?: number
   step?: number
+}
+```
+
+##### `Oklab` from `@llui/components`
+
+Oklab. `l` is 0–1 lightness; `a`/`b` are unbounded (±0.4 roughly spans
+sRGB).
+
+```typescript
+export interface Oklab {
+  l: number
+  a: number
+  b: number
+}
+```
+
+##### `Oklch` from `@llui/components`
+
+OKLCH. `l` 0–1, `c` >= 0 (unbounded — `maxChroma` in the color picker is a
+UI choice, not a property of the color space), `h` in degrees.
+
+```typescript
+export interface Oklch {
+  l: number
+  c: number
+  h: number
 }
 ```
 
@@ -21724,6 +22212,18 @@ export interface RatingItemParts {
 export interface RejectedFile {
   file: FileMeta
   errors: FileError[]
+}
+```
+
+##### `Rgb255` from `@llui/components`
+
+8-bit-per-channel sRGB, 0–255 (integers once produced by this module).
+
+```typescript
+export interface Rgb255 {
+  r: number
+  g: number
+  b: number
 }
 ```
 
@@ -22912,6 +23412,20 @@ export interface SplitterState {
   dragging: boolean
   /** Reading direction. Under 'rtl' horizontal arrow keys are flipped. */
   dir: 'ltr' | 'rtl'
+}
+```
+
+##### `Srgb` from `@llui/components`
+
+sRGB, gamma-encoded, 0–1 per channel. May fall outside [0,1] as an
+intermediate value (e.g. converted from an out-of-gamut OKLCH) — callers
+that need an in-gamut result go through {@link gamutMapOklchToSrgb}.
+
+```typescript
+export interface Srgb {
+  r: number
+  g: number
+  b: number
 }
 ```
 
@@ -25265,6 +25779,34 @@ throws; the axis is simply unlabelled at the end of time.
 function countCalendarTicks(start: number, end: number, step: CalendarStep, opts: CalendarOptions = {}): number
 ```
 
+##### `cssColorAlpha()` from `@llui/components/utils`
+
+Resolved alpha (`none` -> 1, CSS Color 4's used value for a missing
+alpha outside interpolation).
+
+```typescript
+function cssColorAlpha(c: CssColor): number
+```
+
+##### `cssColorToHex()` from `@llui/components/utils`
+
+Gamut-map (if needed) and convert to a displayable hex string.
+`#rrggbb` when alpha is (resolved to) 1, `#rrggbbaa` otherwise.
+
+```typescript
+function cssColorToHex(c: CssColor): string
+```
+
+##### `cssColorToSrgb()` from `@llui/components/utils`
+
+Convert any {@link CssColor} into fully-resolved (non-null) `Srgb`,
+treating `none` as 0 and NOT gamut-mapping (an oklch/oklab input outside
+sRGB stays outside [0,1]).
+
+```typescript
+function cssColorToSrgb(c: CssColor): Srgb
+```
+
 ##### `curvePath()` from `@llui/components/utils`
 
 Join a run of points with the named curve. `closed` applies to `linear`
@@ -25481,6 +26023,47 @@ a microtask if activation triggers a re-render).
 export declare function focusRovingTab(container: Element, value: string): void;
 ```
 
+##### `formatHex()` from `@llui/components/utils`
+
+```typescript
+function formatHex(rgb: Rgb255): string
+```
+
+##### `formatHex8()` from `@llui/components/utils`
+
+```typescript
+function formatHex8(rgb: Rgb255, alpha: number): string
+```
+
+##### `formatOklch()` from `@llui/components/utils`
+
+`oklch(L C H)` / `oklch(L C H / A)`. Fixed precision: `L` as a 0–1
+fraction at 4 dp, `C` at 4 dp, `H` at 2 dp — chosen so the string is stable
+and round-trips through {@link parseCssColor} without drifting.
+
+```typescript
+function formatOklch(ok: Oklch, alpha = 1): string
+```
+
+##### `formatRgb()` from `@llui/components/utils`
+
+```typescript
+function formatRgb(rgb: Rgb255, alpha = 1): string
+```
+
+##### `gamutMapOklchToSrgb()` from `@llui/components/utils`
+
+CSS Color 4 §13.2 gamut mapping: reduce OKLCH chroma by binary search until
+simple-clipping the result into sRGB is perceptually indistinguishable
+(deltaEOK < the 0.02 JND) from the reduced color, then clip. Given an
+already-in-gamut color this returns it converted (and defensively clipped
+for float noise) rather than a no-op, so the result is always safe to hand
+straight to {@link srgbToRgb255}.
+
+```typescript
+function gamutMapOklchToSrgb(ok: Oklch): Srgb
+```
+
 ##### `getFocusables()` from `@llui/components/utils`
 
 ```typescript
@@ -25499,6 +26082,42 @@ the module comment); without one, the flat, layer-agnostic answer.
 export declare function getNestedLayers(aspect?: NestedLayerAspect, within?: NestedLayerScope): Element[];
 ```
 
+##### `hslToHsv()` from `@llui/components/utils`
+
+Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100).
+
+```typescript
+function hslToHsv(hsl: Hsl): Hsv
+```
+
+##### `hslToRgb255()` from `@llui/components/utils`
+
+Convert HSL (h 0-360, s/l 0-100) to RGB (0-255 each, rounded).
+
+```typescript
+function hslToRgb255(hsl: Hsl): Rgb255
+```
+
+##### `hsvToHsl()` from `@llui/components/utils`
+
+Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100).
+
+```typescript
+function hsvToHsl(hsv: Hsv): Hsl
+```
+
+##### `hsvToOklch()` from `@llui/components/utils`
+
+```typescript
+function hsvToOklch(hsv: Hsv): Oklch
+```
+
+##### `hsvToRgb255()` from `@llui/components/utils`
+
+```typescript
+function hsvToRgb255(hsv: Hsv): Rgb255
+```
+
 ##### `indexMap()` from `@llui/components/utils`
 
 A position lookup over a state array: `positions(s.items).get(item)` in place
@@ -25506,6 +26125,27 @@ of `s.items.indexOf(item)`. First occurrence wins, matching `indexOf`.
 
 ```typescript
 function indexMap<T>(): (values: readonly T[] | null | undefined) => ReadonlyMap<T, number>
+```
+
+##### `inSrgbGamut()` from `@llui/components/utils`
+
+Whether `ok`, converted to sRGB, falls inside [0,1] on every channel
+(within `epsilon` — floating-point round-trip noise).
+
+```typescript
+function inSrgbGamut(ok: Oklch, epsilon = 1e-4): boolean
+```
+
+##### `interpolateColor()` from `@llui/components/utils`
+
+Interpolate between two colors per CSS Color 4 §12: convert both into
+`space`, resolve missing/powerless components (an achromatic endpoint's
+hue becomes the OTHER endpoint's hue), premultiply non-hue channels by
+alpha, lerp, then un-premultiply. `hueMethod` controls which way a
+hue-bearing space (`hsl`, `oklch`) rotates; ignored otherwise.
+
+```typescript
+function interpolateColor(a: CssColor, b: CssColor, t: number, space: InterpolationSpace, hueMethod: HueInterpolationMethod = 'shorter'): CssColor
 ```
 
 ##### `isDateOnly()` from `@llui/components/utils`
@@ -25578,6 +26218,18 @@ Straight segments through every point.
 
 ```typescript
 function linearPath(points: readonly Point[], closed = false): string
+```
+
+##### `linearSrgbToOklab()` from `@llui/components/utils`
+
+```typescript
+function linearSrgbToOklab(s: Srgb): Oklab
+```
+
+##### `linearToSrgb()` from `@llui/components/utils`
+
+```typescript
+function linearToSrgb(s: Srgb): Srgb
 ```
 
 ##### `lockBodyScroll()` from `@llui/components/utils`
@@ -25669,10 +26321,76 @@ not a crash or a NaN in a path string.
 function normalize(value: number, domain: Domain): number
 ```
 
+##### `oklabToLinearSrgb()` from `@llui/components/utils`
+
+```typescript
+function oklabToLinearSrgb(lab: Oklab): Srgb
+```
+
+##### `oklabToOklch()` from `@llui/components/utils`
+
+```typescript
+function oklabToOklch(lab: Oklab): Oklch
+```
+
+##### `oklabToSrgb()` from `@llui/components/utils`
+
+NOT gamut-mapped — may return channels outside [0,1] for an OKLab/OKLCH
+color outside sRGB. Use {@link gamutMapOklchToSrgb} for a displayable
+result.
+
+```typescript
+function oklabToSrgb(lab: Oklab): Srgb
+```
+
+##### `oklchToHsv()` from `@llui/components/utils`
+
+Gamut-maps into sRGB first — HSV cannot represent an out-of-gamut color.
+
+```typescript
+function oklchToHsv(ok: Oklch): Hsv
+```
+
+##### `oklchToOklab()` from `@llui/components/utils`
+
+```typescript
+function oklchToOklab(ok: Oklch): Oklab
+```
+
+##### `oklchToSrgb()` from `@llui/components/utils`
+
+NOT gamut-mapped. See {@link oklabToSrgb}.
+
+```typescript
+function oklchToSrgb(ok: Oklch): Srgb
+```
+
+##### `parseCssColor()` from `@llui/components/utils`
+
+Parse a CSS color string into its typed model. Supports `#rgb`/`#rgba`/
+`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()` (legacy comma and modern
+space/slash, numbers and percentages), `hsl()`/`hsla()` (same two
+syntaxes), `oklch()`, `oklab()`, `none` components, `transparent`, and the
+148 CSS Color 4 named colors. Returns `null` on anything else — never
+throws.
+
+```typescript
+function parseCssColor(input: string): CssColor | null
+```
+
 ##### `parseDateValue()` from `@llui/components/utils`
 
 ```typescript
 function parseDateValue(value: DateValue): ParsedDateValue
+```
+
+##### `parseHexColor()` from `@llui/components/utils`
+
+Parse `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`. Returns `null` on anything
+else, never throws.
+
+```typescript
+function parseHexColor(hex: string): { rgb: Rgb255; alpha: number } | null
 ```
 
 ##### `polarPoint()` from `@llui/components/utils`
@@ -25811,6 +26529,14 @@ Returns 'rtl' or 'ltr' (default).
 export declare function resolveDir(el: Element): TextDirection;
 ```
 
+##### `resolveNone()` from `@llui/components/utils`
+
+A `null` (CSS `none`) component behaves as 0 outside interpolation.
+
+```typescript
+function resolveNone(n: number | null): number
+```
+
 ##### `resolveRovingMove()` from `@llui/components/utils`
 
 Map a keyboard key + the current tab value to a roving-tablist move,
@@ -25831,6 +26557,20 @@ An explicit `'ltr' | 'rtl'` wins; an `Element` is resolved from the DOM;
 
 ```typescript
 export declare function resolveTextDirection(source: Element | null | undefined | TextDirection): TextDirection;
+```
+
+##### `rgb255ToHsl()` from `@llui/components/utils`
+
+Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100, rounded).
+
+```typescript
+function rgb255ToHsl(rgb: Rgb255): Hsl
+```
+
+##### `rgb255ToHsv()` from `@llui/components/utils`
+
+```typescript
+function rgb255ToHsv(rgb: Rgb255): Hsv
 ```
 
 ##### `rovingTabStop()` from `@llui/components/utils`
@@ -25964,6 +26704,39 @@ direct consumers on the same rule.
 function snapToStep(value: number, step: number, origin = 0): number
 ```
 
+##### `srgb255ToSrgb()` from `@llui/components/utils`
+
+```typescript
+function srgb255ToSrgb(rgb: Rgb255): Srgb
+```
+
+##### `srgbToLinear()` from `@llui/components/utils`
+
+```typescript
+function srgbToLinear(s: Srgb): Srgb
+```
+
+##### `srgbToOklab()` from `@llui/components/utils`
+
+```typescript
+function srgbToOklab(s: Srgb): Oklab
+```
+
+##### `srgbToOklch()` from `@llui/components/utils`
+
+```typescript
+function srgbToOklch(s: Srgb): Oklch
+```
+
+##### `srgbToRgb255()` from `@llui/components/utils`
+
+Rounds AND clamps into 0-255 — the boundary where an out-of-gamut float
+(an un-mapped OKLCH conversion) must finally become a displayable byte.
+
+```typescript
+function srgbToRgb255(s: Srgb): Rgb255
+```
+
 ##### `stepBy()` from `@llui/components/utils`
 
 Move `count` whole steps (negative to step down), then clamp+snap.
@@ -26087,6 +26860,29 @@ Rungs of the ladder, finest first.
 export type CalendarUnit = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'
 ```
 
+##### `CssColor` from `@llui/components/utils`
+
+A color as CSS Color 4 sees it: one of five spaces, every component
+`number | null` (`null` = the `none` keyword). This is the type
+{@link parseCssColor} returns and {@link interpolateColor} operates on —
+the common currency between "a string the user typed" and "a color a
+gradient stop needs to render".
+
+```typescript
+export type CssColor =
+  | { space: 'srgb'; r: number | null; g: number | null; b: number | null; alpha: number | null }
+  | {
+      space: 'srgb-linear'
+      r: number | null
+      g: number | null
+      b: number | null
+      alpha: number | null
+    }
+  | { space: 'hsl'; h: number | null; s: number | null; l: number | null; alpha: number | null }
+  | { space: 'oklab'; l: number | null; a: number | null; b: number | null; alpha: number | null }
+  | { space: 'oklch'; l: number | null; c: number | null; h: number | null; alpha: number | null }
+```
+
 ##### `Curve` from `@llui/components/utils`
 
 How a run of points is joined.
@@ -26127,6 +26923,20 @@ Shared DOM helpers used by interaction utilities.
 
 ```typescript
 export type ElementSource<T extends Element = Element> = T | T[] | (() => T | T[] | null)
+```
+
+##### `HueInterpolationMethod` from `@llui/components/utils`
+
+```typescript
+export type HueInterpolationMethod = 'shorter' | 'longer' | 'increasing' | 'decreasing'
+```
+
+##### `InterpolationSpace` from `@llui/components/utils`
+
+Interpolation / generic-conversion target spaces (CSS Color 4 §12).
+
+```typescript
+export type InterpolationSpace = 'srgb' | 'srgb-linear' | 'oklab' | 'oklch' | 'hsl'
 ```
 
 ##### `NestedLayerAspect` from `@llui/components/utils`
@@ -26465,6 +27275,30 @@ export interface Frame {
 }
 ```
 
+##### `Hsl` from `@llui/components/utils`
+
+HSL color. `h` 0–360 degrees, `s`/`l` 0–100.
+
+```typescript
+export interface Hsl {
+  h: number
+  s: number
+  l: number
+}
+```
+
+##### `Hsv` from `@llui/components/utils`
+
+HSV color. `h` 0–360 degrees, `s`/`v` 0–100.
+
+```typescript
+export interface Hsv {
+  h: number
+  s: number
+  v: number
+}
+```
+
 ##### `InteractOutsideOptions` from `@llui/components/utils`
 
 ```typescript
@@ -26525,6 +27359,32 @@ export interface NumericGrid {
   min?: number
   max?: number
   step?: number
+}
+```
+
+##### `Oklab` from `@llui/components/utils`
+
+Oklab. `l` is 0–1 lightness; `a`/`b` are unbounded (±0.4 roughly spans
+sRGB).
+
+```typescript
+export interface Oklab {
+  l: number
+  a: number
+  b: number
+}
+```
+
+##### `Oklch` from `@llui/components/utils`
+
+OKLCH. `l` 0–1, `c` >= 0 (unbounded — `maxChroma` in the color picker is a
+UI choice, not a property of the color space), `h` in degrees.
+
+```typescript
+export interface Oklch {
+  l: number
+  c: number
+  h: number
 }
 ```
 
@@ -26628,6 +27488,18 @@ export interface Projection {
 }
 ```
 
+##### `Rgb255` from `@llui/components/utils`
+
+8-bit-per-channel sRGB, 0–255 (integers once produced by this module).
+
+```typescript
+export interface Rgb255 {
+  r: number
+  g: number
+  b: number
+}
+```
+
 ##### `RovingItem` from `@llui/components/utils`
 
 ```typescript
@@ -26663,6 +27535,20 @@ A normalized sample: position along the independent axis, and magnitude.
 export interface Sample {
   u: number
   v: number
+}
+```
+
+##### `Srgb` from `@llui/components/utils`
+
+sRGB, gamma-encoded, 0–1 per channel. May fall outside [0,1] as an
+intermediate value (e.g. converted from an out-of-gamut OKLCH) — callers
+that need an in-gamut result go through {@link gamutMapOklchToSrgb}.
+
+```typescript
+export interface Srgb {
+  r: number
+  g: number
+  b: number
 }
 ```
 
@@ -27000,6 +27886,386 @@ claims the data ends where the array does.
 
 ```typescript
 const MAX_CALENDAR_TICKS
+```
+
+### `@llui/components/utils/color`
+
+#### Functions
+
+##### `cssColorAlpha()` from `@llui/components/utils/color`
+
+Resolved alpha (`none` -> 1, CSS Color 4's used value for a missing
+alpha outside interpolation).
+
+```typescript
+function cssColorAlpha(c: CssColor): number
+```
+
+##### `cssColorToHex()` from `@llui/components/utils/color`
+
+Gamut-map (if needed) and convert to a displayable hex string.
+`#rrggbb` when alpha is (resolved to) 1, `#rrggbbaa` otherwise.
+
+```typescript
+function cssColorToHex(c: CssColor): string
+```
+
+##### `cssColorToSrgb()` from `@llui/components/utils/color`
+
+Convert any {@link CssColor} into fully-resolved (non-null) `Srgb`,
+treating `none` as 0 and NOT gamut-mapping (an oklch/oklab input outside
+sRGB stays outside [0,1]).
+
+```typescript
+function cssColorToSrgb(c: CssColor): Srgb
+```
+
+##### `formatHex()` from `@llui/components/utils/color`
+
+```typescript
+function formatHex(rgb: Rgb255): string
+```
+
+##### `formatHex8()` from `@llui/components/utils/color`
+
+```typescript
+function formatHex8(rgb: Rgb255, alpha: number): string
+```
+
+##### `formatOklch()` from `@llui/components/utils/color`
+
+`oklch(L C H)` / `oklch(L C H / A)`. Fixed precision: `L` as a 0–1
+fraction at 4 dp, `C` at 4 dp, `H` at 2 dp — chosen so the string is stable
+and round-trips through {@link parseCssColor} without drifting.
+
+```typescript
+function formatOklch(ok: Oklch, alpha = 1): string
+```
+
+##### `formatRgb()` from `@llui/components/utils/color`
+
+```typescript
+function formatRgb(rgb: Rgb255, alpha = 1): string
+```
+
+##### `gamutMapOklchToSrgb()` from `@llui/components/utils/color`
+
+CSS Color 4 §13.2 gamut mapping: reduce OKLCH chroma by binary search until
+simple-clipping the result into sRGB is perceptually indistinguishable
+(deltaEOK < the 0.02 JND) from the reduced color, then clip. Given an
+already-in-gamut color this returns it converted (and defensively clipped
+for float noise) rather than a no-op, so the result is always safe to hand
+straight to {@link srgbToRgb255}.
+
+```typescript
+function gamutMapOklchToSrgb(ok: Oklch): Srgb
+```
+
+##### `hslToHsv()` from `@llui/components/utils/color`
+
+Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100).
+
+```typescript
+function hslToHsv(hsl: Hsl): Hsv
+```
+
+##### `hslToRgb255()` from `@llui/components/utils/color`
+
+Convert HSL (h 0-360, s/l 0-100) to RGB (0-255 each, rounded).
+
+```typescript
+function hslToRgb255(hsl: Hsl): Rgb255
+```
+
+##### `hsvToHsl()` from `@llui/components/utils/color`
+
+Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100).
+
+```typescript
+function hsvToHsl(hsv: Hsv): Hsl
+```
+
+##### `hsvToOklch()` from `@llui/components/utils/color`
+
+```typescript
+function hsvToOklch(hsv: Hsv): Oklch
+```
+
+##### `hsvToRgb255()` from `@llui/components/utils/color`
+
+```typescript
+function hsvToRgb255(hsv: Hsv): Rgb255
+```
+
+##### `inSrgbGamut()` from `@llui/components/utils/color`
+
+Whether `ok`, converted to sRGB, falls inside [0,1] on every channel
+(within `epsilon` — floating-point round-trip noise).
+
+```typescript
+function inSrgbGamut(ok: Oklch, epsilon = 1e-4): boolean
+```
+
+##### `interpolateColor()` from `@llui/components/utils/color`
+
+Interpolate between two colors per CSS Color 4 §12: convert both into
+`space`, resolve missing/powerless components (an achromatic endpoint's
+hue becomes the OTHER endpoint's hue), premultiply non-hue channels by
+alpha, lerp, then un-premultiply. `hueMethod` controls which way a
+hue-bearing space (`hsl`, `oklch`) rotates; ignored otherwise.
+
+```typescript
+function interpolateColor(a: CssColor, b: CssColor, t: number, space: InterpolationSpace, hueMethod: HueInterpolationMethod = 'shorter'): CssColor
+```
+
+##### `linearSrgbToOklab()` from `@llui/components/utils/color`
+
+```typescript
+function linearSrgbToOklab(s: Srgb): Oklab
+```
+
+##### `linearToSrgb()` from `@llui/components/utils/color`
+
+```typescript
+function linearToSrgb(s: Srgb): Srgb
+```
+
+##### `oklabToLinearSrgb()` from `@llui/components/utils/color`
+
+```typescript
+function oklabToLinearSrgb(lab: Oklab): Srgb
+```
+
+##### `oklabToOklch()` from `@llui/components/utils/color`
+
+```typescript
+function oklabToOklch(lab: Oklab): Oklch
+```
+
+##### `oklabToSrgb()` from `@llui/components/utils/color`
+
+NOT gamut-mapped — may return channels outside [0,1] for an OKLab/OKLCH
+color outside sRGB. Use {@link gamutMapOklchToSrgb} for a displayable
+result.
+
+```typescript
+function oklabToSrgb(lab: Oklab): Srgb
+```
+
+##### `oklchToHsv()` from `@llui/components/utils/color`
+
+Gamut-maps into sRGB first — HSV cannot represent an out-of-gamut color.
+
+```typescript
+function oklchToHsv(ok: Oklch): Hsv
+```
+
+##### `oklchToOklab()` from `@llui/components/utils/color`
+
+```typescript
+function oklchToOklab(ok: Oklch): Oklab
+```
+
+##### `oklchToSrgb()` from `@llui/components/utils/color`
+
+NOT gamut-mapped. See {@link oklabToSrgb}.
+
+```typescript
+function oklchToSrgb(ok: Oklch): Srgb
+```
+
+##### `parseCssColor()` from `@llui/components/utils/color`
+
+Parse a CSS color string into its typed model. Supports `#rgb`/`#rgba`/
+`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()` (legacy comma and modern
+space/slash, numbers and percentages), `hsl()`/`hsla()` (same two
+syntaxes), `oklch()`, `oklab()`, `none` components, `transparent`, and the
+148 CSS Color 4 named colors. Returns `null` on anything else — never
+throws.
+
+```typescript
+function parseCssColor(input: string): CssColor | null
+```
+
+##### `parseHexColor()` from `@llui/components/utils/color`
+
+Parse `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`. Returns `null` on anything
+else, never throws.
+
+```typescript
+function parseHexColor(hex: string): { rgb: Rgb255; alpha: number } | null
+```
+
+##### `resolveNone()` from `@llui/components/utils/color`
+
+A `null` (CSS `none`) component behaves as 0 outside interpolation.
+
+```typescript
+function resolveNone(n: number | null): number
+```
+
+##### `rgb255ToHsl()` from `@llui/components/utils/color`
+
+Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100, rounded).
+
+```typescript
+function rgb255ToHsl(rgb: Rgb255): Hsl
+```
+
+##### `rgb255ToHsv()` from `@llui/components/utils/color`
+
+```typescript
+function rgb255ToHsv(rgb: Rgb255): Hsv
+```
+
+##### `srgb255ToSrgb()` from `@llui/components/utils/color`
+
+```typescript
+function srgb255ToSrgb(rgb: Rgb255): Srgb
+```
+
+##### `srgbToLinear()` from `@llui/components/utils/color`
+
+```typescript
+function srgbToLinear(s: Srgb): Srgb
+```
+
+##### `srgbToOklab()` from `@llui/components/utils/color`
+
+```typescript
+function srgbToOklab(s: Srgb): Oklab
+```
+
+##### `srgbToOklch()` from `@llui/components/utils/color`
+
+```typescript
+function srgbToOklch(s: Srgb): Oklch
+```
+
+##### `srgbToRgb255()` from `@llui/components/utils/color`
+
+Rounds AND clamps into 0-255 — the boundary where an out-of-gamut float
+(an un-mapped OKLCH conversion) must finally become a displayable byte.
+
+```typescript
+function srgbToRgb255(s: Srgb): Rgb255
+```
+
+#### Types
+
+##### `CssColor` from `@llui/components/utils/color`
+
+A color as CSS Color 4 sees it: one of five spaces, every component
+`number | null` (`null` = the `none` keyword). This is the type
+{@link parseCssColor} returns and {@link interpolateColor} operates on —
+the common currency between "a string the user typed" and "a color a
+gradient stop needs to render".
+
+```typescript
+export type CssColor =
+  | { space: 'srgb'; r: number | null; g: number | null; b: number | null; alpha: number | null }
+  | {
+      space: 'srgb-linear'
+      r: number | null
+      g: number | null
+      b: number | null
+      alpha: number | null
+    }
+  | { space: 'hsl'; h: number | null; s: number | null; l: number | null; alpha: number | null }
+  | { space: 'oklab'; l: number | null; a: number | null; b: number | null; alpha: number | null }
+  | { space: 'oklch'; l: number | null; c: number | null; h: number | null; alpha: number | null }
+```
+
+##### `HueInterpolationMethod` from `@llui/components/utils/color`
+
+```typescript
+export type HueInterpolationMethod = 'shorter' | 'longer' | 'increasing' | 'decreasing'
+```
+
+##### `InterpolationSpace` from `@llui/components/utils/color`
+
+Interpolation / generic-conversion target spaces (CSS Color 4 §12).
+
+```typescript
+export type InterpolationSpace = 'srgb' | 'srgb-linear' | 'oklab' | 'oklch' | 'hsl'
+```
+
+#### Interfaces
+
+##### `Hsl` from `@llui/components/utils/color`
+
+HSL color. `h` 0–360 degrees, `s`/`l` 0–100.
+
+```typescript
+export interface Hsl {
+  h: number
+  s: number
+  l: number
+}
+```
+
+##### `Hsv` from `@llui/components/utils/color`
+
+HSV color. `h` 0–360 degrees, `s`/`v` 0–100.
+
+```typescript
+export interface Hsv {
+  h: number
+  s: number
+  v: number
+}
+```
+
+##### `Oklab` from `@llui/components/utils/color`
+
+Oklab. `l` is 0–1 lightness; `a`/`b` are unbounded (±0.4 roughly spans
+sRGB).
+
+```typescript
+export interface Oklab {
+  l: number
+  a: number
+  b: number
+}
+```
+
+##### `Oklch` from `@llui/components/utils/color`
+
+OKLCH. `l` 0–1, `c` >= 0 (unbounded — `maxChroma` in the color picker is a
+UI choice, not a property of the color space), `h` in degrees.
+
+```typescript
+export interface Oklch {
+  l: number
+  c: number
+  h: number
+}
+```
+
+##### `Rgb255` from `@llui/components/utils/color`
+
+8-bit-per-channel sRGB, 0–255 (integers once produced by this module).
+
+```typescript
+export interface Rgb255 {
+  r: number
+  g: number
+  b: number
+}
+```
+
+##### `Srgb` from `@llui/components/utils/color`
+
+sRGB, gamma-encoded, 0–1 per channel. May fall outside [0,1] as an
+intermediate value (e.g. converted from an out-of-gamut OKLCH) — callers
+that need an in-gamut result go through {@link gamutMapOklchToSrgb}.
+
+```typescript
+export interface Srgb {
+  r: number
+  g: number
+  b: number
+}
 ```
 
 ### `@llui/components/utils/date`
@@ -27706,6 +28972,34 @@ throws; the axis is simply unlabelled at the end of time.
 function countCalendarTicks(start: number, end: number, step: CalendarStep, opts: CalendarOptions = {}): number
 ```
 
+##### `cssColorAlpha()` from `@llui/components/utils/index`
+
+Resolved alpha (`none` -> 1, CSS Color 4's used value for a missing
+alpha outside interpolation).
+
+```typescript
+function cssColorAlpha(c: CssColor): number
+```
+
+##### `cssColorToHex()` from `@llui/components/utils/index`
+
+Gamut-map (if needed) and convert to a displayable hex string.
+`#rrggbb` when alpha is (resolved to) 1, `#rrggbbaa` otherwise.
+
+```typescript
+function cssColorToHex(c: CssColor): string
+```
+
+##### `cssColorToSrgb()` from `@llui/components/utils/index`
+
+Convert any {@link CssColor} into fully-resolved (non-null) `Srgb`,
+treating `none` as 0 and NOT gamut-mapping (an oklch/oklab input outside
+sRGB stays outside [0,1]).
+
+```typescript
+function cssColorToSrgb(c: CssColor): Srgb
+```
+
 ##### `curvePath()` from `@llui/components/utils/index`
 
 Join a run of points with the named curve. `closed` applies to `linear`
@@ -27922,6 +29216,47 @@ a microtask if activation triggers a re-render).
 export declare function focusRovingTab(container: Element, value: string): void;
 ```
 
+##### `formatHex()` from `@llui/components/utils/index`
+
+```typescript
+function formatHex(rgb: Rgb255): string
+```
+
+##### `formatHex8()` from `@llui/components/utils/index`
+
+```typescript
+function formatHex8(rgb: Rgb255, alpha: number): string
+```
+
+##### `formatOklch()` from `@llui/components/utils/index`
+
+`oklch(L C H)` / `oklch(L C H / A)`. Fixed precision: `L` as a 0–1
+fraction at 4 dp, `C` at 4 dp, `H` at 2 dp — chosen so the string is stable
+and round-trips through {@link parseCssColor} without drifting.
+
+```typescript
+function formatOklch(ok: Oklch, alpha = 1): string
+```
+
+##### `formatRgb()` from `@llui/components/utils/index`
+
+```typescript
+function formatRgb(rgb: Rgb255, alpha = 1): string
+```
+
+##### `gamutMapOklchToSrgb()` from `@llui/components/utils/index`
+
+CSS Color 4 §13.2 gamut mapping: reduce OKLCH chroma by binary search until
+simple-clipping the result into sRGB is perceptually indistinguishable
+(deltaEOK < the 0.02 JND) from the reduced color, then clip. Given an
+already-in-gamut color this returns it converted (and defensively clipped
+for float noise) rather than a no-op, so the result is always safe to hand
+straight to {@link srgbToRgb255}.
+
+```typescript
+function gamutMapOklchToSrgb(ok: Oklch): Srgb
+```
+
 ##### `getFocusables()` from `@llui/components/utils/index`
 
 ```typescript
@@ -27940,6 +29275,42 @@ the module comment); without one, the flat, layer-agnostic answer.
 export declare function getNestedLayers(aspect?: NestedLayerAspect, within?: NestedLayerScope): Element[];
 ```
 
+##### `hslToHsv()` from `@llui/components/utils/index`
+
+Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100).
+
+```typescript
+function hslToHsv(hsl: Hsl): Hsv
+```
+
+##### `hslToRgb255()` from `@llui/components/utils/index`
+
+Convert HSL (h 0-360, s/l 0-100) to RGB (0-255 each, rounded).
+
+```typescript
+function hslToRgb255(hsl: Hsl): Rgb255
+```
+
+##### `hsvToHsl()` from `@llui/components/utils/index`
+
+Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100).
+
+```typescript
+function hsvToHsl(hsv: Hsv): Hsl
+```
+
+##### `hsvToOklch()` from `@llui/components/utils/index`
+
+```typescript
+function hsvToOklch(hsv: Hsv): Oklch
+```
+
+##### `hsvToRgb255()` from `@llui/components/utils/index`
+
+```typescript
+function hsvToRgb255(hsv: Hsv): Rgb255
+```
+
 ##### `indexMap()` from `@llui/components/utils/index`
 
 A position lookup over a state array: `positions(s.items).get(item)` in place
@@ -27947,6 +29318,27 @@ of `s.items.indexOf(item)`. First occurrence wins, matching `indexOf`.
 
 ```typescript
 function indexMap<T>(): (values: readonly T[] | null | undefined) => ReadonlyMap<T, number>
+```
+
+##### `inSrgbGamut()` from `@llui/components/utils/index`
+
+Whether `ok`, converted to sRGB, falls inside [0,1] on every channel
+(within `epsilon` — floating-point round-trip noise).
+
+```typescript
+function inSrgbGamut(ok: Oklch, epsilon = 1e-4): boolean
+```
+
+##### `interpolateColor()` from `@llui/components/utils/index`
+
+Interpolate between two colors per CSS Color 4 §12: convert both into
+`space`, resolve missing/powerless components (an achromatic endpoint's
+hue becomes the OTHER endpoint's hue), premultiply non-hue channels by
+alpha, lerp, then un-premultiply. `hueMethod` controls which way a
+hue-bearing space (`hsl`, `oklch`) rotates; ignored otherwise.
+
+```typescript
+function interpolateColor(a: CssColor, b: CssColor, t: number, space: InterpolationSpace, hueMethod: HueInterpolationMethod = 'shorter'): CssColor
 ```
 
 ##### `isDateOnly()` from `@llui/components/utils/index`
@@ -28019,6 +29411,18 @@ Straight segments through every point.
 
 ```typescript
 function linearPath(points: readonly Point[], closed = false): string
+```
+
+##### `linearSrgbToOklab()` from `@llui/components/utils/index`
+
+```typescript
+function linearSrgbToOklab(s: Srgb): Oklab
+```
+
+##### `linearToSrgb()` from `@llui/components/utils/index`
+
+```typescript
+function linearToSrgb(s: Srgb): Srgb
 ```
 
 ##### `lockBodyScroll()` from `@llui/components/utils/index`
@@ -28110,10 +29514,76 @@ not a crash or a NaN in a path string.
 function normalize(value: number, domain: Domain): number
 ```
 
+##### `oklabToLinearSrgb()` from `@llui/components/utils/index`
+
+```typescript
+function oklabToLinearSrgb(lab: Oklab): Srgb
+```
+
+##### `oklabToOklch()` from `@llui/components/utils/index`
+
+```typescript
+function oklabToOklch(lab: Oklab): Oklch
+```
+
+##### `oklabToSrgb()` from `@llui/components/utils/index`
+
+NOT gamut-mapped — may return channels outside [0,1] for an OKLab/OKLCH
+color outside sRGB. Use {@link gamutMapOklchToSrgb} for a displayable
+result.
+
+```typescript
+function oklabToSrgb(lab: Oklab): Srgb
+```
+
+##### `oklchToHsv()` from `@llui/components/utils/index`
+
+Gamut-maps into sRGB first — HSV cannot represent an out-of-gamut color.
+
+```typescript
+function oklchToHsv(ok: Oklch): Hsv
+```
+
+##### `oklchToOklab()` from `@llui/components/utils/index`
+
+```typescript
+function oklchToOklab(ok: Oklch): Oklab
+```
+
+##### `oklchToSrgb()` from `@llui/components/utils/index`
+
+NOT gamut-mapped. See {@link oklabToSrgb}.
+
+```typescript
+function oklchToSrgb(ok: Oklch): Srgb
+```
+
+##### `parseCssColor()` from `@llui/components/utils/index`
+
+Parse a CSS color string into its typed model. Supports `#rgb`/`#rgba`/
+`#rrggbb`/`#rrggbbaa`, `rgb()`/`rgba()` (legacy comma and modern
+space/slash, numbers and percentages), `hsl()`/`hsla()` (same two
+syntaxes), `oklch()`, `oklab()`, `none` components, `transparent`, and the
+148 CSS Color 4 named colors. Returns `null` on anything else — never
+throws.
+
+```typescript
+function parseCssColor(input: string): CssColor | null
+```
+
 ##### `parseDateValue()` from `@llui/components/utils/index`
 
 ```typescript
 function parseDateValue(value: DateValue): ParsedDateValue
+```
+
+##### `parseHexColor()` from `@llui/components/utils/index`
+
+Parse `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`. Returns `null` on anything
+else, never throws.
+
+```typescript
+function parseHexColor(hex: string): { rgb: Rgb255; alpha: number } | null
 ```
 
 ##### `polarPoint()` from `@llui/components/utils/index`
@@ -28252,6 +29722,14 @@ Returns 'rtl' or 'ltr' (default).
 export declare function resolveDir(el: Element): TextDirection;
 ```
 
+##### `resolveNone()` from `@llui/components/utils/index`
+
+A `null` (CSS `none`) component behaves as 0 outside interpolation.
+
+```typescript
+function resolveNone(n: number | null): number
+```
+
 ##### `resolveRovingMove()` from `@llui/components/utils/index`
 
 Map a keyboard key + the current tab value to a roving-tablist move,
@@ -28272,6 +29750,20 @@ An explicit `'ltr' | 'rtl'` wins; an `Element` is resolved from the DOM;
 
 ```typescript
 export declare function resolveTextDirection(source: Element | null | undefined | TextDirection): TextDirection;
+```
+
+##### `rgb255ToHsl()` from `@llui/components/utils/index`
+
+Convert RGB (0-255 each) to HSL (h 0-360, s/l 0-100, rounded).
+
+```typescript
+function rgb255ToHsl(rgb: Rgb255): Hsl
+```
+
+##### `rgb255ToHsv()` from `@llui/components/utils/index`
+
+```typescript
+function rgb255ToHsv(rgb: Rgb255): Hsv
 ```
 
 ##### `rovingTabStop()` from `@llui/components/utils/index`
@@ -28405,6 +29897,39 @@ direct consumers on the same rule.
 function snapToStep(value: number, step: number, origin = 0): number
 ```
 
+##### `srgb255ToSrgb()` from `@llui/components/utils/index`
+
+```typescript
+function srgb255ToSrgb(rgb: Rgb255): Srgb
+```
+
+##### `srgbToLinear()` from `@llui/components/utils/index`
+
+```typescript
+function srgbToLinear(s: Srgb): Srgb
+```
+
+##### `srgbToOklab()` from `@llui/components/utils/index`
+
+```typescript
+function srgbToOklab(s: Srgb): Oklab
+```
+
+##### `srgbToOklch()` from `@llui/components/utils/index`
+
+```typescript
+function srgbToOklch(s: Srgb): Oklch
+```
+
+##### `srgbToRgb255()` from `@llui/components/utils/index`
+
+Rounds AND clamps into 0-255 — the boundary where an out-of-gamut float
+(an un-mapped OKLCH conversion) must finally become a displayable byte.
+
+```typescript
+function srgbToRgb255(s: Srgb): Rgb255
+```
+
 ##### `stepBy()` from `@llui/components/utils/index`
 
 Move `count` whole steps (negative to step down), then clamp+snap.
@@ -28528,6 +30053,29 @@ Rungs of the ladder, finest first.
 export type CalendarUnit = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'
 ```
 
+##### `CssColor` from `@llui/components/utils/index`
+
+A color as CSS Color 4 sees it: one of five spaces, every component
+`number | null` (`null` = the `none` keyword). This is the type
+{@link parseCssColor} returns and {@link interpolateColor} operates on —
+the common currency between "a string the user typed" and "a color a
+gradient stop needs to render".
+
+```typescript
+export type CssColor =
+  | { space: 'srgb'; r: number | null; g: number | null; b: number | null; alpha: number | null }
+  | {
+      space: 'srgb-linear'
+      r: number | null
+      g: number | null
+      b: number | null
+      alpha: number | null
+    }
+  | { space: 'hsl'; h: number | null; s: number | null; l: number | null; alpha: number | null }
+  | { space: 'oklab'; l: number | null; a: number | null; b: number | null; alpha: number | null }
+  | { space: 'oklch'; l: number | null; c: number | null; h: number | null; alpha: number | null }
+```
+
 ##### `Curve` from `@llui/components/utils/index`
 
 How a run of points is joined.
@@ -28568,6 +30116,20 @@ Shared DOM helpers used by interaction utilities.
 
 ```typescript
 export type ElementSource<T extends Element = Element> = T | T[] | (() => T | T[] | null)
+```
+
+##### `HueInterpolationMethod` from `@llui/components/utils/index`
+
+```typescript
+export type HueInterpolationMethod = 'shorter' | 'longer' | 'increasing' | 'decreasing'
+```
+
+##### `InterpolationSpace` from `@llui/components/utils/index`
+
+Interpolation / generic-conversion target spaces (CSS Color 4 §12).
+
+```typescript
+export type InterpolationSpace = 'srgb' | 'srgb-linear' | 'oklab' | 'oklch' | 'hsl'
 ```
 
 ##### `NestedLayerAspect` from `@llui/components/utils/index`
@@ -28906,6 +30468,30 @@ export interface Frame {
 }
 ```
 
+##### `Hsl` from `@llui/components/utils/index`
+
+HSL color. `h` 0–360 degrees, `s`/`l` 0–100.
+
+```typescript
+export interface Hsl {
+  h: number
+  s: number
+  l: number
+}
+```
+
+##### `Hsv` from `@llui/components/utils/index`
+
+HSV color. `h` 0–360 degrees, `s`/`v` 0–100.
+
+```typescript
+export interface Hsv {
+  h: number
+  s: number
+  v: number
+}
+```
+
 ##### `InteractOutsideOptions` from `@llui/components/utils/index`
 
 ```typescript
@@ -28966,6 +30552,32 @@ export interface NumericGrid {
   min?: number
   max?: number
   step?: number
+}
+```
+
+##### `Oklab` from `@llui/components/utils/index`
+
+Oklab. `l` is 0–1 lightness; `a`/`b` are unbounded (±0.4 roughly spans
+sRGB).
+
+```typescript
+export interface Oklab {
+  l: number
+  a: number
+  b: number
+}
+```
+
+##### `Oklch` from `@llui/components/utils/index`
+
+OKLCH. `l` 0–1, `c` >= 0 (unbounded — `maxChroma` in the color picker is a
+UI choice, not a property of the color space), `h` in degrees.
+
+```typescript
+export interface Oklch {
+  l: number
+  c: number
+  h: number
 }
 ```
 
@@ -29069,6 +30681,18 @@ export interface Projection {
 }
 ```
 
+##### `Rgb255` from `@llui/components/utils/index`
+
+8-bit-per-channel sRGB, 0–255 (integers once produced by this module).
+
+```typescript
+export interface Rgb255 {
+  r: number
+  g: number
+  b: number
+}
+```
+
 ##### `RovingItem` from `@llui/components/utils/index`
 
 ```typescript
@@ -29104,6 +30728,20 @@ A normalized sample: position along the independent axis, and magnitude.
 export interface Sample {
   u: number
   v: number
+}
+```
+
+##### `Srgb` from `@llui/components/utils/index`
+
+sRGB, gamma-encoded, 0–1 per channel. May fall outside [0,1] as an
+intermediate value (e.g. converted from an out-of-gamut OKLCH) — callers
+that need an in-gamut result go through {@link gamutMapOklchToSrgb}.
+
+```typescript
+export interface Srgb {
+  r: number
+  g: number
+  b: number
 }
 ```
 
@@ -38743,34 +40381,14 @@ function colorFromPoint(rect: DOMRect, x: number, y: number): { s: number; v: nu
 function connect(state: Signal<ColorPickerState>, send: Send<ColorPickerMsg>, opts: ConnectOptions = {}): ColorPickerParts
 ```
 
-##### `hexToHsl()` from `@llui/components/color-picker`
+##### `hsvToOklchPreserving()` from `@llui/components/color-picker`
+
+HSV -> OKLCH, keeping the HSV hue verbatim when the color is achromatic
+(S or V is 0) instead of the arbitrary hue an achromatic OKLab conversion
+would otherwise produce.
 
 ```typescript
-function hexToHsl(hex: string): Hsl | null
-```
-
-##### `hslToHsv()` from `@llui/components/color-picker`
-
-Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100).
-
-```typescript
-function hslToHsv(hsl: Hsl): Hsv
-```
-
-##### `hslToRgb()` from `@llui/components/color-picker`
-
-Convert HSL (h 0-360, s/l 0-100) to RGB (0-255 each).
-
-```typescript
-function hslToRgb(hsl: Hsl): { r: number; g: number; b: number }
-```
-
-##### `hsvToHsl()` from `@llui/components/color-picker`
-
-Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100).
-
-```typescript
-function hsvToHsl(hsv: Hsv): Hsl
+function hsvToOklchPreserving(hsv: Hsv): Oklch
 ```
 
 ##### `init()` from `@llui/components/color-picker`
@@ -38779,34 +40397,156 @@ function hsvToHsl(hsv: Hsv): Hsl
 function init(opts: ColorPickerInit = {}): ColorPickerState
 ```
 
-##### `parseColor()` from `@llui/components/color-picker`
+##### `isOutOfGamut()` from `@llui/components/color-picker`
 
-Parse #RGB, #RRGGBB, or #RRGGBBAA into HSL (+ optional alpha).
+Whether the OKLCH color falls outside the sRGB gamut (always `false` in
+HSV mode — an HSV color is an sRGB parameterization by construction).
 
 ```typescript
-function parseColor(color: string): { hsl: Hsl; alpha?: number } | null
+function isOutOfGamut(state: ColorPickerState): boolean
+```
+
+##### `lcFromPoint()` from `@llui/components/color-picker`
+
+Map a pointer position over the 2D chroma/lightness area to OKLCH C/L.
+X axis is chroma (left 0 → right `maxChroma`); Y axis is lightness
+(top 1 → bottom 0), mirroring {@link colorFromPoint}'s value axis.
+
+```typescript
+function lcFromPoint(rect: DOMRect, x: number, y: number, maxChroma: number = DEFAULT_MAX_CHROMA): { c: number; l: number }
+```
+
+##### `oklchHueRampGradient()` from `@llui/components/color-picker`
+
+A full-circle OKLCH hue ramp at a fixed lightness/chroma, using CSS
+Color 4's `in oklch longer hue` interpolation method — the ONLY way to
+express a hue sweep as a plain gradient, since hue 0 and hue 360 are the
+SAME point in `oklab`/`srgb` (the default interpolation space), so a
+naive `linear-gradient(oklch(L C 0), oklch(L C 360))` would render as a
+solid color instead of a rainbow.
+
+```typescript
+function oklchHueRampGradient(l = 0.75, c = 0.15): string
+```
+
+##### `oklchPlanePixels()` from `@llui/components/color-picker`
+
+Render one OKLCH hue's chroma/lightness plane as RGBA pixels — chroma
+increasing left to right (0..`maxChroma`), lightness increasing bottom to
+top (0..1), matching {@link lcFromPoint}'s axes. Out-of-gamut pixels are
+fully transparent (alpha 0) rather than gamut-mapped, so a consumer can
+paint them hatched/checkered underneath if it wants a visible "no color
+here" cue instead of a silently-wrong one.
+
+O(width * height) OKLCH->sRGB conversions, each potentially running the
+gamut-mapping binary search — keep the canvas modest (a few hundred
+pixels per side) and repaint only on hue change, not on every pointer move.
+
+```typescript
+function oklchPlanePixels(hue: number, width: number, height: number, maxChroma: number = DEFAULT_MAX_CHROMA): Uint8ClampedArray<ArrayBuffer>
+```
+
+##### `oklchToHsvPreserving()` from `@llui/components/color-picker`
+
+OKLCH -> HSV (gamut-mapped), keeping the OKLCH hue verbatim when the
+color is achromatic (chroma ~0).
+
+```typescript
+function oklchToHsvPreserving(ok: Oklch): Hsv
+```
+
+##### `openEyeDropper()` from `@llui/components/color-picker`
+
+Open the browser's native EyeDropper UI and resolve to the picked color as
+`#rrggbb`. Resolves `null` — never rejects — when the API is unsupported
+or the user cancels (`AbortError`, including a deliberate
+`signal.abort()`). Rejects only for a genuine unexpected failure.
+
+```typescript
+function openEyeDropper(signal?: AbortSignal): Promise<string | null>
+```
+
+##### `paintOklchPlane()` from `@llui/components/color-picker`
+
+Paint {@link oklchPlanePixels} onto a canvas sized to its current
+`width`/`height`. A no-op on a zero-sized canvas or a context-less
+environment (jsdom without a 2D context polyfill).
+
+```typescript
+function paintOklchPlane(canvas: HTMLCanvasElement, hue: number, maxChroma: number = DEFAULT_MAX_CHROMA): void
 ```
 
 ##### `stateHsl()` from `@llui/components/color-picker`
 
-Derive the HSL projection of the current state (for hex output + HSL sliders).
+Project the current color onto HSL (via {@link stateHsv}).
 
 ```typescript
 function stateHsl(state: ColorPickerState): Hsl
 ```
 
-##### `toHex()` from `@llui/components/color-picker`
+##### `stateHsv()` from `@llui/components/color-picker`
+
+Project the current color onto HSV (gamut-mapped if the active model is
+OKLCH and out of gamut).
 
 ```typescript
-function toHex(hsl: Hsl): string
+function stateHsv(state: ColorPickerState): Hsv
+```
+
+##### `stateOklch()` from `@llui/components/color-picker`
+
+Project the current color onto OKLCH (exact — not gamut-mapped — if the
+active model already IS OKLCH; derived from HSV otherwise, which is
+always in-gamut by construction).
+
+```typescript
+function stateOklch(state: ColorPickerState): Oklch
+```
+
+##### `supportsEyeDropper()` from `@llui/components/color-picker`
+
+Whether the EyeDropper API is available. SSR-safe (`false` when there is
+no `window`) and STATIC — a plain function, not a `Signal`, so `connect()`
+never has to decide between two answers for the SAME render: the part bag
+it publishes is identical on the server and on the client's first paint
+(`eyeDropperTrigger` is always rendered enabled/visible from the machine's
+point of view). A consumer that wants to hide or disable the button on an
+unsupported browser calls this from its own `onMount` and sets the DOM
+attribute directly — the same pattern `theme-switch.ts`'s `resolveTheme`
+uses for `prefers-color-scheme`, and the only point in this package where
+a browser-only capability decides what renders.
+
+```typescript
+function supportsEyeDropper(): boolean
+```
+
+##### `toCss()` from `@llui/components/color-picker`
+
+The current color as a CSS string. HSV model -> hex (`#rrggbb`/`#rrggbbaa`
+depending on alpha) — cheap, familiar, and what the hex input already
+shows. OKLCH model -> `oklch()`, EXACT rather than gamut-mapped, because
+an OKLCH color may legitimately sit outside sRGB and a hex round trip
+would silently clip it; the browser gamut-maps `oklch()` for display on
+its own terms, same as it would for a value typed directly into CSS.
+
+```typescript
+function toCss(state: ColorPickerState): string
+```
+
+##### `toHex()` from `@llui/components/color-picker`
+
+`#rrggbb`, gamut-mapped from OKLCH when the active model needs it.
+
+```typescript
+function toHex(state: ColorPickerState): string
 ```
 
 ##### `toHex8()` from `@llui/components/color-picker`
 
-8-digit hex (#RRGGBBAA) including the alpha channel (0..1).
+`#rrggbbaa`.
 
 ```typescript
-function toHex8(hsl: Hsl, alpha: number): string
+function toHex8(state: ColorPickerState): string
 ```
 
 ##### `update()` from `@llui/components/color-picker`
@@ -38817,28 +40557,65 @@ function update(state: ColorPickerState, msg: ColorPickerMsg): [ColorPickerState
 
 #### Types
 
+##### `ColorModel` from `@llui/components/color-picker`
+
+Color picker — HSV and OKLCH color selection.
+
+The canonical color lives in whichever model is ACTIVE (`state.color.model`)
+and is lossless within that model. Every message that edits the color goes
+through a PROJECTION into the model it naturally operates in (HSV, HSL, or
+OKLCH), applies the edit there, then converts the result into the active
+model — so `setSaturation` (an HSL concept) and `setChroma` (an OKLCH
+concept) both work regardless of which model is currently active, and
+`setHue` sets the hue of whichever model IS active (HSV hue and OKLCH hue
+are numerically different rulers for the same wheel).
+
+HUE STABILITY ON ACHROMATIC COLORS is the reason HSV was chosen as the
+original canonical store (S or V at 0 loses no information about hue,
+unlike HSL's black/white axis) and it is preserved across the HSV<->OKLCH
+boundary too: {@link hsvToOklchPreserving}/{@link oklchToHsvPreserving}
+carry the stored hue straight across whenever the color is achromatic in
+the SOURCE model, rather than recomputing an arbitrary hue-of-zero-chroma.
+`setModel` and every cross-model projection route through these two.
+
+```typescript
+export type ColorModel = 'hsv' | 'oklch'
+```
+
 ##### `ColorPickerMsg` from `@llui/components/color-picker`
 
 ```typescript
 export type ColorPickerMsg =
+  /** @intent("Switch the active color model, converting the stored color and keeping its hue stable if it is achromatic") */
+  | { type: 'setModel'; model: ColorModel }
   /** @intent("Set the full HSL color at once") */
   | { type: 'setHsl'; hsl: Hsl }
-  /** @intent("Set the hue channel (0–360)") */
+  /** @intent("Set the hue of the ACTIVE model (0–360)") */
   | { type: 'setHue'; h: number }
-  /** @intent("Set the saturation channel (0–100)") */
+  /** @intent("Set the HSL saturation channel (0–100)") */
   | { type: 'setSaturation'; s: number }
-  /** @intent("Set the lightness channel (0–100)") */
+  /** @intent("Set the HSL lightness channel (0–100)") */
   | { type: 'setLightness'; l: number }
   /** @intent("Set the alpha channel (0–1)") */
   | { type: 'setAlpha'; alpha: number }
-  /** @intent("Set the color from a hex string (#RRGGBB or #RGB)") */
+  /** @intent("Set the color from any CSS color string (hex, rgb(), hsl(), oklch(), oklab(), a named color)") */
   | { type: 'setHex'; hex: string }
   /** @intent("Set saturation and value (HSV, 0–100 each) from the 2D area") */
   | { type: 'setSv'; s: number; v: number }
   /** @intent("Nudge saturation/value (HSV) by signed deltas — used by area arrow keys") */
   | { type: 'nudgeSv'; ds: number; dv: number }
-  /** @intent("Set the color from a swatch or hex string (#RGB, #RRGGBB, or #RRGGBBAA)") */
+  /** @intent("Set the color from a swatch, an eyedropper pick, or any CSS color string") */
   | { type: 'setColor'; color: string }
+  /** @intent("Set the full OKLCH color at once (L 0–1, C >= 0, H degrees)") */
+  | { type: 'setOklch'; l: number; c: number; h: number }
+  /** @intent("Set the OKLCH chroma channel") */
+  | { type: 'setChroma'; c: number }
+  /** @intent("Set the OKLCH lightness channel (0–1)") */
+  | { type: 'setOklchLightness'; l: number }
+  /** @intent("Set chroma and lightness (OKLCH, x/y of the 2D area) at once") */
+  | { type: 'setLc'; c: number; l: number }
+  /** @intent("Nudge chroma/lightness (OKLCH) by signed deltas — used by area arrow keys") */
+  | { type: 'nudgeLc'; dc: number; dl: number }
 ```
 
 #### Interfaces
@@ -38847,10 +40624,19 @@ export type ColorPickerMsg =
 
 ```typescript
 export interface ColorPickerInit {
-  /** Initial color as HSL (converted to the canonical HSV store). */
+  /** Which model the canonical color is stored in. Default `'hsv'`. */
+  model?: ColorModel
+  /** Initial color as any CSS color string the shared parser accepts (hex,
+   * `rgb()`, `hsl()`, `oklch()`, `oklab()`, a named color). Takes precedence
+   * over `hsl`/`hsv`/`oklch` below, and over `alpha` for the color's own
+   * alpha component (an explicit `alpha` option still wins). */
+  color?: string
+  /** Initial color as HSL (converted into the canonical store). */
   hsl?: Hsl
-  /** Initial color as HSV (takes precedence over `hsl`). */
+  /** Initial color as HSV. Takes precedence over `hsl`. */
   hsv?: Hsv
+  /** Initial color as OKLCH. Takes precedence over `hsl`/`hsv`. */
+  oklch?: Oklch
   alpha?: number
   disabled?: boolean
 }
@@ -38864,6 +40650,20 @@ export interface ColorPickerParts {
     'data-scope': 'color-picker'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
+    'data-model': Signal<ColorModel>
+    /** Bare boolean (package convention): present when the current OKLCH
+     * color falls outside sRGB. Always absent in HSV mode (an HSV color is
+     * an sRGB parameterization by construction). */
+    'data-out-of-gamut': Signal<'' | undefined>
+  }
+  /** Cycles the active model between `'hsv'` and `'oklch'`. */
+  modelToggle: {
+    type: 'button'
+    'aria-label': Signal<string>
+    'data-scope': 'color-picker'
+    'data-part': 'model-toggle'
+    'data-model': Signal<ColorModel>
+    onClick: (e: MouseEvent) => void
   }
   hueSlider: {
     type: 'range'
@@ -38903,6 +40703,34 @@ export interface ColorPickerParts {
     'data-part': 'lightness-slider'
     onInput: (e: Event) => void
   }
+  /** OKLCH chroma, `0..maxChroma`. */
+  chromaSlider: {
+    type: 'range'
+    min: 0
+    max: number
+    step: number
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    style: Signal<string>
+    'data-scope': 'color-picker'
+    'data-part': 'chroma-slider'
+    onInput: (e: Event) => void
+  }
+  /** OKLCH perceptual lightness, `0..1`. */
+  oklchLightnessSlider: {
+    type: 'range'
+    min: 0
+    max: 1
+    step: number
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    style: Signal<string>
+    'data-scope': 'color-picker'
+    'data-part': 'oklch-lightness-slider'
+    onInput: (e: Event) => void
+  }
   hexInput: {
     type: 'text'
     autocomplete: 'off'
@@ -38920,22 +40748,34 @@ export interface ColorPickerParts {
     'aria-hidden': 'true'
     style: Signal<string>
   }
-  /** The 2D saturation/value area track. The view owns pointer events and
-   * calls `colorFromPoint(track.getBoundingClientRect(), x, y)` to derive S/V. */
+  /** The 2D area track. In HSV mode the view owns pointer events and calls
+   * `colorFromPoint(...)`; in OKLCH mode, `lcFromPoint(...)`. */
   area: {
     'data-scope': 'color-picker'
     'data-part': 'area'
+    'data-model': Signal<ColorModel>
+    // HSV-mode hue backdrop only; empty in OKLCH mode, where `areaCanvas`
+    // paints the plane instead (the sRGB gamut boundary is not expressible
+    // as a CSS gradient).
     style: Signal<string>
   }
+  /** Decorative `<canvas>` seam for the OKLCH area — headless, so the
+   * consumer owns creating and sizing the real `<canvas>` element and
+   * repainting it with {@link paintOklchPlane} on hue change (and on mount).
+   * Absent/inert in HSV mode. */
+  areaCanvas: {
+    'data-scope': 'color-picker'
+    'data-part': 'area-canvas'
+    'aria-hidden': 'true'
+  }
   /** The draggable thumb inside the 2D area. Keyboard-operable (arrows move
-   * S/V; Shift = coarse) with role="slider" and a 2D aria-valuetext. */
+   * S/V or C/L depending on the active model; Shift = coarse) with
+   * role="slider" and a 2D aria-valuetext. */
   areaThumb: {
     role: 'slider'
     'aria-label': string
-    /** ARIA 1.2 lists this as a REQUIRED property of `slider`, and the
-     * `aria-valuetext` definition says authors must also specify it. The area
-     * is 2D, so it reports the horizontal axis (saturation) numerically and
-     * leaves both axes to `aria-valuetext`. */
+    'aria-valuemin': Signal<number>
+    'aria-valuemax': Signal<number>
     'aria-valuenow': Signal<number>
     'aria-valuetext': Signal<string>
     'aria-disabled': Signal<'true' | undefined>
@@ -38959,6 +40799,17 @@ export interface ColorPickerParts {
     'data-part': 'alpha-slider'
     onInput: (e: Event) => void
   }
+  /** EyeDropper API trigger. Always published; `supportsEyeDropper()` (a
+   * plain, SSR-safe function, not a `Signal` — see its doc comment) is how a
+   * consumer decides whether to show or disable it. */
+  eyeDropperTrigger: {
+    type: 'button'
+    'aria-label': string
+    disabled: Signal<boolean>
+    'data-scope': 'color-picker'
+    'data-part': 'eyedropper-trigger'
+    onClick: (e: MouseEvent) => void
+  }
   /** Container for the preset swatch buttons. */
   swatchGroup: {
     role: 'group'
@@ -38975,12 +40826,9 @@ export interface ColorPickerParts {
 
 ```typescript
 export interface ColorPickerState {
-  /**
-   * Canonical color, stored in HSV so the 2D saturation/value area preserves
-   * S and V independently (HSL collapses both at the black/white axis). HSL is
-   * derived on demand via `stateHsl()` / `hsvToHsl()` for hex output + sliders.
-   */
-  hsv: Hsv
+  color:
+    | { model: 'hsv'; h: number; s: number; v: number }
+    | { model: 'oklch'; l: number; c: number; h: number }
   /** Alpha channel 0..1. */
   alpha: number
   disabled: boolean
@@ -38994,24 +40842,47 @@ export interface ConnectOptions {
   hueLabel?: string
   saturationLabel?: string
   lightnessLabel?: string
+  chromaLabel?: string
+  oklchLightnessLabel?: string
   hexLabel?: string
-  /** aria-label for the 2D saturation/value area thumb. */
+  eyeDropperLabel?: string
+  /** aria-label for the 2D area thumb. */
   areaLabel?: string
   /** aria-label for the alpha slider. */
   alphaLabel?: string
   /** aria-label for the swatch group container. */
   swatchGroupLabel?: string
-  /** Fine keyboard step for the area thumb (S/V units). Default 1. */
+  /** Fine keyboard step for the area thumb (S/V units, or the OKLCH
+   * equivalent scaled by `maxChroma`). Default 1. */
   step?: number
   /** Coarse keyboard step for the area thumb when Shift is held. Default 10. */
   coarseStep?: number
+  /** Upper bound the OKLCH chroma slider/area render up to. Rendering-only —
+   * see {@link DEFAULT_MAX_CHROMA}'s doc comment for how this relates to the
+   * reducer's own chroma ceiling. Default {@link DEFAULT_MAX_CHROMA}. */
+  maxChroma?: number
+}
+```
+
+##### `EyeDropperOpenOptions` from `@llui/components/color-picker`
+
+```typescript
+export interface EyeDropperOpenOptions {
+  signal?: AbortSignal
+}
+```
+
+##### `EyeDropperResult` from `@llui/components/color-picker`
+
+```typescript
+export interface EyeDropperResult {
+  sRGBHex: string
 }
 ```
 
 ##### `Hsl` from `@llui/components/color-picker`
 
-Color picker — HSL/HSV color selection. Tracks hue (0-360), saturation
-(0-100), and lightness (0-100). Emits hex strings for convenience.
+HSL color. `h` 0–360 degrees, `s`/`l` 0–100.
 
 ```typescript
 export interface Hsl {
@@ -39023,13 +40894,26 @@ export interface Hsl {
 
 ##### `Hsv` from `@llui/components/color-picker`
 
-HSV color (h 0-360, s/v 0-100). The 2D area picker operates in HSV space.
+HSV color. `h` 0–360 degrees, `s`/`v` 0–100.
 
 ```typescript
 export interface Hsv {
   h: number
   s: number
   v: number
+}
+```
+
+##### `Oklch` from `@llui/components/color-picker`
+
+OKLCH. `l` 0–1, `c` >= 0 (unbounded — `maxChroma` in the color picker is a
+UI choice, not a property of the color space), `h` in degrees.
+
+```typescript
+export interface Oklch {
+  l: number
+  c: number
+  h: number
 }
 ```
 
@@ -39055,6 +40939,18 @@ export interface SwatchParts {
 
 ```typescript
 const colorPicker
+```
+
+##### `DEFAULT_MAX_CHROMA` from `@llui/components/color-picker`
+
+`0.37` covers the whole of sRGB and most of Display P3 while leaving the
+2D area / chroma slider a sensible fixed range (an unbounded chroma axis
+has no natural "full scale" to show). Chosen once, shared by the reducer's
+clamp and `connect()`'s default rendering range — see the module doc on
+`ConnectOptions.maxChroma` for the one place they can currently diverge.
+
+```typescript
+const DEFAULT_MAX_CHROMA
 ```
 
 ### `@llui/components/timer`

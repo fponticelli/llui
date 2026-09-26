@@ -2,200 +2,313 @@ import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { colorPickerLocale } from '../locale/color-picker.js'
 import { allFiniteNumbers, clamp, finiteOrDefault } from '../utils/number.js'
+import { onScopeTeardown } from '../utils/lifecycle.js'
+import type { Hsl, Hsv, Oklch, Srgb } from '../utils/color.js'
+import {
+  hslToHsv,
+  hsvToHsl,
+  hsvToRgb255,
+  rgb255ToHsv,
+  srgb255ToSrgb,
+  srgbToRgb255,
+  hsvToOklch,
+  oklchToHsv,
+  gamutMapOklchToSrgb,
+  inSrgbGamut,
+  formatHex,
+  formatHex8,
+  formatOklch,
+  parseCssColor,
+  cssColorToSrgb,
+  cssColorAlpha,
+  resolveNone,
+} from '../utils/color.js'
 
 /**
- * Color picker — HSL/HSV color selection. Tracks hue (0-360), saturation
- * (0-100), and lightness (0-100). Emits hex strings for convenience.
+ * Color picker — HSV and OKLCH color selection.
+ *
+ * The canonical color lives in whichever model is ACTIVE (`state.color.model`)
+ * and is lossless within that model. Every message that edits the color goes
+ * through a PROJECTION into the model it naturally operates in (HSV, HSL, or
+ * OKLCH), applies the edit there, then converts the result into the active
+ * model — so `setSaturation` (an HSL concept) and `setChroma` (an OKLCH
+ * concept) both work regardless of which model is currently active, and
+ * `setHue` sets the hue of whichever model IS active (HSV hue and OKLCH hue
+ * are numerically different rulers for the same wheel).
+ *
+ * HUE STABILITY ON ACHROMATIC COLORS is the reason HSV was chosen as the
+ * original canonical store (S or V at 0 loses no information about hue,
+ * unlike HSL's black/white axis) and it is preserved across the HSV<->OKLCH
+ * boundary too: {@link hsvToOklchPreserving}/{@link oklchToHsvPreserving}
+ * carry the stored hue straight across whenever the color is achromatic in
+ * the SOURCE model, rather than recomputing an arbitrary hue-of-zero-chroma.
+ * `setModel` and every cross-model projection route through these two.
  */
 
-export interface Hsl {
-  h: number
-  s: number
-  l: number
-}
+export type ColorModel = 'hsv' | 'oklch'
 
-/** HSV color (h 0-360, s/v 0-100). The 2D area picker operates in HSV space. */
-export interface Hsv {
-  h: number
-  s: number
-  v: number
-}
+export type { Hsl, Hsv, Oklch }
+
+/** `0.37` covers the whole of sRGB and most of Display P3 while leaving the
+ * 2D area / chroma slider a sensible fixed range (an unbounded chroma axis
+ * has no natural "full scale" to show). Chosen once, shared by the reducer's
+ * clamp and `connect()`'s default rendering range — see the module doc on
+ * `ConnectOptions.maxChroma` for the one place they can currently diverge. */
+export const DEFAULT_MAX_CHROMA = 0.37
 
 export interface ColorPickerState {
-  /**
-   * Canonical color, stored in HSV so the 2D saturation/value area preserves
-   * S and V independently (HSL collapses both at the black/white axis). HSL is
-   * derived on demand via `stateHsl()` / `hsvToHsl()` for hex output + sliders.
-   */
-  hsv: Hsv
+  color:
+    | { model: 'hsv'; h: number; s: number; v: number }
+    | { model: 'oklch'; l: number; c: number; h: number }
   /** Alpha channel 0..1. */
   alpha: number
   disabled: boolean
 }
 
 export type ColorPickerMsg =
+  /** @intent("Switch the active color model, converting the stored color and keeping its hue stable if it is achromatic") */
+  | { type: 'setModel'; model: ColorModel }
   /** @intent("Set the full HSL color at once") */
   | { type: 'setHsl'; hsl: Hsl }
-  /** @intent("Set the hue channel (0–360)") */
+  /** @intent("Set the hue of the ACTIVE model (0–360)") */
   | { type: 'setHue'; h: number }
-  /** @intent("Set the saturation channel (0–100)") */
+  /** @intent("Set the HSL saturation channel (0–100)") */
   | { type: 'setSaturation'; s: number }
-  /** @intent("Set the lightness channel (0–100)") */
+  /** @intent("Set the HSL lightness channel (0–100)") */
   | { type: 'setLightness'; l: number }
   /** @intent("Set the alpha channel (0–1)") */
   | { type: 'setAlpha'; alpha: number }
-  /** @intent("Set the color from a hex string (#RRGGBB or #RGB)") */
+  /** @intent("Set the color from any CSS color string (hex, rgb(), hsl(), oklch(), oklab(), a named color)") */
   | { type: 'setHex'; hex: string }
   /** @intent("Set saturation and value (HSV, 0–100 each) from the 2D area") */
   | { type: 'setSv'; s: number; v: number }
   /** @intent("Nudge saturation/value (HSV) by signed deltas — used by area arrow keys") */
   | { type: 'nudgeSv'; ds: number; dv: number }
-  /** @intent("Set the color from a swatch or hex string (#RGB, #RRGGBB, or #RRGGBBAA)") */
+  /** @intent("Set the color from a swatch, an eyedropper pick, or any CSS color string") */
   | { type: 'setColor'; color: string }
+  /** @intent("Set the full OKLCH color at once (L 0–1, C >= 0, H degrees)") */
+  | { type: 'setOklch'; l: number; c: number; h: number }
+  /** @intent("Set the OKLCH chroma channel") */
+  | { type: 'setChroma'; c: number }
+  /** @intent("Set the OKLCH lightness channel (0–1)") */
+  | { type: 'setOklchLightness'; l: number }
+  /** @intent("Set chroma and lightness (OKLCH, x/y of the 2D area) at once") */
+  | { type: 'setLc'; c: number; l: number }
+  /** @intent("Nudge chroma/lightness (OKLCH) by signed deltas — used by area arrow keys") */
+  | { type: 'nudgeLc'; dc: number; dl: number }
 
 export interface ColorPickerInit {
-  /** Initial color as HSL (converted to the canonical HSV store). */
+  /** Which model the canonical color is stored in. Default `'hsv'`. */
+  model?: ColorModel
+  /** Initial color as any CSS color string the shared parser accepts (hex,
+   * `rgb()`, `hsl()`, `oklch()`, `oklab()`, a named color). Takes precedence
+   * over `hsl`/`hsv`/`oklch` below, and over `alpha` for the color's own
+   * alpha component (an explicit `alpha` option still wins). */
+  color?: string
+  /** Initial color as HSL (converted into the canonical store). */
   hsl?: Hsl
-  /** Initial color as HSV (takes precedence over `hsl`). */
+  /** Initial color as HSV. Takes precedence over `hsl`. */
   hsv?: Hsv
+  /** Initial color as OKLCH. Takes precedence over `hsl`/`hsv`. */
+  oklch?: Oklch
   alpha?: number
   disabled?: boolean
 }
 
+const DEFAULT_HSV: Hsv = { h: 0, s: 100, v: 100 }
+const ACHROMATIC_CHROMA_EPSILON = 1e-6
+
+function isAchromaticHsv(hsv: Hsv): boolean {
+  return hsv.s === 0 || hsv.v === 0
+}
+
+function isAchromaticOklch(ok: Oklch): boolean {
+  return ok.c <= ACHROMATIC_CHROMA_EPSILON
+}
+
+function normalizeHue(h: number): number {
+  return ((h % 360) + 360) % 360
+}
+
+function sanitizeHsv(raw: Hsv): Hsv {
+  return {
+    h: finiteOrDefault(raw.h, 0),
+    s: finiteOrDefault(raw.s, 100),
+    v: finiteOrDefault(raw.v, 100),
+  }
+}
+
+function sanitizeOklch(raw: Oklch): Oklch {
+  return {
+    l: clamp(finiteOrDefault(raw.l, 1), 0, 1),
+    c: clamp(finiteOrDefault(raw.c, 0), 0, DEFAULT_MAX_CHROMA),
+    h: normalizeHue(finiteOrDefault(raw.h, 0)),
+  }
+}
+
+/** HSV -> OKLCH, keeping the HSV hue verbatim when the color is achromatic
+ * (S or V is 0) instead of the arbitrary hue an achromatic OKLab conversion
+ * would otherwise produce. */
+export function hsvToOklchPreserving(hsv: Hsv): Oklch {
+  const ok = hsvToOklch(hsv)
+  return isAchromaticHsv(hsv) ? { ...ok, h: normalizeHue(hsv.h) } : ok
+}
+
+/** OKLCH -> HSV (gamut-mapped), keeping the OKLCH hue verbatim when the
+ * color is achromatic (chroma ~0). */
+export function oklchToHsvPreserving(ok: Oklch): Hsv {
+  const hsv = oklchToHsv(ok)
+  return isAchromaticOklch(ok) ? { ...hsv, h: normalizeHue(ok.h) } : hsv
+}
+
+type Color = ColorPickerState['color']
+
+function colorToHsv(color: Color): Hsv {
+  return color.model === 'hsv'
+    ? { h: color.h, s: color.s, v: color.v }
+    : oklchToHsvPreserving(color)
+}
+
+function colorToOklch(color: Color): Oklch {
+  return color.model === 'oklch'
+    ? { l: color.l, c: color.c, h: color.h }
+    : hsvToOklchPreserving(color)
+}
+
+/** Apply an edit expressed in HSV terms, in either model. */
+function withHsvProjection(color: Color, f: (hsv: Hsv) => Hsv): Color {
+  const next = sanitizeHsv(f(colorToHsv(color)))
+  return color.model === 'hsv'
+    ? { model: 'hsv', ...next }
+    : { model: 'oklch', ...hsvToOklchPreserving(next) }
+}
+
+/** Apply an edit expressed in HSL terms (the S/L sliders), in either model.
+ * Distinct from {@link withHsvProjection}: the classic 3-slider layout edits
+ * HSL saturation/lightness, while the 2D area edits HSV saturation/value —
+ * two different projections of the same HSV store, preserved from the
+ * pre-OKLCH component. */
+function withHslProjection(color: Color, f: (hsl: Hsl) => Hsl): Color {
+  return withHsvProjection(color, (hsv) => hslToHsv(f(hsvToHsl(hsv))))
+}
+
+/** Apply an edit expressed in OKLCH terms, in either model. */
+function withOklchProjection(color: Color, f: (ok: Oklch) => Oklch): Color {
+  const next = sanitizeOklch(f(colorToOklch(color)))
+  return color.model === 'oklch'
+    ? { model: 'oklch', ...next }
+    : { model: 'hsv', ...oklchToHsvPreserving(next) }
+}
+
+function colorFromCssString(input: string): { hsv: Hsv; oklch: Oklch; alpha: number } | null {
+  const parsed = parseCssColor(input)
+  if (!parsed) return null
+  const alpha = cssColorAlpha(parsed)
+  if (parsed.space === 'oklch') {
+    const oklch = sanitizeOklch({
+      l: resolveNone(parsed.l),
+      c: resolveNone(parsed.c),
+      h: resolveNone(parsed.h),
+    })
+    return { oklch, hsv: oklchToHsvPreserving(oklch), alpha }
+  }
+  if (parsed.space === 'oklab') {
+    const lab = { l: resolveNone(parsed.l), a: resolveNone(parsed.a), b: resolveNone(parsed.b) }
+    const c = Math.sqrt(lab.a * lab.a + lab.b * lab.b)
+    const h = (Math.atan2(lab.b, lab.a) * 180) / Math.PI
+    const oklch = sanitizeOklch({ l: lab.l, c, h })
+    return { oklch, hsv: oklchToHsvPreserving(oklch), alpha }
+  }
+  const srgb = cssColorToSrgb(parsed)
+  const hsv = sanitizeHsv(rgb255ToHsv(srgbToRgb255(srgb)))
+  return { hsv, oklch: hsvToOklchPreserving(hsv), alpha }
+}
+
 export function init(opts: ColorPickerInit = {}): ColorPickerState {
-  const initialHsv = opts.hsv ?? (opts.hsl ? hslToHsv(opts.hsl) : { h: 0, s: 100, v: 100 })
-  const hsv = {
-    h: finiteOrDefault(initialHsv.h, 0),
-    s: finiteOrDefault(initialHsv.s, 100),
-    v: finiteOrDefault(initialHsv.v, 100),
+  const model: ColorModel = opts.model ?? 'hsv'
+  const disabled = opts.disabled ?? false
+
+  let hsv = DEFAULT_HSV
+  let oklch = hsvToOklchPreserving(DEFAULT_HSV)
+  let parsedAlpha: number | undefined
+
+  const fromString = opts.color !== undefined ? colorFromCssString(opts.color) : null
+  if (fromString) {
+    hsv = fromString.hsv
+    oklch = fromString.oklch
+    parsedAlpha = fromString.alpha
+  } else if (opts.oklch !== undefined) {
+    oklch = sanitizeOklch(opts.oklch)
+    hsv = oklchToHsvPreserving(oklch)
+  } else if (opts.hsv !== undefined) {
+    hsv = sanitizeHsv(opts.hsv)
+    oklch = hsvToOklchPreserving(hsv)
+  } else if (opts.hsl !== undefined) {
+    hsv = sanitizeHsv(hslToHsv(opts.hsl))
+    oklch = hsvToOklchPreserving(hsv)
   }
+
+  const alpha = finiteOrDefault(opts.alpha, parsedAlpha ?? 1)
+
   return {
-    hsv,
-    alpha: finiteOrDefault(opts.alpha, 1),
-    disabled: opts.disabled ?? false,
+    color: model === 'oklch' ? { model: 'oklch', ...oklch } : { model: 'hsv', ...hsv },
+    alpha,
+    disabled,
   }
 }
 
-/** Derive the HSL projection of the current state (for hex output + HSL sliders). */
+/** Project the current color onto HSV (gamut-mapped if the active model is
+ * OKLCH and out of gamut). */
+export function stateHsv(state: ColorPickerState): Hsv {
+  return colorToHsv(state.color)
+}
+
+/** Project the current color onto HSL (via {@link stateHsv}). */
 export function stateHsl(state: ColorPickerState): Hsl {
-  return hsvToHsl(state.hsv)
+  return hsvToHsl(stateHsv(state))
 }
 
-export function update(state: ColorPickerState, msg: ColorPickerMsg): [ColorPickerState, never[]] {
-  if (
-    (msg.type === 'setHsl' && !allFiniteNumbers(msg.hsl)) ||
-    (msg.type === 'setHue' && !allFiniteNumbers(msg.h)) ||
-    (msg.type === 'nudgeSv' && !allFiniteNumbers(msg.ds, msg.dv))
-  ) {
-    return [state, []]
-  }
-  if (state.disabled) return [state, []]
-  switch (msg.type) {
-    case 'setHsl':
-      return [{ ...state, hsv: hslToHsv(msg.hsl) }, []]
-    case 'setHue':
-      return [{ ...state, hsv: { ...state.hsv, h: ((msg.h % 360) + 360) % 360 } }, []]
-    case 'setSaturation': {
-      const hsl = { ...stateHsl(state), s: clamp(msg.s, 0, 100) }
-      return [{ ...state, hsv: hslToHsv(hsl) }, []]
-    }
-    case 'setLightness': {
-      const hsl = { ...stateHsl(state), l: clamp(msg.l, 0, 100) }
-      return [{ ...state, hsv: hslToHsv(hsl) }, []]
-    }
-    case 'setAlpha':
-      return [{ ...state, alpha: clamp(msg.alpha, 0, 1) }, []]
-    case 'setHex': {
-      const hsl = hexToHsl(msg.hex)
-      return hsl ? [{ ...state, hsv: hslToHsv(hsl) }, []] : [state, []]
-    }
-    case 'setSv':
-      return [
-        { ...state, hsv: { ...state.hsv, s: clamp(msg.s, 0, 100), v: clamp(msg.v, 0, 100) } },
-        [],
-      ]
-    case 'nudgeSv':
-      return [
-        {
-          ...state,
-          hsv: {
-            ...state.hsv,
-            s: clamp(state.hsv.s + msg.ds, 0, 100),
-            v: clamp(state.hsv.v + msg.dv, 0, 100),
-          },
-        },
-        [],
-      ]
-    case 'setColor': {
-      const parsed = parseColor(msg.color)
-      if (!parsed) return [state, []]
-      return [
-        {
-          ...state,
-          hsv: hslToHsv(parsed.hsl),
-          ...(parsed.alpha !== undefined ? { alpha: parsed.alpha } : {}),
-        },
-        [],
-      ]
-    }
-  }
+/** Project the current color onto OKLCH (exact — not gamut-mapped — if the
+ * active model already IS OKLCH; derived from HSV otherwise, which is
+ * always in-gamut by construction). */
+export function stateOklch(state: ColorPickerState): Oklch {
+  return colorToOklch(state.color)
 }
 
-/** Convert HSL (h 0-360, s/l 0-100) to RGB (0-255 each). */
-export function hslToRgb(hsl: Hsl): { r: number; g: number; b: number } {
-  const s = hsl.s / 100
-  const l = hsl.l / 100
-  const c = (1 - Math.abs(2 * l - 1)) * s
-  const x = c * (1 - Math.abs(((hsl.h / 60) % 2) - 1))
-  const m = l - c / 2
-  let r: number
-  let g: number
-  let b: number
-  const h = hsl.h
-  if (h < 60) [r, g, b] = [c, x, 0]
-  else if (h < 120) [r, g, b] = [x, c, 0]
-  else if (h < 180) [r, g, b] = [0, c, x]
-  else if (h < 240) [r, g, b] = [0, x, c]
-  else if (h < 300) [r, g, b] = [x, 0, c]
-  else [r, g, b] = [c, 0, x]
-  return {
-    r: Math.round((r + m) * 255),
-    g: Math.round((g + m) * 255),
-    b: Math.round((b + m) * 255),
-  }
+/** The current color as displayable (gamut-mapped) sRGB, 0-1 per channel. */
+function stateSrgb(state: ColorPickerState): Srgb {
+  return state.color.model === 'hsv'
+    ? srgb255ToSrgb(hsvToRgb255(state.color))
+    : gamutMapOklchToSrgb(state.color)
 }
 
-export function toHex(hsl: Hsl): string {
-  const { r, g, b } = hslToRgb(hsl)
-  return `#${hexByte(r)}${hexByte(g)}${hexByte(b)}`
+/** Whether the OKLCH color falls outside the sRGB gamut (always `false` in
+ * HSV mode — an HSV color is an sRGB parameterization by construction). */
+export function isOutOfGamut(state: ColorPickerState): boolean {
+  return state.color.model === 'oklch' ? !inSrgbGamut(state.color) : false
 }
 
-/** 8-digit hex (#RRGGBBAA) including the alpha channel (0..1). */
-export function toHex8(hsl: Hsl, alpha: number): string {
-  const a = Math.round(clamp(alpha, 0, 1) * 255)
-  return `${toHex(hsl)}${hexByte(a)}`
+/** `#rrggbb`, gamut-mapped from OKLCH when the active model needs it. */
+export function toHex(state: ColorPickerState): string {
+  return formatHex(srgbToRgb255(stateSrgb(state)))
 }
 
-function hexByte(n: number): string {
-  return n.toString(16).padStart(2, '0')
+/** `#rrggbbaa`. */
+export function toHex8(state: ColorPickerState): string {
+  return formatHex8(srgbToRgb255(stateSrgb(state)), state.alpha)
 }
 
-/** Convert HSL (h 0-360, s/l 0-100) to HSV (h 0-360, s/v 0-100). */
-export function hslToHsv(hsl: Hsl): Hsv {
-  const l = hsl.l / 100
-  const sl = hsl.s / 100
-  const v = l + sl * Math.min(l, 1 - l)
-  const s = v === 0 ? 0 : 2 * (1 - l / v)
-  return { h: hsl.h, s: Math.round(s * 100), v: Math.round(v * 100) }
-}
-
-/** Convert HSV (h 0-360, s/v 0-100) to HSL (h 0-360, s/l 0-100). */
-export function hsvToHsl(hsv: Hsv): Hsl {
-  const v = hsv.v / 100
-  const sv = hsv.s / 100
-  const l = v * (1 - sv / 2)
-  const s = l === 0 || l === 1 ? 0 : (v - l) / Math.min(l, 1 - l)
-  return { h: hsv.h, s: Math.round(s * 100), l: Math.round(l * 100) }
+/**
+ * The current color as a CSS string. HSV model -> hex (`#rrggbb`/`#rrggbbaa`
+ * depending on alpha) — cheap, familiar, and what the hex input already
+ * shows. OKLCH model -> `oklch()`, EXACT rather than gamut-mapped, because
+ * an OKLCH color may legitimately sit outside sRGB and a hex round trip
+ * would silently clip it; the browser gamut-maps `oklch()` for display on
+ * its own terms, same as it would for a value typed directly into CSS.
+ */
+export function toCss(state: ColorPickerState): string {
+  if (state.color.model === 'oklch') return formatOklch(state.color, state.alpha)
+  return state.alpha < 1 ? toHex8(state) : toHex(state)
 }
 
 /**
@@ -209,61 +322,283 @@ export function colorFromPoint(rect: DOMRect, x: number, y: number): { s: number
   return { s: Math.round(sx * 100), v: Math.round((1 - sy) * 100) }
 }
 
-/** Parse #RGB, #RRGGBB, or #RRGGBBAA into HSL (+ optional alpha). */
-export function parseColor(color: string): { hsl: Hsl; alpha?: number } | null {
-  const normalized = color.trim().replace(/^#/, '')
-  if (/^[0-9a-fA-F]{8}$/.test(normalized)) {
-    const hsl = hexToHsl(normalized.slice(0, 6))
-    if (!hsl) return null
-    return { hsl, alpha: parseInt(normalized.slice(6, 8), 16) / 255 }
-  }
-  const hsl = hexToHsl(normalized)
-  return hsl ? { hsl } : null
+/**
+ * Map a pointer position over the 2D chroma/lightness area to OKLCH C/L.
+ * X axis is chroma (left 0 → right `maxChroma`); Y axis is lightness
+ * (top 1 → bottom 0), mirroring {@link colorFromPoint}'s value axis.
+ */
+export function lcFromPoint(
+  rect: DOMRect,
+  x: number,
+  y: number,
+  maxChroma: number = DEFAULT_MAX_CHROMA,
+): { c: number; l: number } {
+  const sx = rect.width === 0 ? 0 : clamp((x - rect.left) / rect.width, 0, 1)
+  const sy = rect.height === 0 ? 0 : clamp((y - rect.top) / rect.height, 0, 1)
+  return { c: sx * maxChroma, l: 1 - sy }
 }
 
-export function hexToHsl(hex: string): Hsl | null {
-  const normalized = hex.trim().replace(/^#/, '')
-  if (!/^[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(normalized)) return null
-  let r: number
-  let g: number
-  let b: number
-  if (normalized.length === 3) {
-    r = parseInt(normalized[0]! + normalized[0]!, 16)
-    g = parseInt(normalized[1]! + normalized[1]!, 16)
-    b = parseInt(normalized[2]! + normalized[2]!, 16)
-  } else {
-    r = parseInt(normalized.slice(0, 2), 16)
-    g = parseInt(normalized.slice(2, 4), 16)
-    b = parseInt(normalized.slice(4, 6), 16)
+export function update(state: ColorPickerState, msg: ColorPickerMsg): [ColorPickerState, never[]] {
+  if (
+    (msg.type === 'setHsl' && !allFiniteNumbers(msg.hsl)) ||
+    (msg.type === 'setHue' && !allFiniteNumbers(msg.h)) ||
+    (msg.type === 'nudgeSv' && !allFiniteNumbers(msg.ds, msg.dv)) ||
+    (msg.type === 'setOklch' && !allFiniteNumbers(msg.l, msg.c, msg.h)) ||
+    (msg.type === 'setChroma' && !allFiniteNumbers(msg.c)) ||
+    (msg.type === 'setOklchLightness' && !allFiniteNumbers(msg.l)) ||
+    (msg.type === 'setLc' && !allFiniteNumbers(msg.c, msg.l)) ||
+    (msg.type === 'nudgeLc' && !allFiniteNumbers(msg.dc, msg.dl))
+  ) {
+    return [state, []]
   }
-  const rf = r / 255
-  const gf = g / 255
-  const bf = b / 255
-  const max = Math.max(rf, gf, bf)
-  const min = Math.min(rf, gf, bf)
-  const d = max - min
-  let h = 0
-  if (d !== 0) {
-    if (max === rf) h = ((gf - bf) / d) % 6
-    else if (max === gf) h = (bf - rf) / d + 2
-    else h = (rf - gf) / d + 4
-    h *= 60
-    if (h < 0) h += 360
-  }
-  const l = (max + min) / 2
-  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1))
-  return {
-    h: Math.round(h),
-    s: Math.round(s * 100),
-    l: Math.round(l * 100),
+  if (state.disabled) return [state, []]
+  switch (msg.type) {
+    case 'setModel': {
+      if (msg.model === state.color.model) return [state, []]
+      const color: Color =
+        state.color.model === 'hsv'
+          ? { model: 'oklch', ...hsvToOklchPreserving(state.color) }
+          : { model: 'hsv', ...oklchToHsvPreserving(state.color) }
+      return [{ ...state, color }, []]
+    }
+    case 'setHsl':
+      return [{ ...state, color: withHsvProjection(state.color, () => hslToHsv(msg.hsl)) }, []]
+    case 'setHue':
+      return [{ ...state, color: { ...state.color, h: normalizeHue(msg.h) } }, []]
+    case 'setSaturation':
+      return [
+        {
+          ...state,
+          color: withHslProjection(state.color, (hsl) => ({ ...hsl, s: clamp(msg.s, 0, 100) })),
+        },
+        [],
+      ]
+    case 'setLightness':
+      return [
+        {
+          ...state,
+          color: withHslProjection(state.color, (hsl) => ({ ...hsl, l: clamp(msg.l, 0, 100) })),
+        },
+        [],
+      ]
+    case 'setAlpha':
+      return [{ ...state, alpha: clamp(msg.alpha, 0, 1) }, []]
+    case 'setHex':
+    case 'setColor': {
+      const input = msg.type === 'setHex' ? msg.hex : msg.color
+      const parsed = colorFromCssString(input)
+      if (!parsed) return [state, []]
+      const color: Color =
+        state.color.model === 'oklch'
+          ? { model: 'oklch', ...parsed.oklch }
+          : { model: 'hsv', ...parsed.hsv }
+      return [{ ...state, color, alpha: parsed.alpha }, []]
+    }
+    case 'setSv':
+      return [
+        {
+          ...state,
+          color: withHsvProjection(state.color, (hsv) => ({
+            ...hsv,
+            s: clamp(msg.s, 0, 100),
+            v: clamp(msg.v, 0, 100),
+          })),
+        },
+        [],
+      ]
+    case 'nudgeSv':
+      return [
+        {
+          ...state,
+          color: withHsvProjection(state.color, (hsv) => ({
+            ...hsv,
+            s: clamp(hsv.s + msg.ds, 0, 100),
+            v: clamp(hsv.v + msg.dv, 0, 100),
+          })),
+        },
+        [],
+      ]
+    case 'setOklch':
+      return [
+        {
+          ...state,
+          color: withOklchProjection(state.color, () => ({ l: msg.l, c: msg.c, h: msg.h })),
+        },
+        [],
+      ]
+    case 'setChroma':
+      return [
+        { ...state, color: withOklchProjection(state.color, (ok) => ({ ...ok, c: msg.c })) },
+        [],
+      ]
+    case 'setOklchLightness':
+      return [
+        { ...state, color: withOklchProjection(state.color, (ok) => ({ ...ok, l: msg.l })) },
+        [],
+      ]
+    case 'setLc':
+      return [
+        {
+          ...state,
+          color: withOklchProjection(state.color, (ok) => ({ ...ok, c: msg.c, l: msg.l })),
+        },
+        [],
+      ]
+    case 'nudgeLc':
+      return [
+        {
+          ...state,
+          color: withOklchProjection(state.color, (ok) => ({
+            ...ok,
+            c: ok.c + msg.dc,
+            l: ok.l + msg.dl,
+          })),
+        },
+        [],
+      ]
   }
 }
+
+// ── Eyedropper (EyeDropper API) ─────────────────────────────────────────────
+
+export interface EyeDropperOpenOptions {
+  signal?: AbortSignal
+}
+export interface EyeDropperResult {
+  sRGBHex: string
+}
+interface EyeDropperInstance {
+  open(options?: EyeDropperOpenOptions): Promise<EyeDropperResult>
+}
+interface EyeDropperConstructor {
+  new (): EyeDropperInstance
+}
+declare global {
+  interface Window {
+    EyeDropper?: EyeDropperConstructor
+  }
+}
+
+/**
+ * Whether the EyeDropper API is available. SSR-safe (`false` when there is
+ * no `window`) and STATIC — a plain function, not a `Signal`, so `connect()`
+ * never has to decide between two answers for the SAME render: the part bag
+ * it publishes is identical on the server and on the client's first paint
+ * (`eyeDropperTrigger` is always rendered enabled/visible from the machine's
+ * point of view). A consumer that wants to hide or disable the button on an
+ * unsupported browser calls this from its own `onMount` and sets the DOM
+ * attribute directly — the same pattern `theme-switch.ts`'s `resolveTheme`
+ * uses for `prefers-color-scheme`, and the only point in this package where
+ * a browser-only capability decides what renders.
+ */
+export function supportsEyeDropper(): boolean {
+  return typeof window !== 'undefined' && window.EyeDropper !== undefined
+}
+
+/**
+ * Open the browser's native EyeDropper UI and resolve to the picked color as
+ * `#rrggbb`. Resolves `null` — never rejects — when the API is unsupported
+ * or the user cancels (`AbortError`, including a deliberate
+ * `signal.abort()`). Rejects only for a genuine unexpected failure.
+ */
+export async function openEyeDropper(signal?: AbortSignal): Promise<string | null> {
+  if (typeof window === 'undefined' || window.EyeDropper === undefined) return null
+  try {
+    const result = await new window.EyeDropper().open(signal ? { signal } : undefined)
+    return result.sRGBHex
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') return null
+    throw err
+  }
+}
+
+// ── OKLCH plane rendering (the 2D area's canvas, in OKLCH mode) ─────────────
+
+/**
+ * Render one OKLCH hue's chroma/lightness plane as RGBA pixels — chroma
+ * increasing left to right (0..`maxChroma`), lightness increasing bottom to
+ * top (0..1), matching {@link lcFromPoint}'s axes. Out-of-gamut pixels are
+ * fully transparent (alpha 0) rather than gamut-mapped, so a consumer can
+ * paint them hatched/checkered underneath if it wants a visible "no color
+ * here" cue instead of a silently-wrong one.
+ *
+ * O(width * height) OKLCH->sRGB conversions, each potentially running the
+ * gamut-mapping binary search — keep the canvas modest (a few hundred
+ * pixels per side) and repaint only on hue change, not on every pointer move.
+ */
+export function oklchPlanePixels(
+  hue: number,
+  width: number,
+  height: number,
+  maxChroma: number = DEFAULT_MAX_CHROMA,
+): Uint8ClampedArray<ArrayBuffer> {
+  const length = Math.max(0, width) * Math.max(0, height) * 4
+  const out = new Uint8ClampedArray(new ArrayBuffer(length))
+  if (width <= 0 || height <= 0) return out
+  for (let y = 0; y < height; y++) {
+    const l = height === 1 ? 1 : 1 - y / (height - 1)
+    for (let x = 0; x < width; x++) {
+      const c = width === 1 ? 0 : (x / (width - 1)) * maxChroma
+      const ok: Oklch = { l, c, h: hue }
+      const gamutOk = inSrgbGamut(ok)
+      const rgb = srgbToRgb255(gamutOk ? gamutMapOklchToSrgb(ok) : gamutMapOklchToSrgb(ok))
+      const idx = (y * width + x) * 4
+      out[idx] = rgb.r
+      out[idx + 1] = rgb.g
+      out[idx + 2] = rgb.b
+      out[idx + 3] = gamutOk ? 255 : 0
+    }
+  }
+  return out
+}
+
+/** Paint {@link oklchPlanePixels} onto a canvas sized to its current
+ * `width`/`height`. A no-op on a zero-sized canvas or a context-less
+ * environment (jsdom without a 2D context polyfill). */
+export function paintOklchPlane(
+  canvas: HTMLCanvasElement,
+  hue: number,
+  maxChroma: number = DEFAULT_MAX_CHROMA,
+): void {
+  const { width, height } = canvas
+  if (width <= 0 || height <= 0) return
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  const pixels = oklchPlanePixels(hue, width, height, maxChroma)
+  ctx.putImageData(new ImageData(pixels, width, height), 0, 0)
+}
+
+/** A full-circle OKLCH hue ramp at a fixed lightness/chroma, using CSS
+ * Color 4's `in oklch longer hue` interpolation method — the ONLY way to
+ * express a hue sweep as a plain gradient, since hue 0 and hue 360 are the
+ * SAME point in `oklab`/`srgb` (the default interpolation space), so a
+ * naive `linear-gradient(oklch(L C 0), oklch(L C 360))` would render as a
+ * solid color instead of a rainbow. */
+export function oklchHueRampGradient(l = 0.75, c = 0.15): string {
+  return `linear-gradient(in oklch longer hue, oklch(${l} ${c} 0), oklch(${l} ${c} 360))`
+}
+
+// ── Part bag ─────────────────────────────────────────────────────────────────
 
 export interface ColorPickerParts {
   root: {
     'data-scope': 'color-picker'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
+    'data-model': Signal<ColorModel>
+    /** Bare boolean (package convention): present when the current OKLCH
+     * color falls outside sRGB. Always absent in HSV mode (an HSV color is
+     * an sRGB parameterization by construction). */
+    'data-out-of-gamut': Signal<'' | undefined>
+  }
+  /** Cycles the active model between `'hsv'` and `'oklch'`. */
+  modelToggle: {
+    type: 'button'
+    'aria-label': Signal<string>
+    'data-scope': 'color-picker'
+    'data-part': 'model-toggle'
+    'data-model': Signal<ColorModel>
+    onClick: (e: MouseEvent) => void
   }
   hueSlider: {
     type: 'range'
@@ -303,6 +638,34 @@ export interface ColorPickerParts {
     'data-part': 'lightness-slider'
     onInput: (e: Event) => void
   }
+  /** OKLCH chroma, `0..maxChroma`. */
+  chromaSlider: {
+    type: 'range'
+    min: 0
+    max: number
+    step: number
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    style: Signal<string>
+    'data-scope': 'color-picker'
+    'data-part': 'chroma-slider'
+    onInput: (e: Event) => void
+  }
+  /** OKLCH perceptual lightness, `0..1`. */
+  oklchLightnessSlider: {
+    type: 'range'
+    min: 0
+    max: 1
+    step: number
+    'aria-label': string
+    disabled: Signal<boolean>
+    value: Signal<string>
+    style: Signal<string>
+    'data-scope': 'color-picker'
+    'data-part': 'oklch-lightness-slider'
+    onInput: (e: Event) => void
+  }
   hexInput: {
     type: 'text'
     autocomplete: 'off'
@@ -320,22 +683,34 @@ export interface ColorPickerParts {
     'aria-hidden': 'true'
     style: Signal<string>
   }
-  /** The 2D saturation/value area track. The view owns pointer events and
-   * calls `colorFromPoint(track.getBoundingClientRect(), x, y)` to derive S/V. */
+  /** The 2D area track. In HSV mode the view owns pointer events and calls
+   * `colorFromPoint(...)`; in OKLCH mode, `lcFromPoint(...)`. */
   area: {
     'data-scope': 'color-picker'
     'data-part': 'area'
+    'data-model': Signal<ColorModel>
+    // HSV-mode hue backdrop only; empty in OKLCH mode, where `areaCanvas`
+    // paints the plane instead (the sRGB gamut boundary is not expressible
+    // as a CSS gradient).
     style: Signal<string>
   }
+  /** Decorative `<canvas>` seam for the OKLCH area — headless, so the
+   * consumer owns creating and sizing the real `<canvas>` element and
+   * repainting it with {@link paintOklchPlane} on hue change (and on mount).
+   * Absent/inert in HSV mode. */
+  areaCanvas: {
+    'data-scope': 'color-picker'
+    'data-part': 'area-canvas'
+    'aria-hidden': 'true'
+  }
   /** The draggable thumb inside the 2D area. Keyboard-operable (arrows move
-   * S/V; Shift = coarse) with role="slider" and a 2D aria-valuetext. */
+   * S/V or C/L depending on the active model; Shift = coarse) with
+   * role="slider" and a 2D aria-valuetext. */
   areaThumb: {
     role: 'slider'
     'aria-label': string
-    /** ARIA 1.2 lists this as a REQUIRED property of `slider`, and the
-     * `aria-valuetext` definition says authors must also specify it. The area
-     * is 2D, so it reports the horizontal axis (saturation) numerically and
-     * leaves both axes to `aria-valuetext`. */
+    'aria-valuemin': Signal<number>
+    'aria-valuemax': Signal<number>
     'aria-valuenow': Signal<number>
     'aria-valuetext': Signal<string>
     'aria-disabled': Signal<'true' | undefined>
@@ -358,6 +733,17 @@ export interface ColorPickerParts {
     'data-scope': 'color-picker'
     'data-part': 'alpha-slider'
     onInput: (e: Event) => void
+  }
+  /** EyeDropper API trigger. Always published; `supportsEyeDropper()` (a
+   * plain, SSR-safe function, not a `Signal` — see its doc comment) is how a
+   * consumer decides whether to show or disable it. */
+  eyeDropperTrigger: {
+    type: 'button'
+    'aria-label': string
+    disabled: Signal<boolean>
+    'data-scope': 'color-picker'
+    'data-part': 'eyedropper-trigger'
+    onClick: (e: MouseEvent) => void
   }
   /** Container for the preset swatch buttons. */
   swatchGroup: {
@@ -386,17 +772,25 @@ export interface ConnectOptions {
   hueLabel?: string
   saturationLabel?: string
   lightnessLabel?: string
+  chromaLabel?: string
+  oklchLightnessLabel?: string
   hexLabel?: string
-  /** aria-label for the 2D saturation/value area thumb. */
+  eyeDropperLabel?: string
+  /** aria-label for the 2D area thumb. */
   areaLabel?: string
   /** aria-label for the alpha slider. */
   alphaLabel?: string
   /** aria-label for the swatch group container. */
   swatchGroupLabel?: string
-  /** Fine keyboard step for the area thumb (S/V units). Default 1. */
+  /** Fine keyboard step for the area thumb (S/V units, or the OKLCH
+   * equivalent scaled by `maxChroma`). Default 1. */
   step?: number
   /** Coarse keyboard step for the area thumb when Shift is held. Default 10. */
   coarseStep?: number
+  /** Upper bound the OKLCH chroma slider/area render up to. Rendering-only —
+   * see {@link DEFAULT_MAX_CHROMA}'s doc comment for how this relates to the
+   * reducer's own chroma ceiling. Default {@link DEFAULT_MAX_CHROMA}. */
+  maxChroma?: number
 }
 
 export function connect(
@@ -407,11 +801,33 @@ export function connect(
   const locale = colorPickerLocale()
   const fine = opts.step ?? 1
   const coarse = opts.coarseStep ?? 10
+  const maxChroma = opts.maxChroma ?? DEFAULT_MAX_CHROMA
+
+  let pendingEyeDropper: AbortController | null = null
+  onScopeTeardown(() => {
+    pendingEyeDropper?.abort()
+    pendingEyeDropper = null
+  })
+
   return {
     root: {
       'data-scope': 'color-picker',
       'data-part': 'root',
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      'data-model': state.map((s) => s.color.model),
+      'data-out-of-gamut': state.map((s) => (isOutOfGamut(s) ? '' : undefined)),
+    },
+    modelToggle: {
+      type: 'button',
+      'aria-label': state.map((s) =>
+        s.color.model === 'hsv' ? locale.switchToOklch : locale.switchToHsv,
+      ),
+      'data-scope': 'color-picker',
+      'data-part': 'model-toggle',
+      'data-model': state.map((s) => s.color.model),
+      onClick: tagSend(send, ['setModel'], () => {
+        send({ type: 'setModel', model: state.peek().color.model === 'hsv' ? 'oklch' : 'hsv' })
+      }),
     },
     hueSlider: {
       type: 'range',
@@ -420,7 +836,7 @@ export function connect(
       step: 1,
       'aria-label': opts.hueLabel ?? locale.hue,
       disabled: state.map((s) => s.disabled),
-      value: state.map((s) => String(s.hsv.h)),
+      value: state.map((s) => String(Math.round(s.color.h))),
       'data-scope': 'color-picker',
       'data-part': 'hue-slider',
       onInput: tagSend(send, ['setHue'], (e) =>
@@ -463,12 +879,52 @@ export function connect(
         send({ type: 'setLightness', l: Number((e.target as HTMLInputElement).value) }),
       ),
     },
+    chromaSlider: {
+      type: 'range',
+      min: 0,
+      max: maxChroma,
+      step: maxChroma / 200,
+      'aria-label': opts.chromaLabel ?? locale.chroma,
+      disabled: state.map((s) => s.disabled),
+      value: state.map((s) => String(stateOklch(s).c)),
+      style: state.map((s) => {
+        const ok = stateOklch(s)
+        return `background: linear-gradient(to right, ${formatOklch({ l: ok.l, c: 0, h: ok.h })}, ${formatOklch(
+          { l: ok.l, c: maxChroma, h: ok.h },
+        )})`
+      }),
+      'data-scope': 'color-picker',
+      'data-part': 'chroma-slider',
+      onInput: tagSend(send, ['setChroma'], (e) =>
+        send({ type: 'setChroma', c: Number((e.target as HTMLInputElement).value) }),
+      ),
+    },
+    oklchLightnessSlider: {
+      type: 'range',
+      min: 0,
+      max: 1,
+      step: 0.005,
+      'aria-label': opts.oklchLightnessLabel ?? locale.oklchLightness,
+      disabled: state.map((s) => s.disabled),
+      value: state.map((s) => String(stateOklch(s).l)),
+      style: state.map((s) => {
+        const ok = stateOklch(s)
+        return `background: linear-gradient(to right, ${formatOklch({ l: 0, c: ok.c, h: ok.h })}, ${formatOklch(
+          { l: 1, c: ok.c, h: ok.h },
+        )})`
+      }),
+      'data-scope': 'color-picker',
+      'data-part': 'oklch-lightness-slider',
+      onInput: tagSend(send, ['setOklchLightness'], (e) =>
+        send({ type: 'setOklchLightness', l: Number((e.target as HTMLInputElement).value) }),
+      ),
+    },
     hexInput: {
       type: 'text',
       autocomplete: 'off',
       'aria-label': opts.hexLabel ?? locale.hex,
       disabled: state.map((s) => s.disabled),
-      value: state.map((s) => toHex(stateHsl(s))),
+      value: state.map((s) => toHex(s)),
       'data-scope': 'color-picker',
       'data-part': 'hex-input',
       onInput: tagSend(send, ['setHex'], (e) =>
@@ -479,47 +935,71 @@ export function connect(
       'data-scope': 'color-picker',
       'data-part': 'preview',
       'aria-hidden': 'true',
-      style: state.map((s) => `background-color:${toHex(stateHsl(s))};`),
+      style: state.map((s) => `background-color:${toCss(s)};`),
     },
     area: {
       'data-scope': 'color-picker',
       'data-part': 'area',
-      // Hue backdrop; the white→color and transparent→black gradients that
-      // produce the saturation/value field are layered in CSS over this.
-      style: state.map((s) => `background-color:hsl(${s.hsv.h} 100% 50%);`),
+      'data-model': state.map((s) => s.color.model),
+      // HSV-mode hue backdrop; empty in OKLCH mode (areaCanvas paints it).
+      style: state.map((s) =>
+        s.color.model === 'hsv' ? `background-color:hsl(${s.color.h} 100% 50%);` : '',
+      ),
+    },
+    areaCanvas: {
+      'data-scope': 'color-picker',
+      'data-part': 'area-canvas',
+      'aria-hidden': 'true',
     },
     areaThumb: {
       role: 'slider',
-      'aria-label': opts.areaLabel ?? `${locale.saturation} / ${locale.lightness}`,
-      // Required on role="slider" (#122). Horizontal axis = saturation, 0..100
-      // — the slider defaults for valuemin/valuemax already match.
-      'aria-valuenow': state.map((s) => s.hsv.s),
-      // 2D value: report both saturation and value (HSV) axes.
-      'aria-valuetext': state.map((s) => `${locale.saturation} ${s.hsv.s}%, Value ${s.hsv.v}%`),
+      'aria-label': opts.areaLabel ?? `${locale.saturation} / ${locale.value}`,
+      'aria-valuemin': state.map(() => 0),
+      'aria-valuemax': state.map((s) => (s.color.model === 'oklch' ? maxChroma : 100)),
+      'aria-valuenow': state.map((s) => (s.color.model === 'oklch' ? s.color.c : s.color.s)),
+      'aria-valuetext': state.map((s) =>
+        s.color.model === 'oklch'
+          ? `${locale.chroma} ${s.color.c.toFixed(2)}, ${locale.oklchLightness} ${Math.round(s.color.l * 100)}%`
+          : `${locale.saturation} ${s.color.s}%, ${locale.value} ${s.color.v}%`,
+      ),
       'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       tabindex: state.map((s) => (s.disabled ? -1 : 0)),
       'data-scope': 'color-picker',
       'data-part': 'area-thumb',
-      // Position: left = saturation%, top = (100 - value)%.
-      style: state.map((s) => `left:${s.hsv.s}%;top:${100 - s.hsv.v}%;`),
-      onKeyDown: tagSend(send, ['nudgeSv'], (e) => {
+      style: state.map((s) => {
+        if (s.color.model === 'oklch') {
+          const xPct = clamp((s.color.c / maxChroma) * 100, 0, 100)
+          const yPct = clamp((1 - s.color.l) * 100, 0, 100)
+          return `left:${xPct}%;top:${yPct}%;`
+        }
+        return `left:${s.color.s}%;top:${100 - s.color.v}%;`
+      }),
+      onKeyDown: tagSend(send, ['nudgeSv', 'nudgeLc'], (e) => {
         const stepUnit = e.shiftKey ? coarse : fine
+        const isOklch = state.peek().color.model === 'oklch'
+        const nudge = (dx: number, dy: number): void => {
+          if (isOklch) {
+            send({ type: 'nudgeLc', dc: (dx / 100) * maxChroma, dl: dy / 100 })
+          } else {
+            send({ type: 'nudgeSv', ds: dx, dv: dy })
+          }
+        }
         switch (e.key) {
           case 'ArrowRight':
             e.preventDefault()
-            send({ type: 'nudgeSv', ds: stepUnit, dv: 0 })
+            nudge(stepUnit, 0)
             return
           case 'ArrowLeft':
             e.preventDefault()
-            send({ type: 'nudgeSv', ds: -stepUnit, dv: 0 })
+            nudge(-stepUnit, 0)
             return
           case 'ArrowUp':
             e.preventDefault()
-            send({ type: 'nudgeSv', ds: 0, dv: stepUnit })
+            nudge(0, stepUnit)
             return
           case 'ArrowDown':
             e.preventDefault()
-            send({ type: 'nudgeSv', ds: 0, dv: -stepUnit })
+            nudge(0, -stepUnit)
             return
         }
       }),
@@ -533,7 +1013,7 @@ export function connect(
       disabled: state.map((s) => s.disabled),
       value: state.map((s) => String(s.alpha)),
       style: state.map((s) => {
-        const hex = toHex(stateHsl(s))
+        const hex = toHex(s)
         return `background: linear-gradient(to right, transparent, ${hex})`
       }),
       'data-scope': 'color-picker',
@@ -542,6 +1022,24 @@ export function connect(
         send({ type: 'setAlpha', alpha: Number((e.target as HTMLInputElement).value) }),
       ),
     },
+    eyeDropperTrigger: {
+      type: 'button',
+      'aria-label': opts.eyeDropperLabel ?? locale.eyeDropper,
+      disabled: state.map((s) => s.disabled),
+      'data-scope': 'color-picker',
+      'data-part': 'eyedropper-trigger',
+      onClick: tagSend(send, ['setColor'], () => {
+        if (state.peek().disabled) return
+        pendingEyeDropper?.abort()
+        const controller = new AbortController()
+        pendingEyeDropper = controller
+        void openEyeDropper(controller.signal).then((hex) => {
+          if (pendingEyeDropper !== controller) return
+          pendingEyeDropper = null
+          if (hex !== null) send({ type: 'setColor', color: hex })
+        })
+      }),
+    },
     swatchGroup: {
       role: 'group',
       'aria-label': opts.swatchGroupLabel ?? 'Color swatches',
@@ -549,9 +1047,13 @@ export function connect(
       'data-part': 'swatch-group',
     },
     swatch: (color: string): SwatchParts => {
+      const parsedHex = (): string | null => {
+        const parsed = colorFromCssString(color)
+        return parsed ? formatHex(hsvToRgb255(parsed.hsv)) : null
+      }
       const selected = (s: ColorPickerState): boolean => {
-        const parsed = parseColor(color)
-        return parsed ? toHex(parsed.hsl) === toHex(stateHsl(s)) : false
+        const hex = parsedHex()
+        return hex !== null && hex === toHex(s)
       }
       return {
         type: 'button',
@@ -573,12 +1075,22 @@ export const colorPicker = {
   update,
   connect,
   stateHsl,
+  stateHsv,
+  stateOklch,
+  isOutOfGamut,
   toHex,
   toHex8,
-  hexToHsl,
-  hslToRgb,
+  toCss,
+  colorFromPoint,
+  lcFromPoint,
+  hsvToOklchPreserving,
+  oklchToHsvPreserving,
+  supportsEyeDropper,
+  openEyeDropper,
+  oklchPlanePixels,
+  paintOklchPlane,
+  oklchHueRampGradient,
   hslToHsv,
   hsvToHsl,
-  colorFromPoint,
-  parseColor,
+  DEFAULT_MAX_CHROMA,
 }

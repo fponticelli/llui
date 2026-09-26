@@ -503,9 +503,14 @@ export type {
   ColorPickerMsg,
   ColorPickerInit,
   ColorPickerParts,
+  ColorModel,
   Hsl,
   Hsv,
+  Oklch,
   SwatchParts,
+  ConnectOptions as ColorPickerConnectOptions,
+  EyeDropperOpenOptions,
+  EyeDropperResult,
 } from './color-picker.js'
 export type { FieldState, FieldMsg, FieldInit, FieldParts, FieldConnectOptions } from './field.js'
 export type {

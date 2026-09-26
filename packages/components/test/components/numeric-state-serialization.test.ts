@@ -194,7 +194,7 @@ describe('non-bound numeric initialization uses documented defaults (#214)', () 
         }),
       ).toMatchObject({ position: { x: 11, y: 100 }, size: { width: 400, height: 250 } })
       expect(colorPicker.init({ hsv: { h: bad, s: bad, v: bad }, alpha: bad })).toMatchObject({
-        hsv: { h: 0, s: 100, v: 100 },
+        color: { model: 'hsv', h: 0, s: 100, v: 100 },
         alpha: 1,
       })
     })

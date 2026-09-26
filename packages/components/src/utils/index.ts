@@ -125,6 +125,56 @@ export type { NumericGrid } from './number.js'
 export { isDateOnly, parseDateValue } from './date.js'
 export type { DateValue, ParsedDateValue } from './date.js'
 
+// Shared color math (conversions, CSS Color 4 parsing/serialization, sRGB
+// gamut mapping, interpolation) — `color-picker` and the (planned)
+// `gradient-picker` both read from this ONE implementation.
+export {
+  hslToRgb255,
+  rgb255ToHsl,
+  hslToHsv,
+  hsvToHsl,
+  hsvToRgb255,
+  rgb255ToHsv,
+  srgb255ToSrgb,
+  srgbToRgb255,
+  srgbToLinear,
+  linearToSrgb,
+  linearSrgbToOklab,
+  oklabToLinearSrgb,
+  srgbToOklab,
+  oklabToSrgb,
+  oklabToOklch,
+  oklchToOklab,
+  srgbToOklch,
+  oklchToSrgb,
+  hsvToOklch,
+  oklchToHsv,
+  inSrgbGamut,
+  gamutMapOklchToSrgb,
+  resolveNone,
+  formatHex,
+  formatHex8,
+  formatRgb,
+  formatOklch,
+  parseHexColor,
+  parseCssColor,
+  cssColorToSrgb,
+  cssColorAlpha,
+  cssColorToHex,
+  interpolateColor,
+} from './color.js'
+export type {
+  Hsl,
+  Hsv,
+  Rgb255,
+  Srgb,
+  Oklab,
+  Oklch,
+  CssColor,
+  InterpolationSpace,
+  HueInterpolationMethod,
+} from './color.js'
+
 export { resolveDir, flipArrow, resolveTextDirection } from './direction.js'
 export type { TextDirection } from './direction.js'
 

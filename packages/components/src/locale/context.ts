@@ -18,7 +18,18 @@ export interface Locale {
   }
   cascadeSelect: { clear: string }
   clipboard: { copy: string }
-  colorPicker: { hue: string; saturation: string; lightness: string; hex: string }
+  colorPicker: {
+    hue: string
+    saturation: string
+    lightness: string
+    value: string
+    chroma: string
+    oklchLightness: string
+    hex: string
+    eyeDropper: string
+    switchToOklch: string
+    switchToHsv: string
+  }
   combobox: { toggle: string; resultCount: (n: number) => string }
   dateInput: { clear: string }
   datePicker: {
