@@ -167,6 +167,63 @@ export function hasDensityOrSizeProperty(source: string, fileName?: string): boo
 }
 
 /**
+ * Neutralize CSS structural characters (`{`, `}`, `,`) that appear inside a
+ * `/* ... *\/` comment or a quoted string, WITHOUT disturbing anything else —
+ * critically, an attribute-selector's own quoted value
+ * (`[data-scope='avatar']`) must survive byte-for-byte, quotes included, so
+ * `scopeAttr`'s regex can still match it. #264 review item 5: a plain
+ * `css.split('{')` scan reads THROUGH a comment (`/* an avatar's
+ * [data-density] rule was removed *\/`) and through a declaration-value
+ * string (`content: "{ not a rule }"`) as if they were live selector/brace
+ * syntax — a false-positive risk for `cssScopeHasDensityOrSizeSelector`'s "no
+ * density selector for this scope" direction, and the same class of gap
+ * CLAUDE.md documents for `cssRules`-walking tools generally. A comment's
+ * entire span is blanked (its content never needs to survive for the regex);
+ * inside a quoted string only the three structural characters are replaced
+ * with a space, one-for-one, so every other byte — including the quotes and
+ * the scope/attribute text between them — is untouched. Quotes are tracked
+ * with a single "current quote char or none" state rather than nested — CSS
+ * strings never nest.
+ */
+function neutralizeStructuralCharsInCommentsAndStrings(css: string): string {
+  const chars = [...css]
+  let quote: '"' | "'" | null = null
+  for (let i = 0; i < chars.length; i += 1) {
+    const ch = chars[i]!
+    if (quote !== null) {
+      if (ch === '\\') {
+        i += 1 // an escaped char (including an escaped quote) is never the close
+        continue
+      }
+      if (ch === quote) {
+        quote = null
+        continue
+      }
+      if (ch === '{' || ch === '}' || ch === ',') chars[i] = ' '
+      continue
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch
+      continue
+    }
+    if (ch === '/' && chars[i + 1] === '*') {
+      let j = i
+      while (j < chars.length && !(chars[j] === '*' && chars[j + 1] === '/')) {
+        if (chars[j] !== '\n') chars[j] = ' '
+        j += 1
+      }
+      if (j < chars.length) {
+        chars[j] = ' ' // '*'
+        chars[j + 1] = ' ' // '/'
+      }
+      i = j + 1
+      continue
+    }
+  }
+  return chars.join('')
+}
+
+/**
  * Scans CSS rule selectors for one containing BOTH this product's
  * `[data-scope='<scope>']` attribute selector and a `[data-density...]` or
  * `[data-size...]` attribute selector — the shape every real density rule in
@@ -174,12 +231,14 @@ export function hasDensityOrSizeProperty(source: string, fileName?: string): boo
  * `data-display.css`'s `[data-scope='avatar'][data-part='root'][data-density='compact']`).
  * A selector is a rule's text up to its `{`; multi-selector rules are split
  * on top-level commas (none of this family's selectors nest a comma inside
- * brackets/parens, so a plain split is exact here).
+ * brackets/parens, so a plain split is exact here). Comments and quoted
+ * strings are blanked out FIRST so a brace/comma inside either is inert.
  */
 export function cssScopeHasDensityOrSizeSelector(css: string, scope: string): boolean {
   const scopeAttr = new RegExp(`\\[data-scope=['"]${scope}['"]\\]`)
   const densityOrSizeAttr = /\[data-(?:density|size)[=\]]/
-  const rules = css.split('{').slice(0, -1)
+  const cleaned = neutralizeStructuralCharsInCommentsAndStrings(css)
+  const rules = cleaned.split('{').slice(0, -1)
   for (const chunk of rules) {
     // Only the selector text since the PREVIOUS rule's closing brace is this
     // rule's own selector — a naive split on `{` alone would also capture
