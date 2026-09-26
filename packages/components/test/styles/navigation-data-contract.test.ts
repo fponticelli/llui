@@ -9,6 +9,7 @@ import {
   applicableNavigationDataScenarios,
   compileNavigationDataCatalog,
   DENSITY_APPLICABLE_PRODUCT_IDS,
+  DENSITY_RATIONALES,
   forcedColorScenarios,
   joinNavigationDataScenarios,
   NAVIGATION_DATA_DEFINITIONS,
@@ -94,6 +95,31 @@ describe('navigation/data presentation contract', () => {
       .map(({ productId }) => productId)
       .sort()
     expect(withCompactCase).toEqual(DENSITY_APPLICABLE_PRODUCT_IDS)
+  })
+
+  it('registers exactly one specific density-N/A rationale per non-applicable product, each backed by a real absence of a density/size field in its checked sources', () => {
+    const applicableSet = new Set(DENSITY_APPLICABLE_PRODUCT_IDS)
+    const naProductIds = family
+      .map(({ name }) => name)
+      .filter((name) => !applicableSet.has(name))
+      .sort()
+    expect(Object.keys(DENSITY_RATIONALES).sort()).toEqual(naProductIds)
+
+    const displayNameByProductId = new Map(
+      family.map(({ name, displayName }) => [name, displayName]),
+    )
+    for (const [productId, rationale] of Object.entries(DENSITY_RATIONALES)) {
+      const displayName = displayNameByProductId.get(productId)!
+      // The rationale must actually name its own product, not a copy-pasted
+      // sibling's — a bare template can pass `.toContain(displayName)`
+      // trivially by construction; asserting per-product text prevents that.
+      expect(rationale.text, productId).toContain(displayName)
+      expect(rationale.checkedSources.length, productId).toBeGreaterThan(0)
+      for (const relPath of rationale.checkedSources) {
+        const source = readFileSync(resolve(ROOT, relPath), 'utf8')
+        expect(source, `${productId}: ${relPath}`).not.toMatch(/density/i)
+      }
+    }
   })
 
   it('pairs every forced-colors-capable scenario with a concrete non-colour cue', () => {

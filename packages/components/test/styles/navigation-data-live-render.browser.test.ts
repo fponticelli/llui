@@ -134,7 +134,7 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
   }
 
   it.each(['baseline', 'registryTailwind'] as const)(
-    '%s renders a genuinely denser, still-usable compact avatar/table against the real renderer output',
+    '%s renders a genuinely denser, still-usable compact avatar/table/data-table against the real renderer output',
     async (path) => {
       const fixture = fixtures.find((candidate) => candidate.path === path)!
       const page = await openMounted(fixture)
@@ -156,7 +156,23 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
         const tableCompactHeader = rect(
           '[data-scenario-id="component:table"][data-scenario-case="compact"] [data-part="column-header"]',
         )
-        return { avatarComfortable, avatarCompact, tableComfortableHeader, tableCompactHeader }
+        // pattern:data-table wraps the SAME table machine, and its `default`
+        // case is keyed `populated` (a phase, not a density) — the compact
+        // case keeps the same rows so only density varies.
+        const dataTableComfortableHeader = rect(
+          '[data-scenario-id="pattern:data-table"][data-scenario-case="populated"] [data-part="column-header"]',
+        )
+        const dataTableCompactHeader = rect(
+          '[data-scenario-id="pattern:data-table"][data-scenario-case="compact"] [data-part="column-header"]',
+        )
+        return {
+          avatarComfortable,
+          avatarCompact,
+          tableComfortableHeader,
+          tableCompactHeader,
+          dataTableComfortableHeader,
+          dataTableCompactHeader,
+        }
       })
       await page.close()
 
@@ -167,8 +183,51 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
         geometry.tableComfortableHeader.height,
       )
       expect(geometry.tableCompactHeader.height).toBeGreaterThanOrEqual(16)
+      expect(geometry.dataTableCompactHeader.height).toBeLessThan(
+        geometry.dataTableComfortableHeader.height,
+      )
+      expect(geometry.dataTableCompactHeader.height).toBeGreaterThanOrEqual(16)
     },
   )
+
+  it('registryTailwind renders a genuinely denser, still-usable compact item/sidebar against the real renderer output (baseline has no registry-only presentational atoms to compare)', async () => {
+    const fixture = fixtures.find((candidate) => candidate.path === 'registryTailwind')!
+    const page = await openMounted(fixture)
+    const geometry = await page.evaluate(() => {
+      const rect = (selector: string) => {
+        const element = document.querySelector<HTMLElement>(selector)
+        if (element === null) throw new Error(`Missing element for ${selector}`)
+        return element.getBoundingClientRect()
+      }
+      // `registry:item`'s adapter mounts a bare `Item(...)` as the scenario
+      // case root's only child — no machine, no `data-part`, so the direct
+      // child is the one stable handle onto its recipe's padding.
+      const itemComfortable = rect(
+        '[data-scenario-id="registry:item"][data-scenario-case="default"] > *',
+      )
+      const itemCompact = rect(
+        '[data-scenario-id="registry:item"][data-scenario-case="compact"] > *',
+      )
+      // `registry:sidebar`'s adapter renders exactly one <button> (the
+      // SidebarMenuButton) anywhere in its subtree.
+      const sidebarComfortable = rect(
+        '[data-scenario-id="registry:sidebar"][data-scenario-case="expanded"] button',
+      )
+      const sidebarCompact = rect(
+        '[data-scenario-id="registry:sidebar"][data-scenario-case="compact"] button',
+      )
+      return { itemComfortable, itemCompact, sidebarComfortable, sidebarCompact }
+    })
+    await page.close()
+
+    expect(geometry.itemCompact.height).toBeLessThan(geometry.itemComfortable.height)
+    expect(geometry.itemCompact.height).toBeGreaterThanOrEqual(16)
+    // Sidebar's `size="sm"`/`size="default"` are fixed-height Tailwind
+    // classes (`h-7`/`h-8`), not padding around variable content, so their
+    // pixel heights are exact at the default 16px root font size.
+    expect(geometry.sidebarCompact.height).toBeCloseTo(28, 0)
+    expect(geometry.sidebarComfortable.height).toBeCloseTo(32, 0)
+  })
 
   it.each(['baseline', 'registryTailwind'] as const)(
     '%s retains the accordion/collapsible closing case visibly, driven by the real reducer',

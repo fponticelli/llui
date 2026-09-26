@@ -1260,8 +1260,89 @@ export const DENSITY_APPLICABLE_PRODUCT_IDS: readonly string[] = [
   'sidebar',
 ].sort()
 
+/**
+ * Per-product density-N/A rationale (#264 item 6): a single shared template
+ * ("has no collection-density input") was true of all 24 non-applicable
+ * products but named none of them specifically, and could not be falsified
+ * beyond `.toContain(displayName)`. Each rationale below instead names the
+ * REAL fact backing it — either "this machine's `connect()` options carry no
+ * density/size field" (public-machine products) or "this registry atom has no
+ * machine at all" (presentational products) — and `checkedSources` names the
+ * exact repo-relative source file(s) `navigation-data-contract.test.ts` reads
+ * and asserts never mention density/size geometry, so a rationale can no
+ * longer go stale the day a product grows one.
+ */
+export interface DensityRationale {
+  readonly text: string
+  readonly checkedSources: readonly string[]
+}
+
+function noMachineDensityOption(productId: string, displayName: string): DensityRationale {
+  return {
+    text: `${displayName}'s connect() options expose no density/size field, and neither the baseline stylesheet nor the registry ${productId}.ts skin varies its geometry on one; its box is fixed and only its content/state cases vary.`,
+    checkedSources: [
+      `packages/components/src/components/${productId}.ts`,
+      `registry/llui/ui/${productId}.ts`,
+    ],
+  }
+}
+
+function noMachineAtAll(
+  productId: string,
+  displayName: string,
+  recipeFile: string,
+): DensityRationale {
+  return {
+    text: `${displayName} has no machine at all (its ProductContract entry is machine-free); its registry ${recipeFile}.ts recipe fixes one padding/size scale with no size variant to select.`,
+    checkedSources: [`registry/llui/ui/${recipeFile}.ts`],
+  }
+}
+
+export const DENSITY_RATIONALES: Readonly<Record<string, DensityRationale>> = {
+  accordion: noMachineDensityOption('accordion', 'Accordion'),
+  breadcrumbs: {
+    text: `Breadcrumbs' connect() options expose no density/size field; overflow is handled by \`maxVisible\` truncation rather than a smaller box, and neither the baseline stylesheet nor the registry breadcrumb.ts skin varies item size.`,
+    checkedSources: [
+      'packages/components/src/components/breadcrumbs.ts',
+      'registry/llui/ui/breadcrumb.ts',
+    ],
+  },
+  carousel: noMachineDensityOption('carousel', 'Carousel'),
+  chart: noMachineDensityOption('chart', 'Chart'),
+  collapsible: noMachineDensityOption('collapsible', 'Collapsible'),
+  marquee: noMachineDensityOption('marquee', 'Marquee'),
+  meter: noMachineDensityOption('meter', 'Meter'),
+  pagination: noMachineDensityOption('pagination', 'Pagination'),
+  progress: noMachineDensityOption('progress', 'Progress'),
+  sparkline: noMachineDensityOption('sparkline', 'Sparkline'),
+  steps: noMachineDensityOption('steps', 'Steps'),
+  tabs: noMachineDensityOption('tabs', 'Tabs'),
+  toc: noMachineDensityOption('toc', 'Table of Contents'),
+  'tree-view': noMachineDensityOption('tree-view', 'Tree View'),
+  alert: noMachineAtAll('alert', 'Alert', 'alert'),
+  badge: noMachineAtAll('badge', 'Badge', 'badge'),
+  card: noMachineAtAll('card', 'Card', 'card'),
+  chip: noMachineAtAll('chip', 'Chip', 'chip'),
+  empty: noMachineAtAll('empty', 'Empty', 'empty'),
+  kbd: noMachineAtAll('kbd', 'Kbd', 'kbd'),
+  separator: noMachineAtAll('separator', 'Separator', 'separator'),
+  skeleton: {
+    text: `Skeleton has no machine at all (its ProductContract entry is machine-free); its registry skeleton.ts recipe takes its size from the content it stands in for, never from a density switch.`,
+    checkedSources: ['registry/llui/ui/skeleton.ts'],
+  },
+  spinner: noMachineAtAll('spinner', 'Spinner', 'spinner'),
+  typography: {
+    text: `Typography has no machine at all (its ProductContract entry is machine-free); its registry typography.ts recipe fixes one type scale per heading/body/code variant, never a density switch.`,
+    checkedSources: ['registry/llui/ui/typography.ts'],
+  },
+} as const
+
 export function densityRationale(entry: ProductEntry): string {
-  return `${entry.displayName} has no collection-density input; its target size and information hierarchy remain invariant while viewport cases own spatial adaptation.`
+  const rationale = DENSITY_RATIONALES[entry.name]
+  if (rationale === undefined) {
+    throw new Error(`No density rationale registered for product ${entry.name}`)
+  }
+  return rationale.text
 }
 
 /** One navigation-data scenario joined with its ProductContract entry — the
