@@ -148,8 +148,27 @@ describe('AGENTS.md is a symlink to CLAUDE.md', () => {
     const direct = readFileSync(path.join(ROOT, 'CLAUDE.md'), 'utf8')
     expect(viaLink).toBe(direct)
     // Vacuity: an empty or truncated CLAUDE.md would satisfy the equality above.
-    expect(viaLink.length).toBeGreaterThan(100_000)
+    // The failure this guards is the ~10-byte file a `core.symlinks=false`
+    // checkout produces, so the floor only has to sit far above that.
+    expect(viaLink.length).toBeGreaterThan(10_000)
     expect(viaLink).toContain('## Invariants & landmines')
+  })
+
+  // CLAUDE.md keeps the rules short and points into docs/agents/ for the
+  // reasoning. A pointer to a file that was renamed or never added silently
+  // drops that detail for every agent, so each one must resolve.
+  it('points only at docs/agents files that exist', () => {
+    const text = readFileSync(path.join(ROOT, 'CLAUDE.md'), 'utf8')
+    const refs = [...new Set(text.match(/docs\/agents\/[\w-]+\.md/g) ?? [])]
+    expect(refs.length).toBeGreaterThan(5)
+    const missing = refs.filter((rel) => {
+      try {
+        return !lstatSync(path.join(ROOT, rel)).isFile()
+      } catch {
+        return true
+      }
+    })
+    expect(missing).toEqual([])
   })
 })
 
