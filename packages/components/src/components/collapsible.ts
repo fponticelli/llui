@@ -1,12 +1,7 @@
 import { tagSend } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { retainedExit } from '../internal/retained-exit.js'
-import {
-  armDisclosureExit,
-  matchesArmedDisclosureExit,
-  measureDisclosureBlockSize,
-  type ArmedDisclosureExit,
-} from '../internal/disclosure-motion.js'
+import { createDisclosureExitTracker } from '../internal/disclosure-motion.js'
 
 /**
  * Collapsible — a single expandable/collapsible section. Simpler than
@@ -134,30 +129,43 @@ export function connect(
 ): CollapsibleParts {
   const triggerId = `${opts.id}:trigger`
   const contentId = `${opts.id}:content`
-  const armedExits = new WeakMap<EventTarget, ArmedDisclosureExit>()
+  const exitTracker = createDisclosureExitTracker()
   const armExit = (e: AnimationEvent): void => {
-    const target = e.currentTarget
-    if (target === null || target !== e.target) return
     const current = state.peek()
-    if (current.closing) {
-      const armed = armDisclosureExit(e, current.exitGeneration)
-      if (armed !== undefined) armedExits.set(target, armed)
-    } else {
-      measureDisclosureBlockSize(e)
-      armedExits.delete(target)
-    }
+    exitTracker.armExit(e, { closing: current.closing, generation: current.exitGeneration })
   }
   const completeExit = (e: AnimationEvent): void => {
-    const target = e.currentTarget
-    if (target === null) return
     const current = state.peek()
     if (
-      !current.closing ||
-      !matchesArmedDisclosureExit(e, current.exitGeneration, armedExits.get(target))
-    )
-      return
-    armedExits.delete(target)
-    send({ type: 'exitComplete', generation: current.exitGeneration })
+      exitTracker.completeExit(e, { closing: current.closing, generation: current.exitGeneration })
+    ) {
+      send({ type: 'exitComplete', generation: current.exitGeneration })
+    }
+  }
+  // Safety net for the "opted into animated exit, but the skin runs no exit
+  // animation at all" case (a dropped rule, a media query that doesn't
+  // match, `animation: none`): no animationstart/animationend event would
+  // ever fire, so the event-driven path above never completes it. Checked
+  // synchronously right after a user-initiated close via the trigger, which
+  // is the only place `content`'s own element is reachable without a new
+  // Mountable placement — see the README for what this covers (and does not).
+  const completeIfUnanimatedAfterToggle = (e: { currentTarget: EventTarget | null }): void => {
+    const trigger = e.currentTarget instanceof Element ? e.currentTarget : null
+    const content = trigger?.ownerDocument.getElementById(contentId) ?? null
+    // Unreachable in a unit test that dispatches a bare event with no
+    // currentTarget, and there is nothing to check without an element:
+    // avoid peeking so `rootSignal()`-backed structural tests (which have no
+    // live state to peek) keep working unchanged.
+    if (content === null) return
+    const current = state.peek()
+    if (
+      exitTracker.completeIfUnanimated(content, {
+        closing: current.closing,
+        generation: current.exitGeneration,
+      })
+    ) {
+      send({ type: 'exitComplete', generation: current.exitGeneration })
+    }
   }
 
   return {
@@ -177,7 +185,10 @@ export function connect(
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       'data-scope': 'collapsible',
       'data-part': 'trigger',
-      onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle' })),
+      onClick: tagSend(send, ['toggle'], (e: MouseEvent) => {
+        send({ type: 'toggle' })
+        completeIfUnanimatedAfterToggle(e)
+      }),
     },
     content: {
       role: 'region',

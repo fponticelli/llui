@@ -6,12 +6,7 @@ import {
   retainedExits,
   type RetainedExitGeneration,
 } from '../internal/retained-exit.js'
-import {
-  armDisclosureExit,
-  matchesArmedDisclosureExit,
-  measureDisclosureBlockSize,
-  type ArmedDisclosureExit,
-} from '../internal/disclosure-motion.js'
+import { createDisclosureExitTracker } from '../internal/disclosure-motion.js'
 
 /**
  * Accordion — a stack of expandable panels. Items are identified by a string
@@ -231,34 +226,42 @@ export function connect(
   const base = opts.id
   const triggerId = (v: string): string => `${base}:trigger:${v}`
   const contentId = (v: string): string => `${base}:content:${v}`
-  const armedExits = new WeakMap<EventTarget, ArmedDisclosureExit>()
+  const exitTracker = createDisclosureExitTracker()
   const armExit = (value: string, e: AnimationEvent): void => {
-    const target = e.currentTarget
-    if (target === null || target !== e.target) return
     const current = state.peek()
-    if (current.closing.includes(value)) {
-      const armed = armDisclosureExit(
-        e,
-        retainedExitGeneration(current.exitGenerations, value) ?? 0,
-      )
-      if (armed !== undefined) armedExits.set(target, armed)
-    } else {
-      measureDisclosureBlockSize(e)
-      armedExits.delete(target)
-    }
+    exitTracker.armExit(e, {
+      closing: current.closing.includes(value),
+      generation: retainedExitGeneration(current.exitGenerations, value) ?? 0,
+    })
   }
   const completeExit = (value: string, e: AnimationEvent): void => {
-    const target = e.currentTarget
-    if (target === null) return
+    const current = state.peek()
+    const generation = retainedExitGeneration(current.exitGenerations, value) ?? 0
+    if (exitTracker.completeExit(e, { closing: current.closing.includes(value), generation })) {
+      send({ type: 'exitComplete', value, generation })
+    }
+  }
+  // Safety net for the "opted into animated exit, but the skin runs no exit
+  // animation at all" case — see collapsible.ts's identical comment and the
+  // README for what this covers (a user-initiated close via the trigger) and
+  // does not (a programmatic `close`/`setValue` message).
+  const completeIfUnanimatedAfterToggle = (value: string, origin: Element | null): void => {
+    const content = origin?.ownerDocument.getElementById(contentId(value)) ?? null
+    // Unreachable in a unit test that invokes the handler directly with no
+    // currentTarget, and there is nothing to check without an element: avoid
+    // peeking so `rootSignal()`-backed structural tests (which have no live
+    // state to peek) keep working unchanged.
+    if (content === null) return
     const current = state.peek()
     const generation = retainedExitGeneration(current.exitGenerations, value) ?? 0
     if (
-      !current.closing.includes(value) ||
-      !matchesArmedDisclosureExit(e, generation, armedExits.get(target))
-    )
-      return
-    armedExits.delete(target)
-    send({ type: 'exitComplete', value, generation })
+      exitTracker.completeIfUnanimated(content, {
+        closing: current.closing.includes(value),
+        generation,
+      })
+    ) {
+      send({ type: 'exitComplete', value, generation })
+    }
   }
 
   return {
@@ -279,7 +282,13 @@ export function connect(
         'data-scope': 'accordion',
         'data-part': 'trigger',
         'data-value': value,
-        onClick: tagSend(send, ['toggle'], () => send({ type: 'toggle', value })),
+        onClick: tagSend(send, ['toggle'], (e: MouseEvent) => {
+          send({ type: 'toggle', value })
+          completeIfUnanimatedAfterToggle(
+            value,
+            e.currentTarget instanceof Element ? e.currentTarget : null,
+          )
+        }),
         onKeyDown: tagSend(
           send,
           ['focusNext', 'focusPrev', 'focusFirst', 'focusLast', 'toggle'],
@@ -320,6 +329,7 @@ export function connect(
               case 'Enter':
                 e.preventDefault()
                 send({ type: 'toggle', value })
+                completeIfUnanimatedAfterToggle(value, origin)
                 return
             }
           },

@@ -151,12 +151,12 @@ describe('carousel keyboard focus stays scoped to its own instance', () => {
     // Carousel A is earlier in document order, so a whole-document search for
     // `[data-index="1"]` finds A's button first — pressing ArrowRight on B's
     // OWN indicator must never move focus there.
-    indicatorsB[0].focus()
-    indicatorsB[0].dispatchEvent(
+    indicatorsB[0]!.focus()
+    indicatorsB[0]!.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
     )
 
-    expect(indicatorsB[1].getAttribute('aria-selected')).toBe('true')
+    expect(indicatorsB[1]!.getAttribute('aria-selected')).toBe('true')
     expect(document.activeElement).not.toBe(indicatorsA[1])
     expect(indicatorsA.includes(document.activeElement as HTMLButtonElement)).toBe(false)
 

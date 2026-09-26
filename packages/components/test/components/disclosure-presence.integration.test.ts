@@ -194,6 +194,81 @@ describe('animated disclosure presence in actual DOM', () => {
     },
   )
 
+  it.each(['accordion', 'collapsible'] as const)(
+    'completes exit for a custom skin whose animation never publishes --llui-disclosure-exit-animation (%s)',
+    (scope) => {
+      const host = mount()
+      const trigger = part(host, scope, 'trigger') as HTMLButtonElement
+      const content = part(host, scope, 'content')
+      // Deliberately do NOT call declareExitAnimation: a custom skin can run
+      // its own real CSS exit animation without ever publishing the named
+      // custom property the baseline/registry skins use.
+
+      trigger.click()
+      expect(content.dataset.state).toBe('closing')
+
+      content.dispatchEvent(animationEvent('animationstart', 'my-custom-fade-out'))
+      content.dispatchEvent(animationEvent('animationend', 'my-custom-fade-out'))
+
+      expect(content.dataset.state).toBe('closed')
+      expect(content.hidden).toBe(true)
+      expect(content.hasAttribute('inert')).toBe(true)
+    },
+  )
+
+  it.each(['accordion', 'collapsible'] as const)(
+    'still ignores a canceled enter animation when no --llui-disclosure-exit-animation name is published (%s)',
+    (scope) => {
+      const host = mount()
+      const trigger = part(host, scope, 'trigger') as HTMLButtonElement
+      const content = part(host, scope, 'content')
+
+      content.dispatchEvent(animationEvent('animationstart', 'fade-in'))
+      trigger.click()
+      expect(content.dataset.state).toBe('closing')
+      content.dispatchEvent(animationEvent('animationcancel', 'fade-in'))
+      expect(content.dataset.state).toBe('closing')
+
+      content.dispatchEvent(animationEvent('animationstart', 'fade-out'))
+      content.dispatchEvent(animationEvent('animationend', 'fade-out'))
+      expect(content.dataset.state).toBe('closed')
+    },
+  )
+
+  it.each(['accordion', 'collapsible'] as const)(
+    'completes a user-initiated close immediately when the skin runs no exit animation at all (%s)',
+    (scope) => {
+      const host = mount()
+      const trigger = part(host, scope, 'trigger') as HTMLButtonElement
+      const content = part(host, scope, 'content')
+      Object.defineProperty(content, 'getAnimations', { configurable: true, value: () => [] })
+
+      trigger.click()
+
+      expect(content.dataset.state).toBe('closed')
+      expect(content.hidden).toBe(true)
+      expect(content.hasAttribute('inert')).toBe(true)
+    },
+  )
+
+  it.each(['accordion', 'collapsible'] as const)(
+    'does not complete immediately while a real exit animation is still running (%s)',
+    (scope) => {
+      const host = mount()
+      const trigger = part(host, scope, 'trigger') as HTMLButtonElement
+      const content = part(host, scope, 'content')
+      declareExitAnimation(content, scope)
+      Object.defineProperty(content, 'getAnimations', {
+        configurable: true,
+        value: () => [{ animationName: 'irrelevant', playState: 'running' }],
+      })
+
+      trigger.click()
+
+      expect(content.dataset.state).toBe('closing')
+    },
+  )
+
   it.each([
     ['accordion', 'accordion-up'],
     ['collapsible', 'collapse-up'],
@@ -216,8 +291,15 @@ describe('animated disclosure presence in actual DOM', () => {
       content.dispatchEvent(animationEvent('animationstart', exitName))
       trigger.click()
       oldExit.playState = 'idle'
-      trigger.click()
+      // A real browser's `getAnimations()` already reflects the freshly
+      // started exit animation synchronously (it forces a style flush), so
+      // the mock is updated BEFORE the click that starts it, not after —
+      // otherwise the "complete immediately if nothing is running" safety
+      // net would (correctly, given what it can see) treat this moment as
+      // unanimated and short-circuit the very generation this test means to
+      // arm and match against a stale cancel below.
       animations = [currentExit]
+      trigger.click()
       content.dispatchEvent(animationEvent('animationstart', exitName))
 
       content.dispatchEvent(animationEvent('animationcancel', exitName))

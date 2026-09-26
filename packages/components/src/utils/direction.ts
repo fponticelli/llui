@@ -29,24 +29,12 @@ export function syncDomDirection<T extends DirectionState>(state: T, dir: 'ltr' 
   return { ...state, dir }
 }
 
-/** Resolve direction at event time so same-tick ancestor changes are correct. */
+/** Resolve direction at event time so same-tick ancestor changes are correct.
+ * Routes through `@llui/interactions`' `resolveDir` — the package's documented
+ * single source of truth for DOM-derived direction — rather than a second,
+ * independently-maintained ancestor walk. */
 export function eventDirection(state: DirectionState, origin: Element | null): 'ltr' | 'rtl' {
-  return state.dirSource === 'explicit' || origin === null ? state.dir : inheritedDirection(origin)
-}
-
-/** Walk through shadow hosts as well as ordinary parent elements. */
-function inheritedDirection(origin: Element): 'ltr' | 'rtl' {
-  let current: Element | null = origin
-  while (current !== null) {
-    if (current.hasAttribute('dir')) return current.getAttribute('dir') === 'rtl' ? 'rtl' : 'ltr'
-    if (current.parentElement !== null) {
-      current = current.parentElement
-      continue
-    }
-    const root = current.getRootNode()
-    current = root instanceof ShadowRoot ? root.host : null
-  }
-  return origin.ownerDocument.documentElement.dir === 'rtl' ? 'rtl' : 'ltr'
+  return state.dirSource === 'explicit' || origin === null ? state.dir : resolveDir(origin)
 }
 
 interface DirectionObservation {
@@ -113,7 +101,7 @@ export function directionSyncMount(rootId: string, sync: (dir: 'ltr' | 'rtl') =>
       const scopedRoot = getElementByIdInScope(container, rootId)
       if (scopedRoot !== null) currentRoot = scopedRoot
       if (currentRoot === null || !currentRoot.isConnected) return
-      const direction = inheritedDirection(currentRoot)
+      const direction = resolveDir(currentRoot)
       if (direction === lastDirection) return
       lastDirection = direction
       sync(direction)
