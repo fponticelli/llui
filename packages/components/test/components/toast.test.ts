@@ -267,19 +267,59 @@ describe('toast.connect', () => {
   it('toast root uses assertive (role=alert) for error type', () => {
     const error = makeToast({ id: 'e', type: 'error' })
     const info = makeToast({ id: 'i', type: 'info' })
-    expect(parts.toast(signalOf(error)).root['aria-live']).toBe('assertive')
-    expect(parts.toast(signalOf(error)).root.role).toBe('alert')
-    expect(parts.toast(signalOf(info)).root['aria-live']).toBe('polite')
-    expect(parts.toast(signalOf(info)).root.role).toBe('status')
+    expect(read(parts.toast(signalOf(error)).root['aria-live'], error)).toBe('assertive')
+    expect(read(parts.toast(signalOf(error)).root.role, error)).toBe('alert')
+    expect(read(parts.toast(signalOf(info)).root['aria-live'], info)).toBe('polite')
+    expect(read(parts.toast(signalOf(info)).root.role, info)).toBe('status')
   })
 
   it('per-toast ariaLive override wins over type-derived', () => {
     const error = makeToast({ id: 'e', type: 'error', ariaLive: 'polite' })
     const info = makeToast({ id: 'i', type: 'info', ariaLive: 'assertive' })
-    expect(parts.toast(signalOf(error)).root['aria-live']).toBe('polite')
-    expect(parts.toast(signalOf(error)).root.role).toBe('status')
-    expect(parts.toast(signalOf(info)).root['aria-live']).toBe('assertive')
-    expect(parts.toast(signalOf(info)).root.role).toBe('alert')
+    expect(read(parts.toast(signalOf(error)).root['aria-live'], error)).toBe('polite')
+    expect(read(parts.toast(signalOf(error)).root.role, error)).toBe('status')
+    expect(read(parts.toast(signalOf(info)).root['aria-live'], info)).toBe('assertive')
+    expect(read(parts.toast(signalOf(info)).root.role, info)).toBe('alert')
+  })
+
+  it('root data-type reflects the toast type reactively', () => {
+    const info = makeToast({ id: 'x', type: 'info' })
+    expect(read(parts.toast(signalOf(info)).root['data-type'], info)).toBe('info')
+  })
+
+  it('update patching type/ariaLive is visible on the MOUNTED row (resolves the former freeze bug)', () => {
+    // Regression for #265 finding #8: `connect()`'s `toast()` builder used to
+    // read `type`/`ariaLive` once via `.peek()`, so a `toast.promise`-style
+    // loading -> success `update` never reached the rendered `data-type`/
+    // `role`/`aria-live` of an already-mounted row. They are now bound
+    // reactively off the SAME row signal handed to `each`, so re-deriving the
+    // parts against the post-update toast value must reflect the patch.
+    let s = init()
+    s = update(s, { type: 'create', toast: makeToast({ id: 'x', type: 'loading' }) })[0]
+    const row = parts.toast(signalOf(s.toasts[0]!))
+    expect(read(row.root['data-type'], s.toasts[0]!)).toBe('loading')
+    expect(read(row.root.role, s.toasts[0]!)).toBe('status')
+
+    const [s2] = update(s, {
+      type: 'update',
+      id: 'x',
+      patch: { type: 'error', title: 'Failed' },
+    })
+    const updated = s2.toasts[0]!
+    expect(updated.type).toBe('error')
+    // Re-deriving the SAME row builder's Signal against the updated toast
+    // value (what the runtime does on every commit) now reports 'error'/'alert'.
+    expect(read(row.root['data-type'], updated)).toBe('error')
+    expect(read(row.root.role, updated)).toBe('alert')
+    expect(read(row.root['aria-live'], updated)).toBe('assertive')
+  })
+
+  it('ToastPatch cannot patch id (compile-time)', () => {
+    let s = init()
+    s = update(s, { type: 'create', toast: makeToast({ id: 'x' }) })[0]
+    // @ts-expect-error id is not a patchable field — it is immutable for a
+    // toast's lifetime, per ToastPatch's contract.
+    update(s, { type: 'update', id: 'x', patch: { id: 'y' } })
   })
 
   it('progress(id) returns fraction remaining in [0,1]', () => {

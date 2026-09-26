@@ -89,6 +89,21 @@ export type ToastInput = Omit<Toast, 'remainingMs' | 'paused' | 'status'> & {
   status?: PresenceStatus
 }
 
+/**
+ * Fields an `update` message may patch on a mounted toast. `id` is the ONE
+ * truly immutable field — a toast is created once and dismissed once, never
+ * structurally replaced with a different id for the same row — so it is
+ * excluded here rather than silently ignored by the reducer. Every other
+ * field, INCLUDING `type` and `ariaLive`, is a genuine mutable presentation
+ * field (the `toast.promise`-style loading→success/error flow patches `type`,
+ * `title` and `description` on the same mounted toast) and `connect()`'s
+ * `toast()` builder binds every one of these reactively (never via a one-shot
+ * `peek()`), so a patch here is visible wherever it renders — resolving the
+ * former contradiction where `patch: Partial<Toast>` type-allowed patching
+ * fields the connect layer had already frozen at mount (#265).
+ */
+export type ToastPatch = Partial<Omit<Toast, 'id'>>
+
 export type ToasterMsg =
   /** @intent("Show a new toast notification") */
   | { type: 'create'; toast: ToastInput }
@@ -96,8 +111,8 @@ export type ToasterMsg =
   | { type: 'dismiss'; id: string }
   /** @intent("Dismiss every toast currently visible") */
   | { type: 'dismissAll' }
-  /** @intent("Patch fields on the toast with the given id (title, description, type, etc.)") */
-  | { type: 'update'; id: string; patch: Partial<Toast> }
+  /** @intent("Patch mutable presentation fields on the toast with the given id (title, description, type, etc.); `id` cannot be patched") */
+  | { type: 'update'; id: string; patch: ToastPatch }
   /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
   | { type: 'tick'; id: string; elapsedMs: number }
   /** @intent("Pause auto-dismiss countdown for the toast with the given id") */
@@ -259,13 +274,21 @@ export function progress(state: ToasterState, id: string): number {
 
 export interface ToastItemParts {
   root: {
-    role: 'status' | 'alert'
+    /**
+     * Reactive: derived from the toast's current `type`/`ariaLive` (see
+     * {@link politeness}), never frozen at mount — an `update` patching
+     * either is visible here.
+     */
+    role: Signal<'status' | 'alert'>
     'aria-atomic': 'true'
-    'aria-live': ToastPoliteness
+    /** Reactive — see `role` above. */
+    'aria-live': Signal<ToastPoliteness>
     id: string
     'data-scope': 'toast'
     'data-part': 'root'
-    'data-type': ToastType
+    /** Reactive: an `update` patching `type` (e.g. a promise toast moving
+     * loading → success) is visible here, not frozen at mount. */
+    'data-type': Signal<ToastType>
     'data-id': string
     /** Reactive presence status (closed/opening/open/closing) for CSS-driven
      * enter/exit animations. */
@@ -311,10 +334,11 @@ export interface ToasterParts {
    * Build the per-row part descriptors for one toast. Takes the row's
    * `Signal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
    * consumers don't `.peek()` in a reactive slot (which the signal compiler
-   * rejects). A toast's `id`/`type`/`ariaLive` are immutable for its lifetime —
-   * created then dismissed, never structurally replaced — so this reads the
-   * value once internally to build the id/role wiring; the keyed `each`
-   * rebuilds the row if `id` changes.
+   * rejects). Only `id` is immutable for a toast's lifetime — created then
+   * dismissed, never structurally replaced — so this reads `id` once
+   * internally to build id-derived wiring (the keyed `each` rebuilds the row
+   * if `id` changes); every other field (`type`, `ariaLive`, `status`, …) is
+   * bound reactively so an `update` patch renders wherever it appears.
    */
   toast: (toast: Signal<Toast>) => ToastItemParts
   /**
@@ -357,36 +381,40 @@ export function connect(
       'data-placement': state.map((s) => s.placement),
     },
     toast: (toastSig: Signal<Toast>): ToastItemParts => {
-      // A toast's identity-bearing fields (id, type, ariaLive) are immutable for
-      // its id's lifetime (created → dismissed, never structurally replaced), so
-      // read it once to build the id/role-derived descriptors. The keyed `each`
-      // rebuilds this row if `id` changes.
-      const toast = toastSig.peek()
-      const live = politeness(toast)
+      // `id` is the only identity-bearing field that is immutable for a
+      // toast's lifetime (created → dismissed, never structurally replaced),
+      // so it alone is read once to build id-derived descriptors and event
+      // payloads. The keyed `each` rebuilds this row if `id` changes.
+      // `type`/`ariaLive` are documented MUTABLE presentation fields (a
+      // `toast.promise`-style flow patches `type` on a mounted toast), so the
+      // ARIA politeness/role bag below is bound REACTIVELY off `toastSig`
+      // rather than frozen from a one-shot peek (#265 finding #8).
+      const id = toastSig.peek().id
+      const liveSig = toastSig.map((t) => politeness(t))
       return {
         root: {
-          role: live === 'assertive' ? 'alert' : 'status',
+          role: liveSig.map((live) => (live === 'assertive' ? 'alert' : 'status')),
           'aria-atomic': 'true',
-          'aria-live': live,
-          id: `${toast.id}:root`,
+          'aria-live': liveSig,
+          id: `${id}:root`,
           'data-scope': 'toast',
           'data-part': 'root',
-          'data-type': toast.type,
-          'data-id': toast.id,
+          'data-type': toastSig.map((t) => t.type),
+          'data-id': id,
           'data-state': toastSig.map((t) => t.status),
-          onPointerEnter: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
-          onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
-          onFocus: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
-          onBlur: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
-          ...presenceEndProps(send, { type: 'animationEnd', id: toast.id }),
+          onPointerEnter: tagSend(send, ['pause'], () => send({ type: 'pause', id })),
+          onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume', id })),
+          onFocus: tagSend(send, ['pause'], () => send({ type: 'pause', id })),
+          onBlur: tagSend(send, ['resume'], () => send({ type: 'resume', id })),
+          ...presenceEndProps(send, { type: 'animationEnd', id }),
         },
         title: {
-          id: `${toast.id}:title`,
+          id: `${id}:title`,
           'data-scope': 'toast',
           'data-part': 'title',
         },
         description: {
-          id: `${toast.id}:description`,
+          id: `${id}:description`,
           'data-scope': 'toast',
           'data-part': 'description',
         },
@@ -395,7 +423,7 @@ export function connect(
           'aria-label': closeLabel,
           'data-scope': 'toast',
           'data-part': 'close-trigger',
-          onClick: tagSend(send, ['dismiss'], () => send({ type: 'dismiss', id: toast.id })),
+          onClick: tagSend(send, ['dismiss'], () => send({ type: 'dismiss', id })),
         },
       }
     },

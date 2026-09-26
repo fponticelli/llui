@@ -4490,7 +4490,7 @@
       "title": "Sonner / Toast",
       "description": "Skin for @llui/components/toast, with one shared live region.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["floating-motion", "utils"],
+      "registryDependencies": ["floating-motion", "icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/sonner.ts",

@@ -68,6 +68,17 @@ export const GripVerticalIcon = icon('lucide:grip-vertical')
 /** The spinner arc. Pair with `animate-spin`. */
 export const LoaderIcon = icon('lucide:loader-circle')
 
+// Toast (Sonner) per-type glyphs — a NON-COLOR cue for each of the six
+// `ToastType` values (info/success/warning/error/loading/custom), so the type
+// is legible in forced-colors mode and to anyone who can't rely on hue alone.
+// `sonner.ts` shows exactly one per toast, gated on the machine's own
+// (reactive) `data-type`, never on which icon the caller happened to pass.
+export const InfoIcon = icon('lucide:info')
+export const CircleCheckIcon = icon('lucide:circle-check')
+export const TriangleAlertIcon = icon('lucide:triangle-alert')
+export const CircleAlertIcon = icon('lucide:circle-alert')
+export const SparklesIcon = icon('lucide:sparkles')
+
 // Nav glyphs. Not baked into any shadcn component — these exist because the
 // Sidebar's icon rail is only legible with them: collapsed to `--sidebar-width-icon`
 // a text-only menu button shows a truncated label, which is what upstream's

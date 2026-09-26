@@ -131,7 +131,45 @@ describe('registry demo menus/overlays contracts', () => {
     expect(region.getAttribute('aria-label')).not.toBe('')
     const roots = [...region.querySelectorAll<HTMLElement>('[data-part="root"]')]
     expect(roots.map((root) => root.dataset['type'])).toEqual(types)
-    expect(new Set(roots.map((root) => root.className)).size).toBe(types.length)
+    // The six ToastType values are now STATE-DRIVEN off one shared `data-type`
+    // recipe (`data-[type=…]:` Tailwind selectors), not a resolved `variant`
+    // class per instance (#265 findings 8 & 12) — every root legitimately
+    // carries the SAME className, and the type-carrying signal moved to the
+    // `data-type` attribute above. What must still be per-type distinct is the
+    // shared recipe's own forced-colors non-color cue (width + border-style +,
+    // for `error` alone, a text-decoration) — assert that on the recipe text
+    // itself, keyed per type, so two types silently sharing every one of those
+    // fields (a "per-type mutation") still fails the build. `loading` is
+    // exempt from the light/dark COLOR check (it distinguishes itself with
+    // `cursor-progress` + muted text, not a tinted border) but not from the
+    // forced-colors non-color cue below.
+    const classNames = new Set(roots.map((root) => root.className))
+    expect(classNames.size).toBe(1)
+    const sharedClassName = [...classNames][0]!
+    const colorTypes = types.filter((type) => type !== 'loading')
+    const borderColorTokens = colorTypes.map((type) => {
+      const match = sharedClassName.match(
+        new RegExp(`(?<!forced-colors:)data-\\[type=${type}\\]:border-([a-z0-9./-]+)`),
+      )
+      return match?.[1]
+    })
+    expect(borderColorTokens.every((token) => token !== undefined)).toBe(true)
+    expect(new Set(borderColorTokens).size).toBe(colorTypes.length)
+
+    const forcedCuePairs = types.map((type) => {
+      const width = sharedClassName.match(
+        new RegExp(`forced-colors:data-\\[type=${type}\\]:border-s-(\\d+)`),
+      )?.[1]
+      const style = sharedClassName.match(
+        new RegExp(`forced-colors:data-\\[type=${type}\\]:border-(solid|dashed|dotted|double)`),
+      )?.[1]
+      const decoration = sharedClassName.includes(`forced-colors:data-[type=${type}]:underline`)
+        ? 'underline'
+        : ''
+      return `${width}/${style}/${decoration}`
+    })
+    expect(forcedCuePairs.every((pair) => !pair.includes('undefined'))).toBe(true)
+    expect(new Set(forcedCuePairs).size).toBe(types.length)
     for (const root of roots) {
       const assertive = root.dataset['type'] === 'error'
       expect(root.getAttribute('role')).toBe(assertive ? 'alert' : 'status')

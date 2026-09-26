@@ -303,8 +303,23 @@ describe('canonical menus/overlays registry presentation in Chromium', () => {
   }
 
   const idleFixtureMotion = async (page: Page): Promise<void> => {
+    // `finish()` jumps a FINITE animation straight to its end state so a
+    // contrast/geometry read isn't caught mid-transition. It throws
+    // `InvalidStateError` on an animation with an INFINITE target effect end
+    // (`iterations: Infinity` or `duration: Infinity`) — the Web Animations
+    // API spec says "finished" isn't a state such an animation can reach.
+    // The Toast loading icon's `animate-spin` (#265 finding #12's non-color
+    // cue) is exactly that: a genuinely infinite spinner, not a bug. Its
+    // rotation doesn't affect any color/geometry this suite reads, so
+    // `pause()` (freeze it at whatever frame it's on) is the correct
+    // idle-ing for it, while every FINITE animation still gets `finish()`.
     await page.evaluate(() => {
-      for (const animation of document.getAnimations()) animation.finish()
+      for (const animation of document.getAnimations()) {
+        const timing = animation.effect?.getComputedTiming()
+        const infinite = timing?.duration === Infinity || timing?.iterations === Infinity
+        if (infinite) animation.pause()
+        else animation.finish()
+      }
     })
   }
 
@@ -1141,8 +1156,8 @@ describe('canonical menus/overlays registry presentation in Chromium', () => {
                   'baseline-toast-error--error',
                 ],
                 modals: [
-                  ['baseline-dialog-positioner', 'baseline-dialog'],
-                  ['baseline-drawer-positioner', 'baseline-drawer'],
+                  ['baseline-dialog-backdrop', 'baseline-dialog'],
+                  ['baseline-drawer-backdrop', 'baseline-drawer'],
                 ],
               }
         return {
