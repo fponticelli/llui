@@ -274,7 +274,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `item`
+**Parts:** `root`, `exitCompletion`, `item`
 
 **Utilities:** `focusTarget()`
 
@@ -462,9 +462,9 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Connect options:** `ChartConnectOptions`
 
-**Parts:** `root`, `svg`, `title`, `desc`, `table`, `tooltip`, `layer`, `grid`, `axisLabel`, `dotProps`, `legendItem`, `markProps`, `marks`, `vertices`, `gridLines`, `categoryTicks`, `tooltipRows`, `activeLabel`, `rows`, `series`
+**Parts:** `root`, `svg`, `title`, `desc`, `table`, `tooltip`, `layer`, `grid`, `axisLabel`, `dotProps`, `legendItem`, `legendSwatch`, `markProps`, `marks`, `vertices`, `gridLines`, `categoryTicks`, `tooltipRows`, `activeLabel`, `rows`, `series`
 
-**Utilities:** `geometry()`
+**Utilities:** `geometry()`, `chartForcedColorPatterns()`
 
 ---
 
@@ -525,7 +525,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `trigger`, `content`
+**Parts:** `root`, `trigger`, `content`, `exitCompletion`
 
 ---
 
@@ -3230,6 +3230,16 @@ function resetAnatomyIdCounter(): void
 
 Resolve the text direction for an element by walking up the DOM tree.
 Returns 'rtl' or 'ltr' (default).
+
+The walk crosses SHADOW boundaries: `Element.closest()` stops at the
+nearest shadow root and cannot see a `dir` set on an ancestor of the host,
+so an element inside a shadow tree whose host (or the host's own
+ancestors) declares `dir` would otherwise silently read as `ltr`. Continuing
+from `root.host` after `getRootNode()` returns a `ShadowRoot` walks out to
+the light-DOM ancestor and keeps going, arbitrarily many shadow levels
+deep. The final fallback reads `dir` off the element's OWN document
+(`ownerDocument`), never the global `document` — the global binding names a
+DIFFERENT document inside an iframe or any other multi-document context.
 
 ```typescript
 export declare function resolveDir(el: Element): TextDirection
@@ -6248,12 +6258,16 @@ export interface AccordionItemParts {
     'data-state': Signal<'open' | 'closing' | 'closed'>
     'data-scope': 'accordion'
     'data-part': 'content'
+    'data-value': string
     hidden: Signal<boolean>
     'aria-hidden': Signal<'true' | undefined>
     inert: Signal<boolean>
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
+    onTransitionStart: (e: TransitionEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
+    onTransitionCancel: (e: TransitionEvent) => void
   }
   item: {
     'data-state': Signal<'open' | 'closed'>
@@ -6279,6 +6293,17 @@ export interface AccordionParts {
     'data-orientation': 'vertical'
   }
   item: (value: string) => AccordionItemParts
+  /**
+   * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
+   * host app, bypassing the trigger's click handler) once its content's own
+   * exit animation/transition ends — or immediately, if the skin runs no
+   * exit motion at all. MUST be placed in the rendered view (`#264` review
+   * item 1); a click-driven close is still safety-netted synchronously
+   * inside the trigger regardless of whether this is placed, but nothing
+   * else settles a programmatic close on a no-motion skin, which otherwise
+   * hangs `closing` + `inert` forever.
+   */
+  exitCompletion: Mountable
 }
 ```
 
@@ -7147,6 +7172,9 @@ export interface ChartParts {
     'data-coord': Signal<'cartesian' | 'polar'>
     'data-domain': Signal<'value' | 'share'>
     'data-active': Signal<'' | undefined>
+    /** Per-instance forced-colors fill custom properties — see `connect()`'s
+     * own doc for why these must be per-chart rather than a shared global. */
+    style: string
   }
   /**
    * The `<svg>`. `role="img"` with a name and description is what a screen
@@ -7213,6 +7241,16 @@ export interface ChartParts {
     'data-dimmed': Signal<'' | undefined>
     'aria-pressed': Signal<boolean>
     onClick: (e: MouseEvent) => void
+  }
+  /** The legend's colour chip. Spreadable onto its own element (a `<span>` in
+   * both skins) so a forced-colors rule can key off `data-series-cue` the
+   * SAME way a mark does — a legend swatch that only carries `--mark-color`
+   * paints identically for every series once forced colors flattens author
+   * colour, which is the accessibility gap #264 review item 7 names. */
+  legendSwatch: (key: string) => {
+    'data-scope': 'chart'
+    'data-part': 'legend-swatch'
+    'data-series-cue': Signal<ChartSeriesCue>
   }
   /** Attributes for one drawn mark. Spread onto a `<path>` and pass `d`. */
   markProps: (mark: ChartMark) => {
@@ -7519,7 +7557,21 @@ export interface CollapsibleParts {
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
+    onTransitionStart: (e: TransitionEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
+    onTransitionCancel: (e: TransitionEvent) => void
   }
+  /**
+   * Settles a PROGRAMMATIC `close`/`toggle`/`setOpen` (sent directly by the
+   * host app, bypassing the trigger's click handler) once the content's own
+   * exit animation/transition ends — or immediately, if the skin runs no
+   * exit motion at all. MUST be placed in the rendered view (`#264` review
+   * item 1); a click-driven close is still safety-netted synchronously
+   * inside the trigger regardless of whether this is placed, but nothing
+   * else settles a programmatic close on a no-motion skin, which otherwise
+   * hangs `closing` + `inert` forever.
+   */
+  exitCompletion: Mountable
 }
 ```
 
@@ -13421,9 +13473,11 @@ export interface TableCellParts {
   tabindex: Signal<number>
   'data-scope': 'table'
   'data-part': 'cell'
-  /** 0-based row index — addresses the cell for roving DOM focus. */
-  'data-row-index': number
-  /** 0-based column index — addresses the cell for roving DOM focus. */
+  /** 0-based row index — addresses the cell for roving DOM focus. Reactive
+   * for the same reason `TableRowParts`'s `aria-rowindex` is. */
+  'data-row-index': Signal<number>
+  /** 0-based column index — addresses the cell for roving DOM focus. Columns
+   * do not reorder, so this stays a plain number. */
   'data-col-index': number
   'data-focused': Signal<'' | undefined>
   onFocus: (e: FocusEvent) => void
@@ -13540,8 +13594,19 @@ export interface TableParts {
     'data-density': TableDensity | undefined
   }
   columnHeader: (columnId: string) => TableColumnHeaderParts
-  row: (id: string, index: number) => TableRowParts
-  cell: (rowIndex: number, colIndex: number) => TableCellParts
+  /**
+   * `index` accepts a plain `number` OR a `Signal<number>` (the row handle
+   * `each`/`virtualEach` passes its render callback) — a keyed row is REUSED
+   * (moved, not rebuilt) on reorder, so a plain number captured at build time
+   * would freeze `aria-rowindex` and the row's own `toggleRow`/`selectRange`
+   * dispatch at the row's ORIGINAL position forever. Pass the row's reactive
+   * index handle whenever rows can reorder (sorting, filtering); a plain
+   * number is still accepted for a table that never reorders.
+   */
+  row: (id: string, index: Reactive<number>) => TableRowParts
+  /** `rowIndex` has the same `Reactive<number>` contract as {@link row}'s
+   * `index` — the column index does not reorder and stays a plain `number`. */
+  cell: (rowIndex: Reactive<number>, colIndex: number) => TableCellParts
   /**
    * The select-all checkbox, for the `columnheader` of `columnId`.
    *
@@ -13560,7 +13625,8 @@ export interface TableParts {
    * roving stop, and its header will not send `toggleAll` either.
    */
   selectAllCheckbox: (columnId: string) => TableCheckboxParts
-  rowCheckbox: (id: string, index: number) => TableCheckboxParts
+  /** Same `Reactive<number>` contract as {@link row}'s `index`. */
+  rowCheckbox: (id: string, index: Reactive<number>) => TableCheckboxParts
 }
 ```
 
@@ -13570,7 +13636,11 @@ export interface TableParts {
 export interface TableRowParts {
   role: 'row'
   'aria-selected': Signal<boolean | undefined>
-  'aria-rowindex': number
+  /** Reactive: a row's DISPLAY position can change after sort/reorder without
+   * this row being rebuilt (`each` reuses rows by key), so the index this
+   * addresses must follow the row's live position rather than freeze at
+   * whatever it was when the row was first built. */
+  'aria-rowindex': Signal<number>
   'data-scope': 'table'
   'data-part': 'row'
   'data-row': string
@@ -16501,6 +16571,16 @@ function resetAnatomyIdCounter(): void
 Resolve the text direction for an element by walking up the DOM tree.
 Returns 'rtl' or 'ltr' (default).
 
+The walk crosses SHADOW boundaries: `Element.closest()` stops at the
+nearest shadow root and cannot see a `dir` set on an ancestor of the host,
+so an element inside a shadow tree whose host (or the host's own
+ancestors) declares `dir` would otherwise silently read as `ltr`. Continuing
+from `root.host` after `getRootNode()` returns a `ShadowRoot` walks out to
+the light-DOM ancestor and keeps going, arbitrarily many shadow levels
+deep. The final fallback reads `dir` off the element's OWN document
+(`ownerDocument`), never the global `document` — the global binding names a
+DIFFERENT document inside an iframe or any other multi-document context.
+
 ```typescript
 export declare function resolveDir(el: Element): TextDirection
 ```
@@ -18687,6 +18767,9 @@ function directionSyncMount(rootId: string, sync: (dir: 'ltr' | 'rtl') => void):
 ##### `eventDirection()` from `@llui/components/utils/direction`
 
 Resolve direction at event time so same-tick ancestor changes are correct.
+Routes through `@llui/interactions`' `resolveDir` — the package's documented
+single source of truth for DOM-derived direction — rather than a second,
+independently-maintained ancestor walk.
 
 ```typescript
 function eventDirection(state: DirectionState, origin: Element | null): 'ltr' | 'rtl'
@@ -18724,6 +18807,16 @@ function initDirection(dir: 'ltr' | 'rtl' | undefined): DirectionState
 
 Resolve the text direction for an element by walking up the DOM tree.
 Returns 'rtl' or 'ltr' (default).
+
+The walk crosses SHADOW boundaries: `Element.closest()` stops at the
+nearest shadow root and cannot see a `dir` set on an ancestor of the host,
+so an element inside a shadow tree whose host (or the host's own
+ancestors) declares `dir` would otherwise silently read as `ltr`. Continuing
+from `root.host` after `getRootNode()` returns a `ShadowRoot` walks out to
+the light-DOM ancestor and keeps going, arbitrarily many shadow levels
+deep. The final fallback reads `dir` off the element's OWN document
+(`ownerDocument`), never the global `document` — the global binding names a
+DIFFERENT document inside an iframe or any other multi-document context.
 
 ```typescript
 export declare function resolveDir(el: Element): TextDirection
@@ -20189,6 +20282,16 @@ function resetAnatomyIdCounter(): void
 
 Resolve the text direction for an element by walking up the DOM tree.
 Returns 'rtl' or 'ltr' (default).
+
+The walk crosses SHADOW boundaries: `Element.closest()` stops at the
+nearest shadow root and cannot see a `dir` set on an ancestor of the host,
+so an element inside a shadow tree whose host (or the host's own
+ancestors) declares `dir` would otherwise silently read as `ltr`. Continuing
+from `root.host` after `getRootNode()` returns a `ShadowRoot` walks out to
+the light-DOM ancestor and keeps going, arbitrarily many shadow levels
+deep. The final fallback reads `dir` off the element's OWN document
+(`ownerDocument`), never the global `document` — the global binding names a
+DIFFERENT document inside an iframe or any other multi-document context.
 
 ```typescript
 export declare function resolveDir(el: Element): TextDirection
@@ -24087,12 +24190,16 @@ export interface AccordionItemParts {
     'data-state': Signal<'open' | 'closing' | 'closed'>
     'data-scope': 'accordion'
     'data-part': 'content'
+    'data-value': string
     hidden: Signal<boolean>
     'aria-hidden': Signal<'true' | undefined>
     inert: Signal<boolean>
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
+    onTransitionStart: (e: TransitionEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
+    onTransitionCancel: (e: TransitionEvent) => void
   }
   item: {
     'data-state': Signal<'open' | 'closed'>
@@ -24118,6 +24225,17 @@ export interface AccordionParts {
     'data-orientation': 'vertical'
   }
   item: (value: string) => AccordionItemParts
+  /**
+   * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
+   * host app, bypassing the trigger's click handler) once its content's own
+   * exit animation/transition ends — or immediately, if the skin runs no
+   * exit motion at all. MUST be placed in the rendered view (`#264` review
+   * item 1); a click-driven close is still safety-netted synchronously
+   * inside the trigger regardless of whether this is placed, but nothing
+   * else settles a programmatic close on a no-motion skin, which otherwise
+   * hangs `closing` + `inert` forever.
+   */
+  exitCompletion: Mountable
 }
 ```
 
@@ -25933,7 +26051,21 @@ export interface CollapsibleParts {
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
+    onTransitionStart: (e: TransitionEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
+    onTransitionCancel: (e: TransitionEvent) => void
   }
+  /**
+   * Settles a PROGRAMMATIC `close`/`toggle`/`setOpen` (sent directly by the
+   * host app, bypassing the trigger's click handler) once the content's own
+   * exit animation/transition ends — or immediately, if the skin runs no
+   * exit motion at all. MUST be placed in the rendered view (`#264` review
+   * item 1); a click-driven close is still safety-netted synchronously
+   * inside the trigger regardless of whether this is placed, but nothing
+   * else settles a programmatic close on a no-motion skin, which otherwise
+   * hangs `closing` + `inert` forever.
+   */
+  exitCompletion: Mountable
 }
 ```
 
@@ -37114,9 +37246,11 @@ export interface TableCellParts {
   tabindex: Signal<number>
   'data-scope': 'table'
   'data-part': 'cell'
-  /** 0-based row index — addresses the cell for roving DOM focus. */
-  'data-row-index': number
-  /** 0-based column index — addresses the cell for roving DOM focus. */
+  /** 0-based row index — addresses the cell for roving DOM focus. Reactive
+   * for the same reason `TableRowParts`'s `aria-rowindex` is. */
+  'data-row-index': Signal<number>
+  /** 0-based column index — addresses the cell for roving DOM focus. Columns
+   * do not reorder, so this stays a plain number. */
   'data-col-index': number
   'data-focused': Signal<'' | undefined>
   onFocus: (e: FocusEvent) => void
@@ -37223,8 +37357,19 @@ export interface TableParts {
     'data-density': TableDensity | undefined
   }
   columnHeader: (columnId: string) => TableColumnHeaderParts
-  row: (id: string, index: number) => TableRowParts
-  cell: (rowIndex: number, colIndex: number) => TableCellParts
+  /**
+   * `index` accepts a plain `number` OR a `Signal<number>` (the row handle
+   * `each`/`virtualEach` passes its render callback) — a keyed row is REUSED
+   * (moved, not rebuilt) on reorder, so a plain number captured at build time
+   * would freeze `aria-rowindex` and the row's own `toggleRow`/`selectRange`
+   * dispatch at the row's ORIGINAL position forever. Pass the row's reactive
+   * index handle whenever rows can reorder (sorting, filtering); a plain
+   * number is still accepted for a table that never reorders.
+   */
+  row: (id: string, index: Reactive<number>) => TableRowParts
+  /** `rowIndex` has the same `Reactive<number>` contract as {@link row}'s
+   * `index` — the column index does not reorder and stays a plain `number`. */
+  cell: (rowIndex: Reactive<number>, colIndex: number) => TableCellParts
   /**
    * The select-all checkbox, for the `columnheader` of `columnId`.
    *
@@ -37243,7 +37388,8 @@ export interface TableParts {
    * roving stop, and its header will not send `toggleAll` either.
    */
   selectAllCheckbox: (columnId: string) => TableCheckboxParts
-  rowCheckbox: (id: string, index: number) => TableCheckboxParts
+  /** Same `Reactive<number>` contract as {@link row}'s `index`. */
+  rowCheckbox: (id: string, index: Reactive<number>) => TableCheckboxParts
 }
 ```
 
@@ -37253,7 +37399,11 @@ export interface TableParts {
 export interface TableRowParts {
   role: 'row'
   'aria-selected': Signal<boolean | undefined>
-  'aria-rowindex': number
+  /** Reactive: a row's DISPLAY position can change after sort/reorder without
+   * this row being rebuilt (`each` reuses rows by key), so the index this
+   * addresses must follow the row's live position rather than freeze at
+   * whatever it was when the row was first built. */
+  'aria-rowindex': Signal<number>
   'data-scope': 'table'
   'data-part': 'row'
   'data-row': string
@@ -41690,6 +41840,36 @@ const RESERVED_HUE_ARCS: readonly ReservedHueArc[]
 
 #### Functions
 
+##### `chartForcedColorPatterns()` from `@llui/components/chart`
+
+Five SVG `<pattern>` fills, one per {@link ChartSeriesCue} name — the SAME
+cue vocabulary `data-series-cue` already carries on every mark. A skin's
+`forced-colors` rule reads `fill: var(--llui-chart-fill-dot)` (say), which
+`connect()` below sets to THIS chart's own `url('#<id>:pattern-dot')
+CanvasText`, so a bar/area mark gets a REAL redundant cue: `fill:
+CanvasText` alone makes every bar/area series under `forced-colors: active`
+paint identically, since forced colors flattens author colors uniformly
+(#264) — a dash pattern (already used for LINE marks) does nothing for a
+filled shape's fill.
+
+Pure, static, stateless markup — not part of `connect()`'s REACTIVE parts
+(it never varies with data or state), but keyed by the SAME `id` `connect()`
+takes, and it MUST be. A fixed, globally-shared id (`id="llui-chart-pattern-
+dot"` on every chart instance) resolves a `url(#...)` reference to
+WHICHEVER same-named element the browser's id table happens to return —
+measured in real Chromium: when the first such element in the document sits
+inside a `display:none` ancestor (one hidden chart earlier on the page),
+every OTHER, visible chart's pattern-filled marks paint nothing, because a
+referenced paint server inside a non-rendered subtree does not paint even
+for a consumer outside it (#264 review item 3). Per-instance ids close the
+whole bug class rather than depending on document order: each chart only
+ever references its OWN copy. Place it once as the first child of
+`parts.svg` in either skin, passing the SAME `id` given to `connect()`.
+
+```typescript
+function chartForcedColorPatterns(id: string): Mountable
+```
+
 ##### `connect()` from `@llui/components/chart`
 
 ```typescript
@@ -41788,7 +41968,14 @@ export type ChartMsg =
 ##### `ChartSeriesCue` from `@llui/components/chart`
 
 ```typescript
-export type ChartSeriesCue = 'solid' | 'short-dash' | 'dot' | 'long-dash' | 'dash-dot'
+export type ChartSeriesCue =
+  | 'solid'
+  | 'short-dash'
+  | 'dot'
+  | 'long-dash'
+  | 'dash-dot'
+  | 'grid'
+  | 'cross-hatch'
 ```
 
 ##### `MarkType` from `@llui/components/chart`
@@ -41931,6 +42118,9 @@ export interface ChartParts {
     'data-coord': Signal<'cartesian' | 'polar'>
     'data-domain': Signal<'value' | 'share'>
     'data-active': Signal<'' | undefined>
+    /** Per-instance forced-colors fill custom properties — see `connect()`'s
+     * own doc for why these must be per-chart rather than a shared global. */
+    style: string
   }
   /**
    * The `<svg>`. `role="img"` with a name and description is what a screen
@@ -41997,6 +42187,16 @@ export interface ChartParts {
     'data-dimmed': Signal<'' | undefined>
     'aria-pressed': Signal<boolean>
     onClick: (e: MouseEvent) => void
+  }
+  /** The legend's colour chip. Spreadable onto its own element (a `<span>` in
+   * both skins) so a forced-colors rule can key off `data-series-cue` the
+   * SAME way a mark does — a legend swatch that only carries `--mark-color`
+   * paints identically for every series once forced colors flattens author
+   * colour, which is the accessibility gap #264 review item 7 names. */
+  legendSwatch: (key: string) => {
+    'data-scope': 'chart'
+    'data-part': 'legend-swatch'
+    'data-series-cue': Signal<ChartSeriesCue>
   }
   /** Attributes for one drawn mark. Spread onto a `<path>` and pass `d`. */
   markProps: (mark: ChartMark) => {
