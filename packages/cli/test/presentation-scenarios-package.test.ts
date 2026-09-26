@@ -333,9 +333,13 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
         type ResolvedPresentationScenarioSelection,
       } from '@llui/cli/presentation-scenarios'
 
-      const definitions = {} as unknown as PresentationScenarioDefinitions
-      const catalog = {} as unknown as CompiledPresentationScenarioFamily
-      const resolved = {} as unknown as ResolvedPresentationScenarioSelection
+      // This file is TYPE-CHECKED only (see \`ts.createProgram\` below), never executed — a
+      // \`declare const\` fixture value says that plainly, rather than reaching for a double cast
+      // to manufacture a runtime value this file never runs (#270 "avoid \`as unknown as\`",
+      // round four).
+      declare const definitions: PresentationScenarioDefinitions
+      declare const catalog: CompiledPresentationScenarioFamily
+      declare const resolved: ResolvedPresentationScenarioSelection
       void [
         DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
         PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS,

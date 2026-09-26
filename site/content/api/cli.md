@@ -480,8 +480,6 @@ export interface StylelessPresentationCoverage {
 
 ### `StylingSupport`
 
-Browser-pure structural types for ProductContract and presentation tooling.
-
 ```typescript
 export interface StylingSupport {
   baseline: boolean
@@ -1070,9 +1068,13 @@ sizing-basis constants above this export). `stringLength` and `arrayLength` boun
 value at a time and are unaffected by family size. `depth` bounds payload nesting depth to keep
 the decoder's explicit stack bounded. `products`, `casesPerProduct`, and `identifierLength`
 bound the SEPARATE structural scaffolding dimensions — how many scenarios/cases a family may
-declare, and how long a `scenarioId`/`productId`/`defaultCaseId`/`family` identifier may be —
-entirely independent of the payload budgets, which is what makes a compiled catalog's
-scaffolding (absent from raw definitions) cost nothing against them.
+declare, and how long a `scenarioId`/`productId`/`family` identifier may be — entirely
+independent of the payload budgets, which is what makes a compiled catalog's scaffolding
+(absent from raw definitions) cost nothing against them. (`defaultCaseId` is NOT one of these:
+its string VALUE is shared, verbatim, between a raw definition and its compiled scenario, so it
+is metered payload content like any other case content, bounded by `stringLength`/
+`familyStringUnits` above — only the WRAPPER holding it is scaffolding. #270 finding 4, round
+four: this doc previously listed it alongside the scaffolding identifiers by mistake.)
 
 ```typescript
 const PRESENTATION_SCENARIO_COMPLEXITY_LIMITS

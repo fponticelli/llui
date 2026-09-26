@@ -1,5 +1,20 @@
 /** Browser-pure structural types for ProductContract and presentation tooling. */
 
+/**
+ * Hard cap on a `ProductEntry`'s `name` (which becomes a compiled catalog's `productId`) or its
+ * `scenarioId` — the SAME limit `presentation-scenarios.ts`'s `BoundaryDecoder.identifier()`
+ * enforces on a serialized catalog's `productId`/`scenarioId` fields, shared from here (a pure,
+ * dependency-free module both `product-contract.ts` and `presentation-scenarios.ts` already
+ * import from) so the two can never drift apart on what "too long" means. Without this, a
+ * contract entry could carry a `name`/`scenarioId` that compiles cleanly — `compiledCatalog`
+ * copies these fields into the catalog it builds without decoding them, since a `ProductContract`
+ * is caller-trusted, already-validated data, not an untyped boundary — and then FAILS to
+ * re-decode the very catalog `compileScenarioFamily` just produced, the moment it is serialized
+ * (JSON round trip / `structuredClone`) and handed back through `decodeScenarioSelection` (#270
+ * finding 1, round four).
+ */
+export const MAX_PRODUCT_IDENTIFIER_LENGTH = 256
+
 export interface StylingSupport {
   baseline: boolean
   registryTailwind: boolean
