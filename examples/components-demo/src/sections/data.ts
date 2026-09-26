@@ -1,6 +1,7 @@
 import {
   div,
   button,
+  nav,
   span,
   h3,
   img,
@@ -775,6 +776,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   return [
     ta.directionSync,
     pg.directionSync,
+    dt.pagination.directionSync,
     cr.directionSync,
     // Placed so the sortable pointer-wiring onMount registers (discarded
     // onMount() is inert).
@@ -1006,7 +1008,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ]),
         div({ ...dt.emptyState, class: 'mt-2 text-sm text-muted-foreground' }, [text('No rows.')]),
         div({ ...dt.errorState, class: 'mt-2 text-sm text-red-600' }, [text('Failed to load.')]),
-        div({ class: 'mt-3 flex items-center gap-2' }, [
+        // The public `pagination.root` part — a real navigation landmark
+        // (`role="navigation"`/`aria-label`) — rather than a bare `div`, so
+        // this pagination is announced and addressable the same way the
+        // standalone Pagination demo's is (#264).
+        nav({ ...dt.pagination.root, class: 'mt-3 flex items-center gap-2' }, [
           button(
             {
               ...dt.pagination.prevTrigger,

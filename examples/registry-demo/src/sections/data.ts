@@ -407,8 +407,29 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
             PaginationItem([
               PaginationPrevious({ ...dataTable.pagination.prevTrigger }, [text('Prev')]),
             ]),
-            PaginationItem([PaginationLink({ ...dataTable.pagination.item(1) }, [text('1')])]),
-            PaginationItem([PaginationLink({ ...dataTable.pagination.item(2) }, [text('2')])]),
+            // The visible window is computed by the machine's own
+            // `pageItems`, never a hardcoded `item(1)`/`item(2)` — a fixed
+            // pair happened to match this fixture's current 2-page total,
+            // but silently stopped tracking the real total the moment a
+            // status toggle changed row count (#264).
+            each(state.at('dataTable.pagination').map(paginationC.pageItems), {
+              key: (p: paginationC.PageItem) =>
+                p.type === 'page' ? `p${p.page}` : `e${p.position}`,
+              render: (p: Signal<paginationC.PageItem>) => {
+                const item = p.peek()
+                return [
+                  PaginationItem(
+                    item.type === 'page'
+                      ? [
+                          PaginationLink({ ...dataTable.pagination.item(item.page) }, [
+                            text(String(item.page)),
+                          ]),
+                        ]
+                      : [PaginationEllipsis([text('…')])],
+                  ),
+                ]
+              },
+            }),
             PaginationItem([
               PaginationNext({ ...dataTable.pagination.nextTrigger }, [text('Next')]),
             ]),
