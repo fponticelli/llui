@@ -786,8 +786,8 @@ Join family-owned semantic cases to ProductContract's canonical inventory. `defi
 be statically known here — there is no `unknown` fallthrough, so a `Definitions` literal that
 fails to satisfy `PresentationScenarioDefinitions` (an extra field on a case, an unknown
 `environmentAxes` value, a function in `input`, …) is a COMPILE error, not a value silently
-degraded to `CompiledPresentationScenarioFamily`'s erased, `string`-keyed shape (#270 finding
-3). For a definitions value received from an untyped/serialized boundary, decode it with
+degraded to `CompiledPresentationScenarioFamily`'s erased, `string`-keyed shape. For a
+definitions value received from an untyped/serialized boundary, decode it with
 `decodeScenarioFamily` instead.
 
 ```typescript
@@ -833,7 +833,7 @@ function decodeScenarioSelection(
 Resolve one deterministic renderer input from a compiled family catalog. `catalog` must be
 statically known here — there is no `unknown` fallthrough, so a catalog or selection literal
 that fails to satisfy its typed shape is a COMPILE error rather than a value silently accepted
-and narrowed away to `string` (#270 finding 3). For a catalog or selection received from an
+and narrowed away to `string`. For a catalog or selection received from an
 untyped/serialized boundary, decode it with `decodeScenarioSelection` instead.
 
 ```typescript
@@ -1073,8 +1073,7 @@ independent of the payload budgets, which is what makes a compiled catalog's sca
 (absent from raw definitions) cost nothing against them. (`defaultCaseId` is NOT one of these:
 its string VALUE is shared, verbatim, between a raw definition and its compiled scenario, so it
 is metered payload content like any other case content, bounded by `stringLength`/
-`familyStringUnits` above — only the WRAPPER holding it is scaffolding. #270 finding 4, round
-four: this doc previously listed it alongside the scaffolding identifiers by mistake.)
+`familyStringUnits` above — only the WRAPPER holding it is scaffolding.)
 
 ```typescript
 const PRESENTATION_SCENARIO_COMPLEXITY_LIMITS

@@ -235,7 +235,7 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
   it('emits runtime imports only to product-contract-types.js, itself import-free, and type-checks the full source graph without DOM libraries', () => {
     // presentation-scenarios.ts is allowed exactly ONE runtime import, to the pure structural
     // types module — and that module must in turn have ZERO runtime imports of its own, so the
-    // whole graph stays transitively free of Node/DOM/zod/LLui runtime code (#270 finding 6).
+    // whole graph stays transitively free of Node/DOM/zod/LLui runtime code.
     const source = readFileSync(SOURCE_PATH, 'utf8')
     expect(runtimeModuleSpecifiers(source)).toEqual(['./product-contract-types.js'])
     const contractTypesSource = readFileSync(CONTRACT_TYPES_SOURCE_PATH, 'utf8')
@@ -335,8 +335,7 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
 
       // This file is TYPE-CHECKED only (see \`ts.createProgram\` below), never executed — a
       // \`declare const\` fixture value says that plainly, rather than reaching for a double cast
-      // to manufacture a runtime value this file never runs (#270 "avoid \`as unknown as\`",
-      // round four).
+      // to manufacture a runtime value this file never runs.
       declare const definitions: PresentationScenarioDefinitions
       declare const catalog: CompiledPresentationScenarioFamily
       declare const resolved: ResolvedPresentationScenarioSelection
@@ -402,7 +401,7 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
     })
   })
 
-  it('documents the exact PRESENTATION_SCENARIO_COMPLEXITY_LIMITS values in README.md (#270 finding 5)', () => {
+  it('documents the exact PRESENTATION_SCENARIO_COMPLEXITY_LIMITS values in README.md', () => {
     // A bare `readme.includes(formatted)` ties a NUMBER to the README but not to which constant it
     // is supposed to describe — it would pass just as happily if two numbers were swapped between
     // dimensions, or if an unrelated number elsewhere happened to coincide. Each phrase below names

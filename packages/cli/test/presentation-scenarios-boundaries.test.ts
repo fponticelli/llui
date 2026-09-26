@@ -522,7 +522,7 @@ describe('presentation scenario boundary decoding', () => {
     })
   })
 
-  it('rejects an excess case field at runtime even when the caller widened its static type to hide it (#270 finding 4, round two)', () => {
+  it('rejects an excess case field at runtime even when the caller widened its static type to hide it', () => {
     // Two of the compile-time exactness check's known, documented gaps (see
     // test/presentation-scenarios-types.ts): widening a value to PresentationScenarioCase, or
     // smuggling it through a union-typed cases array, both make an excess field statically
@@ -700,7 +700,7 @@ describe('presentation scenario boundary decoding', () => {
 
   it('bounds catalog-integrity diagnostics independently of decoding', () => {
     // Capped at `PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.products` (a STRUCTURAL cap on scenario
-    // COUNT, #270 finding 1 round three) rather than an arbitrarily large count: every repeat past
+    // COUNT) rather than an arbitrarily large count: every repeat past
     // the first reports BOTH a duplicate-product and a duplicate-scenario issue (see the loop
     // above), so this still comfortably exceeds the 100-issue diagnostic cap while staying inside
     // the decode-time array-length limit.
@@ -747,7 +747,7 @@ describe('presentation scenario boundary decoding', () => {
     expectBoundedDiagnostics(error, 'invalid-environment')
   })
 
-  it('clips one oversized diagnostic path instead of collapsing the whole report to the truncation marker (#270)', () => {
+  it('clips one oversized diagnostic path instead of collapsing the whole report to the truncation marker', () => {
     // Protocol IDENTIFIERS (a `scenarioId` key, a `productId`) are now bounded to
     // `MAX_IDENTIFIER_LENGTH` (256) — see the "one cost model" describe block below — so an
     // oversized PATH segment can no longer come from scaffolding at all; it can only come from
@@ -766,14 +766,13 @@ describe('presentation scenario boundary decoding', () => {
     // The first (and only) issue survives with its clipped, marked path — it does NOT collapse
     // to the pathless truncation marker, which is the bad behaviour this replaces. The PROTOCOL
     // PREFIX (`$["component:dialog"].cases[0]`, the case root `protectedPath()` marks) survives in
-    // full and unclipped; only the oversized payload key (the leaf) is internally clipped (#270
-    // finding 3, round three).
+    // full and unclipped; only the oversized payload key (the leaf) is internally clipped.
     expect(first.code).toBe('invalid-definitions')
     expect(first.issues).toHaveLength(1)
     expect(first.issues[0]).not.toContain('diagnostics truncated')
     // `clipRenderedText` clips the LEAF segment's own rendered text (including its closing
     // bracket/quote) from the tail, keeping only its own pre-clip length in the marker — so the
-    // closing `"]` never survives clipping, same as the leaf-clip shape round two's test used.
+    // closing `"]` never survives clipping, same as the leaf-clip shape the test above uses.
     expect(first.issues[0]).toMatch(
       /^\$\["component:dialog"\]\.cases\[0\]\.input\["bad-x*…\(\d+\): /,
     )
@@ -824,7 +823,7 @@ describe('presentation scenario boundary decoding', () => {
     }
   })
 
-  it('elides MIDDLE path segments, never the leaf, so issues that differ only in their leaf stay distinguishable (#270 finding 3, round two)', () => {
+  it('elides MIDDLE path segments, never the leaf, so issues that differ only in their leaf stay distinguishable', () => {
     // 8 levels of long-but-not-individually-oversized keys, ending in three distinct bad leaves.
     // A plain head-keep/tail-cut clip would show the same long shared prefix for every issue and
     // cut off before ever reaching the part that differs (which leaf is bad) — collapsing badA
@@ -868,9 +867,10 @@ describe('presentation scenario boundary decoding', () => {
     expect(replay.issues).toEqual(error.issues)
   })
 
-  it('two issues differing only NEAR THE ROOT (which case, not which leaf) stay distinguishable after clipping (#270 finding 3, round three)', () => {
-    // Same defect class as the test above, one level OUTWARD: round two's fix keeps the LEAF
-    // distinguishable when siblings inside the SAME case differ only in their final segment; it
+  it('two issues differing only NEAR THE ROOT (which case, not which leaf) stay distinguishable after clipping', () => {
+    // Same defect class as the test above, one level OUTWARD: the leaf-clipping fix above keeps
+    // the LEAF distinguishable when siblings inside the SAME case differ only in their final
+    // segment; it
     // says nothing about two issues from DIFFERENT cases whose payload SHAPE is identical and
     // which therefore differ only near the scaffolding root (`cases[0]` vs `cases[1]`) — exactly
     // the segments a plain middle-elision has no reason to prefer keeping over the payload's own
@@ -916,7 +916,7 @@ describe('presentation scenario boundary decoding', () => {
     expect(replay.issues).toEqual(error.issues)
   })
 
-  it('two long PROTECTED prefixes differing only in their last character stay distinguishable (#270 finding 3, round four)', () => {
+  it('two long PROTECTED prefixes differing only in their last character stay distinguishable', () => {
     // The protected prefix is never ELIDED, but it was still being passed through
     // `clipRenderedText`'s per-segment head-keep/tail-cut window (~50 units at the default
     // budget) — so two 101-char scenario ids sharing a 100-char prefix and differing only in
@@ -998,9 +998,9 @@ describe('presentation scenario boundary decoding', () => {
     })
 
     // The ROOT definitions object's own key COUNT is now a STRUCTURAL cap
-    // (`PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.products` — #270 finding 1, round three), checked
-    // from the cheap `Reflect.ownKeys`-only phase alone, so a huge proxy is rejected WITHOUT ever
-    // reading a single property descriptor (#270 finding 2, round three).
+    // (`PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.products`), checked from the cheap
+    // `Reflect.ownKeys`-only phase alone, so a huge proxy is rejected WITHOUT ever
+    // reading a single property descriptor.
     let descriptorReads = 0
     const hugeKeyCount = PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.products + 1
     const huge = new Proxy(
@@ -1032,7 +1032,7 @@ describe('presentation scenario boundary decoding', () => {
     const source = { nested: { labels: ['Ada', 'Grace'] } }
     // Built directly with `copiedArtifactNames` already present, rather than calling
     // `definitions()` (which does not set it) and then casting the result to a mutable shape to
-    // add it after the fact (#270 "avoid `as unknown as`", round four).
+    // add it after the fact.
     const sourceDefinitions: PresentationScenarioDefinitions = {
       'component:dialog': {
         defaultCaseId: 'open',
@@ -1180,8 +1180,8 @@ describe('presentation scenario boundary decoding', () => {
 /**
  * Binary-searches the largest `n` for which `build(n)` compiles successfully via
  * `decodeScenarioFamily`, on the assumption that `build` is MONOTONE (larger `n` never uses less
- * of the budget being probed) — mirrors the reviewer's own probe methodology (round three) rather
- * than hand-deriving a fixed per-shape overhead constant, which is exactly the class of arithmetic
+ * of the budget being probed) — measures the actual boundary empirically rather than
+ * hand-deriving a fixed per-shape overhead constant, which is exactly the class of arithmetic
  * mistake the earlier `reserveScaffolding` design made three times over. `hi` must already fail.
  */
 function maxFittingN(build: (n: number) => unknown, lo: number, hi: number): number {
@@ -1204,7 +1204,7 @@ function maxFittingN(build: (n: number) => unknown, lo: number, hi: number): num
   return low
 }
 
-describe('one cost model governs compileScenarioFamily and every catalog derived from it (#270, round three)', () => {
+describe('one cost model governs compileScenarioFamily and every catalog derived from it', () => {
   function flatNullInput(fieldCount: number): Record<string, null> {
     const input: Record<string, null> = {}
     for (let index = 0; index < fieldCount; index += 1) input[`field${index}`] = null
@@ -1452,7 +1452,7 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
     })
   })
 
-  describe('IDENTIFIER LENGTH (contract entries, not payload) (#270 finding 1, round four)', () => {
+  describe('IDENTIFIER LENGTH (contract entries, not payload)', () => {
     // `entry.name` (-> `productId`) and `entry.scenarioId` are ALREADY-TRUSTED `ProductContract`
     // data — `compiledCatalog` copies them into the catalog it builds WITHOUT decoding them, since
     // a contract is caller-validated, not an untyped boundary. They still become a compiled
@@ -1637,7 +1637,7 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
   })
 })
 
-describe('array decoding cost is bounded by real own-key count, never by a claimed length (#270 finding 2)', () => {
+describe('array decoding cost is bounded by real own-key count, never by a claimed length', () => {
   it('rejects a shared, fully sparse array in O(1) reflection calls per occurrence, not O(length)', () => {
     // A sparse array referenced from MANY places (a shared reference, not copies) used to cost
     // `length` reflection work at EVERY occurrence — a naive per-index scan from 0 to `length`
@@ -1671,8 +1671,8 @@ describe('array decoding cost is bounded by real own-key count, never by a claim
     expect(
       error.issues.some((issue) => issue.includes('sparse array entries are not supported')),
     ).toBe(true)
-    // These bounds must be TIGHT ENOUGH to fail on the pre-memoization code (#270 finding 2,
-    // round three): a bound merely proportional to `occurrences` (e.g. `occurrences * 6 = 300`)
+    // These bounds must be TIGHT ENOUGH to fail on the pre-memoization code: a bound merely
+    // proportional to `occurrences` (e.g. `occurrences * 6 = 300`)
     // is satisfied by 50 real `ownKeys` calls just as easily as by 1, so it cannot tell "O(1) per
     // occurrence" apart from "memoized once, total" — exactly the gap the reviewer measured
     // against this same test. `ownKeys` is called ONLY when the per-object key-list cache misses
@@ -1686,7 +1686,7 @@ describe('array decoding cost is bounded by real own-key count, never by a claim
     expect(descriptorCalls).toBeLessThanOrEqual(occurrences + 5)
   })
 
-  it('inspects a wide shared object referenced many times in O(1) reflection calls, not O(references) (#270 finding 2, round three)', () => {
+  it('inspects a wide shared object referenced many times in O(1) reflection calls, not O(references)', () => {
     // The reviewer's own reproduction: a shared object with K non-recursed-into (here: primitive)
     // own keys, referenced R times — not sparse, not over-length, just WIDE and SHARED. Every
     // occurrence used to re-run `Reflect.ownKeys` + `Object.getOwnPropertyDescriptor` for all K
@@ -1730,7 +1730,7 @@ describe('array decoding cost is bounded by real own-key count, never by a claim
     expect(elapsedMs).toBeLessThan(5_000)
   })
 
-  it('rejects a payload array with a small length but millions of named own keys before reading a single descriptor (#270 finding 2, round four)', () => {
+  it('rejects a payload array with a small length but millions of named own keys before reading a single descriptor', () => {
     // A dense length check alone is not enough: an array reporting `length: 1` can still carry a
     // million EXTRA named (non-index) own keys, which the old code would only discover — one
     // expensive `getOwnPropertyDescriptor` call at a time — while walking the hole-detection loop.
@@ -1758,7 +1758,7 @@ describe('array decoding cost is bounded by real own-key count, never by a claim
     expect(descriptorCalls).toBeLessThanOrEqual(2)
   })
 
-  it('rejects a structural (scaffolding) array — `cases` — with a small length but millions of named own keys, the same way (#270 finding 2, round four)', () => {
+  it('rejects a structural (scaffolding) array — `cases` — with a small length but millions of named own keys, the same way', () => {
     // Same defect, one level over: `structuralArray` (used for `cases`/`scenarios`) checked
     // LENGTH before the expensive phase but had no equivalent own-key-count check of its own, so
     // it reached `#inspectArrayContents`'s per-key descriptor phase regardless.
@@ -1877,7 +1877,7 @@ function manyCaseDefinitions(
   return entries
 }
 
-describe('complexity limits scale with realistic family inventory (#270)', () => {
+describe('complexity limits scale with realistic family inventory', () => {
   it('compiles a realistic 30-product x 5-case x 20-row family the old flat 5,000-node cap rejected', () => {
     const contract = manyProductsContract(30)
     const definitions = manyCaseDefinitions(30, 5, 20)
