@@ -1308,7 +1308,7 @@ export function connect(
       'data-unsupported': state.map((s) => (s.eyeDropperSupported ? undefined : '')),
       'data-scope': 'color-picker',
       'data-part': 'eyedropper-trigger',
-      onClick: tagSend(send, ['setColor'], () => {
+      onClick: tagSend(send, ['setColor', 'eyeDropperFailed'], () => {
         const current = state.peek()
         if (current.disabled || !current.eyeDropperSupported) return
         // Toggle-cancel: a second click while a pick is already open cancels
