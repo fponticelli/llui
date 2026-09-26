@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Gradient picker neighbour-crossing</title>
+    <style>
+      [data-scope='gradient-picker'][data-part='track'] {
+        position: relative;
+        width: 400px;
+        height: 24px;
+      }
+      [data-scope='gradient-picker'][data-part='stop'] {
+        position: absolute;
+        top: 50%;
+        width: 16px;
+        height: 16px;
+        transform: translate(-50%, -50%);
+        border-radius: 50%;
+        border: 2px solid #fff;
+        outline: 2px solid transparent;
+      }
+      [data-scope='gradient-picker'][data-part='stop']:focus {
+        outline-color: blue;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app"></main>
+    <script type="module" src="./gradient-picker.fixture.ts"></script>
+  </body>
+</html>

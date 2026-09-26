@@ -41,6 +41,17 @@ const children = {
   splitter,
 } as const
 
+/** The gradient's current angle in degrees, for DISPLAY only (the
+ * angle-slider composition, the numeric readout) — reading this never
+ * converts a `to <side>` linear direction; only gradient-picker's own
+ * `setAngle` message does that. Conic always stores a plain angle; radial
+ * has none (0 is an arbitrary but harmless default for that case). */
+function currentAngle(s: ReturnType<typeof gradientPicker.init>): number {
+  if (s.kind === 'conic') return s.conicAngle
+  if (s.kind === 'linear' && s.direction.type === 'angle') return s.direction.deg
+  return 0
+}
+
 export type State = ModulesState<typeof children>
 export type Msg =
   | ModulesMsg<typeof children>
@@ -144,12 +155,12 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   // part, but any OTHER angle-editing UI (a circular drag control, here)
   // works against the exact same field with zero glue beyond this translator.
   const angleSliderSend = (m: AngleSliderMsg): void => {
-    const derived = angleSlider.init({ value: state.peek().gradientPicker.angle })
+    const derived = angleSlider.init({ value: currentAngle(state.peek().gradientPicker) })
     const [next] = angleSlider.update(derived, m)
     send({ type: 'gradientPicker', msg: { type: 'setAngle', angle: next.value } })
   }
   const as = angleSlider.connect(
-    state.at('gradientPicker').map((s) => angleSlider.init({ value: s.angle })),
+    state.at('gradientPicker').map((s) => angleSlider.init({ value: currentAngle(s) })),
     angleSliderSend,
   )
   // Same pointer-drag glue `time-inputs.ts`'s own Angle Slider card uses:
@@ -554,7 +565,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                       ...as.thumb,
                       class: 'absolute h-2 w-2 rounded-full bg-primary',
                       style: state.at('gradientPicker').map((s) => {
-                        const { x, y } = angleSlider.pointFromAngle(s.angle)
+                        const { x, y } = angleSlider.pointFromAngle(currentAngle(s))
                         const r = 16
                         return (
                           `left:50%;top:50%;` +
@@ -567,7 +578,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 ],
               ),
               span({ class: 'font-mono' }, [
-                text(state.at('gradientPicker').map((s) => `${Math.round(s.angle)}°`)),
+                text(state.at('gradientPicker').map((s) => `${Math.round(currentAngle(s))}°`)),
               ]),
             ],
           ),

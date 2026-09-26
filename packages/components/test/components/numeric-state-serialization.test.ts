@@ -203,7 +203,7 @@ describe('non-bound numeric initialization uses documented defaults (#214)', () 
         alpha: 1,
       })
       expect(gradientPicker.init({ angle: bad, center: { x: bad, y: bad } })).toMatchObject({
-        angle: 90,
+        direction: { type: 'angle', deg: 90 },
         center: { x: 50, y: 50 },
       })
     })

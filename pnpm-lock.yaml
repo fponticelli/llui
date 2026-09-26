@@ -609,6 +609,9 @@ importers:
       '@llui/interactions':
         specifier: workspace:*
         version: link:../interactions
+      '@llui/test':
+        specifier: workspace:*
+        version: link:../test
       typescript:
         specifier: ^6.0.0
         version: 6.0.2

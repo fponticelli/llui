@@ -83,4 +83,13 @@ export const GradientPickerShapeOption = classPart(button, toggleButtonRecipe)
 export const GradientPickerSizeOption = classPart(button, toggleButtonRecipe)
 export const GradientPickerInterpolationSpaceSelect = classPart(select, selectRecipe)
 export const GradientPickerInterpolationHueSelect = classPart(select, selectRecipe)
-export const GradientPickerCssInput = classPart(input, `${inputRecipe} font-mono text-xs`)
+export const GradientPickerCssInput = classPart(
+  input,
+  `${inputRecipe} font-mono text-xs aria-invalid:border-destructive aria-invalid:ring-destructive/20`,
+)
+/** The describable error region `cssInput`'s `aria-describedby` points at.
+ * `visible`/`message` are plain (non-attribute) signals on the part bag —
+ * like `form-field`'s `errorText.message` — so the CONSUMER decides how to
+ * show/hide it (typically `show(parts.cssError.visible, () => …)`); this
+ * recipe only styles the mounted-and-visible case. */
+export const GradientPickerCssError = classPart(div, 'text-xs text-destructive')

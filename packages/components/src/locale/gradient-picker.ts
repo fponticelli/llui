@@ -23,6 +23,7 @@ export const enGradientPicker: Locale['gradientPicker'] = {
   reverse: 'Reverse stops',
   distribute: 'Distribute evenly',
   css: 'Gradient CSS',
+  cssError: (reason: string) => `Invalid gradient: ${reason}`,
 }
 
 export const gradientPickerLocale = (): Locale['gradientPicker'] =>

@@ -119,7 +119,7 @@ async-list, avatar, breadcrumbs, carousel, cascade-select, listbox, meter, pagin
 
 ### Pickers
 
-color-picker, date-input, date-picker, time-picker, angle-slider
+color-picker, gradient-picker, date-input, date-picker, time-picker, angle-slider
 
 ### Media / canvas
 

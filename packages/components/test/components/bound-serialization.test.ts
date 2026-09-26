@@ -299,7 +299,17 @@ describe('a dropped bound leaves the component still clamping (#177)', () => {
 
   it('gradient-picker falls back to DEFAULT_MAX_CHROMA and keeps clamping the embedded picker to it', () => {
     for (const bad of [...NON_FINITE, 0, -0.5]) {
-      const s = gradientPicker.init({ model: 'oklch', maxChroma: bad })
+      // The selected stop must already BE oklch-model — `pickerStateOf` no
+      // longer re-projects onto a shared "active model" (review finding #1),
+      // so an hsv-model stop's `setChroma` would round-trip back to hsv
+      // instead of staying oklch.
+      const s = gradientPicker.init({
+        maxChroma: bad,
+        stops: [
+          { position: 0, color: { model: 'oklch', l: 0.5, c: 0.1, h: 30 } },
+          { position: 100, color: 'blue' },
+        ],
+      })
       expect(s.maxChroma).toBe(colorPicker.DEFAULT_MAX_CHROMA)
       const [next] = gradientPicker.update(s, {
         type: 'picker',

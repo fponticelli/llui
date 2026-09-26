@@ -363,6 +363,7 @@
     "@llui/compiler": "workspace:*",
     "@llui/dom": "workspace:*",
     "@llui/interactions": "workspace:*",
+    "@llui/test": "workspace:*",
     "typescript": "^6.0.0",
     "vitest": "^4.1.2"
   },

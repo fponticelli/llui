@@ -1,11 +1,12 @@
 import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
-import { mapSend, tagSend } from '@llui/dom'
+import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { firstEnabled, rovingTabStop } from '../utils/list-navigation.js'
 import { deriveOnceN } from '../utils/derive.js'
+import { wrapChildSend } from '../utils/child-send.js'
 import {
   init as menuInit,
   update as menuUpdate,
@@ -267,9 +268,14 @@ export function connect(
   )
 
   // A per-menu Send that wraps each MenuMsg in a `menuMsg` envelope so the
-  // delegated menu.connect drives the embedded machine.
+  // delegated menu.connect drives the embedded machine. `wrapChildSend`
+  // (not plain `mapSend`) also tags the result `__lluiVariants: ['menuMsg']`,
+  // so a submenu's own internal `tagSend(send, ['highlightNext'], …)` calls
+  // report the truthful PARENT-visible type (`menuMsg`) instead of leaking
+  // `menu.ts`'s internal message vocabulary as if menubar's own `Msg` union
+  // had a `'highlightNext'` case (it doesn't — see `wrapChildSend`'s doc).
   const menuSend = (id: string): Send<MenuMsg> =>
-    mapSend<MenubarMsg, MenuMsg>(send, (msg) => ({ type: 'menuMsg', id, msg }))
+    wrapChildSend<MenubarMsg, MenuMsg>(send, (msg) => ({ type: 'menuMsg', id, msg }), ['menuMsg'])
 
   // A per-menu Signal narrowed to the embedded MenuState.
   const menuSignal = (id: string): Signal<MenuState> =>

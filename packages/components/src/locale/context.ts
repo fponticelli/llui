@@ -66,6 +66,7 @@ export interface Locale {
     reverse: string
     distribute: string
     css: string
+    cssError: (reason: string) => string
   }
   imageCropper: { reset: string }
   navigationMenu: { label: string }

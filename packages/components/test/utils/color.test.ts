@@ -1068,44 +1068,51 @@ describe("interpolateColor: missing alpha carries the OTHER endpoint's alpha (fi
   })
 })
 
-describe('interpolateColor: powerless vs EXPLICIT hue (finding C)', () => {
-  // Verified two independent ways against the same math CSS Color 4 governs:
-  // (1) colorjs.io 0.7.1 (the reference implementation, maintained by CSS WG
-  //     members): `new Color('oklch',[1,0,90]).mix(new Color('oklch',[.6,.2,200]), t, {space:'oklch',hue:'shorter'})`
-  //     gives hue 101 at t=0.1 and 145 at t=0.5 — the PLAIN shorter-path
-  //     midpoint of literal 90 and 200 ((90+200)/2=145), i.e. the explicit
-  //     hue 90 is used AS GIVEN, not replaced by 200.
-  // (2) Real Chromium (Playwright, headless), rendering
-  //     `background: linear-gradient(in oklch, oklch(1 0 90), oklch(.6 .2 200))`
-  //     onto a real element and reading back rendered pixels at several
-  //     x-positions, decoded sRGB -> OKLCH: the sampled hue trajectory
-  //     matches the same "explicit 90, not powerless" path, not the
-  //     powerless-substitution path (which would hold hue constant at 200
-  //     throughout). See the harness this test's numbers were derived from
-  //     for the exact repro HTML/CSS and pixel readings.
-  //
-  // This is why `toSpaceComponents` treats an achromatic SAME-SPACE color's
-  // hue as authoritative (never auto-nulled from chroma alone) and only
-  // produces a `null` hue when a CROSS-space conversion computes one for a
-  // color that had no hue at all before the conversion (e.g. projecting
-  // `white` into `hsl` for an `in hsl` mix).
-  it("an achromatic oklch color with an EXPLICIT hue interpolates using that hue, not the other endpoint's", () => {
-    const a: CssColor = { space: 'oklch', l: 1, c: 0, h: 90, alpha: 1 }
-    const b: CssColor = { space: 'oklch', l: 0.6, c: 0.2, h: 200, alpha: 1 }
-    const at01 = interpolateColor(a, b, 0.1, 'oklch', 'shorter')
-    const at05 = interpolateColor(a, b, 0.5, 'oklch', 'shorter')
-    if (at01.space === 'oklch') expect(at01.h).toBeCloseTo(101, 0)
-    if (at05.space === 'oklch') expect(at05.h).toBeCloseTo(145, 0)
+describe('interpolateColor: powerless hue is missing REGARDLESS of its explicit value (finding C, corrected)', () => {
+  // A previous version of this suite claimed an achromatic color's EXPLICIT
+  // hue survives interpolation (citing colorjs.io 0.7.1 and an unlogged
+  // "Chromium verification"). Direct measurement against REAL Chromium
+  // (Playwright, headless) — rendering `background: linear-gradient(90deg in
+  // oklch, oklch(0.5 0 90) 0%, oklch(0.5 0.2 200) 100%)` onto a real element
+  // via an SVG `<foreignObject>` rasterization and reading back pixels with
+  // `getImageData` — contradicts that claim: sampled at 10%/25%/50%, the
+  // rendered hue sits at ~200-206° throughout (the OTHER endpoint's hue),
+  // and is BYTE-IDENTICAL to the same gradient with `oklch(0.5 0 none)` in
+  // place of the explicit `90`. CSS Color 4 §12.2's actual rule is that a
+  // POWERLESS hue (chroma/saturation is 0) is missing for interpolation
+  // REGARDLESS of what it is explicitly written as — an explicit hue only
+  // survives on a color that is genuinely CHROMATIC. `toSpaceComponents` now
+  // nulls a same-space color's hue whenever its own chroma/saturation is 0,
+  // matching the browser exactly; see `gradient-picker.browser.test.ts`'s
+  // "finding #4" case for the full rasterization harness.
+  it("an achromatic oklch color's hue is powerless — interpolation uses the OTHER endpoint's hue, even with an explicit value stored", () => {
+    const a: CssColor = { space: 'oklch', l: 0.5, c: 0, h: 90, alpha: 1 }
+    const b: CssColor = { space: 'oklch', l: 0.5, c: 0.2, h: 200, alpha: 1 }
+    const at10 = interpolateColor(a, b, 0.1, 'oklch', 'shorter')
+    const at50 = interpolateColor(a, b, 0.5, 'oklch', 'shorter')
+    if (at10.space === 'oklch') expect(at10.h).toBeCloseTo(200, 0)
+    if (at50.space === 'oklch') expect(at50.h).toBeCloseTo(200, 0)
   })
 
-  it('the SAME colors with hue `none` instead of explicit 90 DOES substitute the other hue', () => {
-    const a: CssColor = { space: 'oklch', l: 1, c: 0, h: null, alpha: 1 }
-    const b: CssColor = { space: 'oklch', l: 0.6, c: 0.2, h: 200, alpha: 1 }
-    const at05 = interpolateColor(a, b, 0.5, 'oklch', 'shorter')
-    if (at05.space === 'oklch') expect(at05.h).toBeCloseTo(200, 0)
+  it('the SAME colors with hue `none` instead of explicit 90 interpolate IDENTICALLY — both are powerless', () => {
+    const explicit: CssColor = { space: 'oklch', l: 0.5, c: 0, h: 90, alpha: 1 }
+    const none: CssColor = { space: 'oklch', l: 0.5, c: 0, h: null, alpha: 1 }
+    const b: CssColor = { space: 'oklch', l: 0.5, c: 0.2, h: 200, alpha: 1 }
+    const withExplicit = interpolateColor(explicit, b, 0.3, 'oklch', 'shorter')
+    const withNone = interpolateColor(none, b, 0.3, 'oklch', 'shorter')
+    expect(withExplicit).toEqual(withNone)
   })
 
-  it('a CROSS-space achromatic conversion (white -> hsl) still substitutes — no explicit hue existed to keep', () => {
+  it('a genuinely CHROMATIC color keeps its own explicit hue — only an ACHROMATIC one is powerless', () => {
+    const a: CssColor = { space: 'oklch', l: 0.5, c: 0.1, h: 90, alpha: 1 }
+    const b: CssColor = { space: 'oklch', l: 0.5, c: 0.2, h: 200, alpha: 1 }
+    const mid = interpolateColor(a, b, 0.5, 'oklch', 'shorter')
+    // Plain shorter-path midpoint of 90 and 200 is 145 — neither endpoint's
+    // hue substituted, because chroma 0.1 is genuinely non-zero.
+    if (mid.space === 'oklch') expect(mid.h).toBeCloseTo(145, 0)
+  })
+
+  it('a CROSS-space achromatic conversion (white -> hsl) still substitutes — no hue existed to keep', () => {
     const white: CssColor = { space: 'srgb', r: 1, g: 1, b: 1, alpha: 1 }
     const blue: CssColor = { space: 'hsl', h: 240, s: 100, l: 50, alpha: 1 }
     const mid = interpolateColor(white, blue, 0.5, 'hsl')

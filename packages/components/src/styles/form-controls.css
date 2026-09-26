@@ -1253,6 +1253,15 @@ textarea[data-scope='form-field'][data-part='control'] {
   font-family: monospace;
 }
 
+[data-scope='gradient-picker'][data-part='css-input'][aria-invalid='true'] {
+  border-color: var(--destructive);
+}
+
+[data-scope='gradient-picker'][data-part='css-error'] {
+  font-size: 0.75rem;
+  color: var(--destructive);
+}
+
 /* ─── Editable ─── */
 
 [data-scope='editable'][data-part='root'] {

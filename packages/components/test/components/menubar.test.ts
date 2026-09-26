@@ -361,6 +361,21 @@ describe('menubar.connect — APG keyboard', () => {
     expect(send).not.toHaveBeenCalledWith({ type: 'focusNext' })
     expect(send).not.toHaveBeenCalledWith({ type: 'focusPrev' })
   })
+
+  it('a submenu handler reports the truthful PARENT variant (menuMsg), not its own internal type', () => {
+    // `menuSend` wraps the embedded `menu.ts` machine's `send` via
+    // `wrapChildSend`, which tags the wrapped dispatcher `__lluiVariants:
+    // ['menuMsg']` — every `tagSend(...)` call INSIDE menu.ts's own
+    // connect(), built from that dispatcher, must report `menuMsg` (a real
+    // case of MenubarMsg) rather than leaking one of menu.ts's own internal
+    // message names (e.g. `highlightNext`), which menubar's own Msg union
+    // has no case for at all.
+    const p = connect(rootSignal(), vi.fn(), { id: 'mb' })
+    const handler = p.menu('file').trigger.onClick as unknown as {
+      __lluiVariants?: readonly string[]
+    }
+    expect(handler.__lluiVariants).toEqual(['menuMsg'])
+  })
 })
 
 // helper: a Signal backed by a concrete state value for handler-time peeks.

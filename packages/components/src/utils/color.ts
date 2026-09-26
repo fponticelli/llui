@@ -1404,12 +1404,15 @@ interface SpaceComponents {
   /** Non-hue components, in the space's own units — premultiplied by alpha
    * during interpolation. */
   channels: readonly (number | null)[]
-  /** The hue component (degrees), if this space has one. `null` only when
-   * the color's OWN space has no hue (never happens for `hsl`/`oklch`
-   * themselves — a value copied from that space's own storage is used
-   * VERBATIM, explicit or `none`) or when a CROSS-space conversion produced
-   * one from a genuinely achromatic color, which has no hue to carry over —
-   * see the module doc's "powerless vs explicit hue" note. */
+  /** The hue component (degrees), if this space has one. `null` when the
+   * color's OWN space has no hue at all, when the hue is explicitly `none`,
+   * OR when the hue is POWERLESS (the color's own saturation/chroma is 0) —
+   * CSS Color 4 §12.2 treats a powerless hue as missing for interpolation
+   * REGARDLESS of what it is explicitly written as (measured against real
+   * Chromium: `oklch(0.5 0 90)` and `oklch(0.5 0 none)` interpolate
+   * IDENTICALLY against the same other endpoint). Also `null` for a
+   * CROSS-space conversion that produced an achromatic result from a color
+   * with no hue to carry over. */
   hue: number | null
 }
 
@@ -1420,20 +1423,30 @@ function toSpaceComponents(c: CssColor, space: InterpolationSpace): SpaceCompone
       case 'srgb-linear':
         return { channels: [c.r, c.g, c.b], hue: null }
       case 'hsl':
-        return { channels: [c.s, c.l], hue: c.h }
+        // CSS Color 4 §12.2: a hue is POWERLESS — and therefore missing for
+        // interpolation — whenever its own saturation/chroma is 0, REGARDLESS
+        // of what the hue is explicitly written as. Measured against real
+        // Chromium (Playwright): `oklch(0.5 0 90)` mixed with `oklch(0.5 0.2
+        // 200)` renders IDENTICALLY, pixel for pixel, to the same mix with
+        // `oklch(0.5 0 none)` — the hue trajectory sits at ~200-206 (the
+        // OTHER endpoint's hue) throughout both, never rotating toward 90.
+        // An explicit hue on an ACHROMATIC color is therefore NOT kept —
+        // only a genuinely CHROMATIC color's explicit hue survives verbatim.
+        return { channels: [c.s, c.l], hue: resolveNone(c.s) === 0 ? null : c.h }
       case 'oklab':
         return { channels: [c.l, c.a, c.b], hue: null }
       case 'oklch':
-        return { channels: [c.l, c.c], hue: c.h }
+        return { channels: [c.l, c.c], hue: resolveNone(c.c) === 0 ? null : c.h }
     }
   }
   // Cross-space: materialize through the fully-resolved math (a `none`
   // component here has already been treated as 0, which is the CSS Color 4
   // rule for a value used outside the color's OWN space). An achromatic
   // result's hue is genuinely UNDEFINED by this conversion (it did not exist
-  // in the source color), so it becomes `null` here — this is NOT the same
-  // rule as a same-space color's own explicit hue, which is never nulled by
-  // this function.
+  // in the source color), so it becomes `null` here too — the SAME rule the
+  // same-space branch above now applies (achromatic implies powerless), just
+  // reached by a different route (the conversion itself produced chroma 0,
+  // rather than the source's own chroma already being 0).
   switch (space) {
     case 'srgb': {
       const s = cssColorToSrgb(c)

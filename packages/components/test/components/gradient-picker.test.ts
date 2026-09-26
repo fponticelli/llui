@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
+import { component } from '@llui/dom'
+import { propertyTest } from '@llui/test'
 import {
   init,
   update,
@@ -8,27 +10,102 @@ import {
   parseGradient,
   pickerStateOf,
   type GradientPickerState,
+  type GradientPickerMsg,
 } from '../../src/components/gradient-picker'
 import { parseCssColor, interpolateColor } from '../../src/utils/color'
-import { DEFAULT_MAX_CHROMA } from '../../src/components/color-picker'
+import { pickerColorToCss, DEFAULT_MAX_CHROMA } from '../../src/components/color-picker'
 import { signalOf, read } from '../_signal'
+
+// ── Real-event helpers (finding #13: no `as unknown as Event` casts) ───────
+
+/** A real DOM element with the pointer-capture methods jsdom does not
+ * implement stubbed on (jsdom's own gap, not a fake event) plus a fixed
+ * `getBoundingClientRect` (jsdom never computes real layout). */
+function fakeTrackElement(rect = { left: 0, top: 0, width: 200, height: 20 }): HTMLDivElement {
+  const el = document.createElement('div')
+  Object.assign(el, {
+    getBoundingClientRect: () => ({
+      ...rect,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+    }),
+    setPointerCapture: vi.fn(),
+    hasPointerCapture: vi.fn(() => true),
+    releasePointerCapture: vi.fn(),
+  })
+  return el
+}
+
+function realPointerEvent(
+  target: EventTarget,
+  type: string,
+  overrides: Partial<{ button: number; pointerId: number; clientX: number; clientY: number }> = {},
+): PointerEvent {
+  const e = new PointerEvent(type, {
+    bubbles: true,
+    cancelable: true,
+    button: overrides.button ?? 0,
+    pointerId: overrides.pointerId ?? 1,
+    clientX: overrides.clientX ?? 0,
+    clientY: overrides.clientY ?? 0,
+  })
+  Object.defineProperty(e, 'currentTarget', { value: target, configurable: true })
+  return e
+}
+
+function realKeyEvent(
+  target: EventTarget,
+  key: string,
+  overrides: Partial<{ shiftKey: boolean }> = {},
+): KeyboardEvent {
+  const e = new KeyboardEvent('keydown', {
+    key,
+    shiftKey: overrides.shiftKey ?? false,
+    bubbles: true,
+    cancelable: true,
+  })
+  Object.defineProperty(e, 'currentTarget', { value: target, configurable: true })
+  return e
+}
+
+function realInputEvent(input: HTMLInputElement, value: string, type = 'input'): Event {
+  input.value = value
+  const e = new Event(type, { bubbles: true, cancelable: true })
+  Object.defineProperty(e, 'target', { value: input, configurable: true })
+  Object.defineProperty(e, 'currentTarget', { value: input, configurable: true })
+  return e
+}
+
+/** `tagSend(send, variants, fn)` only sets `__lluiVariants` when `variants`
+ * is non-empty (`binding-descriptors.ts`'s own guard), so a handler wrapped
+ * with `tagSend(send, [], fn)` — dispatches nothing itself, e.g. `onPointerUp`
+ * — is correctly UNTAGGED (`undefined`), not tagged with an empty array.
+ * Finding #5 asks that every handler be ROUTED through `tagSend` uniformly
+ * (so the mechanism is already in place if its variant list ever grows),
+ * not that every handler carry a non-empty tag. */
+function variantsOf(fn: unknown): readonly string[] | undefined {
+  return (fn as { __lluiVariants?: readonly string[] }).__lluiVariants
+}
 
 // ── init ─────────────────────────────────────────────────────────────────────
 
 describe('gradient-picker init', () => {
-  it('defaults to a linear 90deg black->white gradient with two stops', () => {
+  it('defaults to a linear black->white gradient with two stops', () => {
     const s = init()
     expect(s.kind).toBe('linear')
     expect(s.repeating).toBe(false)
-    expect(s.angle).toBe(90)
+    expect(s.direction).toEqual({ type: 'angle', deg: 90 })
     expect(s.stops).toHaveLength(2)
     expect(s.stops[0]).toMatchObject({ position: 0 })
     expect(s.stops[1]).toMatchObject({ position: 100 })
     expect(s.minStops).toBe(2)
     expect(s.maxStops).toBeUndefined()
-    expect(s.model).toBe('hsv')
+    expect(s.defaultModel).toBe('hsv')
     expect(s.disabled).toBe(false)
     expect(s.dir).toBe('ltr')
+    expect(s.eyeDropperSupported).toBe(false)
+    expect(s.cssDraft).toBeNull()
+    expect(s.cssError).toBeNull()
   })
 
   it('omits maxStops entirely when unset (round-trips as an identity)', () => {
@@ -39,7 +116,7 @@ describe('gradient-picker init', () => {
 
   it('accepts an explicit css string', () => {
     const s = init({ css: 'linear-gradient(45deg, red 0%, blue 100%)' })
-    expect(s.angle).toBe(45)
+    expect(s.direction).toEqual({ type: 'angle', deg: 45 })
     expect(s.stops).toHaveLength(2)
   })
 
@@ -47,6 +124,12 @@ describe('gradient-picker init', () => {
     const s = init({ css: 'not-a-gradient()' })
     expect(s.kind).toBe('linear')
     expect(s.stops).toHaveLength(2)
+  })
+
+  it('falls back to defaults when css has a stop count outside min/maxStops', () => {
+    const s = init({ css: 'linear-gradient(45deg, red, blue)', minStops: 3 })
+    // 2 parsed stops < minStops 3 -> treated like invalid css.
+    expect(s.stops.length).toBeGreaterThanOrEqual(3)
   })
 
   it('accepts explicit stops, sorted, with sequential ids', () => {
@@ -72,42 +155,67 @@ describe('gradient-picker init', () => {
     expect(s.stops[0]!.color).toEqual({ model: 'oklch', l: 0.5, c: 0.1, h: 30 })
   })
 
-  it('applies maxChroma / minStops / maxStops / model / disabled / dir options', () => {
-    const s = init({
-      maxChroma: 0.2,
-      minStops: 3,
-      maxStops: 4,
-      model: 'oklch',
-      disabled: true,
-      dir: 'rtl',
-    })
-    expect(s.maxChroma).toBe(0.2)
+  it('applies minStops/maxStops/defaultModel/disabled/dir options', () => {
+    const s = init({ minStops: 3, maxStops: 4, defaultModel: 'oklch', disabled: true, dir: 'rtl' })
     expect(s.minStops).toBe(3)
     expect(s.maxStops).toBe(4)
-    expect(s.model).toBe('oklch')
+    expect(s.defaultModel).toBe('oklch')
     expect(s.disabled).toBe(true)
     expect(s.dir).toBe('rtl')
   })
 
-  it('truncates explicit stops to maxStops', () => {
-    const s = init({
-      maxStops: 2,
-      stops: [
-        { position: 0, color: 'red' },
-        { position: 33, color: 'green' },
-        { position: 66, color: 'blue' },
-        { position: 100, color: 'yellow' },
-      ],
-    })
-    expect(s.stops).toHaveLength(2)
-  })
-
   it('non-finite numeric options fall back to documented defaults', () => {
     const s = init({ angle: NaN, center: { x: NaN, y: Infinity }, maxChroma: NaN, minStops: NaN })
-    expect(s.angle).toBe(90)
+    expect(s.direction).toEqual({ type: 'angle', deg: 90 })
     expect(s.center).toEqual({ x: 50, y: 50 })
     expect(s.maxChroma).toBe(DEFAULT_MAX_CHROMA)
     expect(s.minStops).toBe(2)
+  })
+
+  // ── finding #7: crashes/limits ─────────────────────────────────────────────
+
+  it('an explicitly EMPTY stops array never produces an empty gradient', () => {
+    const s = init({ stops: [] })
+    expect(s.stops.length).toBeGreaterThan(0)
+  })
+
+  it('fewer explicit stops than minStops are PADDED, never crash', () => {
+    const s = init({ stops: [{ position: 50, color: 'red' }], minStops: 4 })
+    expect(s.stops.length).toBeGreaterThanOrEqual(4)
+    // Padding never invents a color — every padded stop's color is one that
+    // was already present.
+    const colors = new Set(s.stops.map((st) => pickerColorToCss(st.color, st.alpha)))
+    expect(colors.size).toBe(1)
+  })
+
+  it('a non-integer maxStops (0.5) never produces a config that forbids every stop', () => {
+    const s = init({ maxStops: 0.5 })
+    expect(s.maxStops).toBeGreaterThanOrEqual(s.minStops)
+    expect(Number.isInteger(s.maxStops)).toBe(true)
+    expect(s.stops.length).toBeGreaterThan(0)
+  })
+
+  it('maxStops below minStops is widened to minStops, never contradicts it', () => {
+    const s = init({ minStops: 5, maxStops: 2 })
+    expect(s.maxStops).toBe(5)
+  })
+
+  it('pickerStateOf never throws, even from a hand-built empty-stops state', () => {
+    const s: GradientPickerState = { ...init(), stops: [] }
+    expect(() => pickerStateOf(s)).not.toThrow()
+  })
+
+  // ── finding #2c: never clamp an explicit chroma — raise maxChroma instead ──
+
+  it('an explicit OKLCH chroma beyond the default maxChroma RAISES maxChroma, never clamps', () => {
+    const s = init({
+      stops: [
+        { position: 0, color: { model: 'oklch', l: 0.5, c: 0.6, h: 30 } },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    expect(s.maxChroma).toBeGreaterThanOrEqual(0.6)
+    expect(s.stops[0]!.color).toMatchObject({ c: 0.6 })
   })
 })
 
@@ -115,42 +223,14 @@ describe('gradient-picker init', () => {
 
 describe('gradient-picker update', () => {
   it('addStop inserts sorted, colored exactly what colorAt reports there, and selects it', () => {
-    // srgb interpolation: the stored HSV color round-trips byte-exactly
-    // through integer sRGB, so this is a byte-for-byte check, not just a
-    // numeric-closeness one.
     const s = init({ interpolation: { space: 'srgb' } })
     const before = colorAt(s, 50)
     const [next] = update(s, { type: 'addStop', position: 50 })
     expect(next.stops).toHaveLength(3)
     expect(next.stops[1]!.position).toBe(50)
     expect(next.selectedId).toBe(next.stops[1]!.id)
-    // The new stop reproduces exactly what colorAt said was there before
-    // insertion — read back through colorAt's own exact-stop-match branch.
     const shim: GradientPickerState = { ...next, stops: [next.stops[1]!] }
     expect(colorAt(shim, 50)).toBe(before)
-  })
-
-  it('addStop keeps the interpolated color NUMERICALLY exact even when the interpolation space (oklab) has no dedicated storage model', () => {
-    // The default interpolation space is oklab, but PickerColor only stores
-    // hsv/oklch. addStop must still preserve the VALUE exactly (oklab -> oklch
-    // is a lossless polar/Cartesian change, not a gamut-mapping one) even
-    // though the round-tripped CSS syntax differs (oklab() -> oklch()).
-    const s = init({
-      stops: [
-        { position: 0, color: 'red' },
-        { position: 100, color: 'lime' },
-      ],
-    }) // default interpolation: oklab
-    const before = colorAt(s, 50)
-    const beforeParsed = parseCssColor(before)!
-    const [next] = update(s, { type: 'addStop', position: 50 })
-    const newStop = next.stops[1]!
-    expect(newStop.color.model).toBe('oklch')
-    if (beforeParsed.space === 'oklab') {
-      const c = Math.sqrt(beforeParsed.a! * beforeParsed.a! + beforeParsed.b! * beforeParsed.b!)
-      expect((newStop.color as { l: number }).l).toBeCloseTo(beforeParsed.l!, 3)
-      expect((newStop.color as { c: number }).c).toBeCloseTo(c, 3)
-    }
   })
 
   it('addStop clamps out-of-range positions', () => {
@@ -225,8 +305,6 @@ describe('gradient-picker update', () => {
     const midId = s.stops[1]!.id
     const [selected] = update(s, { type: 'selectStop', id: midId })
     const [next] = update(selected, { type: 'moveStop', id: midId, position: -10 })
-    // Ties are stable-by-insertion (new position wins the tie LAST), so the
-    // pre-existing stop already at 0 stays ahead of the one moved onto it.
     expect(next.stops.map((st) => st.position)).toEqual([0, 0, 100])
     expect(next.stops.find((st) => st.id === midId)).toMatchObject({ position: 0 })
     expect(next.selectedId).toBe(midId)
@@ -264,9 +342,6 @@ describe('gradient-picker update', () => {
     })
     const blueId = s.stops[1]!.id
     const [selected] = update(s, { type: 'selectStop', id: blueId })
-    // Moving blue from 90 to 5 flips it ahead of red — index 1 -> index 0.
-    // Selection is tracked by id, so it must still be blue's id, not
-    // whatever stop happens to occupy blue's OLD index afterward.
     const [next] = update(selected, { type: 'nudgeStop', id: blueId, delta: -85 })
     expect(next.stops[0]!.id).toBe(blueId)
     expect(next.selectedId).toBe(blueId)
@@ -283,10 +358,30 @@ describe('gradient-picker update', () => {
     expect(update(s, { type: 'setRepeating', repeating: true })[0].repeating).toBe(true)
   })
 
-  it('setAngle normalizes to [0, 360)', () => {
+  it('setAngle sets an explicit angle for linear, converting away from a to-keyword direction', () => {
+    const s = init({ css: 'linear-gradient(to right, red, blue)' })
+    expect(s.direction).toEqual({ type: 'to', x: 'right' })
+    const [next] = update(s, { type: 'setAngle', angle: 40 })
+    expect(next.direction).toEqual({ type: 'angle', deg: 40 })
+  })
+
+  it('setAngle normalizes to [0, 360) for linear', () => {
     const s = init()
-    expect(update(s, { type: 'setAngle', angle: 400 })[0].angle).toBe(40)
-    expect(update(s, { type: 'setAngle', angle: -30 })[0].angle).toBe(330)
+    expect(update(s, { type: 'setAngle', angle: 400 })[0].direction).toEqual({
+      type: 'angle',
+      deg: 40,
+    })
+    expect(update(s, { type: 'setAngle', angle: -30 })[0].direction).toEqual({
+      type: 'angle',
+      deg: 330,
+    })
+  })
+
+  it('setAngle sets conicAngle for conic, is a no-op for radial', () => {
+    const conic = update(init(), { type: 'setKind', kind: 'conic' })[0]
+    expect(update(conic, { type: 'setAngle', angle: 40 })[0].conicAngle).toBe(40)
+    const radial = update(init(), { type: 'setKind', kind: 'radial' })[0]
+    expect(update(radial, { type: 'setAngle', angle: 40 })[0]).toBe(radial)
   })
 
   it('setCenter clamps both axes to 0-100', () => {
@@ -311,8 +406,6 @@ describe('gradient-picker update', () => {
       hue: 'longer',
     })
     expect(update(s, { type: 'setInterpolation', space: 'nope' as never })[0]).toBe(s)
-    // An unrecognized hue value falls back to the current hue rather than
-    // rejecting the whole message (the space change still lands).
     const [withBadHue] = update(s, {
       type: 'setInterpolation',
       space: 'hsl',
@@ -357,16 +450,34 @@ describe('gradient-picker update', () => {
     expect(update(s, { type: 'distribute' })[0]).toBe(s)
   })
 
-  it('setGradient replaces the gradient on valid css, leaves state unchanged on invalid css', () => {
+  it('setGradientDraft updates ONLY the draft — never parses, never touches the committed gradient', () => {
     const s = init()
-    const [next] = update(s, {
+    const [next] = update(s, { type: 'setGradientDraft', value: 'not valid css at all' })
+    expect(next.cssDraft).toBe('not valid css at all')
+    expect(next.kind).toBe(s.kind)
+    expect(next.stops).toBe(s.stops)
+    expect(next.cssError).toBeNull()
+  })
+
+  it('setGradient replaces the gradient on valid css and clears the draft/error', () => {
+    const withDraft = { ...init(), cssDraft: 'linear-gradient(0deg, red, blue)', cssError: 'stale' }
+    const [next] = update(withDraft, {
       type: 'setGradient',
       css: 'radial-gradient(circle, red 0%, blue 100%)',
     })
     expect(next.kind).toBe('radial')
     expect(next.shape).toBe('circle')
-    const [unchanged] = update(s, { type: 'setGradient', css: 'garbage' })
-    expect(unchanged).toBe(s)
+    expect(next.cssDraft).toBeNull()
+    expect(next.cssError).toBeNull()
+  })
+
+  it('setGradient on invalid css keeps the OLD gradient but surfaces the draft + reason', () => {
+    const s = init()
+    const [next] = update(s, { type: 'setGradient', css: 'garbage' })
+    expect(next.kind).toBe(s.kind)
+    expect(next.stops).toBe(s.stops)
+    expect(next.cssDraft).toBe('garbage')
+    expect(next.cssError).not.toBeNull()
   })
 
   it('picker writes color+alpha back onto the SELECTED stop only', () => {
@@ -385,43 +496,13 @@ describe('gradient-picker update', () => {
     expect(other.color).toEqual(s.stops[1]!.color)
   })
 
-  it('picker setModel updates state.model AND re-projects the selected stop', () => {
-    const s = init({
-      model: 'hsv',
-      stops: [
-        { position: 0, color: 'red' },
-        { position: 100, color: 'blue' },
-      ],
+  it('picker propagates eyeDropperSupported up to the gradient-level field (not per-stop)', () => {
+    const s = init()
+    const [next] = update(s, {
+      type: 'picker',
+      msg: { type: 'setEyeDropperSupported', supported: true },
     })
-    const [next] = update(s, { type: 'picker', msg: { type: 'setModel', model: 'oklch' } })
-    expect(next.model).toBe('oklch')
-    expect(next.stops[0]!.color.model).toBe('oklch')
-  })
-
-  it("picker preserves a gray stop's hue across a model switch (lossless, no hex round trip)", () => {
-    // HSV gray: v=50, s=0 — hue is otherwise meaningless but STORED as 210.
-    const s = init({
-      stops: [
-        { position: 0, color: { model: 'hsv', h: 210, s: 0, v: 50 } },
-        { position: 100, color: 'blue' },
-      ],
-    })
-    const [next] = update(s, { type: 'picker', msg: { type: 'setModel', model: 'oklch' } })
-    const gray = next.stops[0]!.color
-    expect(gray.model).toBe('oklch')
-    expect((gray as { h: number }).h).toBeCloseTo(210, 5)
-    const [back] = update(next, { type: 'picker', msg: { type: 'setModel', model: 'hsv' } })
-    // Lossless HSV/HSL (color.ts stores floats, rounds only at format time —
-    // see its module doc) means this round trip is no longer rounded to a
-    // clean integer at each step; two hops through OKLab's cube roots leave
-    // ~1e-5-scale floating-point noise on s/v, many orders of magnitude
-    // below sRGB's own 8-bit precision floor (~0.4%). Hue is exact (the
-    // achromatic-preserving path sets it verbatim, never recomputes it).
-    const backColor = back.stops[0]!.color
-    expect(backColor.model).toBe('hsv')
-    expect((backColor as { h: number }).h).toBe(210)
-    expect((backColor as { s: number }).s).toBeCloseTo(0, 3)
-    expect((backColor as { v: number }).v).toBeCloseTo(50, 3)
+    expect(next.eyeDropperSupported).toBe(true)
   })
 
   it('selectNextStop / selectPrevStop move selection within bounds', () => {
@@ -442,9 +523,10 @@ describe('gradient-picker update', () => {
     expect(backToMid.selectedId).toBe(s.stops[1]!.id)
   })
 
-  it('setDir sets the reading direction', () => {
+  it('setDir sets the reading direction, rejects an invalid value', () => {
     const s = init()
     expect(update(s, { type: 'setDir', dir: 'rtl' })[0].dir).toBe('rtl')
+    expect(update(s, { type: 'setDir', dir: 'nope' as never })[0]).toBe(s)
   })
 
   it('disabled state ignores every message', () => {
@@ -455,28 +537,142 @@ describe('gradient-picker update', () => {
         { position: 100, color: 'blue' },
       ],
     })
-    for (const msg of [
-      { type: 'addStop' as const, position: 50 },
-      { type: 'removeStop' as const, id: s.stops[0]!.id },
-      { type: 'selectStop' as const, id: s.stops[1]!.id },
-      { type: 'moveStop' as const, id: s.stops[0]!.id, position: 20 },
-      { type: 'nudgeStop' as const, id: s.stops[0]!.id, delta: 5 },
-      { type: 'setKind' as const, kind: 'radial' as const },
-      { type: 'setRepeating' as const, repeating: true },
-      { type: 'setAngle' as const, angle: 30 },
-      { type: 'setCenter' as const, x: 10, y: 10 },
-      { type: 'setShape' as const, shape: 'circle' as const },
-      { type: 'setSize' as const, size: 'closest-side' as const },
-      { type: 'setInterpolation' as const, space: 'oklch' as const },
-      { type: 'reverse' as const },
-      { type: 'distribute' as const },
-      { type: 'setGradient' as const, css: 'linear-gradient(0deg, red, blue)' },
-      { type: 'picker' as const, msg: { type: 'setHue' as const, h: 10 } },
-      { type: 'selectNextStop' as const },
-      { type: 'selectPrevStop' as const },
-    ]) {
-      expect(update(s, msg)[0]).toBe(s)
-    }
+    const messages: GradientPickerMsg[] = [
+      { type: 'addStop', position: 50 },
+      { type: 'removeStop', id: s.stops[0]!.id },
+      { type: 'selectStop', id: s.stops[1]!.id },
+      { type: 'moveStop', id: s.stops[0]!.id, position: 20 },
+      { type: 'nudgeStop', id: s.stops[0]!.id, delta: 5 },
+      { type: 'setKind', kind: 'radial' },
+      { type: 'setRepeating', repeating: true },
+      { type: 'setAngle', angle: 30 },
+      { type: 'setCenter', x: 10, y: 10 },
+      { type: 'setShape', shape: 'circle' },
+      { type: 'setSize', size: 'closest-side' },
+      { type: 'setInterpolation', space: 'oklch' },
+      { type: 'reverse' },
+      { type: 'distribute' },
+      { type: 'setGradientDraft', value: 'x' },
+      { type: 'setGradient', css: 'linear-gradient(0deg, red, blue)' },
+      { type: 'picker', msg: { type: 'setHue', h: 10 } },
+      { type: 'selectNextStop' },
+      { type: 'selectPrevStop' },
+    ]
+    for (const msg of messages) expect(update(s, msg)[0]).toBe(s)
+  })
+})
+
+// ── Finding #1: the picker edits the stop's OWN model, never re-projects ────
+
+describe('finding #1: picker write-back preserves an out-of-gamut stop exactly', () => {
+  it('setAlpha on an OKLCH stop leaves l/c/h bit-identical', () => {
+    const s = init({
+      maxChroma: 0.4,
+      stops: [
+        { position: 0, color: { model: 'oklch', l: 0.7, c: 0.3, h: 150 } },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const before = s.stops[0]!.color
+    const [next] = update(s, { type: 'picker', msg: { type: 'setAlpha', alpha: 0.5 } })
+    const after = next.stops[0]!.color
+    expect(after).toEqual(before) // bit-identical: same object shape, same values
+    expect(next.stops[0]!.alpha).toBe(0.5)
+  })
+
+  it('setHue on an OKLCH stop leaves l/c bit-identical, only h changes', () => {
+    const s = init({
+      maxChroma: 0.4,
+      stops: [
+        { position: 0, color: { model: 'oklch', l: 0.7, c: 0.3, h: 150 } },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const [next] = update(s, { type: 'picker', msg: { type: 'setHue', h: 200 } })
+    const after = next.stops[0]!.color as { model: 'oklch'; l: number; c: number; h: number }
+    expect(after.l).toBe(0.7)
+    expect(after.c).toBe(0.3)
+    expect(after.h).toBe(200)
+  })
+
+  it('a stop keeps its OWN model until an explicit setModel — pickerStateOf never re-projects', () => {
+    const s = init({
+      defaultModel: 'hsv', // the gradient's default model for NEW stops
+      stops: [
+        { position: 0, color: { model: 'oklch', l: 0.6, c: 0.15, h: 40 } },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    expect(pickerStateOf(s).color.model).toBe('oklch')
+    const [afterAlpha] = update(s, { type: 'picker', msg: { type: 'setAlpha', alpha: 0.9 } })
+    expect(afterAlpha.stops[0]!.color.model).toBe('oklch')
+  })
+
+  it("setModel converts ONLY the selected stop, via color-picker's own reducer", () => {
+    const s = init({
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const otherBefore = s.stops[1]!.color
+    const [next] = update(s, { type: 'picker', msg: { type: 'setModel', model: 'oklch' } })
+    expect(next.stops[0]!.color.model).toBe('oklch')
+    expect(next.stops[1]!.color).toEqual(otherBefore) // untouched
+  })
+
+  it('gray (achromatic) stop keeps its hue across a model switch — lossless, no hex round trip', () => {
+    const s = init({
+      stops: [
+        { position: 0, color: { model: 'hsv', h: 210, s: 0, v: 50 } },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const [next] = update(s, { type: 'picker', msg: { type: 'setModel', model: 'oklch' } })
+    const gray = next.stops[0]!.color
+    expect(gray.model).toBe('oklch')
+    expect((gray as { h: number }).h).toBeCloseTo(210, 5)
+    const [back] = update(next, { type: 'picker', msg: { type: 'setModel', model: 'hsv' } })
+    const backColor = back.stops[0]!.color as { model: 'hsv'; h: number; s: number; v: number }
+    // The *Preserving projections keep the HUE exact across an hsv<->oklch
+    // round trip (the whole point — `withHsvProjection`/`hsvToOklchPreserving`
+    // special-case an achromatic color's hue verbatim); s/v go through the
+    // FLOAT (not integer-rounded, per Lane A's df7684fd) conversion math and
+    // land within float noise of their original values, not bit-identical.
+    expect(backColor.model).toBe('hsv')
+    expect(backColor.h).toBe(210)
+    expect(backColor.s).toBeCloseTo(0, 3)
+    expect(backColor.v).toBeCloseTo(50, 3)
+  })
+})
+
+describe('gradient-picker pickerStateOf', () => {
+  it('derives a ColorPickerState from the selected stop, UNCHANGED (no projection)', () => {
+    const s = init({
+      maxChroma: 0.25,
+      disabled: true,
+      stops: [
+        { position: 0, color: { model: 'oklch', l: 0.5, c: 0.2, h: 10 } },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const derived = pickerStateOf(s)
+    expect(derived.color).toEqual(s.stops[0]!.color)
+    expect(derived.alpha).toBe(1)
+    expect(derived.disabled).toBe(true)
+    expect(derived.maxChroma).toBe(0.25)
+    expect(derived.eyeDropperSupported).toBe(false)
+  })
+
+  it('follows selection: switching the selected stop changes what it derives', () => {
+    const s = init({
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const [switched] = update(s, { type: 'selectStop', id: s.stops[1]!.id })
+    expect(pickerStateOf(s).color).not.toEqual(pickerStateOf(switched).color)
   })
 })
 
@@ -488,9 +684,25 @@ describe('gradient-picker toCss', () => {
     { position: 100, color: 'blue' as const },
   ]
 
-  it('linear: explicit angle + interpolation head', () => {
-    const s = init({ kind: 'linear', angle: 45, stops, interpolation: { space: 'srgb' } })
+  it('linear (explicit angle): angle + interpolation head', () => {
+    const s = init({ angle: 45, stops, interpolation: { space: 'srgb' } })
     expect(toCss(s)).toBe('linear-gradient(45deg in srgb, #ff0000 0%, #0000ff 100%)')
+  })
+
+  it('linear (to-keyword): reproduces the keyword, NOT a numerically-equal angle (finding #2b)', () => {
+    const s = init({
+      css: 'linear-gradient(to right, red, blue)',
+      interpolation: { space: 'srgb' },
+    })
+    expect(toCss(s)).toBe('linear-gradient(to right in srgb, #ff0000 0%, #0000ff 100%)')
+  })
+
+  it('linear (to-corner-keyword): round-trips the two-word corner form', () => {
+    const s = init({
+      css: 'linear-gradient(to top right, red, blue)',
+      interpolation: { space: 'srgb' },
+    })
+    expect(toCss(s)).toBe('linear-gradient(to top right in srgb, #ff0000 0%, #0000ff 100%)')
   })
 
   it('radial: shape/size/center + interpolation head', () => {
@@ -507,7 +719,7 @@ describe('gradient-picker toCss', () => {
     )
   })
 
-  it('conic: from angle + center + interpolation head', () => {
+  it('conic: from angle + center + interpolation head (own conicAngle field, not linear direction)', () => {
     const s = init({
       kind: 'conic',
       angle: 10,
@@ -534,6 +746,7 @@ describe('gradient-picker toCss', () => {
 
   it('an out-of-gamut OKLCH stop stays exact (oklch(), not gamut-mapped hex)', () => {
     const s = init({
+      maxChroma: 0.6,
       stops: [
         { position: 0, color: { model: 'oklch', l: 0.7, c: 0.5, h: 30 } },
         { position: 100, color: 'blue' },
@@ -544,7 +757,300 @@ describe('gradient-picker toCss', () => {
   })
 })
 
-// ── parseGradient ────────────────────────────────────────────────────────────
+// ── Finding #2a: the omitted-`in` default depends on legacy vs modern syntax ─
+
+describe('finding #2a: omitted color-interpolation-method default', () => {
+  it('defaults to srgb when every stop uses a LEGACY syntax (hex/rgb/hsl/hwb/named)', () => {
+    const r = parseGradient('linear-gradient(45deg, red, #00f)')
+    expect(r).toMatchObject({ ok: true, value: { interpolation: { space: 'srgb' } } })
+    const r2 = parseGradient(
+      'linear-gradient(45deg, rgb(255 0 0), hsl(240 100% 50%), hwb(0 0% 0%))',
+    )
+    expect(r2).toMatchObject({ ok: true, value: { interpolation: { space: 'srgb' } } })
+  })
+
+  it('defaults to oklab as soon as ANY stop uses a modern syntax (oklch/oklab/lab/lch/color)', () => {
+    const r = parseGradient('linear-gradient(45deg, red, oklch(0.5 0.1 200))')
+    expect(r).toMatchObject({ ok: true, value: { interpolation: { space: 'oklab' } } })
+  })
+
+  it('an explicit `in <space>` always wins over the classification', () => {
+    const r = parseGradient('linear-gradient(45deg in oklch, red, blue)')
+    expect(r).toMatchObject({ ok: true, value: { interpolation: { space: 'oklch' } } })
+  })
+})
+
+// ── Finding #2b: `to <side-or-corner>` is stored as a keyword, not an angle ──
+
+describe('finding #2b: linear direction model', () => {
+  it('parses `to right` as a keyword direction, not angle:90', () => {
+    const r = parseGradient('linear-gradient(to right, red, blue)')
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.value.direction).toEqual({ type: 'to', x: 'right' })
+  })
+
+  it('parses `to top`/`to bottom` as single-axis y directions', () => {
+    expect(parseGradient('linear-gradient(to top, red, blue)')).toMatchObject({
+      ok: true,
+      value: { direction: { type: 'to', y: 'top' } },
+    })
+    expect(parseGradient('linear-gradient(to bottom, red, blue)')).toMatchObject({
+      ok: true,
+      value: { direction: { type: 'to', y: 'bottom' } },
+    })
+  })
+
+  it('parses both corner token orders into the SAME structured direction', () => {
+    const a = parseGradient('linear-gradient(to top right, red, blue)')
+    const b = parseGradient('linear-gradient(to right top, red, blue)')
+    expect(a).toMatchObject({
+      ok: true,
+      value: { direction: { type: 'to', x: 'right', y: 'top' } },
+    })
+    expect(b).toMatchObject({
+      ok: true,
+      value: { direction: { type: 'to', x: 'right', y: 'top' } },
+    })
+  })
+
+  it('conic has NO to-form: its angle is always a plain number (conicAngle)', () => {
+    const r = parseGradient('conic-gradient(from 45deg, red, blue)')
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.value.conicAngle).toBe(45)
+  })
+})
+
+// ── Finding #2c: reject, never clamp/drop ───────────────────────────────────
+
+describe('finding #2c: parseGradient rejects rather than silently coercing', () => {
+  it('rejects a "none" hue component (cannot be represented in PickerColor)', () => {
+    const r = parseGradient('linear-gradient(45deg, oklch(0.5 0.2 none), blue)')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toMatch(/none.*component/i)
+  })
+
+  it('rejects a "none" alpha component', () => {
+    const r = parseGradient('linear-gradient(45deg, rgb(255 0 0 / none), blue)')
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.reason).toMatch(/none.*component/i)
+  })
+
+  it('rejects a stop position outside 0%-100%', () => {
+    const tooHigh = parseGradient('linear-gradient(45deg, red 0%, blue 150%)')
+    expect(tooHigh.ok).toBe(false)
+    if (!tooHigh.ok) expect(tooHigh.reason).toMatch(/0%-100%/)
+    const negative = parseGradient('linear-gradient(45deg, red -10%, blue 100%)')
+    expect(negative.ok).toBe(false)
+  })
+
+  it('setGradient REJECTS (never truncates) a stop count above maxStops', () => {
+    const s = init({
+      maxStops: 2,
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const [next] = update(s, {
+      type: 'setGradient',
+      css: 'linear-gradient(45deg, red, green, blue)',
+    })
+    expect(next.stops).toBe(s.stops) // unchanged — never truncated to 2
+    expect(next.cssError).toMatch(/at most 2 stops/)
+  })
+
+  it('setGradient REJECTS (never pads) a stop count below minStops', () => {
+    const s = init({
+      minStops: 3,
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 50, color: 'green' },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const [next] = update(s, { type: 'setGradient', css: 'linear-gradient(45deg, red, blue)' })
+    expect(next.stops).toBe(s.stops)
+    expect(next.cssError).toMatch(/at least 3 stops/)
+  })
+
+  it("an explicit chroma beyond a LIVE instance's maxChroma RAISES it via setGradient, never clamps", () => {
+    const s = init({ maxChroma: 0.1 })
+    const [next] = update(s, {
+      type: 'setGradient',
+      css: 'linear-gradient(45deg, oklch(0.5 0.5 30), blue)',
+    })
+    expect(next.maxChroma).toBeGreaterThanOrEqual(0.5)
+    expect(next.stops[0]!.color).toMatchObject({ c: 0.5 })
+  })
+})
+
+// ── Finding #6: id stability + selection-by-position-index across setGradient
+
+describe('finding #6: setGradient keeps ids monotone and selection by position-index', () => {
+  it('never restarts the id counter — new stops continue from the OLD nextId', () => {
+    const s = init({
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 100, color: 'blue' },
+      ],
+    }) // nextId 3
+    const [next] = update(s, {
+      type: 'setGradient',
+      css: 'linear-gradient(0deg, red, green, blue)',
+    })
+    expect(next.stops.map((st) => st.id)).toEqual(['s3', 's4', 's5'])
+    expect(next.nextId).toBe(6)
+  })
+
+  it('preserves selection by POSITION-INDEX when the same index still exists', () => {
+    const s = init({
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 50, color: 'green' },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const [selected] = update(s, { type: 'selectStop', id: s.stops[1]!.id }) // index 1
+    const [next] = update(selected, {
+      type: 'setGradient',
+      css: 'linear-gradient(0deg, yellow, orange, purple, cyan)',
+    })
+    expect(next.selectedId).toBe(next.stops[1]!.id) // still index 1
+  })
+
+  it('clamps the preserved index into the new (shorter) array', () => {
+    const s = init({
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 50, color: 'green' },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const [selected] = update(s, { type: 'selectStop', id: s.stops[2]!.id }) // index 2
+    const [next] = update(selected, {
+      type: 'setGradient',
+      css: 'linear-gradient(0deg, red, blue)',
+    })
+    expect(next.selectedId).toBe(next.stops[1]!.id) // clamped to the last index
+  })
+})
+
+// ── colorAt (independent references, not interpolateColor itself) ──────────
+
+describe('gradient-picker colorAt', () => {
+  it("returns an existing stop's own exact color at its own position", () => {
+    const s = init({
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    expect(colorAt(s, 0)).toBe('#ff0000')
+    expect(colorAt(s, 100)).toBe('#0000ff')
+  })
+
+  it('non-repeating: clamps outside the stop range to the nearest end stop', () => {
+    const s = init({
+      stops: [
+        { position: 20, color: 'red' },
+        { position: 80, color: 'blue' },
+      ],
+    })
+    expect(colorAt(s, 0)).toBe('#ff0000')
+    expect(colorAt(s, 100)).toBe('#0000ff')
+  })
+
+  it('midpoint of red -> blue in srgb: hand-verified exact byte value', () => {
+    const s = init({
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 100, color: 'blue' },
+      ],
+      interpolation: { space: 'srgb' },
+    })
+    // (1,0,0) and (0,0,1) lerp to (0.5,0,0.5) -> 0.5*255=127.5, Math.round -> 128 -> #800080.
+    expect(colorAt(s, 50)).toBe('#800080')
+  })
+
+  it('srgb vs oklch produce genuinely different results for the same stops/position', () => {
+    const base = init({
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const srgbState = update(base, { type: 'setInterpolation', space: 'srgb' })[0]
+    const oklchState = update(base, { type: 'setInterpolation', space: 'oklch', hue: 'shorter' })[0]
+    expect(colorAt(srgbState, 50)).toBe('#800080')
+    expect(colorAt(oklchState, 50)).not.toBe('#800080')
+    expect(colorAt(oklchState, 50).startsWith('oklch(')).toBe(true)
+  })
+
+  // Finding #3: repeating wrap — the review's own measured reproduction.
+  it('finding #3: repeating wraps a query outside the stop range by the period, matching a real repeating-linear-gradient', () => {
+    const s = init({
+      repeating: true,
+      stops: [
+        { position: 20, color: 'red' },
+        { position: 60, color: 'blue' },
+      ],
+      interpolation: { space: 'srgb' },
+    })
+    // period 40; querying 10 wraps to 20 + (((10-20)%40)+40)%40 = 20+30 = 50,
+    // 75% of the way from red to blue in srgb: r=0.25,g=0,b=0.75 -> #4000bf.
+    expect(colorAt(s, 10)).toBe('#4000bf')
+    expect(colorAt(s, 10)).toBe(colorAt(s, 50))
+    // A full period away must repeat identically.
+    expect(colorAt(s, 10)).toBe(colorAt(s, 10 + 40))
+    expect(colorAt(s, 10)).toBe(colorAt(s, 10 - 40))
+  })
+
+  it('non-repeating does NOT wrap — the same out-of-range query just clamps', () => {
+    const s = init({
+      repeating: false,
+      stops: [
+        { position: 20, color: 'red' },
+        { position: 60, color: 'blue' },
+      ],
+      interpolation: { space: 'srgb' },
+    })
+    expect(colorAt(s, 10)).toBe('#ff0000') // clamped to the first stop, NOT wrapped
+  })
+
+  it('interpolates between the two BRACKETING stops for a 3+ stop gradient', () => {
+    const s = init({
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 50, color: 'lime' },
+        { position: 100, color: 'blue' },
+      ],
+      interpolation: { space: 'srgb' },
+    })
+    // At 25%, halfway between red and lime — NOT influenced by blue at all.
+    expect(colorAt(s, 25)).toBe('#808000')
+  })
+
+  it("cross-checks the oklch/oklab path against interpolateColor as an INTEGRATION property (colorAt must feed it the right (a,b,t,space,hueMethod)) — color.test.ts owns interpolateColor's own correctness", () => {
+    const s = init({
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 100, color: 'lime' },
+      ],
+    }) // default interpolation: oklab
+    const before = colorAt(s, 50)
+    const beforeParsed = parseCssColor(before)!
+    const a = parseCssColor('red')!
+    const b = parseCssColor('lime')!
+    const expected = interpolateColor(a, b, 0.5, 'oklab', 'shorter')
+    if (beforeParsed.space === 'oklab' && expected.space === 'oklab') {
+      expect(beforeParsed.l).toBeCloseTo(expected.l!, 3)
+      expect(beforeParsed.a).toBeCloseTo(expected.a!, 3)
+      expect(beforeParsed.b).toBeCloseTo(expected.b!, 3)
+    }
+  })
+})
+
+// ── parseGradient: general accept/reject sweep ──────────────────────────────
 
 describe('gradient-picker parseGradient', () => {
   it('accepts a plain linear gradient with an angle', () => {
@@ -552,38 +1058,24 @@ describe('gradient-picker parseGradient', () => {
     expect(r.ok).toBe(true)
     if (r.ok) {
       expect(r.value.kind).toBe('linear')
-      expect(r.value.angle).toBe(45)
+      expect(r.value.direction).toEqual({ type: 'angle', deg: 45 })
       expect(r.value.stops).toHaveLength(2)
     }
-  })
-
-  it('accepts to <side-or-corner>, order-independent', () => {
-    expect(parseGradient('linear-gradient(to right, red, blue)')).toMatchObject({
-      ok: true,
-      value: { angle: 90 },
-    })
-    expect(parseGradient('linear-gradient(to top right, red, blue)')).toMatchObject({
-      ok: true,
-      value: { angle: 45 },
-    })
-    expect(parseGradient('linear-gradient(to right top, red, blue)')).toMatchObject({
-      ok: true,
-      value: { angle: 45 },
-    })
   })
 
   it('accepts angles in deg/grad/rad/turn', () => {
     expect(parseGradient('linear-gradient(100grad, red, blue)')).toMatchObject({
       ok: true,
-      value: { angle: 90 },
+      value: { direction: { type: 'angle', deg: 90 } },
     })
     expect(parseGradient('linear-gradient(0.5turn, red, blue)')).toMatchObject({
       ok: true,
-      value: { angle: 180 },
+      value: { direction: { type: 'angle', deg: 180 } },
     })
     const rad = parseGradient(`linear-gradient(${Math.PI / 2}rad, red, blue)`)
     expect(rad.ok).toBe(true)
-    if (rad.ok) expect(rad.value.angle).toBeCloseTo(90, 5)
+    if (rad.ok && rad.value.direction.type === 'angle')
+      expect(rad.value.direction.deg).toBeCloseTo(90, 5)
   })
 
   it('accepts repeating-*', () => {
@@ -603,7 +1095,7 @@ describe('gradient-picker parseGradient', () => {
     const r = parseGradient('conic-gradient(from 20deg at 10% 90%, red, blue)')
     expect(r).toMatchObject({
       ok: true,
-      value: { kind: 'conic', angle: 20, center: { x: 10, y: 90 } },
+      value: { kind: 'conic', conicAngle: 20, center: { x: 10, y: 90 } },
     })
   })
 
@@ -630,17 +1122,9 @@ describe('gradient-picker parseGradient', () => {
     })
   })
 
-  it('defaults interpolation to oklab when omitted', () => {
-    const r = parseGradient('linear-gradient(45deg, red, blue)')
-    expect(r).toMatchObject({
-      ok: true,
-      value: { interpolation: { space: 'oklab', hue: 'shorter' } },
-    })
-  })
-
   it('accepts a head-omitted gradient (defaults to 180deg)', () => {
     const r = parseGradient('linear-gradient(red, blue)')
-    expect(r).toMatchObject({ ok: true, value: { angle: 180 } })
+    expect(r).toMatchObject({ ok: true, value: { direction: { type: 'angle', deg: 180 } } })
   })
 
   it('accepts any color parseCssColor accepts (hex/rgb/hsl/oklch/oklab/named)', () => {
@@ -724,191 +1208,6 @@ describe('gradient-picker parseGradient', () => {
   })
 })
 
-// ── colorAt ──────────────────────────────────────────────────────────────────
-
-describe('gradient-picker pickerStateOf', () => {
-  it('derives a ColorPickerState from the selected stop, projected onto state.model', () => {
-    const s = init({
-      model: 'oklch',
-      maxChroma: 0.25,
-      disabled: true,
-      stops: [
-        { position: 0, color: 'red' },
-        { position: 100, color: 'blue' },
-      ],
-    })
-    const derived = pickerStateOf(s)
-    expect(derived.color.model).toBe('oklch')
-    expect(derived.alpha).toBe(1)
-    expect(derived.disabled).toBe(true)
-    expect(derived.maxChroma).toBe(0.25)
-  })
-
-  it('follows selection: switching the selected stop changes what it derives', () => {
-    const s = init({
-      stops: [
-        { position: 0, color: 'red' },
-        { position: 100, color: 'blue' },
-      ],
-    })
-    const [switched] = update(s, { type: 'selectStop', id: s.stops[1]!.id })
-    expect(pickerStateOf(s).color).not.toEqual(pickerStateOf(switched).color)
-  })
-})
-
-describe('gradient-picker colorAt', () => {
-  it("returns an existing stop's own exact color at its own position", () => {
-    const s = init({
-      stops: [
-        { position: 0, color: 'red' },
-        { position: 100, color: 'blue' },
-      ],
-    })
-    expect(colorAt(s, 0)).toBe('#ff0000')
-    expect(colorAt(s, 100)).toBe('#0000ff')
-  })
-
-  it('clamps outside the stop range to the nearest end stop', () => {
-    const s = init({
-      stops: [
-        { position: 20, color: 'red' },
-        { position: 80, color: 'blue' },
-      ],
-    })
-    expect(colorAt(s, 0)).toBe('#ff0000')
-    expect(colorAt(s, 100)).toBe('#0000ff')
-  })
-
-  it('midpoint of red -> blue: srgb vs oklch differ as expected', () => {
-    const base = init({
-      stops: [
-        { position: 0, color: 'red' },
-        { position: 100, color: 'blue' },
-      ],
-    })
-    const srgbState = update(base, { type: 'setInterpolation', space: 'srgb' })[0]
-    // Hand-verified: (1,0,0) and (0,0,1) lerp to (0.5,0,0.5) -> 0.5*255=127.5,
-    // Math.round -> 128 -> #800080.
-    expect(colorAt(srgbState, 50)).toBe('#800080')
-
-    const oklchState = update(base, { type: 'setInterpolation', space: 'oklch', hue: 'shorter' })[0]
-    const oklchResult = colorAt(oklchState, 50)
-    expect(oklchResult).not.toBe('#800080')
-    expect(oklchResult.startsWith('oklch(')).toBe(true)
-
-    // Independently re-derive the SAME interpolation directly through
-    // `interpolateColor` (the function `color.test.ts` owns correctness
-    // for) and compare NUMERICALLY — this is the integration property under
-    // test: `colorAt` must feed it the right (a, b, t, space, hueMethod).
-    const a = parseCssColor('red')!
-    const b = parseCssColor('blue')!
-    const expected = interpolateColor(a, b, 0.5, 'oklch', 'shorter')
-    const parsedResult = parseCssColor(oklchResult)
-    expect(parsedResult).not.toBeNull()
-    if (parsedResult && parsedResult.space === 'oklch' && expected.space === 'oklch') {
-      expect(parsedResult.l).toBeCloseTo(expected.l!, 3)
-      expect(parsedResult.c).toBeCloseTo(expected.c!, 3)
-      expect(parsedResult.h).toBeCloseTo(expected.h!, 1)
-    }
-  })
-
-  it('interpolates between the two BRACKETING stops, not the endpoints, for a 3+ stop gradient', () => {
-    const s = init({
-      stops: [
-        { position: 0, color: 'red' },
-        { position: 50, color: 'lime' },
-        { position: 100, color: 'blue' },
-      ],
-      interpolation: { space: 'srgb' },
-    })
-    // At 25%, halfway between red and lime — NOT influenced by blue at all.
-    expect(colorAt(s, 25)).toBe('#808000')
-  })
-})
-
-// ── round trip: parseGradient(toCss(s)) reproduces s, modulo ids ───────────
-
-describe('gradient-picker round trip', () => {
-  const cases: GradientPickerState[] = [
-    init({
-      kind: 'linear',
-      angle: 0,
-      stops: [
-        { position: 0, color: 'red' },
-        { position: 100, color: 'blue' },
-      ],
-      interpolation: { space: 'srgb' },
-    }),
-    init({
-      kind: 'linear',
-      angle: 123,
-      repeating: true,
-      stops: [
-        { position: 10, color: 'red' },
-        { position: 90, color: 'lime' },
-      ],
-      interpolation: { space: 'oklch', hue: 'longer' },
-    }),
-    init({
-      kind: 'radial',
-      shape: 'circle',
-      size: 'closest-corner',
-      center: { x: 25, y: 75 },
-      stops: [
-        { position: 0, color: 'red' },
-        { position: 50, color: 'green' },
-        { position: 100, color: 'blue' },
-      ],
-      interpolation: { space: 'hsl' },
-    }),
-    init({
-      kind: 'conic',
-      angle: 200,
-      center: { x: 60, y: 40 },
-      stops: [
-        { position: 0, color: 'yellow' },
-        { position: 100, color: 'purple' },
-      ],
-      interpolation: { space: 'oklab' },
-    }),
-    init({
-      kind: 'linear',
-      angle: 45,
-      stops: [
-        { position: 0, color: { model: 'oklch', l: 0.6, c: 0.2, h: 260 } },
-        { position: 100, color: 'white' },
-      ],
-      interpolation: { space: 'srgb' },
-    }),
-  ]
-
-  for (const [i, state] of cases.entries()) {
-    it(`case ${i}: ${state.kind}${state.repeating ? ' repeating' : ''} in ${state.interpolation.space}`, () => {
-      const css = toCss(state)
-      const parsed = parseGradient(css)
-      expect(parsed.ok, `parseGradient failed on: ${css}`).toBe(true)
-      if (!parsed.ok) return
-      expect(parsed.value.kind).toBe(state.kind)
-      expect(parsed.value.repeating).toBe(state.repeating)
-      expect(parsed.value.interpolation).toEqual(state.interpolation)
-      if (state.kind !== 'radial') expect(parsed.value.angle).toBeCloseTo(state.angle, 1)
-      if (state.kind !== 'linear') {
-        expect(parsed.value.center.x).toBeCloseTo(state.center.x, 1)
-        expect(parsed.value.center.y).toBeCloseTo(state.center.y, 1)
-      }
-      if (state.kind === 'radial') {
-        expect(parsed.value.shape).toBe(state.shape)
-        expect(parsed.value.size).toBe(state.size)
-      }
-      expect(parsed.value.stops).toHaveLength(state.stops.length)
-      parsed.value.stops.forEach((stop, idx) => {
-        expect(stop.position).toBeCloseTo(state.stops[idx]!.position, 1)
-        expect(stop.alpha).toBeCloseTo(state.stops[idx]!.alpha, 3)
-      })
-    })
-  }
-})
-
 // ── connect(): part bags ─────────────────────────────────────────────────────
 
 describe('gradient-picker connect — static/reactive part attributes', () => {
@@ -920,7 +1219,7 @@ describe('gradient-picker connect — static/reactive part attributes', () => {
     ],
   })
   const send = vi.fn()
-  const p = connect(signalOf(s), send, { id: 'gp' })
+  const p = connect(signalOf(s), send, { id: 'gp', trackLabel: 'Custom track label' })
 
   it('root reflects kind/disabled/repeating', () => {
     expect(read(p.root['data-kind'], s)).toBe('linear')
@@ -934,8 +1233,23 @@ describe('gradient-picker connect — static/reactive part attributes', () => {
     expect(read(p.preview.style, s)).toContain(toCss(s))
   })
 
-  it('track style is a plain 90deg ramp in the interpolation space', () => {
-    expect(read(p.track.style, s)).toMatch(/linear-gradient\(90deg in oklab,/)
+  // Finding #11: trackLabel is an actual ConnectOptions field that must be used.
+  it("finding #11: opts.trackLabel is actually used for a stop's aria-label", () => {
+    expect(read(p.stop(s.stops[0]!.id)['aria-label'], s)).toBe('Custom track label')
+  })
+
+  it('finding #3: track style is built from the SAME serializer as toCss (hue method included, repeating/rtl reflected)', () => {
+    const longerHueState = {
+      ...s,
+      interpolation: { space: 'oklch' as const, hue: 'longer' as const },
+    }
+    expect(read(p.track.style, longerHueState)).toMatch(
+      /linear-gradient\(90deg in oklch longer hue,/,
+    )
+    const repeatingState = { ...s, repeating: true }
+    expect(read(p.track.style, repeatingState)).toMatch(/^background: repeating-linear-gradient\(/)
+    const rtlState = { ...s, dir: 'rtl' as const }
+    expect(read(p.track.style, rtlState)).toMatch(/linear-gradient\(270deg/)
   })
 
   it('stop() publishes ARIA + position style', () => {
@@ -974,7 +1288,7 @@ describe('gradient-picker connect — static/reactive part attributes', () => {
     expect(read(p.sizeOption('farthest-corner')['data-state'], s)).toBe('on')
   })
 
-  it('interpolationHueSelect is disabled for a non-polar space', () => {
+  it('finding #8: interpolationHueSelect is disabled for a non-polar space AND when the whole picker is disabled', () => {
     expect(
       read(
         p.interpolationHueSelect.disabled,
@@ -987,24 +1301,90 @@ describe('gradient-picker connect — static/reactive part attributes', () => {
         update(s, { type: 'setInterpolation', space: 'oklch' })[0],
       ),
     ).toBe(false)
+    expect(
+      read(p.interpolationHueSelect.disabled, {
+        ...s,
+        disabled: true,
+        interpolation: { space: 'oklch', hue: 'shorter' },
+      }),
+    ).toBe(true)
   })
 
-  it('cssInput value is toCss(state)', () => {
+  it('finding #6: cssInput shows the DRAFT while editing, the live value otherwise; aria-invalid + describedby follow cssError', () => {
     expect(read(p.cssInput.value, s)).toBe(toCss(s))
+    expect(read(p.cssInput['aria-invalid'], s)).toBeUndefined()
+    expect(read(p.cssInput['aria-describedby'], s)).toBeUndefined()
+    const draftState = { ...s, cssDraft: 'typing...', cssError: 'bad input' }
+    expect(read(p.cssInput.value, draftState)).toBe('typing...')
+    expect(read(p.cssInput['aria-invalid'], draftState)).toBe('true')
+    expect(read(p.cssInput['aria-describedby'], draftState)).toBe(p.cssError.id)
+    expect(read(p.cssError.visible, draftState)).toBe(true)
+    expect(read(p.cssError.message, draftState)).toContain('bad input')
+    expect(read(p.cssError.visible, s)).toBe(false)
   })
 
   it('picker exposes the full color-picker part bag over the derived state', () => {
     expect(p.picker.hexInput).toBeDefined()
     expect(p.picker.eyeDropperTrigger).toBeDefined()
     // `p.picker`'s signals are composed atop the OUTER gradient-picker state
-    // signal (`state.map(pickerStateOf)` inside `connect`), so `read` takes
-    // the gradient state `s`, not a pre-projected `ColorPickerState` — the
-    // projection happens as part of reading the composed signal.
+    // signal, so `read` takes the gradient state `s`.
     expect(read(p.picker.hexInput.value, s)).toBe('#ff0000')
   })
 })
 
-describe('gradient-picker connect — dispatch', () => {
+// ── Finding #5: every handler is tagSend-wrapped with truthful variants ─────
+
+describe('finding #5: tagSend coverage and picker variant truthfulness', () => {
+  const s = init({
+    stops: [
+      { position: 0, color: 'red' },
+      { position: 100, color: 'blue' },
+    ],
+  })
+  const send = vi.fn()
+  const p = connect(signalOf(s), send, { id: 'gp' })
+
+  it('track: every pointer handler (incl. move/up/cancel/lostpointercapture) is tagSend-wrapped', () => {
+    expect(variantsOf(p.track.onPointerDown)).toEqual(['addStop', 'moveStop'])
+    expect(variantsOf(p.track.onPointerMove)).toEqual(['moveStop'])
+    expect(variantsOf(p.track.onPointerUp)).toBeUndefined()
+    expect(variantsOf(p.track.onPointerCancel)).toBeUndefined()
+    expect(variantsOf(p.track.onLostPointerCapture)).toBeUndefined()
+  })
+
+  it('stop(): every pointer handler is tagSend-wrapped, including onPointerMove', () => {
+    const stop = p.stop(s.stops[0]!.id)
+    expect(variantsOf(stop.onPointerDown)).toEqual(['selectStop', 'moveStop'])
+    expect(variantsOf(stop.onPointerMove)).toEqual(['moveStop'])
+    expect(variantsOf(stop.onPointerUp)).toBeUndefined()
+    expect(variantsOf(stop.onPointerCancel)).toBeUndefined()
+    expect(variantsOf(stop.onLostPointerCapture)).toBeUndefined()
+    expect(variantsOf(stop.onFocus)).toEqual(['selectStop'])
+    expect(variantsOf(stop.onKeyDown)).toEqual(['nudgeStop', 'moveStop', 'removeStop'])
+  })
+
+  it('centerArea: every pointer handler is tagSend-wrapped', () => {
+    expect(variantsOf(p.centerArea.onPointerDown)).toEqual(['setCenter'])
+    expect(variantsOf(p.centerArea.onPointerUp)).toBeUndefined()
+    expect(variantsOf(p.centerArea.onPointerCancel)).toBeUndefined()
+    expect(variantsOf(p.centerArea.onLostPointerCapture)).toBeUndefined()
+  })
+
+  it("the embedded picker's wrapped send is tagged __lluiVariants: ['picker'] — every handler color-picker builds from it reports the TRUTHFUL parent type", () => {
+    expect(variantsOf(p.picker.hueSlider.onInput)).toEqual(['picker'])
+    expect(variantsOf(p.picker.modelToggle.onClick)).toEqual(['picker'])
+    expect(variantsOf(p.picker.eyeDropperTrigger.onClick)).toEqual(['picker'])
+  })
+
+  it('picker wrapping still dispatches the correctly-shaped wrapped message', () => {
+    p.picker.hueSlider.onInput(realInputEvent(document.createElement('input'), '200'))
+    expect(send).toHaveBeenCalledWith({ type: 'picker', msg: { type: 'setHue', h: 200 } })
+  })
+})
+
+// ── connect(): dispatch, using REAL events (finding #13) ────────────────────
+
+describe('gradient-picker connect — dispatch (real events)', () => {
   it('addStopButton dispatches addStop at the midpoint of the largest gap', () => {
     const s = init({
       stops: [
@@ -1047,119 +1427,117 @@ describe('gradient-picker connect — dispatch', () => {
     expect(send).toHaveBeenCalledWith({ type: 'distribute' })
   })
 
-  it('angleInput dispatches setAngle', () => {
+  it('angleInput dispatches setAngle from a real input element', () => {
     const s = init()
     const send = vi.fn()
     const p = connect(signalOf(s), send, { id: 'gp' })
-    p.angleInput.onInput({ target: { value: '77' } } as unknown as Event)
+    const input = document.createElement('input')
+    p.angleInput.onInput(realInputEvent(input, '77'))
     expect(send).toHaveBeenCalledWith({ type: 'setAngle', angle: 77 })
   })
 
-  it('cssInput dispatches setGradient', () => {
+  it('finding #6: cssInput commits on Enter/change, NEVER on plain input (draft only)', () => {
     const s = init()
     const send = vi.fn()
     const p = connect(signalOf(s), send, { id: 'gp' })
-    p.cssInput.onInput({
-      target: { value: 'linear-gradient(0deg, red, blue)' },
-    } as unknown as Event)
+    const input = document.createElement('input')
+
+    p.cssInput.onInput(realInputEvent(input, 'linear-gradient(0deg, red, blue)'))
+    expect(send).toHaveBeenCalledWith({
+      type: 'setGradientDraft',
+      value: 'linear-gradient(0deg, red, blue)',
+    })
+    expect(send).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'setGradient' }))
+
+    send.mockClear()
+    const enterEvent = realKeyEvent(input, 'Enter')
+    Object.defineProperty(enterEvent, 'target', { value: input, configurable: true })
+    p.cssInput.onKeyDown(enterEvent)
     expect(send).toHaveBeenCalledWith({
       type: 'setGradient',
       css: 'linear-gradient(0deg, red, blue)',
     })
+    expect(enterEvent.defaultPrevented).toBe(true)
+
+    send.mockClear()
+    input.value = 'radial-gradient(circle, red, blue)'
+    p.cssInput.onChange(realInputEvent(input, 'radial-gradient(circle, red, blue)', 'change'))
+    expect(send).toHaveBeenCalledWith({
+      type: 'setGradient',
+      css: 'radial-gradient(circle, red, blue)',
+    })
+  })
+
+  it('a non-Enter key on cssInput does not commit', () => {
+    const s = init()
+    const send = vi.fn()
+    const p = connect(signalOf(s), send, { id: 'gp' })
+    const input = document.createElement('input')
+    input.value = 'x'
+    const tabEvent = realKeyEvent(input, 'Tab')
+    Object.defineProperty(tabEvent, 'target', { value: input, configurable: true })
+    p.cssInput.onKeyDown(tabEvent)
+    expect(send).not.toHaveBeenCalled()
   })
 
   it('interpolationSpaceSelect / interpolationHueSelect dispatch setInterpolation', () => {
     const s = init()
     const send = vi.fn()
     const p = connect(signalOf(s), send, { id: 'gp' })
-    p.interpolationSpaceSelect.onInput({ target: { value: 'hsl' } } as unknown as Event)
+    // A real <select>'s `.value` setter only takes effect when a matching
+    // <option> exists — populate both selects before dispatching.
+    const spaceSelect = document.createElement('select')
+    for (const v of ['srgb', 'srgb-linear', 'oklab', 'oklch', 'hsl']) {
+      spaceSelect.appendChild(new Option(v, v))
+    }
+    p.interpolationSpaceSelect.onInput(
+      realInputEvent(spaceSelect as unknown as HTMLInputElement, 'hsl'),
+    )
     expect(send).toHaveBeenCalledWith({
       type: 'setInterpolation',
       space: 'hsl',
       hue: s.interpolation.hue,
     })
-    p.interpolationHueSelect.onInput({ target: { value: 'increasing' } } as unknown as Event)
+
+    const hueSelect = document.createElement('select')
+    for (const v of ['shorter', 'longer', 'increasing', 'decreasing']) {
+      hueSelect.appendChild(new Option(v, v))
+    }
+    p.interpolationHueSelect.onInput(
+      realInputEvent(hueSelect as unknown as HTMLInputElement, 'increasing'),
+    )
     expect(send).toHaveBeenCalledWith({
       type: 'setInterpolation',
       space: s.interpolation.space,
       hue: 'increasing',
     })
   })
-
-  it('picker wrapping: editing the picker changes only the selected stop', () => {
-    const s = init({
-      stops: [
-        { position: 0, color: 'red' },
-        { position: 100, color: 'blue' },
-      ],
-    })
-    const send = vi.fn()
-    const p = connect(signalOf(s), send, { id: 'gp' })
-    p.picker.hueSlider.onInput({ target: { value: '200' } } as unknown as Event)
-    expect(send).toHaveBeenCalledWith({ type: 'picker', msg: { type: 'setHue', h: 200 } })
-  })
 })
 
-describe('gradient-picker connect — pointer drag on the track (add + drag)', () => {
-  function fakeTrack(): {
-    target: {
-      getBoundingClientRect: () => { left: number; top: number; width: number; height: number }
-      setPointerCapture: ReturnType<typeof vi.fn>
-      hasPointerCapture: ReturnType<typeof vi.fn>
-      releasePointerCapture: ReturnType<typeof vi.fn>
-      querySelector: ReturnType<typeof vi.fn>
-    }
-    stopEl: { focus: ReturnType<typeof vi.fn> }
-  } {
-    const stopEl = { focus: vi.fn() }
-    return {
-      target: {
-        getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 20 }),
-        setPointerCapture: vi.fn(),
-        hasPointerCapture: vi.fn(() => true),
-        releasePointerCapture: vi.fn(),
-        querySelector: vi.fn(() => stopEl),
-      },
-      stopEl,
-    }
-  }
-  const pointerEvent = (
-    target: unknown,
-    overrides: Partial<{
-      button: number
-      clientX: number
-      clientY: number
-      pointerId: number
-    }> = {},
-  ): PointerEvent =>
-    ({
-      button: overrides.button ?? 0,
-      pointerId: overrides.pointerId ?? 1,
-      clientX: overrides.clientX ?? 100,
-      clientY: overrides.clientY ?? 10,
-      currentTarget: target,
-    }) as unknown as PointerEvent
-
+describe('gradient-picker connect — pointer drag on the track (add + drag), real PointerEvents', () => {
   it('pointerdown on the bare track adds a stop at that position and focuses it', () => {
     const s = init()
     const send = vi.fn()
     const p = connect(signalOf(s), send, { id: 'gp' })
-    const { target, stopEl } = fakeTrack()
-    p.track.onPointerDown(pointerEvent(target, { clientX: 100 }))
+    const track = fakeTrackElement()
+    const stopEl = document.createElement('div')
+    const focusSpy = vi.spyOn(stopEl, 'focus')
+    track.querySelector = vi.fn(() => stopEl)
+    p.track.onPointerDown(realPointerEvent(track, 'pointerdown', { clientX: 100 }))
     expect(send).toHaveBeenCalledWith({ type: 'addStop', position: 50 })
-    expect(target.setPointerCapture).toHaveBeenCalledWith(1)
-    expect(stopEl.focus).toHaveBeenCalledTimes(1)
+    expect(track.setPointerCapture).toHaveBeenCalledWith(1)
+    expect(focusSpy).toHaveBeenCalledTimes(1)
   })
 
   it('subsequent pointermove drags the newly-added stop', () => {
     const s = init()
     const send = vi.fn()
     const p = connect(signalOf(s), send, { id: 'gp' })
-    const { target } = fakeTrack()
-    p.track.onPointerDown(pointerEvent(target, { clientX: 100 }))
+    const track = fakeTrackElement()
+    p.track.onPointerDown(realPointerEvent(track, 'pointerdown', { clientX: 100 }))
     const newId = `s${s.nextId}`
     send.mockClear()
-    p.track.onPointerMove(pointerEvent(target, { clientX: 150 }))
+    p.track.onPointerMove(realPointerEvent(track, 'pointermove', { clientX: 150 }))
     expect(send).toHaveBeenCalledWith({ type: 'moveStop', id: newId, position: 75 })
   })
 
@@ -1167,11 +1545,11 @@ describe('gradient-picker connect — pointer drag on the track (add + drag)', (
     const s = init()
     const send = vi.fn()
     const p = connect(signalOf(s), send, { id: 'gp' })
-    const { target } = fakeTrack()
-    p.track.onPointerDown(pointerEvent(target, { clientX: 100 }))
-    p.track.onPointerUp(pointerEvent(target))
+    const track = fakeTrackElement()
+    p.track.onPointerDown(realPointerEvent(track, 'pointerdown', { clientX: 100 }))
+    p.track.onPointerUp(realPointerEvent(track, 'pointerup'))
     send.mockClear()
-    p.track.onPointerMove(pointerEvent(target, { clientX: 10 }))
+    p.track.onPointerMove(realPointerEvent(track, 'pointermove', { clientX: 10 }))
     expect(send).not.toHaveBeenCalled()
   })
 
@@ -1179,8 +1557,8 @@ describe('gradient-picker connect — pointer drag on the track (add + drag)', (
     const s: GradientPickerState = { ...init(), dir: 'rtl' }
     const send = vi.fn()
     const p = connect(signalOf(s), send, { id: 'gp' })
-    const { target } = fakeTrack()
-    p.track.onPointerDown(pointerEvent(target, { clientX: 50 })) // 25% physical -> 75% logical under rtl
+    const track = fakeTrackElement()
+    p.track.onPointerDown(realPointerEvent(track, 'pointerdown', { clientX: 50 })) // 25% physical -> 75% logical under rtl
     expect(send).toHaveBeenCalledWith({ type: 'addStop', position: 75 })
   })
 
@@ -1188,42 +1566,32 @@ describe('gradient-picker connect — pointer drag on the track (add + drag)', (
     const s = init({ disabled: true })
     const send = vi.fn()
     const p = connect(signalOf(s), send, { id: 'gp' })
-    const { target } = fakeTrack()
-    p.track.onPointerDown(pointerEvent(target))
+    const track = fakeTrackElement()
+    p.track.onPointerDown(realPointerEvent(track, 'pointerdown'))
     expect(send).not.toHaveBeenCalled()
   })
 })
 
 describe('gradient-picker connect — pointer drag on an existing stop', () => {
-  function fakeStopDrag(): {
-    target: {
-      getBoundingClientRect: () => { left: number; top: number; width: number; height: number }
-      setPointerCapture: ReturnType<typeof vi.fn>
-      hasPointerCapture: ReturnType<typeof vi.fn>
-      releasePointerCapture: ReturnType<typeof vi.fn>
-      closest: ReturnType<typeof vi.fn>
-    }
-  } {
-    const track = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 20 }) }
-    return {
-      target: {
-        getBoundingClientRect: () => ({ left: 0, top: 0, width: 20, height: 20 }),
-        setPointerCapture: vi.fn(),
-        hasPointerCapture: vi.fn(() => true),
-        releasePointerCapture: vi.fn(),
-        closest: vi.fn(() => track),
-      },
-    }
+  function fakeStopTarget(): HTMLDivElement {
+    const track = fakeTrackElement()
+    const el = document.createElement('div')
+    Object.assign(el, {
+      getBoundingClientRect: () => ({
+        left: 0,
+        top: 0,
+        width: 20,
+        height: 20,
+        right: 20,
+        bottom: 20,
+      }),
+      setPointerCapture: vi.fn(),
+      hasPointerCapture: vi.fn(() => true),
+      releasePointerCapture: vi.fn(),
+      closest: vi.fn(() => track),
+    })
+    return el
   }
-  const pointerEvent = (target: unknown, clientX: number): PointerEvent =>
-    ({
-      button: 0,
-      pointerId: 1,
-      clientX,
-      clientY: 10,
-      currentTarget: target,
-      stopPropagation: vi.fn(),
-    }) as unknown as PointerEvent
 
   it('pointerdown selects the stop and stops propagation (so the track does not also add a stop)', () => {
     const s = init({
@@ -1237,10 +1605,11 @@ describe('gradient-picker connect — pointer drag on an existing stop', () => {
     const p = connect(signalOf(s), send, { id: 'gp' })
     const id = s.stops[1]!.id
     const stopPart = p.stop(id)
-    const { target } = fakeStopDrag()
-    const e = pointerEvent(target, 100)
+    const el = fakeStopTarget()
+    const e = realPointerEvent(el, 'pointerdown', { clientX: 100 })
+    const stopPropSpy = vi.spyOn(e, 'stopPropagation')
     stopPart.onPointerDown(e)
-    expect(e.stopPropagation).toHaveBeenCalledTimes(1)
+    expect(stopPropSpy).toHaveBeenCalledTimes(1)
     expect(send).toHaveBeenCalledWith({ type: 'selectStop', id })
   })
 
@@ -1256,14 +1625,44 @@ describe('gradient-picker connect — pointer drag on an existing stop', () => {
     const p = connect(signalOf(s), send, { id: 'gp' })
     const id = s.stops[1]!.id
     const stopPart = p.stop(id)
-    const { target } = fakeStopDrag()
-    stopPart.onPointerDown(pointerEvent(target, 100))
+    const el = fakeStopTarget()
+    stopPart.onPointerDown(realPointerEvent(el, 'pointerdown', { clientX: 100 }))
     send.mockClear()
-    stopPart.onPointerMove(pointerEvent(target, 20))
+    stopPart.onPointerMove(realPointerEvent(el, 'pointermove', { clientX: 20 }))
     expect(send).toHaveBeenCalledWith({ type: 'moveStop', id, position: 10 })
   })
 
-  it('keyboard: ArrowRight/Left nudge, Shift is coarse, Home/End snap, Delete removes', () => {
+  it('finding #8 (RTL): ArrowRight/Left flip under rtl; ArrowUp/Down are direction-agnostic', () => {
+    const ltr = init({
+      stops: [
+        { position: 0, color: 'red' },
+        { position: 50, color: 'green' },
+        { position: 100, color: 'blue' },
+      ],
+    })
+    const rtl: GradientPickerState = { ...ltr, dir: 'rtl' }
+    const id = ltr.stops[1]!.id
+
+    const sendLtr = vi.fn()
+    const pLtr = connect(signalOf(ltr), sendLtr, { id: 'gp' })
+    const el1 = fakeStopTarget()
+    pLtr.stop(id).onKeyDown(realKeyEvent(el1, 'ArrowRight'))
+    expect(sendLtr).toHaveBeenCalledWith({ type: 'nudgeStop', id, delta: 1 })
+
+    const sendRtl = vi.fn()
+    const pRtl = connect(signalOf(rtl), sendRtl, { id: 'gp' })
+    const el2 = fakeStopTarget()
+    pRtl.stop(id).onKeyDown(realKeyEvent(el2, 'ArrowRight'))
+    // Under rtl, ArrowRight is flipped to mean "decrease".
+    expect(sendRtl).toHaveBeenCalledWith({ type: 'nudgeStop', id, delta: -1 })
+
+    sendRtl.mockClear()
+    pRtl.stop(id).onKeyDown(realKeyEvent(el2, 'ArrowUp'))
+    // ArrowUp/Down are never flipped by rtl (flipArrow only touches Left/Right).
+    expect(sendRtl).toHaveBeenCalledWith({ type: 'nudgeStop', id, delta: 1 })
+  })
+
+  it('keyboard: ArrowUp/Down (APG horizontal-slider synonyms), Shift is coarse, Home/End snap, Delete removes', () => {
     const s = init({
       stops: [
         { position: 0, color: 'red' },
@@ -1275,24 +1674,23 @@ describe('gradient-picker connect — pointer drag on an existing stop', () => {
     const p = connect(signalOf(s), send, { id: 'gp' })
     const id = s.stops[1]!.id
     const stopPart = p.stop(id)
-    const mk = (key: string, shiftKey = false): KeyboardEvent =>
-      ({ key, shiftKey, preventDefault: vi.fn() }) as unknown as KeyboardEvent
+    const el = fakeStopTarget()
 
-    stopPart.onKeyDown(mk('ArrowRight'))
+    stopPart.onKeyDown(realKeyEvent(el, 'ArrowUp'))
     expect(send).toHaveBeenCalledWith({ type: 'nudgeStop', id, delta: 1 })
-    stopPart.onKeyDown(mk('ArrowLeft', true))
+    stopPart.onKeyDown(realKeyEvent(el, 'ArrowDown', { shiftKey: true }))
     expect(send).toHaveBeenCalledWith({ type: 'nudgeStop', id, delta: -10 })
-    stopPart.onKeyDown(mk('Home'))
+    stopPart.onKeyDown(realKeyEvent(el, 'Home'))
     expect(send).toHaveBeenCalledWith({ type: 'moveStop', id, position: 0 })
-    stopPart.onKeyDown(mk('End'))
+    stopPart.onKeyDown(realKeyEvent(el, 'End'))
     expect(send).toHaveBeenCalledWith({ type: 'moveStop', id, position: 100 })
-    stopPart.onKeyDown(mk('PageUp'))
+    stopPart.onKeyDown(realKeyEvent(el, 'PageUp'))
     expect(send).toHaveBeenCalledWith({ type: 'nudgeStop', id, delta: 10 })
-    stopPart.onKeyDown(mk('PageDown'))
+    stopPart.onKeyDown(realKeyEvent(el, 'PageDown'))
     expect(send).toHaveBeenCalledWith({ type: 'nudgeStop', id, delta: -10 })
-    stopPart.onKeyDown(mk('Delete'))
+    stopPart.onKeyDown(realKeyEvent(el, 'Delete'))
     expect(send).toHaveBeenCalledWith({ type: 'removeStop', id })
-    stopPart.onKeyDown(mk('Backspace'))
+    stopPart.onKeyDown(realKeyEvent(el, 'Backspace'))
     expect(send).toHaveBeenCalledWith({ type: 'removeStop', id })
   })
 
@@ -1312,54 +1710,162 @@ describe('gradient-picker connect — pointer drag on an existing stop', () => {
 })
 
 describe('gradient-picker connect — center area (radial/conic)', () => {
-  function fakeArea(): {
-    target: {
-      getBoundingClientRect: () => { left: number; top: number; width: number; height: number }
-      querySelector: ReturnType<typeof vi.fn>
-      setPointerCapture: ReturnType<typeof vi.fn>
-      hasPointerCapture: ReturnType<typeof vi.fn>
-      releasePointerCapture: ReturnType<typeof vi.fn>
-    }
-  } {
-    return {
-      target: {
-        getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 50 }),
-        querySelector: vi.fn(() => ({ focus: vi.fn() })),
-        setPointerCapture: vi.fn(),
-        hasPointerCapture: vi.fn(() => true),
-        releasePointerCapture: vi.fn(),
-      },
-    }
+  function fakeAreaElement(): HTMLDivElement {
+    const el = document.createElement('div')
+    const thumb = document.createElement('div')
+    Object.assign(el, {
+      getBoundingClientRect: () => ({
+        left: 0,
+        top: 0,
+        width: 100,
+        height: 50,
+        right: 100,
+        bottom: 50,
+      }),
+      querySelector: vi.fn(() => thumb),
+      setPointerCapture: vi.fn(),
+      hasPointerCapture: vi.fn(() => true),
+      releasePointerCapture: vi.fn(),
+    })
+    return el
   }
 
   it('pointerdown/move on centerArea dispatches setCenter from the 2D position', () => {
     const s = init({ kind: 'radial' })
     const send = vi.fn()
     const p = connect(signalOf(s), send, { id: 'gp' })
-    const { target } = fakeArea()
-    p.centerArea.onPointerDown({
-      button: 0,
-      pointerId: 1,
-      clientX: 25,
-      clientY: 25,
-      currentTarget: target,
-    } as unknown as PointerEvent)
+    const el = fakeAreaElement()
+    p.centerArea.onPointerDown(realPointerEvent(el, 'pointerdown', { clientX: 25, clientY: 25 }))
     expect(send).toHaveBeenCalledWith({ type: 'setCenter', x: 25, y: 50 })
   })
 
-  it('centerThumb keyboard nudges x/y, Home/End snap to corners', () => {
+  it('finding #8: centerThumb keyboard nudges x/y (rtl-flipped Left/Right), Home/End snap to corners', () => {
     const s = init({ kind: 'radial', center: { x: 50, y: 50 } })
     const send = vi.fn()
     const p = connect(signalOf(s), send, { id: 'gp' })
-    const mk = (key: string, shiftKey = false): KeyboardEvent =>
-      ({ key, shiftKey, preventDefault: vi.fn() }) as unknown as KeyboardEvent
-    p.centerThumb.onKeyDown(mk('ArrowRight'))
+    const el = document.createElement('div')
+    p.centerThumb.onKeyDown(realKeyEvent(el, 'ArrowRight'))
     expect(send).toHaveBeenCalledWith({ type: 'setCenter', x: 51, y: 50 })
-    p.centerThumb.onKeyDown(mk('ArrowDown', true))
+    p.centerThumb.onKeyDown(realKeyEvent(el, 'ArrowDown', { shiftKey: true }))
     expect(send).toHaveBeenCalledWith({ type: 'setCenter', x: 50, y: 60 })
-    p.centerThumb.onKeyDown(mk('Home'))
+    p.centerThumb.onKeyDown(realKeyEvent(el, 'Home'))
     expect(send).toHaveBeenCalledWith({ type: 'setCenter', x: 0, y: 0 })
-    p.centerThumb.onKeyDown(mk('End'))
+    p.centerThumb.onKeyDown(realKeyEvent(el, 'End'))
     expect(send).toHaveBeenCalledWith({ type: 'setCenter', x: 100, y: 100 })
+
+    const rtl: GradientPickerState = { ...s, dir: 'rtl' }
+    const sendRtl = vi.fn()
+    const pRtl = connect(signalOf(rtl), sendRtl, { id: 'gp' })
+    pRtl.centerThumb.onKeyDown(realKeyEvent(el, 'ArrowRight'))
+    expect(sendRtl).toHaveBeenCalledWith({ type: 'setCenter', x: 49, y: 50 })
+  })
+})
+
+// ── Property test: parseGradient(toCss(state)) round-trips through a random
+// sequence of reducer messages, not just a hand-picked table (finding #13) ──
+
+describe('gradient-picker property: round trip survives arbitrary reducer traffic', () => {
+  const gpComponent = component<GradientPickerState, GradientPickerMsg, never>({
+    name: 'gradient-picker-property-under-test',
+    init: () => init({ interpolation: { space: 'srgb' } }),
+    update: (state, msg) => update(state, msg),
+    view: () => [],
+  })
+
+  const POSITIONS = [0, 5, 12.5, 25, 33, 50, 66, 75, 87.5, 95, 100]
+  const ANGLES = [0, 15, 45, 90, 135, 180, 225, 270, 315, 359]
+  let posCursor = 0
+  let angleCursor = 0
+  const nextPosition = (): number => POSITIONS[posCursor++ % POSITIONS.length]!
+  const nextAngle = (): number => ANGLES[angleCursor++ % ANGLES.length]!
+
+  function roundTripHolds(state: GradientPickerState): boolean {
+    const css = toCss(state)
+    const parsed = parseGradient(css)
+    if (!parsed.ok) return false
+    if (parsed.value.kind !== state.kind) return false
+    if (parsed.value.repeating !== state.repeating) return false
+    if (parsed.value.interpolation.space !== state.interpolation.space) return false
+    // `hue` only matters for a POLAR space (hsl/oklch) — `toCss` correctly
+    // drops an inert hue method for a non-polar space (`interpolationHead`),
+    // so a stored-but-irrelevant hue on e.g. `srgb-linear` legitimately does
+    // NOT round-trip, and comparing it there would be testing a value that
+    // was never observable in the serialized CSS to begin with.
+    const isPolar = state.interpolation.space === 'hsl' || state.interpolation.space === 'oklch'
+    if (isPolar && parsed.value.interpolation.hue !== state.interpolation.hue) return false
+    if (state.kind === 'conic' && Math.abs(parsed.value.conicAngle - state.conicAngle) > 0.05) {
+      return false
+    }
+    if (state.kind === 'linear') {
+      if (state.direction.type === 'angle') {
+        if (parsed.value.direction.type !== 'angle') return false
+        if (Math.abs(parsed.value.direction.deg - state.direction.deg) > 0.05) return false
+      }
+    }
+    if (parsed.value.stops.length !== state.stops.length) return false
+    for (let i = 0; i < state.stops.length; i++) {
+      if (Math.abs(parsed.value.stops[i]!.position - state.stops[i]!.position) > 0.05) return false
+      const a = pickerColorToCss(state.stops[i]!.color, state.stops[i]!.alpha)
+      const b = pickerColorToCss(parsed.value.stops[i]!.color, parsed.value.stops[i]!.alpha)
+      if (a !== b) return false
+    }
+    return true
+  }
+
+  it('holds after every message in 200 random sequences (kind/repeating/angle/center/stops/interpolation only — setGradient/picker are exercised by their own dedicated tests)', () => {
+    propertyTest<GradientPickerState, GradientPickerMsg, never>(gpComponent, {
+      invariants: [(state) => state.stops.length >= state.minStops && roundTripHolds(state)],
+      messageGenerators: {
+        addStop: (): GradientPickerMsg => ({ type: 'addStop', position: nextPosition() }),
+        removeStop: (s: GradientPickerState): GradientPickerMsg => ({
+          type: 'removeStop',
+          id: s.stops[posCursor++ % s.stops.length]!.id,
+        }),
+        moveStop: (s: GradientPickerState): GradientPickerMsg => ({
+          type: 'moveStop',
+          id: s.stops[posCursor++ % s.stops.length]!.id,
+          position: nextPosition(),
+        }),
+        nudgeStop: (s: GradientPickerState): GradientPickerMsg => ({
+          type: 'nudgeStop',
+          id: s.stops[posCursor++ % s.stops.length]!.id,
+          delta: nextPosition() - 50,
+        }),
+        setKind: (): GradientPickerMsg => ({
+          type: 'setKind',
+          kind: (['linear', 'radial', 'conic'] as const)[angleCursor++ % 3]!,
+        }),
+        setRepeating: (): GradientPickerMsg => ({
+          type: 'setRepeating',
+          repeating: angleCursor++ % 2 === 0,
+        }),
+        setAngle: (): GradientPickerMsg => ({ type: 'setAngle', angle: nextAngle() }),
+        setCenter: (): GradientPickerMsg => ({
+          type: 'setCenter',
+          x: nextPosition(),
+          y: nextPosition(),
+        }),
+        setShape: (): GradientPickerMsg => ({
+          type: 'setShape',
+          shape: (['circle', 'ellipse'] as const)[angleCursor++ % 2]!,
+        }),
+        setSize: (): GradientPickerMsg => ({
+          type: 'setSize',
+          size: (['closest-side', 'closest-corner', 'farthest-side', 'farthest-corner'] as const)[
+            angleCursor++ % 4
+          ]!,
+        }),
+        setInterpolation: (): GradientPickerMsg => ({
+          type: 'setInterpolation',
+          space: (['srgb', 'srgb-linear', 'oklab', 'oklch', 'hsl'] as const)[angleCursor++ % 5]!,
+          hue: (['shorter', 'longer', 'increasing', 'decreasing'] as const)[angleCursor++ % 4]!,
+        }),
+        reverse: (): GradientPickerMsg => ({ type: 'reverse' }),
+        distribute: (): GradientPickerMsg => ({ type: 'distribute' }),
+      },
+      runs: 200,
+      maxSequenceLength: 15,
+      seed: 12345,
+    })
   })
 })
