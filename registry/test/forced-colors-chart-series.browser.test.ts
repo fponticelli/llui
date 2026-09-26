@@ -6,6 +6,14 @@ import { createServer, type Alias, type ViteDevServer } from 'vite'
 import { resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../scripts/lib/vite-source-aliases.mjs'
 import { contrast, srgb8ToLinear } from '../../scripts/lib/oklch.mjs'
+import {
+  distinctPaintedColorCount,
+  paintedColors,
+  paintedSpatialSignature,
+} from '../../packages/components/test/styles/pixel-probe'
+
+// Matches the fixture's SERIES keys (both examples' forced-colors-chart.ts).
+const SERIES_KEYS = ['bar1', 'bar2', 'bar3', 'area1', 'area2', 'area3']
 
 /**
  * Proves the #264 forced-colors fix end to end: `forced-colors: active`
@@ -329,11 +337,14 @@ describe('forced-colors chart series distinctness (real pixels, both paths)', ()
       const patternIds = new Set(
         [...barFills, ...areaFills].map((f) => patternIdOf(f.fill)).filter((id) => id !== null),
       )
-      // Exact (#264 review item 11): 6 series cycling 5 cues mod-5 means
-      // cue indices 0 and 5 both land on 'solid' (a literal CanvasText fill,
-      // no pattern reference), so exactly 4 of the 5 cue names are ever
-      // referenced by a pattern url() here — short-dash/dot/long-dash/dash-dot.
-      expect(patternIds.size).toBe(4)
+      // Exact (#264 review item 11, revised by review item 7): the cue
+      // vocabulary now has SEVEN names, not five, precisely so a chart with
+      // more than five series never collides two of them back onto the same
+      // cue — this fixture's 6 series (indices 0-5) land on
+      // solid/short-dash/dot/long-dash/dash-dot/grid, one of each, so 5 of
+      // the 7 cue names are referenced by a pattern url() here (every
+      // non-'solid' cue that actually occurs).
+      expect(patternIds.size).toBe(5)
       for (const id of patternIds) {
         const colorCount = await patternColorCount(page, id)
         expect(colorCount, `pattern #${id} should paint >= 2 colours`).toBeGreaterThanOrEqual(2)
@@ -424,7 +435,7 @@ describe('forced-colors chart series distinctness (real pixels, both paths)', ()
       const patternIds = new Set(
         [...barFills, ...areaFills].map((f) => patternIdOf(f.fill)).filter((id) => id !== null),
       )
-      expect(patternIds.size).toBe(4)
+      expect(patternIds.size).toBe(5)
       for (const id of patternIds) {
         expect(visiblePatternIds, id).toContain(id)
         const colorCount = await patternColorCount(page, id)
@@ -434,4 +445,180 @@ describe('forced-colors chart series distinctness (real pixels, both paths)', ()
       await context.close()
     },
   )
+
+  // #264 review item 7: the legend chip only carried `--mark-color`, which
+  // forced colors flattens uniformly across every series — every legend
+  // entry looked identical. `data-series-cue` on the swatch itself gives it
+  // the same redundant cue a mark carries.
+  it.each(['baseline', 'registryTailwind'] as const)(
+    '%s: legend swatches resolve to pairwise-distinct fills under forced colors',
+    async (path) => {
+      const demo = demos.find((candidate) => candidate.path === path)!
+      const context: BrowserContext = await browser.newContext({ forcedColors: 'active' })
+      const page = await context.newPage()
+      await page.goto(demo.url)
+      await page.locator('#chart-legend').waitFor({ state: 'attached' })
+
+      const swatchIds = SERIES_KEYS.map((key) => `chart-swatch-${key}`)
+      const signatures = await Promise.all(
+        swatchIds.map((id) => distinctPaintedColorCount(page.locator(`#${id}`))),
+      )
+      // Every swatch must paint more than one colour on its own (a border
+      // plus a fill/pattern), which is what makes the NEXT check ("are they
+      // different from EACH OTHER") meaningful rather than trivially true of
+      // six blank boxes.
+      expect(signatures.every((count) => count >= 2)).toBe(true)
+
+      // A plain colour SET cannot tell two swatches apart when both use only
+      // Canvas/CanvasText at a different angle or spacing (the exact shape a
+      // colour-count check misses) — the normalized spatial fingerprint
+      // captures the ARRANGEMENT instead. See `pixel-probe.ts`'s
+      // `decodePngSpatialSignature` header.
+      const spatial = await Promise.all(
+        swatchIds.map((id) => paintedSpatialSignature(page.locator(`#${id}`))),
+      )
+      expect(new Set(spatial).size).toBe(spatial.length)
+
+      await context.close()
+    },
+  )
+
+  // #264 review item 7: >5 series used to cycle `% 5`, silently reusing the
+  // sixth series' cue for the first — the seven-name vocabulary means seven
+  // series never collide.
+  it.each(['baseline', 'registryTailwind'] as const)(
+    '%s: seven bar series resolve to pairwise-distinct fills under forced colors',
+    async (path) => {
+      const demo = demos.find((candidate) => candidate.path === path)!
+      const context: BrowserContext = await browser.newContext({ forcedColors: 'active' })
+      const page = await context.newPage()
+      await page.goto(demo.url)
+      await page.locator('#chart-seven-svg').waitFor({ state: 'attached' })
+
+      const fills = await page.evaluate(() => {
+        const root = document.getElementById('chart-seven-svg')
+        if (root === null) throw new Error('missing #chart-seven-svg')
+        const bySeries = new Map<string, string>()
+        for (const el of root.querySelectorAll(
+          '[data-scope="chart"][data-part="mark"][data-mark="bar"]',
+        )) {
+          const series = el.getAttribute('data-series')
+          if (series === null || bySeries.has(series)) continue
+          bySeries.set(series, getComputedStyle(el).fill)
+        }
+        return [...bySeries.values()]
+      })
+      expect(fills.length).toBe(7)
+      expect(new Set(fills).size).toBe(7)
+
+      await context.close()
+    },
+  )
+
+  // #264 review item 7: a pie/donut's wedges are one series across many
+  // rows, so the per-series cue gave every wedge the SAME redundant cue —
+  // one undifferentiated ring. The per-ROW cue fixes it.
+  it.each(['baseline', 'registryTailwind'] as const)(
+    '%s: pie/donut wedges resolve to pairwise-distinct fills under forced colors',
+    async (path) => {
+      const demo = demos.find((candidate) => candidate.path === path)!
+      const context: BrowserContext = await browser.newContext({ forcedColors: 'active' })
+      const page = await context.newPage()
+      await page.goto(demo.url)
+      await page.locator('#chart-pie-svg').waitFor({ state: 'attached' })
+
+      const fills = await page.evaluate(() => {
+        const root = document.getElementById('chart-pie-svg')
+        if (root === null) throw new Error('missing #chart-pie-svg')
+        return [
+          ...root.querySelectorAll('[data-scope="chart"][data-part="mark"][data-mark="bar"]'),
+        ].map((el) => getComputedStyle(el).fill)
+      })
+      // Five rows (#264 review item 7's fixture), one wedge each.
+      expect(fills.length).toBe(5)
+      expect(new Set(fills).size).toBe(5)
+
+      await context.close()
+    },
+  )
+
+  // #264 review item 7: non-text contrast of a mark against its Canvas
+  // background must reach 3:1, proven through the SAME pixel path and the
+  // SAME contrast math (`scripts/lib/oklch.mjs`) the self-check canary uses.
+  it.each(['baseline', 'registryTailwind'] as const)(
+    '%s: every bar/area mark reaches 3:1 non-text contrast against its Canvas background',
+    async (path) => {
+      const demo = demos.find((candidate) => candidate.path === path)!
+      const context: BrowserContext = await browser.newContext({ forcedColors: 'active' })
+      const page = await context.newPage()
+      await page.goto(demo.url)
+      await page.locator('#chart-svg').waitFor({ state: 'attached' })
+
+      const svgBackground = await page
+        .locator('#chart-svg')
+        .evaluate((el) => getComputedStyle(el).backgroundColor)
+      const markColors = await page.evaluate(() =>
+        [
+          ...document
+            .getElementById('chart-svg')!
+            .querySelectorAll('[data-scope="chart"][data-part="mark"][data-mark="bar"]'),
+        ].map((el) => getComputedStyle(el).fill),
+      )
+      expect(markColors.length).toBeGreaterThan(0)
+
+      // A pattern-filled mark's resolved `fill` is `url("#id") rgb(...)` —
+      // an SVG paint-server reference with a plain-colour FALLBACK, not a
+      // colour canvas `fillStyle` can parse on its own. The trailing
+      // `rgb(...)` is that fallback (the pattern's own ink, `CanvasText`,
+      // resolved) — a solid mark's `fill` IS already just that colour, so
+      // the same extraction is a no-op there.
+      const inkOf = (fill: string): string => fill.match(/rgba?\([^)]*\)\s*$/)?.[0] ?? fill
+
+      for (const markColor of markColors) {
+        const ink = inkOf(markColor)
+        const [markRgb, backgroundRgb] = await paintedColors(page, [ink, svgBackground])
+        const ratio = contrast(
+          srgb8ToLinear([markRgb!.r, markRgb!.g, markRgb!.b]),
+          srgb8ToLinear([backgroundRgb!.r, backgroundRgb!.g, backgroundRgb!.b]),
+        )
+        expect(
+          ratio,
+          `mark ink ${ink} (from ${markColor}) vs background ${svgBackground}`,
+        ).toBeGreaterThanOrEqual(3)
+      }
+
+      await context.close()
+    },
+  )
+
+  // #264 review item 7: the baseline bar/area forced-colors stroke used to
+  // lose to the non-forced `stroke: none` rule on specificity, so a bar mark
+  // painted with NO outline at all under forced colors — proven here by
+  // reading the real computed `stroke`/`stroke-width`, not by inspecting the
+  // CSS source.
+  it('baseline: bar marks get a real CanvasText outline under forced colors', async () => {
+    const demo = demos.find((candidate) => candidate.path === 'baseline')!
+    const context: BrowserContext = await browser.newContext({ forcedColors: 'active' })
+    const page = await context.newPage()
+    await page.goto(demo.url)
+    await page.locator('#chart-svg').waitFor({ state: 'attached' })
+
+    const strokes = await page.evaluate(() =>
+      [
+        ...document
+          .getElementById('chart-svg')!
+          .querySelectorAll('[data-scope="chart"][data-part="mark"][data-mark="bar"]'),
+      ].map((el) => {
+        const style = getComputedStyle(el)
+        return { stroke: style.stroke, strokeWidth: style.strokeWidth }
+      }),
+    )
+    expect(strokes.length).toBeGreaterThan(0)
+    for (const { stroke, strokeWidth } of strokes) {
+      expect(stroke).not.toBe('none')
+      expect(Number.parseFloat(strokeWidth)).toBeGreaterThan(0)
+    }
+
+    await context.close()
+  })
 })

@@ -13,6 +13,9 @@ import {
   ChartDot,
   ChartGrid,
   ChartLayer,
+  ChartLegend,
+  ChartLegendItem,
+  ChartLegendSwatch,
   ChartMark,
   ChartSvg,
   ChartTitle,
@@ -32,14 +35,60 @@ const ROWS: chartC.ChartRow[] = [
   { label: 'Q2', values: { bar1: 18, bar2: 13, bar3: 8, area1: 20, area2: 15, area3: 9 } },
 ]
 
+// Seven series (#264 review item 7): one MORE than the seven-name cue
+// vocabulary, so a chart declaring an eighth series would repeat one name —
+// this fixture only needs to prove seven stay pairwise distinct, which is
+// what `SERIES_CUES.length === 7` promises.
+const SEVEN_SERIES = Array.from({ length: 7 }, (_, i) => ({
+  key: `s${i}`,
+  label: `Series ${i}`,
+  mark: 'bar' as const,
+}))
+const SEVEN_ROWS: chartC.ChartRow[] = [
+  {
+    label: 'Q1',
+    values: Object.fromEntries(SEVEN_SERIES.map((s, i) => [s.key, 10 + i])),
+  },
+]
+
+// A single-series PIE (share domain + polar coord): one series, several
+// rows — every wedge used to get the SAME per-series cue, one undifferentiated
+// ring (#264 review item 7). Five rows, one more than the five ORIGINAL cue
+// names, so this also proves the per-ROW cue keeps cycling correctly.
+const PIE_SERIES = [{ key: 'share', label: 'Share', mark: 'bar' as const }]
+const PIE_ROWS: chartC.ChartRow[] = [
+  { label: 'A', values: { share: 10 } },
+  { label: 'B', values: { share: 20 } },
+  { label: 'C', values: { share: 15 } },
+  { label: 'D', values: { share: 25 } },
+  { label: 'E', values: { share: 30 } },
+]
+
+interface ChartFixtureOptions {
+  readonly series: readonly chartC.ChartSeries[]
+  readonly rows: readonly chartC.ChartRow[]
+  readonly domain?: chartC.ChartDomain
+  readonly coord?: chartC.ChartCoord
+  readonly legend?: boolean
+}
+
 function chartFixture(
   chartId: string,
   domIdPrefix: string,
+  opts: ChartFixtureOptions = { series: SERIES, rows: ROWS },
 ): ReturnType<typeof component<{ chart: chartC.ChartState }, chartC.ChartMsg>> {
   return component<{ chart: chartC.ChartState }, chartC.ChartMsg>({
     name: 'ForcedColorsChartFixture',
     init: () => [
-      { chart: chartC.init({ series: SERIES, rows: ROWS, label: 'Series fixture' }) },
+      {
+        chart: chartC.init({
+          series: [...opts.series],
+          rows: [...opts.rows],
+          label: 'Series fixture',
+          domain: opts.domain,
+          coord: opts.coord,
+        }),
+      },
       [],
     ],
     update: (state, msg) => [{ chart: chartC.update(state.chart, msg)[0] }, []],
@@ -84,6 +133,22 @@ function chartFixture(
               ]),
             ],
           ),
+          ...(opts.legend
+            ? [
+                ChartLegend(
+                  { id: `${domIdPrefix}-legend` },
+                  opts.series.map((s) =>
+                    ChartLegendItem({ ...parts.legendItem(s.key) }, [
+                      ChartLegendSwatch({
+                        ...parts.legendSwatch(s.key),
+                        id: `${domIdPrefix}-swatch-${s.key}`,
+                      }),
+                      text(s.label),
+                    ]),
+                  ),
+                ),
+              ]
+            : []),
         ]),
       ]
     },
@@ -97,6 +162,29 @@ function chartFixture(
 // the fix: each instance's marks reference only its OWN patterns.
 mountApp(
   document.getElementById('hidden-app')!,
-  chartFixture('forced-colors-chart-hidden', 'chart-hidden'),
+  chartFixture('forced-colors-chart-hidden', 'chart-hidden', {
+    series: SERIES,
+    rows: ROWS,
+    legend: true,
+  }),
 )
-mountApp(document.getElementById('app')!, chartFixture('forced-colors-chart', 'chart'))
+mountApp(
+  document.getElementById('app')!,
+  chartFixture('forced-colors-chart', 'chart', { series: SERIES, rows: ROWS, legend: true }),
+)
+mountApp(
+  document.getElementById('app-seven')!,
+  chartFixture('forced-colors-chart-seven', 'chart-seven', {
+    series: SEVEN_SERIES,
+    rows: SEVEN_ROWS,
+  }),
+)
+mountApp(
+  document.getElementById('app-pie')!,
+  chartFixture('forced-colors-chart-pie', 'chart-pie', {
+    series: PIE_SERIES,
+    rows: PIE_ROWS,
+    domain: 'share',
+    coord: 'polar',
+  }),
+)

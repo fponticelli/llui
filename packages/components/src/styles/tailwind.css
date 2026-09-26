@@ -185,4 +185,37 @@
   --llui-chart-fill-dot: url('#llui-chart-pattern-dot') CanvasText;
   --llui-chart-fill-long-dash: url('#llui-chart-pattern-long-dash') CanvasText;
   --llui-chart-fill-dash-dot: url('#llui-chart-pattern-dash-dot') CanvasText;
+  --llui-chart-fill-grid: url('#llui-chart-pattern-grid') CanvasText;
+  --llui-chart-fill-cross-hatch: url('#llui-chart-pattern-cross-hatch') CanvasText;
+}
+
+/**
+ * Legend-swatch forced-colors background images, one per {@link
+ * ChartSeriesCue} (#264 review item 7) — kept as plain `:root` custom
+ * properties rather than inline in `ChartLegendSwatch`'s Tailwind class
+ * string, because a `repeating-linear-gradient(...)`/`radial-gradient(...)`
+ * value's internal COMMAS and PARENTHESES do not reliably survive Tailwind
+ * v4's candidate scanner inside a long chained-variant utility — measured:
+ * every one of these classes silently compiled to `background-image: none`
+ * when spelled as `forced-colors:data-[series-cue=X]:[background-image:
+ * repeating-linear-gradient(...)]` directly. A single `var(--name)`
+ * reference (`[background-image:var(--llui-chart-swatch-short-dash)]`) has
+ * no such punctuation and scans reliably, matching the existing
+ * `fill-(--llui-chart-fill-*)` idiom above.
+ */
+:root {
+  --llui-chart-swatch-short-dash: repeating-linear-gradient(
+    90deg,
+    CanvasText 0 2px,
+    Canvas 2px 5px
+  );
+  --llui-chart-swatch-dot: radial-gradient(circle, CanvasText 35%, Canvas 36%);
+  --llui-chart-swatch-long-dash: repeating-linear-gradient(90deg, CanvasText 0 4px, Canvas 4px 6px);
+  --llui-chart-swatch-dash-dot: repeating-linear-gradient(45deg, CanvasText 0 2px, Canvas 2px 4px);
+  --llui-chart-swatch-grid:
+    repeating-linear-gradient(0deg, CanvasText 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, CanvasText 0 1px, Canvas 1px 4px);
+  --llui-chart-swatch-cross-hatch:
+    repeating-linear-gradient(45deg, CanvasText 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(-45deg, CanvasText 0 1px, Canvas 1px 3px);
 }

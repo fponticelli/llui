@@ -371,7 +371,10 @@ const chartAdapter: Adapter<ChartCaseInput> = (host, input, ctx) =>
         div({ ...parts.tooltip }, [text(parts.activeLabel)]),
         div(
           CHART_FIXTURE_SERIES.map((series) =>
-            button({ ...parts.legendItem(series.key) }, [text(series.label)]),
+            button({ ...parts.legendItem(series.key) }, [
+              span({ ...parts.legendSwatch(series.key) }),
+              text(series.label),
+            ]),
           ),
         ),
         tableElement({ ...parts.table }, [tbody([tr([td([text('Q1')]), td([text('12')])])])]),

@@ -415,7 +415,10 @@ function plot(
       opts.legend === null
         ? Object.keys(opts.config).map((key) =>
             ChartLegendItem({ ...parts.legendItem(key) }, [
-              ChartLegendSwatch({ style: `--mark-color:var(--color-${key})` }),
+              ChartLegendSwatch({
+                ...parts.legendSwatch(key),
+                style: `--mark-color:var(--color-${key})`,
+              }),
               text(opts.config[key]!.label),
             ]),
           )

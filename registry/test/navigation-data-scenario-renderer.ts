@@ -72,6 +72,7 @@ import {
   ChartLayer,
   ChartLegend,
   ChartLegendItem,
+  ChartLegendSwatch,
   ChartMark,
   ChartSvg,
   ChartTable,
@@ -488,7 +489,10 @@ const chartAdapter: Adapter<ChartCaseInput> = (host, input, ctx) =>
         ChartTooltipContent({ ...parts.tooltip }, [text(parts.activeLabel)]),
         ChartLegend(
           CHART_FIXTURE_SERIES.map((series) =>
-            ChartLegendItem({ ...parts.legendItem(series.key) }, [text(series.label)]),
+            ChartLegendItem({ ...parts.legendItem(series.key) }, [
+              ChartLegendSwatch({ ...parts.legendSwatch(series.key) }),
+              text(series.label),
+            ]),
           ),
         ),
         ChartTable({ ...parts.table }, [

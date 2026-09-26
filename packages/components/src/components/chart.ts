@@ -57,19 +57,42 @@ import type { Curve } from '../utils/path.js'
 
 export type { ChartCoord }
 export type MarkType = 'line' | 'area' | 'bar'
-export type ChartSeriesCue = 'solid' | 'short-dash' | 'dot' | 'long-dash' | 'dash-dot'
+export type ChartSeriesCue =
+  | 'solid'
+  | 'short-dash'
+  | 'dot'
+  | 'long-dash'
+  | 'dash-dot'
+  | 'grid'
+  | 'cross-hatch'
 
+/**
+ * Seven names, not five (#264 review item 7): a chart with MORE than five
+ * series used to cycle `% 5`, so series index 5 silently reused index 0's
+ * cue ('solid') — two series became visually IDENTICAL under forced colors
+ * the moment a chart declared a sixth series. `grid` and `cross-hatch` are
+ * two more genuinely distinct redundant cues (a fine grid fill / a dense
+ * crosshatch fill for bar and area marks, their own dash rhythms for line
+ * marks, their own radius/fill/stroke combination for dot markers), so a
+ * chart stays fully distinguishable through seven series before any name
+ * repeats.
+ */
 const SERIES_CUES: readonly ChartSeriesCue[] = [
   'solid',
   'short-dash',
   'dot',
   'long-dash',
   'dash-dot',
+  'grid',
+  'cross-hatch',
 ]
 
-function seriesCue(state: ChartState, key: string): ChartSeriesCue {
-  const index = state.series.findIndex((series) => series.key === key)
+function cueForIndex(index: number): ChartSeriesCue {
   return SERIES_CUES[index < 0 ? 0 : index % SERIES_CUES.length]!
+}
+
+function seriesCue(state: ChartState, key: string): ChartSeriesCue {
+  return cueForIndex(state.series.findIndex((series) => series.key === key))
 }
 
 /** `${id}:pattern-<cue>` for every non-`solid` cue (solid needs no pattern —
@@ -130,6 +153,18 @@ export function chartForcedColorPatterns(id: string): Mountable {
     swatch(patternId(id, 'dash-dot'), [
       tile('Canvas'),
       elNS('path', { d: 'M0 0L8 8M8 0L0 8', stroke: 'CanvasText', 'stroke-width': 1.5 }),
+    ]),
+    swatch(patternId(id, 'grid'), [
+      tile('Canvas'),
+      elNS('path', { d: 'M4 0V8M0 4H8', stroke: 'CanvasText', 'stroke-width': 1 }),
+    ]),
+    swatch(patternId(id, 'cross-hatch'), [
+      tile('Canvas'),
+      elNS('path', {
+        d: 'M0 0L8 8M8 0L0 8M4 0V8M0 4H8',
+        stroke: 'CanvasText',
+        'stroke-width': 0.75,
+      }),
     ]),
   ])
 }
@@ -618,7 +653,13 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
         if (slice === undefined || slice.share <= 0) continue
         marks.push({
           seriesKey: s.key,
-          seriesCue: cue,
+          // A pie/donut's wedges are one SERIES across many ROWS, so the
+          // per-SERIES cue above would give every wedge of a single-series
+          // pie the SAME redundant cue — visually one undifferentiated ring
+          // under forced colors (#264 review item 7). The wedge's cue is
+          // keyed by its ROW index instead, cycling the same seven-name
+          // vocabulary, so adjacent slices are genuinely distinguishable.
+          seriesCue: cueForIndex(i),
           label: s.label,
           mark: 'bar',
           d: projection.band(slice.start, slice.end, v0, v1),
@@ -884,6 +925,16 @@ export interface ChartParts {
     'aria-pressed': Signal<boolean>
     onClick: (e: MouseEvent) => void
   }
+  /** The legend's colour chip. Spreadable onto its own element (a `<span>` in
+   * both skins) so a forced-colors rule can key off `data-series-cue` the
+   * SAME way a mark does — a legend swatch that only carries `--mark-color`
+   * paints identically for every series once forced colors flattens author
+   * colour, which is the accessibility gap #264 review item 7 names. */
+  legendSwatch: (key: string) => {
+    'data-scope': 'chart'
+    'data-part': 'legend-swatch'
+    'data-series-cue': Signal<ChartSeriesCue>
+  }
   /** Attributes for one drawn mark. Spread onto a `<path>` and pass `d`. */
   markProps: (mark: ChartMark) => {
     'data-scope': 'chart'
@@ -994,6 +1045,8 @@ export function connect(
     ['dot', `url('#${patternId(opts.id, 'dot')}') CanvasText`],
     ['long-dash', `url('#${patternId(opts.id, 'long-dash')}') CanvasText`],
     ['dash-dot', `url('#${patternId(opts.id, 'dash-dot')}') CanvasText`],
+    ['grid', `url('#${patternId(opts.id, 'grid')}') CanvasText`],
+    ['cross-hatch', `url('#${patternId(opts.id, 'cross-hatch')}') CanvasText`],
   ]
     .map(([cue, value]) => `--llui-chart-fill-${cue}:${value}`)
     .join(';')
@@ -1071,6 +1124,11 @@ export function connect(
         const s = state.peek()
         send({ type: 'setActiveSeries', key: s.activeSeries === key ? null : key })
       }),
+    }),
+    legendSwatch: (key) => ({
+      'data-scope': 'chart',
+      'data-part': 'legend-swatch',
+      'data-series-cue': state.map((s) => seriesCue(s, key)),
     }),
     markProps: (mark) => ({
       'data-scope': 'chart',
