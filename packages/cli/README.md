@@ -58,14 +58,30 @@ Gallery and visual-regression consumers import the browser-safe protocol directl
 source of product metadata. A family supplies semantic cases keyed by the contract's
 `scenarioId`, and `compileScenarioFamily` performs the exact join in canonical contract order.
 
-`compileScenarioFamily` and `resolveScenarioSelection` require a STATICALLY KNOWN `Definitions`
-literal — there is no `unknown` fallthrough, so an invalid literal (an extra field on a case, an
-unrecognized `environmentAxes` value, a function in `input`, …) is a compile error rather than a
-value silently accepted and narrowed away to `CompiledPresentationScenarioFamily`'s erased,
+**This is a deliberate, final API split, not an in-progress one:** `compileScenarioFamily` and
+`resolveScenarioSelection` require a STATICALLY KNOWN `Definitions` literal — there is no
+`unknown` fallthrough, so an invalid literal (an extra field on a case, an unrecognized
+`environmentAxes` value, a function in `input`, …) is a compile error rather than a value
+silently accepted and narrowed away to `CompiledPresentationScenarioFamily`'s erased,
 `string`-keyed shape. For a definitions, catalog, or selection value received from a genuinely
 untyped or serialized boundary (a network response, `JSON.parse`, a dynamic import), decode it
-with `decodeScenarioFamily` / `decodeScenarioSelection` instead — the same validation and
-diagnostics, deliberately without static narrowing.
+with the separately named `decodeScenarioFamily` / `decodeScenarioSelection` instead — the same
+validation and diagnostics, deliberately without static narrowing. Do not reintroduce an
+`unknown` overload on the typed pair to "simplify" the surface: that overload is exactly what let
+an invalid literal silently degrade instead of failing to compile (#270).
+
+**Compile-time exactness has known limits — the runtime decoder is the actual backstop.**
+`compileScenarioFamily`'s generic parameter closes the most common excess-property holes,
+including a union-typed cases array where only ONE member carries the excess field (`keyof` a
+union is normally the INTERSECTION of its members' keys, which hides a key only one arm has; the
+exactness check distributes `keyof` itself instead, to surface it). It cannot close all of
+them: once a value is WIDENED to (or simply annotated as) `PresentationScenarioCase`, its excess
+fields are structurally invisible to any type-level check — TypeScript does not track "this value
+used to have more properties before it was widened," so there is no conditional or mapped-type
+trick that recovers that information. This is not specific to this protocol; it is a general
+limit of structural typing. The RUNTIME `exactFields` check inside `decodeCase` is unaffected by
+either gap: it reads a value's own keys directly, at the moment it is actually decoded, regardless
+of what static type the caller's code gave it on the way in.
 
 A `scenarioId` identifies a product presentation across renderer paths. A case `id` is instead
 a stable, product-local state such as `open` or `loading`. Each case owns only JSON data, the
@@ -88,25 +104,52 @@ over-budget payloads are rejected.
 
 The serialized boundary's complexity budget is exported as `PRESENTATION_SCENARIO_COMPLEXITY_LIMITS`
 and sized with generous headroom against a realistic family, not a flat cap tuned for a single
-demo product: 64 nested levels, 288,000 decoded nodes and own fields, 2,000 entries per array,
-100,000 units per string, and 11,520,000 total string units, across one whole family submission
-(all of its scenarios and cases combined). The basis is documented beside the constants in
-`presentation-scenarios.ts`: ~40 products x ~12 cases x a few-hundred-node payload each, times a
-headroom multiplier — a real 30-product x 5-case x 20-row-table family is comfortably inside it,
-where the flat 5,000-node cap an earlier revision shipped was not (#270). `compileScenarioFamily`
-compiles a catalog from ALREADY-decoded, already-budgeted definitions structurally; it does not
-apply a second, independent decode-and-budget pass to its own output, which used to make a
-definitions payload landing exactly at the family budget fail with a diagnostic path
-(`$.scenarios[…]`) the caller never wrote.
+demo product — one whole family submission (all of its scenarios and cases combined) may contain
+up to 64 nested levels, 288,000 decoded nodes, 576,000 own fields, 11,520,000 total string units,
+100,000 units in any one string, and 2,000 entries in any one array (these numbers are derived,
+not independent — see `PRESENTATION_SCENARIO_COMPLEXITY_LIMITS`'s own value and the sizing-basis
+constants beside it in `presentation-scenarios.ts` for the exact arithmetic, since this prose
+copy can drift and a test asserts it does not). The basis: ~40 products x ~12 cases x a
+few-hundred-node payload each, times a headroom multiplier — a real 30-product x 5-case x
+20-row-table family is comfortably inside it, where the flat 5,000-node cap an earlier revision
+shipped was not (#270).
+
+**One cost model governs a family's definitions and every catalog compiled from it.**
+`compileScenarioFamily` builds its catalog from ALREADY-decoded, already-budgeted definitions
+structurally — it does not re-decode its own output under a second, independent budget. But a
+compiled catalog is not merely definitions restated: it adds real scaffolding (`version`,
+`family`, and, per scenario, `productId`/`scenarioId`) that the raw definitions payload never
+contained. A caller can still hand that catalog back through the untyped boundary at any
+time — most commonly a `JSON.parse(JSON.stringify(catalog))` or `structuredClone`, but any
+serialize/deserialize round trip — and `decodeScenarioSelection` must decode it under the SAME
+family budget. To make that provably hold at the exact boundary, `decodeScenarioSelection`'s own
+decoder widens its budget by the catalog's EXACT scaffolding cost (never an estimate) once it
+knows the real scenario count, derived from the same constants. The result: a definitions
+payload that fits the family budget is guaranteed to still fit when the catalog built from it is
+later decoded from a genuinely untyped/serialized source — at any family size, not merely a small
+one (#270).
 
 Compiler/resolver failures additionally share one exported diagnostic policy
 (`PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS`): at most 100 issues and 16,384 UTF-16 units across the
 final `Error.message`, including newline separators and the explicit truncation diagnostic. Each
-issue's own path and reason text are independently clipped to a small, fixed budget (with a
-deterministic `…(<original length>)` elision marker) before being measured against that aggregate
-— so one pathologically long path segment or quoted value can only ever cost its OWN issue a
-bounded amount, never collapse the whole report to the pathless truncation marker before any real
-issue, including the one naming the actual problem, is ever recorded.
+issue's own path and reason text are independently clipped to a small, fixed budget before being
+measured against that aggregate — so one pathologically long path segment or quoted value can
+only ever cost its OWN issue a bounded amount, never collapse the whole report to the pathless
+truncation marker before any real issue, including the one naming the actual problem, is ever
+recorded. A clipped PATH elides from the MIDDLE, always keeping the root and the leaf segment
+(never a plain head-keep/tail-cut clip, which would make two issues that differ only in their
+leaf — e.g. two different bad fields under the same long, shared, deeply nested prefix —
+byte-identical and undistinguishable); a clipped REASON (free-form text with no root/leaf
+structure) keeps its head and cuts its tail. Either way, the elision carries a deterministic
+`…(<count>)` marker (the original length for reason/segment text, the number of elided segments
+for a path), so replaying the same oversized input renders byte-identical output.
+
+The array decoder's cost is bounded by an array's REAL own-key count, never by its claimed
+`length`: a shared reference to one sparse or over-long array used to cost `length` reflection
+work at EVERY place it is referenced, however few real elements it actually has — a length-only
+peek rejects an over-long array before ever enumerating its keys, and a sparse array's first
+missing index is found by walking only its real own keys (in the order the platform guarantees
+they arrive), never by scanning `0..length`.
 
 `resolveScenarioSelection` skips re-decoding a catalog THIS MODULE produced and the caller still
 holds a live reference to (tracked by object identity, never by structural shape — a
@@ -125,7 +168,10 @@ literal default and case/input union, and resolver results narrow through that s
 JSON snapshots, environment-axis arrays, and copied-artifact arrays are recursively readonly even
 when a caller supplies ordinary mutable definitions without `as const`.
 The direct subpath's declaration graph depends only on browser-pure structural ProductContract
-types—not the CLI's Zod schema or Node runtime.
+types—not the CLI's Zod schema or Node runtime. It carries exactly ONE runtime import, to
+`product-contract-types.ts` (the one canonical source for `PRESENTATION_FAMILY_VALUES` and the
+`ProductContract` structural types) — that file is itself dependency-free, so the whole graph
+stays transitively pure; it is not the same claim as "this file has no imports at all."
 
 **Prototype policy:** a decoded JSON snapshot's nested objects are rebuilt as ORDINARY plain
 objects (`Object.prototype`), not `Object.create(null)` — every key was copied from an own,

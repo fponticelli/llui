@@ -522,6 +522,37 @@ describe('presentation scenario boundary decoding', () => {
     })
   })
 
+  it('rejects an excess case field at runtime even when the caller widened its static type to hide it (#270 finding 4, round two)', () => {
+    // Two of the compile-time exactness check's known, documented gaps (see
+    // test/presentation-scenarios-types.ts): widening a value to PresentationScenarioCase, or
+    // smuggling it through a union-typed cases array, both make an excess field statically
+    // invisible. Neither gap exists at the RUNTIME boundary — `decodeCase`'s `exactFields` check
+    // reads the value's OWN keys directly, regardless of what static type the caller's code gave
+    // it, so this is the backstop for both.
+    const rawCase: Record<string, unknown> = {
+      id: 'open',
+      label: 'Open',
+      input: null,
+      environmentAxes: [],
+      render: () => 'x',
+    }
+    // Simulates the TYPE-level widening from the pinned gap: nothing here is const-checked or
+    // literal-narrowed, matching what a value looks like after `const widened:
+    // PresentationScenarioCase = raw` at the type level.
+    const widenedShapeCase: unknown = rawCase
+
+    const error = errorFrom(() =>
+      decodeScenarioFamily(productContract(), 'menus-overlays', {
+        'component:dialog': { defaultCaseId: 'open', cases: [widenedShapeCase] },
+      }),
+    )
+
+    expect(error).toMatchObject({
+      code: 'invalid-definitions',
+      issues: ['$["component:dialog"].cases[0].render: unexpected field.'],
+    })
+  })
+
   it('returns typed deterministic limit failures instead of native recursion errors', () => {
     let deep: Record<string, unknown> = { leaf: true }
     for (let index = 0; index < 66; index += 1) deep = { child: deep }
@@ -777,6 +808,50 @@ describe('presentation scenario boundary decoding', () => {
     }
   })
 
+  it('elides MIDDLE path segments, never the leaf, so issues that differ only in their leaf stay distinguishable (#270 finding 3, round two)', () => {
+    // 8 levels of long-but-not-individually-oversized keys, ending in three distinct bad leaves.
+    // A plain head-keep/tail-cut clip would show the same long shared prefix for every issue and
+    // cut off before ever reaching the part that differs (which leaf is bad) — collapsing badA
+    // and badB to byte-identical, useless issues.
+    const leaf: Record<string, unknown> = {
+      good: 1,
+      badA: () => 0,
+      badB: () => 0,
+    }
+    let value: unknown = leaf
+    for (let index = 0; index < 8; index += 1) {
+      value = { [`section-with-a-long-descriptive-name-${index}`]: value }
+    }
+
+    const error = errorFrom(() =>
+      decodeScenarioFamily(productContract(), 'menus-overlays', definitions(value)),
+    )
+
+    expect(error.code).toBe('invalid-definitions')
+    const badAIssue = error.issues.find((issue) =>
+      issue.endsWith('.badA: function values are not JSON-safe.'),
+    )
+    const badBIssue = error.issues.find((issue) =>
+      issue.endsWith('.badB: function values are not JSON-safe.'),
+    )
+    expect(badAIssue).toBeDefined()
+    expect(badBIssue).toBeDefined()
+    // Distinguishable: the two issues are NOT identical once their (common) prefix is clipped —
+    // the OLD head-keep/tail-cut design made them byte-identical.
+    expect(badAIssue).not.toBe(badBIssue)
+    // The leaf itself survives fully (never itself elided or truncated away).
+    expect(badAIssue).toMatch(/\.badA: function values are not JSON-safe\.$/)
+    expect(badBIssue).toMatch(/\.badB: function values are not JSON-safe\.$/)
+    // The root is always preserved.
+    expect(badAIssue).toMatch(/^\$/)
+    expect(badBIssue).toMatch(/^\$/)
+    // Deterministic: replaying the same oversized input renders byte-identical clipped issues.
+    const replay = errorFrom(() =>
+      decodeScenarioFamily(productContract(), 'menus-overlays', definitions(value)),
+    )
+    expect(replay.issues).toEqual(error.issues)
+  })
+
   it('types throwing, mutating, and huge proxy reflection as bounded boundary errors', () => {
     const throwing = new Proxy(
       {},
@@ -971,7 +1046,7 @@ describe('presentation scenario boundary decoding', () => {
   })
 })
 
-describe('decodeScenarioFamily does not apply a second independent budget to its own rebuilt catalog (#270)', () => {
+describe('one cost model governs compileScenarioFamily and every catalog derived from it (#270)', () => {
   // root(1) + definition overhead(record 1 + defaultCaseId 1 + cases-array-header 1 = 3) +
   // case overhead(record 1 + id 1 + label 1 = 3) + environmentAxes ['theme'] (header 1 + item
   // 1 = 2) + the input object's own node (1)
@@ -984,7 +1059,7 @@ describe('decodeScenarioFamily does not apply a second independent budget to its
     return input
   }
 
-  it('succeeds for a family definitions payload landing exactly at the family node budget', () => {
+  it('succeeds for a family definitions payload landing exactly at the family node budget, and it does not re-decode its own rebuilt catalog under a fresh budget', () => {
     const input = flatInputAtNodeCount(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyNodes)
 
     const catalog = decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input))
@@ -1006,6 +1081,108 @@ describe('decodeScenarioFamily does not apply a second independent budget to its
     expect(error.issues[0]).toMatch(/^\$\["component:dialog"\]\.cases\[0\]\./)
     expect(error.issues[0]).toContain('node limit of')
     expect(error.issues[0]).not.toMatch(/^\$\.scenarios/)
+  })
+
+  it('a catalog compiled exactly at the family budget survives a JSON round trip AND a structuredClone through decodeScenarioSelection (#270 finding 1, round two)', () => {
+    // A catalog adds scaffolding (version/family/productId/scenarioId) beyond what the raw
+    // definitions payload contained. Before the fix, decodeCatalog charged that scaffolding
+    // against a FRESH copy of the SAME budget, so a definitions payload landing exactly at the
+    // limit compiled successfully but its own compiled catalog failed to re-decode — an
+    // untrusted/serialized copy of a catalog `compileScenarioFamily` had JUST produced was
+    // rejected with an internal `$.scenarios[...]` path the caller never wrote. One cost model
+    // (`decodeCatalog` reserves the EXACT scaffolding overhead once it knows the real scenario
+    // count) is what makes this invariant hold at any size, not merely for a small family.
+    const input = flatInputAtNodeCount(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyNodes)
+    const contract = productContract()
+    const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
+    const selection = { productId: 'dialog', path: 'baseline' as const }
+
+    const serialized = JSON.parse(JSON.stringify(catalog)) as unknown
+    const viaJson = decodeScenarioSelection(contract, serialized, selection)
+    expect(viaJson.case.input).toEqual(input)
+
+    const cloned = structuredClone(catalog)
+    const viaStructuredClone = decodeScenarioSelection(contract, cloned, selection)
+    expect(viaStructuredClone.case.input).toEqual(input)
+  })
+})
+
+describe('array decoding cost is bounded by real own-key count, never by a claimed length (#270 finding 2)', () => {
+  it('rejects a shared, fully sparse array in O(1) reflection calls per occurrence, not O(length)', () => {
+    // A sparse array referenced from MANY places (a shared reference, not copies) used to cost
+    // `length` reflection work at EVERY occurrence — a naive per-index scan from 0 to `length`
+    // regardless of how few real own keys actually exist. Counting `ownKeys`/
+    // `getOwnPropertyDescriptor` TRAP invocations (never a wall-clock measurement) proves the
+    // decoder no longer pays that cost: with the fix, detecting the array is sparse takes a
+    // small, FIXED number of reflection calls per occurrence (it walks only the array's real own
+    // keys — just `length` here, since the array is fully empty — never its claimed length),
+    // regardless of how large `length` claims to be or how many places reference it.
+    let ownKeysCalls = 0
+    let descriptorCalls = 0
+    const sparseTarget = new Array(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.arrayLength)
+    const sparse = new Proxy(sparseTarget, {
+      ownKeys(target) {
+        ownKeysCalls += 1
+        return Reflect.ownKeys(target)
+      },
+      getOwnPropertyDescriptor(target, key) {
+        descriptorCalls += 1
+        return Reflect.getOwnPropertyDescriptor(target, key)
+      },
+    })
+    const occurrences = 50
+    const row = new Array(occurrences).fill(sparse)
+
+    const error = errorFrom(() =>
+      decodeScenarioFamily(productContract(), 'menus-overlays', definitions(row)),
+    )
+
+    expect(error.code).toBe('invalid-definitions')
+    expect(
+      error.issues.some((issue) => issue.includes('sparse array entries are not supported')),
+    ).toBe(true)
+    // Fixed, small per-occurrence cost (a handful of reflection calls each) — nowhere near
+    // `occurrences * arrayLength`, which is what the OLD, unbounded per-index scan would cost
+    // (50 * 2000 = 100,000 just for this one array's real content, before even counting the
+    // 50 outer-row element visits).
+    const maxCallsPerOccurrence = 6
+    expect(ownKeysCalls).toBeLessThanOrEqual(occurrences * maxCallsPerOccurrence)
+    expect(descriptorCalls).toBeLessThanOrEqual(occurrences * maxCallsPerOccurrence)
+  })
+
+  it('rejects an over-long array before ever enumerating its keys', () => {
+    // A dense array far past the length limit used to be enumerated in full (Reflect.ownKeys,
+    // O(length)) BEFORE the length check ever ran. Proving `ownKeys` is never called at all
+    // (rather than timing a real 10-million-element array) is both faster to run and a more
+    // direct proof that the length check now runs first.
+    let ownKeysCalls = 0
+    const overLong = new Proxy([] as unknown[], {
+      ownKeys(target) {
+        ownKeysCalls += 1
+        return Reflect.ownKeys(target)
+      },
+      getOwnPropertyDescriptor(target, key) {
+        if (key === 'length') {
+          return {
+            value: PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.arrayLength + 1,
+            writable: true,
+            enumerable: false,
+            configurable: false,
+          }
+        }
+        return Reflect.getOwnPropertyDescriptor(target, key)
+      },
+    })
+
+    const error = errorFrom(() =>
+      decodeScenarioFamily(productContract(), 'menus-overlays', definitions(overLong)),
+    )
+
+    expect(error.code).toBe('invalid-definitions')
+    expect(error.issues).toEqual([
+      `$["component:dialog"].cases[0].input.length: array length limit of ${PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.arrayLength} exceeded.`,
+    ])
+    expect(ownKeysCalls).toBe(0)
   })
 })
 

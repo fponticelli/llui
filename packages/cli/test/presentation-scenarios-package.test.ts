@@ -5,15 +5,18 @@ import { spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import ts from 'typescript'
 import { afterEach, describe, expect, it } from 'vitest'
+import { PRESENTATION_SCENARIO_COMPLEXITY_LIMITS } from '../src/presentation-scenarios.js'
 
 // @test-needs-own-build — this suite imports and packages this package's emitted dist/ graph.
 
 const PACKAGE_ROOT = resolve(import.meta.dirname, '..')
 const SOURCE_PATH = resolve(PACKAGE_ROOT, 'src/presentation-scenarios.ts')
+const CONTRACT_TYPES_SOURCE_PATH = resolve(PACKAGE_ROOT, 'src/product-contract-types.ts')
 const ROOT_SOURCE_PATH = resolve(PACKAGE_ROOT, 'src/index.ts')
 const DIST_PATH = resolve(PACKAGE_ROOT, 'dist/presentation-scenarios.js')
 const DIST_TYPES_PATH = resolve(PACKAGE_ROOT, 'dist/presentation-scenarios.d.ts')
 const DIST_CONTRACT_TYPES_PATH = resolve(PACKAGE_ROOT, 'dist/product-contract-types.d.ts')
+const DIST_CONTRACT_TYPES_JS_PATH = resolve(PACKAGE_ROOT, 'dist/product-contract-types.js')
 const DIST_ROOT_PATH = resolve(PACKAGE_ROOT, 'dist/index.js')
 
 const DIRECT_EXPORTS = [
@@ -51,9 +54,9 @@ afterEach(() => {
   }
 })
 
-function runtimeModuleSpecifiers(source: string): string[] {
+function runtimeModuleSpecifiers(source: string, fileName: string = SOURCE_PATH): string[] {
   const emitted = ts.transpileModule(source, {
-    fileName: SOURCE_PATH,
+    fileName,
     compilerOptions: {
       module: ts.ModuleKind.ESNext,
       target: ts.ScriptTarget.ES2022,
@@ -229,9 +232,14 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
     }
   })
 
-  it('emits no runtime imports and type-checks the full source graph without DOM libraries', () => {
+  it('emits runtime imports only to product-contract-types.js, itself import-free, and type-checks the full source graph without DOM libraries', () => {
+    // presentation-scenarios.ts is allowed exactly ONE runtime import, to the pure structural
+    // types module — and that module must in turn have ZERO runtime imports of its own, so the
+    // whole graph stays transitively free of Node/DOM/zod/LLui runtime code (#270 finding 6).
     const source = readFileSync(SOURCE_PATH, 'utf8')
-    expect(runtimeModuleSpecifiers(source)).toEqual([])
+    expect(runtimeModuleSpecifiers(source)).toEqual(['./product-contract-types.js'])
+    const contractTypesSource = readFileSync(CONTRACT_TYPES_SOURCE_PATH, 'utf8')
+    expect(runtimeModuleSpecifiers(contractTypesSource, CONTRACT_TYPES_SOURCE_PATH)).toEqual([])
 
     const program = ts.createProgram({
       rootNames: [SOURCE_PATH],
@@ -293,6 +301,9 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
     copyFileSync(DIST_PATH, join(distDirectory, 'presentation-scenarios.js'))
     copyFileSync(DIST_TYPES_PATH, join(distDirectory, 'presentation-scenarios.d.ts'))
     copyFileSync(DIST_CONTRACT_TYPES_PATH, join(distDirectory, 'product-contract-types.d.ts'))
+    // The direct subpath now carries one real runtime import to product-contract-types.js (#270
+    // finding 6) — the synthetic package needs that runtime file too, not just its declaration.
+    copyFileSync(DIST_CONTRACT_TYPES_JS_PATH, join(distDirectory, 'product-contract-types.js'))
     writeFileSync(
       join(packageDirectory, 'package.json'),
       JSON.stringify({
@@ -385,5 +396,21 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
       status: 0,
       stderr: '',
     })
+  })
+
+  it('documents the exact PRESENTATION_SCENARIO_COMPLEXITY_LIMITS values in README.md (#270 finding 5)', () => {
+    // The prose in README.md quotes these numbers rather than deriving them, so they drift
+    // silently whenever the sizing-basis constants change — this is what caught "288,000 …
+    // own fields" (the actual `familyFields` is 576,000, 2x `familyNodes`) the first time.
+    const readme = readFileSync(resolve(PACKAGE_ROOT, 'README.md'), 'utf8')
+    for (const [name, value] of Object.entries(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS)) {
+      const formatted = value.toLocaleString('en-US')
+      expect(readme.includes(formatted), `README.md must quote ${name} as "${formatted}"`).toBe(
+        true,
+      )
+    }
+    // The diagnostic policy is documented separately (also asserted here so it cannot drift
+    // silently either): 100 issues, 16,384 message units.
+    expect(readme).toContain('100 issues and 16,384 UTF-16 units')
   })
 })

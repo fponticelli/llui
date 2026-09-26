@@ -21,9 +21,12 @@ export type ProductCategory =
 /**
  * Single-owner visual-language cohort, independent of user-facing product category. This is the
  * one canonical tuple: `product-contract.ts` derives `PresentationFamilySchema` from it, and
- * `presentation-scenarios.ts` mirrors its literals in a compile-time-checked local constant
- * (it cannot import this module's runtime value without breaking its zero-runtime-import
- * purity contract). Do not duplicate the literals a third way — extend this tuple only.
+ * `presentation-scenarios.ts` imports this value directly. That import does not compromise
+ * presentation-scenarios.ts's browser-purity contract (no Node/DOM/zod/LLui runtime): THIS module
+ * has zero runtime imports of its own, so the import stays transitively pure — the package
+ * boundary test asserts both halves (every runtime import from presentation-scenarios.ts
+ * resolves only to this file, and this file itself imports nothing). Do not duplicate the
+ * literals a second way — extend this tuple only.
  */
 export const PRESENTATION_FAMILY_VALUES = [
   'forms-controls',

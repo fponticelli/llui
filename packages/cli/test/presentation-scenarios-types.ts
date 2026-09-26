@@ -5,7 +5,9 @@ import {
   decodeScenarioSelection,
   resolveScenarioSelection,
   type CompiledPresentationScenario,
+  type PresentationScenarioCase,
   type PresentationScenarioDefinitions,
+  type PresentationScenarioEnvironmentAxis,
   type PresentationScenarioJsonSnapshot,
   type ResolvedPresentationScenarioSelection,
 } from '../src/presentation-scenarios.js'
@@ -166,14 +168,74 @@ const extraCaseFieldDefinitions = {
 // @ts-expect-error an extra field on a case is rejected, not silently accepted as renderer data
 compileScenarioFamily(contract, 'menus-overlays', extraCaseFieldDefinitions)
 
+// `as const` on BOTH the control and the gate: without it, `environmentAxes: ['theme']` infers
+// as plain `string[]`, which fails to compile for EVERY value (valid or not) — a bare
+// `@ts-expect-error` on the non-const spelling proves nothing about 'sepia' specifically (#270
+// finding 4, round two: the original gate was vacuous this way, measured against this exact
+// control).
+const validAxisDefinitions = {
+  'component:dialog': {
+    defaultCaseId: 'open',
+    cases: [{ id: 'open', label: 'Open', input: null, environmentAxes: ['theme'] }],
+  },
+} as const
+compileScenarioFamily(contract, 'menus-overlays', validAxisDefinitions) // passing control
+
 const unknownAxisDefinitions = {
   'component:dialog': {
     defaultCaseId: 'open',
     cases: [{ id: 'open', label: 'Open', input: null, environmentAxes: ['sepia'] }],
   },
-}
-// @ts-expect-error an unknown environmentAxes value is rejected, not widened to `string`
+} as const
+// @ts-expect-error an unknown environmentAxes value is rejected — the control above proves this
+// fails because 'sepia' is invalid, not merely because the array is a non-const literal
 compileScenarioFamily(contract, 'menus-overlays', unknownAxisDefinitions)
+
+// #270 finding 4, round two: `keyof` a UNION type is the INTERSECTION of its members' keys, so an
+// excess field on only ONE arm of a union-typed cases array used to be invisible to the
+// exactness check entirely (TypeScript distributes `Case extends X ? ... : never` over a naked
+// union `Case`, so the bad arm's `never` result silently vanishes via `T | never === T` — this
+// compiled with NO error before the fix). `UnionKeys` (see `ExactCase` in the source) closes it
+// by distributing `keyof` itself instead, which surfaces a key that exists on only one member.
+type UnionCaseBase = {
+  readonly id: string
+  readonly label: string
+  readonly input: null
+  readonly environmentAxes: readonly PresentationScenarioEnvironmentAxis[]
+}
+type UnionCaseWithExtra = UnionCaseBase & { readonly render: () => string }
+declare const unionCases: readonly (UnionCaseBase | UnionCaseWithExtra)[]
+const unionCaseDefinitions = {
+  'component:dialog': { defaultCaseId: 'open', cases: unionCases },
+}
+// @ts-expect-error an excess field on only one arm of a union-typed cases array is still rejected
+compileScenarioFamily(contract, 'menus-overlays', unionCaseDefinitions)
+
+// #270 finding 4, round two: a KNOWN, undocumented-until-now residual gap — once a value is
+// WIDENED to (or simply annotated as) `PresentationScenarioCase`, its excess fields are
+// STRUCTURALLY invisible to any type-level exactness check: `keyof widened` equals
+// `keyof PresentationScenarioCase` exactly, because TypeScript's structural type system does not
+// track "this value used to have more properties before it was widened." No conditional or
+// mapped-type trick can recover that information — it is simply gone from the static type. This
+// is NOT specific to unions; it is the general form of the same problem, and it is why the
+// runtime `exactFields` check in `decodeCase` remains the actual backstop regardless of how
+// the caller's static types are shaped. See README's "Compile-time exactness has known limits"
+// for the user-facing statement of this gap, and
+// `test/presentation-scenarios-boundaries.test.ts`'s "rejects extra source-case fields" tests for
+// the runtime rejection that still applies.
+const rawWidenedCase = {
+  id: 'open',
+  label: 'Open',
+  input: null,
+  environmentAxes: [] as readonly PresentationScenarioEnvironmentAxis[],
+  render: () => 'x',
+}
+const widenedCase: PresentationScenarioCase = rawWidenedCase
+// Compiles — this is the documented gap above, not a `@ts-expect-error` gate: widening to the
+// interface type erases the excess field from what the type system can see.
+compileScenarioFamily(contract, 'menus-overlays', {
+  'component:dialog': { defaultCaseId: 'open', cases: [widenedCase] },
+})
 
 const functionInputDefinitions = {
   'component:dialog': {
