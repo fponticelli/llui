@@ -8,13 +8,19 @@ import { DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT as rootDefaultEnvironment } f
 // @ts-expect-error direct-subpath-only value
 import { PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS as rootDiagnosticLimits } from '../src/index.js'
 // @ts-expect-error direct-subpath-only value
+import { PRESENTATION_SCENARIO_COMPLEXITY_LIMITS as rootComplexityLimits } from '../src/index.js'
+// @ts-expect-error direct-subpath-only value
 import { PRESENTATION_SCENARIO_PATHS as rootPaths } from '../src/index.js'
 // @ts-expect-error direct-subpath-only value
 import { PresentationScenarioError as RootScenarioError } from '../src/index.js'
 // @ts-expect-error direct-subpath-only value
 import { compileScenarioFamily as rootCompile } from '../src/index.js'
 // @ts-expect-error direct-subpath-only value
+import { decodeScenarioFamily as rootDecodeFamily } from '../src/index.js'
+// @ts-expect-error direct-subpath-only value
 import { resolveScenarioSelection as rootResolve } from '../src/index.js'
+// @ts-expect-error direct-subpath-only value
+import { decodeScenarioSelection as rootDecodeSelection } from '../src/index.js'
 
 // @ts-expect-error direct-subpath-only type
 import type { PresentationScenarioJson as RootJson } from '../src/index.js'
@@ -49,10 +55,13 @@ void [
   rootEnvironmentValues,
   rootDefaultEnvironment,
   rootDiagnosticLimits,
+  rootComplexityLimits,
   rootPaths,
   RootScenarioError,
   rootCompile,
+  rootDecodeFamily,
   rootResolve,
+  rootDecodeSelection,
 ]
 type RootTypes =
   | RootJson

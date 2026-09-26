@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { PRESENTATION_FAMILY_VALUES } from './product-contract-types.js'
 import type {
   CopiedArtifact,
   ProductAlias,
@@ -49,13 +50,10 @@ export const ProductCategorySchema = z.enum([
   'utilities',
 ])
 
-/** Single-owner visual-language cohort. This is independent of the user-facing product category. */
-export const PresentationFamilySchema = z.enum([
-  'forms-controls',
-  'navigation-data',
-  'menus-overlays',
-  'specialized-tools',
-])
+/** Single-owner visual-language cohort. This is independent of the user-facing product category.
+ *  Derived from the one canonical tuple in `product-contract-types.ts` — do not restate the
+ *  literals here. */
+export const PresentationFamilySchema = z.enum(PRESENTATION_FAMILY_VALUES)
 
 const PresentationRationaleSchema = z
   .string()

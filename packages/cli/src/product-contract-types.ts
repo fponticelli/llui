@@ -18,12 +18,21 @@ export type ProductCategory =
   | 'patterns'
   | 'utilities'
 
-/** Single-owner visual-language cohort, independent of user-facing product category. */
-export type PresentationFamily =
-  | 'forms-controls'
-  | 'navigation-data'
-  | 'menus-overlays'
-  | 'specialized-tools'
+/**
+ * Single-owner visual-language cohort, independent of user-facing product category. This is the
+ * one canonical tuple: `product-contract.ts` derives `PresentationFamilySchema` from it, and
+ * `presentation-scenarios.ts` mirrors its literals in a compile-time-checked local constant
+ * (it cannot import this module's runtime value without breaking its zero-runtime-import
+ * purity contract). Do not duplicate the literals a third way — extend this tuple only.
+ */
+export const PRESENTATION_FAMILY_VALUES = [
+  'forms-controls',
+  'navigation-data',
+  'menus-overlays',
+  'specialized-tools',
+] as const
+
+export type PresentationFamily = (typeof PRESENTATION_FAMILY_VALUES)[number]
 
 export interface StyledPresentationCoverage {
   mode: 'styled'

@@ -1,6 +1,8 @@
 import type { ProductContract } from '../src/product-contract-types.js'
 import {
   compileScenarioFamily,
+  decodeScenarioFamily,
+  decodeScenarioSelection,
   resolveScenarioSelection,
   type CompiledPresentationScenario,
   type PresentationScenarioDefinitions,
@@ -97,8 +99,17 @@ void [scenarioId, resolvedId]
 declare const serializedDefinitions: unknown
 declare const serializedCatalog: unknown
 declare const serializedSelection: unknown
-const erasedCatalog = compileScenarioFamily(contract, 'menus-overlays', serializedDefinitions)
-const erasedResolved = resolveScenarioSelection(contract, serializedCatalog, serializedSelection)
+// #270 finding 3: compileScenarioFamily/resolveScenarioSelection have no `unknown` fallthrough —
+// an untyped/serialized boundary decodes through decodeScenarioFamily/decodeScenarioSelection
+// below instead. Short names keep each call on one line so prettier cannot separate the
+// `@ts-expect-error` directive from the line it applies to.
+// @ts-expect-error see above
+const rejected1 = compileScenarioFamily(contract, 'menus-overlays', serializedDefinitions)
+// @ts-expect-error see above
+const rejected2 = resolveScenarioSelection(contract, serializedCatalog, serializedSelection)
+void [rejected1, rejected2]
+const erasedCatalog = decodeScenarioFamily(contract, 'menus-overlays', serializedDefinitions)
+const erasedResolved = decodeScenarioSelection(contract, serializedCatalog, serializedSelection)
 const erasedScenarioId: string = erasedCatalog.scenarios[0]!.scenarioId
 const erasedResolvedId: string = erasedResolved.scenarioId
 void [erasedScenarioId, erasedResolvedId]
@@ -142,3 +153,35 @@ type ExplicitMutableSnapshot = PresentationScenarioJsonSnapshot<{
 declare const explicitMutableSnapshot: ExplicitMutableSnapshot
 // @ts-expect-error the exported snapshot helper is recursively readonly
 explicitMutableSnapshot.nested.labels.push('mutation')
+
+// #270 finding 3: with no `unknown` fallthrough, an invalid TYPED literal is a compile error at
+// compileScenarioFamily's only remaining (statically-known) overload, rather than silently
+// falling through to the erased `unknown` shape.
+const extraCaseFieldDefinitions = {
+  'component:dialog': {
+    defaultCaseId: 'open',
+    cases: [{ id: 'open', label: 'Open', input: null, environmentAxes: [], render: () => 'x' }],
+  },
+}
+// @ts-expect-error an extra field on a case is rejected, not silently accepted as renderer data
+compileScenarioFamily(contract, 'menus-overlays', extraCaseFieldDefinitions)
+
+const unknownAxisDefinitions = {
+  'component:dialog': {
+    defaultCaseId: 'open',
+    cases: [{ id: 'open', label: 'Open', input: null, environmentAxes: ['sepia'] }],
+  },
+}
+// @ts-expect-error an unknown environmentAxes value is rejected, not widened to `string`
+compileScenarioFamily(contract, 'menus-overlays', unknownAxisDefinitions)
+
+const functionInputDefinitions = {
+  'component:dialog': {
+    defaultCaseId: 'open',
+    cases: [
+      { id: 'open', label: 'Open', input: { onClick: () => undefined }, environmentAxes: [] },
+    ],
+  },
+}
+// @ts-expect-error a function in `input` is rejected — PresentationScenarioJson excludes it
+compileScenarioFamily(contract, 'menus-overlays', functionInputDefinitions)

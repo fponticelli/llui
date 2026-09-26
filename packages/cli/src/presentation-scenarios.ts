@@ -1,4 +1,8 @@
-import type { PresentationFamily, ProductContract } from './product-contract-types.js'
+import type {
+  PresentationFamily,
+  ProductContract,
+  ProductPresentation,
+} from './product-contract-types.js'
 
 const CASE_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const OBJECT_SOURCE = Function.prototype.toString.call(Object)
@@ -6,11 +10,38 @@ const ARRAY_SOURCE = Function.prototype.toString.call(Array)
 const ARRAY_ENTRIES_SOURCE = Function.prototype.toString.call(Array.prototype.entries)
 const ARRAY_ITERATOR_SOURCE = Function.prototype.toString.call(Array.prototype[Symbol.iterator])
 const MAX_DEPTH = 64
-const MAX_NODES = 5_000
+
+/**
+ * Sizing basis for the boundary-decoding complexity budget below: a realistic family upper bound
+ * with generous headroom, not a measured maximum. Real families as of 2026-09 top out at 29
+ * products (#264 navigation-data) and 25 (#265 forms-controls) with a handful of cases each; a
+ * flat 5,000-node family-wide cap failed a genuine 30-product x 5-case x 20-row family (#270).
+ */
+const REALISTIC_MAX_PRODUCTS_PER_FAMILY = 40
+const REALISTIC_MAX_CASES_PER_PRODUCT = 12
+const REALISTIC_MAX_NODES_PER_CASE = 300
+const REALISTIC_MAX_ARRAY_LENGTH = 1_000
+const COMPLEXITY_HEADROOM_MULTIPLIER = 2
+
+/** Total decoded JSON-tree nodes across one family submission (all scenarios and cases). */
+const MAX_NODES =
+  REALISTIC_MAX_PRODUCTS_PER_FAMILY *
+  REALISTIC_MAX_CASES_PER_PRODUCT *
+  REALISTIC_MAX_NODES_PER_CASE *
+  COMPLEXITY_HEADROOM_MULTIPLIER
+/** One string value's own length; unaffected by family size. */
 const MAX_STRING_LENGTH = 100_000
-const MAX_TOTAL_STRING_UNITS = 1_000_000
-const MAX_ARRAY_LENGTH = 1_000
-const MAX_FIELDS = 10_000
+/** Total UTF-16 units across every string in one family submission. */
+const MAX_TOTAL_STRING_UNITS = MAX_NODES * 40
+/** One array's own length; unaffected by family size, but still given headroom. */
+const MAX_ARRAY_LENGTH = REALISTIC_MAX_ARRAY_LENGTH * COMPLEXITY_HEADROOM_MULTIPLIER
+/**
+ * Total own fields across one family submission. A flat object's fields and nodes grow at
+ * roughly the same rate, so this is sized above `MAX_NODES` rather than equal to it: the two
+ * budgets bound genuinely different shapes (a wide, shallow payload versus a narrow, deep one)
+ * and should not trip on the same input by coincidence.
+ */
+const MAX_FIELDS = MAX_NODES * 2
 const DIAGNOSTIC_PATH_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 
 const THEME_VALUES = Object.freeze(['light', 'dark'] as const)
@@ -34,21 +65,60 @@ export const PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS = Object.freeze({
   messageUnits: 16_384,
 } as const)
 
+/**
+ * Frozen boundary-decoding complexity budget. `familyNodes`/`familyFields`/`familyStringUnits`
+ * bound total work across one family submission (all scenarios and cases combined), sized with
+ * generous headroom against a realistic worst case of ~40 products x ~12 cases x a few-hundred-
+ * node payload each (see the sizing-basis constants above this export). `stringLength` and
+ * `arrayLength` bound one value at a time and are unaffected by family size. `depth` bounds
+ * nesting depth to keep the decoder's explicit stack bounded, independent of both.
+ */
+export const PRESENTATION_SCENARIO_COMPLEXITY_LIMITS = Object.freeze({
+  depth: MAX_DEPTH,
+  familyNodes: MAX_NODES,
+  familyFields: MAX_FIELDS,
+  familyStringUnits: MAX_TOTAL_STRING_UNITS,
+  stringLength: MAX_STRING_LENGTH,
+  arrayLength: MAX_ARRAY_LENGTH,
+} as const)
+
 const ENVIRONMENT_AXES = new Set<string>(Object.keys(PRESENTATION_SCENARIO_ENVIRONMENT_VALUES))
-const PRESENTATION_FAMILY_VALUES = [
+
+/** Type-guard membership check (#270 finding 7) — never cast a merely decoded string to
+ *  `PresentationScenarioEnvironmentAxis` without going through this. */
+function isPresentationScenarioEnvironmentAxis(
+  value: string,
+): value is PresentationScenarioEnvironmentAxis {
+  return ENVIRONMENT_AXES.has(value)
+}
+/**
+ * Mirrors `product-contract-types.ts`'s canonical `PRESENTATION_FAMILY_VALUES` tuple. This module
+ * cannot import that value: doing so would give this file a runtime import, breaking its
+ * zero-runtime-import purity contract (see the package-boundary test). The `Equal<>` assertion
+ * below fails to compile if this literal ever drifts from the canonical `PresentationFamily`
+ * type, which is itself derived from that one tuple — so this is a checked mirror, not a second
+ * independent source of truth.
+ */
+const PRESENTATION_FAMILY_MIRROR_VALUES = [
   'forms-controls',
   'navigation-data',
   'menus-overlays',
   'specialized-tools',
 ] as const
-const PRESENTATION_FAMILIES = new Set<string>(PRESENTATION_FAMILY_VALUES)
+const PRESENTATION_FAMILIES = new Set<string>(PRESENTATION_FAMILY_MIRROR_VALUES)
+
+/** Type-guard membership check (#270 finding 7) — never cast a merely decoded string to
+ *  `PresentationFamily` without going through this. */
+function isPresentationFamily(value: string): value is PresentationFamily {
+  return PRESENTATION_FAMILIES.has(value)
+}
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
     ? true
     : false
 type Assert<Value extends true> = Value
 type _PresentationFamilyRuntimeValuesMatchContract = Assert<
-  Equal<(typeof PRESENTATION_FAMILY_VALUES)[number], PresentationFamily>
+  Equal<(typeof PRESENTATION_FAMILY_MIRROR_VALUES)[number], PresentationFamily>
 >
 
 /** Renderer-neutral data accepted as a scenario input. */
@@ -101,6 +171,22 @@ const PRESENTATION_SCENARIO_PATH_SET = new Set<string>(PRESENTATION_SCENARIO_PAT
 /** A renderer path whose availability is owned by ProductContract. */
 export type PresentationScenarioPath = (typeof PRESENTATION_SCENARIO_PATHS)[number]
 
+/** Type-guard membership check (#270 finding 7) — never cast a merely decoded string to
+ *  `PresentationScenarioPath` without going through this. */
+function isPresentationScenarioPath(value: string): value is PresentationScenarioPath {
+  return PRESENTATION_SCENARIO_PATH_SET.has(value)
+}
+
+/**
+ * Compile-time tie to `ProductContract`: a renderer path is exactly one of
+ * `ProductPresentation`'s non-`family` fields. If a path is ever added to or removed from
+ * `ProductPresentation`, this assertion fails to compile until `PRESENTATION_SCENARIO_PATHS`
+ * is updated to match, instead of the two silently drifting apart.
+ */
+type _PresentationScenarioPathsMatchContract = Assert<
+  Equal<PresentationScenarioPath, Exclude<keyof ProductPresentation, 'family'>>
+>
+
 /** One stable, product-local state owned by a presentation family. */
 export interface PresentationScenarioCase<
   Input extends PresentationScenarioJson = PresentationScenarioJson,
@@ -125,6 +211,48 @@ export interface PresentationScenarioDefinition<
 export type PresentationScenarioDefinitions = Readonly<
   Record<string, PresentationScenarioDefinition>
 >
+
+/**
+ * Recursively enforces #270 finding 3's exactness contract at compile time for a STATICALLY
+ * KNOWN definitions literal: a case may carry only `PresentationScenarioCase`'s own fields
+ * (never a `render`/renderer-metadata field alongside them), and a definition may carry only
+ * `PresentationScenarioDefinition`'s. `input` is deliberately left untouched at every level — it
+ * is arbitrary `PresentationScenarioJson` the family owns, not protocol structure, so it has no
+ * fixed "shape" to be exact against.
+ *
+ * An excess field collapses its case (or definition) to `never`, which is what turns a
+ * `compileScenarioFamily(contract, family, literal)` call carrying an extra field into an
+ * "argument is not assignable to parameter of type `never`" compile error instead of a silently
+ * accepted value: TypeScript does NOT excess-property-check an object literal against a GENERIC
+ * type parameter's constraint the way it excess-property-checks against a concrete parameter
+ * type (`f<const T extends Shape>(x: T)` accepts a `{ ...Shape, extra: 1 }` literal silently,
+ * measured), so `Definitions extends PresentationScenarioDefinitions` alone is not enough — the
+ * PARAMETER's declared type itself must be this exactness-checked shape for the check to fire.
+ */
+type ExactCase<Case> = Case extends PresentationScenarioCase
+  ? Exclude<keyof Case, keyof PresentationScenarioCase> extends never
+    ? Case
+    : never
+  : Case
+
+type ExactDefinition<Definition> = Definition extends {
+  readonly defaultCaseId: string
+  readonly cases: readonly unknown[]
+}
+  ? Exclude<keyof Definition, keyof PresentationScenarioDefinition> extends never
+    ? {
+        readonly defaultCaseId: Definition['defaultCaseId']
+        readonly cases: {
+          readonly [Index in keyof Definition['cases']]: ExactCase<Definition['cases'][Index]>
+        }
+      }
+    : never
+  : Definition
+
+/** Applied to `compileScenarioFamily`'s `definitions` parameter type; see `ExactCase` above. */
+type ExactDefinitions<Definitions> = {
+  readonly [ScenarioId in keyof Definitions]: ExactDefinition<Definitions[ScenarioId]>
+}
 
 /** Canonical renderer input copied from a validated family case. */
 export type CompiledPresentationScenarioCase<
@@ -249,7 +377,13 @@ interface DecodedCase {
   readonly id: string
   readonly label: string
   readonly input: PresentationScenarioJson
-  readonly environmentAxes: readonly PresentationScenarioEnvironmentAxis[]
+  // Structurally decoded strings only — genuinely unknown axis names are still possible here and
+  // are reported by `collectCaseIssues` (which runs after every `DecodedCase` in a family exists
+  // to cross-reference against). Widened deliberately: narrowing this to
+  // `PresentationScenarioEnvironmentAxis[]` at construction would need a cast BEFORE that
+  // validation ever runs (#270 finding 7). The public surface only ever sees a compiled catalog
+  // AFTER `diagnostics.throwIfAny` has confirmed every axis is valid.
+  readonly environmentAxes: readonly string[]
   readonly copiedArtifactNames?: readonly string[]
 }
 
@@ -272,7 +406,9 @@ interface DecodedScenario {
 
 interface DecodedCatalog {
   readonly version: 1
-  readonly family: PresentationFamily
+  // Structurally decoded only — see `DecodedCase.environmentAxes`'s comment for why this is not
+  // narrowed to `PresentationFamily` at construction (#270 finding 7).
+  readonly family: string
   readonly scenarios: readonly DecodedScenario[]
 }
 
@@ -300,8 +436,6 @@ type DiagnosticPathSegment = DiagnosticPropertySegment | DiagnosticIndexSegment
 interface DiagnosticPath {
   readonly parent?: DiagnosticPath
   readonly segment?: DiagnosticPathSegment
-  /** Exact rendered units, saturated one unit beyond the public message budget. */
-  readonly units: number
 }
 
 interface QuotedDiagnosticPart {
@@ -311,69 +445,41 @@ interface QuotedDiagnosticPart {
 
 type DiagnosticPart = string | number | QuotedDiagnosticPart
 
-const ROOT_DIAGNOSTIC_PATH: DiagnosticPath = Object.freeze({ units: 1 })
-const DIAGNOSTIC_UNIT_OVERFLOW = PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.messageUnits + 1
+const ROOT_DIAGNOSTIC_PATH: DiagnosticPath = Object.freeze({})
 const DIAGNOSTIC_TRUNCATION_ISSUE = `$: diagnostics truncated at ${PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.issues} issues or ${PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.messageUnits} aggregate message/path units.`
 
-function cappedDiagnosticUnits(units: number): number {
-  return Math.min(units, DIAGNOSTIC_UNIT_OVERFLOW)
-}
+/**
+ * Per-issue clipping budget (#270 finding 2): rendering one issue's path or reason text is
+ * always cheap and bounded regardless of source-data size (a path chain is at most a few dozen
+ * segments deep, and a single quoted value or key is rendered exactly once), so there is no need
+ * to estimate units before rendering. What DOES need bounding is the RENDERED SIZE any one issue
+ * is allowed to contribute to the aggregate message budget: without a per-issue cap, a single
+ * pathologically long path segment or quoted value (a 20,000-character stale key; a ~6,000-
+ * character unknown environment value) could by itself exceed the entire aggregate budget,
+ * making `add` truncate the WHOLE report before any issue — including this one, with the path
+ * that names the actual problem — is ever recorded. Each is small relative to the aggregate
+ * budget, so many issues can still coexist in one report.
+ */
+const MAX_ISSUE_PATH_UNITS = 200
+const MAX_ISSUE_REASON_UNITS = 200
+const ELISION_MARKER = '…'
 
-function jsonQuotedUnits(value: string): number {
-  let units = 2
-  for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index)
-    if (
-      code === 0x22 ||
-      code === 0x5c ||
-      code === 0x08 ||
-      code === 0x09 ||
-      code === 0x0a ||
-      code === 0x0c ||
-      code === 0x0d
-    ) {
-      units += 2
-    } else if (code <= 0x1f) {
-      units += 6
-    } else if (code >= 0xd800 && code <= 0xdbff) {
-      const next = value.charCodeAt(index + 1)
-      if (next >= 0xdc00 && next <= 0xdfff) {
-        units += 2
-        index += 1
-      } else {
-        units += 6
-      }
-    } else if (code >= 0xdc00 && code <= 0xdfff) {
-      units += 6
-    } else {
-      units += 1
-    }
-    if (units >= DIAGNOSTIC_UNIT_OVERFLOW) return DIAGNOSTIC_UNIT_OVERFLOW
-  }
-  return units
-}
-
-function integerUnits(value: number): number {
-  if (value === 0) return 1
-  return Math.floor(Math.log10(Math.abs(value))) + 1 + (value < 0 ? 1 : 0)
+/** Clips `text` to `limit` UTF-16 units, deterministically marking the elision with its full,
+ *  pre-clip length so two truncated renders of the same oversized input are byte-identical. */
+function clipRenderedText(text: string, limit: number): string {
+  if (text.length <= limit) return text
+  const marker = `${ELISION_MARKER}(${text.length})`
+  const keep = Math.max(0, limit - marker.length)
+  return `${text.slice(0, keep)}${marker}`
 }
 
 function propertyPath(parent: DiagnosticPath, key: string): DiagnosticPath {
   const identifier = DIAGNOSTIC_PATH_IDENTIFIER.test(key)
-  const segmentUnits = identifier ? key.length + 1 : jsonQuotedUnits(key) + 2
-  return {
-    parent,
-    segment: { kind: 'property', key, identifier },
-    units: cappedDiagnosticUnits(parent.units + segmentUnits),
-  }
+  return { parent, segment: { kind: 'property', key, identifier } }
 }
 
 function indexPath(parent: DiagnosticPath, index: number): DiagnosticPath {
-  return {
-    parent,
-    segment: { kind: 'index', index },
-    units: cappedDiagnosticUnits(parent.units + integerUnits(index) + 2),
-  }
+  return { parent, segment: { kind: 'index', index } }
 }
 
 function renderDiagnosticPath(path: DiagnosticPath): string {
@@ -396,21 +502,18 @@ function quoted(value: string): QuotedDiagnosticPart {
   return { kind: 'quoted', value }
 }
 
-function diagnosticPartUnits(part: DiagnosticPart): number {
-  if (typeof part === 'string') return cappedDiagnosticUnits(part.length)
-  if (typeof part === 'number') return integerUnits(part)
-  return jsonQuotedUnits(part.value)
-}
-
 function renderDiagnosticPart(part: DiagnosticPart): string {
   if (typeof part === 'string') return part
   if (typeof part === 'number') return String(part)
   return JSON.stringify(part.value)
 }
 
+/** How many candidate names an ambiguous-registry-target diagnostic suggests before summarizing the rest. */
+const MAX_SUGGESTED_ARTIFACT_NAMES = 8
+
 function boundedSortedArtifactNames(
   artifacts: readonly ProductContract['entries'][number]['copiedArtifacts'][number][],
-  limit = 8,
+  limit = MAX_SUGGESTED_ARTIFACT_NAMES,
 ): readonly string[] {
   const names: string[] = []
   for (const { name } of artifacts) {
@@ -439,23 +542,25 @@ class DiagnosticCollector {
       return
     }
 
-    let reasonUnits = 1 // terminal period
-    for (const part of reason) {
-      reasonUnits = cappedDiagnosticUnits(reasonUnits + diagnosticPartUnits(part))
-    }
-    const issueUnits = cappedDiagnosticUnits(path.units + 2 + reasonUnits)
+    // Clip the path and reason INDEPENDENTLY, before either is measured against the aggregate
+    // budget, so one oversized path or value can only ever cost this one issue a bounded, fixed
+    // amount — never the whole report (#270 finding 2).
+    const renderedPath = clipRenderedText(renderDiagnosticPath(path), MAX_ISSUE_PATH_UNITS)
+    const renderedReason = clipRenderedText(
+      reason.map(renderDiagnosticPart).join(''),
+      MAX_ISSUE_REASON_UNITS,
+    )
+    const issue = `${renderedPath}: ${renderedReason}.`
     const separatorUnits = this.#issues.length === 0 ? 0 : 1
     const reservedMarkerUnits = DIAGNOSTIC_TRUNCATION_ISSUE.length + 1
     if (
-      issueUnits >= DIAGNOSTIC_UNIT_OVERFLOW ||
-      this.#messageUnits + separatorUnits + issueUnits >
-        PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.messageUnits - reservedMarkerUnits
+      this.#messageUnits + separatorUnits + issue.length >
+      PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS.messageUnits - reservedMarkerUnits
     ) {
       this.#truncate()
       return
     }
 
-    const issue = `${renderDiagnosticPath(path)}: ${reason.map(renderDiagnosticPart).join('')}.`
     this.#issues.push(issue)
     this.#messageUnits += separatorUnits + issue.length
   }
@@ -692,8 +797,13 @@ class BoundaryDecoder {
     }
   }
 
-  record(value: unknown, path: DiagnosticPath): InspectedRecord | undefined {
-    if (!this.#consumeNode(path)) return undefined
+  /**
+   * `precharged` is true only when `json()` already charged this value's node budget itself
+   * (it must consume exactly one node per JSON-tree value, whether that value turns out to be a
+   * record, an array, or neither, before it can know which). Every other caller charges here.
+   */
+  record(value: unknown, path: DiagnosticPath, precharged = false): InspectedRecord | undefined {
+    if (!precharged && !this.#consumeNode(path)) return undefined
     if (value === null || typeof value !== 'object') {
       this.issue(path, 'must be a plain object')
       return undefined
@@ -726,8 +836,9 @@ class BoundaryDecoder {
     return { descriptors, keys }
   }
 
-  array(value: unknown, path: DiagnosticPath): InspectedArray | undefined {
-    if (!this.#consumeNode(path)) return undefined
+  /** See `record`'s `precharged` doc: the same one-node-per-JSON-value contract applies here. */
+  array(value: unknown, path: DiagnosticPath, precharged = false): InspectedArray | undefined {
+    if (!precharged && !this.#consumeNode(path)) return undefined
     if (value === null || typeof value !== 'object') {
       this.issue(path, 'must be an array')
       return undefined
@@ -927,8 +1038,7 @@ class BoundaryDecoder {
       const isArray = this.#isArray(item, frame.path)
       if (isArray === undefined) continue
       if (isArray) {
-        this.#nodes -= 1
-        const inspected = this.array(item, frame.path)
+        const inspected = this.array(item, frame.path, true)
         if (inspected === undefined) continue
         const output = new Array<PresentationScenarioJson>(inspected.values.length)
         assign(frame.assignment, output)
@@ -946,10 +1056,21 @@ class BoundaryDecoder {
         continue
       }
 
-      this.#nodes -= 1
-      const inspected = this.record(item, frame.path)
+      const inspected = this.record(item, frame.path, true)
       if (inspected === undefined) continue
-      const output = Object.create(null) as Record<string, PresentationScenarioJson>
+      // An ORDINARY plain object (not `Object.create(null)`): every key here was copied from an
+      // OWN, enumerable, data-descriptor property of already-inspected source data (never a
+      // getter, `toJSON`, or iteration hook), so a normal `Object.prototype` is safe and matches
+      // what every ordinary consumer record already has (#270 finding 5) — `${input}` and
+      // `input.hasOwnProperty(...)` no longer throw the way they do on a null-prototype value.
+      // `Object.defineProperty` — never a later plain assignment — is what actually WRITES a key
+      // literally named `__proto__`: it always creates a genuine own data property regardless of
+      // the key's name, whereas `output['__proto__'] = value` would instead invoke
+      // `Object.prototype`'s `__proto__` ACCESSOR and reassign the object's prototype. Defining
+      // the slot here first (even before its real value is known) means the later plain
+      // assignment in `assign()` below writes to this now-shadowing OWN property, not the
+      // accessor — see `test/presentation-scenarios-boundaries.test.ts`'s `__proto__` case.
+      const output: Record<string, PresentationScenarioJson> = {}
       const dataFields: { readonly key: string; readonly value: unknown }[] = []
       for (const key of inspected.keys) {
         const descriptor = inspected.descriptors[key]!
@@ -1037,7 +1158,7 @@ function decodeCase(
     id,
     label,
     input,
-    environmentAxes: axes as readonly PresentationScenarioEnvironmentAxis[],
+    environmentAxes: axes,
     ...(targets === undefined ? {} : { copiedArtifactNames: targets }),
   })
 }
@@ -1120,7 +1241,7 @@ function decodeCatalog(
   const familyString = familyField.present
     ? decoder.string(familyField.value, familyPath)
     : undefined
-  if (familyString !== undefined && !PRESENTATION_FAMILIES.has(familyString)) {
+  if (familyString !== undefined && !isPresentationFamily(familyString)) {
     decoder.issue(familyPath, 'unknown presentation family ', quoted(familyString))
   }
   const inspectedScenarios = scenariosField.present
@@ -1180,7 +1301,7 @@ function decodeCatalog(
   if (
     version === undefined ||
     familyString === undefined ||
-    !PRESENTATION_FAMILIES.has(familyString) ||
+    !isPresentationFamily(familyString) ||
     inspectedScenarios === undefined
   ) {
     return decoder.result<DecodedCatalog>(undefined)
@@ -1188,7 +1309,7 @@ function decodeCatalog(
   return decoder.result(
     Object.freeze({
       version,
-      family: familyString as PresentationFamily,
+      family: familyString,
       scenarios: Object.freeze(scenarios),
     }),
   )
@@ -1291,7 +1412,7 @@ function collectCaseIssues(
     for (let axisIndex = 0; axisIndex < scenarioCase.environmentAxes.length; axisIndex += 1) {
       const axis = scenarioCase.environmentAxes[axisIndex]!
       const axisPath = indexPath(axesPath, axisIndex)
-      if (!ENVIRONMENT_AXES.has(axis)) {
+      if (!isPresentationScenarioEnvironmentAxis(axis)) {
         diagnostics.add(axisPath, 'unknown environment axis ', quoted(axis))
       }
       if (seenAxes.has(axis)) {
@@ -1404,6 +1525,20 @@ function collectCatalogIntegrityIssues(
   }
 }
 
+/**
+ * Catalog objects THIS MODULE produced and validated in full (`compiledCatalog`, below) — a
+ * frozen `CompiledPresentationScenarioFamily` a caller holds a live reference to, never restored
+ * from serialization. Membership is by REFERENCE, never by structural shape: a byte-identical
+ * `JSON.parse(JSON.stringify(catalog))` copy is a different object and is NOT a member, so it is
+ * decoded and integrity-checked in full — the fast path below trusts a specific object this
+ * module built, not "any catalog that happens to look right" (#270 finding 6).
+ */
+const TRUSTED_CATALOGS = new WeakSet<object>()
+
+function isTrustedCatalog(value: unknown): value is DecodedCatalog {
+  return typeof value === 'object' && value !== null && TRUSTED_CATALOGS.has(value)
+}
+
 function compiledCatalog(
   contract: ProductContract,
   family: PresentationFamily,
@@ -1440,46 +1575,39 @@ function compiledCatalog(
   }
   diagnostics.throwIfAny('invalid-definitions')
 
-  const raw = {
+  // Every piece assembled below (`entry.name`/`entry.scenarioId`, and every field of
+  // `definition`/its cases) already passed the ONE untrusted-boundary decode above, under its own
+  // family-wide complexity budget. Re-decoding this derived, already-typed structure through
+  // `decodeCatalog` would apply a SECOND, independent budget to data the caller never
+  // over-submitted — the catalog's own scaffolding (`version`/`family`/`productId`/`scenarioId`)
+  // adds nodes the caller's payload never contained, so a definitions blob landing exactly at the
+  // family budget could fail here with a diagnostic path (`$.scenarios[...]`) the caller never
+  // wrote (#270). The compile-to-decode integrity invariant instead holds STRUCTURALLY: this
+  // catalog is built only from values `decodeDefinitions` already accepted, so a caller-facing
+  // decode of its JSON serialization (see `resolveScenarioSelection`) is what actually needs to
+  // succeed, and does — see the "survive serialized decode" test.
+  const catalog: DecodedCatalog = Object.freeze({
     version: 1,
     family,
-    scenarios: entries.map((entry) => {
-      const definition = decoded.definitions.get(entry.scenarioId)!
-      return {
-        productId: entry.name,
-        scenarioId: entry.scenarioId,
-        defaultCaseId: definition.defaultCaseId,
-        cases: definition.cases.map((scenarioCase) => ({
-          id: scenarioCase.id,
-          label: scenarioCase.label,
-          input: scenarioCase.input,
-          environmentAxes: scenarioCase.environmentAxes,
-          ...(scenarioCase.copiedArtifactNames === undefined
-            ? {}
-            : { copiedArtifactNames: scenarioCase.copiedArtifactNames }),
-        })),
-      }
-    }),
-  }
-  const catalog = decodeCatalog(raw, diagnostics, 'invalid-definitions')
+    scenarios: Object.freeze(
+      entries.map((entry) => {
+        const definition = decoded.definitions.get(entry.scenarioId)!
+        return Object.freeze({
+          productId: entry.name,
+          scenarioId: entry.scenarioId,
+          defaultCaseId: definition.defaultCaseId,
+          cases: definition.cases,
+        })
+      }),
+    ),
+  })
   collectCatalogIntegrityIssues(diagnostics, contract, catalog)
   diagnostics.throwIfAny('invalid-definitions')
+  TRUSTED_CATALOGS.add(catalog)
   return catalog
 }
 
-/** Join family-owned semantic cases to ProductContract's canonical inventory. */
-export function compileScenarioFamily<const Definitions extends PresentationScenarioDefinitions>(
-  contract: ProductContract,
-  family: PresentationFamily,
-  definitions: Definitions,
-): CompiledPresentationScenarioFamily<Definitions>
-/** Validate and compile definitions received from an untyped serialized boundary. */
-export function compileScenarioFamily(
-  contract: ProductContract,
-  family: PresentationFamily,
-  definitions: unknown,
-): CompiledPresentationScenarioFamily
-export function compileScenarioFamily(
+function compileScenarioFamilyUnknown(
   contract: ProductContract,
   family: PresentationFamily,
   definitions: unknown,
@@ -1494,25 +1622,55 @@ export function compileScenarioFamily(
   ) as CompiledPresentationScenarioFamily
 }
 
-/** Resolve one deterministic renderer input from a compiled family catalog. */
-export function resolveScenarioSelection<Definitions extends PresentationScenarioDefinitions>(
+/**
+ * Join family-owned semantic cases to ProductContract's canonical inventory. `definitions` must
+ * be statically known here — there is no `unknown` fallthrough, so a `Definitions` literal that
+ * fails to satisfy `PresentationScenarioDefinitions` (an extra field on a case, an unknown
+ * `environmentAxes` value, a function in `input`, …) is a COMPILE error, not a value silently
+ * degraded to `CompiledPresentationScenarioFamily`'s erased, `string`-keyed shape (#270 finding
+ * 3). For a definitions value received from an untyped/serialized boundary, decode it with
+ * `decodeScenarioFamily` instead.
+ */
+export function compileScenarioFamily<const Definitions extends PresentationScenarioDefinitions>(
   contract: ProductContract,
-  catalog: CompiledPresentationScenarioFamily<Definitions>,
-  selection: PresentationScenarioSelection,
-): ResolvedPresentationScenarioSelection<Definitions>
-/** Validate and resolve a catalog and selection received from serialized boundaries. */
-export function resolveScenarioSelection(
+  family: PresentationFamily,
+  definitions: ExactDefinitions<Definitions>,
+): CompiledPresentationScenarioFamily<Definitions> {
+  return compileScenarioFamilyUnknown(
+    contract,
+    family,
+    definitions,
+  ) as unknown as CompiledPresentationScenarioFamily<Definitions>
+}
+
+/**
+ * Validate and compile definitions received from an untyped serialized boundary (a network
+ * response, a `JSON.parse`, a dynamic import, …). Prefer `compileScenarioFamily` whenever the
+ * definitions are a statically-known literal — this is the deliberately erased escape hatch, not
+ * a more permissive alternative to it.
+ */
+export function decodeScenarioFamily(
   contract: ProductContract,
-  catalog: unknown,
-  selection: unknown,
-): ResolvedPresentationScenarioSelection
-export function resolveScenarioSelection(
+  family: PresentationFamily,
+  definitions: unknown,
+): CompiledPresentationScenarioFamily {
+  return compileScenarioFamilyUnknown(contract, family, definitions)
+}
+
+function resolveScenarioSelectionUnknown(
   contract: ProductContract,
   catalog: unknown,
   selection: unknown,
 ): ResolvedPresentationScenarioSelection {
   const diagnostics = new DiagnosticCollector()
-  const decodedCatalog = decodeCatalog(catalog, diagnostics)
+  // A catalog THIS MODULE produced and the caller still holds a live reference to has already
+  // passed the untrusted-boundary structural decode once, in full, at compile time — re-running
+  // it here on every resolve is pure repeated work for a frozen object that cannot have changed
+  // since. Skip ONLY that structural re-decode; the integrity cross-check against `contract`
+  // below still always runs, because a compiled-then-cached catalog can legitimately be resolved
+  // against a DIFFERENT (e.g. stale) contract than the one it was compiled against (#270 finding
+  // 6) — trusting the catalog's own shape is not the same as trusting it still matches `contract`.
+  const decodedCatalog = isTrustedCatalog(catalog) ? catalog : decodeCatalog(catalog, diagnostics)
   collectCatalogIntegrityIssues(diagnostics, contract, decodedCatalog)
   diagnostics.throwIfAny('invalid-catalog')
 
@@ -1535,11 +1693,11 @@ export function resolveScenarioSelection(
     throw diagnostics.error('unknown-product')
   }
   const entry = contract.entries.find(({ name }) => name === decodedSelection.productId)!
-  if (!PRESENTATION_SCENARIO_PATH_SET.has(decodedSelection.path)) {
+  if (!isPresentationScenarioPath(decodedSelection.path)) {
     diagnostics.add(selectionPath, 'unknown presentation path ', quoted(decodedSelection.path))
     throw diagnostics.error('invalid-path')
   }
-  const path = decodedSelection.path as PresentationScenarioPath
+  const path = decodedSelection.path
   if (entry.presentation[path].mode === 'not-applicable') {
     diagnostics.add(
       selectionPath,
@@ -1566,11 +1724,11 @@ export function resolveScenarioSelection(
   const environmentPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'environment')
   for (const [axis, value] of Object.entries(decodedSelection.environment)) {
     const axisPath = propertyPath(environmentPath, axis)
-    if (!ENVIRONMENT_AXES.has(axis)) {
+    if (!isPresentationScenarioEnvironmentAxis(axis)) {
       diagnostics.add(axisPath, 'unknown environment axis ', quoted(axis))
       continue
     }
-    const knownAxis = axis as PresentationScenarioEnvironmentAxis
+    const knownAxis = axis
     const allowedValues = PRESENTATION_SCENARIO_ENVIRONMENT_VALUES[knownAxis] as readonly string[]
     if (!allowedValues.includes(value)) {
       diagnostics.add(axisPath, 'unknown value ', quoted(value))
@@ -1671,4 +1829,37 @@ export function resolveScenarioSelection(
         }),
   })
   return result as ResolvedPresentationScenarioSelection
+}
+
+/**
+ * Resolve one deterministic renderer input from a compiled family catalog. `catalog` must be
+ * statically known here — there is no `unknown` fallthrough, so a catalog or selection literal
+ * that fails to satisfy its typed shape is a COMPILE error rather than a value silently accepted
+ * and narrowed away to `string` (#270 finding 3). For a catalog or selection received from an
+ * untyped/serialized boundary, decode it with `decodeScenarioSelection` instead.
+ */
+export function resolveScenarioSelection<Definitions extends PresentationScenarioDefinitions>(
+  contract: ProductContract,
+  catalog: CompiledPresentationScenarioFamily<Definitions>,
+  selection: PresentationScenarioSelection,
+): ResolvedPresentationScenarioSelection<Definitions> {
+  return resolveScenarioSelectionUnknown(
+    contract,
+    catalog,
+    selection,
+  ) as unknown as ResolvedPresentationScenarioSelection<Definitions>
+}
+
+/**
+ * Validate and resolve a catalog and selection received from serialized boundaries (a network
+ * response, a `JSON.parse`, a dynamic import, …). Prefer `resolveScenarioSelection` whenever the
+ * catalog is a statically-known compiled result — this is the deliberately erased escape hatch,
+ * not a more permissive alternative to it.
+ */
+export function decodeScenarioSelection(
+  contract: ProductContract,
+  catalog: unknown,
+  selection: unknown,
+): ResolvedPresentationScenarioSelection {
+  return resolveScenarioSelectionUnknown(contract, catalog, selection)
 }

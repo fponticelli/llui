@@ -267,14 +267,8 @@ export type PresentationCoverage =
 
 ### `PresentationFamily`
 
-Single-owner visual-language cohort, independent of user-facing product category.
-
 ```typescript
-export type PresentationFamily =
-  | 'forms-controls'
-  | 'navigation-data'
-  | 'menus-overlays'
-  | 'specialized-tools'
+export type PresentationFamily = (typeof PRESENTATION_FAMILY_VALUES)[number]
 ```
 
 ### `ProductCategory`
@@ -563,6 +557,8 @@ const PresentationCoverageSchema
 ### `PresentationFamilySchema`
 
 Single-owner visual-language cohort. This is independent of the user-facing product category.
+Derived from the one canonical tuple in `product-contract-types.ts` — do not restate the
+literals here.
 
 ```typescript
 const PresentationFamilySchema
@@ -788,36 +784,66 @@ const RegistrySchema
 
 ##### `compileScenarioFamily()` from `@llui/cli/presentation-scenarios`
 
-Join family-owned semantic cases to ProductContract's canonical inventory.
+Join family-owned semantic cases to ProductContract's canonical inventory. `definitions` must
+be statically known here — there is no `unknown` fallthrough, so a `Definitions` literal that
+fails to satisfy `PresentationScenarioDefinitions` (an extra field on a case, an unknown
+`environmentAxes` value, a function in `input`, …) is a COMPILE error, not a value silently
+degraded to `CompiledPresentationScenarioFamily`'s erased, `string`-keyed shape (#270 finding
+3). For a definitions value received from an untyped/serialized boundary, decode it with
+`decodeScenarioFamily` instead.
 
 ```typescript
-export function compileScenarioFamily<const Definitions extends PresentationScenarioDefinitions>(
+function compileScenarioFamily<const Definitions extends PresentationScenarioDefinitions>(
   contract: ProductContract,
   family: PresentationFamily,
-  definitions: Definitions,
+  definitions: ExactDefinitions<Definitions>,
 ): CompiledPresentationScenarioFamily<Definitions>
-export function compileScenarioFamily(
+```
+
+##### `decodeScenarioFamily()` from `@llui/cli/presentation-scenarios`
+
+Validate and compile definitions received from an untyped serialized boundary (a network
+response, a `JSON.parse`, a dynamic import, …). Prefer `compileScenarioFamily` whenever the
+definitions are a statically-known literal — this is the deliberately erased escape hatch, not
+a more permissive alternative to it.
+
+```typescript
+function decodeScenarioFamily(
   contract: ProductContract,
   family: PresentationFamily,
   definitions: unknown,
 ): CompiledPresentationScenarioFamily
 ```
 
-##### `resolveScenarioSelection()` from `@llui/cli/presentation-scenarios`
+##### `decodeScenarioSelection()` from `@llui/cli/presentation-scenarios`
 
-Resolve one deterministic renderer input from a compiled family catalog.
+Validate and resolve a catalog and selection received from serialized boundaries (a network
+response, a `JSON.parse`, a dynamic import, …). Prefer `resolveScenarioSelection` whenever the
+catalog is a statically-known compiled result — this is the deliberately erased escape hatch,
+not a more permissive alternative to it.
 
 ```typescript
-export function resolveScenarioSelection<Definitions extends PresentationScenarioDefinitions>(
-  contract: ProductContract,
-  catalog: CompiledPresentationScenarioFamily<Definitions>,
-  selection: PresentationScenarioSelection,
-): ResolvedPresentationScenarioSelection<Definitions>
-export function resolveScenarioSelection(
+function decodeScenarioSelection(
   contract: ProductContract,
   catalog: unknown,
   selection: unknown,
 ): ResolvedPresentationScenarioSelection
+```
+
+##### `resolveScenarioSelection()` from `@llui/cli/presentation-scenarios`
+
+Resolve one deterministic renderer input from a compiled family catalog. `catalog` must be
+statically known here — there is no `unknown` fallthrough, so a catalog or selection literal
+that fails to satisfy its typed shape is a COMPILE error rather than a value silently accepted
+and narrowed away to `string` (#270 finding 3). For a catalog or selection received from an
+untyped/serialized boundary, decode it with `decodeScenarioSelection` instead.
+
+```typescript
+function resolveScenarioSelection<Definitions extends PresentationScenarioDefinitions>(
+  contract: ProductContract,
+  catalog: CompiledPresentationScenarioFamily<Definitions>,
+  selection: PresentationScenarioSelection,
+): ResolvedPresentationScenarioSelection<Definitions>
 ```
 
 #### Types
@@ -1032,6 +1058,19 @@ Canonical environment used when a selection omits supported overrides.
 
 ```typescript
 const DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT
+```
+
+##### `PRESENTATION_SCENARIO_COMPLEXITY_LIMITS` from `@llui/cli/presentation-scenarios`
+
+Frozen boundary-decoding complexity budget. `familyNodes`/`familyFields`/`familyStringUnits`
+bound total work across one family submission (all scenarios and cases combined), sized with
+generous headroom against a realistic worst case of ~40 products x ~12 cases x a few-hundred-
+node payload each (see the sizing-basis constants above this export). `stringLength` and
+`arrayLength` bound one value at a time and are unaffected by family size. `depth` bounds
+nesting depth to keep the decoder's explicit stack bounded, independent of both.
+
+```typescript
+const PRESENTATION_SCENARIO_COMPLEXITY_LIMITS
 ```
 
 ##### `PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS` from `@llui/cli/presentation-scenarios`

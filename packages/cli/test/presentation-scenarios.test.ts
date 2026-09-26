@@ -3,6 +3,8 @@ import { ProductContractSchema, type ProductContract } from '../src/product-cont
 import {
   DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
   compileScenarioFamily,
+  decodeScenarioFamily,
+  decodeScenarioSelection,
   PresentationScenarioError,
   resolveScenarioSelection,
   type PresentationScenarioDefinitions,
@@ -245,10 +247,10 @@ describe('compileScenarioFamily', () => {
           },
         ],
       },
-    } as unknown as PresentationScenarioDefinitions
+    }
 
     try {
-      compileScenarioFamily(contract(), 'menus-overlays', definitions)
+      decodeScenarioFamily(contract(), 'menus-overlays', definitions)
       expect.unreachable('invalid case metadata must throw')
     } catch (error) {
       expect(error).toBeInstanceOf(PresentationScenarioError)
@@ -328,10 +330,10 @@ describe('compileScenarioFamily', () => {
           },
         ],
       },
-    } as unknown as PresentationScenarioDefinitions
+    }
 
     try {
-      compileScenarioFamily(contract(), 'menus-overlays', definitions)
+      decodeScenarioFamily(contract(), 'menus-overlays', definitions)
       expect.unreachable('non-JSON input must throw')
     } catch (error) {
       expect(error).toBeInstanceOf(PresentationScenarioError)
@@ -374,6 +376,79 @@ describe('compileScenarioFamily', () => {
     const encoded = JSON.stringify(compiledInput)
     expect(JSON.parse(encoded)).toEqual(expected)
     expect(JSON.stringify(JSON.parse(encoded))).toBe(encoded)
+  })
+
+  it('snapshots JSON input objects as ordinary plain objects, not Object.create(null) (#270 finding 5)', () => {
+    const definitions = {
+      'component:dialog': {
+        defaultCaseId: 'default',
+        cases: [
+          {
+            id: 'default',
+            label: 'Default',
+            input: { title: 'Ordinary prototype', nested: { count: 1 } },
+            environmentAxes: [],
+          },
+        ],
+      },
+      'component:menu': {
+        defaultCaseId: 'default',
+        cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
+      },
+    } as const satisfies PresentationScenarioDefinitions
+
+    const compiled = compileScenarioFamily(contract(), 'menus-overlays', definitions)
+    const input = compiled.scenarios[0]!.cases[0]!.input as {
+      readonly title: string
+      readonly nested: { readonly count: number }
+    }
+
+    // A null-prototype snapshot throws on both of these; an ordinary one does not.
+    expect(() => `${input}`).not.toThrow()
+    expect(`${input}`).toBe('[object Object]')
+    expect(() => Object.prototype.hasOwnProperty.call(input, 'title')).not.toThrow()
+    expect(Object.prototype.hasOwnProperty.call(input, 'title')).toBe(true)
+    expect(Object.getPrototypeOf(input)).toBe(Object.prototype)
+    expect(Object.getPrototypeOf(input.nested)).toBe(Object.prototype)
+    expect(Object.isFrozen(input)).toBe(true)
+  })
+
+  it('handles a `__proto__` data key via defineProperty, never assignment, and preserves it as an own property (#270 finding 5)', () => {
+    const proto = Object.create(null) as Record<string, unknown>
+    proto['visible'] = true
+    proto['__proto__'] = 'a plain string value, not a prototype'
+    const definitions = {
+      'component:dialog': {
+        defaultCaseId: 'default',
+        cases: [{ id: 'default', label: 'Default', input: proto, environmentAxes: [] }],
+      },
+      'component:menu': {
+        defaultCaseId: 'default',
+        cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
+      },
+    }
+
+    const compiled = decodeScenarioFamily(contract(), 'menus-overlays', definitions)
+    const input = compiled.scenarios[0]!.cases[0]!.input as Record<string, unknown>
+
+    // The object's ACTUAL prototype is untouched (still ordinary Object.prototype) — a plain
+    // assignment of a `__proto__`-named key would instead have reassigned it, most likely to
+    // `'a plain string value, not a prototype'` coerced away or to `Object.prototype` itself
+    // depending on the value, and either way would have LOST the key as own data.
+    expect(Object.getPrototypeOf(input)).toBe(Object.prototype)
+    expect(Object.prototype.hasOwnProperty.call(input, '__proto__')).toBe(true)
+    expect(Object.getOwnPropertyDescriptor(input, '__proto__')).toMatchObject({
+      value: 'a plain string value, not a prototype',
+      enumerable: true,
+    })
+    expect(input['__proto__']).toBe('a plain string value, not a prototype')
+    expect(input['visible']).toBe(true)
+    // A computed key here (never the literal `__proto__:` syntax, which sets the prototype
+    // instead of creating a data property — precisely the footgun this test exists to catch).
+    expect(JSON.parse(JSON.stringify(input))).toEqual({
+      ['__proto__']: 'a plain string value, not a prototype',
+      visible: true,
+    })
   })
 
   it('retains the family-owned case union for exact protocol cases', () => {
@@ -455,7 +530,7 @@ describe('compileScenarioFamily', () => {
           },
         ],
       },
-    } as unknown as PresentationScenarioDefinitions
+    } as const satisfies PresentationScenarioDefinitions
 
     try {
       compileScenarioFamily(drawerContract, 'menus-overlays', definitions)
@@ -689,7 +764,7 @@ describe('resolveScenarioSelection', () => {
 
     for (const { catalog: invalidCatalog, issues } of invalidCatalogs) {
       try {
-        resolveScenarioSelection(productContract, invalidCatalog as unknown as typeof catalog, {
+        decodeScenarioSelection(productContract, invalidCatalog, {
           productId: 'dialog',
           path: 'baseline',
         })
@@ -778,12 +853,12 @@ describe('resolveScenarioSelection', () => {
     const catalog = compileScenarioFamily(productContract, 'menus-overlays', definitions)
 
     try {
-      resolveScenarioSelection(productContract, catalog, {
+      decodeScenarioSelection(productContract, catalog, {
         productId: 'dialog',
         caseId: 'open',
         path: 'baseline',
         environment: { theme: 'sepia', motion: 'reduced', contrast: 'high' },
-      } as unknown as Parameters<typeof resolveScenarioSelection>[2])
+      })
       expect.unreachable('invalid environment must throw')
     } catch (error) {
       expect(error).toBeInstanceOf(PresentationScenarioError)
@@ -955,7 +1030,10 @@ describe('resolveScenarioSelection', () => {
 
     for (const { catalog, issue } of selections) {
       try {
-        resolveScenarioSelection(ambiguousContract, catalog, {
+        // The loop's `catalog` is a runtime union of two differently-defaulted compiled results,
+        // so no single static `Definitions` describes every iteration — decode it, exactly the
+        // shape decodeScenarioSelection exists for (#270 finding 3).
+        decodeScenarioSelection(ambiguousContract, catalog, {
           productId: 'picker',
           path: 'registryTailwind',
         })
@@ -1006,5 +1084,65 @@ describe('resolveScenarioSelection', () => {
         path: 'registryTailwind',
       }),
     ).not.toHaveProperty('copiedArtifact')
+  })
+
+  it('skips re-decoding a catalog this module already produced and validated, but still re-validates a serialized copy (#270 finding 6)', () => {
+    const definitions = {
+      'component:dialog': {
+        defaultCaseId: 'open',
+        cases: [
+          {
+            id: 'open',
+            label: 'Open',
+            input: { nested: { labels: ['Ada', 'Grace'] } },
+            environmentAxes: ['theme'],
+          },
+        ],
+      },
+      'component:menu': {
+        defaultCaseId: 'default',
+        cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
+      },
+    } as const satisfies PresentationScenarioDefinitions
+    const productContract = contract()
+    const catalog = compileScenarioFamily(productContract, 'menus-overlays', definitions)
+    const trustedCase = catalog.scenarios[0]!.cases[0]!
+
+    // The PRODUCED catalog: resolving against it returns the SAME case object (and its `input`)
+    // — proof the structural decode was skipped, since a full decode always REBUILDS every value
+    // from scratch and could never hand back the exact reference it was given.
+    const trustedResolved = resolveScenarioSelection(productContract, catalog, {
+      productId: 'dialog',
+      path: 'baseline',
+    })
+    expect(trustedResolved.case).toBe(trustedCase)
+    expect(trustedResolved.case.input).toBe(trustedCase.input)
+
+    // A byte-identical but DIFFERENT object (never produced by this module) is a different
+    // reference, so it is decoded and integrity-checked in full: its resolved case is a freshly
+    // rebuilt object, not the serialized copy's own.
+    const serializedCatalog = JSON.parse(JSON.stringify(catalog)) as typeof catalog
+    const untrustedResolved = resolveScenarioSelection(productContract, serializedCatalog, {
+      productId: 'dialog',
+      path: 'baseline',
+    })
+    expect(untrustedResolved.case).not.toBe(serializedCatalog.scenarios[0]!.cases[0])
+    expect(untrustedResolved.case).toEqual(trustedCase)
+    expect(untrustedResolved.case.input).toEqual(trustedCase.input)
+
+    // A genuinely stale contract is still caught even for the trusted (produced) catalog — the
+    // fast path skips the STRUCTURAL decode only, never the contract integrity cross-check.
+    const staleContract = ProductContractSchema.parse({
+      version: 2,
+      entries: [product('menu')],
+      aliases: [],
+    })
+    try {
+      resolveScenarioSelection(staleContract, catalog, { productId: 'dialog', path: 'baseline' })
+      expect.unreachable('a stale catalog join must still throw for a trusted catalog')
+    } catch (error) {
+      expect(error).toBeInstanceOf(PresentationScenarioError)
+      expect(error).toMatchObject({ code: 'invalid-catalog' })
+    }
   })
 })

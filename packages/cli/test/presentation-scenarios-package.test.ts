@@ -21,6 +21,7 @@ const DIRECT_EXPORTS = [
   'CompiledPresentationScenarioCase',
   'CompiledPresentationScenarioFamily',
   'DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT',
+  'PRESENTATION_SCENARIO_COMPLEXITY_LIMITS',
   'PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS',
   'PRESENTATION_SCENARIO_ENVIRONMENT_VALUES',
   'PRESENTATION_SCENARIO_PATHS',
@@ -37,6 +38,8 @@ const DIRECT_EXPORTS = [
   'PresentationScenarioSelection',
   'ResolvedPresentationScenarioSelection',
   'compileScenarioFamily',
+  'decodeScenarioFamily',
+  'decodeScenarioSelection',
   'resolveScenarioSelection',
 ] as const
 
@@ -261,11 +264,14 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
     expect(Object.keys(direct).sort()).toEqual(
       [
         'DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT',
+        'PRESENTATION_SCENARIO_COMPLEXITY_LIMITS',
         'PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS',
         'PRESENTATION_SCENARIO_ENVIRONMENT_VALUES',
         'PRESENTATION_SCENARIO_PATHS',
         'PresentationScenarioError',
         'compileScenarioFamily',
+        'decodeScenarioFamily',
+        'decodeScenarioSelection',
         'resolveScenarioSelection',
       ].sort(),
     )

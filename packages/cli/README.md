@@ -58,6 +58,15 @@ Gallery and visual-regression consumers import the browser-safe protocol directl
 source of product metadata. A family supplies semantic cases keyed by the contract's
 `scenarioId`, and `compileScenarioFamily` performs the exact join in canonical contract order.
 
+`compileScenarioFamily` and `resolveScenarioSelection` require a STATICALLY KNOWN `Definitions`
+literal — there is no `unknown` fallthrough, so an invalid literal (an extra field on a case, an
+unrecognized `environmentAxes` value, a function in `input`, …) is a compile error rather than a
+value silently accepted and narrowed away to `CompiledPresentationScenarioFamily`'s erased,
+`string`-keyed shape. For a definitions, catalog, or selection value received from a genuinely
+untyped or serialized boundary (a network response, `JSON.parse`, a dynamic import), decode it
+with `decodeScenarioFamily` / `decodeScenarioSelection` instead — the same validation and
+diagnostics, deliberately without static narrowing.
+
 A `scenarioId` identifies a product presentation across renderer paths. A case `id` is instead
 a stable, product-local state such as `open` or `loading`. Each case owns only JSON data, the
 environment axes it supports, and any copied-artifact targets it applies to. Theme, direction,
@@ -77,11 +86,34 @@ traps still produce typed failures, and all work after `ownKeys` returns is boun
 properties, accessors, symbols, decorated arrays, noncanonical serialization/iteration hooks and
 over-budget payloads are rejected.
 
-The serialized boundary is capped at 64 nested levels, 5,000 decoded nodes, 1,000 entries per
-array, 100,000 units per string, 1,000,000 total string units and 10,000 total own fields.
-Compiler/resolver failures additionally share one exported diagnostic policy: at most 100 issues
-and 16,384 UTF-16 units across the final `Error.message`, including newline separators and the
-explicit truncation diagnostic. Paths and quoted values are measured before they are rendered.
+The serialized boundary's complexity budget is exported as `PRESENTATION_SCENARIO_COMPLEXITY_LIMITS`
+and sized with generous headroom against a realistic family, not a flat cap tuned for a single
+demo product: 64 nested levels, 288,000 decoded nodes and own fields, 2,000 entries per array,
+100,000 units per string, and 11,520,000 total string units, across one whole family submission
+(all of its scenarios and cases combined). The basis is documented beside the constants in
+`presentation-scenarios.ts`: ~40 products x ~12 cases x a few-hundred-node payload each, times a
+headroom multiplier — a real 30-product x 5-case x 20-row-table family is comfortably inside it,
+where the flat 5,000-node cap an earlier revision shipped was not (#270). `compileScenarioFamily`
+compiles a catalog from ALREADY-decoded, already-budgeted definitions structurally; it does not
+apply a second, independent decode-and-budget pass to its own output, which used to make a
+definitions payload landing exactly at the family budget fail with a diagnostic path
+(`$.scenarios[…]`) the caller never wrote.
+
+Compiler/resolver failures additionally share one exported diagnostic policy
+(`PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS`): at most 100 issues and 16,384 UTF-16 units across the
+final `Error.message`, including newline separators and the explicit truncation diagnostic. Each
+issue's own path and reason text are independently clipped to a small, fixed budget (with a
+deterministic `…(<original length>)` elision marker) before being measured against that aggregate
+— so one pathologically long path segment or quoted value can only ever cost its OWN issue a
+bounded amount, never collapse the whole report to the pathless truncation marker before any real
+issue, including the one naming the actual problem, is ever recorded.
+
+`resolveScenarioSelection` skips re-decoding a catalog THIS MODULE produced and the caller still
+holds a live reference to (tracked by object identity, never by structural shape — a
+`JSON.parse(JSON.stringify(catalog))` copy is a different object and is always decoded and
+integrity-checked in full). The contract integrity cross-check still always runs regardless,
+because a cached catalog can legitimately be resolved against a different (e.g. stale) contract
+than the one it was compiled against.
 
 Source case objects are exact protocol data: `id`, `label`, `input`, `environmentAxes`, and the
 optional `copiedArtifactNames` are the only fields. Renderer adapters live in each app as
@@ -94,6 +126,17 @@ JSON snapshots, environment-axis arrays, and copied-artifact arrays are recursiv
 when a caller supplies ordinary mutable definitions without `as const`.
 The direct subpath's declaration graph depends only on browser-pure structural ProductContract
 types—not the CLI's Zod schema or Node runtime.
+
+**Prototype policy:** a decoded JSON snapshot's nested objects are rebuilt as ORDINARY plain
+objects (`Object.prototype`), not `Object.create(null)` — every key was copied from an own,
+enumerable, data-descriptor property of already-inspected source data (never a getter, `toJSON`,
+or iteration hook), so a normal prototype is safe and matches what every other value in the
+protocol already has. `${input}` and `Object.prototype.hasOwnProperty.call(input, key)` work as
+expected; a null-prototype value would throw on both. A source key literally named `__proto__` is
+still handled safely: the decoder always creates its slot with `Object.defineProperty` (which
+makes a genuine own data property regardless of the key's name) BEFORE the key's value is ever
+assigned, so the later plain assignment writes to that now-shadowing own property rather than
+invoking `Object.prototype`'s `__proto__` accessor and reassigning the object's prototype.
 
 The package-boundary suite imports and repackages emitted files. Run `pnpm run build` before a
 direct `pnpm run test`; the workspace Turbo task encodes that own-package build edge automatically.
