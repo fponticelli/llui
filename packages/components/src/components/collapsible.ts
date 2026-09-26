@@ -1,9 +1,11 @@
-import { tagSend } from '@llui/dom'
+import { onMount, tagSend, type Mountable } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { retainedExit } from '../internal/retained-exit.js'
 import {
-  completeIfUnanimated,
+  createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
+  watchForStalledDisclosureExit,
+  type DisclosureExitWatchEntry,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
 import { getElementByIdInScope } from '../utils/root-scope.js'
@@ -124,6 +126,17 @@ export interface CollapsibleParts {
     onTransitionEnd: (e: TransitionEvent) => void
     onTransitionCancel: (e: TransitionEvent) => void
   }
+  /**
+   * Settles a PROGRAMMATIC `close`/`toggle`/`setOpen` (sent directly by the
+   * host app, bypassing the trigger's click handler) once the content's own
+   * exit animation/transition ends — or immediately, if the skin runs no
+   * exit motion at all. MUST be placed in the rendered view (`#264` review
+   * item 1); a click-driven close is still safety-netted synchronously
+   * inside the trigger regardless of whether this is placed, but nothing
+   * else settles a programmatic close on a no-motion skin, which otherwise
+   * hangs `closing` + `inert` forever.
+   */
+  exitCompletion: Mountable
 }
 
 export interface ConnectOptions {
@@ -138,6 +151,17 @@ export function connect(
   const triggerId = `${opts.id}:trigger`
   const contentId = `${opts.id}:content`
   const exitTracker = createDisclosureExitTracker()
+  const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] => {
+    const current = state.peek()
+    return current.closing
+      ? [{ key: 'root', closing: true, generation: current.exitGeneration, contentId }]
+      : []
+  }
+  // Dev-only, unconditional the moment `connect()` runs — independent of
+  // whether `exitCompletion` below is ever placed in the view, because
+  // nothing placement-gated can warn about its OWN absence (#264 review
+  // item 1).
+  watchForStalledDisclosureExit(exitWatchEntries, () => 'Collapsible')
   const armExit = (e: MotionEvent): void => {
     const current = state.peek()
     exitTracker.armExit(e, { closing: current.closing, generation: current.exitGeneration })
@@ -219,36 +243,14 @@ export function connect(
       onTransitionEnd: tagSend(send, ['exitComplete'], completeExit),
       onTransitionCancel: tagSend(send, ['exitComplete'], completeExit),
     },
+    exitCompletion: onMount(
+      createDisclosureExitCompletionMount(
+        getElementByIdInScope,
+        exitWatchEntries,
+        (_key, generation) => send({ type: 'exitComplete', generation }),
+      ),
+    ),
   }
 }
 
-/**
- * Settle a close that entered `closing` from a message the trigger's own
- * click handler never saw — a PROGRAMMATIC `close`/`toggle`/`setOpen` the
- * host app sends directly (#264 review item 4b). See
- * `accordion.watchExitCompletion`'s doc comment for the full rationale; this
- * is the same idiom for collapsible's single content element.
- */
-export function watchExitCompletion(
-  root: Element,
-  state: Signal<CollapsibleState>,
-  send: Send<CollapsibleMsg>,
-): () => void {
-  const check = (): void => {
-    const current = state.peek()
-    if (!current.closing) return
-    const content = root.querySelector<HTMLElement>(
-      '[data-scope="collapsible"][data-part="content"]',
-    )
-    if (completeIfUnanimated(content, { closing: true, generation: current.exitGeneration })) {
-      send({ type: 'exitComplete', generation: current.exitGeneration })
-    }
-  }
-
-  check()
-  const observer = new MutationObserver(check)
-  observer.observe(root, { attributes: true, attributeFilter: ['data-state'], subtree: true })
-  return () => observer.disconnect()
-}
-
-export const collapsible = { init, update, connect, watchExitCompletion }
+export const collapsible = { init, update, connect }

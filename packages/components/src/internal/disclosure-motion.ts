@@ -188,8 +188,8 @@ export interface DisclosureExitTracker {
 /** Standalone form of `DisclosureExitTracker.completeIfUnanimated`, usable
  * outside a live tracker instance — it consults only the element's current
  * running effects and the given state, no tracker-private bookkeeping. Used
- * by a `watchExitCompletion` observer to settle a value that entered
- * `closing` from a message the click/keydown handlers never saw (a
+ * by the `exitCompletion` connect()-owned Mountable to settle a value that
+ * entered `closing` from a message the click/keydown handlers never saw (a
  * PROGRAMMATIC close/toggle/setValue sent directly by the host app, #264
  * review item 4b) — the in-handler safety net above only ever runs for a
  * user-initiated close. */
@@ -203,6 +203,123 @@ export function completeIfUnanimated(
     .getAnimations({ subtree: false })
     .filter((candidate) => ['running', 'paused', 'pending'].includes(candidate.playState))
   return running.length === 0
+}
+
+/** One closing content element a disclosure component wants watched: a
+ * stable `key` (accordion's item value; collapsible's single instance uses
+ * a constant key), whether it is CURRENTLY closing, its exit generation
+ * (rejects a stale settle the same way the in-handler tracker does), and the
+ * id its content element is rendered with. */
+export interface DisclosureExitWatchEntry {
+  readonly key: string
+  readonly closing: boolean
+  readonly generation: number
+  readonly contentId: string
+}
+
+/**
+ * Root-scoped completion watcher, one per `connect()` call (#264 review item
+ * 1). Resolves each closing entry's content element by ID
+ * (`getElementByIdInScope`, never a scope-wide `[data-scope][data-part]`
+ * query) so it cannot settle a SIBLING instance sharing the same onMount
+ * build container — the container `onMount` hands a callback is the whole
+ * enclosing BUILD, which is shared by every component placed inside one
+ * parent view, not a box scoped to this one instance (see CLAUDE.md's
+ * `onMount` invariant). Two accordions with an item sharing the same VALUE,
+ * or an accordion and a collapsible both rendered inside one parent's view,
+ * used to be settled by whichever container-wide query ran first, cutting a
+ * running exit animation on the wrong instance.
+ *
+ * Returned as a `Mountable` meant for `connect()`'s own `exitCompletion`
+ * part — it must be PLACED in the rendered view (as `parts.exitCompletion`)
+ * for programmatic closes on a no-exit-motion skin to ever settle; a
+ * click-driven close is still safety-netted synchronously inside the
+ * trigger's own handler regardless of whether this is placed.
+ */
+export function createDisclosureExitCompletionMount(
+  getElementByIdInScope: (root: Node, id: string) => HTMLElement | null,
+  getEntries: () => readonly DisclosureExitWatchEntry[],
+  onSettle: (key: string, generation: number) => void,
+): (container: Element) => (() => void) | void {
+  return (container: Element) => {
+    const check = (): void => {
+      for (const entry of getEntries()) {
+        if (!entry.closing) continue
+        const content = getElementByIdInScope(container, entry.contentId)
+        if (completeIfUnanimated(content, { closing: true, generation: entry.generation })) {
+          onSettle(entry.key, entry.generation)
+        }
+      }
+    }
+    check()
+    if (typeof MutationObserver === 'undefined') return
+    const observer = new MutationObserver(check)
+    observer.observe(container, {
+      attributes: true,
+      attributeFilter: ['data-state'],
+      subtree: true,
+    })
+    return () => observer.disconnect()
+  }
+}
+
+/**
+ * Development-only safety net that does NOT depend on `exitCompletion` ever
+ * being placed in the view (#264 review item 1). `@llui/dom`'s build-once
+ * model runs no side effect that was not placed in the rendered tree, so a
+ * forgotten `parts.exitCompletion` cannot be detected from anything that
+ * itself requires placement — this instead polls plain `state.peek()` from
+ * the moment `connect()` is called, entirely independent of what the
+ * consumer does with its return value. It resolves the content element
+ * through the GLOBAL `document` rather than `getElementByIdInScope`, which
+ * is an accepted narrowing for a diagnostic-only path (a shadow-DOM-mounted
+ * instance simply does not get the warning) since a plain poll has no live
+ * root reference to scope through. Cost is bounded and DEV-only: each tick is
+ * O(entries), the check short-circuits to nothing when nothing is closing,
+ * and every key warns at most once.
+ */
+export function watchForStalledDisclosureExit(
+  getEntries: () => readonly DisclosureExitWatchEntry[],
+  describe: (key: string) => string,
+  deadlineMs = 1500,
+): () => void {
+  if (import.meta.env?.DEV !== true || typeof setInterval === 'undefined') return () => {}
+  const firstSeen = new Map<string, number>()
+  const warned = new Set<string>()
+  const tick = (): void => {
+    const now = Date.now()
+    const active = new Set<string>()
+    for (const entry of getEntries()) {
+      if (!entry.closing) continue
+      const trackKey = `${entry.key}\u0000${entry.generation}`
+      active.add(trackKey)
+      const since = firstSeen.get(trackKey)
+      if (since === undefined) {
+        firstSeen.set(trackKey, now)
+        continue
+      }
+      if (now - since < deadlineMs || warned.has(trackKey)) continue
+      const el = typeof document === 'undefined' ? null : document.getElementById(entry.contentId)
+      const running =
+        el instanceof HTMLElement &&
+        typeof el.getAnimations === 'function' &&
+        el
+          .getAnimations({ subtree: false })
+          .some((a) => ['running', 'paused', 'pending'].includes(a.playState))
+      if (running) continue
+      warned.add(trackKey)
+      console.warn(
+        `[llui/components] ${describe(entry.key)} has stayed "closing" for over ${deadlineMs}ms ` +
+          'with no running exit animation/transition. This usually means the `exitCompletion` ' +
+          'connect() part was never placed in the rendered view, so a programmatic close on a ' +
+          "skin with no exit motion never settles. Place `parts.exitCompletion` in the component's " +
+          'view, or pass `animated: false` if no exit motion is intended.',
+      )
+    }
+    for (const key of [...firstSeen.keys()]) if (!active.has(key)) firstSeen.delete(key)
+  }
+  const id = setInterval(tick, Math.max(100, Math.floor(deadlineMs / 3)))
+  return () => clearInterval(id)
 }
 
 /**

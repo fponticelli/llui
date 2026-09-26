@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { button, component, div, mountApp, onMount, text, type Mountable } from '@llui/dom'
+import { button, component, div, mountApp, text, type Mountable } from '@llui/dom'
 import * as accordion from '../../src/components/accordion'
 import * as collapsible from '../../src/components/collapsible'
 
@@ -64,16 +64,8 @@ function mount(): HTMLElement {
             button({ ...col.trigger }, [text('Collapsible details')]),
             div({ ...col.content }, [text('Collapsible content')]),
           ]),
-          onMount((root) =>
-            accordion.watchExitCompletion(root, state.at('accordion'), (msg) =>
-              send({ type: 'accordion', msg }),
-            ),
-          ),
-          onMount((root) =>
-            collapsible.watchExitCompletion(root, state.at('collapsible'), (msg) =>
-              send({ type: 'collapsible', msg }),
-            ),
-          ),
+          acc.exitCompletion,
+          col.exitCompletion,
         ]
       },
     }),

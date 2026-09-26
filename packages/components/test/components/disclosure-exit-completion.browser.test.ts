@@ -218,6 +218,103 @@ describe('#264 — disclosure exit completion in Chromium', () => {
     expect(after).toEqual({ state: 'closed', hidden: true, inert: true })
   })
 
+  it('sibling-instance isolation: a fast accordion sharing a container never settles a slow sibling early (#264 review item 1)', async () => {
+    // Both siblings start with item 'x' OPEN; close both at (nearly) the
+    // same time. A's exit is 60ms, B's is 500ms. If either watcher resolved
+    // content by a container-wide `[data-scope][data-part]` query instead of
+    // its own `opts.id`-scoped content id, A's watcher (or B's) could pick up
+    // the WRONG sibling's DOM node and settle B's still-animating exit the
+    // moment A's short animation ends.
+    await page.evaluate(() => {
+      window.__sibASend!({ type: 'close', value: 'x' })
+      window.__sibBSend!({ type: 'close', value: 'x' })
+    })
+    const stateOf = (rootId: string): Promise<string> =>
+      page.evaluate(
+        (id) =>
+          document.querySelector(`#${id} [data-part='content']`)?.getAttribute('data-state') ?? '',
+        rootId,
+      )
+
+    expect(await stateOf('sib-a-root')).toBe('closing')
+    expect(await stateOf('sib-b-root')).toBe('closing')
+
+    // Wait past A's fast (60ms) animation, but well before B's slow (500ms)
+    // one — this is exactly the window where a cross-contaminated watcher
+    // would wrongly settle B.
+    await page.waitForFunction(
+      () =>
+        document.querySelector("#sib-a-root [data-part='content']")?.getAttribute('data-state') ===
+        'closed',
+      { timeout: 2000 },
+    )
+    // Give any (buggy) MutationObserver-driven cross-settle a full microtask
+    // turn to have taken effect.
+    await page.evaluate(() => new Promise((r) => setTimeout(r, 30)))
+    expect(await stateOf('sib-b-root')).toBe('closing')
+
+    await page.waitForFunction(
+      () =>
+        document.querySelector("#sib-b-root [data-part='content']")?.getAttribute('data-state') ===
+        'closed',
+      { timeout: 2000 },
+    )
+    expect(await stateOf('sib-b-root')).toBe('closed')
+  })
+
+  it('sibling isolation: closing A (fast) then reopening it never leaks a stray settle onto B (slow, still animating)', async () => {
+    // Fresh page: both start open. Close B first (slow, 500ms exit), then
+    // close AND reopen A (fast, 60ms exit) — A's own settle/reopen cycle
+    // must never be mistaken for B's, and B must still be genuinely
+    // `closing` (not prematurely `closed`) until its own slow animation ends.
+    await page.evaluate(() => window.__sibBSend!({ type: 'close', value: 'x' }))
+    await page.evaluate(() => {
+      window.__sibASend!({ type: 'close', value: 'x' })
+    })
+    await page.waitForFunction(
+      () =>
+        document.querySelector("#sib-a-root [data-part='content']")?.getAttribute('data-state') ===
+        'closed',
+      { timeout: 2000 },
+    )
+    await page.evaluate(() => window.__sibASend!({ type: 'open', value: 'x' }))
+    await page.waitForFunction(
+      () =>
+        document.querySelector("#sib-a-root [data-part='content']")?.getAttribute('data-state') ===
+        'open',
+      { timeout: 2000 },
+    )
+    // B's slow (500ms) exit is still running at this point.
+    expect(
+      await page.evaluate(() =>
+        document.querySelector("#sib-b-root [data-part='content']")?.getAttribute('data-state'),
+      ),
+    ).toBe('closing')
+  })
+
+  it('dev warning fires when `exitCompletion` is NOT placed and a programmatic close hangs on a no-motion skin', async () => {
+    const warnings: string[] = []
+    page.on('console', (msg) => {
+      if (msg.type() === 'warning' || msg.type() === 'error') warnings.push(msg.text())
+    })
+
+    await page.evaluate(() => window.__noPartSend!({ type: 'close', value: 'x' }))
+
+    // The content genuinely hangs `closing` + `inert` forever — nothing
+    // resolves it without `exitCompletion` placed.
+    await page.evaluate(() => new Promise((r) => setTimeout(r, 200)))
+    const stuck = await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>("#host-no-part [data-part='content']")!
+      return { state: el.dataset.state, inert: el.hasAttribute('inert') }
+    })
+    expect(stuck).toEqual({ state: 'closing', inert: true })
+
+    // The dev-mode watchdog (independent of `exitCompletion` placement)
+    // warns once the deadline (1500ms) passes.
+    await new Promise((r) => setTimeout(r, 2200))
+    expect(warnings.some((w) => w.includes('exitCompletion'))).toBe(true)
+  })
+
   it('never lets a canceled enter animation complete an unrelated exit under rapid open/close', async () => {
     // Open x (starts the enter animation), then immediately close it again
     // before the enter finishes — canceling it. The exit that starts as a

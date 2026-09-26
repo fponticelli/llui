@@ -88,6 +88,10 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
 
   return [
     tabs.directionSync,
+    // A PROGRAMMATIC close/toggle on a no-exit-motion skin never settles
+    // without these placed (#264 review item 1).
+    faq.exitCompletion,
+    details.exitCompletion,
     section('Tabs, Accordion & Collapsible', 'Disclosure patterns.', [
       Tabs({ ...tabs.root }, [
         TabsList(

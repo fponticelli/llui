@@ -1,4 +1,4 @@
-import { tagSend } from '@llui/dom'
+import { onMount, tagSend, type Mountable } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { focusRovingItem } from '../utils/roving.js'
 import { getElementByIdInScope } from '../utils/root-scope.js'
@@ -8,8 +8,10 @@ import {
   type RetainedExitGeneration,
 } from '../internal/retained-exit.js'
 import {
-  completeIfUnanimated,
+  createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
+  watchForStalledDisclosureExit,
+  type DisclosureExitWatchEntry,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
 
@@ -220,6 +222,17 @@ export interface AccordionParts {
     'data-orientation': 'vertical'
   }
   item: (value: string) => AccordionItemParts
+  /**
+   * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
+   * host app, bypassing the trigger's click handler) once its content's own
+   * exit animation/transition ends — or immediately, if the skin runs no
+   * exit motion at all. MUST be placed in the rendered view (`#264` review
+   * item 1); a click-driven close is still safety-netted synchronously
+   * inside the trigger regardless of whether this is placed, but nothing
+   * else settles a programmatic close on a no-motion skin, which otherwise
+   * hangs `closing` + `inert` forever.
+   */
+  exitCompletion: Mountable
 }
 
 export interface ConnectOptions {
@@ -236,6 +249,18 @@ export function connect(
   const triggerId = (v: string): string => `${base}:trigger:${v}`
   const contentId = (v: string): string => `${base}:content:${v}`
   const exitTracker = createDisclosureExitTracker()
+  const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] =>
+    state.peek().closing.map((value) => ({
+      key: value,
+      closing: true,
+      generation: retainedExitGeneration(state.peek().exitGenerations, value) ?? 0,
+      contentId: contentId(value),
+    }))
+  // Dev-only, unconditional the moment `connect()` runs — independent of
+  // whether `exitCompletion` below is ever placed in the view, because
+  // nothing placement-gated can warn about its OWN absence (#264 review
+  // item 1).
+  watchForStalledDisclosureExit(exitWatchEntries, (value) => `Accordion item "${value}"`)
   const armExit = (value: string, e: MotionEvent): void => {
     const current = state.peek()
     exitTracker.armExit(e, {
@@ -285,6 +310,13 @@ export function connect(
       'data-part': 'root',
       'data-orientation': 'vertical',
     },
+    exitCompletion: onMount(
+      createDisclosureExitCompletionMount(
+        getElementByIdInScope,
+        exitWatchEntries,
+        (value, generation) => send({ type: 'exitComplete', value, generation }),
+      ),
+    ),
     item: (value: string): AccordionItemParts => ({
       trigger: {
         type: 'button',
@@ -399,49 +431,4 @@ export function focusTarget(
   return items[(idx - 1 + items.length) % items.length]!
 }
 
-/**
- * Settle every item that enters `closing` from a message the trigger's own
- * click/keydown handlers never saw — a PROGRAMMATIC `close`/`toggle`/
- * `setValue` the host app sends directly (#264 review item 4b). The
- * in-handler safety net (`completeIfUnanimatedAfterToggle`, wired inside
- * `connect()`) only runs for a user-initiated interaction, because that is
- * the only place `content`'s live element is reachable without a fresh
- * subscription. Wire this once via `onMount` alongside the mounted root,
- * mirroring `tabs.watchTabIndicator`/`navigationMenu.watchNavMenuIndicator` —
- * an opt-in observer over the rendered DOM, not a `connect()`-time hook,
- * because `connect()` runs once per render pass with no lifecycle of its
- * own.
- *
- * Root-scoped (never `document.getElementById`) so a shadow-DOM-mounted
- * instance keeps working; each content element carries its own `data-value`
- * so a value string containing characters unsafe in a CSS attribute selector
- * never needs escaping.
- */
-export function watchExitCompletion(
-  root: Element,
-  state: Signal<AccordionState>,
-  send: Send<AccordionMsg>,
-): () => void {
-  const check = (): void => {
-    const current = state.peek()
-    if (current.closing.length === 0) return
-    const contents = root.querySelectorAll<HTMLElement>(
-      '[data-scope="accordion"][data-part="content"]',
-    )
-    for (const content of contents) {
-      const value = content.dataset.value
-      if (value === undefined || !current.closing.includes(value)) continue
-      const generation = retainedExitGeneration(current.exitGenerations, value) ?? 0
-      if (completeIfUnanimated(content, { closing: true, generation })) {
-        send({ type: 'exitComplete', value, generation })
-      }
-    }
-  }
-
-  check()
-  const observer = new MutationObserver(check)
-  observer.observe(root, { attributes: true, attributeFilter: ['data-state'], subtree: true })
-  return () => observer.disconnect()
-}
-
-export const accordion = { init, update, connect, focusTarget, watchExitCompletion }
+export const accordion = { init, update, connect, focusTarget }
