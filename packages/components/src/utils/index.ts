@@ -178,6 +178,9 @@ export type {
 export { resolveDir, flipArrow, resolveTextDirection } from './direction.js'
 export type { TextDirection } from './direction.js'
 
+export { pointerDragHandlers } from './pointer-drag.js'
+export type { PointerDragCallbacks, PointerDragHandlers } from './pointer-drag.js'
+
 export { resolveRovingMove, focusRovingTab, focusRovingItem } from './roving.js'
 export type { RovingItem, RovingMove, RovingOptions, RovingOrientation } from './roving.js'
 

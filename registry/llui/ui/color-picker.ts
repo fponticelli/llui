@@ -36,8 +36,11 @@ export const ColorPicker = classPart(
   'group/color-picker flex w-full max-w-xs flex-col gap-3 data-disabled:pointer-events-none data-disabled:opacity-50',
 )
 export const ColorPickerArea = classPart(
+  // `touch-none` (`touch-action: none`) — the machine owns pointer drag
+  // (`onPointerDown` etc., pointer-captured), and without this a touch drag
+  // also pans/scrolls the page instead of only moving the thumb.
   div,
-  'relative h-32 w-full cursor-crosshair rounded-md border',
+  'relative h-32 w-full touch-none cursor-crosshair rounded-md border',
 )
 /** OKLCH-mode plane; absolutely positioned to fill `ColorPickerArea` and
  * `pointer-events-none` so pointer/drag handling stays on the area div

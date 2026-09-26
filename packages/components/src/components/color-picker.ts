@@ -1,8 +1,14 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { colorPickerLocale } from '../locale/color-picker.js'
-import { allFiniteNumbers, clamp, finiteOrDefault } from '../utils/number.js'
+import {
+  allFiniteNumbers,
+  clamp,
+  finiteOrDefault,
+  positiveFiniteOrDefault,
+} from '../utils/number.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
+import { pointerDragHandlers } from '../utils/pointer-drag.js'
 import type { Hsl, Hsv, Oklch, Srgb } from '../utils/color.js'
 import {
   hslToHsv,
@@ -51,9 +57,9 @@ export type { Hsl, Hsv, Oklch }
 
 /** `0.37` covers the whole of sRGB and most of Display P3 while leaving the
  * 2D area / chroma slider a sensible fixed range (an unbounded chroma axis
- * has no natural "full scale" to show). Chosen once, shared by the reducer's
- * clamp and `connect()`'s default rendering range — see the module doc on
- * `ConnectOptions.maxChroma` for the one place they can currently diverge. */
+ * has no natural "full scale" to show) — the default for
+ * {@link ColorPickerState.maxChroma} when `init()` gets no `maxChroma`
+ * option. */
 export const DEFAULT_MAX_CHROMA = 0.37
 
 export interface ColorPickerState {
@@ -63,6 +69,13 @@ export interface ColorPickerState {
   /** Alpha channel 0..1. */
   alpha: number
   disabled: boolean
+  /** Upper bound for OKLCH chroma — the ONE source of truth for the reducer's
+   * clamp (`setOklch`/`setChroma`/`setLc`/`nudgeLc`) AND for `connect()`'s
+   * chroma slider/area rendering range, so the two can no longer disagree
+   * the way a `ConnectOptions.maxChroma` rendering-only override could.
+   * Always finite and > 0 (`init` validates it; there is no setter — it is
+   * fixed for the component's lifetime, like `slider`'s `min`/`max`). */
+  maxChroma: number
 }
 
 export type ColorPickerMsg =
@@ -113,6 +126,9 @@ export interface ColorPickerInit {
   oklch?: Oklch
   alpha?: number
   disabled?: boolean
+  /** Upper bound for OKLCH chroma. Must be finite and > 0 — anything else
+   * (including omission) falls back to {@link DEFAULT_MAX_CHROMA}. */
+  maxChroma?: number
 }
 
 const DEFAULT_HSV: Hsv = { h: 0, s: 100, v: 100 }
@@ -138,10 +154,10 @@ function sanitizeHsv(raw: Hsv): Hsv {
   }
 }
 
-function sanitizeOklch(raw: Oklch): Oklch {
+function sanitizeOklch(raw: Oklch, maxChroma: number): Oklch {
   return {
     l: clamp(finiteOrDefault(raw.l, 1), 0, 1),
-    c: clamp(finiteOrDefault(raw.c, 0), 0, DEFAULT_MAX_CHROMA),
+    c: clamp(finiteOrDefault(raw.c, 0), 0, maxChroma),
     h: normalizeHue(finiteOrDefault(raw.h, 0)),
   }
 }
@@ -193,59 +209,66 @@ function withHslProjection(color: Color, f: (hsl: Hsl) => Hsl): Color {
 }
 
 /** Apply an edit expressed in OKLCH terms, in either model. */
-function withOklchProjection(color: Color, f: (ok: Oklch) => Oklch): Color {
-  const next = sanitizeOklch(f(colorToOklch(color)))
+function withOklchProjection(color: Color, maxChroma: number, f: (ok: Oklch) => Oklch): Color {
+  const next = sanitizeOklch(f(colorToOklch(color)), maxChroma)
   return color.model === 'oklch'
     ? { model: 'oklch', ...next }
     : { model: 'hsv', ...oklchToHsvPreserving(next) }
 }
 
-function colorFromCssString(input: string): { hsv: Hsv; oklch: Oklch; alpha: number } | null {
+function colorFromCssString(
+  input: string,
+  maxChroma: number,
+): { hsv: Hsv; oklch: Oklch; alpha: number } | null {
   const parsed = parseCssColor(input)
   if (!parsed) return null
   const alpha = cssColorAlpha(parsed)
   if (parsed.space === 'oklch') {
-    const oklch = sanitizeOklch({
-      l: resolveNone(parsed.l),
-      c: resolveNone(parsed.c),
-      h: resolveNone(parsed.h),
-    })
+    const oklch = sanitizeOklch(
+      {
+        l: resolveNone(parsed.l),
+        c: resolveNone(parsed.c),
+        h: resolveNone(parsed.h),
+      },
+      maxChroma,
+    )
     return { oklch, hsv: oklchToHsvPreserving(oklch), alpha }
   }
   if (parsed.space === 'oklab') {
     const lab = { l: resolveNone(parsed.l), a: resolveNone(parsed.a), b: resolveNone(parsed.b) }
     const c = Math.sqrt(lab.a * lab.a + lab.b * lab.b)
     const h = (Math.atan2(lab.b, lab.a) * 180) / Math.PI
-    const oklch = sanitizeOklch({ l: lab.l, c, h })
+    const oklch = sanitizeOklch({ l: lab.l, c, h }, maxChroma)
     return { oklch, hsv: oklchToHsvPreserving(oklch), alpha }
   }
   const srgb = cssColorToSrgb(parsed)
   const hsv = sanitizeHsv(rgb255ToHsv(srgbToRgb255(srgb)))
-  return { hsv, oklch: hsvToOklchPreserving(hsv), alpha }
+  return { hsv, oklch: sanitizeOklch(hsvToOklchPreserving(hsv), maxChroma), alpha }
 }
 
 export function init(opts: ColorPickerInit = {}): ColorPickerState {
   const model: ColorModel = opts.model ?? 'hsv'
   const disabled = opts.disabled ?? false
+  const maxChroma = positiveFiniteOrDefault(opts.maxChroma, DEFAULT_MAX_CHROMA)
 
   let hsv = DEFAULT_HSV
-  let oklch = hsvToOklchPreserving(DEFAULT_HSV)
+  let oklch = sanitizeOklch(hsvToOklchPreserving(DEFAULT_HSV), maxChroma)
   let parsedAlpha: number | undefined
 
-  const fromString = opts.color !== undefined ? colorFromCssString(opts.color) : null
+  const fromString = opts.color !== undefined ? colorFromCssString(opts.color, maxChroma) : null
   if (fromString) {
     hsv = fromString.hsv
     oklch = fromString.oklch
     parsedAlpha = fromString.alpha
   } else if (opts.oklch !== undefined) {
-    oklch = sanitizeOklch(opts.oklch)
+    oklch = sanitizeOklch(opts.oklch, maxChroma)
     hsv = oklchToHsvPreserving(oklch)
   } else if (opts.hsv !== undefined) {
     hsv = sanitizeHsv(opts.hsv)
-    oklch = hsvToOklchPreserving(hsv)
+    oklch = sanitizeOklch(hsvToOklchPreserving(hsv), maxChroma)
   } else if (opts.hsl !== undefined) {
     hsv = sanitizeHsv(hslToHsv(opts.hsl))
-    oklch = hsvToOklchPreserving(hsv)
+    oklch = sanitizeOklch(hsvToOklchPreserving(hsv), maxChroma)
   }
 
   const alpha = finiteOrDefault(opts.alpha, parsedAlpha ?? 1)
@@ -254,6 +277,7 @@ export function init(opts: ColorPickerInit = {}): ColorPickerState {
     color: model === 'oklch' ? { model: 'oklch', ...oklch } : { model: 'hsv', ...hsv },
     alpha,
     disabled,
+    maxChroma,
   }
 }
 
@@ -357,7 +381,7 @@ export function update(state: ColorPickerState, msg: ColorPickerMsg): [ColorPick
       if (msg.model === state.color.model) return [state, []]
       const color: Color =
         state.color.model === 'hsv'
-          ? { model: 'oklch', ...hsvToOklchPreserving(state.color) }
+          ? { model: 'oklch', ...sanitizeOklch(hsvToOklchPreserving(state.color), state.maxChroma) }
           : { model: 'hsv', ...oklchToHsvPreserving(state.color) }
       return [{ ...state, color }, []]
     }
@@ -386,7 +410,7 @@ export function update(state: ColorPickerState, msg: ColorPickerMsg): [ColorPick
     case 'setHex':
     case 'setColor': {
       const input = msg.type === 'setHex' ? msg.hex : msg.color
-      const parsed = colorFromCssString(input)
+      const parsed = colorFromCssString(input, state.maxChroma)
       if (!parsed) return [state, []]
       const color: Color =
         state.color.model === 'oklch'
@@ -422,25 +446,39 @@ export function update(state: ColorPickerState, msg: ColorPickerMsg): [ColorPick
       return [
         {
           ...state,
-          color: withOklchProjection(state.color, () => ({ l: msg.l, c: msg.c, h: msg.h })),
+          color: withOklchProjection(state.color, state.maxChroma, () => ({
+            l: msg.l,
+            c: msg.c,
+            h: msg.h,
+          })),
         },
         [],
       ]
     case 'setChroma':
       return [
-        { ...state, color: withOklchProjection(state.color, (ok) => ({ ...ok, c: msg.c })) },
+        {
+          ...state,
+          color: withOklchProjection(state.color, state.maxChroma, (ok) => ({ ...ok, c: msg.c })),
+        },
         [],
       ]
     case 'setOklchLightness':
       return [
-        { ...state, color: withOklchProjection(state.color, (ok) => ({ ...ok, l: msg.l })) },
+        {
+          ...state,
+          color: withOklchProjection(state.color, state.maxChroma, (ok) => ({ ...ok, l: msg.l })),
+        },
         [],
       ]
     case 'setLc':
       return [
         {
           ...state,
-          color: withOklchProjection(state.color, (ok) => ({ ...ok, c: msg.c, l: msg.l })),
+          color: withOklchProjection(state.color, state.maxChroma, (ok) => ({
+            ...ok,
+            c: msg.c,
+            l: msg.l,
+          })),
         },
         [],
       ]
@@ -448,7 +486,7 @@ export function update(state: ColorPickerState, msg: ColorPickerMsg): [ColorPick
       return [
         {
           ...state,
-          color: withOklchProjection(state.color, (ok) => ({
+          color: withOklchProjection(state.color, state.maxChroma, (ok) => ({
             ...ok,
             c: ok.c + msg.dc,
             l: ok.l + msg.dl,
@@ -638,12 +676,12 @@ export interface ColorPickerParts {
     'data-part': 'lightness-slider'
     onInput: (e: Event) => void
   }
-  /** OKLCH chroma, `0..maxChroma`. */
+  /** OKLCH chroma, `0..state.maxChroma`. */
   chromaSlider: {
     type: 'range'
     min: 0
-    max: number
-    step: number
+    max: Signal<number>
+    step: Signal<number>
     'aria-label': string
     disabled: Signal<boolean>
     value: Signal<string>
@@ -683,8 +721,13 @@ export interface ColorPickerParts {
     'aria-hidden': 'true'
     style: Signal<string>
   }
-  /** The 2D area track. In HSV mode the view owns pointer events and calls
-   * `colorFromPoint(...)`; in OKLCH mode, `lcFromPoint(...)`. */
+  /** The 2D area track. The machine owns the pointer-drag lifecycle
+   * (capture on down, released on up/cancel, primary button only, ignored
+   * while disabled): it computes from `currentTarget.getBoundingClientRect()`
+   * and dispatches `setSv` (HSV mode, via `colorFromPoint`) or `setLc`
+   * (OKLCH mode, via `lcFromPoint`) — see `utils/pointer-drag.ts`. Keyboard
+   * continues from wherever a drag left off because `pointerdown` focuses
+   * `areaThumb`. */
   area: {
     'data-scope': 'color-picker'
     'data-part': 'area'
@@ -693,6 +736,10 @@ export interface ColorPickerParts {
     // paints the plane instead (the sRGB gamut boundary is not expressible
     // as a CSS gradient).
     style: Signal<string>
+    onPointerDown: (e: PointerEvent) => void
+    onPointerMove: (e: PointerEvent) => void
+    onPointerUp: (e: PointerEvent) => void
+    onPointerCancel: (e: PointerEvent) => void
   }
   /** Decorative `<canvas>` seam for the OKLCH area — headless, so the
    * consumer owns creating and sizing the real `<canvas>` element and
@@ -783,14 +830,10 @@ export interface ConnectOptions {
   /** aria-label for the swatch group container. */
   swatchGroupLabel?: string
   /** Fine keyboard step for the area thumb (S/V units, or the OKLCH
-   * equivalent scaled by `maxChroma`). Default 1. */
+   * equivalent scaled by `state.maxChroma`). Default 1. */
   step?: number
   /** Coarse keyboard step for the area thumb when Shift is held. Default 10. */
   coarseStep?: number
-  /** Upper bound the OKLCH chroma slider/area render up to. Rendering-only —
-   * see {@link DEFAULT_MAX_CHROMA}'s doc comment for how this relates to the
-   * reducer's own chroma ceiling. Default {@link DEFAULT_MAX_CHROMA}. */
-  maxChroma?: number
 }
 
 export function connect(
@@ -801,12 +844,34 @@ export function connect(
   const locale = colorPickerLocale()
   const fine = opts.step ?? 1
   const coarse = opts.coarseStep ?? 10
-  const maxChroma = opts.maxChroma ?? DEFAULT_MAX_CHROMA
 
   let pendingEyeDropper: AbortController | null = null
   onScopeTeardown(() => {
     pendingEyeDropper?.abort()
     pendingEyeDropper = null
+  })
+
+  // 2D area drag: the machine owns the pointer lifecycle (see
+  // `utils/pointer-drag.ts`'s doc comment for why this differs from
+  // `slider.ts`/`angle-slider.ts`, which push it onto the consumer).
+  const areaDrag = pointerDragHandlers({
+    isDisabled: () => state.peek().disabled,
+    onDragStart: (e) => {
+      ;(e.currentTarget as HTMLElement)
+        .querySelector<HTMLElement>('[data-part="area-thumb"]')
+        ?.focus()
+    },
+    onDrag: (e) => {
+      const rect = (e.currentTarget as Element).getBoundingClientRect()
+      const current = state.peek()
+      if (current.color.model === 'oklch') {
+        const { c, l } = lcFromPoint(rect, e.clientX, e.clientY, current.maxChroma)
+        send({ type: 'setLc', c, l })
+      } else {
+        const { s, v } = colorFromPoint(rect, e.clientX, e.clientY)
+        send({ type: 'setSv', s, v })
+      }
+    },
   })
 
   return {
@@ -882,15 +947,15 @@ export function connect(
     chromaSlider: {
       type: 'range',
       min: 0,
-      max: maxChroma,
-      step: maxChroma / 200,
+      max: state.map((s) => s.maxChroma),
+      step: state.map((s) => s.maxChroma / 200),
       'aria-label': opts.chromaLabel ?? locale.chroma,
       disabled: state.map((s) => s.disabled),
       value: state.map((s) => String(stateOklch(s).c)),
       style: state.map((s) => {
         const ok = stateOklch(s)
         return `background: linear-gradient(to right, ${formatOklch({ l: ok.l, c: 0, h: ok.h })}, ${formatOklch(
-          { l: ok.l, c: maxChroma, h: ok.h },
+          { l: ok.l, c: s.maxChroma, h: ok.h },
         )})`
       }),
       'data-scope': 'color-picker',
@@ -945,6 +1010,10 @@ export function connect(
       style: state.map((s) =>
         s.color.model === 'hsv' ? `background-color:hsl(${s.color.h} 100% 50%);` : '',
       ),
+      onPointerDown: tagSend(send, ['setSv', 'setLc'], areaDrag.onPointerDown),
+      onPointerMove: tagSend(send, ['setSv', 'setLc'], areaDrag.onPointerMove),
+      onPointerUp: areaDrag.onPointerUp,
+      onPointerCancel: areaDrag.onPointerCancel,
     },
     areaCanvas: {
       'data-scope': 'color-picker',
@@ -955,7 +1024,7 @@ export function connect(
       role: 'slider',
       'aria-label': opts.areaLabel ?? `${locale.saturation} / ${locale.value}`,
       'aria-valuemin': state.map(() => 0),
-      'aria-valuemax': state.map((s) => (s.color.model === 'oklch' ? maxChroma : 100)),
+      'aria-valuemax': state.map((s) => (s.color.model === 'oklch' ? s.maxChroma : 100)),
       'aria-valuenow': state.map((s) => (s.color.model === 'oklch' ? s.color.c : s.color.s)),
       'aria-valuetext': state.map((s) =>
         s.color.model === 'oklch'
@@ -968,7 +1037,7 @@ export function connect(
       'data-part': 'area-thumb',
       style: state.map((s) => {
         if (s.color.model === 'oklch') {
-          const xPct = clamp((s.color.c / maxChroma) * 100, 0, 100)
+          const xPct = clamp((s.color.c / s.maxChroma) * 100, 0, 100)
           const yPct = clamp((1 - s.color.l) * 100, 0, 100)
           return `left:${xPct}%;top:${yPct}%;`
         }
@@ -976,10 +1045,11 @@ export function connect(
       }),
       onKeyDown: tagSend(send, ['nudgeSv', 'nudgeLc'], (e) => {
         const stepUnit = e.shiftKey ? coarse : fine
-        const isOklch = state.peek().color.model === 'oklch'
+        const current = state.peek()
+        const isOklch = current.color.model === 'oklch'
         const nudge = (dx: number, dy: number): void => {
           if (isOklch) {
-            send({ type: 'nudgeLc', dc: (dx / 100) * maxChroma, dl: dy / 100 })
+            send({ type: 'nudgeLc', dc: (dx / 100) * current.maxChroma, dl: dy / 100 })
           } else {
             send({ type: 'nudgeSv', ds: dx, dv: dy })
           }
@@ -1048,7 +1118,9 @@ export function connect(
     },
     swatch: (color: string): SwatchParts => {
       const parsedHex = (): string | null => {
-        const parsed = colorFromCssString(color)
+        // Only `.hsv` is read below, so the maxChroma passed here never
+        // affects the result — any value would do.
+        const parsed = colorFromCssString(color, DEFAULT_MAX_CHROMA)
         return parsed ? formatHex(hsvToRgb255(parsed.hsv)) : null
       }
       const selected = (s: ColorPickerState): boolean => {

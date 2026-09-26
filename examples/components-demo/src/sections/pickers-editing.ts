@@ -203,20 +203,6 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     }
   })
 
-  // Click-to-pick on the 2D area — the machine owns the thumb's keyboard
-  // handling (arrow keys already work via `areaThumb.onKeyDown`); the view
-  // owns pointer position, per `colorFromPoint`/`lcFromPoint`'s doc comments.
-  const onAreaClick = (e: MouseEvent): void => {
-    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-    if (state.peek().colorPicker.color.model === 'oklch') {
-      const { c, l } = colorPicker.lcFromPoint(rect, e.clientX, e.clientY)
-      send({ type: 'colorPicker', msg: { type: 'setLc', c, l } })
-    } else {
-      const { s, v } = colorPicker.colorFromPoint(rect, e.clientX, e.clientY)
-      send({ type: 'colorPicker', msg: { type: 'setSv', s, v } })
-    }
-  }
-
   const dpGrid = (): Renderable => {
     const dowLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     // The baked theme applies `display: grid; grid-template-columns: repeat(7, 1fr)`
@@ -347,7 +333,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
               text(state.at('colorPicker').map((s) => (s.color.model === 'hsv' ? 'OKLCH' : 'HSV'))),
             ]),
           ]),
-          div({ ...cp.area, onClick: onAreaClick }, [
+          div({ ...cp.area }, [
             canvas({ ...cp.areaCanvas, id: oklchCanvasId, width: 240, height: 128 }),
             div({ ...cp.areaThumb }, []),
           ]),

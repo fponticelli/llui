@@ -79,16 +79,17 @@ function expectSerializableState(state: unknown, label: string): void {
 
 /**
  * Every component that keeps a numeric bound in state, with the bound-carrying
- * `init` options poisoned by `bad`. `color-picker` is in the list as a control:
- * its min/max/step are `connect()` part-bag constants, so no bound reaches its
- * state and the sweep must still pass for it.
+ * `init` options poisoned by `bad`. `color-picker`'s bound is `maxChroma` (the
+ * OKLCH chroma ceiling the reducer clamps to and `connect()` renders up to —
+ * moved into state so the two could not disagree the way a separate
+ * `connect()`-option rendering range once could).
  */
 function poisonedInits(bad: number): Array<[string, unknown]> {
   return [
     ['angle-slider', angleSlider.init({ value: 45, min: bad, max: bad, step: bad })],
     ['breadcrumbs', breadcrumbs.init({ maxVisible: bad })],
     ['carousel', carousel.init({ count: bad, interval: bad, swipeThreshold: bad })],
-    ['color-picker', colorPicker.init({})],
+    ['color-picker', colorPicker.init({ maxChroma: bad })],
     ['date-picker', datePicker.init({ months: bad })],
     ['file-upload', fileUpload.init({ maxFiles: bad, maxSize: bad, minFileSize: bad })],
     [
@@ -280,6 +281,16 @@ describe('a dropped bound leaves the component still clamping (#177)', () => {
       expect(splitter.update(s, { type: 'setPosition', position: 999 })[0].position).toBe(100)
       expect(splitter.update(s, { type: 'toMin' })[0].position).toBe(0)
       expect(splitter.update(s, { type: 'toMax' })[0].position).toBe(100)
+    }
+  })
+
+  it('color-picker falls back to DEFAULT_MAX_CHROMA and keeps clamping to it', () => {
+    for (const bad of [...NON_FINITE, 0, -0.5]) {
+      const s = colorPicker.init({ model: 'oklch', maxChroma: bad })
+      expect(s.maxChroma).toBe(colorPicker.DEFAULT_MAX_CHROMA)
+      expect(colorPicker.update(s, { type: 'setChroma', c: 999 })[0].color).toMatchObject({
+        c: colorPicker.DEFAULT_MAX_CHROMA,
+      })
     }
   })
 

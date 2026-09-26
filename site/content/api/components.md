@@ -529,10 +529,11 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | \| { model: 'oklch'; l: number; c: number; h: number }` |
 | `alpha`                                                 | `number`                                              |
 | `disabled`                                              | `boolean`                                             |
+| `maxChroma`                                             | `number`                                              |
 
 **Messages:** `setModel`, `setHsl`, `setHue`, `setSaturation`, `setLightness`, `setAlpha`, `setHex`, `setSv`, `nudgeSv`, `setColor`, `setOklch`, `setChroma`, `setOklchLightness`, `setLc`, `nudgeLc`
 
-**Init options:** `model?: ColorModel, color?: string, hsl?: Hsl, hsv?: Hsv, oklch?: Oklch, alpha?: number, disabled?: boolean`
+**Init options:** `model?: ColorModel, color?: string, hsl?: Hsl, hsv?: Hsv, oklch?: Oklch, alpha?: number, disabled?: boolean, maxChroma?: number`
 
 **Connect options:** `ConnectOptions`
 
@@ -2981,6 +2982,27 @@ else, never throws.
 
 ```typescript
 function parseHexColor(hex: string): { rgb: Rgb255; alpha: number } | null
+```
+
+##### `pointerDragHandlers()` from `@llui/components`
+
+Build the four pointer handlers for one drag track. One call per live
+`connect()` instance — `dragging` is closure-scoped per instance, the same
+shape as this package's other per-instance mutable state (e.g.
+`color-picker`'s eyedropper `pendingEyeDropper` AbortController).
+
+- Primary button only (`e.button !== 0` on `pointerdown` is ignored —
+  `pointermove`/`pointerup` never carry a meaningful `button`, so they are
+  never re-checked; a drag that started validly keeps running).
+- `setPointerCapture` on `pointerdown`'s `currentTarget`, so `pointermove`
+  keeps firing even once the pointer leaves the element's bounds — a
+  plain drag with no capture stalls out at the track's edge instead of
+  saturating like a native `<input type="range">`.
+- Released on `pointerup`/`pointercancel`, guarded by `hasPointerCapture`
+  so releasing twice (or without ever capturing) is a harmless no-op.
+
+```typescript
+function pointerDragHandlers(callbacks: PointerDragCallbacks): PointerDragHandlers
 ```
 
 ##### `polarPoint()` from `@llui/components`
@@ -7267,14 +7289,10 @@ export interface ConnectOptions {
   /** aria-label for the swatch group container. */
   swatchGroupLabel?: string
   /** Fine keyboard step for the area thumb (S/V units, or the OKLCH
-   * equivalent scaled by `maxChroma`). Default 1. */
+   * equivalent scaled by `state.maxChroma`). Default 1. */
   step?: number
   /** Coarse keyboard step for the area thumb when Shift is held. Default 10. */
   coarseStep?: number
-  /** Upper bound the OKLCH chroma slider/area render up to. Rendering-only —
-   * see {@link DEFAULT_MAX_CHROMA}'s doc comment for how this relates to the
-   * reducer's own chroma ceiling. Default {@link DEFAULT_MAX_CHROMA}. */
-  maxChroma?: number
 }
 ```
 
@@ -7297,6 +7315,9 @@ export interface ColorPickerInit {
   oklch?: Oklch
   alpha?: number
   disabled?: boolean
+  /** Upper bound for OKLCH chroma. Must be finite and > 0 — anything else
+   * (including omission) falls back to {@link DEFAULT_MAX_CHROMA}. */
+  maxChroma?: number
 }
 ```
 
@@ -7361,12 +7382,12 @@ export interface ColorPickerParts {
     'data-part': 'lightness-slider'
     onInput: (e: Event) => void
   }
-  /** OKLCH chroma, `0..maxChroma`. */
+  /** OKLCH chroma, `0..state.maxChroma`. */
   chromaSlider: {
     type: 'range'
     min: 0
-    max: number
-    step: number
+    max: Signal<number>
+    step: Signal<number>
     'aria-label': string
     disabled: Signal<boolean>
     value: Signal<string>
@@ -7406,8 +7427,13 @@ export interface ColorPickerParts {
     'aria-hidden': 'true'
     style: Signal<string>
   }
-  /** The 2D area track. In HSV mode the view owns pointer events and calls
-   * `colorFromPoint(...)`; in OKLCH mode, `lcFromPoint(...)`. */
+  /** The 2D area track. The machine owns the pointer-drag lifecycle
+   * (capture on down, released on up/cancel, primary button only, ignored
+   * while disabled): it computes from `currentTarget.getBoundingClientRect()`
+   * and dispatches `setSv` (HSV mode, via `colorFromPoint`) or `setLc`
+   * (OKLCH mode, via `lcFromPoint`) — see `utils/pointer-drag.ts`. Keyboard
+   * continues from wherever a drag left off because `pointerdown` focuses
+   * `areaThumb`. */
   area: {
     'data-scope': 'color-picker'
     'data-part': 'area'
@@ -7416,6 +7442,10 @@ export interface ColorPickerParts {
     // paints the plane instead (the sRGB gamut boundary is not expressible
     // as a CSS gradient).
     style: Signal<string>
+    onPointerDown: (e: PointerEvent) => void
+    onPointerMove: (e: PointerEvent) => void
+    onPointerUp: (e: PointerEvent) => void
+    onPointerCancel: (e: PointerEvent) => void
   }
   /** Decorative `<canvas>` seam for the OKLCH area — headless, so the
    * consumer owns creating and sizing the real `<canvas>` element and
@@ -7490,6 +7520,13 @@ export interface ColorPickerState {
   /** Alpha channel 0..1. */
   alpha: number
   disabled: boolean
+  /** Upper bound for OKLCH chroma — the ONE source of truth for the reducer's
+   * clamp (`setOklch`/`setChroma`/`setLc`/`nudgeLc`) AND for `connect()`'s
+   * chroma slider/area rendering range, so the two can no longer disagree
+   * the way a `ConnectOptions.maxChroma` rendering-only override could.
+   * Always finite and > 0 (`init` validates it; there is no setter — it is
+   * fixed for the component's lifetime, like `slider`'s `min`/`max`). */
+  maxChroma: number
 }
 ```
 
@@ -10671,6 +10708,38 @@ export interface PinInputState {
 export interface Point {
   x: number
   y: number
+}
+```
+
+##### `PointerDragCallbacks` from `@llui/components`
+
+One call site's drag callbacks.
+
+```typescript
+export interface PointerDragCallbacks {
+  /** Checked on `pointerdown` only — a drag that is already underway keeps
+   * running even if this flips true mid-drag (the reducer's own `disabled`
+   * guard is the actual safety net for a message dispatched from `onDrag`
+   * after that point; this only decides whether a NEW drag may start). */
+  isDisabled: () => boolean
+  /** Fires once, on `pointerdown`, after capture is acquired and BEFORE the
+   * first `onDrag` call — the hook for a one-time side effect like moving
+   * focus onto a thumb element. */
+  onDragStart?: (e: PointerEvent) => void
+  /** Fires on `pointerdown` (immediately after `onDragStart`) and again on
+   * every `pointermove` while the drag is live. */
+  onDrag: (e: PointerEvent) => void
+}
+```
+
+##### `PointerDragHandlers` from `@llui/components`
+
+```typescript
+export interface PointerDragHandlers {
+  onPointerDown: (e: PointerEvent) => void
+  onPointerMove: (e: PointerEvent) => void
+  onPointerUp: (e: PointerEvent) => void
+  onPointerCancel: (e: PointerEvent) => void
 }
 ```
 
@@ -15463,6 +15532,27 @@ else, never throws.
 function parseHexColor(hex: string): { rgb: Rgb255; alpha: number } | null
 ```
 
+##### `pointerDragHandlers()` from `@llui/components/utils`
+
+Build the four pointer handlers for one drag track. One call per live
+`connect()` instance — `dragging` is closure-scoped per instance, the same
+shape as this package's other per-instance mutable state (e.g.
+`color-picker`'s eyedropper `pendingEyeDropper` AbortController).
+
+- Primary button only (`e.button !== 0` on `pointerdown` is ignored —
+  `pointermove`/`pointerup` never carry a meaningful `button`, so they are
+  never re-checked; a drag that started validly keeps running).
+- `setPointerCapture` on `pointerdown`'s `currentTarget`, so `pointermove`
+  keeps firing even once the pointer leaves the element's bounds — a
+  plain drag with no capture stalls out at the track's edge instead of
+  saturating like a native `<input type="range">`.
+- Released on `pointerup`/`pointercancel`, guarded by `hasPointerCapture`
+  so releasing twice (or without ever capturing) is a harmless no-op.
+
+```typescript
+function pointerDragHandlers(callbacks: PointerDragCallbacks): PointerDragHandlers
+```
+
 ##### `polarPoint()` from `@llui/components/utils`
 
 A point on a circle. Angles are RADIANS CLOCKWISE FROM 12 O'CLOCK, which is
@@ -16517,6 +16607,38 @@ export interface ParsedDateValue {
 export interface Point {
   x: number
   y: number
+}
+```
+
+##### `PointerDragCallbacks` from `@llui/components/utils`
+
+One call site's drag callbacks.
+
+```typescript
+export interface PointerDragCallbacks {
+  /** Checked on `pointerdown` only — a drag that is already underway keeps
+   * running even if this flips true mid-drag (the reducer's own `disabled`
+   * guard is the actual safety net for a message dispatched from `onDrag`
+   * after that point; this only decides whether a NEW drag may start). */
+  isDisabled: () => boolean
+  /** Fires once, on `pointerdown`, after capture is acquired and BEFORE the
+   * first `onDrag` call — the hook for a one-time side effect like moving
+   * focus onto a thumb element. */
+  onDragStart?: (e: PointerEvent) => void
+  /** Fires on `pointerdown` (immediately after `onDragStart`) and again on
+   * every `pointermove` while the drag is live. */
+  onDrag: (e: PointerEvent) => void
+}
+```
+
+##### `PointerDragHandlers` from `@llui/components/utils`
+
+```typescript
+export interface PointerDragHandlers {
+  onPointerDown: (e: PointerEvent) => void
+  onPointerMove: (e: PointerEvent) => void
+  onPointerUp: (e: PointerEvent) => void
+  onPointerCancel: (e: PointerEvent) => void
 }
 ```
 
@@ -18787,6 +18909,27 @@ else, never throws.
 function parseHexColor(hex: string): { rgb: Rgb255; alpha: number } | null
 ```
 
+##### `pointerDragHandlers()` from `@llui/components/utils/index`
+
+Build the four pointer handlers for one drag track. One call per live
+`connect()` instance — `dragging` is closure-scoped per instance, the same
+shape as this package's other per-instance mutable state (e.g.
+`color-picker`'s eyedropper `pendingEyeDropper` AbortController).
+
+- Primary button only (`e.button !== 0` on `pointerdown` is ignored —
+  `pointermove`/`pointerup` never carry a meaningful `button`, so they are
+  never re-checked; a drag that started validly keeps running).
+- `setPointerCapture` on `pointerdown`'s `currentTarget`, so `pointermove`
+  keeps firing even once the pointer leaves the element's bounds — a
+  plain drag with no capture stalls out at the track's edge instead of
+  saturating like a native `<input type="range">`.
+- Released on `pointerup`/`pointercancel`, guarded by `hasPointerCapture`
+  so releasing twice (or without ever capturing) is a harmless no-op.
+
+```typescript
+function pointerDragHandlers(callbacks: PointerDragCallbacks): PointerDragHandlers
+```
+
 ##### `polarPoint()` from `@llui/components/utils/index`
 
 A point on a circle. Angles are RADIANS CLOCKWISE FROM 12 O'CLOCK, which is
@@ -19841,6 +19984,38 @@ export interface ParsedDateValue {
 export interface Point {
   x: number
   y: number
+}
+```
+
+##### `PointerDragCallbacks` from `@llui/components/utils/index`
+
+One call site's drag callbacks.
+
+```typescript
+export interface PointerDragCallbacks {
+  /** Checked on `pointerdown` only — a drag that is already underway keeps
+   * running even if this flips true mid-drag (the reducer's own `disabled`
+   * guard is the actual safety net for a message dispatched from `onDrag`
+   * after that point; this only decides whether a NEW drag may start). */
+  isDisabled: () => boolean
+  /** Fires once, on `pointerdown`, after capture is acquired and BEFORE the
+   * first `onDrag` call — the hook for a one-time side effect like moving
+   * focus onto a thumb element. */
+  onDragStart?: (e: PointerEvent) => void
+  /** Fires on `pointerdown` (immediately after `onDragStart`) and again on
+   * every `pointermove` while the drag is live. */
+  onDrag: (e: PointerEvent) => void
+}
+```
+
+##### `PointerDragHandlers` from `@llui/components/utils/index`
+
+```typescript
+export interface PointerDragHandlers {
+  onPointerDown: (e: PointerEvent) => void
+  onPointerMove: (e: PointerEvent) => void
+  onPointerUp: (e: PointerEvent) => void
+  onPointerCancel: (e: PointerEvent) => void
 }
 ```
 
@@ -20996,6 +21171,65 @@ export type CurveAxis = 'x' | 'y'
 export interface Point {
   x: number
   y: number
+}
+```
+
+### `@llui/components/utils/pointer-drag`
+
+#### Functions
+
+##### `pointerDragHandlers()` from `@llui/components/utils/pointer-drag`
+
+Build the four pointer handlers for one drag track. One call per live
+`connect()` instance — `dragging` is closure-scoped per instance, the same
+shape as this package's other per-instance mutable state (e.g.
+`color-picker`'s eyedropper `pendingEyeDropper` AbortController).
+
+- Primary button only (`e.button !== 0` on `pointerdown` is ignored —
+  `pointermove`/`pointerup` never carry a meaningful `button`, so they are
+  never re-checked; a drag that started validly keeps running).
+- `setPointerCapture` on `pointerdown`'s `currentTarget`, so `pointermove`
+  keeps firing even once the pointer leaves the element's bounds — a
+  plain drag with no capture stalls out at the track's edge instead of
+  saturating like a native `<input type="range">`.
+- Released on `pointerup`/`pointercancel`, guarded by `hasPointerCapture`
+  so releasing twice (or without ever capturing) is a harmless no-op.
+
+```typescript
+function pointerDragHandlers(callbacks: PointerDragCallbacks): PointerDragHandlers
+```
+
+#### Interfaces
+
+##### `PointerDragCallbacks` from `@llui/components/utils/pointer-drag`
+
+One call site's drag callbacks.
+
+```typescript
+export interface PointerDragCallbacks {
+  /** Checked on `pointerdown` only — a drag that is already underway keeps
+   * running even if this flips true mid-drag (the reducer's own `disabled`
+   * guard is the actual safety net for a message dispatched from `onDrag`
+   * after that point; this only decides whether a NEW drag may start). */
+  isDisabled: () => boolean
+  /** Fires once, on `pointerdown`, after capture is acquired and BEFORE the
+   * first `onDrag` call — the hook for a one-time side effect like moving
+   * focus onto a thumb element. */
+  onDragStart?: (e: PointerEvent) => void
+  /** Fires on `pointerdown` (immediately after `onDragStart`) and again on
+   * every `pointermove` while the drag is live. */
+  onDrag: (e: PointerEvent) => void
+}
+```
+
+##### `PointerDragHandlers` from `@llui/components/utils/pointer-drag`
+
+```typescript
+export interface PointerDragHandlers {
+  onPointerDown: (e: PointerEvent) => void
+  onPointerMove: (e: PointerEvent) => void
+  onPointerUp: (e: PointerEvent) => void
+  onPointerCancel: (e: PointerEvent) => void
 }
 ```
 
@@ -30162,6 +30396,9 @@ export interface ColorPickerInit {
   oklch?: Oklch
   alpha?: number
   disabled?: boolean
+  /** Upper bound for OKLCH chroma. Must be finite and > 0 — anything else
+   * (including omission) falls back to {@link DEFAULT_MAX_CHROMA}. */
+  maxChroma?: number
 }
 ```
 
@@ -30226,12 +30463,12 @@ export interface ColorPickerParts {
     'data-part': 'lightness-slider'
     onInput: (e: Event) => void
   }
-  /** OKLCH chroma, `0..maxChroma`. */
+  /** OKLCH chroma, `0..state.maxChroma`. */
   chromaSlider: {
     type: 'range'
     min: 0
-    max: number
-    step: number
+    max: Signal<number>
+    step: Signal<number>
     'aria-label': string
     disabled: Signal<boolean>
     value: Signal<string>
@@ -30271,8 +30508,13 @@ export interface ColorPickerParts {
     'aria-hidden': 'true'
     style: Signal<string>
   }
-  /** The 2D area track. In HSV mode the view owns pointer events and calls
-   * `colorFromPoint(...)`; in OKLCH mode, `lcFromPoint(...)`. */
+  /** The 2D area track. The machine owns the pointer-drag lifecycle
+   * (capture on down, released on up/cancel, primary button only, ignored
+   * while disabled): it computes from `currentTarget.getBoundingClientRect()`
+   * and dispatches `setSv` (HSV mode, via `colorFromPoint`) or `setLc`
+   * (OKLCH mode, via `lcFromPoint`) — see `utils/pointer-drag.ts`. Keyboard
+   * continues from wherever a drag left off because `pointerdown` focuses
+   * `areaThumb`. */
   area: {
     'data-scope': 'color-picker'
     'data-part': 'area'
@@ -30281,6 +30523,10 @@ export interface ColorPickerParts {
     // paints the plane instead (the sRGB gamut boundary is not expressible
     // as a CSS gradient).
     style: Signal<string>
+    onPointerDown: (e: PointerEvent) => void
+    onPointerMove: (e: PointerEvent) => void
+    onPointerUp: (e: PointerEvent) => void
+    onPointerCancel: (e: PointerEvent) => void
   }
   /** Decorative `<canvas>` seam for the OKLCH area — headless, so the
    * consumer owns creating and sizing the real `<canvas>` element and
@@ -30355,6 +30601,13 @@ export interface ColorPickerState {
   /** Alpha channel 0..1. */
   alpha: number
   disabled: boolean
+  /** Upper bound for OKLCH chroma — the ONE source of truth for the reducer's
+   * clamp (`setOklch`/`setChroma`/`setLc`/`nudgeLc`) AND for `connect()`'s
+   * chroma slider/area rendering range, so the two can no longer disagree
+   * the way a `ConnectOptions.maxChroma` rendering-only override could.
+   * Always finite and > 0 (`init` validates it; there is no setter — it is
+   * fixed for the component's lifetime, like `slider`'s `min`/`max`). */
+  maxChroma: number
 }
 ```
 
@@ -30376,14 +30629,10 @@ export interface ConnectOptions {
   /** aria-label for the swatch group container. */
   swatchGroupLabel?: string
   /** Fine keyboard step for the area thumb (S/V units, or the OKLCH
-   * equivalent scaled by `maxChroma`). Default 1. */
+   * equivalent scaled by `state.maxChroma`). Default 1. */
   step?: number
   /** Coarse keyboard step for the area thumb when Shift is held. Default 10. */
   coarseStep?: number
-  /** Upper bound the OKLCH chroma slider/area render up to. Rendering-only —
-   * see {@link DEFAULT_MAX_CHROMA}'s doc comment for how this relates to the
-   * reducer's own chroma ceiling. Default {@link DEFAULT_MAX_CHROMA}. */
-  maxChroma?: number
 }
 ```
 
@@ -30468,9 +30717,9 @@ const colorPicker
 
 `0.37` covers the whole of sRGB and most of Display P3 while leaving the
 2D area / chroma slider a sensible fixed range (an unbounded chroma axis
-has no natural "full scale" to show). Chosen once, shared by the reducer's
-clamp and `connect()`'s default rendering range — see the module doc on
-`ConnectOptions.maxChroma` for the one place they can currently diverge.
+has no natural "full scale" to show) — the default for
+{@link ColorPickerState.maxChroma} when `init()` gets no `maxChroma`
+option.
 
 ```typescript
 const DEFAULT_MAX_CHROMA

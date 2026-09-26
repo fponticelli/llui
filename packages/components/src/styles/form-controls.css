@@ -1034,6 +1034,9 @@ textarea[data-scope='form-field'][data-part='control'] {
   border: 1px solid var(--border);
   overflow: hidden;
   cursor: crosshair;
+  /* The machine owns pointer drag (pointer-captured); without this a touch
+   * drag also pans/scrolls the page instead of only moving the thumb. */
+  touch-action: none;
 }
 
 [data-scope='color-picker'][data-part='area-canvas'] {

@@ -473,9 +473,9 @@ describe('color-picker.connect — HSV parts', () => {
     expect(send).toHaveBeenCalledWith({ type: 'nudgeSv', ds: 0, dv: 10 })
   })
 
-  it('area thumb arrow keys nudge C/L in oklch mode, scaled by maxChroma', () => {
+  it('area thumb arrow keys nudge C/L in oklch mode, scaled by state.maxChroma', () => {
     const send = vi.fn()
-    const pc = connect(signalOf(init({ model: 'oklch' })), send, { step: 1, maxChroma: 0.5 })
+    const pc = connect(signalOf(init({ model: 'oklch', maxChroma: 0.5 })), send, { step: 1 })
     const mk = (key: string): KeyboardEvent =>
       ({ key, shiftKey: false, preventDefault: vi.fn() }) as unknown as KeyboardEvent
     pc.areaThumb.onKeyDown(mk('ArrowRight'))
@@ -509,13 +509,19 @@ describe('color-picker.connect — HSV parts', () => {
 })
 
 describe('color-picker.connect — OKLCH parts', () => {
-  const p = connect(rootSignal(), vi.fn(), { maxChroma: 0.4 })
+  const p = connect(rootSignal(), vi.fn())
 
-  it('chromaSlider spans 0..maxChroma and tracks current chroma', () => {
-    expect(p.chromaSlider.max).toBe(0.4)
-    const s = init({ model: 'oklch', oklch: { l: 0.5, c: 0.2, h: 10 } })
+  it('chromaSlider spans 0..state.maxChroma and tracks current chroma', () => {
+    const s = init({ model: 'oklch', oklch: { l: 0.5, c: 0.2, h: 10 }, maxChroma: 0.4 })
+    expect(read(p.chromaSlider.max, s)).toBe(0.4)
+    expect(read(p.chromaSlider.step, s)).toBeCloseTo(0.4 / 200, 9)
     expect(read(p.chromaSlider.value, s)).toBe('0.2')
     expect(read(p.chromaSlider.style, s)).toContain('oklch(')
+  })
+
+  it('a DIFFERENT instance with a different maxChroma renders its own range', () => {
+    const s = init({ model: 'oklch', maxChroma: 0.1 })
+    expect(read(p.chromaSlider.max, s)).toBe(0.1)
   })
 
   it('chromaSlider onInput dispatches setChroma', () => {
@@ -558,6 +564,123 @@ describe('color-picker.connect — OKLCH parts', () => {
   it('areaCanvas is a decorative, headless seam', () => {
     expect(p.areaCanvas['aria-hidden']).toBe('true')
     expect(p.areaCanvas['data-part']).toBe('area-canvas')
+  })
+})
+
+describe('color-picker.connect — area pointer drag (machine-owned)', () => {
+  function fakeArea(): {
+    target: {
+      getBoundingClientRect: () => { left: number; top: number; width: number; height: number }
+      setPointerCapture: ReturnType<typeof vi.fn>
+      hasPointerCapture: ReturnType<typeof vi.fn>
+      releasePointerCapture: ReturnType<typeof vi.fn>
+      querySelector: ReturnType<typeof vi.fn>
+    }
+    thumb: { focus: ReturnType<typeof vi.fn> }
+  } {
+    const thumb = { focus: vi.fn() }
+    return {
+      target: {
+        getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 100 }),
+        setPointerCapture: vi.fn(),
+        hasPointerCapture: vi.fn(() => true),
+        releasePointerCapture: vi.fn(),
+        querySelector: vi.fn(() => thumb),
+      },
+      thumb,
+    }
+  }
+
+  const pointerEvent = (
+    target: unknown,
+    overrides: Partial<{
+      button: number
+      clientX: number
+      clientY: number
+      pointerId: number
+    }> = {},
+  ): PointerEvent =>
+    ({
+      button: overrides.button ?? 0,
+      pointerId: overrides.pointerId ?? 1,
+      clientX: overrides.clientX ?? 100,
+      clientY: overrides.clientY ?? 50,
+      currentTarget: target,
+    }) as unknown as PointerEvent
+
+  it('onPointerDown (hsv mode) captures, dispatches setSv from the position, and focuses the thumb', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init()), send)
+    const { target, thumb } = fakeArea()
+    pc.area.onPointerDown(pointerEvent(target, { clientX: 100, clientY: 50 }))
+    expect(target.setPointerCapture).toHaveBeenCalledWith(1)
+    expect(send).toHaveBeenCalledWith({ type: 'setSv', s: 50, v: 50 })
+    expect(thumb.focus).toHaveBeenCalledTimes(1)
+  })
+
+  it('onPointerDown (oklch mode) dispatches setLc, scaled by state.maxChroma', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ model: 'oklch', maxChroma: 0.5 })), send)
+    const { target } = fakeArea()
+    pc.area.onPointerDown(pointerEvent(target, { clientX: 200, clientY: 0 }))
+    expect(send).toHaveBeenCalledWith({ type: 'setLc', c: 0.5, l: 1 })
+  })
+
+  it('onPointerMove after a valid pointerdown keeps dispatching from the live position', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init()), send)
+    const { target } = fakeArea()
+    pc.area.onPointerDown(pointerEvent(target, { clientX: 0, clientY: 0 }))
+    send.mockClear()
+    pc.area.onPointerMove(pointerEvent(target, { clientX: 200, clientY: 100 }))
+    expect(send).toHaveBeenCalledWith({ type: 'setSv', s: 100, v: 0 })
+  })
+
+  it('onPointerMove with no prior pointerdown is inert', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init()), send)
+    const { target } = fakeArea()
+    pc.area.onPointerMove(pointerEvent(target))
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('onPointerUp releases capture and ends the drag (a further move is inert)', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init()), send)
+    const { target } = fakeArea()
+    pc.area.onPointerDown(pointerEvent(target))
+    pc.area.onPointerUp(pointerEvent(target))
+    expect(target.releasePointerCapture).toHaveBeenCalledWith(1)
+    send.mockClear()
+    pc.area.onPointerMove(pointerEvent(target))
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('onPointerCancel behaves like onPointerUp', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init()), send)
+    const { target } = fakeArea()
+    pc.area.onPointerDown(pointerEvent(target))
+    pc.area.onPointerCancel(pointerEvent(target))
+    expect(target.releasePointerCapture).toHaveBeenCalledWith(1)
+  })
+
+  it('a non-primary button is ignored — no capture, no dispatch', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init()), send)
+    const { target } = fakeArea()
+    pc.area.onPointerDown(pointerEvent(target, { button: 2 }))
+    expect(target.setPointerCapture).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('onPointerDown while disabled is ignored', () => {
+    const send = vi.fn()
+    const pc = connect(signalOf(init({ disabled: true })), send)
+    const { target } = fakeArea()
+    pc.area.onPointerDown(pointerEvent(target))
+    expect(target.setPointerCapture).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
   })
 })
 
@@ -730,9 +853,53 @@ describe('serialization', () => {
       init(),
       init({ model: 'oklch' }),
       init({ model: 'oklch', oklch: { l: 0.5, c: 0.1, h: 200 } }),
+      init({ maxChroma: 0.2 }),
     ]
     for (const s of states) {
       expect(JSON.parse(JSON.stringify(s))).toStrictEqual(s)
     }
+  })
+})
+
+describe('maxChroma (state, not a connect() option)', () => {
+  it('defaults to DEFAULT_MAX_CHROMA', () => {
+    expect(init().maxChroma).toBe(DEFAULT_MAX_CHROMA)
+  })
+
+  it('accepts a valid override', () => {
+    expect(init({ maxChroma: 0.2 }).maxChroma).toBe(0.2)
+  })
+
+  it('rejects non-finite or non-positive values, falling back to the default', () => {
+    for (const bad of [NaN, Infinity, -Infinity, 0, -0.5]) {
+      expect(init({ maxChroma: bad }).maxChroma).toBe(DEFAULT_MAX_CHROMA)
+    }
+  })
+
+  it('the reducer clamps chroma to THIS instance maxChroma, not the global default', () => {
+    const narrow = init({ model: 'oklch', maxChroma: 0.1 })
+    expect(update(narrow, { type: 'setChroma', c: 999 })[0].color).toMatchObject({ c: 0.1 })
+    const wide = init({ model: 'oklch', maxChroma: 0.3 })
+    expect(update(wide, { type: 'setChroma', c: 999 })[0].color).toMatchObject({ c: 0.3 })
+  })
+
+  it('setModel converts hsv -> oklch clamped to the instance maxChroma', () => {
+    // Pure red is ~0.258 chroma in OKLCH — comfortably inside the 0.37
+    // default but well outside a 0.1 ceiling.
+    const narrow = init({ hsv: { h: 0, s: 100, v: 100 }, maxChroma: 0.1 })
+    const [oklchState] = update(narrow, { type: 'setModel', model: 'oklch' })
+    expect(oklchState.color).toMatchObject({ c: 0.1 })
+  })
+
+  it('setColor/setHex clamp an OKLCH-space CSS string to the instance maxChroma', () => {
+    const narrow = init({ model: 'oklch', maxChroma: 0.1 })
+    const [s] = update(narrow, { type: 'setColor', color: 'oklch(0.6 0.3 20)' })
+    expect(s.color).toMatchObject({ c: 0.1 })
+  })
+
+  it('maxChroma is fixed for the component lifetime — no message changes it', () => {
+    const s = init({ maxChroma: 0.2 })
+    const [after] = update(s, { type: 'setHue', h: 90 })
+    expect(after.maxChroma).toBe(0.2)
   })
 })
