@@ -4150,14 +4150,22 @@ export type ComboboxMsg =
   /**
    * @humanOnly
    *
-   * Atomic replacement: `items` is required, and `groups`/`disabled` are
-   * OPTIONAL companions that replace their own state field when present
-   * (omitted ⇒ unchanged) — but every field the fresh `items` list makes
+   * Atomic replacement: `items` is required. `disabled` is an OPTIONAL
+   * companion that replaces `disabledItems` when present (omitted ⇒
+   * unchanged). `groups` is different: omitting it RESETS to no groups
+   * (`[]`), the same as `init()` with no `groups` option — a fresh
+   * replacement with no `groups` describes a flat result, and carrying a
+   * PREVIOUS load's groups forward would keep describing options this
+   * replacement never mentioned as belonging to a group that may no longer
+   * apply (#265 A3). Every field the fresh `items`/`disabled`/`groups` makes
    * inconsistent is reconciled in this SAME reducer step, never in a
-   * follow-up message. `value` (selection) and `highlightedValue` are
-   * dropped when they no longer name a value in the new `items` (after the
-   * new `disabled` is applied), so there is no instant where the machine
-   * reports a selected/highlighted option the fresh list does not carry.
+   * follow-up message. `value` (selection) is dropped when it no longer
+   * names a value in the new `items` (after the new `disabled` is applied).
+   * `highlightedValue` is kept only when it is BOTH still in the fresh
+   * filtered list AND not newly disabled; otherwise it moves to the first
+   * enabled match (or `null` when none is enabled) — never left dangling
+   * for a render in between, and never left naming an option that is now
+   * disabled.
    */
   | {
       type: 'loadSuccess'
@@ -18961,6 +18969,26 @@ The second argument is the direction source:
 export declare function flipArrow(key: string, source: Element | null | TextDirection): string
 ```
 
+##### `floatingDir()` from `@llui/components/utils/direction`
+
+The `dir` a floating-placement call (`attachFloating`'s `dir` option) should
+be given for this state. While direction is still automatic (`dirSource ===
+'dom'`, i.e. no explicit config/`setDir` yet), this returns `undefined` so
+`attachFloating` falls back to reading the FLOATING ELEMENT's own computed
+`direction` (`domPlatform`'s default) — the actual page/ancestor direction
+a portaled overlay landed under — rather than the state's `dir`, which
+defaults to `'ltr'` until something explicitly resolves it. Passing the
+state's `dir` unconditionally (#265 A1) meant an RTL page with no opt-in
+direction-sync part mirrored every floating menu/popover/etc. as if it were
+LTR: the state said `'ltr'` (its untouched default) while the DOM said
+`'rtl'`. Once a consumer calls `setDir`/passes `dir` explicitly,
+`dirSource` flips to `'explicit'` and that value is authoritative here too,
+overriding whatever the DOM happens to compute to.
+
+```typescript
+function floatingDir(state: DirectionState): 'ltr' | 'rtl' | undefined
+```
+
 ##### `initDirection()` from `@llui/components/utils/direction`
 
 Deterministic on the server; omitted direction is resolved only after mount.
@@ -27870,17 +27898,28 @@ export type ToastInput = Omit<Toast, 'remainingMs' | 'paused' | 'status'> & {
 Fields an `update` message may patch on a mounted toast. `id` is the ONE
 truly immutable field — a toast is created once and dismissed once, never
 structurally replaced with a different id for the same row — so it is
-excluded here rather than silently ignored by the reducer. Every other
-field, INCLUDING `type` and `ariaLive`, is a genuine mutable presentation
-field (the `toast.promise`-style loading→success/error flow patches `type`,
-`title` and `description` on the same mounted toast) and `connect()`'s
-`toast()` builder binds every one of these reactively (never via a one-shot
-`peek()`), so a patch here is visible wherever it renders — resolving the
-former contradiction where `patch: Partial<Toast>` type-allowed patching
-fields the connect layer had already frozen at mount (#265).
+excluded here rather than silently ignored by the reducer. `type` and
+`ariaLive` (among others) ARE genuine mutable presentation fields (the
+`toast.promise`-style loading→success/error flow patches `type`, `title`
+and `description` on the same mounted toast) and `connect()`'s `toast()`
+builder binds every one of these reactively (never via a one-shot
+`peek()`), so a patch here is visible wherever it renders.
+
+`status`/`remainingMs`/`paused` are excluded: they are LIFECYCLE fields the
+reducer itself owns (presence transitions, the tick-driven countdown,
+pause/resume) and a patch is the wrong channel for them — `dismiss`/`tick`/
+`pause`/`resume` already exist and a caller patching `remainingMs` directly
+would race the reducer's own countdown math. `duration` stays patchable
+(it IS presentation — the toast.promise flow moves a sticky `loading`
+toast to a finite `success`/`error` duration), so `update` re-seeds
+`remainingMs` from the new `duration` whenever `duration` is part of the
+patch (#265 A2) — otherwise a toast created sticky (duration: null,
+remainingMs frozen at 0) that is later patched to a finite duration would
+inherit that frozen 0 and dismiss on the very next tick instead of lasting
+its new duration.
 
 ```typescript
-export type ToastPatch = Partial<Omit<Toast, 'id'>>
+export type ToastPatch = Partial<Omit<Toast, 'id' | 'status' | 'remainingMs' | 'paused'>>
 ```
 
 ##### `ToastPlacement` from `@llui/components/toast`
@@ -28675,14 +28714,22 @@ export type ComboboxMsg =
   /**
    * @humanOnly
    *
-   * Atomic replacement: `items` is required, and `groups`/`disabled` are
-   * OPTIONAL companions that replace their own state field when present
-   * (omitted ⇒ unchanged) — but every field the fresh `items` list makes
+   * Atomic replacement: `items` is required. `disabled` is an OPTIONAL
+   * companion that replaces `disabledItems` when present (omitted ⇒
+   * unchanged). `groups` is different: omitting it RESETS to no groups
+   * (`[]`), the same as `init()` with no `groups` option — a fresh
+   * replacement with no `groups` describes a flat result, and carrying a
+   * PREVIOUS load's groups forward would keep describing options this
+   * replacement never mentioned as belonging to a group that may no longer
+   * apply (#265 A3). Every field the fresh `items`/`disabled`/`groups` makes
    * inconsistent is reconciled in this SAME reducer step, never in a
-   * follow-up message. `value` (selection) and `highlightedValue` are
-   * dropped when they no longer name a value in the new `items` (after the
-   * new `disabled` is applied), so there is no instant where the machine
-   * reports a selected/highlighted option the fresh list does not carry.
+   * follow-up message. `value` (selection) is dropped when it no longer
+   * names a value in the new `items` (after the new `disabled` is applied).
+   * `highlightedValue` is kept only when it is BOTH still in the fresh
+   * filtered list AND not newly disabled; otherwise it moves to the first
+   * enabled match (or `null` when none is enabled) — never left dangling
+   * for a render in between, and never left naming an option that is now
+   * disabled.
    */
   | {
       type: 'loadSuccess'
