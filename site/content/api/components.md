@@ -1754,7 +1754,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `placement` | `ToastPlacement` |
 | `animated`  | `boolean`        |
 
-**Messages:** `create`, `dismiss`, `dismissAll`, `update`, `tick`, `pause`, `resume`, `pauseAll`, `resumeAll`, `animationEnd`
+**Messages:** `create`, `dismiss`, `dismissAll`, `setPlacement`, `update`, `tick`, `pause`, `resume`, `pauseAll`, `resumeAll`, `animationEnd`
 
 **Init options:** `max?: number, placement?: ToastPlacement, animated?: boolean`
 
@@ -5994,6 +5994,8 @@ export type ToasterMsg =
   | { type: 'dismiss'; id: string }
   /** @intent("Dismiss every toast currently visible") */
   | { type: 'dismissAll' }
+  /** @intent("Move the toast region to a different corner/edge of the viewport") */
+  | { type: 'setPlacement'; placement: ToastPlacement }
   /** @intent("Patch mutable presentation fields on the toast with the given id (title, description, type, etc.); `id` cannot be patched") */
   | { type: 'update'; id: string; patch: ToastPatch }
   /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
@@ -14362,8 +14364,12 @@ export interface ToastItemParts {
     'data-state': Signal<PresenceStatus>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
-    onFocus: (e: FocusEvent) => void
-    onBlur: (e: FocusEvent) => void
+    /** Bubbling — a plain (non-bubbling) `onFocus`/`onBlur` here would never
+     * fire for the only naturally focusable descendant, the close button,
+     * so pause-on-focus would be dead: nothing but the row itself receives
+     * `focus`/`blur` directly, and it carries no `tabindex`. */
+    onFocusIn: (e: FocusEvent) => void
+    onFocusOut: (e: FocusEvent) => void
     /** Advance past the exit animation: a `'closing'` toast is removed from the
      * queue once its animation/transition ends. */
     onAnimationEnd: (e: AnimationEvent) => void
@@ -27849,6 +27855,8 @@ export type ToasterMsg =
   | { type: 'dismiss'; id: string }
   /** @intent("Dismiss every toast currently visible") */
   | { type: 'dismissAll' }
+  /** @intent("Move the toast region to a different corner/edge of the viewport") */
+  | { type: 'setPlacement'; placement: ToastPlacement }
   /** @intent("Patch mutable presentation fields on the toast with the given id (title, description, type, etc.); `id` cannot be patched") */
   | { type: 'update'; id: string; patch: ToastPatch }
   /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
@@ -28093,8 +28101,12 @@ export interface ToastItemParts {
     'data-state': Signal<PresenceStatus>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
-    onFocus: (e: FocusEvent) => void
-    onBlur: (e: FocusEvent) => void
+    /** Bubbling — a plain (non-bubbling) `onFocus`/`onBlur` here would never
+     * fire for the only naturally focusable descendant, the close button,
+     * so pause-on-focus would be dead: nothing but the row itself receives
+     * `focus`/`blur` directly, and it carries no `tabindex`. */
+    onFocusIn: (e: FocusEvent) => void
+    onFocusOut: (e: FocusEvent) => void
     /** Advance past the exit animation: a `'closing'` toast is removed from the
      * queue once its animation/transition ends. */
     onAnimationEnd: (e: AnimationEvent) => void
