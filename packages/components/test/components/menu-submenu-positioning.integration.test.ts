@@ -3,6 +3,7 @@ import { button, component, div, mountApp, text } from '@llui/dom'
 import { isInNestedLayer } from '@llui/interactions'
 import { init, update, connect, overlay, subOverlay } from '../../src/components/menu'
 import type { MenuState, MenuMsg } from '../../src/components/menu'
+import * as dialog from '../../src/components/dialog'
 
 /**
  * Engine-owned per-level submenu overlays (#265 A4). Before this, the
@@ -352,5 +353,138 @@ describe('menu submenu positioning (engine-owned subOverlay)', () => {
     // the root content (subOverlay declares no `dismiss` of its own, so it
     // registers for 'outside' too — see subOverlay's doc comment).
     expect(isInNestedLayer(subContent, 'outside', rootContent)).toBe(true)
+  })
+
+  it('an outside click closes the whole chain — root content AND the open submenu level', async () => {
+    const { send } = makeApp()
+    await flush()
+    const trigger = document.getElementById('mn:sub:sub:trigger') as HTMLElement
+    trigger.getBoundingClientRect = () => rect(100, 40, 60, 20)
+    send({ type: 'openSub', value: 'sub' })
+    await flush()
+    expect(document.querySelector('[data-part="subcontent"]')).not.toBeNull()
+    expect(document.querySelector('[data-part="content"]')).not.toBeNull()
+
+    // `subOverlay` declares no `dismiss` of its own (see its doc comment) —
+    // outside-click handling stays owned by the ROOT overlay's dismissable
+    // layer, so a genuinely outside interaction dismisses the WHOLE chain in
+    // one go, not just the deepest level.
+    const outside = document.createElement('div')
+    document.body.appendChild(outside)
+    outside.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await flush()
+
+    expect(document.querySelector('[data-part="subcontent"]')).toBeNull()
+    expect(document.querySelector('[data-part="content"]')).toBeNull()
+  })
+
+  it('a modal dialog opened OVER an open menu correctly hides its submenu too (#171, per level)', async () => {
+    type Ctx2 = { m: MenuState; d: dialog.DialogState }
+    type Msg2 = { type: 'm'; msg: MenuMsg } | { type: 'd'; msg: dialog.DialogMsg }
+    let sendRef!: (m: Msg2) => void
+    const def = component<Ctx2, Msg2, never>({
+      name: 'ModalOverMenu',
+      init: () => [
+        {
+          m: init({
+            items: [
+              {
+                value: 'sub',
+                kind: 'action',
+                children: [{ value: 's1', kind: 'action' }],
+              },
+            ],
+            open: true,
+            skipAnimations: true,
+          }),
+          d: dialog.init(),
+        },
+        [],
+      ],
+      update: (state, msg) => {
+        if (msg.type === 'm') return [{ ...state, m: update(state.m, msg.msg)[0] }, []]
+        return [{ ...state, d: dialog.update(state.d, msg.msg)[0] }, []]
+      },
+      view: ({ state, send }) => {
+        sendRef = send
+        const m = state.map((s) => s.m)
+        const d = state.map((s) => s.d)
+        const msend = (msg: MenuMsg): void => send({ type: 'm', msg })
+        const dsend = (msg: dialog.DialogMsg): void => send({ type: 'd', msg })
+        const parts = connect(m, msend, { id: 'mo' })
+        const dparts = dialog.connect(d, dsend, { id: 'do' })
+        return [
+          button({ ...parts.trigger }, [text('Menu')]),
+          button({ ...dparts.trigger }, [text('Open dialog')]),
+          overlay({
+            state: m,
+            send: msend,
+            parts,
+            content: () => [
+              div({ ...parts.content }, [
+                div({ ...parts.subTrigger('sub') }, [text('sub')]),
+                subOverlay({
+                  value: 'sub',
+                  state: m,
+                  parts,
+                  content: () => [
+                    div({ ...parts.subContent('sub') }, [
+                      div({ ...parts.item('s1').item }, [text('s1')]),
+                    ]),
+                  ],
+                }),
+              ]),
+            ],
+          }),
+          dialog.overlay({
+            state: d,
+            send: dsend,
+            parts: dparts,
+            content: () => [div({ ...dparts.content }, [text('Dialog')])],
+          }),
+        ]
+      },
+    })
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const app = mountApp(container, def)
+    await flush()
+
+    const trigger = document.getElementById('mo:sub:sub:trigger') as HTMLElement
+    trigger.getBoundingClientRect = () => rect(100, 40, 60, 20)
+    sendRef({ type: 'm', msg: { type: 'openSub', value: 'sub' } })
+    await flush()
+    const subContent = document.getElementById('mo:sub:sub:content') as HTMLElement
+    expect(subContent).not.toBeNull()
+    expect(subContent.getAttribute('aria-hidden')).toBeNull()
+
+    // Open the modal dialog OVER the already-open menu + submenu.
+    sendRef({ type: 'd', msg: { type: 'open' } })
+    await flush()
+
+    // The menu (and its submenu) were opened BEFORE the dialog and are not
+    // nested inside it, so the modal's sweep SHOULD hide both — that is
+    // ordinary, correct modal behavior (#171's fix only EXEMPTS a layer
+    // that is nested INSIDE the asking modal, e.g. a select opened from
+    // within the dialog itself; this is the opposite, unrelated case).
+    // Before #265 A4 the submenu was rendered INLINE inside the root
+    // content, so it inherited `aria-hidden`/`inert` automatically as a
+    // DESCENDANT of the (correctly swept) root content. `subOverlay` now
+    // portals it to `body` as an INDEPENDENT sibling subtree, so it no
+    // longer inherits anything — it must participate in the sweep on its
+    // own nested-layer registration, exactly like the root content does.
+    // `aria-hidden`/`inert` are applied to the SWEPT SIBLING (each level's
+    // own positioner wrapper here), not necessarily to the content div by
+    // its own id — both properties INHERIT, so `closest(...)` is what
+    // reflects the effective state a real assistive-tech user or the focus
+    // trap would observe, the same way `isInNestedLayer`'s own containment
+    // check works.
+    const rootContent = document.getElementById('mo:content') as HTMLElement
+    expect(rootContent.closest('[aria-hidden="true"]')).not.toBeNull()
+    expect(rootContent.closest('[inert]')).not.toBeNull()
+    expect(subContent.closest('[aria-hidden="true"]')).not.toBeNull()
+    expect(subContent.closest('[inert]')).not.toBeNull()
+
+    app.dispose()
   })
 })
