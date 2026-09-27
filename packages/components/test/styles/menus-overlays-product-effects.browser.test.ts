@@ -362,6 +362,7 @@ describe('menus-overlays product effects, live in Chromium (#265 G2)', () => {
     for (const { scenarioId, caseId } of casesWithAxis('theme')) {
       it(`theme: ${scenarioId}/${caseId} paints as a page-level theme does, at AA contrast`, async () => {
         const { selector } = SURFACE[scenarioId]
+        const surfaces: Record<'light' | 'dark', string> = { light: '', dark: '' }
         for (const theme of ['light', 'dark'] as const) {
           const label = `${path} ${scenarioId}/${caseId} ${theme}`
           const subtree = await openCase(path, scenarioId, caseId, { theme })
@@ -389,8 +390,14 @@ describe('menus-overlays product effects, live in Chromium (#265 G2)', () => {
             bucketedKey(inkB!),
           ])
           expect(ratio(bgA!, inkA!), label).toBeGreaterThanOrEqual(4.5)
+          surfaces[theme] = bucketedKey(bgB!)
           await Promise.all([subtree.close(), whole.close()])
         }
+        // The two themes genuinely differ: without this, deleting the dark
+        // tokens would paint both arms light and still match each other.
+        expect(surfaces.dark, `${path} ${scenarioId}/${caseId} dark vs light`).not.toBe(
+          surfaces.light,
+        )
       })
     }
 

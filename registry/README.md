@@ -97,12 +97,15 @@ and not in a `--chip-fill` token.
 
 What remains is not approximation. It is, in order of size:
 
-1. **Radix runtime variables.** `origin-(--radix-…-transform-origin)`,
-   `max-h-(--radix-…-available-height)`,
+1. **Radix runtime variables.** `origin-(--radix-…-transform-origin)` and
    `h-[var(--radix-navigation-menu-viewport-height)]`. Radix's positioner writes
    these; LLui's floating layer does not, so the classes would resolve to
    `var(--undefined)`. Dropping them costs the zoom animation its trigger-edge
-   origin — the only visual difference in those files.
+   origin — the only visual difference in those files. The one Radix variable
+   LLui DOES have an equivalent for is translated, not dropped:
+   `max-h-(--radix-…-available-height)` becomes
+   `max-h-[var(--llui-floating-available-height,calc(100dvh-2rem))]`, written by
+   `attachFloating` (the fallback covers the frame before the first measure).
 2. **`cmdk` selectors.** `command`'s `[&_[cmdk-group-heading]]` block targets
    that library's own attributes. There is no cmdk here;
    `@llui/components/patterns/command-menu` publishes `data-highlighted` like

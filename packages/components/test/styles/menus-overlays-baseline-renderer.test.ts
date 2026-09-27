@@ -11,6 +11,7 @@
  * `data-*`/`aria-*`/`role`/text/class), never a renderer wrapper attribute.
  */
 import { readFileSync } from 'node:fs'
+import ts from 'typescript'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { ProductContractSchema } from '@llui/cli'
@@ -723,6 +724,30 @@ describe('baseline menus-overlays scenario renderer', () => {
     }
   })
 
+  /** The titles of the real `it(...)` calls in a test file — parsed, so a
+   * commented-out test or a title quoted in prose never counts. A generated
+   * per-case title is its template text, `${…}` included. */
+  function liveTestTitles(file: string): string[] {
+    const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest)
+    const titles: string[] = []
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'it'
+      ) {
+        const title = node.arguments[0]
+        if (title !== undefined && ts.isStringLiteralLike(title)) titles.push(title.text)
+        else if (title !== undefined && ts.isTemplateExpression(title)) {
+          titles.push(title.getText(source).slice(1, -1))
+        }
+      }
+      node.forEachChild(visit)
+    }
+    visit(source)
+    return titles
+  }
+
   it('every live proof names a test that exists, by its exact title, in its file', () => {
     const proofs = [
       ...Object.values(GEOMETRY_ALLOWLIST),
@@ -732,12 +757,7 @@ describe('baseline menus-overlays scenario renderer', () => {
     // dropping out of the table.
     expect(new Set(proofs.map(({ file }) => file)).size).toBe(3)
     for (const { file, test } of proofs) {
-      // Prettier may break a long title onto the line after `it(`.
-      const source = readFileSync(resolve(ROOT, file), 'utf8').replace(/\bit\(\s+/g, 'it(')
-      expect(
-        source.includes(`it('${test}'`) || source.includes(`it(\`${test}\``),
-        `${file}: ${test}`,
-      ).toBe(true)
+      expect(liveTestTitles(resolve(ROOT, file)), file).toContain(test)
     }
   })
 
