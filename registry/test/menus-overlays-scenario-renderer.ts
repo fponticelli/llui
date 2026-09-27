@@ -28,8 +28,10 @@ import {
   type Signal,
 } from '@llui/dom'
 import type { ProductContract } from '@llui/cli'
-import type { PresentationScenarioEnvironment } from '@llui/cli/presentation-scenarios'
-import { resolveScenarioSelection } from '../../packages/components/test/styles/menus-overlays-scenarios.js'
+import {
+  resolveScenarioSelection,
+  type PresentationScenarioEnvironment,
+} from '@llui/cli/presentation-scenarios'
 import * as dialog from '../../packages/components/src/components/dialog.js'
 import * as alertDialog from '../../packages/components/src/components/alert-dialog.js'
 import * as drawer from '../../packages/components/src/components/drawer.js'

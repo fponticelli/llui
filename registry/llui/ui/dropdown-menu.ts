@@ -84,15 +84,3 @@ export const DropdownMenuSubContent = classPart(
   div,
   `z-50 min-w-[8rem] shadow-lg ${dropdownMenuSurfaceRecipe} ${floatingSyncMotionRecipe}`,
 )
-
-/**
- * The positioning wrapper `menu.subOverlay` (`@llui/components/menu`) builds
- * around each open submenu LEVEL's content, anchored to that level's own
- * `subTrigger`. Bare on purpose: it carries no visual style of its own
- * (`DropdownMenuSubContent` inside it is the surface) — real floating
- * geometry attaches directly to `DropdownMenuSubContent` itself (the engine
- * only prefers an ancestor carrying `data-part="positioner"`, which this
- * `"subpositioner"` wrapper is not), so this class stays empty rather than
- * carrying inline positioning that would never be read.
- */
-export const DropdownMenuSubPositioner = classPart(div, '')
