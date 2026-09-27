@@ -72,10 +72,20 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
 
   describe.each(['baseline', 'registryTailwind'] as const)('%s renderer', (path) => {
     it('anchors ContextMenu at the real virtual pointer coordinates it was opened with', async () => {
-      const page = await openCase(path, 'component:context-menu', 'open')
-      const rect = await page
-        .locator('#case [data-scope="context-menu"][data-part="content"]')
-        .boundingBox()
+      // Reduced motion, and measured only once placed: under load a read
+      // could land mid entry-zoom or before the first computed position.
+      const page = await openCase(path, 'component:context-menu', 'open', undefined, {
+        beforeMount: (p) => p.emulateMedia({ reducedMotion: 'reduce' }),
+      })
+      const content = page.locator('#case [data-scope="context-menu"][data-part="content"]')
+      await content.waitFor({ state: 'visible' })
+      await page.evaluate(
+        () =>
+          new Promise<void>((done) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => done())),
+          ),
+      )
+      const rect = await content.boundingBox()
       expect(rect).not.toBeNull()
       // Case input opens at (240, 160); the positioner anchors to that point
       // (not necessarily flush against it — padding/offset/middleware may

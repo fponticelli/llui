@@ -136,7 +136,12 @@ describe('menus/overlays composed-pattern scenarios use their real machines', ()
       expect(read(parts.content['aria-busy'], state), scenarioCase.id).toBe(
         input.status === 'loading' ? 'true' : undefined,
       )
-      expect(read(parts.empty.hidden, state), scenarioCase.id).toBe(input.items.length !== 0)
+      // `empty` shows only for a SETTLED empty list: never while a fetch is in
+      // flight or after one failed (#265 G4).
+      const settled = input.status !== 'loading' && input.status !== 'error'
+      expect(read(parts.empty.hidden, state), scenarioCase.id).toBe(
+        !settled || input.items.length !== 0,
+      )
       if (input.status === 'error') {
         expect(typeof read(parts.liveRegion.text, state)).toBe('string')
       }
