@@ -208,16 +208,16 @@ const accordionAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) => {
     (state, send) => {
       const parts = accordion.connect(state, send, { id: `baseline-accordion-${ctx.caseId}` })
       const item = parts.item(itemValue)
-      // `exitCompletion` MUST be placed (#264 review follow-up to M1): the
-      // `closing` phase this scenario constructs via a direct reducer call
-      // (`initDisclosureAccordion`, never a real mount) sets `exitWatched:
-      // true` in the initial state to simulate what a real attach would —
-      // but nothing here ever runs a real attach unless this part is
-      // placed, and `connect()`'s own stale-flag recovery
-      // (`scheduleStaleExitWatcherRecovery`) would otherwise correctly
-      // treat that simulated flag as STALE (no real watcher this session)
-      // and clear it, settling the very `closing` phase this fixture exists
-      // to render.
+      // `exitCompletion` is placed for realism, matching a real mount
+      // exactly (#264 review-264i): the `closing` phase this scenario
+      // constructs via a direct reducer call (`initDisclosureAccordion`,
+      // never a real mount) already bumps `exitWatchers.count` to a
+      // watched value directly, in THIS realm — there is no separate
+      // closure count or microtask recovery any more that could disagree
+      // with it and clear the simulated `closing` phase, but placing this
+      // part is still what a real consumer does, so this fixture renders
+      // the shape a live instance actually produces rather than a reducer
+      // shortcut a consumer could never reach.
       return [
         div({ ...parts.root }, [
           div({ ...item.item }, [

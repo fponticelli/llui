@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { pathHandle } from '@llui/dom'
 import { init, update, connect, focusTarget } from '../../src/components/accordion'
+import { isExitWatched } from '../../src/internal/disclosure-motion'
 import { rootSignal, signalOf, read } from '../_signal'
 
 function animationEvent(type: string, animationName: string): Event {
@@ -14,7 +15,7 @@ function animationEvent(type: string, animationName: string): Event {
  * any interaction can happen, so unit tests exercising retained-exit
  * behavior via bare `update()` calls attach it explicitly first (#264 item
  * F1) — `closing` retention now only ever engages when `animated &&
- * exitWatched`.
+ * isExitWatched(exitWatchers)`.
  */
 function attached(state: ReturnType<typeof init>): ReturnType<typeof init> {
   return update(state, { type: 'exitWatcherAttach' })[0]
@@ -33,21 +34,21 @@ describe('accordion reducer', () => {
       exitGenerations: [],
       exitSequence: 0,
       animated: false,
-      exitWatched: false,
+      exitWatchers: { session: expect.any(String), count: 0 },
     })
   })
 
-  it('init always starts exitWatched at false, never trusting a persisted/hydrated value (#264 review M1)', () => {
+  it('init always starts unwatched, never trusting a persisted/hydrated value (#264 review M1)', () => {
     // Simulates a host handing `init()` a persisted/rehydrated options blob
-    // that happens to carry a stray `exitWatched` field (e.g. spread from an
-    // old serialized STATE rather than a real `AccordionInit`) — `init()`
+    // that happens to carry a stray `exitWatchers` field (e.g. spread from
+    // an old serialized STATE rather than a real `AccordionInit`) — `init()`
     // must never inherit it: a watcher can only be truthfully counted by its
     // OWN mount running again after hydration, since mounts never survive a
     // serialize/deserialize round trip. `AccordionInit`'s fields are all
     // optional, so a plain (non-cast) object with one extra property is
     // still structurally assignable — no `as unknown as` needed.
-    const tampered = { value: ['a'], exitWatched: true }
-    expect(init(tampered).exitWatched).toBe(false)
+    const tampered = { value: ['a'], exitWatchers: { session: 'stale-session', count: 7 } }
+    expect(isExitWatched(init(tampered).exitWatchers)).toBe(false)
   })
 
   it('toggle opens a closed item (single)', () => {
@@ -292,16 +293,25 @@ describe('accordion.connect', () => {
 describe('accordion exitCompletion fail-safe (#264 item F1)', () => {
   it('a forgotten exitCompletion (watcher never attached) closes instantly, never retains', () => {
     const [s] = update(init({ value: ['a'], animated: true }), { type: 'close', value: 'a' })
-    expect(s).toMatchObject({ value: [], closing: [], exitWatched: false })
+    expect(s.value).toEqual([])
+    expect(s.closing).toEqual([])
+    expect(isExitWatched(s.exitWatchers)).toBe(false)
   })
 
-  it('exitWatcherAttach sets exitWatched; a subsequent close then retains', () => {
+  it('exitWatcherAttach marks the slice watched; a subsequent close then retains', () => {
     const attachedState = update(init({ value: ['a'], animated: true }), {
       type: 'exitWatcherAttach',
     })[0]
-    expect(attachedState.exitWatched).toBe(true)
+    expect(isExitWatched(attachedState.exitWatchers)).toBe(true)
     const closing = update(attachedState, { type: 'close', value: 'a' })[0]
     expect(closing).toMatchObject({ value: [], closing: ['a'] })
+  })
+
+  it('a second exitWatcherAttach over the same slice increments the count (two placements)', () => {
+    const once = update(init({ value: ['a'], animated: true }), { type: 'exitWatcherAttach' })[0]
+    const twice = update(once, { type: 'exitWatcherAttach' })[0]
+    expect(twice.exitWatchers.count).toBe(2)
+    expect(isExitWatched(twice.exitWatchers)).toBe(true)
   })
 
   it('exitWatcherDetach mid-closing settles it immediately rather than leaving it stuck', () => {
@@ -311,21 +321,50 @@ describe('accordion exitCompletion fail-safe (#264 item F1)', () => {
     })[0]
     expect(closing.closing).toEqual(['a'])
     const detached = update(closing, { type: 'exitWatcherDetach' })[0]
-    expect(detached).toMatchObject({ closing: [], exitGenerations: [], exitWatched: false })
+    expect(detached.closing).toEqual([])
+    expect(detached.exitGenerations).toEqual([])
+    expect(isExitWatched(detached.exitWatchers)).toBe(false)
   })
 
-  it('exitWatcherDetach sets exitWatched false UNCONDITIONALLY, even if already false (#264 review M1)', () => {
-    // The reducer no longer counts anything — the real mount COUNT lives in
-    // connect()'s own closure (see disclosure-exit-failsafe.test.ts for the
-    // double-placement / persisted-slice scenarios that motivate this, which
-    // require a real mount and cannot be exercised via bare `update()`
-    // calls). A stray/duplicate `exitWatcherDetach` at the reducer level is
-    // simply idempotent.
+  it('exitWatcherDetach never goes negative and stays unwatched, even if already at 0 (#264 review M1)', () => {
+    // The reducer no longer tracks a stray closure count — the real mount
+    // COUNT lives entirely in the `exitWatchers` field itself (#264
+    // review-264i), so a stray/duplicate `exitWatcherDetach` clamps at 0
+    // rather than going negative, and stays unwatched.
     let state = init({ value: ['a'], animated: true })
     state = update(state, { type: 'exitWatcherDetach' })[0]
-    expect(state.exitWatched).toBe(false)
+    expect(isExitWatched(state.exitWatchers)).toBe(false)
+    expect(state.exitWatchers.count).toBe(0)
     state = update(state, { type: 'exitWatcherDetach' })[0]
-    expect(state.exitWatched).toBe(false)
+    expect(isExitWatched(state.exitWatchers)).toBe(false)
+    expect(state.exitWatchers.count).toBe(0)
+  })
+
+  it('attach/detach are pure: the same input produces the same output every time (reducer purity)', () => {
+    const base = init({ value: ['a'], animated: true })
+    const a1 = update(base, { type: 'exitWatcherAttach' })[0]
+    const a2 = update(base, { type: 'exitWatcherAttach' })[0]
+    expect(a1).toEqual(a2)
+    const attached1 = update(a1, { type: 'exitWatcherDetach' })[0]
+    const attached2 = update(a2, { type: 'exitWatcherDetach' })[0]
+    expect(attached1).toEqual(attached2)
+  })
+
+  it('a restored slice with a FOREIGN session and a stale positive count is unwatched, and a close does not retain', () => {
+    // Simulates a state slice restored from a past page load (a different
+    // JS realm, so a different session token) whose `count` was left at a
+    // real, nonzero value from that session — reading it directly, without
+    // ever sending exitWatcherAttach/Detach, must still be unwatched: the
+    // whole point of the session token is that `isExitWatched` alone
+    // decides this, with no recovery message required.
+    const restored = {
+      ...init({ value: ['a'], animated: true }),
+      exitWatchers: { session: 'a-past-page-load', count: 5 },
+    }
+    expect(isExitWatched(restored.exitWatchers)).toBe(false)
+    const [s] = update(restored, { type: 'close', value: 'a' })
+    expect(s.value).toEqual([])
+    expect(s.closing).toEqual([])
   })
 
   it('no warning fires when the watcher is attached (placed correctly)', () => {

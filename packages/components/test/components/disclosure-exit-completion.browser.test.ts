@@ -295,12 +295,14 @@ describe('#264 — disclosure exit completion in Chromium', () => {
   it('closes instantly, with a DEV warning, when `exitCompletion` is NOT placed at all (#264 item F1)', async () => {
     // #264 item F1 supersedes review item 4's accepted trade-off: a
     // forgotten `exitCompletion` placement no longer hangs `closing` +
-    // `inert` forever. `state.exitWatched` is an idempotent boolean set by
-    // `exitWatcherAttach`, sent only on the 0->1 transition of a mount COUNT
-    // `connect()` keeps in its own closure (#264 review M1 — never in
-    // state), so with `exitCompletion` never placed the reducer's `animated
-    // && exitWatched` gate never engages retention at all — the close is
-    // instant, exactly as `animated: false` would be. The dev warning lives
+    // `inert` forever. `state.exitWatchers` holds a mount COUNT keyed by a
+    // per-realm session token (#264 review-264i), incremented/decremented
+    // only by `exitWatcherAttach`/`exitWatcherDetach` — sent only by a real
+    // `exitCompletion` mount/cleanup — so with `exitCompletion` never
+    // placed the count stays 0 and the reducer's `animated &&
+    // isExitWatched(exitWatchers)` gate never engages retention at all —
+    // the close is instant, exactly as `animated: false` would be. The dev
+    // warning lives
     // at the `connect()` boundary (a closure flag), never inside the
     // reducer, so it fires only for the CLICK-driven path it can actually
     // observe — a real trigger click, not a raw programmatic `send`,

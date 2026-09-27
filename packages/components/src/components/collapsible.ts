@@ -2,12 +2,15 @@ import { onMount, tagSend, type Mountable } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { retainedExit } from '../internal/retained-exit.js'
 import {
+  attachExitWatcher,
   createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
   createMissingExitWatcherWarning,
-  scheduleStaleExitWatcherRecovery,
-  sharedExitWatcherCounter,
+  detachExitWatcher,
+  initExitWatchers,
+  isExitWatched,
   type DisclosureExitWatchEntry,
+  type ExitWatchers,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
 import { getElementByIdInScope } from '../utils/root-scope.js'
@@ -27,17 +30,15 @@ export interface CollapsibleState {
   /** Whether close waits for the content's own animation end/cancel event. */
   animated: boolean
   /**
-   * IDEMPOTENT BOOLEAN: is at least one `parts.exitCompletion` CURRENTLY
-   * mounted (#264 item F1)? See `accordion.ts`'s identical field for the
-   * full rationale (#264 review M1): the actual mount COUNT lives in
-   * `connect()`'s own closure, never here, so a persisted/restored state
-   * slice that bypasses `init()` can never carry a stale count that hangs
-   * `closing` forever. `exitWatcherAttach` sets this `true` (sent only on
-   * the closure count's 0->1 transition); `exitWatcherDetach` sets it
-   * `false` UNCONDITIONALLY (sent only on the 1->0 transition) and settles
-   * any currently-closing panel.
+   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
+   * per-JS-realm session token. See `accordion.ts`'s identical field, and
+   * `ExitWatchers`'s own header in `disclosure-motion.ts`, for the full
+   * rationale (#264 review-264i) — a restored slice's `session` is foreign
+   * to this realm and reads as unwatched regardless of its `count`, so it
+   * can never resurrect a hang. Never a caller-facing init option;
+   * `init()` always starts it at `initExitWatchers()`.
    */
-  exitWatched: boolean
+  exitWatchers: ExitWatchers
 }
 
 export type CollapsibleMsg =
@@ -70,7 +71,7 @@ export function init(opts: CollapsibleInit = {}): CollapsibleState {
     closing: false,
     exitGeneration: 0,
     animated: opts.animated ?? false,
-    exitWatched: false,
+    exitWatchers: initExitWatchers(),
   }
 }
 
@@ -85,7 +86,7 @@ function withOpen(state: CollapsibleState, open: boolean): CollapsibleState {
     open,
     state.closing,
     state.exitGeneration,
-    state.animated && state.exitWatched,
+    state.animated && isExitWatched(state.exitWatchers),
   )
   return {
     ...state,
@@ -97,13 +98,15 @@ function withOpen(state: CollapsibleState, open: boolean): CollapsibleState {
 
 export function update(state: CollapsibleState, msg: CollapsibleMsg): [CollapsibleState, never[]] {
   if (msg.type === 'exitWatcherAttach') {
-    return state.exitWatched ? [state, []] : [{ ...state, exitWatched: true }, []]
+    return [{ ...state, exitWatchers: attachExitWatcher(state.exitWatchers) }, []]
   }
   if (msg.type === 'exitWatcherDetach') {
-    // Sets `exitWatched` to `false` UNCONDITIONALLY (#264 review M1) — see
-    // accordion.ts's identical note.
-    if (!state.exitWatched && !state.closing) return [state, []]
-    return [{ ...state, exitWatched: false, closing: false }, []]
+    const { watchers, settledToZero } = detachExitWatcher(state.exitWatchers)
+    if (!settledToZero) return [{ ...state, exitWatchers: watchers }, []]
+    // See accordion.ts's identical note: settle any currently-closing panel
+    // immediately, since nothing will send the `exitComplete` that would
+    // otherwise clear it.
+    return [{ ...state, exitWatchers: watchers, closing: false }, []]
   }
   if (msg.type === 'exitComplete') {
     return state.closing && state.exitGeneration === msg.generation
@@ -199,22 +202,9 @@ export function connect(
       'intended.',
   )
   const warnIfClosedWithoutWatcher = (before: CollapsibleState, after: CollapsibleState): void => {
-    if (!before.animated || before.exitWatched) return
+    if (!before.animated || isExitWatched(before.exitWatchers)) return
     warnMissingWatcher(before.open && !after.open && !after.closing)
   }
-  // Counts how many `exitCompletion` mounts are CURRENTLY live, entirely in
-  // THIS closure (#264 review M1) — see `createExitWatcherCounter`'s header.
-  // Shared by dispatcher identity across every `connect()` call over the
-  // same slice — see accordion.ts's identical note.
-  const exitWatcher = sharedExitWatcherCounter(
-    send,
-    () => send({ type: 'exitWatcherAttach' }),
-    () => send({ type: 'exitWatcherDetach' }),
-  )
-  // Self-heals a restored state slice carrying a stale `exitWatched: true`
-  // with nothing mounted this session — see accordion.ts's identical note
-  // and `scheduleStaleExitWatcherRecovery`'s own header.
-  scheduleStaleExitWatcherRecovery(state, exitWatcher, () => send({ type: 'exitWatcherDetach' }))
   const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] => {
     const current = state.peek()
     return current.closing
@@ -307,18 +297,15 @@ export function connect(
       onTransitionEnd: tagSend(send, ['exitComplete'], completeExit),
       onTransitionCancel: tagSend(send, ['exitComplete'], completeExit),
     },
-    exitCompletion: onMount((container: Element) => {
-      const detachWatcher = exitWatcher.attach()
-      const dispose = createDisclosureExitCompletionMount(
+    exitCompletion: onMount(
+      createDisclosureExitCompletionMount(
         getElementByIdInScope,
         exitWatchEntries,
         (_key, generation) => send({ type: 'exitComplete', generation }),
-      )(container)
-      return () => {
-        dispose?.()
-        detachWatcher()
-      }
-    }),
+        () => send({ type: 'exitWatcherAttach' }),
+        () => send({ type: 'exitWatcherDetach' }),
+      ),
+    ),
   }
 }
 

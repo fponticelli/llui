@@ -8,12 +8,15 @@ import {
   type RetainedExitGeneration,
 } from '../internal/retained-exit.js'
 import {
+  attachExitWatcher,
   createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
   createMissingExitWatcherWarning,
-  scheduleStaleExitWatcherRecovery,
-  sharedExitWatcherCounter,
+  detachExitWatcher,
+  initExitWatchers,
+  isExitWatched,
   type DisclosureExitWatchEntry,
+  type ExitWatchers,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
 
@@ -45,28 +48,21 @@ export interface AccordionState {
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
   /**
-   * IDEMPOTENT BOOLEAN: is at least one `parts.exitCompletion` CURRENTLY
-   * mounted (#264 item F1)? `closing` retention only ever engages when
-   * `animated && exitWatched` — never `animated` alone — so a forgotten
-   * `exitCompletion` placement closes instantly instead of hanging `closing`
-   * + `inert` forever.
-   *
-   * The actual COUNT of mounted instances (needed so placing `exitCompletion`
-   * TWICE — an unusual but real shape, e.g. two arms of a conditional both
-   * rendering it — tracks correctly) lives in `connect()`'s OWN closure, NOT
-   * here (#264 review M1) — a persisted/restored state slice that bypasses
-   * `init()` (a host's own hydration layer handing a JSON snapshot straight
-   * to this reducer) can carry a stale count from a past session, and
-   * incrementing/decrementing relative to that WRONG baseline can leave a
-   * real "nothing is watching any more" situation still reading as watched,
-   * hanging `closing` forever the moment the one real watcher this session
-   * ever had detaches. `exitWatcherAttach` sets this `true` (sent only on
-   * the closure count's 0->1 transition); `exitWatcherDetach` sets it `false`
-   * UNCONDITIONALLY (sent only on the 1->0 transition) and settles any
-   * currently-closing item — never a caller-facing init option, and
-   * `init()` always starts it at `false`.
+   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
+   * per-JS-realm session token — see `ExitWatchers`'s own header in
+   * `disclosure-motion.ts` for the full rationale (#264 review-264i: this
+   * replaced a closure-owned counter keyed by dispatcher identity, which
+   * broke when two `connect()` calls over the same slice used two DIFFERENT
+   * inline `send` wrappers). `closing` retention only ever engages when
+   * `animated && isExitWatched(exitWatchers)` — never `animated` alone — so
+   * a forgotten `exitCompletion` placement closes instantly instead of
+   * hanging `closing` + `inert` forever, and a state slice RESTORED from a
+   * past session (its `session` necessarily foreign to this realm) reads as
+   * unwatched regardless of its `count`, so it can never resurrect a hang
+   * either. Never a caller-facing init option; `init()` always starts it at
+   * `initExitWatchers()` (this realm's session, count 0).
    */
-  exitWatched: boolean
+  exitWatchers: ExitWatchers
 }
 
 export type AccordionMsg =
@@ -119,7 +115,7 @@ export function init(opts: AccordionInit = {}): AccordionState {
     exitGenerations: [],
     exitSequence: 0,
     animated: opts.animated ?? false,
-    exitWatched: false,
+    exitWatchers: initExitWatchers(),
   }
 }
 
@@ -140,7 +136,7 @@ function withValue(state: AccordionState, value: string[]): AccordionState {
     state.closing,
     state.exitGenerations,
     state.exitSequence,
-    state.animated && state.exitWatched,
+    state.animated && isExitWatched(state.exitWatchers),
   )
   return {
     ...state,
@@ -165,17 +161,16 @@ function toggleValue(state: AccordionState, value: string): string[] {
 
 export function update(state: AccordionState, msg: AccordionMsg): [AccordionState, never[]] {
   if (msg.type === 'exitWatcherAttach') {
-    return state.exitWatched ? [state, []] : [{ ...state, exitWatched: true }, []]
+    return [{ ...state, exitWatchers: attachExitWatcher(state.exitWatchers) }, []]
   }
   if (msg.type === 'exitWatcherDetach') {
-    // Sets `exitWatched` to `false` UNCONDITIONALLY (#264 review M1) — this
-    // message is sent only on the closure counter's 1->0 transition, so it
-    // is already known that NOTHING is watching any more; settle every
-    // currently-retained exit immediately, since nothing will ever send the
+    const { watchers, settledToZero } = detachExitWatcher(state.exitWatchers)
+    if (!settledToZero) return [{ ...state, exitWatchers: watchers }, []]
+    // Settle every currently-retained exit immediately: nothing is watching
+    // this slice any more in this realm, so nothing will ever send the
     // `exitComplete` that would otherwise clear it (#264 item F1 — "detach
     // mid-closing settles").
-    if (!state.exitWatched && state.closing.length === 0) return [state, []]
-    return [{ ...state, exitWatched: false, closing: [], exitGenerations: [] }, []]
+    return [{ ...state, exitWatchers: watchers, closing: [], exitGenerations: [] }, []]
   }
   if (msg.type === 'exitComplete') {
     if (
@@ -325,30 +320,12 @@ export function connect(
       'intended.',
   )
   const warnIfClosedWithoutWatcher = (before: AccordionState, after: AccordionState): void => {
-    if (!before.animated || before.exitWatched) return
+    if (!before.animated || isExitWatched(before.exitWatchers)) return
     const closedWithoutRetention = before.value.some(
       (v) => !after.value.includes(v) && !after.closing.includes(v),
     )
     warnMissingWatcher(closedWithoutRetention)
   }
-  // Counts how many `exitCompletion` mounts are CURRENTLY live, entirely in
-  // THIS closure (#264 review M1) — see `createExitWatcherCounter`'s header
-  // for why state itself must never carry the count. Shared by DISPATCHER
-  // identity across every `connect()` call over the same slice (#264 review
-  // follow-up — "the two-connect-on-one-slice case"), so two `connect()`
-  // calls sharing a `send` share one real count instead of two independent
-  // (and therefore inconsistent) ones.
-  const exitWatcher = sharedExitWatcherCounter(
-    send,
-    () => send({ type: 'exitWatcherAttach' }),
-    () => send({ type: 'exitWatcherDetach' }),
-  )
-  // Self-heals a RESTORED state slice carrying a stale `exitWatched: true`
-  // with nothing actually mounted this session (#264 review — follow-up to
-  // M1, which moved the COUNT into this closure but left the boolean itself
-  // as ordinary, persistable state). See `scheduleStaleExitWatcherRecovery`'s
-  // own header for the full timing rationale.
-  scheduleStaleExitWatcherRecovery(state, exitWatcher, () => send({ type: 'exitWatcherDetach' }))
   const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] =>
     state.peek().closing.map((value) => ({
       key: value,
@@ -405,18 +382,15 @@ export function connect(
       'data-part': 'root',
       'data-orientation': 'vertical',
     },
-    exitCompletion: onMount((container: Element) => {
-      const detachWatcher = exitWatcher.attach()
-      const dispose = createDisclosureExitCompletionMount(
+    exitCompletion: onMount(
+      createDisclosureExitCompletionMount(
         getElementByIdInScope,
         exitWatchEntries,
         (value, generation) => send({ type: 'exitComplete', value, generation }),
-      )(container)
-      return () => {
-        dispose?.()
-        detachWatcher()
-      }
-    }),
+        () => send({ type: 'exitWatcherAttach' }),
+        () => send({ type: 'exitWatcherDetach' }),
+      ),
+    ),
     item: (value: string): AccordionItemParts => ({
       trigger: {
         type: 'button',

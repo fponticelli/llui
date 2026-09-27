@@ -247,12 +247,14 @@ export interface DisclosureExitWatchEntry {
  * "still running" and warned falsely after the deadline even when nothing
  * was actually stuck) and (b) needed a whole disposal/dedupe apparatus to
  * avoid leaking timers or re-warning. The fail-safe is now structural
- * instead of diagnostic: `connect()` tracks whether ITS OWN
- * `exitCompletion` mount is currently attached (`state.exitWatched`, flipped
- * by an `exitWatcherAttach`/`exitWatcherDetach` message this mount sends on
- * mount/cleanup) and the reducer only ever enters `closing` when
- * `animated && exitWatched` both hold — otherwise it closes INSTANTLY, the
- * same as `animated: false`. A forgotten placement can therefore never hang:
+ * instead of diagnostic: `connect()` tracks how many `exitCompletion` mounts
+ * are currently attached in `state.exitWatchers` (`{ session, count }`,
+ * #264 review-264i — see `ExitWatchers`'s own header below), incremented/
+ * decremented by an `exitWatcherAttach`/`exitWatcherDetach` message this
+ * mount sends on mount/cleanup, and the reducer only ever enters `closing`
+ * when `animated && isExitWatched(exitWatchers)` both hold — otherwise it
+ * closes INSTANTLY, the same as `animated: false`. A forgotten placement
+ * can therefore never hang:
  * there is no `closing` state to get stuck in. `connect()` also warns once,
  * synchronously, the first time a close would have retained but the watcher
  * was never attached (see `accordion.ts`/`collapsible.ts`), which needs no
@@ -262,12 +264,29 @@ export interface DisclosureExitWatchEntry {
  * below settles those reactively off a `MutationObserver` on `data-state`,
  * with no deadline and nothing to leak.
  */
+/**
+ * `sendAttach`/`sendDetach` fold the watcher-count bookkeeping into THIS one
+ * mount instead of a wrapping `onMount` body each caller used to write by
+ * hand (#264 review follow-up — one shared helper, never two copies that
+ * could drift): `accordion.ts` and `collapsible.ts` now pass this function
+ * itself as their `exitCompletion`'s `onMount` callback, with nothing
+ * wrapping it. `sendAttach` fires exactly once, synchronously, before the
+ * first `check()` (so a value already `closing` at mount is checked against
+ * a watcher the reducer already knows is attached); `sendDetach` fires
+ * exactly once, from the returned cleanup, whether or not `MutationObserver`
+ * exists — a browser with no exit-motion support still needs its detach
+ * counted, or the reducer's count and the real mount count drift apart the
+ * moment such an environment unmounts.
+ */
 export function createDisclosureExitCompletionMount(
   getElementByIdInScope: (root: Node, id: string) => HTMLElement | null,
   getEntries: () => readonly DisclosureExitWatchEntry[],
   onSettle: (key: string, generation: number) => void,
-): (container: Element) => (() => void) | void {
+  sendAttach: () => void,
+  sendDetach: () => void,
+): (container: Element) => () => void {
   return (container: Element) => {
+    sendAttach()
     const check = (): void => {
       for (const entry of getEntries()) {
         if (!entry.closing) continue
@@ -279,14 +298,17 @@ export function createDisclosureExitCompletionMount(
     }
     check()
 
-    if (typeof MutationObserver === 'undefined') return undefined
+    if (typeof MutationObserver === 'undefined') return sendDetach
     const observer = new MutationObserver(check)
     observer.observe(container, {
       attributes: true,
       attributeFilter: ['data-state'],
       subtree: true,
     })
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      sendDetach()
+    }
   }
 }
 
@@ -339,139 +361,128 @@ export function createDisclosureExitTracker(): DisclosureExitTracker {
 }
 
 /**
- * Tracks how many `exitCompletion` Mountables are CURRENTLY mounted for one
- * `connect()` instance, entirely inside THIS closure — never in serialized
- * state (#264 review M1). A persisted/restored state slice that bypasses
- * `init()` (a host's own hydration layer handing a JSON snapshot straight to
- * a component, rather than calling `init()`) can carry a stale count from a
- * PAST session; incrementing/decrementing relative to that wrong baseline
- * can leave a real "nothing is watching any more" situation still reading as
- * "watched", hanging `closing` forever the moment the one real watcher this
- * session ever had detaches. Counting in the closure instead means state
- * only ever needs an IDEMPOTENT BOOLEAN (`exitWatcherAttach` on the 0->1
- * transition, `exitWatcherDetach` on the 1->0 transition) — `attach()`/its
- * returned detacher are the only two calls a `connect()` needs, and multiple
- * concurrent placements (an unusual but real shape — two arms of a
- * conditional both rendering `exitCompletion`) are still correct: one
- * detaching does not send `exitWatcherDetach` while another placement is
- * still mounted.
+ * How many `exitCompletion` mounts a disclosure component's `closing`
+ * retention is conditioned on being CURRENTLY live — held entirely in
+ * ordinary, JSON-serializable STATE (#264 review-264i: replaces the
+ * closure-owned counter from #264 review M1/review-264h, which broke the
+ * moment two `connect()` calls over the same slice used two DIFFERENT
+ * dispatcher wrappers — an idiomatic
+ * `(msg) => send({ type: 'accordion', msg })` written inline at each call
+ * site, rather than a single shared `send` reference — since the closure
+ * counter was keyed by DISPATCHER IDENTITY and two distinct inline arrows
+ * are two distinct objects no `WeakMap` can unify. Counting in STATE instead
+ * means every `exitWatcherAttach`/`exitWatcherDetach` message lands on the
+ * SAME reducer regardless of how many independent `connect()` closures (or
+ * dispatcher wrapper shapes) sent it, so the count is correct by
+ * construction — no coordination between `connect()` calls is needed at
+ * all.
+ *
+ * The hazard the OLD design's closure-counting existed to avoid — a
+ * persisted/restored state slice bypassing `init()` and carrying a stale
+ * count from a PAST session, permanently reading as "watched" with nothing
+ * really mounted — is answered here by `session`, a token identifying the
+ * CURRENT JS realm (one value per module evaluation, i.e. once per page
+ * load/worker/SSR render; see {@link CURRENT_EXIT_WATCHER_SESSION}). A
+ * restored `count` whose `session` does not match this realm's is FOREIGN —
+ * necessarily from a past page load, since nothing in this realm could have
+ * written it — and is read as unwatched regardless of its number, exactly
+ * once, the first time either `attachExitWatcher` or `detachExitWatcher`
+ * touches it: attaching resets it to `{ session: CURRENT, count: 1 }` and
+ * detaching to `{ session: CURRENT, count: 0 }`, so a foreign entry can
+ * never need a second correction. No microtask, no scheduling, no
+ * `try`/`catch` around a signal peek, no dev-log noise on a disposed
+ * `send` — the self-heal is a pure, synchronous, ordinary reducer
+ * transition, not a side effect racing the mount.
+ *
+ * `count` still exists (not a bare boolean) so TWO concurrent placements —
+ * an unusual but real shape, e.g. two arms of a conditional both rendering
+ * `exitCompletion` — are correct: one detaching does not un-watch the slice
+ * while another placement is still mounted.
  */
-export interface ExitWatcherCounter {
-  /** Current live count — read-only; the only writes are through `attach()`. */
+export interface ExitWatchers {
+  readonly session: string
   readonly count: number
-  attach: () => () => void
 }
 
-export function createExitWatcherCounter(
-  onFirstAttach: () => void,
-  onLastDetach: () => void,
-): ExitWatcherCounter {
-  let count = 0
-  return {
-    get count() {
-      return count
-    },
-    attach(): () => void {
-      count += 1
-      if (count === 1) onFirstAttach()
-      let detached = false
-      return () => {
-        if (detached) return
-        detached = true
-        count = Math.max(0, count - 1)
-        if (count === 0) onLastDetach()
-      }
-    },
+/**
+ * One token per module evaluation — a fresh value every time this module is
+ * loaded into a new JS realm (a page load, a worker, an SSR render process),
+ * and the SAME value for every `connect()` call within that realm, however
+ * many independent components/dispatchers there are. Its value is never
+ * compared across realms except for equality against a state slice's own
+ * recorded `session` — a non-deterministic value is fine, and no ordering or
+ * uniqueness guarantee beyond "not equal to another realm's token, almost
+ * certainly" is relied on.
+ *
+ * SSR-safe by construction, with no special-casing: the server process that
+ * renders `renderToString` output evaluates this module in its OWN realm and
+ * never mounts `exitCompletion` (SSR does not run `onMount`), so a
+ * server-rendered `exitWatchers` always serializes as `{ session:
+ * <server's token>, count: 0 }`. The client then evaluates this module
+ * AGAIN, in the browser's realm, minting its OWN token — necessarily
+ * different from the server's — so hydration reads the server's `session`
+ * as foreign and treats it as unwatched, which is already the correct
+ * answer (`count` was `0` regardless). The token itself is never rendered
+ * into DOM output (nothing here touches an attribute or text node), so
+ * there is no hydration MISMATCH to cause — only ordinary component state
+ * that happens to differ from the server's, exactly like any other field a
+ * host chooses not to carry across a reload.
+ */
+const CURRENT_EXIT_WATCHER_SESSION: string = createExitWatcherSession()
+
+function createExitWatcherSession(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
   }
+  return `${Date.now()}:${Math.random().toString(36).slice(2)}`
+}
+
+/** The state a fresh `init()` always starts with: this realm's own session,
+ * watching nobody. */
+export function initExitWatchers(): ExitWatchers {
+  return { session: CURRENT_EXIT_WATCHER_SESSION, count: 0 }
 }
 
 /**
- * `connect()` may be called MORE THAN ONCE over the same underlying slice —
- * an unusual but real shape (e.g. two independent views each wiring up the
- * same accordion instance for their own DOM). Each call used to build its
- * OWN `createExitWatcherCounter`, so two counters tracked the SAME real
- * mounts independently: one `connect()`'s counter could read 1 (attached)
- * while the other's read 0, and the SECOND could then wrongly fire the
- * "forgot to place exitCompletion" recovery below against a slice a SIBLING
- * connect() call is genuinely watching (#264 review — "the two-connect-on-
- * one-slice case"). Keyed by the DISPATCHER identity (`send`) rather than
- * the state slice itself, because `send` is the one value every `connect()`
- * call over the same reducer necessarily shares, and — unlike the state
- * signal — it is a stable object reference across `connect()` calls
- * (queueable in a `WeakMap`, and never recreated per render the way a
- * derived signal handle can be). The first `connect()` call for a given
- * `send` wins: its `onFirstAttach`/`onLastDetach` callbacks are the ones
- * that end up wired to the shared counter, but since both calls dispatch
- * through the SAME `send`, the message each would have sent is identical —
- * only one of them needs to actually fire it.
+ * `true` exactly when at least one `exitCompletion` is mounted IN THIS
+ * REALM right now — a foreign `session` (necessarily from a past page load)
+ * is never watched, whatever its `count` says.
  */
-const SHARED_EXIT_WATCHER_COUNTERS = new WeakMap<object, ExitWatcherCounter>()
-
-export function sharedExitWatcherCounter(
-  dispatcher: object,
-  onFirstAttach: () => void,
-  onLastDetach: () => void,
-): ExitWatcherCounter {
-  const existing = SHARED_EXIT_WATCHER_COUNTERS.get(dispatcher)
-  if (existing !== undefined) return existing
-  const counter = createExitWatcherCounter(onFirstAttach, onLastDetach)
-  SHARED_EXIT_WATCHER_COUNTERS.set(dispatcher, counter)
-  return counter
+export function isExitWatched(watchers: ExitWatchers): boolean {
+  return watchers.session === CURRENT_EXIT_WATCHER_SESSION && watchers.count > 0
 }
 
-/**
- * Self-heals a state slice restored (JSON round trip, bypassing `init()`)
- * with a STALE `exitWatched: true` from a past session (#264 review —
- * follow-up to M1's mount-count fix, which moved the COUNT into `connect()`'s
- * closure but left the BOOLEAN itself as ordinary, persistable state; a
- * restored slice can still carry a stale `true` with NOTHING mounted this
- * session, which — read uncorrected — makes the very next close retain
- * against a watcher that will never complete it, hanging `closing` + `inert`
- * exactly like the bug M1 fixed, and ALSO suppresses the "you forgot to
- * place exitCompletion" warning, since that warning's own condition is
- * `!before.exitWatched`).
- *
- * Called once per `connect()`, unconditionally — cheap, since the ONLY path
- * that ever sends anything is the pathological restored-stale-flag case;
- * ordinary `init()`-constructed state always starts `exitWatched: false`, so
- * this is a no-op on every normal mount. Deferred to a microtask rather than
- * checked synchronously at `connect()` time for two reasons: (1) `connect()`
- * runs DURING `view()`, before this build's OWN `onMount` callbacks have had
- * a chance to run (they fire only once the structural primitives holding
- * them are PLACED, after `view()` returns) — checking synchronously would
- * see the closure count as 0 even for an instance whose `exitCompletion` is
- * about to attach in the very same mount pass, and (2) peeking a signal with
- * no live value (`rootSignal()`-backed structural tests) throws by design,
- * so the peek is wrapped in a `try`/`catch` here rather than left to fail a
- * test that never mounts anything. A real mount's ENTIRE initial `onMount`
- * pass runs synchronously inside `mountApp`/`hydrateSignalApp`, which
- * returns before any microtask can run, so by the time this callback fires,
- * `counter.count` already reflects whether a real watcher attached during
- * that SAME mount — and stays IDEMPOTENT from there: it corrects the flag
- * (and settles anything spuriously `closing`) via the ordinary
- * `exitWatcherDetach` message exactly once, the same message a real detach
- * sends, so nothing about it needs to be re-armed or re-checked later.
- *
- * SSR-safe / disposed-safe: SSR (`renderToString`) disposes its whole tree
- * synchronously before returning, and the framework's own `send()` already
- * no-ops (with a dev log) after disposal — this schedules through the same
- * `send`, so it inherits that safety net rather than needing a second one.
- */
-export function scheduleStaleExitWatcherRecovery<S extends { readonly exitWatched: boolean }>(
-  state: { peek(): S },
-  counter: ExitWatcherCounter,
-  sendDetach: () => void,
-): void {
-  if (typeof queueMicrotask !== 'function') return
-  queueMicrotask(() => {
-    let current: S
-    try {
-      current = state.peek()
-    } catch {
-      return
-    }
-    if (counter.count === 0 && current.exitWatched) sendDetach()
-  })
+/** Reducer transition for `exitWatcherAttach`. A foreign `session` is reset
+ * to this realm's, at count 1 — it cannot need incrementing, since nothing
+ * in this realm could have attached against it before now. */
+export function attachExitWatcher(watchers: ExitWatchers): ExitWatchers {
+  return watchers.session === CURRENT_EXIT_WATCHER_SESSION
+    ? { session: watchers.session, count: watchers.count + 1 }
+    : { session: CURRENT_EXIT_WATCHER_SESSION, count: 1 }
+}
+
+export interface ExitWatcherDetachResult {
+  readonly watchers: ExitWatchers
+  /** `true` exactly when this detach brought the slice from watched to
+   * unwatched (in THIS realm) — the caller settles any currently-closing
+   * content only on this transition, never on every detach, matching the
+   * original 1->0-only settle behavior. */
+  readonly settledToZero: boolean
+}
+
+/** Reducer transition for `exitWatcherDetach`. A foreign `session` resets to
+ * this realm's at count 0 (never negative — there was nothing in this realm
+ * to detach from) and always reports `settledToZero`, since a foreign entry
+ * is by definition already not watched by this realm and adopting it is
+ * itself the corrective transition (the #264 review-264h "restored stale
+ * flag" case, now handled by the SAME arithmetic as an ordinary detach
+ * rather than a separate microtask-scheduled recovery). */
+export function detachExitWatcher(watchers: ExitWatchers): ExitWatcherDetachResult {
+  if (watchers.session !== CURRENT_EXIT_WATCHER_SESSION) {
+    return { watchers: { session: CURRENT_EXIT_WATCHER_SESSION, count: 0 }, settledToZero: true }
+  }
+  const count = Math.max(0, watchers.count - 1)
+  return { watchers: { session: watchers.session, count }, settledToZero: count === 0 }
 }
 
 /**
