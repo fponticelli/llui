@@ -3,7 +3,8 @@
   "extends": ["//"],
   "tasks": {
     "test": {
-      "dependsOn": ["build", "^build"]
+      "dependsOn": ["build", "^build"],
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/registry/registry.json"]
     }
   }
 }

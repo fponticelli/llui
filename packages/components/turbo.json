@@ -9,6 +9,9 @@
         "package.json",
         "$TURBO_ROOT$/scripts/publish-component-styles.mjs"
       ]
+    },
+    "test": {
+      "inputs": ["$TURBO_EXTENDS$", "$TURBO_ROOT$/registry/registry.json"]
     }
   }
 }

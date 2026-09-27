@@ -72,12 +72,12 @@ describe('published LLui product contract', () => {
       return counts
     }, {})
 
-    expect(contract.entries).toHaveLength(94)
+    expect(contract.entries).toHaveLength(95)
     expect(familyCounts).toEqual({
       'forms-controls': 25,
       'navigation-data': 29,
       'menus-overlays': 17,
-      'specialized-tools': 23,
+      'specialized-tools': 24,
     })
   })
 
