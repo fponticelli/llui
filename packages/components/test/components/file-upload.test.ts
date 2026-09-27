@@ -636,6 +636,12 @@ describe('file-upload upload lifecycle (#266)', () => {
   it('retry is only meaningful after a failure', () => {
     const s0 = two()
     expect(update(s0, { type: 'retryUpload', id: 'a' })[0]).toBe(s0)
+    // Not while it is still going, and never after it finished: a stray retry
+    // must not restart an upload that is in flight or already done.
+    const [uploading] = update(s0, { type: 'uploadProgress', id: 'a', progress: 0.6 })
+    expect(update(uploading, { type: 'retryUpload', id: 'a' })[0]).toBe(uploading)
+    const [done] = update(uploading, { type: 'uploadSucceeded', id: 'a' })
+    expect(update(done, { type: 'retryUpload', id: 'a' })[0]).toBe(done)
   })
 
   it('removing or clearing files drops their upload entries', () => {
