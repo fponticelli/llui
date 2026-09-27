@@ -90,7 +90,7 @@ const App = component<State, Msg, never>({
 >
 > **Breaking (#265 A4): `watchSubmenuPositioning` is REMOVED — submenu positioning is now engine-owned.** It was a consumer-wired `MutationObserver` polling the mounted build root for `[data-part="subcontent"]` nodes and hand-rolling `attachFloating` over each one found; every call site had to remember to wire it from `onMount`, and it saw only whatever a hand-rolled `show(isOpen, [subPositioner, subContent])` block happened to render. Each of `menu`, `context-menu`, and `menubar` now exports `subOverlay(opts)`, built on the same `createOverlay` engine as their own `overlay()`: call it once per `children`-bearing item, alongside its `subTrigger`, in place of that hand-rolled block —
 >
-> ```ts
+> ```typescript @doc-skip
 > // before
 > show(
 >   openPath.map((p) => p.includes(it.value)),
