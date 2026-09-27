@@ -594,8 +594,9 @@ export interface FloatingOptions {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to the first focusable
-   * descendant, else the container itself (give it `tabindex="-1"`). */
+  /** Element to focus when the trap activates. Defaults to the first
+   * tab-reachable descendant, else the container itself (given a temporary
+   * `tabindex="-1"` when it has none). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean

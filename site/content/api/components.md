@@ -6065,10 +6065,12 @@ remainingMs frozen at 0) that is later patched to a finite duration would
 inherit that frozen 0 and dismiss on the very next tick instead of lasting
 its new duration.
 
-A key present with the value `undefined` means "not patched" (#265 G6), the
-same as an absent key: `{ duration: undefined }` leaves the countdown alone
-rather than re-seeding it to 0. To make a toast sticky, patch
-`duration: null`.
+`undefined` on a REQUIRED field (`type`, `duration`, `dismissable`) means
+"not patched", the same as an absent key (#265 G6): `{ duration: undefined }`
+leaves the countdown alone rather than re-seeding it to 0 — patch
+`duration: null` to make a toast sticky. On an OPTIONAL field (`title`,
+`description`, `ariaLive`) `undefined` clears it, so a loading -> success
+patch can drop a description the success toast should not keep.
 
 ```typescript
 export type ToastPatch = Partial<Omit<Toast, 'id' | 'status' | 'remainingMs' | 'pausedBy'>>
@@ -6080,7 +6082,7 @@ Why a toast's countdown is paused. The row's own handlers use `'hover'` and
 `'focus'`; a `pause`/`resume` message without a reason uses `'manual'`.
 
 ```typescript
-export type ToastPauseReason = 'focus' | 'hover' | 'manual'
+export type ToastPauseReason = (typeof PAUSE_REASONS)[number]
 ```
 
 ##### `ToastPlacement` from `@llui/components`
@@ -9645,8 +9647,9 @@ export interface FocusRestoreQuery {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to the first focusable
-   * descendant, else the container itself (give it `tabindex="-1"`). */
+  /** Element to focus when the trap activates. Defaults to the first
+   * tab-reachable descendant, else the container itself (given a temporary
+   * `tabindex="-1"` when it has none). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -14458,7 +14461,9 @@ export interface ToastItemParts {
     'data-scope': 'toast'
     'data-part': 'close-trigger'
     /** Reactive: true while the toast is not `dismissable` — the button leaves
-     * the accessibility tree and the tab order. */
+     * the accessibility tree and the tab order. Hiding it while it has focus
+     * is safe for the `'focus'` pause reason: the browser's focus fixup fires
+     * `blur`/`focusout` on the row (verified in Chromium), which releases it. */
     hidden: Signal<boolean>
     /** Dismisses the toast; ignored while it is not `dismissable`. */
     onClick: (e: MouseEvent) => void
@@ -17588,8 +17593,9 @@ export interface FocusRestoreQuery {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to the first focusable
-   * descendant, else the container itself (give it `tabindex="-1"`). */
+  /** Element to focus when the trap activates. Defaults to the first
+   * tab-reachable descendant, else the container itself (given a temporary
+   * `tabindex="-1"` when it has none). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -19547,8 +19553,9 @@ export declare function pushFocusTrap(opts: FocusTrapOptions): () => void
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to the first focusable
-   * descendant, else the container itself (give it `tabindex="-1"`). */
+  /** Element to focus when the trap activates. Defaults to the first
+   * tab-reachable descendant, else the container itself (given a temporary
+   * `tabindex="-1"` when it has none). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -21394,8 +21401,9 @@ export interface FocusRestoreQuery {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to the first focusable
-   * descendant, else the container itself (give it `tabindex="-1"`). */
+  /** Element to focus when the trap activates. Defaults to the first
+   * tab-reachable descendant, else the container itself (given a temporary
+   * `tabindex="-1"` when it has none). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -28056,10 +28064,12 @@ remainingMs frozen at 0) that is later patched to a finite duration would
 inherit that frozen 0 and dismiss on the very next tick instead of lasting
 its new duration.
 
-A key present with the value `undefined` means "not patched" (#265 G6), the
-same as an absent key: `{ duration: undefined }` leaves the countdown alone
-rather than re-seeding it to 0. To make a toast sticky, patch
-`duration: null`.
+`undefined` on a REQUIRED field (`type`, `duration`, `dismissable`) means
+"not patched", the same as an absent key (#265 G6): `{ duration: undefined }`
+leaves the countdown alone rather than re-seeding it to 0 — patch
+`duration: null` to make a toast sticky. On an OPTIONAL field (`title`,
+`description`, `ariaLive`) `undefined` clears it, so a loading -> success
+patch can drop a description the success toast should not keep.
 
 ```typescript
 export type ToastPatch = Partial<Omit<Toast, 'id' | 'status' | 'remainingMs' | 'pausedBy'>>
@@ -28071,7 +28081,7 @@ Why a toast's countdown is paused. The row's own handlers use `'hover'` and
 `'focus'`; a `pause`/`resume` message without a reason uses `'manual'`.
 
 ```typescript
-export type ToastPauseReason = 'focus' | 'hover' | 'manual'
+export type ToastPauseReason = (typeof PAUSE_REASONS)[number]
 ```
 
 ##### `ToastPlacement` from `@llui/components/toast`
@@ -28295,7 +28305,9 @@ export interface ToastItemParts {
     'data-scope': 'toast'
     'data-part': 'close-trigger'
     /** Reactive: true while the toast is not `dismissable` — the button leaves
-     * the accessibility tree and the tab order. */
+     * the accessibility tree and the tab order. Hiding it while it has focus
+     * is safe for the `'focus'` pause reason: the browser's focus fixup fires
+     * `blur`/`focusout` on the row (verified in Chromium), which releases it. */
     hidden: Signal<boolean>
     /** Dismisses the toast; ignored while it is not `dismissable`. */
     onClick: (e: MouseEvent) => void
