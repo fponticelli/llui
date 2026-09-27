@@ -300,6 +300,10 @@ export function icon(name: string | Signal<string>, props?: ElProps): Mountable 
       // and `paint` corrects it per icon, so nothing reflows for the common
       // case and an odd-sized glyph settles on its first paint.
       viewBox: '0 0 24 24',
+      // The glyph's identity, from its NAME — deterministic, unlike the old
+      // per-instance marker above, so identical mounts stay byte-identical.
+      // Lets a stylesheet or a test tell glyphs apart without their paths.
+      'data-glyph': name,
       ...props,
     },
     [

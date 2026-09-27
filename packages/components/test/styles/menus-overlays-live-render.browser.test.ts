@@ -41,9 +41,31 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { Page } from 'playwright'
-import { paintedColors, bucketedKey } from './pixel-probe.js'
+import { paintedColors, bucketedKey, type RGB } from './pixel-probe.js'
 import { contrast, srgb8ToLinear } from '../../../../scripts/lib/oklch.mjs'
-import { useMenusOverlaysLiveHarness } from './menus-overlays-live-harness.js'
+import { useMenusOverlaysLiveHarness, type LivePath } from './menus-overlays-live-harness.js'
+
+const TOAST_TYPES = ['info', 'success', 'warning', 'error', 'loading', 'custom'] as const
+type ToastTypeName = (typeof TOAST_TYPES)[number]
+type Hue = 'red' | 'amber' | 'green' | 'sky' | 'violet' | 'neutral'
+
+/** The hue family of a painted colour: `neutral` when it has (near) no
+ * chroma, else by HSL hue angle. Ranges are wide on purpose — they separate
+ * the six toast families, not shades within one. */
+function hueFamily({ r, g, b }: RGB): Hue {
+  const max = Math.max(r, g, b)
+  const min = Math.min(r, g, b)
+  if (max - min < 16) return 'neutral'
+  const d = max - min
+  const h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4
+  const deg = h * 60
+  if (deg >= 340 || deg <= 20) return 'red'
+  if (deg >= 25 && deg <= 55) return 'amber'
+  if (deg >= 110 && deg <= 170) return 'green'
+  if (deg >= 180 && deg <= 215) return 'sky'
+  if (deg >= 240 && deg <= 285) return 'violet'
+  throw new Error(`hue ${deg.toFixed(0)} (rgb ${r},${g},${b}) is in no toast family`)
+}
 
 describe('menus-overlays scenario renderer, mounted live in Chromium (#265 finding #1/#2, part 3)', () => {
   const { newPage, mount, openCase } = useMenusOverlaysLiveHarness()
@@ -285,7 +307,7 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
     })
 
     it('every ToastType clears AA text contrast (>=4.5:1) and non-text contrast (>=3:1) in light, dark, and forced colors', async () => {
-      const types = ['info', 'success', 'warning', 'error', 'loading', 'custom'] as const
+      const types = TOAST_TYPES
       const modes = ['light', 'dark', 'forced'] as const
       const toTriple = (c: { r: number; g: number; b: number }): [number, number, number] => [
         c.r,
@@ -344,55 +366,86 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
       }
     })
 
-    it('places every real ToastType and every real toast placement, LTR and RTL', async () => {
-      const types = ['info', 'success', 'warning', 'error', 'loading', 'custom'] as const
-      // Types carrying their own real color cue — real painted BORDER
-      // colors, never a CSS-string comparison. Border, not background, is
-      // the cue both skins actually use: the baseline recipe mixes a
-      // per-type hue into `border-color` (menus-overlays.css), and the
-      // registry recipe differentiates by `data-[type=…]:border-*`
-      // (border/icon color) while leaving `background` uniformly
-      // `bg-popover` — so a background-only check is a false positive
-      // against the registry skin, not a real per-type visual regression.
-      // `loading` has NO color cue in either skin by design (a neutral,
-      // in-progress toast should not read as an alert color) — it instead
-      // gets its own NON-COLOR glyph, asserted below for every type
-      // (loading included), which is what closes #265's finding that it
-      // used to be distinguished only by `cursor: progress`.
-      const coloredTypes = ['info', 'success', 'warning', 'error', 'custom'] as const
-      const paintedBorders: string[] = []
-      for (const toastType of types) {
-        const page = await openCase(path, 'component:toast', toastType)
-        const root = page.locator('#case [data-scope="toast"][data-part="root"]')
-        expect(await root.getAttribute('data-type')).toBe(toastType)
-        if ((coloredTypes as readonly string[]).includes(toastType)) {
-          const border = await root.evaluate((node) => getComputedStyle(node).borderColor)
-          const [painted] = await paintedColors(page, [border])
-          paintedBorders.push(bucketedKey(painted!))
-        }
-        // Every type — including `loading` — shows exactly one visible
-        // glyph: the baseline's `[data-part='type-icon'][data-icon=…]` or
-        // the registry's per-type Lucide `<svg>`, both gated purely by
-        // `data-type` (never resolved once in JS), so an `update` patching
-        // a mounted toast's `type` swaps the visible glyph with no rebuild.
-        const visibleIcons = await root.evaluate((node) => {
-          // Baseline: `[data-part='type-icon']`. Registry: the per-type
-          // Lucide `<svg>` set, each carrying its own `group-data-[type=…]/
-          // toast:` gate class — deliberately excludes the always-visible
-          // `ToastClose` `<svg>`, which carries no such class.
-          const candidates = node.querySelectorAll('[data-part="type-icon"], svg[class*="/toast:"]')
-          let count = 0
-          for (const el of candidates) {
-            if (getComputedStyle(el).display !== 'none') count++
-          }
-          return count
-        })
-        expect(visibleIcons, `${path}/${toastType} visible icon count`).toBe(1)
+    it('paints each ToastType with its own exact signature: tint hue, glyph, and forced-colors edge', async () => {
+      // EXACT per type, never "all distinct": swapping two types' tints,
+      // glyphs or edges keeps a distinct set the same size (#265 finding 12,
+      // mutants V1-V3). Both skins share the semantics; `loading` is the
+      // neutral one, told apart by its own glyph and dotted edge.
+      const HUE: Record<ToastTypeName, Hue> = {
+        info: 'sky',
+        success: 'green',
+        warning: 'amber',
+        error: 'red',
+        loading: 'neutral',
+        custom: 'violet',
       }
-      // Every real ToastType with its own colour cue must paint a genuinely
-      // distinct border — never collapse to one shared visual.
-      expect(new Set(paintedBorders).size).toBe(coloredTypes.length)
+      const GLYPH: Record<LivePath, Record<ToastTypeName, string>> = {
+        baseline: {
+          info: 'info',
+          success: 'success',
+          warning: 'warning',
+          error: 'error',
+          loading: 'loading',
+          custom: 'custom',
+        },
+        registryTailwind: {
+          info: 'lucide:info',
+          success: 'lucide:circle-check',
+          warning: 'lucide:triangle-alert',
+          error: 'lucide:circle-alert',
+          loading: 'lucide:loader-circle',
+          custom: 'lucide:sparkles',
+        },
+      }
+      const FORCED_EDGE: Record<ToastTypeName, string> = {
+        info: 'solid 4px',
+        success: 'double 4px',
+        warning: 'dashed 4px',
+        error: 'solid 4px',
+        loading: 'dotted 4px',
+        custom: 'solid 8px',
+      }
+      for (const toastType of TOAST_TYPES) {
+        const label = `${path}/${toastType}`
+        for (const theme of ['light', 'dark'] as const) {
+          const page = await openCase(path, 'component:toast', toastType, { theme })
+          const root = page.locator('#case [data-scope="toast"][data-part="root"]')
+          const border = await root.evaluate((node) => getComputedStyle(node).borderTopColor)
+          const [painted] = await paintedColors(page, [border])
+          expect(hueFamily(painted!), `${label}/${theme} tint`).toBe(HUE[toastType])
+          // Exactly one glyph shows, and it is THIS type's glyph.
+          const visible = await root.evaluate((node) =>
+            Array.from(node.querySelectorAll('[data-part="type-icon"], svg[data-glyph]'))
+              .filter((el) => getComputedStyle(el).display !== 'none')
+              .filter((el) => !el.closest('[data-part="close-trigger"]'))
+              .map((el) => el.getAttribute('data-icon') ?? el.getAttribute('data-glyph')),
+          )
+          expect(visible, `${label}/${theme} glyph`).toEqual([GLYPH[path][toastType]])
+          await page.close()
+        }
+        const page = await openCase(path, 'component:toast', toastType, { forcedColors: 'active' })
+        await page.emulateMedia({ forcedColors: 'active' })
+        const root = page.locator('#case [data-scope="toast"][data-part="root"]')
+        const edge = await root.evaluate((node) => {
+          const style = getComputedStyle(node)
+          return { edge: `${style.borderLeftStyle} ${style.borderLeftWidth}`, ink: style.color }
+        })
+        expect(edge.edge, `${label} forced edge`).toBe(FORCED_EDGE[toastType])
+        const [ink, linkText, canvasText] = await paintedColors(page, [
+          edge.ink,
+          'LinkText',
+          'CanvasText',
+        ])
+        // An error reads as a LINK-coloured, underlined toast; every other
+        // type keeps plain CanvasText.
+        expect(bucketedKey(ink!), `${label} forced ink`).toBe(
+          bucketedKey(toastType === 'error' ? linkText! : canvasText!),
+        )
+        await page.close()
+      }
+    })
 
+    it('places every real toast placement, LTR and RTL', async () => {
       const placements = [
         'top',
         'top-start',

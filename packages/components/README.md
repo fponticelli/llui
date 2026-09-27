@@ -297,6 +297,10 @@ never assigned to `innerHTML`. Icons are async (SSR emits the sized empty box)
 and need the network; point `iconConfig.api` at a self-hosted Iconify to drop the
 third-party dependency.
 
+Every `<svg>` carries `data-glyph="<prefix:name>"`, following a signal name. It is the
+glyph's identity before (or without) the fetch: select on it in CSS, or assert on it
+in a test, instead of comparing paths.
+
 ## Styling (opt-in)
 
 Components are fully headless by default. Two independent styling distributions are available; choose one for component parts.
