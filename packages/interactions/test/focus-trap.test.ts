@@ -25,4 +25,31 @@ describe('pushFocusTrap', () => {
     expect(document.activeElement).toBe(outside)
     release()
   })
+
+  // #265 H2: a modal with nothing focusable inside (a registry Drawer with no
+  // close button) left focus on <body>, outside the modal. The WAI-ARIA dialog
+  // pattern focuses the dialog itself then; the content parts carry
+  // `tabindex="-1"` for exactly that.
+  it('focuses the container itself when it holds nothing focusable', () => {
+    const container = document.createElement('div')
+    container.tabIndex = -1
+    container.append(document.createElement('p'))
+    document.body.append(container)
+    const release = pushFocusTrap({ container })
+    expect(document.activeElement).toBe(container)
+    release()
+    container.remove()
+  })
+
+  it('still prefers the first focusable descendant over the container', () => {
+    const container = document.createElement('div')
+    container.tabIndex = -1
+    const button = document.createElement('button')
+    container.append(button)
+    document.body.append(container)
+    const release = pushFocusTrap({ container })
+    expect(document.activeElement).toBe(button)
+    release()
+    container.remove()
+  })
 })

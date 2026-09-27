@@ -6,7 +6,8 @@ import { engineFocus, runEngineFocus } from './engine-focus.js'
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to first focusable. */
+  /** Element to focus when the trap activates. Defaults to the first focusable
+   * descendant, else the container itself (give it `tabindex="-1"`). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -94,8 +95,12 @@ export function pushFocusTrap(opts: FocusTrapOptions): () => void {
     if (initial && initial instanceof HTMLElement) {
       initial.focus()
     } else if (containers.length > 0) {
-      const focusables = getFocusables(containers[0]!)
-      focusables[0]?.focus()
+      const container = containers[0]!
+      // Nothing focusable inside: focus the container itself (the WAI-ARIA
+      // dialog pattern — overlay content parts carry `tabindex="-1"` for
+      // this), never leave focus behind the trap on <body> (#265 H2).
+      const target = getFocusables(container)[0] ?? container
+      if (target instanceof HTMLElement) target.focus()
     }
   })
 
