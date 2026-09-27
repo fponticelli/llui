@@ -267,7 +267,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `exitGenerations` | `RetainedExitGeneration<string>[]` |
 | `exitSequence`    | `number`                           |
 | `animated`        | `boolean`                          |
-| `exitWatched`     | `boolean`                          |
+| `exitWatchers`    | `ExitWatchers`                     |
 
 **Messages:** `toggle`, `open`, `close`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `exitComplete`, `exitWatcherAttach`, `exitWatcherDetach`
 
@@ -512,14 +512,14 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **State** (`CollapsibleState`):
 
-| Field            | Type      |
-| ---------------- | --------- |
-| `open`           | `boolean` |
-| `disabled`       | `boolean` |
-| `closing`        | `boolean` |
-| `exitGeneration` | `number`  |
-| `animated`       | `boolean` |
-| `exitWatched`    | `boolean` |
+| Field            | Type           |
+| ---------------- | -------------- |
+| `open`           | `boolean`      |
+| `disabled`       | `boolean`      |
+| `closing`        | `boolean`      |
+| `exitGeneration` | `number`       |
+| `animated`       | `boolean`      |
+| `exitWatchers`   | `ExitWatchers` |
 
 **Messages:** `toggle`, `open`, `close`, `setOpen`, `exitComplete`, `exitWatcherAttach`, `exitWatcherDetach`
 
@@ -6349,28 +6349,21 @@ export interface AccordionState {
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
   /**
-   * IDEMPOTENT BOOLEAN: is at least one `parts.exitCompletion` CURRENTLY
-   * mounted (#264 item F1)? `closing` retention only ever engages when
-   * `animated && exitWatched` — never `animated` alone — so a forgotten
-   * `exitCompletion` placement closes instantly instead of hanging `closing`
-   * + `inert` forever.
-   *
-   * The actual COUNT of mounted instances (needed so placing `exitCompletion`
-   * TWICE — an unusual but real shape, e.g. two arms of a conditional both
-   * rendering it — tracks correctly) lives in `connect()`'s OWN closure, NOT
-   * here (#264 review M1) — a persisted/restored state slice that bypasses
-   * `init()` (a host's own hydration layer handing a JSON snapshot straight
-   * to this reducer) can carry a stale count from a past session, and
-   * incrementing/decrementing relative to that WRONG baseline can leave a
-   * real "nothing is watching any more" situation still reading as watched,
-   * hanging `closing` forever the moment the one real watcher this session
-   * ever had detaches. `exitWatcherAttach` sets this `true` (sent only on
-   * the closure count's 0->1 transition); `exitWatcherDetach` sets it `false`
-   * UNCONDITIONALLY (sent only on the 1->0 transition) and settles any
-   * currently-closing item — never a caller-facing init option, and
-   * `init()` always starts it at `false`.
+   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
+   * per-JS-realm session token — see `ExitWatchers`'s own header in
+   * `disclosure-motion.ts` for the full rationale (#264 review-264i: this
+   * replaced a closure-owned counter keyed by dispatcher identity, which
+   * broke when two `connect()` calls over the same slice used two DIFFERENT
+   * inline `send` wrappers). `closing` retention only ever engages when
+   * `animated && isExitWatched(exitWatchers)` — never `animated` alone — so
+   * a forgotten `exitCompletion` placement closes instantly instead of
+   * hanging `closing` + `inert` forever, and a state slice RESTORED from a
+   * past session (its `session` necessarily foreign to this realm) reads as
+   * unwatched regardless of its `count`, so it can never resurrect a hang
+   * either. Never a caller-facing init option; `init()` always starts it at
+   * `initExitWatchers()` (this realm's session, count 0).
    */
-  exitWatched: boolean
+  exitWatchers: ExitWatchers
 }
 ```
 
@@ -7630,17 +7623,15 @@ export interface CollapsibleState {
   /** Whether close waits for the content's own animation end/cancel event. */
   animated: boolean
   /**
-   * IDEMPOTENT BOOLEAN: is at least one `parts.exitCompletion` CURRENTLY
-   * mounted (#264 item F1)? See `accordion.ts`'s identical field for the
-   * full rationale (#264 review M1): the actual mount COUNT lives in
-   * `connect()`'s own closure, never here, so a persisted/restored state
-   * slice that bypasses `init()` can never carry a stale count that hangs
-   * `closing` forever. `exitWatcherAttach` sets this `true` (sent only on
-   * the closure count's 0->1 transition); `exitWatcherDetach` sets it
-   * `false` UNCONDITIONALLY (sent only on the 1->0 transition) and settles
-   * any currently-closing panel.
+   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
+   * per-JS-realm session token. See `accordion.ts`'s identical field, and
+   * `ExitWatchers`'s own header in `disclosure-motion.ts`, for the full
+   * rationale (#264 review-264i) — a restored slice's `session` is foreign
+   * to this realm and reads as unwatched regardless of its `count`, so it
+   * can never resurrect a hang. Never a caller-facing init option;
+   * `init()` always starts it at `initExitWatchers()`.
    */
-  exitWatched: boolean
+  exitWatchers: ExitWatchers
 }
 ```
 
@@ -24326,28 +24317,21 @@ export interface AccordionState {
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
   /**
-   * IDEMPOTENT BOOLEAN: is at least one `parts.exitCompletion` CURRENTLY
-   * mounted (#264 item F1)? `closing` retention only ever engages when
-   * `animated && exitWatched` — never `animated` alone — so a forgotten
-   * `exitCompletion` placement closes instantly instead of hanging `closing`
-   * + `inert` forever.
-   *
-   * The actual COUNT of mounted instances (needed so placing `exitCompletion`
-   * TWICE — an unusual but real shape, e.g. two arms of a conditional both
-   * rendering it — tracks correctly) lives in `connect()`'s OWN closure, NOT
-   * here (#264 review M1) — a persisted/restored state slice that bypasses
-   * `init()` (a host's own hydration layer handing a JSON snapshot straight
-   * to this reducer) can carry a stale count from a past session, and
-   * incrementing/decrementing relative to that WRONG baseline can leave a
-   * real "nothing is watching any more" situation still reading as watched,
-   * hanging `closing` forever the moment the one real watcher this session
-   * ever had detaches. `exitWatcherAttach` sets this `true` (sent only on
-   * the closure count's 0->1 transition); `exitWatcherDetach` sets it `false`
-   * UNCONDITIONALLY (sent only on the 1->0 transition) and settles any
-   * currently-closing item — never a caller-facing init option, and
-   * `init()` always starts it at `false`.
+   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
+   * per-JS-realm session token — see `ExitWatchers`'s own header in
+   * `disclosure-motion.ts` for the full rationale (#264 review-264i: this
+   * replaced a closure-owned counter keyed by dispatcher identity, which
+   * broke when two `connect()` calls over the same slice used two DIFFERENT
+   * inline `send` wrappers). `closing` retention only ever engages when
+   * `animated && isExitWatched(exitWatchers)` — never `animated` alone — so
+   * a forgotten `exitCompletion` placement closes instantly instead of
+   * hanging `closing` + `inert` forever, and a state slice RESTORED from a
+   * past session (its `session` necessarily foreign to this realm) reads as
+   * unwatched regardless of its `count`, so it can never resurrect a hang
+   * either. Never a caller-facing init option; `init()` always starts it at
+   * `initExitWatchers()` (this realm's session, count 0).
    */
-  exitWatched: boolean
+  exitWatchers: ExitWatchers
 }
 ```
 
@@ -26173,17 +26157,15 @@ export interface CollapsibleState {
   /** Whether close waits for the content's own animation end/cancel event. */
   animated: boolean
   /**
-   * IDEMPOTENT BOOLEAN: is at least one `parts.exitCompletion` CURRENTLY
-   * mounted (#264 item F1)? See `accordion.ts`'s identical field for the
-   * full rationale (#264 review M1): the actual mount COUNT lives in
-   * `connect()`'s own closure, never here, so a persisted/restored state
-   * slice that bypasses `init()` can never carry a stale count that hangs
-   * `closing` forever. `exitWatcherAttach` sets this `true` (sent only on
-   * the closure count's 0->1 transition); `exitWatcherDetach` sets it
-   * `false` UNCONDITIONALLY (sent only on the 1->0 transition) and settles
-   * any currently-closing panel.
+   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
+   * per-JS-realm session token. See `accordion.ts`'s identical field, and
+   * `ExitWatchers`'s own header in `disclosure-motion.ts`, for the full
+   * rationale (#264 review-264i) — a restored slice's `session` is foreign
+   * to this realm and reads as unwatched regardless of its `count`, so it
+   * can never resurrect a hang. Never a caller-facing init option;
+   * `init()` always starts it at `initExitWatchers()`.
    */
-  exitWatched: boolean
+  exitWatchers: ExitWatchers
 }
 ```
 
