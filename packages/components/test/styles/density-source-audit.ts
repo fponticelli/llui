@@ -61,24 +61,40 @@ export function optionsInterfacePropertyNames(source: string, fileName = 'source
 }
 
 /**
- * `createVariants({ variants: { <axis>: {...} } })`'s AXIS names (the top
- * level keys of the `variants` object) — this is the registry recipe
- * equivalent of a `ConnectOptions` field, and the shape a `size`/`density`
- * variant axis actually takes (`registry/llui/ui/avatar.ts`'s `data-size`
- * driven by exactly such an axis on avatar's OWN recipe, as opposed to a
- * borrowed one like the carousel case above).
+ * Resolve a `{ variants: ... }` (or `{ variants }` SHORTHAND) property to the
+ * object literal it actually names, following a module-level const exactly
+ * like `scripts/lib/registry-classes.mjs`'s own Tailwind extractor does
+ * (#264 item F3, shared rather than reimplemented) — `button.ts`/`badge.ts`
+ * both declare their `variants` map as a separate const and spread it in by
+ * shorthand, and the whole axis map (`size` included) was invisible to this
+ * density/size audit for the identical reason it used to be invisible to the
+ * class extractor. Shared by both `createVariantsAxisNames` and
+ * `createVariantsAxisValueNames` (#264 review LOW 5 — one resolution, not
+ * two copies that could drift).
  */
-export function createVariantsAxisNames(source: string, fileName = 'source.ts'): string[] {
-  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-  // Follows a `createVariants({ variants })` SHORTHAND to its module-level
-  // const, exactly like `scripts/lib/registry-classes.mjs`'s own Tailwind
-  // extractor (#264 item F3, shared rather than reimplemented): `button.ts`
-  // and `badge.ts` both declare their `variants` map as a separate const and
-  // spread it in by shorthand, and the whole axis map — `size` included —
-  // was invisible to this density/size audit for the identical reason it
-  // used to be invisible to the class extractor.
-  const objectConsts = indexObjectConsts(sf)
-  const names: string[] = []
+function resolveVariantsProperty(
+  prop: ts.ObjectLiteralElementLike,
+  objectConsts: Map<string, ts.ObjectLiteralExpression>,
+): ts.ObjectLiteralExpression | undefined {
+  if (ts.isPropertyAssignment(prop) && propName(prop.name) === 'variants') {
+    return asObjectLiteral(prop.initializer, objectConsts)
+  }
+  if (ts.isShorthandPropertyAssignment(prop) && prop.name.text === 'variants') {
+    return asObjectLiteral(prop.name, objectConsts)
+  }
+  return undefined
+}
+
+/**
+ * Every `variants` object literal reachable from a `createVariants(...)` /
+ * `createVariantsPart(...)` call in `sf`, resolving both the inline and the
+ * module-const-by-shorthand spelling.
+ */
+function findVariantsObjects(
+  sf: ts.SourceFile,
+  objectConsts: Map<string, ts.ObjectLiteralExpression>,
+): ts.ObjectLiteralExpression[] {
+  const found: ts.ObjectLiteralExpression[] = []
   const visit = (node: ts.Node): void => {
     if (
       ts.isCallExpression(node) &&
@@ -92,26 +108,38 @@ export function createVariantsAxisNames(source: string, fileName = 'source.ts'):
       for (const arg of node.arguments) {
         if (!ts.isObjectLiteralExpression(arg)) continue
         for (const prop of arg.properties) {
-          const variantsObj =
-            ts.isPropertyAssignment(prop) && propName(prop.name) === 'variants'
-              ? asObjectLiteral(prop.initializer, objectConsts)
-              : ts.isShorthandPropertyAssignment(prop) && prop.name.text === 'variants'
-                ? asObjectLiteral(prop.name, objectConsts)
-                : undefined
-          if (variantsObj === undefined) continue
-          for (const axis of variantsObj.properties) {
-            const name =
-              ts.isPropertyAssignment(axis) || ts.isShorthandPropertyAssignment(axis)
-                ? propName(axis.name)
-                : undefined
-            if (name !== undefined) names.push(name)
-          }
+          const variantsObj = resolveVariantsProperty(prop, objectConsts)
+          if (variantsObj !== undefined) found.push(variantsObj)
         }
       }
     }
     ts.forEachChild(node, visit)
   }
   visit(sf)
+  return found
+}
+
+/**
+ * `createVariants({ variants: { <axis>: {...} } })`'s AXIS names (the top
+ * level keys of the `variants` object) — this is the registry recipe
+ * equivalent of a `ConnectOptions` field, and the shape a `size`/`density`
+ * variant axis actually takes (`registry/llui/ui/avatar.ts`'s `data-size`
+ * driven by exactly such an axis on avatar's OWN recipe, as opposed to a
+ * borrowed one like the carousel case above).
+ */
+export function createVariantsAxisNames(source: string, fileName = 'source.ts'): string[] {
+  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const objectConsts = indexObjectConsts(sf)
+  const names: string[] = []
+  for (const variantsObj of findVariantsObjects(sf, objectConsts)) {
+    for (const axis of variantsObj.properties) {
+      const name =
+        ts.isPropertyAssignment(axis) || ts.isShorthandPropertyAssignment(axis)
+          ? propName(axis.name)
+          : undefined
+      if (name !== undefined) names.push(name)
+    }
+  }
   return names
 }
 
@@ -125,49 +153,28 @@ export function createVariantsAxisValueNames(
   fileName = 'source.ts',
 ): string[] {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
-  // See `createVariantsAxisNames`'s identical note (#264 item F3).
   const objectConsts = indexObjectConsts(sf)
   const names: string[] = []
-  const visit = (node: ts.Node): void => {
-    if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      (node.expression.text === 'createVariants' || node.expression.text === 'createVariantsPart')
-    ) {
-      for (const arg of node.arguments) {
-        if (!ts.isObjectLiteralExpression(arg)) continue
-        for (const prop of arg.properties) {
-          const variantsObj =
-            ts.isPropertyAssignment(prop) && propName(prop.name) === 'variants'
-              ? asObjectLiteral(prop.initializer, objectConsts)
-              : ts.isShorthandPropertyAssignment(prop) && prop.name.text === 'variants'
-                ? asObjectLiteral(prop.name, objectConsts)
-                : undefined
-          if (variantsObj === undefined) continue
-          for (const axis of variantsObj.properties) {
-            const axisObj =
-              (ts.isPropertyAssignment(axis) && propName(axis.name) === axisName) ||
-              (ts.isShorthandPropertyAssignment(axis) && axis.name.text === axisName)
-                ? asObjectLiteral(
-                    ts.isPropertyAssignment(axis) ? axis.initializer : axis.name,
-                    objectConsts,
-                  )
-                : undefined
-            if (axisObj === undefined) continue
-            for (const value of axisObj.properties) {
-              const name =
-                ts.isPropertyAssignment(value) || ts.isShorthandPropertyAssignment(value)
-                  ? propName(value.name)
-                  : undefined
-              if (name !== undefined) names.push(name)
-            }
-          }
-        }
+  for (const variantsObj of findVariantsObjects(sf, objectConsts)) {
+    for (const axis of variantsObj.properties) {
+      const axisObj =
+        (ts.isPropertyAssignment(axis) && propName(axis.name) === axisName) ||
+        (ts.isShorthandPropertyAssignment(axis) && axis.name.text === axisName)
+          ? asObjectLiteral(
+              ts.isPropertyAssignment(axis) ? axis.initializer : axis.name,
+              objectConsts,
+            )
+          : undefined
+      if (axisObj === undefined) continue
+      for (const value of axisObj.properties) {
+        const name =
+          ts.isPropertyAssignment(value) || ts.isShorthandPropertyAssignment(value)
+            ? propName(value.name)
+            : undefined
+        if (name !== undefined) names.push(name)
       }
     }
-    ts.forEachChild(node, visit)
   }
-  visit(sf)
   return names
 }
 
