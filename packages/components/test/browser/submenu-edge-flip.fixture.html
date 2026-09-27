@@ -20,6 +20,23 @@
         right: 8px;
         top: 8px;
       }
+      /* Mirrors #trigger-right's flip proof under RTL: at the LEFT edge, the
+         unflipped rtl default (left) has no room, so it must flip right —
+         the same shape as the LTR case, opposite starting side. */
+      #trigger-rtl {
+        position: absolute;
+        left: 8px;
+        top: 80px;
+      }
+      /* Near the viewport's BOTTOM edge with plenty of room to the right
+         (so it will NOT flip horizontally) but not enough room below the
+         trigger's own top for a 5-item submenu — proves SHIFT alone keeps
+         it in view. */
+      #trigger-bottom {
+        position: absolute;
+        left: 8px;
+        bottom: 4px;
+      }
       [data-part='content'],
       [data-part='subcontent'] {
         width: 140px;

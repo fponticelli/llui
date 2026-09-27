@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import {
   eventDirection,
@@ -8,8 +8,10 @@ import {
   type DirectionState,
   type TextDirection,
 } from '../utils/direction.js'
-import { attachFloating, type Placement } from '../utils/floating.js'
+import { type Placement } from '../utils/floating.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
+import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
   typeaheadAccumulate,
@@ -1066,9 +1068,41 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
   }
 }
 
-// ---- real per-level submenu positioning ----
+// ---- engine-owned per-level submenu overlays (#265 A4) ----
+//
+// Replaces the consumer-wired `watchSubmenuPositioning` (a MutationObserver
+// polling the build root for `[data-part="subcontent"]` nodes and hand-rolling
+// `attachFloating` over them). Each submenu level is now its own
+// `createOverlay` instance — SINGLE-phase (no `visibleWhen`: a submenu level
+// is a synchronous boolean machine, exactly like select/combobox, so mount and
+// floating attach/detach happen together) with an explicit
+// `nestedLayerOwner` naming its own subTrigger, which is what keeps #171's fix
+// (a modal opened over an open menu leaves it inert) working per LEVEL rather
+// than per root menu.
 
-export interface SubmenuPositioningOptions {
+export interface SubOverlayOptions<Scope extends string, S> {
+  /** The subTrigger value this level opens under. */
+  value: string
+  state: Signal<S>
+  /** The subTrigger/subPositioner/subContent part builders for this scope
+   * (from `parts` as returned by `createMenuTreeParts`/`connect()`). */
+  parts: Pick<MenuTreeParts<Scope>, 'subTrigger' | 'subPositioner' | 'subContent'>
+  /** The submenu's own content — typically a nested recursive render of
+   * `it.children`, wrapped in `div({ ...parts.subContent(value) }, […])`
+   * (`contentId` below must match that div's id, i.e. `parts.subContent(value).id`). */
+  content: () => Renderable
+  /** Whether this level should be mounted, given the FULL state `s` passed to
+   * `state`. For `menu`/`context-menu`, `s.openPath.includes(value)`; for
+   * `menubar`, `s` is the root `MenubarState` and this reaches into the one
+   * embedded menu's `openPath`. */
+  isOpen: (s: S) => boolean
+  /** The direction-relevant slice of state for this level's placement, given
+   * the full state `s` — `s` itself for `menu`/`context-menu`, the embedded
+   * menu's state for `menubar`. */
+  direction: (s: S) => Pick<MenuTreeState, 'dir' | 'dirSource'>
+  /** Portal host (default: `body`, matching every other overlay in this file). */
+  target?: string | HTMLElement
+  positionerClass?: string
   /** Cross-axis alignment against the subTrigger (default: 'start' — the top
    * edge of the trigger, matching every other overlay's `*-start` default). */
   align?: 'start' | 'end'
@@ -1093,107 +1127,83 @@ function submenuPlacement(dir: TextDirection, align: 'start' | 'end'): Placement
   return `${side}-${align}` as Placement
 }
 
-/** The minimal shape `watchSubmenuPositioning` needs to resolve direction —
- * satisfied by the `Signal<S>` for any `S extends MenuTreeState` a menu/
- * context-menu/menubar `connect()` is called with. */
-export interface SubmenuDirectionSource {
-  peek(): Pick<MenuTreeState, 'dir' | 'dirSource'>
-}
-
 /**
- * Attach REAL floating geometry to every currently-mounted submenu level
- * inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
- * named by its own `aria-labelledby` (never a hand-tracked map — the DOM
- * relationship the machine already publishes is the source of truth), with
- * flip/shift and a side chosen by `eventDirection(direction.peek(), trigger)`
+ * Build a per-level submenu overlay, anchored on its own subTrigger.
+ *
+ * Direction is resolved through `eventDirection(direction(state.peek()), trigger)`
  * — the SAME shared seam every keyboard handler in this file resolves through
- * (#265 finding 6), not an isolated `resolveDir` call. That keeps the two
- * consistent in BOTH modes: while `dirSource` is `'dom'` it falls through to
- * `resolveDir(trigger)`, so a submenu nested under an RTL ancestor still opens
- * the correct way even if the root menu itself is LTR; once a consumer
- * EXPLICITLY configures/`setDir`s a direction, that explicit value wins here
- * too, instead of the floating geometry silently disagreeing with the
- * keyboard/state direction because it kept reading the raw DOM regardless.
+ * (#265 finding 6), not an isolated `resolveDir` call: while `dirSource` is
+ * `'dom'` it falls through to `resolveDir(trigger)`, so a submenu nested under
+ * an RTL ancestor still opens the correct way even if the root menu itself is
+ * LTR; once a consumer EXPLICITLY configures/`setDir`s a direction, that
+ * explicit value wins here too. Both the initial placement AND the ongoing
+ * `dir` are THUNKS (`OverlayFloatingConfig.placement`/`dir`), resolved fresh at
+ * attach time rather than captured at declaration time — matching the root
+ * `overlay()`s' `dir: () => floatingDir(state.peek())`.
  *
- * A submenu level is a SYNCHRONOUS boolean machine, the same as
- * select/combobox/searchable-select: `openPath` membership is its only mounted
- * entry state, so — like those — the CALLER is expected to mount
- * `subPositioner`/`subContent` only while the level is open (e.g. behind a
- * `show(...)`) rather than keep it in the DOM and toggle `data-state`. This
- * watcher therefore keys off DOM PRESENCE, not `data-state`: attaching floating
- * to every subcontent node found, detaching (which restores every inline style
- * `attachFloating` wrote) for any node it had attached that is no longer
- * present. That is the "gating/exit cleanup" contract — a level that closes
- * tears its floating attachment down in the same tick its node unmounts, never
- * on a later poll.
+ * A runtime direction change WHILE a level stays open (an explicit `setDir`,
+ * or a `dirSource: 'dom'` ancestor `dir` mutation) cannot be picked up by
+ * `attachFloating`'s own `autoUpdate` — a physical `placement` string
+ * (`'right-start'`) is resolved once at attach and a repeated
+ * `computePosition` pass with the SAME closed-over string can never flip
+ * sides. `floating.reattachKey` closes that: a hidden, reactively-bound
+ * marker element (rendered as this overlay's first content child) carries
+ * `data-llui-reattach-key` bound to `${dir}:${dirSource}`, and the engine
+ * re-runs the whole attach (fresh `placement`/`dir` thunk calls) whenever that
+ * attribute's value changes while mounted.
  *
- * Call from `onMount` with the menu's build root, exactly like
- * `tabs.watchTabIndicator` / `navigationMenu.watchNavMenuIndicator` — `onMount`
- * hands the BUILD's root container, not the element the call sits inside, so
- * forwarding whatever `onMount` gave you (rather than the menu's own root) is
- * how two menus on one page end up positioning each other's submenus.
- *
- * `direction` is the same `Signal<MenuState | ContextMenuState | MenubarState>`
- * passed into this instance's `connect()` — the exact one in scope at every
- * demo call site (`state.at('dropdown')`, `state.at('menubar')`, …) — so the
- * geometry reads the SAME direction the reducer/keyboard handlers do, never a
- * second, independently-resolved one.
+ * No `dismiss` config: Escape and outside-click stay owned by the ROOT
+ * overlay's dismissable layer plus this file's own subContent/subTrigger key
+ * handlers (`ArrowLeft`/`Escape` -> `closeSub`). This level still registers as
+ * a NESTED LAYER (owner: its own subTrigger) with the `outside` aspect, which
+ * is what keeps a click inside it from being misread as "outside" the root
+ * content (and, transitively, "outside" an ancestor level's own registration)
+ * — see `nested-layer.ts`'s per-layer, per-aspect design.
  */
-export function watchSubmenuPositioning(
-  root: HTMLElement,
-  direction: SubmenuDirectionSource,
-  opts: SubmenuPositioningOptions = {},
-): () => void {
+export function subOverlay<Scope extends string, S>(opts: SubOverlayOptions<Scope, S>): Mountable {
+  const { value, state, parts } = opts
   const align = opts.align ?? 'start'
-  const offset = opts.offset ?? 2
-  const flip = opts.flip !== false
-  const shift = opts.shift !== false
+  const triggerId = parts.subTrigger(value).id
+  const contentId = parts.subContent(value).id
 
-  const attached = new Map<HTMLElement, () => void>()
-
-  const attach = (subContent: HTMLElement): void => {
-    if (attached.has(subContent)) return
-    const triggerId = subContent.getAttribute('aria-labelledby')
-    const trigger = triggerId ? document.getElementById(triggerId) : null
-    if (!trigger) return
-    const positioner = subContent.closest('[data-part="subpositioner"]') as HTMLElement | null
-    const floatingEl = positioner ?? subContent
-    const dir = eventDirection(direction.peek(), trigger)
-    const stop = attachFloating({
-      anchor: trigger,
-      floating: floatingEl,
-      stateTarget: subContent,
-      placement: submenuPlacement(dir, align),
-      offset,
-      flip,
-      shift,
-      dir,
-    })
-    attached.set(subContent, stop)
+  const directionKey = (s: S): string => {
+    const d = opts.direction(s)
+    return `${d.dir}:${d.dirSource}`
+  }
+  const resolvedDir = (): TextDirection => {
+    const trigger = typeof document === 'undefined' ? null : document.getElementById(triggerId)
+    return eventDirection(opts.direction(state.peek()), trigger)
   }
 
-  const detach = (subContent: HTMLElement): void => {
-    const stop = attached.get(subContent)
-    if (!stop) return
-    stop()
-    attached.delete(subContent)
-  }
-
-  const sync = (): void => {
-    const live = new Set(root.querySelectorAll<HTMLElement>('[data-part="subcontent"]'))
-    for (const node of live) attach(node)
-    for (const node of Array.from(attached.keys())) {
-      if (!live.has(node)) detach(node)
-    }
-  }
-
-  sync()
-
-  const mo = new MutationObserver(sync)
-  mo.observe(root, { childList: true, subtree: true })
-
-  return () => {
-    mo.disconnect()
-    for (const node of Array.from(attached.keys())) detach(node)
-  }
+  return createOverlay({
+    state,
+    host: resolvePortalTarget(opts.target ?? 'body'),
+    // The reactive `data-llui-reattach-key` marker lives HERE, on the
+    // positioner wrapper `createOverlay` builds around `content()` — not as
+    // an extra child inside content, which this file does not control (the
+    // caller builds the `contentId`'d div itself). The engine finds it via
+    // `content.closest(...)` (ancestor-or-self), which reaches this wrapper.
+    positioner: positionerProps(
+      { ...parts.subPositioner(value), 'data-llui-reattach-key': state.map(directionKey) },
+      opts.positionerClass,
+    ),
+    content: opts.content,
+    contentId,
+    relationships: {
+      placementAnchor: { id: triggerId },
+      nestedLayerOwner: { id: triggerId },
+      dismissIgnore: [{ id: triggerId }],
+    },
+    mountWhen: (s) => opts.isOpen(s),
+    // No `dismiss` config — see the doc comment above.
+    onDismiss: () => {},
+    floating: {
+      placement: () => submenuPlacement(resolvedDir(), align),
+      offset: opts.offset ?? 2,
+      flip: opts.flip !== false,
+      shift: opts.shift !== false,
+      dir: () => resolvedDir(),
+      reattachKey: () => directionKey(state.peek()),
+    },
+  })
 }

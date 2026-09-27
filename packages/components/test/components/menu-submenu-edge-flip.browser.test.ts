@@ -1,13 +1,16 @@
 // @vitest-environment node
 
-// #265 finding 7 — real per-open-level submenu positioning, proved with REAL
-// Chromium layout rather than a mocked `getBoundingClientRect`. The jsdom
-// integration test (`menu-submenu-positioning.integration.test.ts`) already
-// pins the flip/RTL logic against fabricated rects; this file proves the
-// SAME behavior actually holds once a real browser lays the page out —
-// `attachFloating`'s flip/shift math consumes real viewport and element
-// metrics, and a mocked rect cannot by itself prove those wire up to a
-// genuine layout.
+// #265 A4 — engine-owned per-level submenu overlays (`menu.subOverlay`),
+// proved with REAL Chromium layout rather than a mocked
+// `getBoundingClientRect`. The jsdom integration test
+// (`menu-submenu-positioning.integration.test.ts`) already pins the flip/RTL
+// logic against fabricated rects; this file proves the SAME behavior
+// actually holds once a real browser lays the page out — `attachFloating`'s
+// flip/shift math consumes real viewport and element metrics, and a mocked
+// rect cannot by itself prove those wire up to a genuine layout. Covers the
+// four #265 A4 real-Chromium proofs for submenu geometry: LTR flip at the
+// right edge, the RTL mirror at the left edge, alignment to the subTrigger's
+// own top, and SHIFT alone keeping a level in view at the bottom edge.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
@@ -104,5 +107,39 @@ describe('#265 finding 7 — submenu edge-flip in real Chromium layout', () => {
       return Math.abs(sub.top - trigger.top) < 4
     })
     expect(aligned).toBe(true)
+  })
+
+  it('mirrors the flip under RTL — a left-edge trigger flips to the right', async () => {
+    await page.locator('[id="rtl:sub:sub:trigger"]').click()
+    const geometry = await page.evaluate(() => {
+      const trigger = document.querySelector('[id="rtl:sub:sub:trigger"]')!.getBoundingClientRect()
+      const sub = document.querySelector('[id="rtl:sub:sub:content"]')!.getBoundingClientRect()
+      return {
+        side: document.querySelector('[id="rtl:sub:sub:content"]')!.getAttribute('data-side'),
+        subRightOfTrigger: sub.left >= trigger.right - 1,
+        subWithinViewport: sub.left >= 0 && sub.right <= 480,
+      }
+    })
+    // Under rtl the un-flipped default is 'left'; a trigger with no room on
+    // its left (this fixture's left edge) must flip to 'right' — the exact
+    // mirror of the LTR right-edge case above.
+    expect(geometry.side).toBe('right')
+    expect(geometry.subRightOfTrigger).toBe(true)
+    expect(geometry.subWithinViewport).toBe(true)
+  })
+
+  it('keeps a bottom-edge submenu in view by SHIFT alone (no room to flip vertically)', async () => {
+    await page.locator('[id="bottom:sub:sub:trigger"]').click()
+    const geometry = await page.evaluate(() => {
+      const sub = document.querySelector('[id="bottom:sub:sub:content"]')!.getBoundingClientRect()
+      return {
+        side: document.querySelector('[id="bottom:sub:sub:content"]')!.getAttribute('data-side'),
+        subWithinViewport: sub.top >= 0 && sub.bottom <= 320,
+      }
+    })
+    // The preferred side is still 'right' (plenty of horizontal room) — only
+    // the CROSS axis (vertical) needed a shift to stay on screen.
+    expect(geometry.side).toBe('right')
+    expect(geometry.subWithinViewport).toBe(true)
   })
 })

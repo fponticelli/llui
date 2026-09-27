@@ -60,7 +60,14 @@ export interface OverlayElements {
 }
 
 export interface OverlayFloatingConfig {
-  placement: Placement
+  /**
+   * Preferred placement. A function so it can be resolved AT ATTACH TIME
+   * (#265 A4) — a per-level submenu chooses its physical side (`right-start`
+   * under 'ltr', `left-start` under 'rtl') from the reading direction in
+   * effect when the level opens, the same way `dir` below is already
+   * resolved lazily rather than captured at declaration time.
+   */
+  placement: Placement | (() => Placement)
   offset: number
   flip: boolean
   shift: boolean
@@ -75,6 +82,28 @@ export interface OverlayFloatingConfig {
    * before `mountWhen` releases retained exit content; the engine rejects that
    * two-phase lifetime unless placement persists with the mounted node. */
   persistent?: boolean
+  /**
+   * Re-run floating attachment (detach then reattach, re-evaluating the
+   * `placement`/`dir` thunks fresh) whenever this key's value CHANGES while
+   * mounted. Needed because `placement`/`dir` are otherwise resolved ONCE at
+   * attach and `autoUpdate` never re-polls them — a physical `placement`
+   * string (`'right-start'`) encodes a reading-direction decision that a
+   * later `computePosition` pass with the same closed-over string cannot
+   * correct (#265 A4: a submenu whose menu tree flips direction while the
+   * level stays open must re-place, not just re-run the same geometry).
+   *
+   * There is no public imperative signal-subscribe seam for framework-internal
+   * code running inside a mount callback (`@llui/dom`'s reactivity is
+   * binding-driven, not subscription-driven) — a caller declares this key by
+   * rendering it as a reactive attribute inside its own `content()` (a hidden
+   * marker element carrying `data-llui-reattach-key`), and the engine watches
+   * that ATTRIBUTE with a `MutationObserver`, the same declarative-binding-
+   * to-DOM-observation idiom `direction.ts:directionSyncMount` already uses in
+   * the other direction (DOM to state, here state to DOM to imperative code).
+   * The marker is looked up via `[data-llui-reattach-key]` inside the resolved
+   * `content` element; a caller that supplies `reattachKey` MUST render one.
+   */
+  reattachKey?: () => string | number
 }
 
 export interface OverlayDismissConfig {
@@ -315,13 +344,14 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
       ? (els.content.querySelector(f.arrowSelector) as HTMLElement | null)
       : null
     const dir = typeof f.dir === 'function' ? f.dir() : f.dir
+    const placement = typeof f.placement === 'function' ? f.placement() : f.placement
     let stopFloating: () => void
     try {
       stopFloating = attachFloating({
         anchor: els.placementAnchor ?? els.content,
         floating: els.floating,
         stateTarget: els.content,
-        placement: f.placement,
+        placement,
         offset: f.offset,
         flip: f.flip,
         shift: f.shift,
@@ -345,6 +375,41 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
     }
   }
 
+  /**
+   * `attachFloatingFor` plus, when `reattachKey` is configured, a
+   * `MutationObserver` on the caller-rendered `[data-llui-reattach-key]`
+   * marker that detaches and reattaches (fresh `placement`/`dir` thunk calls)
+   * whenever the key's value changes. See `OverlayFloatingConfig.reattachKey`.
+   */
+  const attachFloatingWithReattach = (els: OverlayElements): (() => void) => {
+    let stop = attachFloatingFor(els)
+    const reattachKey = opts.floating!.reattachKey
+    if (!reattachKey) return () => stop()
+    let lastKey = reattachKey()
+    // `closest` (ancestor-or-self), not `querySelector` (descendant): the
+    // marker attribute is expected on `content` itself or on an ANCESTOR a
+    // caller controls directly (e.g. its own `positioner` override) — a
+    // submenu's `contentId` div is built by the CALLER, so `subOverlay`
+    // cannot inject a child into it and instead carries the marker on the
+    // positioner it does control.
+    const marker = els.content.closest<HTMLElement>('[data-llui-reattach-key]')
+    let mo: MutationObserver | undefined
+    if (marker && typeof MutationObserver !== 'undefined') {
+      mo = new MutationObserver(() => {
+        const nextKey = reattachKey()
+        if (nextKey === lastKey) return
+        lastKey = nextKey
+        stop()
+        stop = attachFloatingFor(els)
+      })
+      mo.observe(marker, { attributes: true, attributeFilter: ['data-llui-reattach-key'] })
+    }
+    return () => {
+      mo?.disconnect()
+      stop()
+    }
+  }
+
   const interactionMount = (): Mountable =>
     onMount((root) => {
       const els = resolveEls(root)
@@ -364,7 +429,7 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
         )
       }
       if (opts.floating && !opts.floating.persistent) {
-        cleanups.push(attachFloatingFor(els))
+        cleanups.push(attachFloatingWithReattach(els))
       }
       if (opts.lockScroll) cleanups.push(lockBodyScroll())
       // Apply modal isolation before activating the trap, but register its

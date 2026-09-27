@@ -27,10 +27,8 @@ import {
   type MenuMsg,
   type MenuItem,
   type MenuParts,
-  watchSubmenuPositioning,
 } from './menu.js'
-
-export { watchSubmenuPositioning, type SubmenuPositioningOptions } from './menu.js'
+import { subOverlay as machineSubOverlay } from './menu-machine.js'
 
 /**
  * Menubar — a desktop-style application menu bar (File / Edit / View …).
@@ -582,4 +580,49 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
   })
 }
 
-export const menubar = { init, update, connect, overlay, watchSubmenuPositioning }
+export interface SubOverlayOptions {
+  /** The open menu's id (`opts.menuId` of the enclosing `overlay()`). */
+  menuId: string
+  /** The subTrigger value this level opens under. */
+  value: string
+  /** The ROOT `Signal<MenubarState>` — the same one passed to `connect()`. */
+  state: Signal<MenubarState>
+  parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
+  align?: 'start' | 'end'
+  offset?: number
+  flip?: boolean
+  shift?: boolean
+}
+
+/**
+ * Engine-owned floating overlay for one submenu level of an embedded menu
+ * (#265 A4) — replaces the consumer-wired `watchSubmenuPositioning` (removed).
+ * Unlike `menu`/`context-menu`'s own `subOverlay`, this one reads the ROOT
+ * `MenubarState` and reaches into the one open menu's embedded `MenuState`
+ * (`s.menuStates[menuId]`) for both open-membership and direction, because a
+ * menubar's `overlay()` is likewise keyed on root state (`s.open === menuId`)
+ * rather than on the embedded menu's own state. See
+ * `menu-machine.ts:subOverlay`'s doc comment for the shared contract.
+ */
+export function subOverlay(opts: SubOverlayOptions): Mountable {
+  const { menuId, value } = opts
+  return machineSubOverlay({
+    value,
+    state: opts.state,
+    parts: opts.parts,
+    content: opts.content,
+    isOpen: (s) => (s.menuStates[menuId]?.openPath ?? []).includes(value),
+    direction: (s) => s.menuStates[menuId] ?? s,
+    target: opts.target,
+    positionerClass: opts.positionerClass,
+    align: opts.align,
+    offset: opts.offset,
+    flip: opts.flip,
+    shift: opts.shift,
+  })
+}
+
+export const menubar = { init, update, connect, overlay, subOverlay }

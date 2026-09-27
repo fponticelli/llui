@@ -29,13 +29,7 @@ import {
   setHighlight,
   createMenuTreeParts,
   activeMenuHighlight,
-  watchSubmenuPositioning,
-} from './menu-machine.js'
-
-export {
-  watchSubmenuPositioning,
-  type SubmenuPositioningOptions,
-  type SubmenuDirectionSource,
+  subOverlay as machineSubOverlay,
 } from './menu-machine.js'
 
 /**
@@ -448,12 +442,53 @@ export function overlay(opts: OverlayOptions): Mountable {
   })
 }
 
+export interface SubOverlayOptions {
+  /** The subTrigger value this level opens under. */
+  value: string
+  state: Signal<MenuState>
+  parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
+  align?: 'start' | 'end'
+  offset?: number
+  flip?: boolean
+  shift?: boolean
+}
+
+/**
+ * Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
+ * consumer-wired `watchSubmenuPositioning` (removed). Call once per
+ * `children`-bearing item, alongside its `subTrigger`, in place of the old
+ * hand-rolled `show(isOpen, () => [div(subPositioner, [div(subContent, …)])])`:
+ * `subOverlay` builds both wrapper divs itself and owns mount/floating/
+ * nested-layer-ownership. See `menu-machine.ts:subOverlay`'s doc comment for
+ * the full contract (direction resolution, no-`dismiss` design, runtime
+ * direction-change re-placement).
+ */
+export function subOverlay(opts: SubOverlayOptions): Mountable {
+  return machineSubOverlay({
+    value: opts.value,
+    state: opts.state,
+    parts: opts.parts,
+    content: opts.content,
+    isOpen: (s) => s.openPath.includes(opts.value),
+    direction: (s) => s,
+    target: opts.target,
+    positionerClass: opts.positionerClass,
+    align: opts.align,
+    offset: opts.offset,
+    flip: opts.flip,
+    shift: opts.shift,
+  })
+}
+
 export const menu = {
   init,
   update,
   connect,
   overlay,
+  subOverlay,
   isPresent,
   isMounted,
-  watchSubmenuPositioning,
 }

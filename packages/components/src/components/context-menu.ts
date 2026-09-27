@@ -21,11 +21,9 @@ import {
   firstNav,
   createMenuTreeParts,
   activeMenuHighlight,
-  watchSubmenuPositioning,
+  subOverlay as machineSubOverlay,
 } from './menu-machine.js'
 import { allFiniteNumbers } from '../utils/number.js'
-
-export { watchSubmenuPositioning, type SubmenuPositioningOptions } from './menu-machine.js'
 
 /**
  * Context menu — right-click (contextmenu) triggered menu positioned at the
@@ -380,12 +378,48 @@ export function overlay(opts: OverlayOptions): Mountable {
   })
 }
 
+export interface SubOverlayOptions {
+  /** The subTrigger value this level opens under. */
+  value: string
+  state: Signal<ContextMenuState>
+  parts: Pick<ContextMenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
+  align?: 'start' | 'end'
+  offset?: number
+  flip?: boolean
+  shift?: boolean
+}
+
+/**
+ * Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
+ * consumer-wired `watchSubmenuPositioning` (removed). See
+ * `menu-machine.ts:subOverlay`'s doc comment for the full contract.
+ */
+export function subOverlay(opts: SubOverlayOptions): Mountable {
+  return machineSubOverlay({
+    value: opts.value,
+    state: opts.state,
+    parts: opts.parts,
+    content: opts.content,
+    isOpen: (s) => s.openPath.includes(opts.value),
+    direction: (s) => s,
+    target: opts.target,
+    positionerClass: opts.positionerClass,
+    align: opts.align,
+    offset: opts.offset,
+    flip: opts.flip,
+    shift: opts.shift,
+  })
+}
+
 export const contextMenu = {
   init,
   update,
   connect,
   overlay,
+  subOverlay,
   isPresent,
   isMounted,
-  watchSubmenuPositioning,
 }
