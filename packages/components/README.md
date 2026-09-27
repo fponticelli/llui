@@ -89,26 +89,40 @@ const App = component<State, Msg, never>({
 > **Breaking (#265 finding 6): `menu`/`context-menu`/`menubar` no longer have a second, independently-resolved direction.** `menu-machine.ts` — the shared item-tree machine behind `menu`, `context-menu`, and (via `menu.ts`) `menubar` — is migrated onto the same seam as the paragraph above, closing a gap where a menu's floating submenu geometry resolved direction from a bare, isolated `resolveDir(trigger)` call while keyboard handling and an explicit `setDir` used a completely different, nullable `dir: TextDirection | null` field: an explicitly-configured direction could silently disagree with what a submenu opened toward. Three consequences: (1) `MenuState`/`ContextMenuState`/`MenubarState`'s `dir` is now always a concrete `'ltr' | 'rtl'` (never `null`), with a `dirSource: 'dom' | 'explicit'` field recording whether it is DOM-observed or was explicitly set — there is no longer a way to clear an explicit `setDir` back to "follow the page"; (2) `menu.floatingDir` is REMOVED — `menu.overlay`'s floating placement now reads `state.dir` directly, unconditionally; (3) `ContextMenuParts.trigger` gained a REQUIRED `id`, and `MenubarParts.root` gained a REQUIRED `id` (mirroring `navigation-menu`'s own `root.id` requirement) — both are what their new `directionSync` part observes.
 >
 > **Breaking (#265 A4): `watchSubmenuPositioning` is REMOVED — submenu positioning is now engine-owned.** It was a consumer-wired `MutationObserver` polling the mounted build root for `[data-part="subcontent"]` nodes and hand-rolling `attachFloating` over each one found; every call site had to remember to wire it from `onMount`, and it saw only whatever a hand-rolled `show(isOpen, [subPositioner, subContent])` block happened to render. Each of `menu`, `context-menu`, and `menubar` now exports `subOverlay(opts)`, built on the same `createOverlay` engine as their own `overlay()`: call it once per `children`-bearing item, alongside its `subTrigger`, in place of that hand-rolled block —
->
-> ```typescript @doc-skip
-> // before
-> show(
->   openPath.map((p) => p.includes(it.value)),
->   () => [
->     div({ ...parts.subPositioner(it.value) }, [
->       div({ ...parts.subContent(it.value) }, renderChildren(it.children)),
->     ]),
->   ],
-> )
-> // after
-> menu.subOverlay({
->   value: it.value,
->   state,
->   parts,
->   content: () => [div({ ...parts.subContent(it.value) }, renderChildren(it.children))],
-> })
-> ```
->
+
+```typescript
+import { div, show } from '@llui/dom'
+import type { Renderable, Signal } from '@llui/dom'
+import { menu, type MenuItem, type MenuParts, type MenuState } from '@llui/components/menu'
+
+// Signature only — a real call site closes over its own `state`/`send`;
+// the parameters below just name the types each argument has.
+function renderSubTrigger(
+  state: Signal<MenuState>,
+  parts: MenuParts,
+  it: MenuItem,
+  openPath: Signal<readonly string[]>,
+  renderChildren: (children: readonly MenuItem[]) => Renderable,
+) {
+  // before
+  show(
+    openPath.map((p) => p.includes(it.value)),
+    () => [
+      div({ ...parts.subPositioner(it.value) }, [
+        div({ ...parts.subContent(it.value) }, renderChildren(it.children ?? [])),
+      ]),
+    ],
+  )
+  // after
+  menu.subOverlay({
+    value: it.value,
+    state,
+    parts,
+    content: () => [div({ ...parts.subContent(it.value) }, renderChildren(it.children ?? []))],
+  })
+}
+```
+
 > `subOverlay` builds the subpositioner wrapper itself (from `parts.subPositioner(value)`), gates mount on `openPath` membership (menubar's variant additionally takes a `menuId` and reaches into `state.menuStates[menuId].openPath`), and owns floating (flip/shift/collision padding, a physical side resolved from the reading direction in effect when the level opens), nested-layer registration (owner: that level's own `subTrigger` — keeping #171's modal-isolation fix scoped per level), and re-placement if the direction changes at runtime while the level stays open. It declares no `dismiss` config: Escape/outside-click stay owned by the root overlay's dismissable layer plus this file's own subContent/subTrigger key handlers. `DropdownMenuSubPositioner`/`ContextMenuSubPositioner`/`MenubarSubPositioner` in the registry stay exported (an empty `classPart(div, '')`) but are no longer referenced by any view — real floating geometry attaches directly to the `subContent` element now, since `createOverlay`'s positioner-selector only recognizes `data-part="positioner"`, not this machine's `"subpositioner"`.
 >
 > The engine itself gained two small, generally-useful pieces backing this: `OverlayFloatingConfig.placement` now accepts a thunk (`Placement | (() => Placement)`, resolved at attach time, mirroring the existing `dir` thunk), and `OverlayFloatingConfig.reattachKey` re-runs floating attach when a caller-rendered `data-llui-reattach-key` marker attribute changes while mounted — needed because `placement`/`dir` are otherwise captured once at attach and `attachFloating`'s own `autoUpdate` never re-polls them.
