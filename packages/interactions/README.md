@@ -35,6 +35,12 @@ A viewport cap alone is not enough: an anchor halfway down the page leaves far l
 viewport below it, and the surface runs off the bottom edge. Like every inline style it writes,
 both properties are restored to their prior values on cleanup.
 
+## Focus traps always take focus
+
+`pushFocusTrap` focuses `initialFocus`, else the first tab-reachable descendant, else the
+container itself, giving it a temporary `tabindex="-1"` when it has none (removed on release).
+Focus never stays behind the trap, even in a modal with nothing focusable inside it.
+
 ## Why this is a separate package
 
 The Step-1 demand check for [#49](https://github.com/fponticelli/llui/issues/49) found two
