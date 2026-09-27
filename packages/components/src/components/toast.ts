@@ -122,6 +122,8 @@ export type ToasterMsg =
   | { type: 'dismiss'; id: string }
   /** @intent("Dismiss every toast currently visible") */
   | { type: 'dismissAll' }
+  /** @intent("Move the toast region to a different corner/edge of the viewport") */
+  | { type: 'setPlacement'; placement: ToastPlacement }
   /** @intent("Patch mutable presentation fields on the toast with the given id (title, description, type, etc.); `id` cannot be patched") */
   | { type: 'update'; id: string; patch: ToastPatch }
   /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
@@ -199,6 +201,8 @@ export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, nev
       return [closeToasts(state, (t) => t.id === msg.id), []]
     case 'dismissAll':
       return [closeToasts(state, () => true), []]
+    case 'setPlacement':
+      return [{ ...state, placement: msg.placement }, []]
     case 'animationEnd':
       // Exit animation done — remove the now-`'closing'` toast from the queue.
       return [

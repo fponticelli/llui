@@ -132,6 +132,33 @@ describe('toast reducer', () => {
     s = update(s, { type: 'resumeAll' })[0]
     expect(s.toasts.every((t) => !t.paused)).toBe(true)
   })
+
+  it('init defaults placement to bottom-end', () => {
+    expect(init().placement).toBe('bottom-end')
+  })
+
+  it('setPlacement changes the region placement, leaving toasts untouched', () => {
+    let s = init({ placement: 'bottom-end' })
+    s = update(s, { type: 'create', toast: makeToast({ id: 'x' }) })[0]
+    s = update(s, { type: 'setPlacement', placement: 'top-start' })[0]
+    expect(s.placement).toBe('top-start')
+    expect(s.toasts).toHaveLength(1)
+  })
+
+  it('setPlacement accepts all six ToastPlacement values', () => {
+    const placements = [
+      'top',
+      'top-start',
+      'top-end',
+      'bottom',
+      'bottom-start',
+      'bottom-end',
+    ] as const
+    for (const placement of placements) {
+      const s = update(init(), { type: 'setPlacement', placement })[0]
+      expect(s.placement).toBe(placement)
+    }
+  })
 })
 
 describe('toast countdown (tick-driven, timer-free)', () => {
