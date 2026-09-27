@@ -22,7 +22,7 @@ import { navigationMenu } from '@llui/components/navigation-menu'
 import { scrollArea } from '@llui/components/scroll-area'
 import { breadcrumbs } from '@llui/components/breadcrumbs'
 import { menubar } from '@llui/components/menubar'
-import { watchSubmenuPositioning, type MenuItem, type MenuParts } from '@llui/components/menu'
+import type { MenuItem, MenuParts } from '@llui/components/menu'
 import { toolbar } from '@llui/components/toolbar'
 import { sectionGroup, card } from '../shared/ui'
 import {
@@ -238,21 +238,17 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   }
 
   // Recursive: mirrors the `overlays` section's real submenu renderer. A
-  // `children` node is a real subTrigger + a real anchored submenu
-  // (subPositioner/subContent), gated `show`n only while its value is a
-  // member of the delegated menu's OWN `openPath` — the machine tracks one
-  // per top-level entry (`state.menuStates[id].openPath`), so the gate reads
-  // that slice specifically rather than the bar's `open` field (which only
-  // names WHICH top-level menu is open, not its submenu chain).
+  // `children` node is a real subTrigger + an ENGINE-OWNED submenu overlay
+  // (`menubar.subOverlay`, #265 A4) — it reaches into the delegated menu's
+  // OWN `openPath` internally (`state.menuStates[menuId].openPath`) rather
+  // than the bar's `open` field (which only names WHICH top-level menu is
+  // open, not its submenu chain).
   const renderMenuItems = (items: MenuItem[], menuId: string, parts: MenuParts): Renderable =>
     items.flatMap((it): Renderable => {
       if (it.kind === 'separator') {
         return [div({ ...parts.separator(), class: 'my-1 border-t border-border' }, [])]
       }
       if (it.children && it.children.length > 0) {
-        const isOpen = state
-          .at('menubar')
-          .map((s) => s.menuStates[menuId]?.openPath.includes(it.value) ?? false)
         return [
           div(
             {
@@ -262,8 +258,12 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             },
             [text(itemLabels[it.value] ?? it.value), text('›')],
           ),
-          show(isOpen, () => [
-            div({ ...parts.subPositioner(it.value) }, [
+          menubar.subOverlay({
+            menuId,
+            value: it.value,
+            state: state.at('menubar'),
+            parts,
+            content: () => [
               div(
                 {
                   ...parts.subContent(it.value),
@@ -272,8 +272,8 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 },
                 renderMenuItems(it.children!, menuId, parts),
               ),
-            ]),
-          ]),
+            ],
+          }),
         ]
       }
       return [
@@ -311,10 +311,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             ...menuParts.content,
             class: 'min-w-44 bg-card border border-border rounded-md shadow-lg p-1 outline-none',
           },
-          [
-            onMount((root) => watchSubmenuPositioning(root as HTMLElement, state.at('menubar'))),
-            ...renderMenuItems(items, id, menuParts),
-          ],
+          renderMenuItems(items, id, menuParts),
         ),
       ],
     })

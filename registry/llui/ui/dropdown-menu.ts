@@ -84,11 +84,13 @@ export const DropdownMenuSubContent = classPart(
 )
 
 /**
- * The positioning wrapper `watchSubmenuPositioning` (`@llui/components/menu`)
- * attaches real floating geometry to — one per open submenu LEVEL, anchored to
- * that level's own `subTrigger`. Bare on purpose: it carries no visual style
- * of its own (`DropdownMenuSubContent` inside it is the surface), only the
- * `position:absolute` the machine's `subPositioner` part bag already sets
- * inline before the first layout pass.
+ * The positioning wrapper `menu.subOverlay` (`@llui/components/menu`) builds
+ * around each open submenu LEVEL's content, anchored to that level's own
+ * `subTrigger`. Bare on purpose: it carries no visual style of its own
+ * (`DropdownMenuSubContent` inside it is the surface) — real floating
+ * geometry attaches directly to `DropdownMenuSubContent` itself (the engine
+ * only prefers an ancestor carrying `data-part="positioner"`, which this
+ * `"subpositioner"` wrapper is not), so this class stays empty rather than
+ * carrying inline positioning that would never be read.
  */
 export const DropdownMenuSubPositioner = classPart(div, '')

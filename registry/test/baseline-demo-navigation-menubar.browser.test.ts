@@ -264,11 +264,11 @@ describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', 
   })
 
   it('Menubar submenu flips side at a real viewport edge — proved against the actual demo layout, not a synthetic fixture', async () => {
-    // #265 finding 7's other proof (`menu-submenu-edge-flip.browser.test.ts`)
-    // exercises `watchSubmenuPositioning` against a minimal hand-built
-    // fixture. This measures the SAME behavior through the demo's actual
-    // Menubar composition (`renderMenuOverlay` -> `watchSubmenuPositioning`,
-    // wired via `onMount` in `surfaces.ts`) at a viewport narrow enough that
+    // #265 A4's other proof (`menu-submenu-edge-flip.browser.test.ts`)
+    // exercises `menu.subOverlay` against a minimal hand-built fixture. This
+    // measures the SAME behavior through the demo's actual Menubar
+    // composition (`renderMenuOverlay` -> `menubar.subOverlay`, wired via
+    // `renderMenuItems` in `surfaces.ts`) at a viewport narrow enough that
     // the View menu's real DOM position leaves no room on the right —
     // measured directly: at this width the submenu's preferred-side box
     // would overflow past `window.innerWidth`, so a real flip is required,

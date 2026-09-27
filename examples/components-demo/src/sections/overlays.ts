@@ -1,9 +1,9 @@
-import { div, button, span, h3, p, input, svg, path, each, text, onMount, show } from '@llui/dom'
-import type { Send, Signal, Renderable } from '@llui/dom'
+import { div, button, span, h3, p, input, svg, path, each, text, onMount } from '@llui/dom'
+import type { Send, Signal, Renderable, Mountable } from '@llui/dom'
 import { popover } from '@llui/components/popover'
 import { tooltip } from '@llui/components/tooltip'
 import { hoverCard } from '@llui/components/hover-card'
-import { menu, watchSubmenuPositioning, type MenuItem, type MenuParts } from '@llui/components/menu'
+import { menu, type MenuItem, type MenuParts } from '@llui/components/menu'
 import { contextMenu, type ContextMenuParts } from '@llui/components/context-menu'
 import { select } from '@llui/components/select'
 import { combobox } from '@llui/components/combobox'
@@ -78,9 +78,9 @@ const FRUITS = [
 // Declared once and used by BOTH `init` and the view so the two cannot drift.
 // `Share` and `More` are real nested submenus (`children`), not decoration —
 // they're what exercises the machine's per-level `openPath`, hover-intent
-// timers, and (via `watchSubmenuPositioning`) real anchored floating geometry
-// instead of the fixed top-left corner the stub positioner used to render at
-// (#265 finding #7).
+// timers, and (via `menu.subOverlay`/`contextMenu.subOverlay`) a REAL,
+// engine-owned floating overlay per level instead of the fixed top-left
+// corner the stub positioner used to render at (#265 A4).
 const MENU_ITEMS: MenuItem[] = [
   { value: 'Edit', kind: 'action' },
   { value: 'Duplicate', kind: 'action' },
@@ -349,45 +349,41 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
 
   const selectItems = (): Renderable =>
     COLORS.map((v, i) => div({ ...se.item(v, i).item }, [text(v)]))
-  // Recursive: a `children` node renders a real subTrigger + a real anchored
-  // submenu (subPositioner/subContent), gated `show`n only while its value is
-  // a member of `openPath` — the same "open is the only mounted entry state"
-  // convention select/combobox already use, so `watchSubmenuPositioning`
-  // (wired below via `onMount`) only ever sees currently-open levels to
-  // attach `attachFloating` to.
+  // Recursive: a `children` node renders a real subTrigger + an ENGINE-OWNED
+  // submenu overlay (`menu.subOverlay`/`contextMenu.subOverlay`, #265 A4) —
+  // `subOverlayFor` closes over the right per-machine state/parts so this
+  // helper itself stays state-shape-agnostic, and builds both the
+  // subpositioner and subcontent wrapper divs itself (real anchored floating
+  // geometry, gated on `openPath` membership internally).
   const renderMenuTree = (
     items: MenuItem[],
     parts: Pick<
       MenuParts | ContextMenuParts,
       'item' | 'subTrigger' | 'subPositioner' | 'subContent'
     >,
-    openPath: Signal<string[]>,
+    subOverlayFor: (value: string, content: () => Renderable) => Mountable,
   ): Renderable =>
     items.flatMap((it): Renderable => {
       if (it.children && it.children.length > 0) {
-        const isOpen = openPath.map((path) => path.includes(it.value))
         return [
           div({ ...parts.subTrigger(it.value) }, [text(it.value), text(' ›')]),
-          show(isOpen, () => [
-            div({ ...parts.subPositioner(it.value) }, [
-              div({ ...parts.subContent(it.value) }, renderMenuTree(it.children!, parts, openPath)),
-            ]),
+          subOverlayFor(it.value, () => [
+            div(
+              { ...parts.subContent(it.value) },
+              renderMenuTree(it.children!, parts, subOverlayFor),
+            ),
           ]),
         ]
       }
       return [div({ ...parts.item(it.value).item }, [text(it.value)])]
     })
   const menuItems = (): Renderable =>
-    renderMenuTree(
-      MENU_ITEMS,
-      me,
-      state.at('menu').map((m) => m.openPath),
+    renderMenuTree(MENU_ITEMS, me, (value, content) =>
+      menu.subOverlay({ value, state: state.at('menu'), parts: me, content }),
     )
   const ctxMenuItems = (): Renderable =>
-    renderMenuTree(
-      CONTEXT_MENU_ITEMS,
-      cm,
-      state.at('contextMenu').map((m) => m.openPath),
+    renderMenuTree(CONTEXT_MENU_ITEMS, cm, (value, content) =>
+      contextMenu.subOverlay({ value, state: state.at('contextMenu'), parts: cm, content }),
     )
 
   // Per-row parts come from the machine's own `toast(item)` builder (never
@@ -741,12 +737,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           state: state.at('menu'),
           send: (m) => send({ type: 'menu', msg: m }),
           parts: me,
-          content: () => [
-            div({ ...me.content }, [
-              onMount((root) => watchSubmenuPositioning(root as HTMLElement, state.at('menu'))),
-              ...menuItems(),
-            ]),
-          ],
+          content: () => [div({ ...me.content }, menuItems())],
         }),
       ]),
       card('Context Menu', [
@@ -763,14 +754,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           state: state.at('contextMenu'),
           send: (m) => send({ type: 'contextMenu', msg: m }),
           parts: cm,
-          content: () => [
-            div({ ...cm.content }, [
-              onMount((root) =>
-                watchSubmenuPositioning(root as HTMLElement, state.at('contextMenu')),
-              ),
-              ...ctxMenuItems(),
-            ]),
-          ],
+          content: () => [div({ ...cm.content }, ctxMenuItems())],
         }),
       ]),
       card('Select', [

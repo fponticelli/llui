@@ -429,11 +429,16 @@ const menuAdapter: Adapter<MenuCaseInput> = (host, input, ctx) =>
               ...(input.nestedOpen
                 ? [
                     div({ ...parts.subTrigger(SUBMENU_VALUE) }, [text('More')]),
-                    div({ ...parts.subPositioner(SUBMENU_VALUE) }, [
-                      div({ ...parts.subContent(SUBMENU_VALUE) }, [
-                        div({ ...parts.item(SUBMENU_CHILD_VALUE).item }, [text('Submenu item')]),
-                      ]),
-                    ]),
+                    menu.subOverlay({
+                      value: SUBMENU_VALUE,
+                      state,
+                      parts,
+                      content: () => [
+                        div({ ...parts.subContent(SUBMENU_VALUE) }, [
+                          div({ ...parts.item(SUBMENU_CHILD_VALUE).item }, [text('Submenu item')]),
+                        ]),
+                      ],
+                    }),
                   ]
                 : []),
             ]),
@@ -504,13 +509,18 @@ const contextMenuAdapter: Adapter<ContextMenuCaseInput> = (host, input, ctx) =>
               ...(input.nestedOpen
                 ? [
                     div({ ...menuParts.subTrigger(SUBMENU_VALUE) }, [text('More')]),
-                    div({ ...menuParts.subPositioner(SUBMENU_VALUE) }, [
-                      div({ ...menuParts.subContent(SUBMENU_VALUE) }, [
-                        div({ ...menuParts.item(SUBMENU_CHILD_VALUE).item }, [
-                          text('Submenu item'),
+                    contextMenu.subOverlay({
+                      value: SUBMENU_VALUE,
+                      state,
+                      parts,
+                      content: () => [
+                        div({ ...menuParts.subContent(SUBMENU_VALUE) }, [
+                          div({ ...menuParts.item(SUBMENU_CHILD_VALUE).item }, [
+                            text('Submenu item'),
+                          ]),
                         ]),
-                      ]),
-                    ]),
+                      ],
+                    }),
                   ]
                 : []),
             ]),

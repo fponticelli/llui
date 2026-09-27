@@ -79,7 +79,6 @@ import {
   DropdownMenuItem,
   DropdownMenuItemIndicator,
   DropdownMenuSubContent,
-  DropdownMenuSubPositioner,
   DropdownMenuSubTrigger,
 } from '../llui/ui/dropdown-menu'
 import {
@@ -88,7 +87,6 @@ import {
   ContextMenuCheckboxItem,
   ContextMenuItemIndicator,
   ContextMenuSubContent,
-  ContextMenuSubPositioner,
   ContextMenuSubTrigger,
 } from '../llui/ui/context-menu'
 import { Menubar, MenubarContent, MenubarTrigger } from '../llui/ui/menubar'
@@ -575,13 +573,18 @@ const menuAdapter: Adapter<MenuCaseInput> = (host, input, ctx) =>
               ...(input.nestedOpen
                 ? [
                     DropdownMenuSubTrigger({ ...parts.subTrigger(SUBMENU_VALUE) }, [text('More')]),
-                    DropdownMenuSubPositioner({ ...parts.subPositioner(SUBMENU_VALUE) }, [
-                      DropdownMenuSubContent({ ...parts.subContent(SUBMENU_VALUE) }, [
-                        DropdownMenuItem({ ...parts.item(SUBMENU_CHILD_VALUE).item }, [
-                          text('Submenu item'),
+                    menu.subOverlay({
+                      value: SUBMENU_VALUE,
+                      state,
+                      parts,
+                      content: () => [
+                        DropdownMenuSubContent({ ...parts.subContent(SUBMENU_VALUE) }, [
+                          DropdownMenuItem({ ...parts.item(SUBMENU_CHILD_VALUE).item }, [
+                            text('Submenu item'),
+                          ]),
                         ]),
-                      ]),
-                    ]),
+                      ],
+                    }),
                   ]
                 : []),
             ]),
@@ -662,13 +665,18 @@ const contextMenuAdapter: Adapter<ContextMenuCaseInput> = (host, input, ctx) =>
                     ContextMenuSubTrigger({ ...menuParts.subTrigger(SUBMENU_VALUE) }, [
                       text('More'),
                     ]),
-                    ContextMenuSubPositioner({ ...menuParts.subPositioner(SUBMENU_VALUE) }, [
-                      ContextMenuSubContent({ ...menuParts.subContent(SUBMENU_VALUE) }, [
-                        ContextMenuItem({ ...menuParts.item(SUBMENU_CHILD_VALUE).item }, [
-                          text('Submenu item'),
+                    contextMenu.subOverlay({
+                      value: SUBMENU_VALUE,
+                      state,
+                      parts,
+                      content: () => [
+                        ContextMenuSubContent({ ...menuParts.subContent(SUBMENU_VALUE) }, [
+                          ContextMenuItem({ ...menuParts.item(SUBMENU_CHILD_VALUE).item }, [
+                            text('Submenu item'),
+                          ]),
                         ]),
-                      ]),
-                    ]),
+                      ],
+                    }),
                   ]
                 : []),
             ]),

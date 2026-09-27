@@ -12,7 +12,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuSubContent,
-  DropdownMenuSubPositioner,
   DropdownMenuSubTrigger,
 } from '../components/ui/dropdown-menu'
 import {
@@ -21,7 +20,6 @@ import {
   ContextMenuSeparator,
   ContextMenuShortcut,
   ContextMenuSubContent,
-  ContextMenuSubPositioner,
   ContextMenuSubTrigger,
 } from '../components/ui/context-menu'
 import {
@@ -31,7 +29,6 @@ import {
   MenubarSeparator,
   MenubarShortcut,
   MenubarSubContent,
-  MenubarSubPositioner,
   MenubarSubTrigger,
   MenubarTrigger,
 } from '../components/ui/menubar'
@@ -175,41 +172,40 @@ interface MenuTreeParts {
 
 /** The per-surface recipe set a real submenu needs, so ONE recursive renderer
  * covers dropdown menu, context menu, and menubar instead of three
- * hand-rolled copies (#265 finding 7 + 9). */
+ * hand-rolled copies (#265 A4/finding 9). No `SubPositioner` recipe: the
+ * engine-owned `subOverlay` (`menuC`/`contextMenuC`/`menubarC`) builds that
+ * wrapper itself now. */
 interface MenuTreeRecipes {
   Item: PartHelper
   Shortcut: PartHelper
   SubTrigger: PartHelper
-  SubPositioner: PartHelper
   SubContent: PartHelper
 }
 
 /**
  * Recursively renders a label/shortcut tree against a real menu machine's
- * part bag. A `children` entry becomes a real subTrigger + an anchored
- * submenu, mounted (via `show`) only while its value is a member of the
- * machine's own `openPath` — the synchronous-boolean convention
- * `watchSubmenuPositioning` (wired via `onMount` at each menu's `content`
- * root below) depends on to know which levels are currently open.
+ * part bag. A `children` entry becomes a real subTrigger + an ENGINE-OWNED
+ * submenu overlay (#265 A4) — `subOverlayFor` closes over the right
+ * per-surface `menuC.subOverlay`/`contextMenuC.subOverlay`/
+ * `menubarC.subOverlay` call (differing in menubar's case by an extra
+ * `menuId`), so this renderer stays agnostic to which of the three it is
+ * building for.
  */
 function renderMenuTree<P extends MenuTreeParts>(
   specs: readonly MenuItemSpec[],
   parts: P,
-  openPath: Signal<string[]>,
+  subOverlayFor: (value: string, content: () => Mountable[]) => Mountable,
   recipes: MenuTreeRecipes,
 ): Mountable[] {
   return specs.flatMap((s): Mountable[] => {
     if (s.children && s.children.length > 0) {
-      const isOpen = openPath.map((p) => p.includes(s.value))
       return [
         recipes.SubTrigger({ ...parts.subTrigger(s.value) }, [text(s.label)]),
-        show(isOpen, () => [
-          recipes.SubPositioner({ ...parts.subPositioner(s.value) }, [
-            recipes.SubContent(
-              { ...parts.subContent(s.value) },
-              renderMenuTree(s.children!, parts, openPath, recipes),
-            ),
-          ]),
+        subOverlayFor(s.value, () => [
+          recipes.SubContent(
+            { ...parts.subContent(s.value) },
+            renderMenuTree(s.children!, parts, subOverlayFor, recipes),
+          ),
         ]),
       ]
     }
@@ -335,21 +331,18 @@ const CONTEXT_RECIPES: MenuTreeRecipes = {
   Item: ContextMenuItem,
   Shortcut: ContextMenuShortcut,
   SubTrigger: ContextMenuSubTrigger,
-  SubPositioner: ContextMenuSubPositioner,
   SubContent: ContextMenuSubContent,
 }
 const MENUBAR_RECIPES: MenuTreeRecipes = {
   Item: MenubarItem,
   Shortcut: MenubarShortcut,
   SubTrigger: MenubarSubTrigger,
-  SubPositioner: MenubarSubPositioner,
   SubContent: MenubarSubContent,
 }
 const DROPDOWN_RECIPES: MenuTreeRecipes = {
   Item: DropdownMenuItem,
   Shortcut: DropdownMenuShortcut,
   SubTrigger: DropdownMenuSubTrigger,
-  SubPositioner: DropdownMenuSubPositioner,
   SubContent: DropdownMenuSubContent,
 }
 
@@ -368,13 +361,15 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const cbSend = (m: comboboxC.ComboboxMsg): void => send({ type: 'combobox', msg: m })
   const cb = comboboxC.connect(state.at('combobox'), cbSend, { id: 'demo-combobox' })
   const { text: liveText, ...liveAttrs } = cb.liveRegion
-  const ddOpenPath = state.at('dropdown').map((s) => s.openPath)
-  const ctxOpenPath = state.at('context').map((s) => s.openPath)
+  const ddSubOverlay = (value: string, content: () => Mountable[]): Mountable =>
+    menuC.subOverlay({ value, state: state.at('dropdown'), parts: dd, content })
+  const ctxSubOverlay = (value: string, content: () => Mountable[]): Mountable =>
+    contextMenuC.subOverlay({ value, state: state.at('context'), parts: ctx, content })
 
   return [
     section(
       'Dropdown Menu',
-      'A real subTrigger/subContent submenu (`Team`), anchored to its own subTrigger via `watchSubmenuPositioning` — not a fixed top-left corner (#265 finding 7).',
+      'A real subTrigger/subContent submenu (`Team`), anchored to its own subTrigger via an engine-owned floating overlay — not a fixed top-left corner (#265 A4).',
       [
         // shadcn wraps a real `<Button>` in `DropdownMenuTrigger asChild` —
         // the trigger IS the button, not a second wrapping element — so this
@@ -391,11 +386,8 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       positionerClass: 'z-popover',
       content: () => [
         DropdownMenuContent({ ...dd.content }, [
-          onMount((root) =>
-            menuC.watchSubmenuPositioning(root as HTMLElement, state.at('dropdown')),
-          ),
           ...DROPDOWN_ITEMS.flatMap((i, index) => [
-            ...renderMenuTree([i], dd, ddOpenPath, DROPDOWN_RECIPES),
+            ...renderMenuTree([i], dd, ddSubOverlay, DROPDOWN_RECIPES),
             ...(index === 1 ? [DropdownMenuSeparator({ ...dd.separator() })] : []),
           ]),
         ]),
@@ -424,11 +416,8 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       positionerClass: 'z-popover',
       content: () => [
         ContextMenuContent({ ...ctx.content }, [
-          onMount((root) =>
-            contextMenuC.watchSubmenuPositioning(root as HTMLElement, state.at('context')),
-          ),
           ...CONTEXT_ITEMS.flatMap((i, index) => [
-            ...renderMenuTree([i], ctx, ctxOpenPath, CONTEXT_RECIPES),
+            ...renderMenuTree([i], ctx, ctxSubOverlay, CONTEXT_RECIPES),
             ...(index === 1 ? [ContextMenuSeparator({ ...ctx.separator() })] : []),
           ]),
         ]),
@@ -450,10 +439,17 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
     ...MENUBAR_MENUS.map((m) => {
       const menu = bar.menu(m.id)
       // Each top-level menu embeds its OWN `MenuState` (keyed by id) inside the
-      // bar's `menuStates` — this reads THIS menu's `openPath` reactively, the
-      // same value `renderMenuTree`'s gating `show`s need to know which
-      // submenu LEVEL of THIS menu (not a sibling top-level menu) is open.
-      const menuOpenPath = state.at('menubar').map((s) => s.menuStates[m.id]?.openPath ?? [])
+      // bar's `menuStates` — `menubarC.subOverlay` reaches into THIS menu's
+      // `openPath` reactively via that `menuId`, so it knows which submenu
+      // LEVEL of THIS menu (not a sibling top-level menu) is open.
+      const menuSubOverlay = (value: string, content: () => Mountable[]): Mountable =>
+        menubarC.subOverlay({
+          menuId: m.id,
+          value,
+          state: state.at('menubar'),
+          parts: menu,
+          content,
+        })
       return menubarC.overlay({
         state: state.at('menubar'),
         send: barSend,
@@ -462,12 +458,9 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
         positionerClass: 'z-popover',
         content: () => [
           MenubarContent({ ...menu.content }, [
-            onMount((root) =>
-              menubarC.watchSubmenuPositioning(root as HTMLElement, state.at('menubar')),
-            ),
             ...m.items
               .flatMap((i, index) => [
-                ...renderMenuTree([i], menu, menuOpenPath, MENUBAR_RECIPES),
+                ...renderMenuTree([i], menu, menuSubOverlay, MENUBAR_RECIPES),
                 ...(index === 0 && m.items.length > 2
                   ? [MenubarSeparator({ ...menu.separator() })]
                   : []),
