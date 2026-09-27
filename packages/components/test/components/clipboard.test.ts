@@ -11,7 +11,30 @@ import { rootSignal, signalOf, read } from '../_signal'
 
 describe('clipboard reducer', () => {
   it('initializes empty', () => {
-    expect(init()).toEqual({ value: '', copied: false })
+    expect(init()).toEqual({ value: '', copied: false, failed: false })
+  })
+
+  // #266: a refused write used to be indistinguishable from "never clicked" —
+  // the user pressed Copy and nothing at all happened. `copyFailed` makes the
+  // failure a STATE, so the view can say so and point at the selectable input.
+  it('copyFailed records the refusal without claiming success', () => {
+    const [s] = update(init({ value: 'hi' }), { type: 'copyFailed' })
+    expect(s.failed).toBe(true)
+    expect(s.copied).toBe(false)
+  })
+
+  it('a later success, a new request, reset and a new value each clear the failure', () => {
+    const [failed] = update(init({ value: 'hi' }), { type: 'copyFailed' })
+    expect(update(failed, { type: 'copied' })[0]).toMatchObject({ copied: true, failed: false })
+    expect(update(failed, { type: 'copy' })[0].failed).toBe(false)
+    expect(update(failed, { type: 'reset' })[0].failed).toBe(false)
+    expect(update(failed, { type: 'setValue', value: 'x' })[0].failed).toBe(false)
+  })
+
+  it('a stale success is cleared by a failure (the two flags are exclusive)', () => {
+    const [copied] = update(init({ value: 'hi' }), { type: 'copied' })
+    const [s] = update(copied, { type: 'copyFailed' })
+    expect(s).toMatchObject({ copied: false, failed: true })
   })
 
   it('setValue updates value and clears copied flag', () => {
@@ -178,6 +201,14 @@ describe('clipboard.connect', () => {
   it('data-copied reflects state', () => {
     expect(read(p.root['data-copied'], { value: '', copied: true })).toBe('')
     expect(read(p.root['data-copied'], { value: '', copied: false })).toBeUndefined()
+  })
+
+  it('data-failed reflects a refused write on root, trigger and the live indicator (#266)', () => {
+    const failed = { value: '', copied: false, failed: true }
+    expect(read(p.root['data-failed'], failed)).toBe('')
+    expect(read(p.trigger['data-failed'], failed)).toBe('')
+    expect(read(p.indicator['data-failed'], failed)).toBe('')
+    expect(read(p.root['data-failed'], { value: '', copied: false, failed: false })).toBe(undefined)
   })
 
   it('indicator has aria-live=polite', () => {

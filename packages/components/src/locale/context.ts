@@ -42,8 +42,15 @@ export interface Locale {
   }
   dialog: { close: string }
   drawer: { close: string }
-  fileUpload: { remove: string; clear: string }
-  floatingPanel: { label: string; minimize: string; maximize: string; close: string }
+  fileUpload: { remove: string; clear: string; retry: string; progress: string }
+  floatingPanel: {
+    label: string
+    minimize: string
+    maximize: string
+    close: string
+    move: string
+    resize: string
+  }
   gradientPicker: {
     track: string
     stop: (index: number, count: number, color: string, position: number) => string
@@ -68,7 +75,7 @@ export interface Locale {
     css: string
     cssError: (reason: string) => string
   }
-  imageCropper: { reset: string }
+  imageCropper: { reset: string; cropArea: string }
   navigationMenu: { label: string }
   numberInput: { increment: string; decrement: string }
   pagination: { label: string; prev: string; next: string; page: (n: number) => string }

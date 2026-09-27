@@ -118,4 +118,76 @@ describe('floating-panel.connect', () => {
     p.resizeHandle('se').onPointerDown({} as PointerEvent)
     expect(send).toHaveBeenCalledWith({ type: 'resizeStart', handle: 'se' })
   })
+
+  it('minimize/maximize triggers publish their toggle state (#266)', () => {
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.minimizeTrigger['aria-pressed'], init())).toBe('false')
+    expect(read(p.minimizeTrigger['aria-pressed'], { ...init(), minimized: true })).toBe('true')
+    expect(read(p.maximizeTrigger['aria-pressed'], { ...init(), maximized: true })).toBe('true')
+  })
+})
+
+// #266: the panel could only be moved and resized with a pointer. The drag
+// handle and every resize grip are now keyboard stops with the same geometry
+// rules the pointer path uses (minSize/maxSize clamp, maximized blocks both).
+describe('floating-panel keyboard parity (#266)', () => {
+  it('moveBy moves without a drag in progress; maximized refuses it', () => {
+    const [s] = update(init(), { type: 'moveBy', dx: 10, dy: -20 })
+    expect(s.position).toEqual({ x: 110, y: 80 })
+    const max = update(init(), { type: 'maximize' })[0]
+    expect(update(max, { type: 'moveBy', dx: 10, dy: 0 })[0]).toBe(max)
+    expect(update(init(), { type: 'moveBy', dx: Number.NaN, dy: 0 })[0].position).toEqual({
+      x: 100,
+      y: 100,
+    })
+  })
+
+  it('resizeBy applies the pointer resize math for the named handle, clamped', () => {
+    const s0 = init({ minSize: { width: 200, height: 150 }, maxSize: { width: 450 } })
+    expect(update(s0, { type: 'resizeBy', handle: 'se', dx: 10, dy: 10 })[0].size).toEqual({
+      width: 410,
+      height: 310,
+    })
+    // West edge: x moves with the edge, width shrinks.
+    const west = update(s0, { type: 'resizeBy', handle: 'w', dx: 10, dy: 0 })[0]
+    expect(west.position.x).toBe(110)
+    expect(west.size.width).toBe(390)
+    // Constraints: max width 450, min height 150.
+    expect(update(s0, { type: 'resizeBy', handle: 'e', dx: 500, dy: 0 })[0].size.width).toBe(450)
+    expect(update(s0, { type: 'resizeBy', handle: 's', dx: 0, dy: -500 })[0].size.height).toBe(150)
+    const max = update(s0, { type: 'maximize' })[0]
+    expect(update(max, { type: 'resizeBy', handle: 'se', dx: 5, dy: 5 })[0]).toBe(max)
+  })
+
+  const key = (handler: (e: KeyboardEvent) => void, init: KeyboardEventInit): KeyboardEvent => {
+    const e = new KeyboardEvent('keydown', { cancelable: true, ...init })
+    handler(e)
+    return e
+  }
+
+  it('the drag handle is a named keyboard stop whose arrows move the panel', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send)
+    expect(p.dragHandle.tabindex).toBe(0)
+    expect(p.dragHandle['aria-label']).toBe('Move panel')
+    expect(key(p.dragHandle.onKeyDown, { key: 'ArrowLeft' }).defaultPrevented).toBe(true)
+    expect(send).toHaveBeenLastCalledWith({ type: 'moveBy', dx: -10, dy: 0 })
+    key(p.dragHandle.onKeyDown, { key: 'ArrowDown', shiftKey: true })
+    expect(send).toHaveBeenLastCalledWith({ type: 'moveBy', dx: 0, dy: 50 })
+    send.mockClear()
+    expect(key(p.dragHandle.onKeyDown, { key: 'Enter' }).defaultPrevented).toBe(false)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('a resize grip is a named keyboard stop whose arrows resize from that grip', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send)
+    const se = p.resizeHandle('se')
+    expect(se.tabindex).toBe(0)
+    expect(se['aria-label']).toBe('Resize panel')
+    key(se.onKeyDown, { key: 'ArrowRight' })
+    expect(send).toHaveBeenLastCalledWith({ type: 'resizeBy', handle: 'se', dx: 10, dy: 0 })
+    key(se.onKeyDown, { key: 'ArrowUp', shiftKey: true })
+    expect(send).toHaveBeenLastCalledWith({ type: 'resizeBy', handle: 'se', dx: 0, dy: -50 })
+  })
 })

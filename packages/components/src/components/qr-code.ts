@@ -116,22 +116,39 @@ export function toDataUrl(
 }
 
 export interface QrCodeParts {
+  /**
+   * A labelled `group` around the code and its download action. `aria-label` on
+   * a bare `<div>` (role `generic`) is prohibited ARIA and ignored by most
+   * assistive technology, which is why the role is stated.
+   */
   root: {
+    role: 'group'
     'data-scope': 'qr-code'
     'data-part': 'root'
     'aria-label': string
+    /** Present while no matrix has been supplied — the empty state hook. */
+    'data-empty': Signal<'' | undefined>
   }
+  /**
+   * The `role="img"` graphic carries its OWN accessible name. A screen-reader
+   * user cannot scan the modules, so the name includes the encoded value.
+   */
   svg: {
     'data-scope': 'qr-code'
     'data-part': 'svg'
     role: 'img'
+    'aria-label': Signal<string>
     viewBox: Signal<string>
     'shape-rendering': 'crispEdges'
   }
+  /** Spread onto a `<rect>`: sized to the module grid so it covers the quiet background. */
   background: {
     'data-scope': 'qr-code'
     'data-part': 'background'
+    width: Signal<string>
+    height: Signal<string>
   }
+  /** Spread onto a `<path>`: one sub-path per dark module. */
   foreground: {
     'data-scope': 'qr-code'
     'data-part': 'foreground'
@@ -142,6 +159,8 @@ export interface QrCodeParts {
     'aria-label': string
     'data-scope': 'qr-code'
     'data-part': 'download-trigger'
+    /** Nothing to download until a matrix exists. */
+    disabled: Signal<boolean>
     onClick: (e: MouseEvent) => void
   }
 }
@@ -162,25 +181,31 @@ export function connect(
   const label = opts.label ?? locale.label
   const filename = opts.downloadFilename ?? 'qrcode.svg'
 
+  // The grid side in user units; an empty matrix keeps a 1x1 box so the svg and
+  // its background stay valid, sized, and paintable in the empty state.
+  const side = (st: QrCodeState): number => Math.max(size(st), 1)
+
   return {
     root: {
+      role: 'group',
       'data-scope': 'qr-code',
       'data-part': 'root',
       'aria-label': label,
+      'data-empty': state.map((st) => (size(st) === 0 ? '' : undefined)),
     },
     svg: {
       'data-scope': 'qr-code',
       'data-part': 'svg',
       role: 'img',
-      viewBox: state.map((st) => {
-        const n = size(st)
-        return n > 0 ? `0 0 ${n} ${n}` : '0 0 1 1'
-      }),
+      'aria-label': state.map((st) => (st.value === '' ? label : `${label}: ${st.value}`)),
+      viewBox: state.map((st) => `0 0 ${side(st)} ${side(st)}`),
       'shape-rendering': 'crispEdges',
     },
     background: {
       'data-scope': 'qr-code',
       'data-part': 'background',
+      width: state.map((st) => String(side(st))),
+      height: state.map((st) => String(side(st))),
     },
     foreground: {
       'data-scope': 'qr-code',
@@ -192,14 +217,17 @@ export function connect(
       'aria-label': opts.downloadLabel ?? locale.download,
       'data-scope': 'qr-code',
       'data-part': 'download-trigger',
-      onClick: () => {
-        // Generate an SVG blob and trigger a download via a hidden link.
-        // State isn't accessible here; caller should use the current value
-        // in a DOM query or run this inside a closure with state access.
-        // We dispatch a best-effort via the document for now.
-        const root = document.querySelector<HTMLElement>('[data-scope="qr-code"][data-part="svg"]')
-        if (!root) return
-        const xml = new XMLSerializer().serializeToString(root)
+      disabled: state.map((st) => size(st) === 0),
+      onClick: (e) => {
+        // Serialize THIS instance's graphic: resolve the svg from the trigger's
+        // own root. A document-wide query downloaded whichever QR code came
+        // first on the page (#266).
+        const trigger = e.currentTarget
+        if (!(trigger instanceof Element)) return
+        const root = trigger.closest('[data-scope="qr-code"][data-part="root"]')
+        const svg = root?.querySelector('[data-scope="qr-code"][data-part="svg"]')
+        if (!svg) return
+        const xml = new XMLSerializer().serializeToString(svg)
         const blob = new Blob([xml], { type: 'image/svg+xml' })
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')

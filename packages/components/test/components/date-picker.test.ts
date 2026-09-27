@@ -6,6 +6,7 @@ import {
   monthGrid,
   monthLabel,
   weekdayLabels,
+  todayInTimeZone,
 } from '../../src/components/date-picker'
 import { rootSignal, read, signalOf } from '../_signal'
 
@@ -21,6 +22,7 @@ function rangeCell(iso: string, overrides: Record<string, unknown> = {}) {
     isRangeStart: false,
     isRangeEnd: false,
     isInRange: false,
+    isUnavailable: false,
     ...overrides,
   }
 }
@@ -160,6 +162,7 @@ describe('date-picker.connect', () => {
       isRangeStart: false,
       isRangeEnd: false,
       isInRange: false,
+      isUnavailable: false,
     }
     pc.dayCell(cell).cell.onKeyDown(
       new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
@@ -186,6 +189,7 @@ describe('date-picker.connect', () => {
       isRangeStart: false,
       isRangeEnd: false,
       isInRange: false,
+      isUnavailable: false,
     }
     pc.dayCell(cell).cell.onClick(new MouseEvent('click'))
     expect(send).not.toHaveBeenCalled()
@@ -451,7 +455,8 @@ describe('date-picker.connect range + multi-month + presets', () => {
 
   it('dayCell hover sends setHover in range mode', () => {
     const send = vi.fn()
-    const pc = connect(rootSignal(), send, { mode: 'range' })
+    const s = init({ mode: 'range', visibleYear: 2024, visibleMonth: 6 })
+    const pc = connect(signalOf(s), send, { mode: 'range' })
     pc.dayCell(rangeCell('2024-06-12')).cell.onPointerEnter(new PointerEvent('pointerenter'))
     expect(send).toHaveBeenCalledWith({ type: 'setHover', date: '2024-06-12' })
   })
@@ -461,5 +466,144 @@ describe('date-picker.connect range + multi-month + presets', () => {
     const [s] = update(s0, { type: 'moveFocus', days: 1 })
     expect(s.focused).toBe('2024-07-01')
     expect(s.visibleMonth).toBe(7)
+  })
+})
+
+// #266: "today" came from the wall clock at every grid computation, so a
+// gallery screenshot, an SSR render and its hydration could disagree about
+// which cell is today (and a test's today-marker moved every midnight). It is
+// now PINNABLE state, and a helper computes it in any IANA time zone.
+describe('date-picker pinned today and time zones (#266)', () => {
+  it('a pinned today drives the today marker, the default focus and the visible month', () => {
+    const s = init({ today: '2026-03-14' })
+    expect(s.today).toBe('2026-03-14')
+    expect(s.focused).toBe('2026-03-14')
+    expect([s.visibleYear, s.visibleMonth]).toEqual([2026, 3])
+    const todayCells = monthGrid(s).filter((c) => c.isToday)
+    expect(todayCells.map((c) => c.iso)).toEqual(['2026-03-14'])
+  })
+
+  it('focusToday honours the pinned today, not the clock', () => {
+    const s0 = init({ today: '2026-03-14', value: '2025-01-02' })
+    const [s] = update(s0, { type: 'focusToday' })
+    expect(s.focused).toBe('2026-03-14')
+    expect(s.visibleMonth).toBe(3)
+  })
+
+  it('setToday re-pins (and null returns to the clock)', () => {
+    const s0 = init({ today: '2026-03-14' })
+    expect(update(s0, { type: 'setToday', today: '2026-03-15' })[0].today).toBe('2026-03-15')
+    expect(update(s0, { type: 'setToday', today: null })[0].today).toBeNull()
+  })
+
+  it('todayInTimeZone reads the calendar date of an instant in a named zone', () => {
+    // 2026-03-14T23:30:00Z: still the 14th in Los Angeles, already the 15th in Auckland.
+    const instant = Date.UTC(2026, 2, 14, 23, 30)
+    expect(todayInTimeZone('America/Los_Angeles', instant)).toBe('2026-03-14')
+    expect(todayInTimeZone('Pacific/Auckland', instant)).toBe('2026-03-15')
+    expect(todayInTimeZone('UTC', instant)).toBe('2026-03-14')
+  })
+
+  it('the state stays a JSON round-trip identity with a pinned today', () => {
+    const s = init({ today: '2026-03-14', unavailable: ['2026-03-20'] })
+    expect(JSON.parse(JSON.stringify(s))).toEqual(s)
+  })
+})
+
+// #266: bookings, holidays and sold-out dates are not a min/max window. A date
+// in `unavailable` is disabled like an out-of-bounds one, but published
+// separately so a skin can strike it through rather than merely dim it.
+describe('date-picker unavailable dates (#266)', () => {
+  const base = {
+    today: '2026-03-14',
+    visibleYear: 2026,
+    visibleMonth: 3,
+    unavailable: ['2026-03-18', '2026-03-19'],
+  }
+
+  it('marks unavailable cells disabled AND unavailable; bounds stay merely disabled', () => {
+    const s = init({ ...base, min: '2026-03-05' })
+    const byIso = new Map(monthGrid(s).map((c) => [c.iso, c]))
+    expect(byIso.get('2026-03-18')).toMatchObject({ isDisabled: true, isUnavailable: true })
+    expect(byIso.get('2026-03-02')).toMatchObject({ isDisabled: true, isUnavailable: false })
+    expect(byIso.get('2026-03-17')).toMatchObject({ isDisabled: false, isUnavailable: false })
+  })
+
+  it('selectFocused refuses an unavailable date', () => {
+    const s0 = init(base)
+    const focused = update(s0, { type: 'setFocused', date: '2026-03-18' })[0]
+    expect(update(focused, { type: 'selectFocused' })[0].value).toBeNull()
+  })
+
+  it('a range may not be completed across an unavailable date', () => {
+    const s0 = init({ ...base, mode: 'range' })
+    const anchored = update(update(s0, { type: 'setFocused', date: '2026-03-16' })[0], {
+      type: 'selectFocused',
+    })[0]
+    expect(anchored.start).toBe('2026-03-16')
+    const across = update(update(anchored, { type: 'setFocused', date: '2026-03-21' })[0], {
+      type: 'selectFocused',
+    })[0]
+    expect(across.end).toBeNull()
+    expect(across.start).toBe('2026-03-16')
+    const within = update(update(anchored, { type: 'setFocused', date: '2026-03-17' })[0], {
+      type: 'selectFocused',
+    })[0]
+    expect([within.start, within.end]).toEqual(['2026-03-16', '2026-03-17'])
+  })
+
+  it('setUnavailable replaces the set', () => {
+    const s = update(init(base), { type: 'setUnavailable', dates: ['2026-03-01'] })[0]
+    expect(s.unavailable).toEqual(['2026-03-01'])
+  })
+
+  it('the day cell publishes data-unavailable', () => {
+    const s = init(base)
+    const bag = connect(signalOf(s), vi.fn()).dayCell(rangeCell('2026-03-18')).cell
+    expect(read(bag['data-unavailable'], s)).toBe('')
+    expect(read(bag['aria-disabled'], s)).toBe('true')
+    const free = connect(signalOf(s), vi.fn()).dayCell(rangeCell('2026-03-17')).cell
+    expect(read(free['data-unavailable'], s)).toBeUndefined()
+  })
+
+  it('range hover preview reads disabled-ness LIVE, not from the build-time cell', () => {
+    const s = init({ ...base, mode: 'range' })
+    const send = vi.fn()
+    // The caller's snapshot says "enabled"; live state says unavailable.
+    const bag = connect(signalOf(s), send, { mode: 'range' }).dayCell(rangeCell('2026-03-18')).cell
+    bag.onPointerEnter(new PointerEvent('pointerenter'))
+    expect(send).not.toHaveBeenCalled()
+  })
+})
+
+// #266: PageUp/PageDown changed the visible month but left the roving focus in
+// the PREVIOUS month, so the new grid had no tabindex=0 cell and keyboard focus
+// had nowhere to land. They now move the focused date by a month (clamping the
+// day), which brings the visible month along with it.
+describe('date-picker month paging keeps the roving focus visible (#266)', () => {
+  it('moveFocusMonths moves by calendar months and clamps the day', () => {
+    const s0 = init({ value: '2026-01-31' })
+    const [feb] = update(s0, { type: 'moveFocusMonths', months: 1 })
+    expect(feb.focused).toBe('2026-02-28')
+    expect([feb.visibleYear, feb.visibleMonth]).toEqual([2026, 2])
+    const [dec] = update(s0, { type: 'moveFocusMonths', months: -1 })
+    expect(dec.focused).toBe('2025-12-31')
+    expect([dec.visibleYear, dec.visibleMonth]).toEqual([2025, 12])
+  })
+
+  it('PageDown / PageUp send moveFocusMonths and the focused cell stays in the grid', () => {
+    const send = vi.fn()
+    const s = init({ value: '2026-03-14' })
+    const bag = connect(signalOf(s), send).dayCell(rangeCell('2026-03-14')).cell
+    const down = new KeyboardEvent('keydown', { key: 'PageDown', cancelable: true })
+    Object.defineProperty(down, 'currentTarget', { value: document.body })
+    bag.onKeyDown(down)
+    expect(send).toHaveBeenLastCalledWith({ type: 'moveFocusMonths', months: 1 })
+    const up = new KeyboardEvent('keydown', { key: 'PageUp', cancelable: true })
+    Object.defineProperty(up, 'currentTarget', { value: document.body })
+    bag.onKeyDown(up)
+    expect(send).toHaveBeenLastCalledWith({ type: 'moveFocusMonths', months: -1 })
+    const next = update(s, { type: 'moveFocusMonths', months: 1 })[0]
+    expect(monthGrid(next).some((c) => c.isFocused && c.inMonth)).toBe(true)
   })
 })

@@ -120,6 +120,25 @@ describe('parts / formatMs', () => {
 })
 
 describe('timer.connect', () => {
+  it('publishes a completed countdown on the root and refuses to start it again (#266)', () => {
+    const p = connect(rootSignal(), vi.fn())
+    const done = init({ direction: 'down', targetMs: 1000, elapsedMs: 1000 })
+    expect(read(p.root['data-complete'], done)).toBe('')
+    expect(read(p.root['data-complete'], init({ direction: 'down', targetMs: 1000 }))).toBe(
+      undefined,
+    )
+    expect(read(p.root['data-complete'], init({ elapsedMs: 5000 }))).toBeUndefined()
+    // A finished countdown has nothing left to run; start is re-enabled by reset.
+    expect(read(p.startTrigger.disabled, done)).toBe(true)
+    expect(read(p.startTrigger.disabled, update(done, { type: 'reset' })[0])).toBe(false)
+  })
+
+  it('start on a completed countdown is a no-op in the reducer too (#266)', () => {
+    const done = init({ direction: 'down', targetMs: 1000, elapsedMs: 1000 })
+    const [next] = update(done, { type: 'start', now: 5000 })
+    expect(next).toBe(done)
+  })
+
   it('startTrigger disabled while running', () => {
     const p = connect(rootSignal<TimerState>(), vi.fn())
     expect(read(p.startTrigger.disabled, init())).toBe(false)

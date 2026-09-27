@@ -5,6 +5,8 @@ export const enFloatingPanel: Locale['floatingPanel'] = {
   minimize: 'Minimize',
   maximize: 'Maximize',
   close: 'Close',
+  move: 'Move panel',
+  resize: 'Resize panel',
 }
 export const floatingPanelLocale = (): Locale['floatingPanel'] =>
   resolveLocaleSlice('floatingPanel', enFloatingPanel)
