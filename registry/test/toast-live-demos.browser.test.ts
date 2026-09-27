@@ -62,6 +62,62 @@ async function startExample(directory: string): Promise<{ server: ViteDevServer;
   return { server, url: `http://127.0.0.1:${address.port}/` }
 }
 
+declare global {
+  interface Window {
+    /** Every `data-state` each toast row (by `data-id`) has taken, in order,
+     * with `removed` appended when the row leaves the DOM. */
+    __toastStates?: Record<string, string[]>
+  }
+}
+
+/**
+ * Record each toast row's lifecycle as it HAPPENS, from a MutationObserver:
+ * reading `data-state` after the fact misses a `closing` phase that a
+ * reduced-motion exit ends within the same frame.
+ */
+async function recordToastStates(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const states: Record<string, string[]> = {}
+    window.__toastStates = states
+    const ROOT = '[data-scope="toast"][data-part="root"]'
+    const note = (el: Element, value: string): void => {
+      const id = el.getAttribute('data-id')
+      if (id === null) return
+      const list = (states[id] ??= [])
+      if (list[list.length - 1] !== value) list.push(value)
+    }
+    new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.type === 'attributes') {
+          const el = record.target as Element
+          if (el.matches(ROOT)) note(el, el.getAttribute('data-state') ?? '')
+          continue
+        }
+        for (const node of record.addedNodes) {
+          if (!(node instanceof Element)) continue
+          for (const el of [node, ...node.querySelectorAll(ROOT)]) {
+            if (el.matches(ROOT)) note(el, el.getAttribute('data-state') ?? '')
+          }
+        }
+        for (const node of record.removedNodes) {
+          if (!(node instanceof Element)) continue
+          for (const el of [node, ...node.querySelectorAll(ROOT)]) {
+            if (el.matches(ROOT)) note(el, 'removed')
+          }
+        }
+      }
+    }).observe(document.body, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ['data-state'],
+    })
+  })
+}
+
+const statesOf = (page: Page, id: string): Promise<string[] | undefined> =>
+  page.evaluate((key) => window.__toastStates?.[key], id)
+
 describe('actual Toast demos in Chromium (#265 task item 1)', () => {
   let browser: Browser
   let servers: ViteDevServer[] = []
@@ -99,6 +155,7 @@ describe('actual Toast demos in Chromium (#265 task item 1)', () => {
         await page.clock.install({ time: 0 })
         await page.goto(urls[demo.path]!)
         await page.locator('#app').waitFor({ state: 'attached' })
+        await recordToastStates(page)
       })
 
       afterEach(async () => {
@@ -280,8 +337,12 @@ describe('actual Toast demos in Chromium (#265 task item 1)', () => {
         await page.locator(demo.trigger('warning')).click()
         const root = page.locator(`${ROOT}[data-type="warning"]`).last()
         await root.waitFor({ state: 'attached' })
+        const id = (await root.getAttribute('data-id'))!
         await page.clock.fastForward(10_000)
         await root.waitFor({ state: 'detached', timeout: 5000 })
+        // Every phase really happened, in order: the row stayed mounted as
+        // `closing` until its own exit animation ended.
+        expect(await statesOf(page, id)).toEqual(['open', 'closing', 'removed'])
       })
 
       it('create -> tick-expiry -> closing -> animationend -> removal, under reduced motion (no wall-clock wait)', async () => {
@@ -289,6 +350,7 @@ describe('actual Toast demos in Chromium (#265 task item 1)', () => {
         await page.locator(demo.trigger('warning')).click()
         const root = page.locator(`${ROOT}[data-type="warning"]`).last()
         await root.waitFor({ state: 'attached' })
+        const id = (await root.getAttribute('data-id'))!
         await page.clock.fastForward(10_000)
         // Reduced motion collapses the exit animation to ~0.01ms, so the
         // real `animationend` still fires and removal is still real — just
@@ -301,6 +363,16 @@ describe('actual Toast demos in Chromium (#265 task item 1)', () => {
         // `closing` scenario case, which mounts already-closing rather than
         // racing a live removal.)
         await root.waitFor({ state: 'detached', timeout: 5000 })
+        expect(await statesOf(page, id)).toEqual(['open', 'closing', 'removed'])
+      })
+
+      it('a loading toast is sticky: no amount of elapsed time dismisses it', async () => {
+        await page.locator(demo.trigger('loading')).click()
+        const root = page.locator(`${ROOT}[data-type="loading"]`).last()
+        await root.waitFor({ state: 'attached' })
+        const id = (await root.getAttribute('data-id'))!
+        await page.clock.fastForward(60_000)
+        expect(await statesOf(page, id)).toEqual(['open'])
       })
 
       it('loading -> success update changes type/text/visual/ARIA on the SAME mounted row, and the success toast then lasts its own duration', async () => {
@@ -320,12 +392,18 @@ describe('actual Toast demos in Chromium (#265 task item 1)', () => {
         expect(await patched.getAttribute('role')).toBe('status')
         expect(await patched.getAttribute('aria-live')).toBe('polite')
 
-        // The patched toast re-seeded its countdown from the new duration
-        // (#265 A2) — it must still be present just after the patch and
-        // gone once that duration elapses.
-        expect(await patched.count()).toBeGreaterThan(0)
-        await page.clock.fastForward(10_000)
+        // E5 — the patch RE-SEEDS the countdown from the new duration (3000ms,
+        // both demos). A sticky toast's remainingMs sat at 0; without the
+        // re-seed the first tick after the patch dismisses it. So: still
+        // `open` just short of 3000ms after the patch, `closing` just after.
+        // The patch fired at 1200ms and we stand at 2000ms, so +1800ms is
+        // 2600ms after it, +1000ms more is 3600ms (the demo ticks every
+        // 250ms, hence the margins).
+        await page.clock.fastForward(1_800)
+        expect(await statesOf(page, id!)).toEqual(['open'])
+        await page.clock.fastForward(1_000)
         await patched.waitFor({ state: 'detached', timeout: 5000 })
+        expect(await statesOf(page, id!)).toEqual(['open', 'closing', 'removed'])
       })
     })
   }

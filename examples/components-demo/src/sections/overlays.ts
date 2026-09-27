@@ -246,7 +246,9 @@ export const update = mergeHandlers<State, Msg, Effect>(
         type: msg.kind,
         title: msg.title,
         description: msg.description,
-        duration: 3000,
+        // `loading` is in-progress work: it stays until something resolves it
+        // (see the async demo below), exactly like the registry demo.
+        duration: msg.kind === 'loading' ? null : 3000,
         dismissable: true,
       },
     })
