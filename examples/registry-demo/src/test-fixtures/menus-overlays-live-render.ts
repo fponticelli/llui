@@ -10,6 +10,7 @@ import {
   compileMenusOverlaysCatalog,
   joinMenusOverlaysScenarios,
   resolveScenarioSelection,
+  type MenusOverlaysDefinitions,
   type PresentationScenarioEnvironment,
 } from '../../../../packages/components/test/styles/menus-overlays-scenarios'
 import {
@@ -42,7 +43,7 @@ window.__mountMenusOverlaysRegistryCase = (contract, request) => {
   if (scenario === undefined) {
     throw new Error(`Unknown menus-overlays scenarioId ${request.scenarioId}`)
   }
-  const resolved = resolveScenarioSelection(contract, catalog, {
+  const resolved = resolveScenarioSelection<MenusOverlaysDefinitions>(contract, catalog, {
     productId: scenario.productId,
     caseId: request.caseId,
     path: 'registryTailwind',
