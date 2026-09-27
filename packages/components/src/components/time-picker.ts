@@ -183,6 +183,7 @@ export interface TimePickerParts {
     'data-scope': 'time-picker'
     'data-part': 'root'
     'data-format': Signal<TimeFormat>
+    'data-disabled': Signal<'' | undefined>
   }
   hoursInput: {
     type: 'number'
@@ -244,6 +245,7 @@ export function connect(
       'data-scope': 'time-picker',
       'data-part': 'root',
       'data-format': state.map((s) => s.format),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
     hoursInput: {
       type: 'number',

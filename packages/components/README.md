@@ -325,7 +325,7 @@ This is ordinary published CSS. It requires no Tailwind dependency, plugin, conf
 
 Dark tokens are included. The theme follows `prefers-color-scheme`, `.dark`, and `[data-theme='dark']`; `[data-theme='light']` or `.light` opts out. The former second `theme-dark.css` import must be removed; that redundant subpath is no longer exported.
 
-For a custom bundle, import `semantic-tokens.css`, `semantic-tokens-dark.css`, and `foundation.css` first, then only the public family entries you need: `form-controls.css`, `disclosure-navigation.css`, `menus-overlays.css`, `data-display.css`, `layout.css`, and `motion.css`.
+For a custom bundle, import `semantic-tokens.css`, `semantic-tokens-dark.css`, and `foundation.css` first, then only the public family entries you need: `form-controls.css`, `disclosure-navigation.css`, `menus-overlays.css`, `data-display.css`, `specialized-tools.css`, and `motion.css`.
 
 The non-colour baseline names deliberately moved out of Tailwind namespaces: `--radius-md`, `--shadow-sm`, `--transition-duration-fast`, `--z-index-dialog`, and `--spacing-2` become `--llui-radius-md`, `--llui-shadow-sm`, `--llui-duration-fast`, `--llui-z-dialog`, and `--llui-space-2`. Base shadcn token names such as `--primary` and `--radius` are unchanged.
 
