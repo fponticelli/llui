@@ -120,14 +120,22 @@ export type ComboboxMsg =
   /**
    * @humanOnly
    *
-   * Atomic replacement: `items` is required, and `groups`/`disabled` are
-   * OPTIONAL companions that replace their own state field when present
-   * (omitted ⇒ unchanged) — but every field the fresh `items` list makes
+   * Atomic replacement: `items` is required. `disabled` is an OPTIONAL
+   * companion that replaces `disabledItems` when present (omitted ⇒
+   * unchanged). `groups` is different: omitting it RESETS to no groups
+   * (`[]`), the same as `init()` with no `groups` option — a fresh
+   * replacement with no `groups` describes a flat result, and carrying a
+   * PREVIOUS load's groups forward would keep describing options this
+   * replacement never mentioned as belonging to a group that may no longer
+   * apply (#265 A3). Every field the fresh `items`/`disabled`/`groups` makes
    * inconsistent is reconciled in this SAME reducer step, never in a
-   * follow-up message. `value` (selection) and `highlightedValue` are
-   * dropped when they no longer name a value in the new `items` (after the
-   * new `disabled` is applied), so there is no instant where the machine
-   * reports a selected/highlighted option the fresh list does not carry.
+   * follow-up message. `value` (selection) is dropped when it no longer
+   * names a value in the new `items` (after the new `disabled` is applied).
+   * `highlightedValue` is kept only when it is BOTH still in the fresh
+   * filtered list AND not newly disabled; otherwise it moves to the first
+   * enabled match (or `null` when none is enabled) — never left dangling
+   * for a render in between, and never left naming an option that is now
+   * disabled.
    */
   | {
       type: 'loadSuccess'
@@ -268,6 +276,31 @@ function indexOfValue(items: string[], value: string | null): number | null {
 /** The first-enabled option's VALUE in `items`, or null. */
 function firstEnabledValue(items: string[], disabled: string[]): string | null {
   return valueAt(items, firstEnabledIndex(items, navigableDisabled(disabled)))
+}
+
+/**
+ * Resolve the highlight after an `items`/`disabled` replacement
+ * (`setItems`/`loadSuccess`, #265 A3): keep the current highlight only when
+ * it survives BOTH the fresh filtered list AND the fresh disabled set,
+ * otherwise move to the first enabled match in the fresh list (or `null`
+ * when none is enabled). A highlight that merely stayed in `filteredItems`
+ * but became disabled in this same replacement must not linger —
+ * `aria-activedescendant` would otherwise keep naming an option a keyboard
+ * user can no longer select.
+ */
+function resolveHighlightAfterReplace(
+  highlightedValue: string | null,
+  filteredItems: string[],
+  disabledItems: string[],
+): string | null {
+  if (
+    highlightedValue !== null &&
+    filteredItems.includes(highlightedValue) &&
+    !disabledItems.includes(highlightedValue)
+  ) {
+    return highlightedValue
+  }
+  return firstEnabledValue(filteredItems, disabledItems)
 }
 
 /** Commit a normal (non-create) option pick. */
@@ -420,12 +453,15 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
       const disabled = msg.disabled ?? state.disabledItems
       const value = state.value.filter((v) => msg.items.includes(v) && !disabled.includes(v))
       const filteredItems = computeFiltered(msg.items, state.inputValue, state.allowCreate)
-      // Value-keyed clamp: keep the highlight only when its value survives in the
-      // new filtered list, otherwise drop it (never dangle aria-activedescendant).
-      const highlightedValue =
-        state.highlightedValue !== null && filteredItems.includes(state.highlightedValue)
-          ? state.highlightedValue
-          : null
+      // Value-keyed clamp: keep the highlight only when its value survives in
+      // the new filtered list AND is not newly disabled; otherwise move to
+      // the first enabled match (or null) — never dangle
+      // aria-activedescendant on a filtered-out or disabled option (#265 A3).
+      const highlightedValue = resolveHighlightAfterReplace(
+        state.highlightedValue,
+        filteredItems,
+        disabled,
+      )
       return [
         {
           ...state,
@@ -445,18 +481,27 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
       // #265 finding 10): a partially-stale write is worse than a dropped one,
       // so the whole message either applies as ONE swap or not at all.
       if (msg.requestId !== state.requestId) return [state, []]
-      const groups = msg.groups ?? state.groups
+      // `groups` is OPTIONAL but not "unchanged when omitted": an atomic
+      // replacement with no `groups` is a flat (ungrouped) result, exactly
+      // like `init()` with no `groups` option — carrying a PREVIOUS load's
+      // groups forward would describe options this replacement never
+      // mentioned as still belonging to a group that may no longer apply
+      // (#265 A3).
+      const groups = msg.groups ?? []
       const disabledItems = msg.disabled ?? state.disabledItems
       const filteredItems = computeFiltered(msg.items, state.inputValue, state.allowCreate)
       // Atomic replacement: items/groups/disabled/selected/filtering/highlight
-      // all move together. A selection or highlight the fresh items (or the
-      // fresh disabled list) no longer support is dropped in this same step —
-      // never left dangling for a render in between.
+      // all move together. A selection the fresh items (or the fresh disabled
+      // list) no longer support is dropped in this same step — never left
+      // dangling for a render in between. The highlight is resolved the same
+      // way `setItems` does: kept only if still filtered-in AND still
+      // enabled, otherwise moved to the first enabled match (or null).
       const value = state.value.filter((v) => msg.items.includes(v) && !disabledItems.includes(v))
-      const highlightedValue =
-        state.highlightedValue !== null && filteredItems.includes(state.highlightedValue)
-          ? state.highlightedValue
-          : null
+      const highlightedValue = resolveHighlightAfterReplace(
+        state.highlightedValue,
+        filteredItems,
+        disabledItems,
+      )
       return [
         {
           ...state,

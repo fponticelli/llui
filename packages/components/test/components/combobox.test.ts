@@ -525,7 +525,65 @@ describe('combobox value-based highlight identity', () => {
     }
     const [s1] = update(kept, { type: 'setItems', items: ['banana', 'cherry'] })
     expect(s1.highlightedValue).toBe('banana')
+    // #265 A3: a pruned highlight moves to the first ENABLED match in the
+    // fresh list rather than dropping to null outright — 'cherry' is the
+    // first (and only enabled) survivor once 'banana' is filtered out.
     const [s2] = update(kept, { type: 'setItems', items: ['cherry', 'date'] })
-    expect(s2.highlightedValue).toBeNull()
+    expect(s2.highlightedValue).toBe('cherry')
+  })
+
+  it('setItems moves the highlight to null only when NO item in the fresh list is enabled', () => {
+    const kept = {
+      ...init({ items: ['apple', 'banana'] }),
+      highlightedValue: 'banana',
+      open: true,
+    }
+    const [s] = update(kept, {
+      type: 'setItems',
+      items: ['cherry', 'date'],
+      disabled: ['cherry', 'date'],
+    })
+    expect(s.highlightedValue).toBeNull()
+  })
+
+  it('setItems prunes a highlight that is still in the filtered list but became NEWLY DISABLED (#265 A3)', () => {
+    const kept = {
+      ...init({ items: ['apple', 'banana', 'cherry'] }),
+      highlightedValue: 'banana',
+      open: true,
+    }
+    const [s] = update(kept, {
+      type: 'setItems',
+      items: ['apple', 'banana', 'cherry'],
+      disabled: ['banana'],
+    })
+    expect(s.filteredItems).toContain('banana')
+    // 'banana' is still filtered-in but now disabled — the highlight must
+    // move to the first ENABLED match, not linger on a disabled option.
+    expect(s.highlightedValue).toBe('apple')
+  })
+
+  it('loadSuccess prunes a highlight that became NEWLY DISABLED even though it is still filtered-in (#265 A3)', () => {
+    const s0 = init({ items: ['apple', 'banana', 'cherry'] })
+    const [s1] = update(s0, { type: 'highlight', value: 'banana' })
+    const [s2] = update(s1, { type: 'loadStart', requestId: 1 })
+    const [s3] = update(s2, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['apple', 'banana', 'cherry'],
+      disabled: ['banana'],
+    })
+    expect(s3.filteredItems).toContain('banana')
+    expect(s3.highlightedValue).toBe('apple')
+  })
+
+  it('loadSuccess with no `groups` RESETS to no groups rather than carrying the previous load forward (#265 A3)', () => {
+    const s0 = init({
+      items: ['old-a'],
+      groups: [{ id: 'g1', label: 'G1', items: ['old-a'] }],
+    })
+    const [s1] = update(s0, { type: 'loadStart', requestId: 1 })
+    const [s2] = update(s1, { type: 'loadSuccess', requestId: 1, items: ['new-a'] })
+    expect(s2.groups).toEqual([])
   })
 })

@@ -145,6 +145,28 @@ describe('searchableSelect reducer', () => {
     expect(s.combobox.value).toEqual([])
   })
 
+  /** #265 A3 (pattern-level): the highlight-pruning and groups-reset fixes
+   * to combobox's `loadSuccess` reach the pattern too, since it delegates
+   * directly to the combobox reducer. */
+  it('loadSuccess prunes a highlight that became newly disabled and resets groups when omitted', () => {
+    let s = init({
+      items: ['apple', 'banana', 'cherry'],
+      groups: [{ id: 'g1', label: 'G1', items: ['apple', 'banana', 'cherry'] }],
+    })
+    s = apply(s, { type: 'setItems', items: ['apple', 'banana', 'cherry'] })
+    s = { ...s, combobox: { ...s.combobox, highlightedValue: 'banana' } }
+    s = apply(s, { type: 'loadStart', requestId: 1 })
+    s = apply(s, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['apple', 'banana', 'cherry'],
+      disabled: ['banana'],
+    })
+    expect(s.combobox.filteredItems).toContain('banana')
+    expect(s.combobox.highlightedValue).toBe('apple')
+    expect(s.combobox.groups).toEqual([])
+  })
+
   describe('multiple mode', () => {
     it('toggles values and stays open', () => {
       let s = init({ items: ['Apple', 'Banana', 'Cherry'], selectionMode: 'multiple' })
