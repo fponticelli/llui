@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createVariantsAxisNames,
+  createVariantsAxisValueNames,
+  cssHasScopeSelector,
   cssScopeHasDensityOrSizeSelector,
   hasDensityOrSizeProperty,
   optionsInterfacePropertyNames,
-  createVariantsAxisNames,
 } from './density-source-audit'
 
 /**
@@ -70,6 +72,27 @@ describe('hasDensityOrSizeProperty — known-positive self-checks', () => {
     expect(createVariantsAxisNames(source)).toEqual(['density'])
   })
 
+  it('createVariantsAxisNames follows a variants SHORTHAND to its module-level const (#264 item F3)', () => {
+    // `button.ts`/`badge.ts`'s real shape: the variants map is a separate
+    // const, spread into `createVariants` by shorthand rather than written
+    // inline — the exact hole M2's mutation (a `size` axis added this way)
+    // exploited, since the old code only read an INLINE `variants: {...}`.
+    const source = `
+      const variants = { size: { sm: 'h-5', lg: 'h-7' } }
+      export const badgeVariants = createVariants({ base: 'inline-flex', variants })
+    `
+    expect(createVariantsAxisNames(source)).toEqual(['size'])
+    expect(hasDensityOrSizeProperty(source)).toBe(true)
+  })
+
+  it('createVariantsAxisValueNames follows the same shorthand to the axis rungs', () => {
+    const source = `
+      const variants = { size: { sm: 'h-5', lg: 'h-7' } }
+      export const badgeVariants = createVariants({ base: 'inline-flex', variants })
+    `
+    expect(createVariantsAxisValueNames(source, 'size')).toEqual(['sm', 'lg'])
+  })
+
   it('is still false for an unrelated field merely mentioning "density" in prose', () => {
     const source = `
       // This component has no density option — see densityRationale below.
@@ -127,5 +150,31 @@ describe('cssScopeHasDensityOrSizeSelector — known-positive self-checks', () =
       [data-scope='avatar'][data-density='compact'] { gap: 0; }
     `
     expect(cssScopeHasDensityOrSizeSelector(css, 'avatar')).toBe(true)
+  })
+})
+
+describe('cssHasScopeSelector — the "was this scope ever audited at all" half (#264 item F3)', () => {
+  it('is true for a scope with ANY baseline rule, density/size or not', () => {
+    const css = `[data-scope='avatar'][data-part='root'] { display: flex; }`
+    expect(cssHasScopeSelector(css, 'avatar')).toBe(true)
+  })
+
+  it('is false for a scope with no baseline rule at all', () => {
+    const css = `[data-scope='table'][data-part='root'] { display: block; }`
+    expect(cssHasScopeSelector(css, 'avatar')).toBe(false)
+  })
+
+  it("disambiguates cssScopeHasDensityOrSizeSelector's false: unaudited vs. genuinely clean", () => {
+    // A scope this baseline never styles at all: the density check is
+    // vacuously false, and cssHasScopeSelector is what says so.
+    const noRulesAtAll = `.unrelated { color: red; }`
+    expect(cssScopeHasDensityOrSizeSelector(noRulesAtAll, 'avatar')).toBe(false)
+    expect(cssHasScopeSelector(noRulesAtAll, 'avatar')).toBe(false)
+
+    // A scope this baseline DOES style, with no density/size selector: the
+    // same `false` from the density check now means something real.
+    const genuinelyClean = `[data-scope='avatar'][data-part='root'] { display: flex; }`
+    expect(cssScopeHasDensityOrSizeSelector(genuinelyClean, 'avatar')).toBe(false)
+    expect(cssHasScopeSelector(genuinelyClean, 'avatar')).toBe(true)
   })
 })

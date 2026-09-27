@@ -28,3 +28,18 @@ declare module '*/scripts/lib/oklch.mjs' {
   ): number
   export function srgb8ToLinear(rgb: readonly [number, number, number]): [number, number, number]
 }
+
+// Ambient types for `scripts/lib/registry-classes.mjs`'s shared
+// module-const resolution (#264 item F3: `density-source-audit.ts` follows a
+// `createVariants({ variants })` SHORTHAND to its module-level const exactly
+// like the Tailwind class extractor already does, rather than reimplementing
+// the lookup), for the same reason as above.
+declare module '*/scripts/lib/registry-classes.mjs' {
+  import type ts from 'typescript'
+
+  export function indexObjectConsts(sf: ts.SourceFile): Map<string, ts.ObjectLiteralExpression>
+  export function asObjectLiteral(
+    node: ts.Node | undefined,
+    objectConsts: Map<string, ts.ObjectLiteralExpression>,
+  ): ts.ObjectLiteralExpression | undefined
+}

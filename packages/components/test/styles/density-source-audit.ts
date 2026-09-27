@@ -1,4 +1,5 @@
 import ts from 'typescript'
+import { asObjectLiteral, indexObjectConsts } from '../../../../scripts/lib/registry-classes.mjs'
 
 /**
  * #264 review item 4: the density-N/A rationale's per-product `checkedSources`
@@ -69,6 +70,14 @@ export function optionsInterfacePropertyNames(source: string, fileName = 'source
  */
 export function createVariantsAxisNames(source: string, fileName = 'source.ts'): string[] {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  // Follows a `createVariants({ variants })` SHORTHAND to its module-level
+  // const, exactly like `scripts/lib/registry-classes.mjs`'s own Tailwind
+  // extractor (#264 item F3, shared rather than reimplemented): `button.ts`
+  // and `badge.ts` both declare their `variants` map as a separate const and
+  // spread it in by shorthand, and the whole axis map — `size` included —
+  // was invisible to this density/size audit for the identical reason it
+  // used to be invisible to the class extractor.
+  const objectConsts = indexObjectConsts(sf)
   const names: string[] = []
   const visit = (node: ts.Node): void => {
     if (
@@ -83,18 +92,19 @@ export function createVariantsAxisNames(source: string, fileName = 'source.ts'):
       for (const arg of node.arguments) {
         if (!ts.isObjectLiteralExpression(arg)) continue
         for (const prop of arg.properties) {
-          if (
-            ts.isPropertyAssignment(prop) &&
-            propName(prop.name) === 'variants' &&
-            ts.isObjectLiteralExpression(prop.initializer)
-          ) {
-            for (const axis of prop.initializer.properties) {
-              const name =
-                ts.isPropertyAssignment(axis) || ts.isShorthandPropertyAssignment(axis)
-                  ? propName(axis.name)
-                  : undefined
-              if (name !== undefined) names.push(name)
-            }
+          const variantsObj =
+            ts.isPropertyAssignment(prop) && propName(prop.name) === 'variants'
+              ? asObjectLiteral(prop.initializer, objectConsts)
+              : ts.isShorthandPropertyAssignment(prop) && prop.name.text === 'variants'
+                ? asObjectLiteral(prop.name, objectConsts)
+                : undefined
+          if (variantsObj === undefined) continue
+          for (const axis of variantsObj.properties) {
+            const name =
+              ts.isPropertyAssignment(axis) || ts.isShorthandPropertyAssignment(axis)
+                ? propName(axis.name)
+                : undefined
+            if (name !== undefined) names.push(name)
           }
         }
       }
@@ -115,6 +125,8 @@ export function createVariantsAxisValueNames(
   fileName = 'source.ts',
 ): string[] {
   const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  // See `createVariantsAxisNames`'s identical note (#264 item F3).
+  const objectConsts = indexObjectConsts(sf)
   const names: string[] = []
   const visit = (node: ts.Node): void => {
     if (
@@ -125,25 +137,29 @@ export function createVariantsAxisValueNames(
       for (const arg of node.arguments) {
         if (!ts.isObjectLiteralExpression(arg)) continue
         for (const prop of arg.properties) {
-          if (
-            ts.isPropertyAssignment(prop) &&
-            propName(prop.name) === 'variants' &&
-            ts.isObjectLiteralExpression(prop.initializer)
-          ) {
-            for (const axis of prop.initializer.properties) {
-              if (
-                ts.isPropertyAssignment(axis) &&
-                propName(axis.name) === axisName &&
-                ts.isObjectLiteralExpression(axis.initializer)
-              ) {
-                for (const value of axis.initializer.properties) {
-                  const name =
-                    ts.isPropertyAssignment(value) || ts.isShorthandPropertyAssignment(value)
-                      ? propName(value.name)
-                      : undefined
-                  if (name !== undefined) names.push(name)
-                }
-              }
+          const variantsObj =
+            ts.isPropertyAssignment(prop) && propName(prop.name) === 'variants'
+              ? asObjectLiteral(prop.initializer, objectConsts)
+              : ts.isShorthandPropertyAssignment(prop) && prop.name.text === 'variants'
+                ? asObjectLiteral(prop.name, objectConsts)
+                : undefined
+          if (variantsObj === undefined) continue
+          for (const axis of variantsObj.properties) {
+            const axisObj =
+              (ts.isPropertyAssignment(axis) && propName(axis.name) === axisName) ||
+              (ts.isShorthandPropertyAssignment(axis) && axis.name.text === axisName)
+                ? asObjectLiteral(
+                    ts.isPropertyAssignment(axis) ? axis.initializer : axis.name,
+                    objectConsts,
+                  )
+                : undefined
+            if (axisObj === undefined) continue
+            for (const value of axisObj.properties) {
+              const name =
+                ts.isPropertyAssignment(value) || ts.isShorthandPropertyAssignment(value)
+                  ? propName(value.name)
+                  : undefined
+              if (name !== undefined) names.push(name)
             }
           }
         }
@@ -278,6 +294,34 @@ export function cssScopeHasDensityOrSizeSelector(css: string, scope: string): bo
     const selectorText = chunk.split('}').pop() ?? chunk
     for (const selector of selectorText.split(',')) {
       if (scopeAttr.test(selector) && densityOrSizeAttr.test(selector)) return true
+    }
+  }
+  return false
+}
+
+/**
+ * True if ANY baseline rule carries this product's `[data-scope='<scope>']`
+ * attribute selector at all, regardless of what else the rule selects on.
+ *
+ * `cssScopeHasDensityOrSizeSelector` returning `false` is ambiguous on its
+ * own (#264 item F3): it means EITHER "this scope has baseline rules and
+ * genuinely none of them are density/size-scoped" (the case the density-N/A
+ * rationale check exists to prove) OR "this scope has NO baseline rules at
+ * all", which proves nothing about density/size and would let a product
+ * that never shipped ANY baseline CSS pass the absence check vacuously. A
+ * caller asserting the density-N/A rationale should check THIS first and
+ * require an explicit, separate reason (e.g. `presentation.baseline.mode ===
+ * 'styleless'`) for a product with no owned scope at all, rather than
+ * reading silence as "checked and clean".
+ */
+export function cssHasScopeSelector(css: string, scope: string): boolean {
+  const scopeAttr = new RegExp(`\\[data-scope=['"]${scope}['"]\\]`)
+  const cleaned = neutralizeStructuralCharsInCommentsAndStrings(css)
+  const rules = cleaned.split('{').slice(0, -1)
+  for (const chunk of rules) {
+    const selectorText = chunk.split('}').pop() ?? chunk
+    for (const selector of selectorText.split(',')) {
+      if (scopeAttr.test(selector)) return true
     }
   }
   return false

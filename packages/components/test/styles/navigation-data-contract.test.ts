@@ -7,6 +7,7 @@ import { decodeScenarioFamily } from '@llui/cli/presentation-scenarios'
 import { loadProductContract } from './navigation-data-contract-source'
 import {
   createVariantsAxisValueNames,
+  cssHasScopeSelector,
   cssScopeHasDensityOrSizeSelector,
   hasDensityOrSizeProperty,
   typeAliasUnionLiteralMembers,
@@ -222,10 +223,27 @@ describe('navigation/data presentation contract', () => {
       // carry a `[data-density...]`/`[data-size...]` attribute selector,
       // across every baseline CSS file (not merely the two the family's other
       // checks read).
-      expect(
-        cssScopeHasDensityOrSizeSelector(allBaselineCss, productId),
-        `${productId}: baseline stylesheet has a density/size-scoped selector`,
-      ).toBe(false)
+      //
+      // `cssScopeHasDensityOrSizeSelector` returning `false` is ambiguous on
+      // its own (#264 item F3): a product with NO baseline rules at all for
+      // its scope passes that check vacuously, having never actually been
+      // audited. Require the scope to genuinely EXIST in the baseline first;
+      // a product with none is classified EXPLICITLY, as `styleless`, rather
+      // than silently reading as "checked and clean".
+      if (cssHasScopeSelector(allBaselineCss, productId)) {
+        expect(
+          cssScopeHasDensityOrSizeSelector(allBaselineCss, productId),
+          `${productId}: baseline stylesheet has a density/size-scoped selector`,
+        ).toBe(false)
+      } else {
+        const entry = family.find(({ name }) => name === productId)!
+        expect(
+          ['styleless', 'not-applicable'],
+          `${productId}: has no baseline CSS scope at all, so the density/size ` +
+            'absence check above would be vacuous — this must be classified ' +
+            "'styleless'/'not-applicable' rather than silently unaudited",
+        ).toContain(entry.presentation.baseline.mode)
+      }
     }
   })
 

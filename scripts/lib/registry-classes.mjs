@@ -38,6 +38,54 @@ import ts from 'typescript'
 const CLASS_CALLS = new Set(['cn', 'mergeClass', 'classPart', 'classPartWithDefaults'])
 
 /**
+ * Index a module's top-level `const X = { … }` object-literal declarations
+ * by name, so a `createVariants({ variants })` SHORTHAND — or any other
+ * config object passed by identifier — can be followed to what it actually
+ * holds. Exported so a second consumer needing the identical "either an
+ * inline object literal or a module-level const by name" resolution does not
+ * reimplement it: `packages/components/test/styles/density-source-audit.ts`'s
+ * `createVariantsAxisNames`/`createVariantsAxisValueNames` had exactly this
+ * gap (#264 item F3) — `badge.ts`'s `size` variant axis, added via the same
+ * `variants` shorthand `button.ts` already uses, was invisible to the
+ * density/size audit for the identical reason it used to be invisible here.
+ *
+ * @param {ts.SourceFile} sf
+ * @returns {Map<string, ts.ObjectLiteralExpression>}
+ */
+export function indexObjectConsts(sf) {
+  /** @type {Map<string, ts.ObjectLiteralExpression>} */
+  const objectConsts = new Map()
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue
+    for (const decl of stmt.declarationList.declarations) {
+      if (
+        ts.isIdentifier(decl.name) &&
+        decl.initializer !== undefined &&
+        ts.isObjectLiteralExpression(decl.initializer)
+      ) {
+        objectConsts.set(decl.name.text, decl.initializer)
+      }
+    }
+  }
+  return objectConsts
+}
+
+/**
+ * Resolve `node` to an object literal, following a module-level const by
+ * name via the map {@link indexObjectConsts} builds.
+ *
+ * @param {ts.Node | undefined} node
+ * @param {Map<string, ts.ObjectLiteralExpression>} objectConsts
+ * @returns {ts.ObjectLiteralExpression | undefined}
+ */
+export function asObjectLiteral(node, objectConsts) {
+  if (node === undefined) return undefined
+  if (ts.isObjectLiteralExpression(node)) return node
+  if (ts.isIdentifier(node)) return objectConsts.get(node.text)
+  return undefined
+}
+
+/**
  * `classPart`/`classPartWithDefaults`'s FIRST argument is the element tag
  * function (`div`, `button`, …), never a recipe — reading it as one used to
  * be harmless because `pushString` silently ignored any non-literal node,
@@ -64,32 +112,31 @@ export function extractClassCandidates(fileName, source) {
   const strings = []
 
   // Index module-level `const X = { … }` so a `createVariants({ variants })`
-  // SHORTHAND can be followed to its object. Without this the whole variant map
-  // of any component written that way is invisible: `button.ts` and `badge.ts`
-  // both are, and every one of their variant classes was going unchecked while
-  // the file still reported plenty of candidates from its base recipe — a silent
-  // hole, not an obvious one.
-  //
+  // SHORTHAND can be followed to its object (shared with
+  // `density-source-audit.ts` — see `indexObjectConsts`'s own header).
+  // Without this the whole variant map of any component written that way is
+  // invisible: `button.ts` and `badge.ts` both are, and every one of their
+  // variant classes was going unchecked while the file still reported plenty
+  // of candidates from its base recipe — a silent hole, not an obvious one.
+  const objectConsts = indexObjectConsts(sf)
+
   // The identical hazard exists one level down: a recipe STRING assigned to a
   // module-level const and passed BY IDENTIFIER to `cn`/`mergeClass`/`classPart`/
   // `classPartWithDefaults` (`const TABLE_CONTAINER_CLASSES = '…'; …
   // mergeClass(TABLE_CONTAINER_CLASSES, viewportClassName)`) used to reach
   // `pushString` as a bare `Identifier`, which no branch handled — silently
-  // skipped, no candidates contributed, no error. `stringConsts` (below) is the
-  // string-typed sibling of `objectConsts`, resolved through the exact same
-  // `asObject`-shaped lookup inside `pushString` itself, so every recipe
-  // position gains it for free rather than needing its own copy of the lookup.
-  /** @type {Map<string, ts.ObjectLiteralExpression>} */
-  const objectConsts = new Map()
+  // skipped, no candidates contributed, no error. `stringConsts` is the
+  // string-typed sibling of `objectConsts`, resolved through the identical
+  // "inline literal, or a module-level const by name" shape inside
+  // `pushString` itself, so every recipe position gains it for free rather
+  // than needing its own copy of the lookup.
   /** @type {Map<string, ts.Expression>} */
   const stringConsts = new Map()
   for (const stmt of sf.statements) {
     if (!ts.isVariableStatement(stmt)) continue
     for (const decl of stmt.declarationList.declarations) {
       if (!ts.isIdentifier(decl.name) || decl.initializer === undefined) continue
-      if (ts.isObjectLiteralExpression(decl.initializer)) {
-        objectConsts.set(decl.name.text, decl.initializer)
-      } else if (
+      if (
         ts.isStringLiteral(decl.initializer) ||
         ts.isNoSubstitutionTemplateLiteral(decl.initializer) ||
         ts.isTemplateExpression(decl.initializer)
@@ -123,12 +170,7 @@ export function extractClassCandidates(fileName, source) {
    * @param {ts.Node | undefined} node
    * @returns {ts.ObjectLiteralExpression | undefined}
    */
-  const asObject = (node) => {
-    if (node === undefined) return undefined
-    if (ts.isObjectLiteralExpression(node)) return node
-    if (ts.isIdentifier(node)) return objectConsts.get(node.text)
-    return undefined
-  }
+  const asObject = (node) => asObjectLiteral(node, objectConsts)
 
   /**
    * The set of names bound in every DIRECT binding pattern (a destructured
