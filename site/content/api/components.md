@@ -267,8 +267,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `exitGenerations` | `RetainedExitGeneration<string>[]` |
 | `exitSequence`    | `number`                           |
 | `animated`        | `boolean`                          |
-| `exitWatcher`     | `boolean`                          |
-| `exitWarned`      | `boolean`                          |
+| `exitWatcher`     | `number`                           |
 
 **Messages:** `toggle`, `open`, `close`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `exitComplete`, `exitWatcherAttach`, `exitWatcherDetach`
 
@@ -520,8 +519,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `closing`        | `boolean` |
 | `exitGeneration` | `number`  |
 | `animated`       | `boolean` |
-| `exitWatcher`    | `boolean` |
-| `exitWarned`     | `boolean` |
+| `exitWatcher`    | `number`  |
 
 **Messages:** `toggle`, `open`, `close`, `setOpen`, `exitComplete`, `exitWatcherAttach`, `exitWatcherDetach`
 
@@ -6351,20 +6349,21 @@ export interface AccordionState {
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
   /**
-   * Whether `parts.exitCompletion` is CURRENTLY placed/mounted (#264 item
-   * F1). `closing` retention only ever engages when `animated && exitWatcher`
-   * both hold — never `animated` alone — so a forgotten `exitCompletion`
-   * placement closes instantly instead of hanging `closing` + `inert`
-   * forever. Flipped by the `exitWatcherAttach`/`exitWatcherDetach` messages
-   * that mount sends on mount/cleanup; never a caller-facing init option.
+   * COUNT of currently-mounted `parts.exitCompletion` instances (#264 item
+   * F1; a count rather than a boolean per #264 review BLOCK 2, so placing it
+   * TWICE — an unusual but real shape, e.g. two arms of a conditional both
+   * rendering it — tracks correctly: one detach must not drop retention
+   * while the other placement is still mounted). `closing` retention only
+   * ever engages when `animated && exitWatcher > 0` — never `animated`
+   * alone — so a forgotten `exitCompletion` placement closes instantly
+   * instead of hanging `closing` + `inert` forever. Incremented/decremented
+   * (never below 0) by the `exitWatcherAttach`/`exitWatcherDetach` messages
+   * that mount sends on mount/cleanup; never a caller-facing init option,
+   * and `init()` always starts it at `0` — a persisted/hydrated state slice
+   * can never inherit a stale nonzero count, since a watcher can only ever
+   * be truthfully counted by ITS OWN mount running again after hydration.
    */
-  exitWatcher: boolean
-  /**
-   * Set once a close was reduced with `animated: true` but `exitWatcher:
-   * false` — throttles the dev-mode "you forgot to place exitCompletion"
-   * warning to fire at most once per instance. Never reset back to `false`.
-   */
-  exitWarned: boolean
+  exitWatcher: number
 }
 ```
 
@@ -7624,20 +7623,17 @@ export interface CollapsibleState {
   /** Whether close waits for the content's own animation end/cancel event. */
   animated: boolean
   /**
-   * Whether `parts.exitCompletion` is CURRENTLY placed/mounted (#264 item
-   * F1). `closing` retention only ever engages when `animated && exitWatcher`
-   * both hold — never `animated` alone — so a forgotten `exitCompletion`
-   * placement closes instantly instead of hanging `closing` + `inert`
-   * forever. Flipped by the `exitWatcherAttach`/`exitWatcherDetach` messages
-   * that mount sends on mount/cleanup; never a caller-facing init option.
+   * COUNT of currently-mounted `parts.exitCompletion` instances (#264 item
+   * F1; a count rather than a boolean per #264 review BLOCK 2 — see
+   * `accordion.ts`'s identical field for why). `closing` retention only ever
+   * engages when `animated && exitWatcher > 0` — never `animated` alone —
+   * so a forgotten `exitCompletion` placement closes instantly instead of
+   * hanging `closing` + `inert` forever. Incremented/decremented (never
+   * below 0) by the `exitWatcherAttach`/`exitWatcherDetach` messages that
+   * mount sends on mount/cleanup; never a caller-facing init option, and
+   * `init()` always starts it at `0`.
    */
-  exitWatcher: boolean
-  /**
-   * Set once a close was reduced with `animated: true` but `exitWatcher:
-   * false` — throttles the dev-mode "you forgot to place exitCompletion"
-   * warning to fire at most once per instance. Never reset back to `false`.
-   */
-  exitWarned: boolean
+  exitWatcher: number
 }
 ```
 
@@ -24323,20 +24319,21 @@ export interface AccordionState {
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
   /**
-   * Whether `parts.exitCompletion` is CURRENTLY placed/mounted (#264 item
-   * F1). `closing` retention only ever engages when `animated && exitWatcher`
-   * both hold — never `animated` alone — so a forgotten `exitCompletion`
-   * placement closes instantly instead of hanging `closing` + `inert`
-   * forever. Flipped by the `exitWatcherAttach`/`exitWatcherDetach` messages
-   * that mount sends on mount/cleanup; never a caller-facing init option.
+   * COUNT of currently-mounted `parts.exitCompletion` instances (#264 item
+   * F1; a count rather than a boolean per #264 review BLOCK 2, so placing it
+   * TWICE — an unusual but real shape, e.g. two arms of a conditional both
+   * rendering it — tracks correctly: one detach must not drop retention
+   * while the other placement is still mounted). `closing` retention only
+   * ever engages when `animated && exitWatcher > 0` — never `animated`
+   * alone — so a forgotten `exitCompletion` placement closes instantly
+   * instead of hanging `closing` + `inert` forever. Incremented/decremented
+   * (never below 0) by the `exitWatcherAttach`/`exitWatcherDetach` messages
+   * that mount sends on mount/cleanup; never a caller-facing init option,
+   * and `init()` always starts it at `0` — a persisted/hydrated state slice
+   * can never inherit a stale nonzero count, since a watcher can only ever
+   * be truthfully counted by ITS OWN mount running again after hydration.
    */
-  exitWatcher: boolean
-  /**
-   * Set once a close was reduced with `animated: true` but `exitWatcher:
-   * false` — throttles the dev-mode "you forgot to place exitCompletion"
-   * warning to fire at most once per instance. Never reset back to `false`.
-   */
-  exitWarned: boolean
+  exitWatcher: number
 }
 ```
 
@@ -26162,20 +26159,17 @@ export interface CollapsibleState {
   /** Whether close waits for the content's own animation end/cancel event. */
   animated: boolean
   /**
-   * Whether `parts.exitCompletion` is CURRENTLY placed/mounted (#264 item
-   * F1). `closing` retention only ever engages when `animated && exitWatcher`
-   * both hold — never `animated` alone — so a forgotten `exitCompletion`
-   * placement closes instantly instead of hanging `closing` + `inert`
-   * forever. Flipped by the `exitWatcherAttach`/`exitWatcherDetach` messages
-   * that mount sends on mount/cleanup; never a caller-facing init option.
+   * COUNT of currently-mounted `parts.exitCompletion` instances (#264 item
+   * F1; a count rather than a boolean per #264 review BLOCK 2 — see
+   * `accordion.ts`'s identical field for why). `closing` retention only ever
+   * engages when `animated && exitWatcher > 0` — never `animated` alone —
+   * so a forgotten `exitCompletion` placement closes instantly instead of
+   * hanging `closing` + `inert` forever. Incremented/decremented (never
+   * below 0) by the `exitWatcherAttach`/`exitWatcherDetach` messages that
+   * mount sends on mount/cleanup; never a caller-facing init option, and
+   * `init()` always starts it at `0`.
    */
-  exitWatcher: boolean
-  /**
-   * Set once a close was reduced with `animated: true` but `exitWatcher:
-   * false` — throttles the dev-mode "you forgot to place exitCompletion"
-   * warning to fire at most once per instance. Never reset back to `false`.
-   */
-  exitWarned: boolean
+  exitWatcher: number
 }
 ```
 
