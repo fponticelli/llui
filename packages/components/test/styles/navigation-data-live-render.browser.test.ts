@@ -115,13 +115,10 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
   async function openMounted(fixture: Fixture): Promise<Page> {
     const page = await browser.newPage()
     await page.goto(fixture.url)
-    await page.waitForFunction(
-      (fn) => typeof (window as unknown as Record<string, unknown>)[fn] === 'function',
-      fixture.mountFn,
-    )
+    await page.waitForFunction((fn) => typeof window[fn] === 'function', fixture.mountFn)
     await page.evaluate(
       ({ fn, contract }) => {
-        const mount = (window as unknown as Record<string, (c: unknown) => void>)[fn]
+        const mount = window[fn]
         if (mount === undefined) throw new Error(`Missing window.${fn}`)
         mount(contract)
       },
