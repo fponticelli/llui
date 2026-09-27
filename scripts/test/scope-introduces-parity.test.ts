@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import ts from 'typescript'
 import { scopeIntroduces as portedScopeIntroduces } from '../lib/registry-classes.mjs'
-import { scopeIntroduces as compilerScopeIntroduces } from '../../packages/compiler/src/signals/helper-bindings.ts'
+import { scopeIntroduces as compilerScopeIntroduces } from '../../packages/compiler/src/signals/helper-bindings'
 
 /**
  * #264 review follow-up (review-264h LOW): `registry-classes.mjs` cannot

@@ -399,6 +399,7 @@ export function extractClassCandidates(fileName, source, usedAllowlistKeys) {
     return undefined
   }
 
+  /** @param {ts.Identifier} node */
   const isLocallyBoundInFile = (node) => isLocallyBound(node, sf)
 
   // Template literals contribute their STATIC text only. An interpolated span is
