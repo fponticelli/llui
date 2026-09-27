@@ -388,7 +388,6 @@ describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', 
       // queue as the attribute mutation, but is not guaranteed synchronous
       // with the assignment above — yield one tick before asserting.
       await new Promise((r) => setTimeout(r, 0))
-      const fileTrigger = document.getElementById('menubar-demo:file:trigger') as HTMLElement
       const editTrigger = document.getElementById('menubar-demo:edit:trigger') as HTMLElement
       editTrigger.focus()
       // Under rtl, logical "next sibling" (File -> Edit going forward) is the
