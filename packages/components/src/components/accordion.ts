@@ -42,20 +42,21 @@ export interface AccordionState {
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
   /**
-   * Whether `parts.exitCompletion` is CURRENTLY placed/mounted (#264 item
-   * F1). `closing` retention only ever engages when `animated && exitWatcher`
-   * both hold — never `animated` alone — so a forgotten `exitCompletion`
-   * placement closes instantly instead of hanging `closing` + `inert`
-   * forever. Flipped by the `exitWatcherAttach`/`exitWatcherDetach` messages
-   * that mount sends on mount/cleanup; never a caller-facing init option.
+   * COUNT of currently-mounted `parts.exitCompletion` instances (#264 item
+   * F1; a count rather than a boolean per #264 review BLOCK 2, so placing it
+   * TWICE — an unusual but real shape, e.g. two arms of a conditional both
+   * rendering it — tracks correctly: one detach must not drop retention
+   * while the other placement is still mounted). `closing` retention only
+   * ever engages when `animated && exitWatcher > 0` — never `animated`
+   * alone — so a forgotten `exitCompletion` placement closes instantly
+   * instead of hanging `closing` + `inert` forever. Incremented/decremented
+   * (never below 0) by the `exitWatcherAttach`/`exitWatcherDetach` messages
+   * that mount sends on mount/cleanup; never a caller-facing init option,
+   * and `init()` always starts it at `0` — a persisted/hydrated state slice
+   * can never inherit a stale nonzero count, since a watcher can only ever
+   * be truthfully counted by ITS OWN mount running again after hydration.
    */
-  exitWatcher: boolean
-  /**
-   * Set once a close was reduced with `animated: true` but `exitWatcher:
-   * false` — throttles the dev-mode "you forgot to place exitCompletion"
-   * warning to fire at most once per instance. Never reset back to `false`.
-   */
-  exitWarned: boolean
+  exitWatcher: number
 }
 
 export type AccordionMsg =
@@ -108,45 +109,28 @@ export function init(opts: AccordionInit = {}): AccordionState {
     exitGenerations: [],
     exitSequence: 0,
     animated: opts.animated ?? false,
-    exitWatcher: false,
-    exitWarned: false,
+    exitWatcher: 0,
   }
 }
 
 /**
- * The dev-mode message for a close reduced with `animated: true` but no
- * `exitCompletion` mount attached (#264 item F1). Fires at most once per
- * instance (`state.exitWarned` throttles it) and is a pure side effect of an
- * otherwise-pure reducer helper — the same pragmatic exception the codebase
- * already makes at the `connect()`/mount boundary (see `overlay-engine.ts`),
- * moved here because "was this close reduced under the missing-watcher
- * condition" is a fact only the reducer has, and only a `console.warn` from
- * INSIDE the reduce step can report it "synchronously when a close is
- * reduced" with no separate observation mechanism (a timer, a subscription)
- * needed.
+ * Pure — no `console.warn`, no other side effect (#264 review BLOCK 2:
+ * `update()` must stay pure so `@llui/test`'s `replayTrace`/`propertyTest`,
+ * which re-run a reducer's messages to compare traces, cannot re-emit a
+ * diagnostic as a side effect of REPLAYING history rather than of anything
+ * happening for the first time). The dev-mode "you forgot to place
+ * exitCompletion" warning moved to `connect()`'s own click/keydown-wrapped
+ * handlers, the one place that already peeks state before/after a `send`
+ * for the identical reason (`completeIfUnanimatedAfterToggle`) — see there.
  */
-function warnMissingExitWatcher(describe: string): void {
-  if (import.meta.env?.DEV !== true) return
-  console.warn(
-    `[llui/components] ${describe} was configured \`animated: true\` but \`parts.exitCompletion\` ` +
-      'was never placed in the rendered view (or has not mounted yet), so a closing item cannot ' +
-      'be retained for its exit animation and closes instantly instead. Place `parts.' +
-      "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
-      'intended.',
-  )
-}
-
 function withValue(state: AccordionState, value: string[]): AccordionState {
-  const departing = state.value.some((v) => !value.includes(v))
-  const watcherMissing = state.animated && departing && !state.exitWatcher
-  if (watcherMissing && !state.exitWarned) warnMissingExitWatcher('Accordion')
   const retained = retainedExits(
     state.value,
     value,
     state.closing,
     state.exitGenerations,
     state.exitSequence,
-    state.animated && state.exitWatcher,
+    state.animated && state.exitWatcher > 0,
   )
   return {
     ...state,
@@ -154,7 +138,6 @@ function withValue(state: AccordionState, value: string[]): AccordionState {
     closing: retained.exiting,
     exitGenerations: retained.generations,
     exitSequence: retained.sequence,
-    exitWarned: state.exitWarned || watcherMissing,
   }
 }
 
@@ -172,14 +155,20 @@ function toggleValue(state: AccordionState, value: string): string[] {
 
 export function update(state: AccordionState, msg: AccordionMsg): [AccordionState, never[]] {
   if (msg.type === 'exitWatcherAttach') {
-    return state.exitWatcher ? [state, []] : [{ ...state, exitWatcher: true }, []]
+    return [{ ...state, exitWatcher: state.exitWatcher + 1 }, []]
   }
   if (msg.type === 'exitWatcherDetach') {
-    // Settle every currently-retained exit immediately: with the watcher
-    // gone, nothing will ever send the `exitComplete` that would otherwise
-    // clear it (#264 item F1 — "detach mid-closing settles").
-    if (!state.exitWatcher && state.closing.length === 0) return [state, []]
-    return [{ ...state, exitWatcher: false, closing: [], exitGenerations: [] }, []]
+    // Never negative — a stray/duplicate detach (should not happen, but
+    // costs nothing to guard) cannot leave the count reading as "watched"
+    // when nothing is.
+    const next = Math.max(0, state.exitWatcher - 1)
+    if (next > 0) return [{ ...state, exitWatcher: next }, []]
+    // Dropped to zero: settle every currently-retained exit immediately —
+    // with NO watcher left attached, nothing will ever send the
+    // `exitComplete` that would otherwise clear it (#264 item F1 —
+    // "detach mid-closing settles").
+    if (state.closing.length === 0) return [{ ...state, exitWatcher: next }, []]
+    return [{ ...state, exitWatcher: next, closing: [], exitGenerations: [] }, []]
   }
   if (msg.type === 'exitComplete') {
     if (
@@ -309,6 +298,35 @@ export function connect(
   const triggerId = (v: string): string => `${base}:trigger:${v}`
   const contentId = (v: string): string => `${base}:content:${v}`
   const exitTracker = createDisclosureExitTracker()
+  // Dev-mode "you forgot to place exitCompletion" warning (#264 review BLOCK
+  // 2), OWNED BY THIS `connect()` CALL — a closure flag, not state, so it
+  // cannot appear in a serialized snapshot/replay and cannot make `update()`
+  // impure. Throttled to once per INSTANCE (this closure's lifetime), fires
+  // SYNCHRONOUSLY right after the underlying `send` that closed something
+  // without a watcher attached — no timer, no subscription. Scoped to the
+  // click/keydown-wrapped handlers below, the same scope
+  // `completeIfUnanimatedAfterToggle` already has: a state signal has no
+  // ambient "subscribe" outside a placed binding (see `Signal`'s three-method
+  // contract), so observing EVERY possible caller of `send` — including a
+  // host bypassing these handlers entirely — is not reachable from here,
+  // exactly the same documented gap that safety net already has.
+  let warnedMissingWatcher = false
+  const warnIfClosedWithoutWatcher = (before: AccordionState, after: AccordionState): void => {
+    if (warnedMissingWatcher || import.meta.env?.DEV !== true) return
+    if (!before.animated || before.exitWatcher > 0) return
+    const closedWithoutRetention = before.value.some(
+      (v) => !after.value.includes(v) && !after.closing.includes(v),
+    )
+    if (!closedWithoutRetention) return
+    warnedMissingWatcher = true
+    console.warn(
+      '[llui/components] Accordion was configured `animated: true` but `parts.exitCompletion` ' +
+        'was never placed in the rendered view (or has not mounted yet), so a closing item cannot ' +
+        'be retained for its exit animation and closes instantly instead. Place `parts.' +
+        "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
+        'intended.',
+    )
+  }
   const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] =>
     state.peek().closing.map((value) => ({
       key: value,
@@ -390,10 +408,16 @@ export function connect(
         'data-part': 'trigger',
         'data-value': value,
         onClick: tagSend(send, ['toggle'], (e: MouseEvent) => {
+          // Peeking (both here and for the warning) is unreachable in a unit
+          // test that invokes the handler directly with no `currentTarget` —
+          // see `completeIfUnanimatedAfterToggle`'s identical note; guarding
+          // on the same `origin` keeps `rootSignal()`-backed structural
+          // tests (no live state to peek) working unchanged.
+          const origin = e.currentTarget instanceof Element ? e.currentTarget : null
+          const before = origin === null ? null : state.peek()
           send({ type: 'toggle', value })
-          completeIfUnanimatedAfterToggle(
-            e.currentTarget instanceof Element ? e.currentTarget : null,
-          )
+          if (before !== null) warnIfClosedWithoutWatcher(before, state.peek())
+          completeIfUnanimatedAfterToggle(origin)
         }),
         onKeyDown: tagSend(
           send,
@@ -432,11 +456,14 @@ export function connect(
                 moveFocus({ type: 'focusLast' })
                 return
               case ' ':
-              case 'Enter':
+              case 'Enter': {
                 e.preventDefault()
+                const before = origin === null ? null : state.peek()
                 send({ type: 'toggle', value })
+                if (before !== null) warnIfClosedWithoutWatcher(before, state.peek())
                 completeIfUnanimatedAfterToggle(origin)
                 return
+              }
             }
           },
         ),

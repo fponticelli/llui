@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { pathHandle } from '@llui/dom'
 import { init, update, connect } from '../../src/components/collapsible'
 import { rootSignal, signalOf, read } from '../_signal'
 
@@ -13,7 +14,7 @@ function animationEvent(type: string, animationName: string): Event {
  * any interaction can happen, so unit tests exercising retained-exit
  * behavior via bare `update()` calls attach it explicitly first (#264 item
  * F1) — `closing` retention now only ever engages when `animated &&
- * exitWatcher` both hold.
+ * exitWatcher > 0`.
  */
 function attached(state: ReturnType<typeof init>): ReturnType<typeof init> {
   return update(state, { type: 'exitWatcherAttach' })[0]
@@ -27,9 +28,13 @@ describe('collapsible reducer', () => {
       closing: false,
       exitGeneration: 0,
       animated: false,
-      exitWatcher: false,
-      exitWarned: false,
+      exitWatcher: 0,
     })
+  })
+
+  it('init always starts exitWatcher at 0, never trusting a persisted/hydrated value (#264 review BLOCK 2)', () => {
+    const tampered = { open: true, exitWatcher: 99 } as unknown as Parameters<typeof init>[0]
+    expect(init(tampered).exitWatcher).toBe(0)
   })
 
   it('toggle alternates', () => {
@@ -130,14 +135,14 @@ describe('collapsible.connect', () => {
 describe('collapsible exitCompletion fail-safe (#264 item F1)', () => {
   it('a forgotten exitCompletion (watcher never attached) closes instantly, never retains', () => {
     const [s] = update(init({ open: true, animated: true }), { type: 'close' })
-    expect(s).toMatchObject({ open: false, closing: false, exitWatcher: false })
+    expect(s).toMatchObject({ open: false, closing: false, exitWatcher: 0 })
   })
 
-  it('exitWatcherAttach flips the flag; a subsequent close then retains', () => {
+  it('exitWatcherAttach increments the count; a subsequent close then retains', () => {
     const attachedState = update(init({ open: true, animated: true }), {
       type: 'exitWatcherAttach',
     })[0]
-    expect(attachedState.exitWatcher).toBe(true)
+    expect(attachedState.exitWatcher).toBe(1)
     const closing = update(attachedState, { type: 'close' })[0]
     expect(closing).toMatchObject({ open: false, closing: true })
   })
@@ -146,24 +151,26 @@ describe('collapsible exitCompletion fail-safe (#264 item F1)', () => {
     const closing = update(attached(init({ open: true, animated: true })), { type: 'close' })[0]
     expect(closing.closing).toBe(true)
     const detached = update(closing, { type: 'exitWatcherDetach' })[0]
-    expect(detached).toMatchObject({ closing: false, exitWatcher: false })
+    expect(detached).toMatchObject({ closing: false, exitWatcher: 0 })
   })
 
-  it('DEV warning fires exactly once per instance when a close is missed for lack of a watcher', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      let state = init({ open: true, animated: true })
-      state = update(state, { type: 'close' })[0]
-      expect(warnSpy).toHaveBeenCalledTimes(1)
-      expect(String(warnSpy.mock.calls[0]?.[0])).toContain('exitCompletion')
-      state = update(state, { type: 'open' })[0]
-      state = update(state, { type: 'close' })[0]
-      // Throttled: still exactly once for this instance.
-      expect(warnSpy).toHaveBeenCalledTimes(1)
-      expect(state).toMatchObject({ open: false, exitWarned: true })
-    } finally {
-      warnSpy.mockRestore()
-    }
+  it('exitWatcher is a COUNT: double placement tracks correctly, and a detach never goes negative (#264 review BLOCK 2)', () => {
+    let state = init({ open: true, animated: true })
+    state = update(state, { type: 'exitWatcherAttach' })[0]
+    state = update(state, { type: 'exitWatcherAttach' })[0]
+    expect(state.exitWatcher).toBe(2)
+
+    state = update(state, { type: 'close' })[0]
+    expect(state).toMatchObject({ open: false, closing: true })
+    state = update(state, { type: 'exitWatcherDetach' })[0]
+    expect(state.exitWatcher).toBe(1)
+    expect(state.closing).toBe(true) // still retained — one watcher remains
+
+    state = update(state, { type: 'exitWatcherDetach' })[0]
+    expect(state).toMatchObject({ exitWatcher: 0, closing: false })
+
+    state = update(state, { type: 'exitWatcherDetach' })[0]
+    expect(state.exitWatcher).toBe(0)
   })
 
   it('no warning fires when the watcher is attached (placed correctly)', () => {
@@ -181,6 +188,65 @@ describe('collapsible exitCompletion fail-safe (#264 item F1)', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       update(init({ open: true }), { type: 'close' })
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('update() never calls console.warn — the diagnostic lives at the connect() boundary, not the reducer (#264 review BLOCK 2)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      let state = init({ open: true, animated: true }) // watcher never attached
+      for (let i = 0; i < 5; i += 1) {
+        state = update(state, { type: 'close' })[0]
+        state = update(state, { type: 'open' })[0]
+      }
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+})
+
+describe('collapsible connect() dev warning (#264 review BLOCK 2 — moved out of the reducer)', () => {
+  it('fires exactly once per instance, from a real click, when exitCompletion was never placed', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      let state = init({ open: true, animated: true })
+      const send = (msg: Parameters<typeof update>[1]): void => {
+        state = update(state, msg)[0]
+      }
+      const p = connect(
+        pathHandle<ReturnType<typeof init>>(() => state, ''),
+        send,
+        { id: 'x' },
+      )
+      const el = document.createElement('button')
+      document.body.append(el)
+      const click = (): void => {
+        const event = new MouseEvent('click')
+        Object.defineProperty(event, 'currentTarget', { value: el })
+        p.trigger.onClick(event)
+      }
+      click()
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(String(warnSpy.mock.calls[0]?.[0])).toContain('exitCompletion')
+      state = update(state, { type: 'open' })[0]
+      click()
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      el.remove()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('never fires for a purely programmatic close bypassing the trigger (documented scope, like completeIfUnanimatedAfterToggle)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const state = attached(init({ open: true, animated: true }))
+      const detached = update(state, { type: 'exitWatcherDetach' })[0]
+      update(detached, { type: 'close' })
       expect(warnSpy).not.toHaveBeenCalled()
     } finally {
       warnSpy.mockRestore()

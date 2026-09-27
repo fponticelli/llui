@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
+import { pathHandle } from '@llui/dom'
 import { init, update, connect, focusTarget } from '../../src/components/accordion'
 import { rootSignal, signalOf, read } from '../_signal'
 
@@ -13,7 +14,7 @@ function animationEvent(type: string, animationName: string): Event {
  * any interaction can happen, so unit tests exercising retained-exit
  * behavior via bare `update()` calls attach it explicitly first (#264 item
  * F1) — `closing` retention now only ever engages when `animated &&
- * exitWatcher` both hold.
+ * exitWatcher > 0`.
  */
 function attached(state: ReturnType<typeof init>): ReturnType<typeof init> {
   return update(state, { type: 'exitWatcherAttach' })[0]
@@ -32,9 +33,19 @@ describe('accordion reducer', () => {
       exitGenerations: [],
       exitSequence: 0,
       animated: false,
-      exitWatcher: false,
-      exitWarned: false,
+      exitWatcher: 0,
     })
+  })
+
+  it('init always starts exitWatcher at 0, never trusting a persisted/hydrated value (#264 review BLOCK 2)', () => {
+    // Simulates a host handing `init()` a persisted/rehydrated options blob
+    // that happens to carry a stray `exitWatcher` field (e.g. spread from an
+    // old serialized STATE rather than a real `AccordionInit`) — `init()`
+    // must never inherit it: a watcher can only be truthfully counted by its
+    // OWN mount running again after hydration, since mounts never survive a
+    // serialize/deserialize round trip.
+    const tampered = { value: ['a'], exitWatcher: 99 } as unknown as Parameters<typeof init>[0]
+    expect(init(tampered).exitWatcher).toBe(0)
   })
 
   it('toggle opens a closed item (single)', () => {
@@ -279,14 +290,14 @@ describe('accordion.connect', () => {
 describe('accordion exitCompletion fail-safe (#264 item F1)', () => {
   it('a forgotten exitCompletion (watcher never attached) closes instantly, never retains', () => {
     const [s] = update(init({ value: ['a'], animated: true }), { type: 'close', value: 'a' })
-    expect(s).toMatchObject({ value: [], closing: [], exitWatcher: false })
+    expect(s).toMatchObject({ value: [], closing: [], exitWatcher: 0 })
   })
 
-  it('exitWatcherAttach flips the flag; a subsequent close then retains', () => {
+  it('exitWatcherAttach increments the count; a subsequent close then retains', () => {
     const attachedState = update(init({ value: ['a'], animated: true }), {
       type: 'exitWatcherAttach',
     })[0]
-    expect(attachedState.exitWatcher).toBe(true)
+    expect(attachedState.exitWatcher).toBe(1)
     const closing = update(attachedState, { type: 'close', value: 'a' })[0]
     expect(closing).toMatchObject({ value: [], closing: ['a'] })
   })
@@ -298,24 +309,31 @@ describe('accordion exitCompletion fail-safe (#264 item F1)', () => {
     })[0]
     expect(closing.closing).toEqual(['a'])
     const detached = update(closing, { type: 'exitWatcherDetach' })[0]
-    expect(detached).toMatchObject({ closing: [], exitGenerations: [], exitWatcher: false })
+    expect(detached).toMatchObject({ closing: [], exitGenerations: [], exitWatcher: 0 })
   })
 
-  it('DEV warning fires exactly once per instance when a close is missed for lack of a watcher', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      let state = init({ value: ['a'], animated: true })
-      state = update(state, { type: 'close', value: 'a' })[0]
-      expect(warnSpy).toHaveBeenCalledTimes(1)
-      expect(String(warnSpy.mock.calls[0]?.[0])).toContain('exitCompletion')
-      state = update(state, { type: 'open', value: 'a' })[0]
-      state = update(state, { type: 'close', value: 'a' })[0]
-      // Throttled: still exactly once for this instance.
-      expect(warnSpy).toHaveBeenCalledTimes(1)
-      expect(state).toMatchObject({ value: [], exitWarned: true })
-    } finally {
-      warnSpy.mockRestore()
-    }
+  it('exitWatcher is a COUNT: double placement tracks correctly, and a detach never goes negative (#264 review BLOCK 2)', () => {
+    let state = init({ value: ['a'], animated: true })
+    state = update(state, { type: 'exitWatcherAttach' })[0]
+    state = update(state, { type: 'exitWatcherAttach' })[0]
+    expect(state.exitWatcher).toBe(2)
+
+    // One placement detaching (e.g. one conditional arm unmounting) must NOT
+    // drop retention while the OTHER placement is still mounted.
+    state = update(state, { type: 'close', value: 'a' })[0]
+    expect(state).toMatchObject({ value: [], closing: ['a'] })
+    state = update(state, { type: 'exitWatcherDetach' })[0]
+    expect(state.exitWatcher).toBe(1)
+    expect(state.closing).toEqual(['a']) // still retained — one watcher remains
+
+    // The SECOND detach drops to 0 and settles immediately.
+    state = update(state, { type: 'exitWatcherDetach' })[0]
+    expect(state).toMatchObject({ exitWatcher: 0, closing: [] })
+
+    // A stray extra detach (should not happen, but costs nothing to guard)
+    // never goes negative.
+    state = update(state, { type: 'exitWatcherDetach' })[0]
+    expect(state.exitWatcher).toBe(0)
   })
 
   it('no warning fires when the watcher is attached (placed correctly)', () => {
@@ -342,5 +360,73 @@ describe('accordion exitCompletion fail-safe (#264 item F1)', () => {
   it('single-mode switching without a watcher closes the departing item instantly too', () => {
     const [s] = update(init({ value: ['a'], animated: true }), { type: 'toggle', value: 'b' })
     expect(s).toMatchObject({ value: ['b'], closing: [] })
+  })
+
+  it('update() never calls console.warn — the diagnostic lives at the connect() boundary, not the reducer (#264 review BLOCK 2)', () => {
+    // A reducer must stay pure so replayTrace/propertyTest (which RE-RUN a
+    // recorded message history) cannot re-emit a diagnostic as a side effect
+    // of replaying, rather than of anything happening for the first time.
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      let state = init({ value: ['a'], animated: true }) // watcher never attached
+      for (let i = 0; i < 5; i += 1) {
+        state = update(state, { type: 'close', value: 'a' })[0]
+        state = update(state, { type: 'open', value: 'a' })[0]
+      }
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+})
+
+describe('accordion connect() dev warning (#264 review BLOCK 2 — moved out of the reducer)', () => {
+  it('fires exactly once per instance, from a real click, when exitCompletion was never placed', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      let state = init({ value: ['a'], animated: true })
+      const send = (msg: Parameters<typeof update>[1]): void => {
+        state = update(state, msg)[0]
+      }
+      // A LIVE signal handle (`.peek()` re-reads the mutable `state` closure
+      // on every call, unlike `signalOf`'s fixed snapshot) — needed here
+      // because the warning must observe the state `send` just produced.
+      const p = connect(
+        pathHandle<ReturnType<typeof init>>(() => state, ''),
+        send,
+        { id: 'x' },
+      )
+      const el = document.createElement('button')
+      document.body.append(el)
+      const click = (): void => {
+        const event = new MouseEvent('click')
+        Object.defineProperty(event, 'currentTarget', { value: el })
+        p.item('a').trigger.onClick(event)
+      }
+      click()
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(String(warnSpy.mock.calls[0]?.[0])).toContain('exitCompletion')
+      // Throttled: a second miss on the SAME connect() instance does not warn again.
+      state = update(state, { type: 'open', value: 'a' })[0]
+      click()
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      el.remove()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('never fires for a purely programmatic close bypassing the trigger (documented scope, like completeIfUnanimatedAfterToggle)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const state = attached(init({ value: ['a'], animated: true }))
+      // Detach it again so the watcher is gone but exercise the message path
+      // a host would use directly, bypassing connect()'s own handlers.
+      const detached = update(state, { type: 'exitWatcherDetach' })[0]
+      update(detached, { type: 'close', value: 'a' })
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
   })
 })

@@ -295,23 +295,23 @@ describe('#264 — disclosure exit completion in Chromium', () => {
   it('closes instantly, with a DEV warning, when `exitCompletion` is NOT placed at all (#264 item F1)', async () => {
     // #264 item F1 supersedes review item 4's accepted trade-off: a
     // forgotten `exitCompletion` placement no longer hangs `closing` +
-    // `inert` forever. `state.exitWatcher` is only ever flipped `true` by
-    // that mount's own onMount, so with it never placed the reducer's
-    // `animated && exitWatcher` gate never engages retention at all — the
-    // close is instant, exactly as `animated: false` would be — and a
-    // one-time DEV warning fires synchronously from the reducer, with no
-    // timer/deadline involved.
+    // `inert` forever. `state.exitWatcher` is a COUNT of mounted
+    // `exitCompletion` instances (#264 review BLOCK 2), only ever
+    // incremented by that mount's own onMount, so with it never placed the
+    // reducer's `animated && exitWatcher > 0` gate never engages retention
+    // at all — the close is instant, exactly as `animated: false` would be.
+    // The dev warning lives at the `connect()` boundary (a closure flag),
+    // never inside the reducer, so it fires only for the CLICK-driven path
+    // it can actually observe — a real trigger click, not a raw programmatic
+    // `send`, matching `completeIfUnanimatedAfterToggle`'s identical scope.
     const warnings: string[] = []
     page.on('console', (msg) => {
       if (msg.type() === 'warning' || msg.type() === 'error') warnings.push(msg.text())
     })
 
-    await page.evaluate(() => window.__noPartSend!({ type: 'close', value: 'x' }))
+    await clickTrigger('host-no-part', 'x') // open -> closed, instantly
 
-    const settled = await page.evaluate(() => {
-      const el = document.querySelector<HTMLElement>("#host-no-part [data-part='content']")!
-      return { state: el.dataset.state, hidden: el.hidden, inert: el.hasAttribute('inert') }
-    })
+    const settled = await contentState('host-no-part', 'x')
     expect(settled).toEqual({ state: 'closed', hidden: true, inert: true })
     expect(warnings.some((w) => w.includes('exitCompletion'))).toBe(true)
   })
