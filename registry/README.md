@@ -171,12 +171,15 @@ keyboard roving-focus wiring unable to find the element it moves focus to.
    the caller's children itself, and the required field means
    `Accordion({ ...parts.root }, [...])` (missing it) is a type error, not a runtime
    surprise. Forgetting to place `parts.exitCompletion` at ALL is no longer a hang —
-   `@llui/components`' reducer only retains a `closing` phase while the part is
-   mounted, closing instantly otherwise, with a synchronous, once-per-instance
-   dev-mode warning — so the required field here is about not silently losing the
-   requested exit ANIMATION in a registry skin, not about avoiding a stuck instance.
-   See `@llui/components`'s README (`accordion / collapsible exit motion`) for the full
-   contract.
+   whether it is mounted lives in a runtime registry keyed by the machine's own
+   `opts.id`, never in state, and `@llui/components`' reducer only retains a
+   `closing` phase when the closing message itself carries `retain: true` (stamped
+   by `connect()`'s own trigger handlers from that registry) — a forgotten part
+   means the registry never counts an attach, so every close is instant instead,
+   with a synchronous, once-per-id dev-mode warning — so the required field here is
+   about not silently losing the requested exit ANIMATION in a registry skin, not
+   about avoiding a stuck instance. See `@llui/components`'s README (`accordion /
+collapsible exit motion`) for the full contract.
 
 ## Checks
 

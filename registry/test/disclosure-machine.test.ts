@@ -133,10 +133,14 @@ describe('registry disclosure skins consume retained machine presence', () => {
       const content = part(host, scope, 'content')
       Object.defineProperty(content, 'getAnimations', { configurable: true, value: () => [] })
 
+      // A programmatic close only retains when `retain: true` is stamped
+      // (#264 review-264j) — exactly what `parts.close()` would produce
+      // from the runtime registry; a raw `send` with no `retain` closes
+      // instantly by design.
       if (scope === 'accordion') {
-        app?.send({ type: 'accordion', msg: { type: 'close', value: 'details' } })
+        app?.send({ type: 'accordion', msg: { type: 'close', value: 'details', retain: true } })
       } else {
-        app?.send({ type: 'collapsible', msg: { type: 'close' } })
+        app?.send({ type: 'collapsible', msg: { type: 'close', retain: true } })
       }
 
       expect(content.dataset.state).toBe('closing')

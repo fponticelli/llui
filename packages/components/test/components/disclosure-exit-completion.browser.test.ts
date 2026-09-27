@@ -226,8 +226,8 @@ describe('#264 — disclosure exit completion in Chromium', () => {
     // the WRONG sibling's DOM node and settle B's still-animating exit the
     // moment A's short animation ends.
     await page.evaluate(() => {
-      window.__sibASend!({ type: 'close', value: 'x' })
-      window.__sibBSend!({ type: 'close', value: 'x' })
+      window.__sibASend!({ type: 'close', value: 'x', retain: true })
+      window.__sibBSend!({ type: 'close', value: 'x', retain: true })
     })
     const stateOf = (rootId: string): Promise<string> =>
       page.evaluate(
@@ -267,9 +267,9 @@ describe('#264 — disclosure exit completion in Chromium', () => {
     // close AND reopen A (fast, 60ms exit) — A's own settle/reopen cycle
     // must never be mistaken for B's, and B must still be genuinely
     // `closing` (not prematurely `closed`) until its own slow animation ends.
-    await page.evaluate(() => window.__sibBSend!({ type: 'close', value: 'x' }))
+    await page.evaluate(() => window.__sibBSend!({ type: 'close', value: 'x', retain: true }))
     await page.evaluate(() => {
-      window.__sibASend!({ type: 'close', value: 'x' })
+      window.__sibASend!({ type: 'close', value: 'x', retain: true })
     })
     await page.waitForFunction(
       () =>
@@ -295,18 +295,19 @@ describe('#264 — disclosure exit completion in Chromium', () => {
   it('closes instantly, with a DEV warning, when `exitCompletion` is NOT placed at all (#264 item F1)', async () => {
     // #264 item F1 supersedes review item 4's accepted trade-off: a
     // forgotten `exitCompletion` placement no longer hangs `closing` +
-    // `inert` forever. `state.exitWatchers` holds a mount COUNT keyed by a
-    // per-realm session token (#264 review-264i), incremented/decremented
-    // only by `exitWatcherAttach`/`exitWatcherDetach` — sent only by a real
-    // `exitCompletion` mount/cleanup — so with `exitCompletion` never
-    // placed the count stays 0 and the reducer's `animated &&
-    // isExitWatched(exitWatchers)` gate never engages retention at all —
-    // the close is instant, exactly as `animated: false` would be. The dev
-    // warning lives
-    // at the `connect()` boundary (a closure flag), never inside the
-    // reducer, so it fires only for the CLICK-driven path it can actually
-    // observe — a real trigger click, not a raw programmatic `send`,
-    // matching `completeIfUnanimatedAfterToggle`'s identical scope.
+    // `inert` forever. Whether a watcher is attached lives in a runtime
+    // registry keyed by `opts.id` (#264 review-264j), incremented/
+    // decremented only by a real `exitCompletion` mount/cleanup — so with
+    // `exitCompletion` never placed, the registry stays empty for this id
+    // and `connect()`'s trigger handlers stamp `retain: false` on the
+    // closing message, so the reducer's `animated && msg.retain === true`
+    // gate never engages retention at all — the close is instant, exactly
+    // as `animated: false` would be. The dev warning lives at the
+    // `connect()` dispatch boundary (throttled per id in the registry
+    // module), never inside the reducer, so it fires only for the
+    // CLICK-driven path it can actually observe — a real trigger click, not
+    // a raw programmatic `send`, matching
+    // `completeIfUnanimatedAfterToggle`'s identical scope.
     const warnings: string[] = []
     page.on('console', (msg) => {
       if (msg.type() === 'warning' || msg.type() === 'error') warnings.push(msg.text())

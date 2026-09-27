@@ -171,13 +171,11 @@ function initDisclosureAccordion(
   })
   if (input.state === 'open') return opened
   if (input.state === 'closing') {
-    // A real reducer transition into `closing` only retains while
-    // `exitCompletion`'s mount is attached (#264 item F1) — a real mounted
-    // instance always attaches before any interaction is possible, so this
-    // fixture attaches it explicitly before closing, exactly like a real
-    // mount would.
-    const attached = accordion.update(opened, { type: 'exitWatcherAttach' })[0]
-    return accordion.update(attached, { type: 'close', value: itemValue })[0]
+    // A real reducer transition into `closing` only retains when the
+    // message carries `retain: true` (#264 review-264j) — a real trigger
+    // click stamps this from the runtime registry, so this fixture stamps
+    // it directly, exactly like a real click would produce.
+    return accordion.update(opened, { type: 'close', value: itemValue, retain: true })[0]
   }
   return accordion.init({ items: [itemValue], value: [], disabled: input.disabled, animated })
 }
@@ -190,9 +188,8 @@ function initDisclosureCollapsible(
   const opened = collapsible.init({ open: true, disabled: input.disabled, animated })
   if (input.state === 'open') return opened
   if (input.state === 'closing') {
-    // See the identical note in `initDisclosureAccordion` (#264 item F1).
-    const attached = collapsible.update(opened, { type: 'exitWatcherAttach' })[0]
-    return collapsible.update(attached, { type: 'close' })[0]
+    // See the identical note in `initDisclosureAccordion` (#264 review-264j).
+    return collapsible.update(opened, { type: 'close', retain: true })[0]
   }
   return collapsible.init({ open: false, disabled: input.disabled, animated })
 }
@@ -209,15 +206,13 @@ const accordionAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) => {
       const parts = accordion.connect(state, send, { id: `baseline-accordion-${ctx.caseId}` })
       const item = parts.item(itemValue)
       // `exitCompletion` is placed for realism, matching a real mount
-      // exactly (#264 review-264i): the `closing` phase this scenario
-      // constructs via a direct reducer call (`initDisclosureAccordion`,
-      // never a real mount) already bumps `exitWatchers.count` to a
-      // watched value directly, in THIS realm — there is no separate
-      // closure count or microtask recovery any more that could disagree
-      // with it and clear the simulated `closing` phase, but placing this
-      // part is still what a real consumer does, so this fixture renders
-      // the shape a live instance actually produces rather than a reducer
-      // shortcut a consumer could never reach.
+      // exactly (#264 review-264j): "is a watcher mounted" now lives in a
+      // runtime registry keyed by `opts.id`, never in state, so the
+      // `closing` phase this scenario constructs via a direct reducer call
+      // (`initDisclosureAccordion`, stamping `retain: true` directly) needs
+      // no attach/detach message of any kind to line up with it — placing
+      // this part is simply what a real consumer does, so this fixture
+      // renders the shape a live instance actually produces.
       return [
         div({ ...parts.root }, [
           div({ ...item.item }, [

@@ -270,11 +270,11 @@ function initDisclosureAccordion(
   })
   if (input.state === 'open') return opened
   if (input.state === 'closing') {
-    // `closing` only retains while `exitCompletion`'s mount is attached
-    // (#264 item F1) — attach it explicitly, exactly like a real mount
-    // would, before closing.
-    const attached = accordion.update(opened, { type: 'exitWatcherAttach' })[0]
-    return accordion.update(attached, { type: 'close', value: itemValue })[0]
+    // `closing` only retains when the message carries `retain: true` (#264
+    // review-264j) — a real trigger click stamps this from the runtime
+    // registry; this fixture stamps it directly, exactly as a real click
+    // would.
+    return accordion.update(opened, { type: 'close', value: itemValue, retain: true })[0]
   }
   return accordion.init({ items: [itemValue], value: [], disabled: input.disabled, animated })
 }
@@ -287,9 +287,8 @@ function initDisclosureCollapsible(
   const opened = collapsible.init({ open: true, disabled: input.disabled, animated })
   if (input.state === 'open') return opened
   if (input.state === 'closing') {
-    // See the identical note in `initDisclosureAccordion` (#264 item F1).
-    const attached = collapsible.update(opened, { type: 'exitWatcherAttach' })[0]
-    return collapsible.update(attached, { type: 'close' })[0]
+    // See the identical note in `initDisclosureAccordion` (#264 review-264j).
+    return collapsible.update(opened, { type: 'close', retain: true })[0]
   }
   return collapsible.init({ open: false, disabled: input.disabled, animated })
 }

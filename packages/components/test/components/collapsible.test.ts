@@ -1,24 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
 import { pathHandle } from '@llui/dom'
 import { init, update, connect } from '../../src/components/collapsible'
-import { isExitWatched } from '../../src/internal/disclosure-motion'
+import { attachExitWatcher, detachExitWatcher } from '../../src/internal/disclosure-motion'
 import { rootSignal, signalOf, read } from '../_signal'
 
 function animationEvent(type: string, animationName: string): Event {
   const event = new Event(type)
   Object.defineProperty(event, 'animationName', { value: animationName })
   return event
-}
-
-/**
- * Real usage always attaches the `exitCompletion` watcher (via mount) before
- * any interaction can happen, so unit tests exercising retained-exit
- * behavior via bare `update()` calls attach it explicitly first (#264 item
- * F1) — `closing` retention only ever engages when `animated &&
- * isExitWatched(exitWatchers)`.
- */
-function attached(state: ReturnType<typeof init>): ReturnType<typeof init> {
-  return update(state, { type: 'exitWatcherAttach' })[0]
 }
 
 describe('collapsible reducer', () => {
@@ -29,15 +18,11 @@ describe('collapsible reducer', () => {
       closing: false,
       exitGeneration: 0,
       animated: false,
-      exitWatchers: { session: expect.any(String), count: 0 },
     })
   })
 
-  it('init always starts unwatched, never trusting a persisted/hydrated value (#264 review M1)', () => {
-    // `CollapsibleInit`'s fields are all optional, so a plain (non-cast)
-    // object with one extra property is still structurally assignable.
-    const tampered = { open: true, exitWatchers: { session: 'stale-session', count: 7 } }
-    expect(isExitWatched(init(tampered).exitWatchers)).toBe(false)
+  it('init is fully deterministic — no random/ambient field of any kind (#264 review-264j)', () => {
+    expect(init({ open: true, animated: true })).toEqual(init({ open: true, animated: true }))
   })
 
   it('toggle alternates', () => {
@@ -57,16 +42,25 @@ describe('collapsible reducer', () => {
     expect(s.open).toBe(false)
   })
 
-  it('retains closing content only when animation is explicitly enabled', () => {
+  it('retains closing content only when animation is explicitly enabled AND retain is stamped', () => {
     const instant = update(init({ open: true }), { type: 'close' })[0]
     expect(instant).toMatchObject({ open: false, closing: false })
 
-    const animated = update(attached(init({ open: true, animated: true })), { type: 'close' })[0]
+    const noRetain = update(init({ open: true, animated: true }), { type: 'close' })[0]
+    expect(noRetain).toMatchObject({ open: false, closing: false })
+
+    const animated = update(init({ open: true, animated: true }), {
+      type: 'close',
+      retain: true,
+    })[0]
     expect(animated).toMatchObject({ open: false, closing: true })
   })
 
   it('reopen interrupts a retained close and exitComplete hides it', () => {
-    const closing = update(attached(init({ open: true, animated: true })), { type: 'close' })[0]
+    const closing = update(init({ open: true, animated: true }), {
+      type: 'close',
+      retain: true,
+    })[0]
     expect(update(closing, { type: 'open' })[0]).toMatchObject({ open: true, closing: false })
     expect(
       update(closing, { type: 'exitComplete', generation: closing.exitGeneration })[0],
@@ -77,14 +71,23 @@ describe('collapsible reducer', () => {
   })
 
   it('rejects a stale completion from an earlier exit generation', () => {
-    const first = update(attached(init({ open: true, animated: true })), { type: 'close' })[0]
+    const first = update(init({ open: true, animated: true }), {
+      type: 'close',
+      retain: true,
+    })[0]
     const reopened = update(first, { type: 'open' })[0]
-    const second = update(reopened, { type: 'close' })[0]
+    const second = update(reopened, { type: 'close', retain: true })[0]
 
     expect(first.exitGeneration).toBe(1)
     expect(second.exitGeneration).toBe(2)
     expect(update(second, { type: 'exitComplete', generation: 1 })[0].closing).toBe(true)
     expect(update(second, { type: 'exitComplete', generation: 2 })[0].closing).toBe(false)
+  })
+
+  it('reducer purity: identical (state, msg) always produces an identical result', () => {
+    const base = init({ open: true, animated: true })
+    const msg = { type: 'close' as const, retain: true }
+    expect(update(base, msg)[0]).toEqual(update(base, msg)[0])
   })
 })
 
@@ -111,7 +114,10 @@ describe('collapsible.connect', () => {
 
   it('keeps closing content mounted and noninteractive until its own animation ends', () => {
     const send = vi.fn()
-    const closing = update(attached(init({ open: true, animated: true })), { type: 'close' })[0]
+    const closing = update(init({ open: true, animated: true }), {
+      type: 'close',
+      retain: true,
+    })[0]
     const content = connect(signalOf(closing), send, { id: 'x' }).content
     expect(read(content.hidden, closing)).toBe(false)
     expect(read(content['data-state'], closing)).toBe('closing')
@@ -127,108 +133,68 @@ describe('collapsible.connect', () => {
     expect(send).toHaveBeenCalledWith({ type: 'exitComplete', generation: 1 })
   })
 
-  it('trigger click sends toggle', () => {
+  it('trigger click sends toggle, stamping retain: false when no exitCompletion is attached for this id', () => {
     const send = vi.fn()
     const pc = connect(rootSignal(), send, { id: 'x' })
     pc.trigger.onClick(new MouseEvent('click'))
-    expect(send).toHaveBeenCalledWith({ type: 'toggle' })
+    expect(send).toHaveBeenCalledWith({ type: 'toggle', retain: false })
   })
 })
 
-describe('collapsible exitCompletion fail-safe (#264 item F1)', () => {
-  it('a forgotten exitCompletion (watcher never attached) closes instantly, never retains', () => {
-    const [s] = update(init({ open: true, animated: true }), { type: 'close' })
-    expect(s.open).toBe(false)
-    expect(s.closing).toBe(false)
-    expect(isExitWatched(s.exitWatchers)).toBe(false)
+describe('collapsible exitCompletion fail-safe (#264 item F1, mechanism per #264 review-264j)', () => {
+  it('a close with no retain (or retain: false) closes instantly, never retains', () => {
+    const [s1] = update(init({ open: true, animated: true }), { type: 'close' })
+    expect(s1.open).toBe(false)
+    expect(s1.closing).toBe(false)
+
+    const [s2] = update(init({ open: true, animated: true }), { type: 'close', retain: false })
+    expect(s2.closing).toBe(false)
   })
 
-  it('exitWatcherAttach marks the slice watched; a subsequent close then retains', () => {
-    const attachedState = update(init({ open: true, animated: true }), {
-      type: 'exitWatcherAttach',
+  it('a close with retain: true retains, exactly when animated is also true', () => {
+    const retained = update(init({ open: true, animated: true }), {
+      type: 'close',
+      retain: true,
     })[0]
-    expect(isExitWatched(attachedState.exitWatchers)).toBe(true)
-    const closing = update(attachedState, { type: 'close' })[0]
-    expect(closing).toMatchObject({ open: false, closing: true })
+    expect(retained).toMatchObject({ open: false, closing: true })
+
+    const notAnimated = update(init({ open: true, animated: false }), {
+      type: 'close',
+      retain: true,
+    })[0]
+    expect(notAnimated.closing).toBe(false)
   })
 
-  it('a second exitWatcherAttach over the same slice increments the count (two placements)', () => {
-    const once = update(init({ open: true, animated: true }), { type: 'exitWatcherAttach' })[0]
-    const twice = update(once, { type: 'exitWatcherAttach' })[0]
-    expect(twice.exitWatchers.count).toBe(2)
-    expect(isExitWatched(twice.exitWatchers)).toBe(true)
-  })
-
-  it('exitWatcherDetach mid-closing settles it immediately rather than leaving it stuck', () => {
-    const closing = update(attached(init({ open: true, animated: true })), { type: 'close' })[0]
+  it('exitComplete settles a retained panel — the SAME message a watcher-detach settle uses', () => {
+    const closing = update(init({ open: true, animated: true }), {
+      type: 'close',
+      retain: true,
+    })[0]
     expect(closing.closing).toBe(true)
-    const detached = update(closing, { type: 'exitWatcherDetach' })[0]
-    expect(detached.closing).toBe(false)
-    expect(isExitWatched(detached.exitWatchers)).toBe(false)
+    const settled = update(closing, { type: 'exitComplete', generation: closing.exitGeneration })[0]
+    expect(settled.closing).toBe(false)
   })
 
-  it('exitWatcherDetach never goes negative and stays unwatched, even if already at 0 (#264 review M1)', () => {
-    // The reducer no longer tracks a stray closure count — the real mount
-    // COUNT lives entirely in the `exitWatchers` field itself (#264
-    // review-264i), so a stray/duplicate `exitWatcherDetach` clamps at 0
-    // rather than going negative, and stays unwatched.
-    let state = init({ open: true, animated: true })
-    state = update(state, { type: 'exitWatcherDetach' })[0]
-    expect(isExitWatched(state.exitWatchers)).toBe(false)
-    expect(state.exitWatchers.count).toBe(0)
-    state = update(state, { type: 'exitWatcherDetach' })[0]
-    expect(isExitWatched(state.exitWatchers)).toBe(false)
-    expect(state.exitWatchers.count).toBe(0)
-  })
-
-  it('attach/detach are pure: the same input produces the same output every time (reducer purity)', () => {
+  it('reducer purity: identical (state, msg) always produces an identical result', () => {
     const base = init({ open: true, animated: true })
-    const a1 = update(base, { type: 'exitWatcherAttach' })[0]
-    const a2 = update(base, { type: 'exitWatcherAttach' })[0]
-    expect(a1).toEqual(a2)
-    const attached1 = update(a1, { type: 'exitWatcherDetach' })[0]
-    const attached2 = update(a2, { type: 'exitWatcherDetach' })[0]
-    expect(attached1).toEqual(attached2)
+    const msg = { type: 'close' as const, retain: true }
+    expect(update(base, msg)[0]).toEqual(update(base, msg)[0])
   })
 
-  it('a restored slice with a FOREIGN session and a stale positive count is unwatched, and a close does not retain', () => {
-    const restored = {
-      ...init({ open: true, animated: true }),
-      exitWatchers: { session: 'a-past-page-load', count: 5 },
-    }
-    expect(isExitWatched(restored.exitWatchers)).toBe(false)
-    const [s] = update(restored, { type: 'close' })
-    expect(s.open).toBe(false)
-    expect(s.closing).toBe(false)
+  it('init() carries no runtime/watcher field of any kind — a plain JSON round trip is a no-op', () => {
+    const s = init({ open: true, animated: true })
+    const roundTripped: typeof s = JSON.parse(JSON.stringify(s))
+    expect(roundTripped).toEqual(s)
+    const [next] = update(roundTripped, { type: 'close' })
+    expect(next.open).toBe(false)
   })
 
-  it('no warning fires when the watcher is attached (placed correctly)', () => {
+  it('update() never calls console.warn under ANY message, retained or not (#264 review BLOCK 2)', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      const s = attached(init({ open: true, animated: true }))
-      update(s, { type: 'close' })
-      expect(warnSpy).not.toHaveBeenCalled()
-    } finally {
-      warnSpy.mockRestore()
-    }
-  })
-
-  it('no warning fires when animated is false (instant close is intentional)', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      update(init({ open: true }), { type: 'close' })
-      expect(warnSpy).not.toHaveBeenCalled()
-    } finally {
-      warnSpy.mockRestore()
-    }
-  })
-
-  it('update() never calls console.warn — the diagnostic lives at the connect() boundary, not the reducer (#264 review BLOCK 2)', () => {
-    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    try {
-      let state = init({ open: true, animated: true }) // watcher never attached
+      let state = init({ open: true, animated: true })
       for (let i = 0; i < 5; i += 1) {
-        state = update(state, { type: 'close' })[0]
+        state = update(state, { type: 'close', retain: i % 2 === 0 })[0]
         state = update(state, { type: 'open' })[0]
       }
       expect(warnSpy).not.toHaveBeenCalled()
@@ -238,8 +204,8 @@ describe('collapsible exitCompletion fail-safe (#264 item F1)', () => {
   })
 })
 
-describe('collapsible connect() dev warning (#264 review BLOCK 2 — moved out of the reducer)', () => {
-  it('fires exactly once per instance, from a real click, when exitCompletion was never placed', () => {
+describe('collapsible connect() dev warning (registry-based, #264 review-264j)', () => {
+  it('fires exactly once per id, from a real click, when exitCompletion is never attached', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       let state = init({ open: true, animated: true })
@@ -249,7 +215,9 @@ describe('collapsible connect() dev warning (#264 review BLOCK 2 — moved out o
       const p = connect(
         pathHandle<ReturnType<typeof init>>(() => state, ''),
         send,
-        { id: 'x' },
+        {
+          id: 'collapsible-warn-once-per-id',
+        },
       )
       const el = document.createElement('button')
       document.body.append(el)
@@ -270,12 +238,38 @@ describe('collapsible connect() dev warning (#264 review BLOCK 2 — moved out o
     }
   })
 
-  it('never fires for a purely programmatic close bypassing the trigger (documented scope, like completeIfUnanimatedAfterToggle)', () => {
+  it('never fires once the id has a real attached watcher (registry, not state)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const id = 'collapsible-warn-attached-no-fire'
+    try {
+      let state = init({ open: true, animated: true })
+      const send = (msg: Parameters<typeof update>[1]): void => {
+        state = update(state, msg)[0]
+      }
+      const p = connect(
+        pathHandle<ReturnType<typeof init>>(() => state, ''),
+        send,
+        { id },
+      )
+      attachExitWatcher(id)
+      const el = document.createElement('button')
+      document.body.append(el)
+      const event = new MouseEvent('click')
+      Object.defineProperty(event, 'currentTarget', { value: el })
+      p.trigger.onClick(event)
+      expect(warnSpy).not.toHaveBeenCalled()
+      el.remove()
+    } finally {
+      detachExitWatcher(id)
+      warnSpy.mockRestore()
+    }
+  })
+
+  it("never fires for a purely programmatic close bypassing connect()'s own handlers (documented scope)", () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      const state = attached(init({ open: true, animated: true }))
-      const detached = update(state, { type: 'exitWatcherDetach' })[0]
-      update(detached, { type: 'close' })
+      const state = init({ open: true, animated: true })
+      update(state, { type: 'close' })
       expect(warnSpy).not.toHaveBeenCalled()
     } finally {
       warnSpy.mockRestore()

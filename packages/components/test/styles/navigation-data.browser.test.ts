@@ -55,14 +55,13 @@ const accordionOpened = accordionMachine.init({
   value: ['item'],
   animated: true,
 })
-// `closing` only retains while `exitCompletion`'s mount is attached (#264
-// item F1) — attach it explicitly, exactly like a real mount would.
-const accordionAttached = accordionMachine.update(accordionOpened, {
-  type: 'exitWatcherAttach',
-})[0]
-const accordionClosingState = accordionMachine.update(accordionAttached, {
+// `closing` only retains when the message carries `retain: true` (#264
+// review-264j) — a real trigger click stamps this from the runtime
+// registry; this fixture stamps it directly, exactly as a real click would.
+const accordionClosingState = accordionMachine.update(accordionOpened, {
   type: 'close',
   value: 'item',
+  retain: true,
 })[0]
 const accordionClosingContent = accordionClosingParts.item('item').content
 const accordionClosingAttrs = {
@@ -75,12 +74,10 @@ const collapsibleClosingParts = collapsibleMachine.connect(rootSignal(), () => {
   id: 'browser-collapsible',
 })
 const collapsibleOpened = collapsibleMachine.init({ open: true, animated: true })
-// See the identical note above (#264 item F1).
-const collapsibleAttached = collapsibleMachine.update(collapsibleOpened, {
-  type: 'exitWatcherAttach',
-})[0]
-const collapsibleClosingState = collapsibleMachine.update(collapsibleAttached, {
+// See the identical note above (#264 review-264j).
+const collapsibleClosingState = collapsibleMachine.update(collapsibleOpened, {
   type: 'close',
+  retain: true,
 })[0]
 const collapsibleClosingContent = collapsibleClosingParts.content
 const collapsibleClosingAttrs = {

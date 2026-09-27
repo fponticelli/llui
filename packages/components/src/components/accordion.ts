@@ -8,15 +8,11 @@ import {
   type RetainedExitGeneration,
 } from '../internal/retained-exit.js'
 import {
-  attachExitWatcher,
   createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
-  createMissingExitWatcherWarning,
-  detachExitWatcher,
-  initExitWatchers,
-  isExitWatched,
+  isExitWatcherAttached,
+  warnMissingExitWatcherOnce,
   type DisclosureExitWatchEntry,
-  type ExitWatchers,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
 
@@ -47,33 +43,17 @@ export interface AccordionState {
   exitSequence: number
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
-  /**
-   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
-   * per-JS-realm session token — see `ExitWatchers`'s own header in
-   * `disclosure-motion.ts` for the full rationale (#264 review-264i: this
-   * replaced a closure-owned counter keyed by dispatcher identity, which
-   * broke when two `connect()` calls over the same slice used two DIFFERENT
-   * inline `send` wrappers). `closing` retention only ever engages when
-   * `animated && isExitWatched(exitWatchers)` — never `animated` alone — so
-   * a forgotten `exitCompletion` placement closes instantly instead of
-   * hanging `closing` + `inert` forever, and a state slice RESTORED from a
-   * past session (its `session` necessarily foreign to this realm) reads as
-   * unwatched regardless of its `count`, so it can never resurrect a hang
-   * either. Never a caller-facing init option; `init()` always starts it at
-   * `initExitWatchers()` (this realm's session, count 0).
-   */
-  exitWatchers: ExitWatchers
 }
 
 export type AccordionMsg =
   /** @intent("Toggle the named accordion item open/closed") */
-  | { type: 'toggle'; value: string }
+  | { type: 'toggle'; value: string; retain?: boolean }
   /** @intent("Open the named accordion item") */
-  | { type: 'open'; value: string }
+  | { type: 'open'; value: string; retain?: boolean }
   /** @intent("Close the named accordion item") */
-  | { type: 'close'; value: string }
+  | { type: 'close'; value: string; retain?: boolean }
   /** @intent("Replace the set of currently-open items with the provided values") */
-  | { type: 'setValue'; value: string[] }
+  | { type: 'setValue'; value: string[]; retain?: boolean }
   /** @humanOnly */
   | { type: 'setItems'; items: string[] }
   /** @humanOnly */
@@ -84,12 +64,10 @@ export type AccordionMsg =
   | { type: 'focusFirst' }
   /** @humanOnly */
   | { type: 'focusLast' }
-  /** @humanOnly — sent by the retained content's own animation end/cancel event. */
+  /** @humanOnly — sent by the retained content's own animation end/cancel event,
+   * or by `exitCompletion`'s own cleanup settling every still-closing item once
+   * the last watcher for this `id` detaches. */
   | { type: 'exitComplete'; value: string; generation: number }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own mount, once placed. */
-  | { type: 'exitWatcherAttach' }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own cleanup, on unmount. */
-  | { type: 'exitWatcherDetach' }
 
 export interface AccordionInit {
   value?: string[]
@@ -115,28 +93,34 @@ export function init(opts: AccordionInit = {}): AccordionState {
     exitGenerations: [],
     exitSequence: 0,
     animated: opts.animated ?? false,
-    exitWatchers: initExitWatchers(),
   }
 }
 
 /**
- * Pure — no `console.warn`, no other side effect (#264 review BLOCK 2:
- * `update()` must stay pure so `@llui/test`'s `replayTrace`/`propertyTest`,
- * which re-run a reducer's messages to compare traces, cannot re-emit a
- * diagnostic as a side effect of REPLAYING history rather than of anything
- * happening for the first time). The dev-mode "you forgot to place
- * exitCompletion" warning moved to `connect()`'s own click/keydown-wrapped
- * handlers, the one place that already peeks state before/after a `send`
- * for the identical reason (`completeIfUnanimatedAfterToggle`) — see there.
+ * Pure — no `console.warn`, no other side effect, no read of anything outside
+ * `state`/`msg` (#264 review-264j, FINAL: "is a watcher mounted" is a
+ * RUNTIME/VIEW fact, never domain state — see `disclosure-motion.ts`'s
+ * header comment on `createDisclosureExitCompletionMount` for the full
+ * history of why. `retain` is the ONE bit the reducer needs, stamped onto
+ * the message itself by `connect()`'s trigger handlers at DISPATCH time from
+ * a runtime registry keyed by `opts.id` — never read here). This keeps
+ * `update()` fully pure and `init()` fully deterministic, so `@llui/test`'s
+ * `replayTrace`/`propertyTest` reproduce byte-identically regardless of
+ * which mounts happen to be live during a replay (see
+ * `test/components/disclosure-exit-replay.test.ts`).
  */
-function withValue(state: AccordionState, value: string[]): AccordionState {
+function withValue(
+  state: AccordionState,
+  value: string[],
+  retain: boolean | undefined,
+): AccordionState {
   const retained = retainedExits(
     state.value,
     value,
     state.closing,
     state.exitGenerations,
     state.exitSequence,
-    state.animated && isExitWatched(state.exitWatchers),
+    state.animated && retain === true,
   )
   return {
     ...state,
@@ -160,18 +144,6 @@ function toggleValue(state: AccordionState, value: string): string[] {
 }
 
 export function update(state: AccordionState, msg: AccordionMsg): [AccordionState, never[]] {
-  if (msg.type === 'exitWatcherAttach') {
-    return [{ ...state, exitWatchers: attachExitWatcher(state.exitWatchers) }, []]
-  }
-  if (msg.type === 'exitWatcherDetach') {
-    const { watchers, settledToZero } = detachExitWatcher(state.exitWatchers)
-    if (!settledToZero) return [{ ...state, exitWatchers: watchers }, []]
-    // Settle every currently-retained exit immediately: nothing is watching
-    // this slice any more in this realm, so nothing will ever send the
-    // `exitComplete` that would otherwise clear it (#264 item F1 — "detach
-    // mid-closing settles").
-    return [{ ...state, exitWatchers: watchers, closing: [], exitGenerations: [] }, []]
-  }
   if (msg.type === 'exitComplete') {
     if (
       !state.closing.includes(msg.value) ||
@@ -190,10 +162,13 @@ export function update(state: AccordionState, msg: AccordionMsg): [AccordionStat
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'toggle':
-      return [withValue(state, toggleValue(state, msg.value)), []]
+      return [withValue(state, toggleValue(state, msg.value), msg.retain), []]
     case 'open':
       if (state.value.includes(msg.value) && !state.closing.includes(msg.value)) return [state, []]
-      return [withValue(state, state.multiple ? [...state.value, msg.value] : [msg.value]), []]
+      return [
+        withValue(state, state.multiple ? [...state.value, msg.value] : [msg.value], msg.retain),
+        [],
+      ]
     case 'close':
       if (!state.value.includes(msg.value)) return [state, []]
       if (!state.multiple && !state.collapsible) return [state, []]
@@ -201,11 +176,12 @@ export function update(state: AccordionState, msg: AccordionMsg): [AccordionStat
         withValue(
           state,
           state.value.filter((v) => v !== msg.value),
+          msg.retain,
         ),
         [],
       ]
     case 'setValue':
-      return [withValue(state, msg.value), []]
+      return [withValue(state, msg.value, msg.retain), []]
     case 'setItems':
       return [{ ...state, items: msg.items }, []]
     // Focus messages don't mutate state but are emitted so user handlers can respond.
@@ -274,9 +250,9 @@ export interface AccordionParts {
    * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
    * host app, bypassing the trigger's click handler) once its content's own
    * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. Its mount ALSO reports whether it is placed at all:
-   * `animated: true` only ever retains `closing` content while this is
-   * mounted (#264 item F1) — forgetting to place it degrades gracefully to
+   * exit motion at all. Its mount ALSO reports whether it is placed at all
+   * (#264 item F1): `animated: true` only ever retains `closing` content
+   * while this is mounted — forgetting to place it degrades gracefully to
    * an instant close (with a one-time dev warning) rather than hanging
    * `closing` + `inert` forever, so placing it is no longer required for
    * SAFETY, only for the requested exit animation to actually run on a
@@ -284,6 +260,17 @@ export interface AccordionParts {
    * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
+  /**
+   * An animated-aware programmatic close (#264 review-264j): a raw
+   * `send({ type: 'close', value })` from app/agent code carries no
+   * `retain` and therefore closes INSTANTLY, even with `animated: true` and
+   * `exitCompletion` placed — documented, fail-safe behavior, since a bare
+   * message has no way to know whether a watcher happens to be mounted.
+   * `parts.close(value)` is the correct way for a host to close an item
+   * programmatically and still get the animated exit: it stamps `retain`
+   * from the SAME runtime registry the trigger handlers read.
+   */
+  close: (value: string) => void
 }
 
 export interface ConnectOptions {
@@ -300,31 +287,23 @@ export function connect(
   const triggerId = (v: string): string => `${base}:trigger:${v}`
   const contentId = (v: string): string => `${base}:content:${v}`
   const exitTracker = createDisclosureExitTracker()
-  // Dev-mode "you forgot to place exitCompletion" warning (#264 review BLOCK
-  // 2), OWNED BY THIS `connect()` CALL — a closure flag, not state, so it
-  // cannot appear in a serialized snapshot/replay and cannot make `update()`
-  // impure. Throttled to once per INSTANCE (this closure's lifetime), fires
-  // SYNCHRONOUSLY right after the underlying `send` that closed something
-  // without a watcher attached — no timer, no subscription. Scoped to the
-  // click/keydown-wrapped handlers below, the same scope
-  // `completeIfUnanimatedAfterToggle` already has: a state signal has no
-  // ambient "subscribe" outside a placed binding (see `Signal`'s three-method
-  // contract), so observing EVERY possible caller of `send` — including a
-  // host bypassing these handlers entirely — is not reachable from here,
-  // exactly the same documented gap that safety net already has.
-  const warnMissingWatcher = createMissingExitWatcherWarning(
-    '[llui/components] Accordion was configured `animated: true` but `parts.exitCompletion` ' +
-      'was never placed in the rendered view (or has not mounted yet), so a closing item cannot ' +
-      'be retained for its exit animation and closes instantly instead. Place `parts.' +
-      "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
-      'intended.',
-  )
-  const warnIfClosedWithoutWatcher = (before: AccordionState, after: AccordionState): void => {
-    if (!before.animated || isExitWatched(before.exitWatchers)) return
-    const closedWithoutRetention = before.value.some(
-      (v) => !after.value.includes(v) && !after.closing.includes(v),
+  // Peeking is unreachable in a unit test that invokes the click/keydown
+  // handlers directly with no `currentTarget` (`rootSignal()`-backed
+  // structural tests, which have no live value to peek) — those call sites
+  // guard on the same `origin` `completeIfUnanimatedAfterToggle` does.
+  // `close()` is a genuine programmatic API assumed to run against a real
+  // live signal, exactly like `exitWatchEntries`/`armExit` elsewhere in this
+  // file, so it peeks unconditionally.
+  const warnIfMissingWatcher = (): void => {
+    if (!state.peek().animated || isExitWatcherAttached(base)) return
+    warnMissingExitWatcherOnce(
+      base,
+      '[llui/components] Accordion was configured `animated: true` but `parts.exitCompletion` ' +
+        'was never placed in the rendered view (or has not mounted yet), so a closing item cannot ' +
+        'be retained for its exit animation and closes instantly instead. Place `parts.' +
+        "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
+        'intended.',
     )
-    warnMissingWatcher(closedWithoutRetention)
   }
   const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] =>
     state.peek().closing.map((value) => ({
@@ -384,13 +363,21 @@ export function connect(
     },
     exitCompletion: onMount(
       createDisclosureExitCompletionMount(
+        base,
         getElementByIdInScope,
         exitWatchEntries,
         (value, generation) => send({ type: 'exitComplete', value, generation }),
-        () => send({ type: 'exitWatcherAttach' }),
-        () => send({ type: 'exitWatcherDetach' }),
       ),
     ),
+    close: (value: string): void => {
+      // No DOM origin for a programmatic call, so the in-handler unanimated
+      // safety net (`completeIfUnanimatedAfterToggle`, which needs a real
+      // element to resolve the enclosing scope from) does not apply here —
+      // `exitCompletion`'s own mounted `check()`/`MutationObserver` already
+      // covers the unanimated-skin case for any placed watcher.
+      warnIfMissingWatcher()
+      send({ type: 'close', value, retain: isExitWatcherAttached(base) })
+    },
     item: (value: string): AccordionItemParts => ({
       trigger: {
         type: 'button',
@@ -404,15 +391,14 @@ export function connect(
         'data-part': 'trigger',
         'data-value': value,
         onClick: tagSend(send, ['toggle'], (e: MouseEvent) => {
-          // Peeking (both here and for the warning) is unreachable in a unit
-          // test that invokes the handler directly with no `currentTarget` —
-          // see `completeIfUnanimatedAfterToggle`'s identical note; guarding
-          // on the same `origin` keeps `rootSignal()`-backed structural
-          // tests (no live state to peek) working unchanged.
+          // Peeking is unreachable in a unit test that invokes the handler
+          // directly with no `currentTarget` — see
+          // `completeIfUnanimatedAfterToggle`'s identical note; guarding on
+          // the same `origin` keeps `rootSignal()`-backed structural tests
+          // (no live state to peek) working unchanged.
           const origin = e.currentTarget instanceof Element ? e.currentTarget : null
-          const before = origin === null ? null : state.peek()
-          send({ type: 'toggle', value })
-          if (before !== null) warnIfClosedWithoutWatcher(before, state.peek())
+          if (origin !== null) warnIfMissingWatcher()
+          send({ type: 'toggle', value, retain: isExitWatcherAttached(base) })
           completeIfUnanimatedAfterToggle(origin)
         }),
         onKeyDown: tagSend(
@@ -454,9 +440,8 @@ export function connect(
               case ' ':
               case 'Enter': {
                 e.preventDefault()
-                const before = origin === null ? null : state.peek()
-                send({ type: 'toggle', value })
-                if (before !== null) warnIfClosedWithoutWatcher(before, state.peek())
+                if (origin !== null) warnIfMissingWatcher()
+                send({ type: 'toggle', value, retain: isExitWatcherAttached(base) })
                 completeIfUnanimatedAfterToggle(origin)
                 return
               }

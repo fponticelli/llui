@@ -164,13 +164,14 @@ export type { ClassValue }
  * item 2). `exitCompletion` settles a PROGRAMMATIC close/toggle/setValue on a
  * skin with no exit motion.
  *
- * **Forgetting it is no longer a hang (#264 item F1).** The machine's
- * reducer now tracks whether `exitCompletion` is CURRENTLY mounted
- * (`exitWatcherAttach`/`exitWatcherDetach`, sent by the Mountable's own
- * mount/cleanup) and only ever retains `closing` while it is attached —
- * otherwise it closes instantly, with a synchronous, once-per-instance
- * dev-mode `console.warn` (never a build error). So `exitCompletion` is no
- * longer required for SAFETY. It is kept REQUIRED here anyway, and a root
+ * **Forgetting it is no longer a hang (#264 item F1).** Whether
+ * `exitCompletion` is CURRENTLY mounted lives in a runtime registry keyed by
+ * the machine's own `opts.id` (#264 review-264j — never in state or a
+ * message), and the reducer only ever retains `closing` when the
+ * closing-capable message itself carries `retain: true`, which `connect()`'s
+ * trigger handlers stamp from that registry — otherwise it closes instantly,
+ * with a synchronous, once-per-id dev-mode `console.warn` (never a build
+ * error). So `exitCompletion` is no longer required for SAFETY. It is kept REQUIRED here anyway, and a root
  * wrapper still cannot forget to append what it is compile-time REQUIRED to
  * accept: `exitCompletion` is a non-optional field on the props bag below,
  * so `Accordion({ ...parts.root }, [...])` (missing the field) is a type

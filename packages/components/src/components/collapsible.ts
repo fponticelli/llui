@@ -2,15 +2,11 @@ import { onMount, tagSend, type Mountable } from '@llui/dom'
 import type { Send, Signal } from '@llui/dom'
 import { retainedExit } from '../internal/retained-exit.js'
 import {
-  attachExitWatcher,
   createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
-  createMissingExitWatcherWarning,
-  detachExitWatcher,
-  initExitWatchers,
-  isExitWatched,
+  isExitWatcherAttached,
+  warnMissingExitWatcherOnce,
   type DisclosureExitWatchEntry,
-  type ExitWatchers,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
 import { getElementByIdInScope } from '../utils/root-scope.js'
@@ -29,33 +25,21 @@ export interface CollapsibleState {
   exitGeneration: number
   /** Whether close waits for the content's own animation end/cancel event. */
   animated: boolean
-  /**
-   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
-   * per-JS-realm session token. See `accordion.ts`'s identical field, and
-   * `ExitWatchers`'s own header in `disclosure-motion.ts`, for the full
-   * rationale (#264 review-264i) — a restored slice's `session` is foreign
-   * to this realm and reads as unwatched regardless of its `count`, so it
-   * can never resurrect a hang. Never a caller-facing init option;
-   * `init()` always starts it at `initExitWatchers()`.
-   */
-  exitWatchers: ExitWatchers
 }
 
 export type CollapsibleMsg =
   /** @intent("Toggle the collapsible panel open/closed") */
-  | { type: 'toggle' }
+  | { type: 'toggle'; retain?: boolean }
   /** @intent("Expand the collapsible panel") */
-  | { type: 'open' }
+  | { type: 'open'; retain?: boolean }
   /** @intent("Collapse the panel") */
-  | { type: 'close' }
+  | { type: 'close'; retain?: boolean }
   /** @intent("Set the panel's open state to a specific value") */
-  | { type: 'setOpen'; open: boolean }
-  /** @humanOnly */
+  | { type: 'setOpen'; open: boolean; retain?: boolean }
+  /** @humanOnly — sent by the retained content's own animation end/cancel event,
+   * or by `exitCompletion`'s own cleanup settling a still-closing panel once
+   * the last watcher for this `id` detaches. */
   | { type: 'exitComplete'; generation: number }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own mount, once placed. */
-  | { type: 'exitWatcherAttach' }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own cleanup, on unmount. */
-  | { type: 'exitWatcherDetach' }
 
 export interface CollapsibleInit {
   open?: boolean
@@ -71,22 +55,27 @@ export function init(opts: CollapsibleInit = {}): CollapsibleState {
     closing: false,
     exitGeneration: 0,
     animated: opts.animated ?? false,
-    exitWatchers: initExitWatchers(),
   }
 }
 
 /**
- * Pure — no `console.warn` (#264 review BLOCK 2). See `accordion.ts`'s
- * identical note: the dev warning moved to `connect()`'s click-wrapped
- * handler, which already peeks state before/after a `send`.
+ * Pure — no `console.warn`, no read of anything outside `state`/`msg` (#264
+ * review-264j, FINAL). See `accordion.ts`'s identical note: `retain` is
+ * stamped onto the message by `connect()`'s trigger handlers from a runtime
+ * registry, never read here — "is a watcher mounted" is a view fact, not
+ * domain state.
  */
-function withOpen(state: CollapsibleState, open: boolean): CollapsibleState {
+function withOpen(
+  state: CollapsibleState,
+  open: boolean,
+  retain: boolean | undefined,
+): CollapsibleState {
   const retained = retainedExit(
     state.open,
     open,
     state.closing,
     state.exitGeneration,
-    state.animated && isExitWatched(state.exitWatchers),
+    state.animated && retain === true,
   )
   return {
     ...state,
@@ -97,17 +86,6 @@ function withOpen(state: CollapsibleState, open: boolean): CollapsibleState {
 }
 
 export function update(state: CollapsibleState, msg: CollapsibleMsg): [CollapsibleState, never[]] {
-  if (msg.type === 'exitWatcherAttach') {
-    return [{ ...state, exitWatchers: attachExitWatcher(state.exitWatchers) }, []]
-  }
-  if (msg.type === 'exitWatcherDetach') {
-    const { watchers, settledToZero } = detachExitWatcher(state.exitWatchers)
-    if (!settledToZero) return [{ ...state, exitWatchers: watchers }, []]
-    // See accordion.ts's identical note: settle any currently-closing panel
-    // immediately, since nothing will send the `exitComplete` that would
-    // otherwise clear it.
-    return [{ ...state, exitWatchers: watchers, closing: false }, []]
-  }
   if (msg.type === 'exitComplete') {
     return state.closing && state.exitGeneration === msg.generation
       ? [{ ...state, closing: false }, []]
@@ -116,13 +94,13 @@ export function update(state: CollapsibleState, msg: CollapsibleMsg): [Collapsib
   if (state.disabled) return [state, []]
   switch (msg.type) {
     case 'toggle':
-      return [withOpen(state, !state.open), []]
+      return [withOpen(state, !state.open, msg.retain), []]
     case 'open':
-      return [withOpen(state, true), []]
+      return [withOpen(state, true, msg.retain), []]
     case 'close':
-      return [withOpen(state, false), []]
+      return [withOpen(state, false, msg.retain), []]
     case 'setOpen':
-      return [withOpen(state, msg.open), []]
+      return [withOpen(state, msg.open, msg.retain), []]
   }
 }
 
@@ -176,6 +154,13 @@ export interface CollapsibleParts {
    * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
+  /**
+   * An animated-aware programmatic close (#264 review-264j) — see
+   * `accordion.ts`'s identical part for the full rationale. A raw
+   * `send({ type: 'close' })` carries no `retain` and closes INSTANTLY;
+   * `parts.close()` stamps `retain` from the runtime registry.
+   */
+  close: () => void
 }
 
 export interface ConnectOptions {
@@ -187,23 +172,20 @@ export function connect(
   send: Send<CollapsibleMsg>,
   opts: ConnectOptions,
 ): CollapsibleParts {
-  const triggerId = `${opts.id}:trigger`
-  const contentId = `${opts.id}:content`
+  const id = opts.id
+  const triggerId = `${id}:trigger`
+  const contentId = `${id}:content`
   const exitTracker = createDisclosureExitTracker()
-  // Dev-mode "you forgot to place exitCompletion" warning (#264 review BLOCK
-  // 2) — see `accordion.ts`'s identical closure for the full rationale
-  // (closure-owned, not state; throttled once per instance; scoped to the
-  // same click-wrapped handler `completeIfUnanimatedAfterToggle` already is).
-  const warnMissingWatcher = createMissingExitWatcherWarning(
-    '[llui/components] Collapsible was configured `animated: true` but `parts.exitCompletion` ' +
-      'was never placed in the rendered view (or has not mounted yet), so a closing panel cannot ' +
-      'be retained for its exit animation and closes instantly instead. Place `parts.' +
-      "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
-      'intended.',
-  )
-  const warnIfClosedWithoutWatcher = (before: CollapsibleState, after: CollapsibleState): void => {
-    if (!before.animated || isExitWatched(before.exitWatchers)) return
-    warnMissingWatcher(before.open && !after.open && !after.closing)
+  const warnIfMissingWatcher = (): void => {
+    if (!state.peek().animated || isExitWatcherAttached(id)) return
+    warnMissingExitWatcherOnce(
+      id,
+      '[llui/components] Collapsible was configured `animated: true` but `parts.exitCompletion` ' +
+        'was never placed in the rendered view (or has not mounted yet), so a closing panel cannot ' +
+        'be retained for its exit animation and closes instantly instead. Place `parts.' +
+        "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
+        'intended.',
+    )
   }
   const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] => {
     const current = state.peek()
@@ -273,10 +255,8 @@ export function connect(
       onClick: tagSend(send, ['toggle'], (e: MouseEvent) => {
         // Peeking is unreachable in a unit test with no `currentTarget` —
         // see `completeIfUnanimatedAfterToggle`'s identical note.
-        const origin = e.currentTarget instanceof Element ? e.currentTarget : null
-        const before = origin === null ? null : state.peek()
-        send({ type: 'toggle' })
-        if (before !== null) warnIfClosedWithoutWatcher(before, state.peek())
+        if (e.currentTarget instanceof Element) warnIfMissingWatcher()
+        send({ type: 'toggle', retain: isExitWatcherAttached(id) })
         completeIfUnanimatedAfterToggle(e)
       }),
     },
@@ -299,13 +279,16 @@ export function connect(
     },
     exitCompletion: onMount(
       createDisclosureExitCompletionMount(
+        id,
         getElementByIdInScope,
         exitWatchEntries,
         (_key, generation) => send({ type: 'exitComplete', generation }),
-        () => send({ type: 'exitWatcherAttach' }),
-        () => send({ type: 'exitWatcherDetach' }),
       ),
     ),
+    close: (): void => {
+      warnIfMissingWatcher()
+      send({ type: 'close', retain: isExitWatcherAttached(id) })
+    },
   }
 }
 
