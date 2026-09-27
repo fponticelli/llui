@@ -3,13 +3,11 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { ProductContractSchema } from '@llui/cli'
+import { PRESENTATION_SCENARIO_ENVIRONMENT_VALUES } from '@llui/cli/presentation-scenarios'
 import {
   MENUS_OVERLAYS_DEFINITIONS,
-  MENUS_OVERLAYS_ENVIRONMENT_AXES,
-  MENUS_OVERLAYS_SCENARIO_DEFINITIONS,
   compileMenusOverlaysCatalog,
   joinMenusOverlaysScenarios,
-  menusOverlaysScenarios,
   type MenusOverlaysDefinitionScenarioId,
 } from './menus-overlays-scenarios'
 
@@ -58,9 +56,10 @@ describe('menus-overlays real per-product scenario catalog (compileScenarioFamil
       for (const scenarioCase of scenario.cases) {
         expect(() => JSON.parse(JSON.stringify(scenarioCase.input)), scenarioCase.id).not.toThrow()
         for (const axis of scenarioCase.environmentAxes) {
-          expect(axis in MENUS_OVERLAYS_ENVIRONMENT_AXES, `${scenario.scenarioId}:${axis}`).toBe(
-            true,
-          )
+          expect(
+            axis in PRESENTATION_SCENARIO_ENVIRONMENT_VALUES,
+            `${scenario.scenarioId}:${axis}`,
+          ).toBe(true)
         }
       }
     }
@@ -107,67 +106,5 @@ describe('menus-overlays real per-product scenario catalog (compileScenarioFamil
     const navCases = caseIds('component:navigation-menu')
     expect(navCases).not.toContain('opening')
     expect(navCases).not.toContain('closing')
-  })
-})
-
-describe('menus-overlays legacy compatibility surface (registry-side consumers, part 2 deferred)', () => {
-  const scenarios = menusOverlaysScenarios(contract)
-
-  it('projects the sole canonical inventory into scenario-keyed cases and orthogonal axes', () => {
-    const expectedScenarioIds = canonicalFamily.map(({ scenarioId }) => scenarioId)
-    expect(scenarios).toMatchObject({
-      family: 'menus-overlays',
-      environmentAxes: MENUS_OVERLAYS_ENVIRONMENT_AXES,
-    })
-    expect(scenarios.scenarios.map(({ scenarioId }) => scenarioId)).toEqual(expectedScenarioIds)
-    expect(Object.keys(scenarios.byScenarioId)).toEqual(expectedScenarioIds)
-    expect(Object.keys(MENUS_OVERLAYS_SCENARIO_DEFINITIONS)).toEqual(expectedScenarioIds)
-  })
-
-  it('keeps every family copied skin installable with a closed registry dependency graph', () => {
-    const items = new Map((registry.items ?? []).map((item) => [item.name, item]))
-    const problems: string[] = []
-    for (const entry of canonicalFamily) {
-      for (const artifact of entry.copiedArtifacts) {
-        if (!artifact.styling.registryTailwind) continue
-        const item = items.get(artifact.name)
-        if (item === undefined) {
-          problems.push(`${entry.name}: missing copied artifact ${artifact.name}`)
-          continue
-        }
-        for (const dependency of item.registryDependencies ?? []) {
-          if (!items.has(dependency))
-            problems.push(`${artifact.name}: missing dependency ${dependency}`)
-        }
-      }
-    }
-    expect(problems).toEqual([])
-  })
-
-  it('rejects either side of case-definition drift against canonical scenario membership', () => {
-    const removed = canonicalFamily[0]!
-    const added = contract.entries.find((entry) => entry.presentation.family !== 'menus-overlays')!
-    const withoutCanonicalProduct = {
-      ...contract,
-      entries: contract.entries.map((entry) =>
-        entry.name === removed.name
-          ? { ...entry, presentation: { ...entry.presentation, family: 'forms-controls' as const } }
-          : entry,
-      ),
-    }
-    const withUnconfiguredProduct = {
-      ...contract,
-      entries: contract.entries.map((entry) =>
-        entry.name === added.name
-          ? { ...entry, presentation: { ...entry.presentation, family: 'menus-overlays' as const } }
-          : entry,
-      ),
-    }
-    expect(() => menusOverlaysScenarios(withoutCanonicalProduct)).toThrow(
-      new RegExp(`extras: .*${removed.scenarioId}`),
-    )
-    expect(() => menusOverlaysScenarios(withUnconfiguredProduct)).toThrow(
-      new RegExp(`missing: .*${added.scenarioId}`),
-    )
   })
 })

@@ -592,7 +592,7 @@ const navigationMenuAdapter: Adapter<NavigationMenuCaseInput> = (host, input, ct
         div({ ...parts.root }, [
           ...input.branches.map((branch) => {
             const item = parts.item(branch.id, { isBranch: true })
-            return div({}, [
+            return div([
               button({ ...item.trigger }, [text(branch.label)]),
               div({ ...item.content }, [text(`${branch.label} panel`)]),
             ])

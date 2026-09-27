@@ -758,7 +758,7 @@ const navigationMenuAdapter: Adapter<NavigationMenuCaseInput> = (host, input, ct
           NavigationMenuList(
             input.branches.map((branch) => {
               const item = parts.item(branch.id, { isBranch: true })
-              return div({}, [
+              return div([
                 NavigationMenuTrigger({ ...item.trigger }, [
                   text(branch.label),
                   NavigationMenuIndicator([ChevronDownIcon({ class: 'size-3' })]),
