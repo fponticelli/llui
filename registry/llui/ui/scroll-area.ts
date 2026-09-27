@@ -40,7 +40,7 @@ export const ScrollAreaContent = classPart(div, 'min-w-full')
  */
 export const ScrollAreaScrollbar = classPart(
   div,
-  'absolute flex touch-none border-transparent p-px opacity-0 transition-colors select-none data-visible:opacity-100 data-[axis=x]:inset-x-0 data-[axis=x]:bottom-0 data-[axis=y]:inset-y-0 data-[axis=y]:end-0 data-[orientation=vertical]:h-full data-[orientation=vertical]:w-2.5 data-[orientation=vertical]:border-l data-[orientation=vertical]:border-l-transparent data-[orientation=horizontal]:h-2.5 data-[orientation=horizontal]:flex-col data-[orientation=horizontal]:border-t data-[orientation=horizontal]:border-t-transparent data-[axis=y]:h-full data-[axis=y]:w-2.5 data-[axis=y]:border-l data-[axis=y]:border-l-transparent data-[axis=x]:h-2.5 data-[axis=x]:flex-col data-[axis=x]:border-t data-[axis=x]:border-t-transparent',
+  'absolute flex touch-none border-transparent p-px opacity-0 transition-[color,background-color,border-color,opacity] select-none motion-reduce:transition-none data-visible:opacity-100 data-[axis=x]:inset-x-0 data-[axis=x]:bottom-0 data-[axis=y]:inset-y-0 data-[axis=y]:end-0 data-[orientation=vertical]:h-full data-[orientation=vertical]:w-2.5 data-[orientation=vertical]:border-l data-[orientation=vertical]:border-l-transparent data-[orientation=horizontal]:h-2.5 data-[orientation=horizontal]:flex-col data-[orientation=horizontal]:border-t data-[orientation=horizontal]:border-t-transparent data-[axis=y]:h-full data-[axis=y]:w-2.5 data-[axis=y]:border-l data-[axis=y]:border-l-transparent data-[axis=x]:h-2.5 data-[axis=x]:flex-col data-[axis=x]:border-t data-[axis=x]:border-t-transparent',
 )
 export const ScrollAreaThumb = classPart(
   div,

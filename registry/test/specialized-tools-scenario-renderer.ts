@@ -14,18 +14,15 @@
  * Iconify source, so the gallery needs no live network.
  */
 import {
-  canvas,
   component,
   div,
   each,
-  img,
   li,
   mountApp,
   onMount,
   option,
   p,
   span,
-  table,
   tbody,
   text,
   thead,
@@ -523,20 +520,24 @@ const datePickerAdapter: Adapter<DatePickerCaseInput> = (host, data, ctx) =>
                 state.map((s) => datePicker.weekRows(datePicker.monthGrid(s, offset))),
                 {
                   key: (week: datePicker.DayCell[]) => week[0]?.iso ?? '',
-                  render: (week: Signal<datePicker.DayCell[]>) => [
-                    CalendarRow(
-                      { ...parts.row },
-                      week
-                        .peek()
-                        .map((cell) =>
+                  // A row's key is its first date, so its cells ARE its
+                  // identity: snapshot them once. `dayCell` re-derives every
+                  // flag from live state for that date.
+                  render: (week: Signal<datePicker.DayCell[]>) => {
+                    const cells = week.peek()
+                    return [
+                      CalendarRow(
+                        { ...parts.row },
+                        cells.map((cell) =>
                           CalendarDay({ ...parts.dayCell(cell).cell }, [
                             CalendarDayButton({ type: 'button', tabindex: -1 }, [
                               text(String(cell.day)),
                             ]),
                           ]),
                         ),
-                    ),
-                  ],
+                      ),
+                    ]
+                  },
                 },
               ),
             ]),
@@ -702,9 +703,10 @@ const gradientPickerAdapter: Adapter<GradientPickerCaseInput> = (host, data, ctx
         GradientPickerTrack({ ...parts.track }, [
           each(state.at('stops'), {
             key: (stop: { id: string }) => stop.id,
-            render: (stop: Signal<{ id: string }>) => [
-              GradientPickerStop({ ...parts.stop(stop.peek().id) }, []),
-            ],
+            render: (stop: Signal<{ id: string }>) => {
+              const id = stop.peek().id
+              return [GradientPickerStop({ ...parts.stop(id) }, [])]
+            },
           }),
         ]),
         div({ class: 'flex items-center gap-2' }, [

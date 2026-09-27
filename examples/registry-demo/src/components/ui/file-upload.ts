@@ -76,7 +76,7 @@ export const FileUploadItemProgress = classPart(
 )
 export const FileUploadItemProgressRange = classPart(
   div,
-  'h-full bg-primary transition-[width] forced-color-adjust-none forced-colors:bg-[Highlight]',
+  'h-full bg-primary transition-[width] motion-reduce:transition-none forced-color-adjust-none forced-colors:bg-[Highlight]',
 )
 export const FileUploadItemErrorText = classPart(p, 'flex-1 text-xs text-destructive')
 export const FileUploadItemRetryTrigger = classPart(

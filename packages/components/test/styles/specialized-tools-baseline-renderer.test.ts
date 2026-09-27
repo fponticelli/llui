@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { lintSignalSource, parseModule } from '@llui/compiler'
 import { loadProductContract } from './navigation-data-contract-source'
 import {
   applicableSpecializedToolsScenarios,
@@ -256,5 +257,50 @@ describe('baseline specialized-tools scenario renderer (#266)', () => {
     expect(
       at('wizard', 'validating', '[data-part="next-trigger"]')?.getAttribute('aria-busy'),
     ).toBe('true')
+  })
+})
+
+/**
+ * Both renderers are VIEW code, and the framework's lint rules are build
+ * errors. The registry renderer is compiled by `examples/registry-demo`'s real
+ * Vite plugin in the live-render browser test, where a finding is a 500 and
+ * every registry case times out; the baseline renderer is served by
+ * `examples/baseline-css`, which has NO plugin, so nothing else would ever
+ * lint it. Both are held to the same rules here, directly.
+ */
+describe('specialized-tools renderers compile under the framework lint rules (#266)', () => {
+  const repoRoot = resolve(import.meta.dirname, '../../../..')
+  const renderers = [
+    'packages/components/test/styles/specialized-tools-baseline-renderer.ts',
+    'registry/test/specialized-tools-scenario-renderer.ts',
+  ]
+
+  it.each(renderers)('%s reports no signal lint diagnostics', (file) => {
+    const parsed = parseModule(file, readFileSync(resolve(repoRoot, file), 'utf8'))
+    const messages = lintSignalSource(parsed).map(
+      (message) => `${message.rule} ${message.line}:${message.column} ${message.message}`,
+    )
+    expect(messages).toEqual([])
+  })
+
+  it('the lint is live on this shape: a peeked row signal in a slot is reported', () => {
+    const bad = `
+      import { component, each, div, text, type Signal } from '@llui/dom'
+      export const Bad = component({
+        name: 'bad',
+        init: () => ({ rows: [[1, 2]] }),
+        update: (state) => [state, []],
+        view: ({ state }) => [
+          each(state.at('rows'), {
+            key: (row: number[]) => String(row[0]),
+            render: (row: Signal<number[]>) => [
+              div({}, row.peek().map((n) => text(String(n)))),
+            ],
+          }),
+        ],
+      })
+    `
+    const rules = lintSignalSource(parseModule('self-check.ts', bad)).map((m) => m.rule)
+    expect(rules).toContain('peek-in-slot')
   })
 })

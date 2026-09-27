@@ -26,7 +26,10 @@ import { buttonVariants } from '@/ui/button'
  * reaches the box through `group/image-cropper` — a bare `data-dragging:` on the
  * box never matched (#266). The box is also a keyboard stop (arrows move it,
  * `+`/`-` zoom), so its focus ring is live; under forced colors, where the dim
- * shadow is dropped, a `Highlight` outline keeps the crop edge visible.
+ * shadow is dropped, a `Highlight` outline keeps the crop edge visible. That
+ * outline needs `outline-solid` spelled out: `outline-none` sets Tailwind's
+ * `--tw-outline-style` to `none`, and `outline-2` only reads that variable, so
+ * without it the forced outline computed to `none` (caught by the live render).
  */
 export const ImageCropper = classPart(
   div,
@@ -35,7 +38,7 @@ export const ImageCropper = classPart(
 export const ImageCropperImage = classPart(img, 'pointer-events-none block w-full select-none')
 export const ImageCropperCropBox = classPart(
   div,
-  'absolute cursor-move border-2 border-background shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] outline-none group-data-dragging/image-cropper:cursor-grabbing focus-visible:ring-[3px] focus-visible:ring-ring/50 forced-colors:outline-2 forced-colors:outline-[Highlight]',
+  'absolute cursor-move border-2 border-background shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] outline-none group-data-dragging/image-cropper:cursor-grabbing focus-visible:ring-[3px] focus-visible:ring-ring/50 forced-colors:outline-2 forced-colors:outline-solid forced-colors:outline-[Highlight]',
 )
 export const ImageCropperResizeHandle = classPart(
   div,

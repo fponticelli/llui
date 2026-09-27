@@ -24,7 +24,7 @@ import { classPart } from '@/lib/utils'
 export const Sortable = classPart(div, 'flex flex-col gap-1.5')
 export const SortableItem = classPart(
   div,
-  'flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm shadow-xs transition-[colors,transform] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-dragging:opacity-50 data-dragging:shadow-md data-over:border-primary data-[shift=down]:translate-y-1 data-[shift=up]:-translate-y-1',
+  'flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm shadow-xs transition-[colors,transform] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-dragging:opacity-50 data-dragging:shadow-md data-over:border-primary data-[shift=down]:translate-y-1 data-[shift=up]:-translate-y-1 motion-reduce:transition-none',
 )
 export const SortableHandle = classPart(
   div,

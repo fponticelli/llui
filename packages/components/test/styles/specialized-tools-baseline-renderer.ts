@@ -385,16 +385,20 @@ const datePickerAdapter: Adapter<DatePickerCaseInput> = (host, data, ctx) =>
               state.map((s) => datePicker.weekRows(datePicker.monthGrid(s, offset))),
               {
                 key: (week: datePicker.DayCell[]) => week[0]?.iso ?? '',
-                render: (week: Signal<datePicker.DayCell[]>) => [
-                  div(
-                    { ...parts.row },
-                    week
-                      .peek()
-                      .map((cell) =>
+                // A row's key is its first date, so its cells ARE its
+                // identity: snapshot them once. `dayCell` re-derives every
+                // flag from live state for that date.
+                render: (week: Signal<datePicker.DayCell[]>) => {
+                  const cells = week.peek()
+                  return [
+                    div(
+                      { ...parts.row },
+                      cells.map((cell) =>
                         button({ ...parts.dayCell(cell).cell }, [text(String(cell.day))]),
                       ),
-                  ),
-                ],
+                    ),
+                  ]
+                },
               },
             ),
           ]),
@@ -531,7 +535,10 @@ const gradientPickerAdapter: Adapter<GradientPickerCaseInput> = (host, data, ctx
         div({ ...parts.track }, [
           each(state.at('stops'), {
             key: (stop: { id: string }) => stop.id,
-            render: (stop: Signal<{ id: string }>) => [div({ ...parts.stop(stop.peek().id) })],
+            render: (stop: Signal<{ id: string }>) => {
+              const id = stop.peek().id
+              return [div({ ...parts.stop(id) })]
+            },
           }),
         ]),
         row([
@@ -624,10 +631,13 @@ const scrollAreaAdapter: Adapter<ScrollAreaCaseInput> = (host, data, ctx) =>
       const parts = scrollArea.connect(state, send)
       const lines = Array.from({ length: data.rows }, (_, index) => `Release note ${index + 1}`)
       // The consumer sizes the area — a scroll area has no intrinsic height.
+      // The box is a GRID so the root, its one item, is stretched to a
+      // DEFINITE 10rem the viewport's `height: 100%` resolves against; in a
+      // plain block box the root grows to its content and nothing scrolls.
       return div(
         {
           style:
-            'height: 10rem; width: 16rem; border: 1px solid var(--border); border-radius: 0.375rem',
+            'display: grid; height: 10rem; width: 16rem; border: 1px solid var(--border); border-radius: 0.375rem',
         },
         [
           div({ ...parts.root, 'aria-label': 'Release notes' }, [
