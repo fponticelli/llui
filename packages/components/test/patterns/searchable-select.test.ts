@@ -154,7 +154,7 @@ describe('searchableSelect reducer', () => {
       groups: [{ id: 'g1', label: 'G1', items: ['apple', 'banana', 'cherry'] }],
     })
     s = apply(s, { type: 'setItems', items: ['apple', 'banana', 'cherry'] })
-    s = { ...s, combobox: { ...s.combobox, highlightedValue: 'banana' } }
+    s = { ...s, combobox: { ...s.combobox, highlightedValue: 'banana', open: true } }
     s = apply(s, { type: 'loadStart', requestId: 1 })
     s = apply(s, {
       type: 'loadSuccess',
@@ -165,6 +165,24 @@ describe('searchableSelect reducer', () => {
     expect(s.combobox.filteredItems).toContain('banana')
     expect(s.combobox.highlightedValue).toBe('apple')
     expect(s.combobox.groups).toEqual([])
+  })
+
+  // #265 G3: a background loadSuccess/setItems must never manufacture a
+  // highlight while the listbox is closed — the option it would name is
+  // unmounted, and re-opening reseeds the highlight itself.
+  it('loadSuccess while CLOSED never manufactures a highlight, even when the prior one is pruned', () => {
+    let s = init({ items: ['apple', 'banana', 'cherry'] })
+    expect(s.combobox.open).toBe(false)
+    s = { ...s, combobox: { ...s.combobox, highlightedValue: 'banana' } }
+    s = apply(s, { type: 'loadStart', requestId: 1 })
+    s = apply(s, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['apple', 'banana', 'cherry'],
+      disabled: ['banana'],
+    })
+    expect(s.combobox.open).toBe(false)
+    expect(s.combobox.highlightedValue).toBeNull()
   })
 
   describe('multiple mode', () => {

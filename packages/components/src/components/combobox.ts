@@ -113,7 +113,15 @@ export type ComboboxMsg =
   | { type: 'highlight'; value: string | null }
   /** @intent("Pick the currently-highlighted option in the filtered list") */
   | { type: 'selectHighlighted' }
-  /** @humanOnly */
+  /**
+   * @humanOnly
+   *
+   * Replace `items` (and optionally `disabled`) synchronously — the same
+   * highlight-resolution policy as `loadSuccess` applies: a highlight that no
+   * longer survives the fresh list moves to the first enabled match WHILE
+   * OPEN, or to `null` WHILE CLOSED (#265 G3), since a background refresh
+   * must not manufacture a highlight before the control is ever opened.
+   */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
@@ -132,10 +140,16 @@ export type ComboboxMsg =
    * follow-up message. `value` (selection) is dropped when it no longer
    * names a value in the new `items` (after the new `disabled` is applied).
    * `highlightedValue` is kept only when it is BOTH still in the fresh
-   * filtered list AND not newly disabled; otherwise it moves to the first
-   * enabled match (or `null` when none is enabled) — never left dangling
-   * for a render in between, and never left naming an option that is now
-   * disabled.
+   * filtered list AND not newly disabled. Otherwise the fallback depends on
+   * whether the listbox is open: WHILE OPEN it moves to the first enabled
+   * match (or `null` when none is enabled) — never left dangling for a
+   * render in between, and never left naming an option that is now
+   * disabled. WHILE CLOSED it always resolves to `null` instead, even when
+   * the fresh list has enabled options: the listbox content is unmounted
+   * while closed, so there is no option `aria-activedescendant` could
+   * correctly name, and a background load (a prefetch, a poll) must not
+   * manufacture a highlight before the control is ever opened — re-opening
+   * always reseeds the highlight itself (#265 G3).
    */
   | {
       type: 'loadSuccess'
@@ -281,17 +295,26 @@ function firstEnabledValue(items: string[], disabled: string[]): string | null {
 /**
  * Resolve the highlight after an `items`/`disabled` replacement
  * (`setItems`/`loadSuccess`, #265 A3): keep the current highlight only when
- * it survives BOTH the fresh filtered list AND the fresh disabled set,
- * otherwise move to the first enabled match in the fresh list (or `null`
- * when none is enabled). A highlight that merely stayed in `filteredItems`
- * but became disabled in this same replacement must not linger —
- * `aria-activedescendant` would otherwise keep naming an option a keyboard
- * user can no longer select.
+ * it survives BOTH the fresh filtered list AND the fresh disabled set.
+ * Otherwise, the fallback depends on whether the listbox is OPEN right now
+ * (#265 G3): while open, move to the first enabled match in the fresh list,
+ * because `aria-activedescendant` must keep naming a selectable option for
+ * the keyboard user currently navigating it — a highlight that merely stayed
+ * in `filteredItems` but became disabled in this same replacement must not
+ * linger. While CLOSED, fall back to `null` instead: the listbox content is
+ * unmounted, so there is no option `aria-activedescendant` could correctly
+ * name, and a background `setItems`/`loadSuccess` (a prefetch, a poll) must
+ * not manufacture a highlight nobody asked for — main never did, and doing
+ * so left `aria-activedescendant` naming an unmounted option the moment data
+ * arrived before the control was ever opened. Re-opening always reseeds the
+ * highlight itself (`case 'open'`), so returning to `null` here loses
+ * nothing.
  */
 function resolveHighlightAfterReplace(
   highlightedValue: string | null,
   filteredItems: string[],
   disabledItems: string[],
+  open: boolean,
 ): string | null {
   if (
     highlightedValue !== null &&
@@ -300,7 +323,7 @@ function resolveHighlightAfterReplace(
   ) {
     return highlightedValue
   }
-  return firstEnabledValue(filteredItems, disabledItems)
+  return open ? firstEnabledValue(filteredItems, disabledItems) : null
 }
 
 /** Commit a normal (non-create) option pick. */
@@ -455,12 +478,14 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
       const filteredItems = computeFiltered(msg.items, state.inputValue, state.allowCreate)
       // Value-keyed clamp: keep the highlight only when its value survives in
       // the new filtered list AND is not newly disabled; otherwise move to
-      // the first enabled match (or null) — never dangle
-      // aria-activedescendant on a filtered-out or disabled option (#265 A3).
+      // the first enabled match while OPEN, or null while CLOSED — never
+      // dangle aria-activedescendant on a filtered-out/disabled option, and
+      // never manufacture one while closed (#265 A3, G3).
       const highlightedValue = resolveHighlightAfterReplace(
         state.highlightedValue,
         filteredItems,
         disabled,
+        state.open,
       )
       return [
         {
@@ -495,12 +520,15 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
       // list) no longer support is dropped in this same step — never left
       // dangling for a render in between. The highlight is resolved the same
       // way `setItems` does: kept only if still filtered-in AND still
-      // enabled, otherwise moved to the first enabled match (or null).
+      // enabled, otherwise moved to the first enabled match while open, or
+      // null while closed (#265 G3) — a background load must not manufacture
+      // a highlight before the control is ever opened.
       const value = state.value.filter((v) => msg.items.includes(v) && !disabledItems.includes(v))
       const highlightedValue = resolveHighlightAfterReplace(
         state.highlightedValue,
         filteredItems,
         disabledItems,
+        state.open,
       )
       return [
         {

@@ -564,7 +564,7 @@ describe('combobox value-based highlight identity', () => {
   })
 
   it('loadSuccess prunes a highlight that became NEWLY DISABLED even though it is still filtered-in (#265 A3)', () => {
-    const s0 = init({ items: ['apple', 'banana', 'cherry'] })
+    const s0 = { ...init({ items: ['apple', 'banana', 'cherry'] }), open: true }
     const [s1] = update(s0, { type: 'highlight', value: 'banana' })
     const [s2] = update(s1, { type: 'loadStart', requestId: 1 })
     const [s3] = update(s2, {
@@ -575,6 +575,73 @@ describe('combobox value-based highlight identity', () => {
     })
     expect(s3.filteredItems).toContain('banana')
     expect(s3.highlightedValue).toBe('apple')
+  })
+
+  it('setItems while CLOSED never manufactures a highlight (#265 G3): a pruned highlight moves to null, never to the first enabled match', () => {
+    const s0 = { ...init({ items: ['apple', 'banana', 'cherry'] }), open: false }
+    const [s1] = update(s0, { type: 'highlight', value: 'banana' })
+    const [s2] = update(s1, {
+      type: 'setItems',
+      items: ['apple', 'banana', 'cherry'],
+      disabled: ['banana'],
+    })
+    expect(s2.open).toBe(false)
+    expect(s2.highlightedValue).toBeNull()
+  })
+
+  it('setItems while CLOSED with no prior highlight stays null (does not seed one from the fresh list)', () => {
+    const s0 = init({ items: ['apple', 'banana', 'cherry'] })
+    expect(s0.open).toBe(false)
+    expect(s0.highlightedValue).toBeNull()
+    const [s1] = update(s0, { type: 'setItems', items: ['apple', 'banana', 'cherry'] })
+    expect(s1.open).toBe(false)
+    expect(s1.highlightedValue).toBeNull()
+  })
+
+  it('loadSuccess while CLOSED never manufactures a highlight (#265 G3): a pruned highlight moves to null, never to the first enabled match', () => {
+    const s0 = { ...init({ items: ['apple', 'banana', 'cherry'] }), open: false }
+    const [s1] = update(s0, { type: 'highlight', value: 'banana' })
+    const [s2] = update(s1, { type: 'loadStart', requestId: 1 })
+    const [s3] = update(s2, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['apple', 'banana', 'cherry'],
+      disabled: ['banana'],
+    })
+    expect(s3.open).toBe(false)
+    expect(s3.highlightedValue).toBeNull()
+  })
+
+  it('loadSuccess while CLOSED with no prior highlight stays null (does not seed one from a background prefetch)', () => {
+    const s0 = init({ items: [] })
+    const [s1] = update(s0, { type: 'loadStart', requestId: 1 })
+    const [s2] = update(s1, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['apple', 'banana'],
+    })
+    expect(s2.open).toBe(false)
+    expect(s2.highlightedValue).toBeNull()
+  })
+
+  it('a highlight that SURVIVES a CLOSED setItems/loadSuccess is kept (only a fresh manufacture is forbidden)', () => {
+    const s0 = { ...init({ items: ['apple', 'banana'] }), open: false }
+    const [s1] = update(s0, { type: 'highlight', value: 'banana' })
+    const [s2] = update(s1, { type: 'setItems', items: ['banana', 'cherry'] })
+    expect(s2.highlightedValue).toBe('banana')
+  })
+
+  it('aria-activedescendant never names an option while closed, even right after a background setItems (#265 G3)', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send, { id: 'cb' })
+    const s0 = { ...init({ items: ['apple', 'banana', 'cherry'] }), open: false }
+    const [s1] = update(s0, { type: 'highlight', value: 'banana' })
+    const [s2] = update(s1, {
+      type: 'setItems',
+      items: ['apple', 'banana', 'cherry'],
+      disabled: ['banana'],
+    })
+    expect(read(p.input['aria-activedescendant'], s2)).toBeUndefined()
   })
 
   it('loadSuccess with no `groups` RESETS to no groups rather than carrying the previous load forward (#265 A3)', () => {
