@@ -791,6 +791,7 @@ const toastAdapter: Adapter<ToastCaseInput> = (host, input, ctx) =>
             const toastSig = state.map((s) => s.toasts.find((x) => x.id === t.id) ?? t)
             const itemParts = parts.toast(toastSig)
             return div({ ...itemParts.root }, [
+              ...toastTypeIcons(),
               h2({ ...itemParts.title }, [text(t.title ?? '')]),
               p({ ...itemParts.description }, [text(t.description ?? '')]),
               ...(t.dismissable ? [button({ ...itemParts.closeTrigger }, [text('Dismiss')])] : []),
@@ -800,6 +801,33 @@ const toastAdapter: Adapter<ToastCaseInput> = (host, input, ctx) =>
       ]
     },
   )
+
+// Every ToastType's own glyph, always mounted (six per toast row) and shown
+// only under its own `data-type` via the CSS in menus-overlays.css — never
+// resolved once from `t.type` in JS, so a mounted `update` patching `type`
+// swaps the visible glyph reactively with no rebuild (#265).
+const TOAST_TYPE_GLYPHS: Record<string, string> = {
+  info: 'ℹ',
+  success: '✓',
+  warning: '⚠',
+  error: '✕',
+  loading: '⟳',
+  custom: '✦',
+}
+
+function toastTypeIcons(): Mountable[] {
+  return Object.entries(TOAST_TYPE_GLYPHS).map(([type, glyph]) =>
+    span(
+      {
+        'data-scope': 'toast',
+        'data-part': 'type-icon',
+        'data-icon': type,
+        'aria-hidden': 'true',
+      },
+      [text(glyph)],
+    ),
+  )
+}
 
 // ---------------------------------------------------------------------------
 // component:toolbar — no presence at all; persistently mounted.

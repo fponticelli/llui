@@ -519,15 +519,52 @@
 }
 
 /*
+ * Every ToastType also carries a real NON-COLOR cue: a `[data-part=
+ * 'type-icon']` glyph, always mounted (six per toast) and shown only under
+ * its own type via the `[data-icon]` attribute selector below — the same
+ * always-mounted/CSS-gated idiom `registry/llui/ui/sonner.ts` uses for its
+ * Lucide icon set, so an `update` patching a mounted toast's `type` swaps the
+ * visible glyph with no JS on this side. `loading` used to be distinguished
+ * ONLY by `cursor: progress` in light/dark mode — invisible to anyone not
+ * hovering with a mouse — and now gets the same glyph treatment as the other
+ * five.
+ */
+[data-scope='toast'][data-part='type-icon'] {
+  display: none;
+  flex-shrink: 0;
+  margin-inline-end: var(--llui-space-2);
+}
+
+[data-scope='toast'][data-part='root'][data-type='info'] [data-part='type-icon'][data-icon='info'],
+[data-scope='toast'][data-part='root'][data-type='success']
+  [data-part='type-icon'][data-icon='success'],
+[data-scope='toast'][data-part='root'][data-type='warning']
+  [data-part='type-icon'][data-icon='warning'],
+[data-scope='toast'][data-part='root'][data-type='error']
+  [data-part='type-icon'][data-icon='error'],
+[data-scope='toast'][data-part='root'][data-type='loading']
+  [data-part='type-icon'][data-icon='loading'],
+[data-scope='toast'][data-part='root'][data-type='custom']
+  [data-part='type-icon'][data-icon='custom'] {
+  display: inline-flex;
+}
+
+[data-scope='toast'][data-part='type-icon'][data-icon='loading'] {
+  animation: spin 1s linear infinite;
+}
+
+/*
  * All six ToastType values get a distinguishing background/border tint in
  * light/dark mode AND a distinct `border-inline-start-style` under forced
  * colors, where tints are suppressed to system colors (#265 finding 12). Two
  * of the six (`info`/`custom`) used to fall through to the plain neutral
  * `[data-part='root']` rule above — visually IDENTICAL to each other and to
  * an untyped toast, in every color scheme. `registry/llui/ui/sonner.ts`
- * mirrors this exact six-way split; `scripts/test/token-contrast.test.ts` and
- * `registry/test/menus-overlays-styles.test.ts` both assert all six render
- * distinctly (light/dark contrast; six distinct forced-colors border styles).
+ * mirrors this exact six-way split; `packages/components/test/styles/
+ * menus-overlays-live-render.browser.test.ts` and `scripts/test/
+ * token-contrast.test.ts` both assert all six render distinctly (real
+ * painted border colors / contrast; six distinct forced-colors border
+ * styles; a distinct glyph per type, `loading` included).
  */
 [data-scope='toast'][data-part='root'][data-type='info'] {
   background: color-mix(in srgb, rgb(14 165 233) 14%, var(--popover));

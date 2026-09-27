@@ -1,4 +1,18 @@
-import { div, button, span, h3, p, input, svg, path, each, text, onMount } from '@llui/dom'
+import {
+  div,
+  button,
+  span,
+  h3,
+  p,
+  input,
+  svg,
+  path,
+  each,
+  text,
+  onMount,
+  select as domSelect,
+  option as domOption,
+} from '@llui/dom'
 import type { Send, Signal, Renderable, Mountable } from '@llui/dom'
 import { popover } from '@llui/components/popover'
 import { tooltip } from '@llui/components/tooltip'
@@ -11,6 +25,7 @@ import { drawer } from '@llui/components/drawer'
 import { dialog } from '@llui/components/dialog'
 import { alertDialog } from '@llui/components/alert-dialog'
 import { toast, nextToastId } from '@llui/components/toast'
+import type { ToastPlacement } from '@llui/components/toast'
 import {
   confirmDialog,
   type ConfirmDialogState,
@@ -112,6 +127,17 @@ const CONTEXT_MENU_ITEMS: MenuItem[] = [
 
 // Select options, shared by `init` and the view for the same reason.
 const COLORS = ['Red', 'Green', 'Blue', 'Purple', 'Orange']
+
+// Non-color cue per ToastType — see `toastTypeIcons()` in `view` below and
+// `menus-overlays.css`'s matching `[data-icon]` rules.
+const TOAST_TYPE_GLYPHS: Record<string, string> = {
+  info: 'ℹ',
+  success: '✓',
+  warning: '⚠',
+  error: '✕',
+  loading: '⟳',
+  custom: '✦',
+}
 
 // Command palette commands. JSON-serializable: execution is surfaced as an
 // `execute` effect keyed by `id`, handled in `onEffect` below.
@@ -347,6 +373,25 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     return () => clearInterval(id)
   })
 
+  // Every ToastType's own glyph, always mounted (six per toast row) and
+  // shown only under its own `data-type` via menus-overlays.css — never
+  // resolved once from the toast's `type` in JS, so an `update` patching a
+  // mounted toast's `type` (the loading→success demo below) swaps the
+  // visible glyph reactively with no rebuild (#265 finding: `loading` used
+  // to be distinguished only by `cursor: progress`).
+  const toastTypeIcons = (): Mountable[] =>
+    Object.entries(TOAST_TYPE_GLYPHS).map(([type, glyph]) =>
+      span(
+        {
+          'data-scope': 'toast',
+          'data-part': 'type-icon',
+          'data-icon': type,
+          'aria-hidden': 'true',
+        },
+        [text(glyph)],
+      ),
+    )
+
   const selectItems = (): Renderable =>
     COLORS.map((v, i) => div({ ...se.item(v, i).item }, [text(v)]))
   // Recursive: a `children` node renders a real subTrigger + an ENGINE-OWNED
@@ -398,6 +443,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         const parts = toastParts.toast(item)
         return [
           div({ ...parts.root }, [
+            ...toastTypeIcons(),
             div({ class: 'flex flex-col gap-1' }, [
               div({ ...parts.title }, [text(item.map((t) => t.title ?? ''))]),
               div({ ...parts.description }, [text(item.map((t) => t.description ?? ''))]),
@@ -872,6 +918,49 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ]),
       ]),
       card('Toast', [
+        // #265 A6: a real placement control + a real direction toggle, so the
+        // region's six `ToastPlacement`s and their LTR/RTL logical mirroring
+        // (menus-overlays.css's `inset-inline-start`/`inset-inline-end`) are
+        // reachable from the ACTUAL demo, not only from an isolated scenario
+        // renderer — see `registry/test/toast-live-demos.browser.test.ts`.
+        div({ class: 'mb-3 flex flex-wrap items-center gap-2' }, [
+          span({ id: 'toast-placement-label', class: 'text-sm font-medium' }, [text('Placement')]),
+          (() => {
+            const options: { value: ToastPlacement; label: string }[] = [
+              { value: 'top', label: 'Top' },
+              { value: 'top-start', label: 'Top start' },
+              { value: 'top-end', label: 'Top end' },
+              { value: 'bottom', label: 'Bottom' },
+              { value: 'bottom-start', label: 'Bottom start' },
+              { value: 'bottom-end', label: 'Bottom end' },
+            ]
+            return domSelect(
+              {
+                id: 'toast-placement-select',
+                class: 'select select-sm',
+                'aria-labelledby': 'toast-placement-label',
+                value: state.at('toast.placement'),
+                onChange: (e: Event) => {
+                  const placement = (e.target as HTMLSelectElement).value as ToastPlacement
+                  send({ type: 'toast', msg: { type: 'setPlacement', placement } })
+                },
+              },
+              options.map((o) => domOption({ value: o.value }, [text(o.label)])),
+            )
+          })(),
+          button(
+            {
+              id: 'toast-direction-toggle',
+              class: 'btn btn-secondary btn-sm',
+              type: 'button',
+              onClick: () => {
+                const root = document.documentElement
+                root.dir = root.dir === 'rtl' ? 'ltr' : 'rtl'
+              },
+            },
+            [text('Toggle direction (LTR/RTL)')],
+          ),
+        ]),
         // #265 finding 3: both demos exercise the exact six-value ToastType
         // vocabulary (`ToastKind` is a direct alias of `ToastType` — see
         // `../shared/bus.ts`), not a demo-local subset.

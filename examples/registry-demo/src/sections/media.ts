@@ -1,10 +1,10 @@
-import { div, each, onMount, span, tbody, text, thead } from '@llui/dom'
+import { div, each, onMount, option, select, span, tbody, text, thead } from '@llui/dom'
 import type { Mountable, Send, Signal } from '@llui/dom'
 import * as carouselC from '@llui/components/carousel'
 import * as datePickerC from '@llui/components/date-picker'
 import * as popoverC from '@llui/components/popover'
 import * as toastC from '@llui/components/toast'
-import type { ToastType } from '@llui/components/toast'
+import type { ToastPlacement, ToastType } from '@llui/components/toast'
 import {
   Carousel,
   CarouselContent,
@@ -393,6 +393,48 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'Toast (Sonner)',
       "shadcn's `sonner.tsx` has no recipes of its own — it hands the sonner library theme variables. `@llui/components/toast` owns the queue, the cap and the live region, so these recipes are built from shadcn's token vocabulary.",
       [
+        // #265 A6: a real placement control + a real direction toggle, so the
+        // region's six `ToastPlacement`s and their LTR/RTL logical mirroring
+        // are reachable from the ACTUAL registry demo too — see
+        // `registry/test/toast-live-demos.browser.test.ts`.
+        row('Placement', [
+          span({ id: 'toast-placement-label', class: 'text-sm font-medium' }, [text('Placement')]),
+          (() => {
+            const options: { value: ToastPlacement; label: string }[] = [
+              { value: 'top', label: 'Top' },
+              { value: 'top-start', label: 'Top start' },
+              { value: 'top-end', label: 'Top end' },
+              { value: 'bottom', label: 'Bottom' },
+              { value: 'bottom-start', label: 'Bottom start' },
+              { value: 'bottom-end', label: 'Bottom end' },
+            ]
+            return select(
+              {
+                id: 'toast-placement-select',
+                class: 'rounded-md border border-input bg-background px-2 py-1 text-sm',
+                'aria-labelledby': 'toast-placement-label',
+                value: state.at('toaster.placement'),
+                onChange: (e: Event) => {
+                  const placement = (e.target as HTMLSelectElement).value as ToastPlacement
+                  send({ type: 'toaster', msg: { type: 'setPlacement', placement } })
+                },
+              },
+              options.map((o) => option({ value: o.value }, [text(o.label)])),
+            )
+          })(),
+          Button(
+            {
+              id: 'toast-direction-toggle',
+              variant: 'outline',
+              type: 'button',
+              onClick: () => {
+                const root = document.documentElement
+                root.dir = root.dir === 'rtl' ? 'ltr' : 'rtl'
+              },
+            },
+            [text('Toggle direction (LTR/RTL)')],
+          ),
+        ]),
         row('Push', [
           ...Object.values(TOAST_DEMOS).map((demo) =>
             Button(
