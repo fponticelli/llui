@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { parseModule, lintSignalSource } from '@llui/compiler'
@@ -11,15 +11,27 @@ import { parseModule, lintSignalSource } from '@llui/compiler'
 // `eyeDropperFailed`. A build error in one production file is invisible to any test that
 // only exercises fixtures, so this sweeps EVERY real source file the compiler would ever
 // see under `packages/components/src` and asserts the rule that broke the demo compile
-// reports nothing on any of them — never re-derive the file set with a filesystem walk
-// (`.claude/worktrees/` trap); enumerate with `git ls-files`.
+// reports nothing on any of them.
+//
+// Enumeration is `git ls-files --cached --others --exclude-standard` — TRACKED plus
+// UNTRACKED-BUT-NOT-IGNORED, so a brand-new file the author has not yet `git add`ed is
+// still covered (CLAUDE.md's own standing rule; a bare `git ls-files` misses exactly
+// that file, silently). Never re-derive the file set with a plain filesystem walk either
+// (the `.claude/worktrees/` trap, irrelevant here since this walk is rooted at `src`, but
+// the discipline is the same one CLAUDE.md names generally).
+//
+// The vacuity guard below is an EXACT set comparison against an INDEPENDENT enumeration
+// (a `readdirSync` walk), never a `length > N` floor — a floor only detects
+// under-collection and cannot see the git enumeration silently missing files a directory
+// walk would still find (or vice versa).
 const PACKAGE_ROOT = resolve(import.meta.dirname, '..')
 
 function sourceFiles(): string[] {
-  const out = execFileSync('git', ['ls-files', '-z', '--', 'src'], {
-    cwd: PACKAGE_ROOT,
-    encoding: 'utf8',
-  })
+  const out = execFileSync(
+    'git',
+    ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', 'src'],
+    { cwd: PACKAGE_ROOT, encoding: 'utf8' },
+  )
   return out
     .split('\0')
     .filter((p) => p.length > 0)
@@ -27,10 +39,23 @@ function sourceFiles(): string[] {
     .sort()
 }
 
+/** Independent enumeration, walking the real filesystem rather than asking git — used
+ * ONLY to cross-check `sourceFiles()`'s count/membership, never as the corpus itself. */
+function walkSourceFiles(dir: string): string[] {
+  const out: string[] = []
+  for (const entry of readdirSync(resolve(PACKAGE_ROOT, dir), { withFileTypes: true })) {
+    const rel = `${dir}/${entry.name}`
+    if (entry.isDirectory()) out.push(...walkSourceFiles(rel))
+    else if (/\.tsx?$/.test(entry.name)) out.push(rel)
+  }
+  return out.sort()
+}
+
 describe('tag-send-drift corpus sweep (@llui/components/src)', () => {
-  it('finds a non-trivial number of source files (vacuity guard)', () => {
+  it('the git enumeration is EXACTLY the real filesystem set (vacuity guard, no floor)', () => {
     const files = sourceFiles()
     expect(files.length).toBeGreaterThan(50)
+    expect(files).toEqual(walkSourceFiles('src'))
   })
 
   it('the analyzer can still detect a faithful drift (self-check)', () => {
