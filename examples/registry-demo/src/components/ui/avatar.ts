@@ -33,6 +33,28 @@ import { classPart, classPartWithDefaults } from '../../lib/utils'
  * machine reporting `compact`) gets `lg` PLUS the compact-mapped rules — the
  * two axes are independent, so `lg` is never capped by density having no
  * equivalent rung.
+ *
+ * **`AvatarBadge`'s DEFAULT rung must be UNCONDITIONAL, not a
+ * `group-data-[size=default]/avatar:` variant (#264 review, BLOCK 1).**
+ * Upstream spells every rung — including default — as a conditional variant,
+ * which works there because `size` is upstream's ONLY axis: with `data-size`
+ * ALWAYS present (defaulted), `group-data-[size=default]/avatar:size-2.5`
+ * and `group-data-[size=sm]/avatar:size-2` never compete on the SAME
+ * element, since only one value can ever be present at a time. Adding
+ * `data-density` as a SECOND, independent axis breaks that precondition: a
+ * machine-wired instance carries `data-size="default"` (the classPartWithDefaults
+ * default, never overridden by the machine) AND `data-density="compact"`
+ * simultaneously, so `group-data-[size=default]/avatar:size-2.5` and
+ * `group-data-[density=compact]/avatar:size-2` are EQUAL specificity on the
+ * same element — measured, the compiled stylesheet resolves that tie to
+ * `size-2.5` (badge renders 10px instead of 8px), silently un-mapping
+ * `compact` back onto `default`'s look. The fix is to stop the default rung
+ * from being conditional AT ALL: it is now a bare, unconditional class
+ * (`size-2.5 [&>svg]:size-2`), so there is nothing for `sm`'s or `compact`'s
+ * OVERRIDE to tie against — an override wins simply by being a more specific
+ * STATE, not by winning a same-specificity tie. `lg` needs no `[&>svg]`
+ * override at all, since its icon is the same size as the (now unconditional)
+ * default. `comfortable` needs no rule at all, for the identical reason.
  */
 export const Avatar = classPartWithDefaults(
   div,
@@ -50,7 +72,7 @@ export const AvatarFallback = classPart(
 )
 export const AvatarBadge = classPart(
   span,
-  'absolute end-0 bottom-0 z-10 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background select-none group-data-[size=sm]/avatar:size-2 group-data-[size=sm]/avatar:[&>svg]:hidden group-data-[size=default]/avatar:size-2.5 group-data-[size=default]/avatar:[&>svg]:size-2 group-data-[size=lg]/avatar:size-3 group-data-[size=lg]/avatar:[&>svg]:size-2 group-data-[density=compact]/avatar:size-2 group-data-[density=compact]/avatar:[&>svg]:hidden group-data-[density=comfortable]/avatar:size-2.5 group-data-[density=comfortable]/avatar:[&>svg]:size-2',
+  'absolute end-0 bottom-0 z-10 inline-flex items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-background select-none size-2.5 [&>svg]:size-2 group-data-[size=sm]/avatar:size-2 group-data-[size=sm]/avatar:[&>svg]:hidden group-data-[size=lg]/avatar:size-3 group-data-[density=compact]/avatar:size-2 group-data-[density=compact]/avatar:[&>svg]:hidden',
 )
 
 /**
