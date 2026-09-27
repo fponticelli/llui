@@ -438,6 +438,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
                         type: 'success',
                         title: 'Deploy complete',
                         description: 'The release is live.',
+                        duration: 3000,
                       },
                     },
                   })

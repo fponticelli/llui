@@ -93,16 +93,27 @@ export type ToastInput = Omit<Toast, 'remainingMs' | 'paused' | 'status'> & {
  * Fields an `update` message may patch on a mounted toast. `id` is the ONE
  * truly immutable field — a toast is created once and dismissed once, never
  * structurally replaced with a different id for the same row — so it is
- * excluded here rather than silently ignored by the reducer. Every other
- * field, INCLUDING `type` and `ariaLive`, is a genuine mutable presentation
- * field (the `toast.promise`-style loading→success/error flow patches `type`,
- * `title` and `description` on the same mounted toast) and `connect()`'s
- * `toast()` builder binds every one of these reactively (never via a one-shot
- * `peek()`), so a patch here is visible wherever it renders — resolving the
- * former contradiction where `patch: Partial<Toast>` type-allowed patching
- * fields the connect layer had already frozen at mount (#265).
+ * excluded here rather than silently ignored by the reducer. `type` and
+ * `ariaLive` (among others) ARE genuine mutable presentation fields (the
+ * `toast.promise`-style loading→success/error flow patches `type`, `title`
+ * and `description` on the same mounted toast) and `connect()`'s `toast()`
+ * builder binds every one of these reactively (never via a one-shot
+ * `peek()`), so a patch here is visible wherever it renders.
+ *
+ * `status`/`remainingMs`/`paused` are excluded: they are LIFECYCLE fields the
+ * reducer itself owns (presence transitions, the tick-driven countdown,
+ * pause/resume) and a patch is the wrong channel for them — `dismiss`/`tick`/
+ * `pause`/`resume` already exist and a caller patching `remainingMs` directly
+ * would race the reducer's own countdown math. `duration` stays patchable
+ * (it IS presentation — the toast.promise flow moves a sticky `loading`
+ * toast to a finite `success`/`error` duration), so `update` re-seeds
+ * `remainingMs` from the new `duration` whenever `duration` is part of the
+ * patch (#265 A2) — otherwise a toast created sticky (duration: null,
+ * remainingMs frozen at 0) that is later patched to a finite duration would
+ * inherit that frozen 0 and dismiss on the very next tick instead of lasting
+ * its new duration.
  */
-export type ToastPatch = Partial<Omit<Toast, 'id'>>
+export type ToastPatch = Partial<Omit<Toast, 'id' | 'status' | 'remainingMs' | 'paused'>>
 
 export type ToasterMsg =
   /** @intent("Show a new toast notification") */
@@ -201,7 +212,18 @@ export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, nev
       return [
         {
           ...state,
-          toasts: state.toasts.map((t) => (t.id === msg.id ? { ...t, ...msg.patch } : t)),
+          toasts: state.toasts.map((t) => {
+            if (t.id !== msg.id) return t
+            const patched = { ...t, ...msg.patch }
+            // A `duration` patch re-seeds the countdown — a sticky toast
+            // (duration: null) moving to a finite duration must start
+            // ticking fresh from that duration, not from the 0 it was
+            // frozen at while sticky (#265 A2).
+            if ('duration' in msg.patch) {
+              return { ...patched, remainingMs: patched.duration ?? 0 }
+            }
+            return patched
+          }),
         },
         [],
       ]

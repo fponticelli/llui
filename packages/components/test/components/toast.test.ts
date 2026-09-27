@@ -83,6 +83,37 @@ describe('toast reducer', () => {
     expect(s2.toasts[0]!.type).toBe('success')
   })
 
+  it('update patching duration re-seeds remainingMs, including a sticky (loading) -> finite transition', () => {
+    let s = init()
+    // A sticky toast (duration: null) is created with remainingMs frozen at 0
+    // (nothing to count down from) — the loading->success shape both demos use.
+    s = update(s, {
+      type: 'create',
+      toast: makeToast({ id: 'x', type: 'loading', duration: null, remainingMs: 0 }),
+    })[0]
+    expect(s.toasts[0]!.remainingMs).toBe(0)
+    const [s2] = update(s, {
+      type: 'update',
+      id: 'x',
+      patch: { type: 'success', duration: 3000 },
+    })
+    // The reseeded countdown must actually last the full duration: a single
+    // small tick must NOT dismiss it.
+    expect(s2.toasts[0]!.remainingMs).toBe(3000)
+    const [s3] = update(s2, { type: 'tick', id: 'x', elapsedMs: 100 })
+    expect(s3.toasts).toHaveLength(1)
+    expect(s3.toasts[0]!.remainingMs).toBe(2900)
+  })
+
+  it('update patching a field other than duration leaves remainingMs untouched', () => {
+    let s = init()
+    s = update(s, { type: 'create', toast: makeToast({ id: 'x', duration: 5000 }) })[0]
+    s = update(s, { type: 'tick', id: 'x', elapsedMs: 1000 })[0]
+    expect(s.toasts[0]!.remainingMs).toBe(4000)
+    const [s2] = update(s, { type: 'update', id: 'x', patch: { title: 'New title' } })
+    expect(s2.toasts[0]!.remainingMs).toBe(4000)
+  })
+
   it('pause/resume flip paused flag', () => {
     let s = init()
     s = update(s, { type: 'create', toast: makeToast({ id: 'x' }) })[0]
