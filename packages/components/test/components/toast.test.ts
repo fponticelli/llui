@@ -229,7 +229,7 @@ describe('toast reducer', () => {
    * undefined `duration` used to re-seed the countdown to 0 and dismiss the
    * toast on the next tick.
    */
-  it('an undefined patch value leaves that field alone', () => {
+  it('an undefined REQUIRED field is not patched; an undefined OPTIONAL field is cleared', () => {
     let s = init()
     s = update(s, {
       type: 'create',
@@ -241,12 +241,18 @@ describe('toast reducer', () => {
       id: 'x',
       patch: { duration: undefined, title: undefined, description: 'D' },
     })[0]
-    expect(s.toasts[0]).toMatchObject({
-      duration: 3000,
-      remainingMs: 2000,
-      title: 'T',
-      description: 'D',
-    })
+    // `duration` is required: undefined leaves the countdown alone. `title`
+    // is optional: undefined clears it.
+    expect(s.toasts[0]).toMatchObject({ duration: 3000, remainingMs: 2000, description: 'D' })
+    expect(s.toasts[0]!.title).toBeUndefined()
+    s = update(s, {
+      type: 'update',
+      id: 'x',
+      patch: { type: undefined, dismissable: undefined, ariaLive: 'assertive' },
+    })[0]
+    expect(s.toasts[0]).toMatchObject({ type: 'info', dismissable: true, ariaLive: 'assertive' })
+    s = update(s, { type: 'update', id: 'x', patch: { ariaLive: undefined } })[0]
+    expect(s.toasts[0]!.ariaLive).toBeUndefined()
     s = update(s, { type: 'tick', id: 'x', elapsedMs: 1000 })[0]
     expect(s.toasts.map((t) => t.remainingMs)).toEqual([1000])
   })

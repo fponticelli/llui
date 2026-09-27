@@ -342,21 +342,24 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
   }
 
   /**
-   * The direction a floating attachment runs under, in precedence order: a
-   * `dir` the floating element was AUTHORED with (never overwritten), the
-   * component's explicit direction, then the placement anchor's resolved
-   * direction. `undefined` only without an anchor, where the floating
-   * element's own computed direction is the best there is.
+   * The direction a floating attachment runs under: the component's EXPLICIT
+   * direction, else the placement anchor's resolved one. `undefined` only
+   * without an anchor, where the floating element's own computed direction is
+   * the best there is. The engine owns `dir` on the floating element while
+   * attached (its prior value is restored on detach).
    */
-  const effectiveDir = (els: OverlayElements, authored: TextDirection | undefined) => {
-    if (authored !== undefined) return authored
+  const effectiveDir = (els: OverlayElements): TextDirection | undefined => {
     const f = opts.floating!
     const explicit = typeof f.dir === 'function' ? f.dir() : f.dir
     if (explicit !== undefined) return explicit
     return els.placementAnchor ? resolveDir(els.placementAnchor) : undefined
   }
 
-  const attachFloatingFor = (els: OverlayElements): (() => void) => {
+  /** One floating attachment under `dir`; returns its detach. */
+  const attachFloatingFor = (
+    els: OverlayElements,
+    dir: TextDirection | undefined,
+  ): (() => void) => {
     const f = opts.floating!
     let restoreSameWidth: (() => void) | undefined
     if (f.sameWidth && els.placementAnchor) {
@@ -373,9 +376,7 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
     // Snapshot BEFORE writing: a reattach first restores, so this always
     // reads what the element carried before the engine touched it.
     const priorDir = els.floating.getAttribute('dir')
-    const authored = priorDir === 'rtl' || priorDir === 'ltr' ? priorDir : undefined
-    const dir = effectiveDir(els, authored)
-    if (authored === undefined && dir !== undefined) els.floating.setAttribute('dir', dir)
+    if (dir !== undefined) els.floating.setAttribute('dir', dir)
     const restoreDir = (): void => {
       if (priorDir === null) els.floating.removeAttribute('dir')
       else els.floating.setAttribute('dir', priorDir)
@@ -425,20 +426,21 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
    *    the ancestor chain of any anchor inside it.
    */
   const attachFloatingWithReattach = (els: OverlayElements): (() => void) => {
-    const priorDir = els.floating.getAttribute('dir')
-    const authored = priorDir === 'rtl' || priorDir === 'ltr' ? priorDir : undefined
-    let stop = attachFloatingFor(els)
-    let lastDir = effectiveDir(els, authored)
-    const reattach = (): void => {
+    // Resolved ONCE per attach, and the value compared later is the value
+    // that was applied.
+    let appliedDir = effectiveDir(els)
+    let stop = attachFloatingFor(els, appliedDir)
+    const reattach = (dir: TextDirection | undefined): void => {
       stop()
-      stop = attachFloatingFor(els)
-      lastDir = effectiveDir(els, authored)
+      appliedDir = dir
+      stop = attachFloatingFor(els, appliedDir)
     }
     const stopWatchingDirection = els.placementAnchor
       ? watchDirection(
           () => els.placementAnchor,
           () => {
-            if (effectiveDir(els, authored) !== lastDir) reattach()
+            const next = effectiveDir(els)
+            if (next !== appliedDir) reattach(next)
           },
         )
       : () => {}
@@ -467,7 +469,7 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
           const nextKey = reattachKey()
           if (nextKey === lastKey) return
           lastKey = nextKey
-          reattach()
+          reattach(effectiveDir(els))
         })
         mo.observe(marker, { attributes: true, attributeFilter: ['data-llui-reattach-key'] })
       }

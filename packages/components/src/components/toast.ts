@@ -49,12 +49,12 @@ export type ToastPlacement =
 /** aria-live politeness for a toast's announcement region. */
 export type ToastPoliteness = 'polite' | 'assertive'
 
+/** Every pause reason, in the canonical order `pausedBy` keeps them. */
+const PAUSE_REASONS = ['focus', 'hover', 'manual'] as const
+
 /** Why a toast's countdown is paused. The row's own handlers use `'hover'` and
  * `'focus'`; a `pause`/`resume` message without a reason uses `'manual'`. */
-export type ToastPauseReason = 'focus' | 'hover' | 'manual'
-
-/** Canonical order of {@link ToastPauseReason}s in `pausedBy`. */
-const PAUSE_REASONS: readonly ToastPauseReason[] = ['focus', 'hover', 'manual']
+export type ToastPauseReason = (typeof PAUSE_REASONS)[number]
 
 export interface Toast {
   id: string
@@ -128,10 +128,12 @@ export type ToastInput = Omit<Toast, 'remainingMs' | 'pausedBy' | 'status'> & {
  * inherit that frozen 0 and dismiss on the very next tick instead of lasting
  * its new duration.
  *
- * A key present with the value `undefined` means "not patched" (#265 G6), the
- * same as an absent key: `{ duration: undefined }` leaves the countdown alone
- * rather than re-seeding it to 0. To make a toast sticky, patch
- * `duration: null`.
+ * `undefined` on a REQUIRED field (`type`, `duration`, `dismissable`) means
+ * "not patched", the same as an absent key (#265 G6): `{ duration: undefined }`
+ * leaves the countdown alone rather than re-seeding it to 0 — patch
+ * `duration: null` to make a toast sticky. On an OPTIONAL field (`title`,
+ * `description`, `ariaLive`) `undefined` clears it, so a loading -> success
+ * patch can drop a description the success toast should not keep.
  */
 export type ToastPatch = Partial<Omit<Toast, 'id' | 'status' | 'remainingMs' | 'pausedBy'>>
 
@@ -215,11 +217,16 @@ function setPauseReason(
   return changed ? { ...state, toasts } : state
 }
 
-/** `patch` without the keys whose value is `undefined` — see {@link ToastPatch}. */
-function definedPatch(patch: ToastPatch): ToastPatch {
-  return Object.fromEntries(
-    Object.entries(patch).filter(([, value]) => value !== undefined),
-  ) as ToastPatch
+/** `toast` with `patch` applied — see {@link ToastPatch} for what an
+ * `undefined` value means per field. */
+function applyPatch(toast: Toast, patch: ToastPatch): Toast {
+  return {
+    ...toast,
+    ...patch,
+    type: patch.type ?? toast.type,
+    duration: patch.duration === undefined ? toast.duration : patch.duration,
+    dismissable: patch.dismissable ?? toast.dismissable,
+  }
 }
 
 /**
@@ -273,18 +280,18 @@ export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, nev
         [],
       ]
     case 'update': {
-      const patch = definedPatch(msg.patch)
+      const { patch } = msg
       return [
         {
           ...state,
           toasts: state.toasts.map((t) => {
             if (t.id !== msg.id) return t
-            const patched = { ...t, ...patch }
+            const patched = applyPatch(t, patch)
             // A `duration` patch re-seeds the countdown — a sticky toast
             // (duration: null) moving to a finite duration must start
             // ticking fresh from that duration, not from the 0 it was
             // frozen at while sticky (#265 A2).
-            if ('duration' in patch) {
+            if (patch.duration !== undefined) {
               return { ...patched, remainingMs: patched.duration ?? 0 }
             }
             return patched
@@ -407,7 +414,9 @@ export interface ToastItemParts {
     'data-scope': 'toast'
     'data-part': 'close-trigger'
     /** Reactive: true while the toast is not `dismissable` — the button leaves
-     * the accessibility tree and the tab order. */
+     * the accessibility tree and the tab order. Hiding it while it has focus
+     * is safe for the `'focus'` pause reason: the browser's focus fixup fires
+     * `blur`/`focusout` on the row (verified in Chromium), which releases it. */
     hidden: Signal<boolean>
     /** Dismisses the toast; ignored while it is not `dismissable`. */
     onClick: (e: MouseEvent) => void
