@@ -209,20 +209,30 @@ describe('actual Toast demos in Chromium (#265 task item 1)', () => {
         const root = page.locator(`${ROOT}[data-type="success"]`).last()
         await root.waitFor({ state: 'attached' })
         await root.hover()
-        // Advance well past the demo's 3s/5s duration while hovered.
+        // Advance well past the demo's 3s/5s duration while hovered. The
+        // reducer sets `status: 'closing'` SYNCHRONOUSLY the instant a tick
+        // expires it (see toast.ts's `update`) — no real wall-clock wait is
+        // needed to observe that transition, only to observe the (real,
+        // CSS-timed) removal that follows it. Reading `data-state` right
+        // after the clock advance is what actually discriminates "genuinely
+        // paused" from "not yet removed": an immediate raw attachment check
+        // is trivially true either way, since even an UNPAUSED countdown
+        // stays mounted (as 'closing') until its real exit animation ends.
         await page.clock.fastForward(10_000)
-        expect(await root.count()).toBeGreaterThan(0)
+        expect(await root.getAttribute('data-state')).toBe('open')
         await page.mouse.move(0, 0) // unhover
         await page.clock.fastForward(10_000)
         await root.waitFor({ state: 'detached', timeout: 5000 })
 
-        // Focus path: dismissable content is focusable via its close button.
+        // Focus path: the close button is the only naturally focusable
+        // descendant — `onFocusIn`/`onFocusOut` (bubbling) is what lets the
+        // root observe that, unlike a plain `focus`/`blur` pair.
         await page.locator(demo.trigger('success')).click()
         const root2 = page.locator(`${ROOT}[data-type="success"]`).last()
         await root2.waitFor({ state: 'attached' })
         await root2.locator('button').last().focus()
         await page.clock.fastForward(10_000)
-        expect(await root2.count()).toBeGreaterThan(0)
+        expect(await root2.getAttribute('data-state')).toBe('open')
         await page.locator('body').click({ position: { x: 0, y: 0 } }) // blur
         await page.clock.fastForward(10_000)
         await root2.waitFor({ state: 'detached', timeout: 5000 })

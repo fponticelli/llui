@@ -321,8 +321,12 @@ export interface ToastItemParts {
     'data-state': Signal<PresenceStatus>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
-    onFocus: (e: FocusEvent) => void
-    onBlur: (e: FocusEvent) => void
+    /** Bubbling — a plain (non-bubbling) `onFocus`/`onBlur` here would never
+     * fire for the only naturally focusable descendant, the close button,
+     * so pause-on-focus would be dead: nothing but the row itself receives
+     * `focus`/`blur` directly, and it carries no `tabindex`. */
+    onFocusIn: (e: FocusEvent) => void
+    onFocusOut: (e: FocusEvent) => void
     /** Advance past the exit animation: a `'closing'` toast is removed from the
      * queue once its animation/transition ends. */
     onAnimationEnd: (e: AnimationEvent) => void
@@ -430,8 +434,17 @@ export function connect(
           'data-state': toastSig.map((t) => t.status),
           onPointerEnter: tagSend(send, ['pause'], () => send({ type: 'pause', id })),
           onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume', id })),
-          onFocus: tagSend(send, ['pause'], () => send({ type: 'pause', id })),
-          onBlur: tagSend(send, ['resume'], () => send({ type: 'resume', id })),
+          onFocusIn: tagSend(send, ['pause'], () => send({ type: 'pause', id })),
+          // Guarded like carousel.ts's own `onFocusOut`: `focusout` fires
+          // when focus moves BETWEEN two descendants of the same row too,
+          // which must not resume the countdown while focus is still
+          // somewhere inside this toast.
+          onFocusOut: tagSend(send, ['resume'], (e) => {
+            const root = e.currentTarget
+            const next = e.relatedTarget
+            if (root instanceof Node && next instanceof Node && root.contains(next)) return
+            send({ type: 'resume', id })
+          }),
           ...presenceEndProps(send, { type: 'animationEnd', id }),
         },
         title: {
