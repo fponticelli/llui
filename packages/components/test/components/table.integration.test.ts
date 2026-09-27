@@ -41,17 +41,19 @@ describe('table integration — grid cell DOM focus follows keyboard', () => {
       view: ({ state, send }) => {
         const parts = table.connect(state.at('t'), send, { id: 'tbl' })
         return [
-          div(
-            { ...parts.root },
-            ROWS.map((id, rowIndex) =>
-              div(
-                { ...parts.row(id, rowIndex) },
-                COLS.map((_c, colIndex) =>
-                  div({ ...parts.cell(rowIndex, colIndex) }, [text(`${rowIndex},${colIndex}`)]),
+          div({ ...parts.viewport }, [
+            div(
+              { ...parts.root },
+              ROWS.map((id, rowIndex) =>
+                div(
+                  { ...parts.row(id, rowIndex) },
+                  COLS.map((_c, colIndex) =>
+                    div({ ...parts.cell(rowIndex, colIndex) }, [text(`${rowIndex},${colIndex}`)]),
+                  ),
                 ),
               ),
             ),
-          ),
+          ]),
         ]
       },
     })
@@ -136,23 +138,25 @@ describe('table integration — the header row is reachable by keyboard', () => 
       view: ({ state, send }) => {
         const parts = table.connect(state.at('t'), send, { id: 'tbl' })
         return [
-          div({ ...parts.root }, [
-            div(
-              { role: 'row' },
-              HCOLS.map((c) =>
-                div({ ...parts.columnHeader(c.id) }, [
-                  c.id === 'sel' ? div({ ...parts.selectAllCheckbox(c.id) }, []) : text(c.id),
-                ]),
-              ),
-            ),
-            ...ROWS.map((id, rowIndex) =>
+          div({ ...parts.viewport }, [
+            div({ ...parts.root }, [
               div(
-                { ...parts.row(id, rowIndex) },
-                HCOLS.map((_c, colIndex) =>
-                  div({ ...parts.cell(rowIndex, colIndex) }, [text(`${rowIndex},${colIndex}`)]),
+                { role: 'row' },
+                HCOLS.map((c) =>
+                  div({ ...parts.columnHeader(c.id) }, [
+                    c.id === 'sel' ? div({ ...parts.selectAllCheckbox(c.id) }, []) : text(c.id),
+                  ]),
                 ),
               ),
-            ),
+              ...ROWS.map((id, rowIndex) =>
+                div(
+                  { ...parts.row(id, rowIndex) },
+                  HCOLS.map((_c, colIndex) =>
+                    div({ ...parts.cell(rowIndex, colIndex) }, [text(`${rowIndex},${colIndex}`)]),
+                  ),
+                ),
+              ),
+            ]),
           ]),
         ]
       },

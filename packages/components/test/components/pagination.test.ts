@@ -63,13 +63,22 @@ describe('pagination reducer', () => {
 
   it('setDir updates the reading direction', () => {
     const [s] = update(init(), { type: 'setDir', dir: 'rtl' })
-    expect(s.dir).toBe('rtl')
+    expect(s).toMatchObject({ dir: 'rtl', dirSource: 'explicit' })
   })
 
   it('setDir applies even when disabled', () => {
     const s0 = init({ disabled: true })
     const [s] = update(s0, { type: 'setDir', dir: 'rtl' })
     expect(s.dir).toBe('rtl')
+  })
+
+  it('follows observed direction only while init dir remains omitted', () => {
+    expect(init()).toMatchObject({ dir: 'ltr', dirSource: 'dom' })
+    expect(init({ dir: 'rtl' })).toMatchObject({ dir: 'rtl', dirSource: 'explicit' })
+    const [observed] = update(init(), { type: 'syncDomDir', dir: 'rtl' })
+    expect(observed).toMatchObject({ dir: 'rtl', dirSource: 'dom' })
+    const [configured] = update(observed, { type: 'setDir', dir: 'ltr' })
+    expect(update(configured, { type: 'syncDomDir', dir: 'rtl' })[0]).toBe(configured)
   })
 })
 
@@ -113,7 +122,7 @@ describe('pageItems', () => {
 })
 
 describe('pagination.connect', () => {
-  const parts = connect(rootSignal(), vi.fn())
+  const parts = connect(rootSignal(), vi.fn(), { id: 'pagination-test' })
 
   it('root has role=navigation', () => {
     expect(parts.root.role).toBe('navigation')
@@ -136,13 +145,13 @@ describe('pagination.connect', () => {
 
   it('item click sends goTo', () => {
     const send = vi.fn()
-    const p = connect(rootSignal(), send)
+    const p = connect(rootSignal(), send, { id: 'pagination-click' })
     p.item(4).onClick(new MouseEvent('click'))
     expect(send).toHaveBeenCalledWith({ type: 'goTo', page: 4 })
   })
 
   it('roving tabindex: only the current page item is a tab stop', () => {
-    const p = connect(rootSignal(), vi.fn())
+    const p = connect(rootSignal(), vi.fn(), { id: 'pagination-tabindex' })
     const st = init({ total: 100, pageSize: 10, page: 3 })
     expect(read(p.item(3).tabindex, st)).toBe(0)
     expect(read(p.item(2).tabindex, st)).toBe(-1)
@@ -325,7 +334,9 @@ describe('pagination roving focus (RTL)', () => {
   }
 
   it('ltr: ArrowRight moves to the next control (unchanged)', () => {
-    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'ltr' })), vi.fn())
+    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'ltr' })), vi.fn(), {
+      id: 'pagination-ltr',
+    })
     const { root, controls } = buildPagination([1, 2, 3])
     const page2 = controls.find((c) => c.getAttribute('data-value') === '2')!
     page2.focus()
@@ -335,7 +346,9 @@ describe('pagination roving focus (RTL)', () => {
   })
 
   it('rtl: ArrowRight moves to the PREVIOUS control (flipped)', () => {
-    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'rtl' })), vi.fn())
+    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'rtl' })), vi.fn(), {
+      id: 'pagination-rtl-right',
+    })
     const { root, controls } = buildPagination([1, 2, 3])
     const page2 = controls.find((c) => c.getAttribute('data-value') === '2')!
     page2.focus()
@@ -346,7 +359,9 @@ describe('pagination roving focus (RTL)', () => {
   })
 
   it('rtl: ArrowLeft moves to the NEXT control (flipped)', () => {
-    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'rtl' })), vi.fn())
+    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'rtl' })), vi.fn(), {
+      id: 'pagination-rtl-left',
+    })
     const { root, controls } = buildPagination([1, 2, 3])
     const page2 = controls.find((c) => c.getAttribute('data-value') === '2')!
     page2.focus()
@@ -356,7 +371,9 @@ describe('pagination roving focus (RTL)', () => {
   })
 
   it('rtl: Home/End are NOT flipped', () => {
-    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'rtl' })), vi.fn())
+    const p = connect(signalOf(init({ total: 30, pageSize: 10, page: 2, dir: 'rtl' })), vi.fn(), {
+      id: 'pagination-rtl-ends',
+    })
     const { root, controls } = buildPagination([1, 2, 3])
     const page2 = controls.find((c) => c.getAttribute('data-value') === '2')!
     page2.focus()

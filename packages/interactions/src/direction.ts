@@ -4,12 +4,29 @@ export type TextDirection = 'ltr' | 'rtl'
 /**
  * Resolve the text direction for an element by walking up the DOM tree.
  * Returns 'rtl' or 'ltr' (default).
+ *
+ * The walk crosses SHADOW boundaries: `Element.closest()` stops at the
+ * nearest shadow root and cannot see a `dir` set on an ancestor of the host,
+ * so an element inside a shadow tree whose host (or the host's own
+ * ancestors) declares `dir` would otherwise silently read as `ltr`. Continuing
+ * from `root.host` after `getRootNode()` returns a `ShadowRoot` walks out to
+ * the light-DOM ancestor and keeps going, arbitrarily many shadow levels
+ * deep. The final fallback reads `dir` off the element's OWN document
+ * (`ownerDocument`), never the global `document` — the global binding names a
+ * DIFFERENT document inside an iframe or any other multi-document context.
  */
 export function resolveDir(el: Element): TextDirection {
-  const ancestor = el.closest('[dir]')
-  if (ancestor) return ancestor.getAttribute('dir') === 'rtl' ? 'rtl' : 'ltr'
-  if (typeof document !== 'undefined' && document.documentElement.dir === 'rtl') return 'rtl'
-  return 'ltr'
+  let current: Element | null = el
+  while (current !== null) {
+    if (current.hasAttribute('dir')) return current.getAttribute('dir') === 'rtl' ? 'rtl' : 'ltr'
+    if (current.parentElement !== null) {
+      current = current.parentElement
+      continue
+    }
+    const root = current.getRootNode()
+    current = root instanceof ShadowRoot ? root.host : null
+  }
+  return el.ownerDocument.documentElement.dir === 'rtl' ? 'rtl' : 'ltr'
 }
 
 /**

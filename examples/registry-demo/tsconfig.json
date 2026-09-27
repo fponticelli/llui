@@ -8,6 +8,17 @@
   "include": ["src"],
   "compilerOptions": {
     "noEmit": true,
-    "types": []
+    "types": [],
+    // The app's OWN copied `src/components/ui/*` never uses `@/` — `llui add`
+    // rewrites it to relative imports when no alias is configured (this app
+    // has none). This mapping exists only so
+    // `src/test-fixtures/navigation-data-live-render.ts` can import
+    // `registry/llui/ui/*` SOURCE directly (the scenario renderer under test
+    // reaches it the same way `llui add` output would), without adding one
+    // for real app code to accidentally rely on.
+    "paths": {
+      "@/lib/*": ["../../registry/llui/lib/*"],
+      "@/ui/*": ["../../registry/llui/ui/*"]
+    }
   }
 }

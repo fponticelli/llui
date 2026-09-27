@@ -360,6 +360,7 @@
     "@llui/interactions": "workspace:^"
   },
   "devDependencies": {
+    "@llui/cli": "workspace:*",
     "@llui/compiler": "workspace:*",
     "@llui/dom": "workspace:*",
     "@llui/interactions": "workspace:*",

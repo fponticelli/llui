@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -6,6 +7,7 @@ import {
   extractClassCandidates,
   extractHtmlClassCandidates,
   isPureReExport,
+  UNRESOLVED_RECIPE_ALLOWED,
 } from '../lib/registry-classes.mjs'
 import {
   appEntry,
@@ -45,21 +47,83 @@ const DEMOS = [
  */
 const RECIPE_FREE = new Set(['ui/icons.ts'])
 
-async function sourceFiles(dir: string): Promise<string[]> {
+// Enumeration is `git ls-files --cached --others --exclude-standard`, never a
+// filesystem walk (#264 review follow-up) — CLAUDE.md's standing rule: a
+// `readdirSync`/`readdir` walk rooted above `.claude/worktrees/` (a gitignored
+// full checkout of every sibling lane) would silently sweep every other
+// branch's files as if they were this repo's own, and a `length > N` floor
+// cannot tell over-collection from a correct count. This walk is rooted at
+// `registry/llui` or an example app's `src/`, neither of which is anywhere
+// near `.claude/worktrees/`, but the discipline is the same one CLAUDE.md
+// names generally and the git-based enumeration additionally covers a
+// brand-new file the author has not yet `git add`ed (`--others
+// --exclude-standard`), which a bare `git ls-files` would miss.
+function gitLsFiles(dir: string): string[] {
+  const relDir = path.relative(ROOT, dir)
+  const out = execFileSync(
+    'git',
+    ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', relDir],
+    { cwd: ROOT, encoding: 'utf8' },
+  )
+  return out
+    .split('\0')
+    .filter((p) => p.length > 0)
+    .filter((p) => p.endsWith('.ts'))
+    .map((p) => path.join(ROOT, p))
+    .sort()
+}
+
+/**
+ * Independent enumeration, walking the real filesystem rather than asking
+ * git — used ONLY by the vacuity test below to cross-check `gitLsFiles`'s
+ * membership, never as the corpus a real sweep runs against.
+ */
+async function walkSourceFiles(dir: string): Promise<string[]> {
   const out: string[] = []
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) out.push(...(await sourceFiles(full)))
+    if (entry.isDirectory()) out.push(...(await walkSourceFiles(full)))
     else if (entry.name.endsWith('.ts')) out.push(full)
   }
   return out.sort()
 }
 
+async function sourceFiles(dir: string): Promise<string[]> {
+  // Real repo sweeps (the registry, both demos' `src/`) go through git — see
+  // `gitLsFiles` above. A handful of tests in this file build a SYNTHETIC
+  // fixture app under `mkdtemp(tmpdir())`, which sits outside this repo's
+  // working tree entirely and is never git-tracked, so `git ls-files` there
+  // fails outright (`fatal: … is outside repository`); those fall back to a
+  // plain filesystem walk, which is the only enumeration such a fixture can
+  // have and is not the corpus the review's git-ls-files requirement is about.
+  const relDir = path.relative(ROOT, dir)
+  const insideRepo = relDir !== '' && !relDir.startsWith('..') && !path.isAbsolute(relDir)
+  return insideRepo ? gitLsFiles(dir) : walkSourceFiles(dir)
+}
+
+// #264 review M2: every `UNRESOLVED_RECIPE_ALLOWED` key `extractClassCandidates`
+// actually consults across every sweep this file runs (registry + both demos),
+// accumulated here so the "closed at both ends" test below can assert it
+// against the allowlist's own key set — closed at ONE end by the resolver
+// itself (an unlisted unresolvable identifier still throws, failing this
+// suite), and at the OTHER by this accumulator (an entry nothing needed any
+// more is exactly the allowlist rot CLAUDE.md warns about).
+const usedAllowlistKeys = new Set<string>()
+
 async function candidatesUnder(dir: string): Promise<Map<string, string[]>> {
   const byFile = new Map<string, string[]>()
   for (const file of await sourceFiles(dir)) {
     const source = await readFile(file, 'utf8')
-    byFile.set(path.relative(dir, file), extractClassCandidates(file, source))
+    // The REPO-relative path is what UNRESOLVED_RECIPE_ALLOWED keys on (#264
+    // review follow-up) — `avatar.ts` exists at BOTH `registry/llui/ui/` and
+    // `examples/registry-demo/src/components/ui/`, both swept by this same
+    // file, so a directory-relative (or bare basename) key would let one
+    // file's exemption silently also excuse the other's.
+    const relToRepo = path.relative(ROOT, file)
+    byFile.set(
+      path.relative(dir, file),
+      extractClassCandidates(relToRepo, source, usedAllowlistKeys),
+    )
   }
   return byFile
 }
@@ -271,5 +335,33 @@ describe('registry Tailwind classes', () => {
     expect(selectorFor('data-[state=open]:bg-muted')).toBe('.data-\\[state\\=open\\]\\:bg-muted')
     const { dead } = await compileCandidates(['bg-black/50', 'data-[state=open]:bg-muted'])
     expect(dead).toEqual([])
+  })
+
+  it('UNRESOLVED_RECIPE_ALLOWED is closed at both ends (#264 review M2)', async () => {
+    // Runs its OWN sweep (rather than relying on earlier tests in this file
+    // to have populated `usedAllowlistKeys`, which would make this test's
+    // pass/fail depend on execution order) over every corpus this file
+    // checks — the registry itself plus both demos, the same roots
+    // `allCandidates`/`appCandidates` cover elsewhere.
+    usedAllowlistKeys.clear()
+    await allCandidates()
+    for (const demo of DEMOS) await appCandidates(demo)
+    // An entry that resolves to nothing needed any more is exactly the
+    // allowlist rot CLAUDE.md warns about; an unlisted unresolvable
+    // identifier would already have thrown during the sweep above, failing
+    // this test for the OTHER reason.
+    expect([...usedAllowlistKeys].sort()).toEqual(Object.keys(UNRESOLVED_RECIPE_ALLOWED).sort())
+  })
+
+  it('git ls-files enumeration matches an independent filesystem walk, exactly (#264 review follow-up)', async () => {
+    // A `length > N` floor only detects UNDER-collection; it cannot see the
+    // git-based enumeration silently missing a file the walk would still
+    // find, or the reverse. Assert EXACT set equality against a differently
+    // derived corpus, over every root a real sweep runs against.
+    for (const dir of [REGISTRY, ...DEMOS.map((d) => path.join(d, 'src'))]) {
+      const viaGit = gitLsFiles(dir)
+      const viaWalk = await walkSourceFiles(dir)
+      expect(viaGit.sort()).toEqual(viaWalk.sort())
+    }
   })
 })

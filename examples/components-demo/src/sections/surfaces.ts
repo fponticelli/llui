@@ -243,7 +243,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             {
               ...menuParts.content,
               class:
-                'absolute top-full left-0 mt-1 min-w-44 bg-card border border-border rounded-md shadow-lg p-1 z-50 outline-none',
+                'absolute top-full start-0 mt-1 min-w-44 bg-card border border-border rounded-md shadow-lg p-1 z-50 outline-none',
             },
             items.map((it) =>
               it.kind === 'separator'
@@ -343,7 +343,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                   }),
                 ),
               ]),
-              button({ ...tr.prevTrigger, class: 'btn btn-secondary btn-sm ml-auto' }, [
+              button({ ...tr.prevTrigger, class: 'btn btn-secondary btn-sm ms-auto' }, [
                 text('Prev'),
               ]),
               button({ ...tr.nextTrigger, class: 'btn btn-primary btn-sm' }, [
@@ -398,7 +398,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           div(
             {
               ...fp.resizeHandle('se'),
-              class: 'absolute bottom-0 right-0 w-4 h-4 cursor-se-resize',
+              class: 'absolute bottom-0 end-0 w-4 h-4 cursor-se-resize',
               style: 'background: linear-gradient(135deg, transparent 50%, rgb(148 163 184) 50%);',
             },
             [],
@@ -424,7 +424,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 {
                   ...nv.item('file', { isBranch: true }).content,
                   class:
-                    'absolute top-full left-0 mt-1 min-w-36 bg-card border border-border rounded-md shadow-lg p-1 z-50',
+                    'absolute top-full start-0 mt-1 min-w-36 bg-card border border-border rounded-md shadow-lg p-1 z-50',
                 },
                 [
                   div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
@@ -451,7 +451,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 {
                   ...nv.item('edit', { isBranch: true }).content,
                   class:
-                    'absolute top-full left-0 mt-1 min-w-36 bg-card border border-border rounded-md shadow-lg p-1 z-50',
+                    'absolute top-full start-0 mt-1 min-w-36 bg-card border border-border rounded-md shadow-lg p-1 z-50',
                 },
                 [
                   div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [

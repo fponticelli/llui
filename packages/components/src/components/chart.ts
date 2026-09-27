@@ -1,5 +1,5 @@
-import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import { elNS, tagSend } from '@llui/dom'
+import type { Mountable, Send, Signal } from '@llui/dom'
 import { deriveOnce } from '../utils/derive.js'
 import { allFiniteNumbers, finiteBound, positiveFiniteOrDefault } from '../utils/number.js'
 import {
@@ -57,6 +57,117 @@ import type { Curve } from '../utils/path.js'
 
 export type { ChartCoord }
 export type MarkType = 'line' | 'area' | 'bar'
+export type ChartSeriesCue =
+  | 'solid'
+  | 'short-dash'
+  | 'dot'
+  | 'long-dash'
+  | 'dash-dot'
+  | 'grid'
+  | 'cross-hatch'
+
+/**
+ * Seven names, not five (#264 review item 7): a chart with MORE than five
+ * series used to cycle `% 5`, so series index 5 silently reused index 0's
+ * cue ('solid') — two series became visually IDENTICAL under forced colors
+ * the moment a chart declared a sixth series. `grid` and `cross-hatch` are
+ * two more genuinely distinct redundant cues (a fine grid fill / a dense
+ * crosshatch fill for bar and area marks, their own dash rhythms for line
+ * marks, their own radius/fill/stroke combination for dot markers), so a
+ * chart stays fully distinguishable through seven series before any name
+ * repeats.
+ */
+const SERIES_CUES: readonly ChartSeriesCue[] = [
+  'solid',
+  'short-dash',
+  'dot',
+  'long-dash',
+  'dash-dot',
+  'grid',
+  'cross-hatch',
+]
+
+function cueForIndex(index: number): ChartSeriesCue {
+  return SERIES_CUES[index < 0 ? 0 : index % SERIES_CUES.length]!
+}
+
+function seriesCue(state: ChartState, key: string): ChartSeriesCue {
+  return cueForIndex(state.series.findIndex((series) => series.key === key))
+}
+
+/** `${id}:pattern-<cue>` for every non-`solid` cue (solid needs no pattern —
+ * it is a flat `CanvasText` fill). Shared by `chartForcedColorPatterns` (which
+ * DEFINES the patterns) and `connect()` (which points each mark's
+ * `fill` at its OWN chart's copy via an inline custom property) so the two
+ * can never name different ids for the same chart instance. */
+function patternId(id: string, cue: Exclude<ChartSeriesCue, 'solid'>): string {
+  return `${id}:pattern-${cue}`
+}
+
+/**
+ * Five SVG `<pattern>` fills, one per {@link ChartSeriesCue} name — the SAME
+ * cue vocabulary `data-series-cue` already carries on every mark. A skin's
+ * `forced-colors` rule reads `fill: var(--llui-chart-fill-dot)` (say), which
+ * `connect()` below sets to THIS chart's own `url('#<id>:pattern-dot')
+ * CanvasText`, so a bar/area mark gets a REAL redundant cue: `fill:
+ * CanvasText` alone makes every bar/area series under `forced-colors: active`
+ * paint identically, since forced colors flattens author colors uniformly
+ * (#264) — a dash pattern (already used for LINE marks) does nothing for a
+ * filled shape's fill.
+ *
+ * Pure, static, stateless markup — not part of `connect()`'s REACTIVE parts
+ * (it never varies with data or state), but keyed by the SAME `id` `connect()`
+ * takes, and it MUST be. A fixed, globally-shared id (`id="llui-chart-pattern-
+ * dot"` on every chart instance) resolves a `url(#...)` reference to
+ * WHICHEVER same-named element the browser's id table happens to return —
+ * measured in real Chromium: when the first such element in the document sits
+ * inside a `display:none` ancestor (one hidden chart earlier on the page),
+ * every OTHER, visible chart's pattern-filled marks paint nothing, because a
+ * referenced paint server inside a non-rendered subtree does not paint even
+ * for a consumer outside it (#264 review item 3). Per-instance ids close the
+ * whole bug class rather than depending on document order: each chart only
+ * ever references its OWN copy. Place it once as the first child of
+ * `parts.svg` in either skin, passing the SAME `id` given to `connect()`. */
+export function chartForcedColorPatterns(id: string): Mountable {
+  const swatch = (patternElId: string, content: readonly Mountable[]): Mountable =>
+    elNS(
+      'pattern',
+      { id: patternElId, patternUnits: 'userSpaceOnUse', width: 8, height: 8 },
+      content,
+    )
+  const tile = (fill: string): Mountable => elNS('rect', { width: 8, height: 8, fill })
+  return elNS('defs', {}, [
+    swatch(patternId(id, 'short-dash'), [
+      tile('Canvas'),
+      elNS('path', { d: 'M0 4H8', stroke: 'CanvasText', 'stroke-width': 2 }),
+    ]),
+    swatch(patternId(id, 'dot'), [
+      tile('Canvas'),
+      elNS('circle', { cx: 2, cy: 2, r: 1.4, fill: 'CanvasText' }),
+      elNS('circle', { cx: 6, cy: 6, r: 1.4, fill: 'CanvasText' }),
+    ]),
+    swatch(patternId(id, 'long-dash'), [
+      tile('Canvas'),
+      elNS('path', { d: 'M0 0L8 8', stroke: 'CanvasText', 'stroke-width': 3 }),
+    ]),
+    swatch(patternId(id, 'dash-dot'), [
+      tile('Canvas'),
+      elNS('path', { d: 'M0 0L8 8M8 0L0 8', stroke: 'CanvasText', 'stroke-width': 1.5 }),
+    ]),
+    swatch(patternId(id, 'grid'), [
+      tile('Canvas'),
+      elNS('path', { d: 'M4 0V8M0 4H8', stroke: 'CanvasText', 'stroke-width': 1 }),
+    ]),
+    swatch(patternId(id, 'cross-hatch'), [
+      tile('Canvas'),
+      elNS('path', {
+        d: 'M0 0L8 8M8 0L0 8M4 0V8M0 4H8',
+        stroke: 'CanvasText',
+        'stroke-width': 0.75,
+      }),
+    ]),
+  ])
+}
 
 /**
  * How the INDEPENDENT axis is allocated — and therefore which of a chart's two
@@ -318,6 +429,7 @@ export function update(state: ChartState, msg: ChartMsg): [ChartState, never[]] 
 /** A drawn mark: one series, one path. */
 export interface ChartMark {
   seriesKey: string
+  seriesCue: ChartSeriesCue
   label: string
   mark: MarkType
   /** The SVG path `d`. */
@@ -331,6 +443,7 @@ export interface ChartMark {
 /** A vertex on a line or area series, for the dot layer and hit feedback. */
 export interface ChartVertex {
   seriesKey: string
+  seriesCue: ChartSeriesCue
   index: number
   x: number
   y: number
@@ -517,6 +630,7 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
   const groupCount = state.stacked ? 1 : Math.max(1, barKeys.length)
 
   for (const s of state.series) {
+    const cue = seriesCue(state, s.key)
     const dimmed = state.activeSeries !== null && s.key !== state.activeSeries
     const pairs = offsets.get(s.key)!
 
@@ -539,6 +653,13 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
         if (slice === undefined || slice.share <= 0) continue
         marks.push({
           seriesKey: s.key,
+          // A pie/donut's wedges are one SERIES across many ROWS, so the
+          // per-SERIES cue above would give every wedge of a single-series
+          // pie the SAME redundant cue — visually one undifferentiated ring
+          // under forced colors (#264 review item 7). The wedge's cue is
+          // keyed by its ROW index instead, cycling the same seven-name
+          // vocabulary, so adjacent slices are genuinely distinguishable.
+          seriesCue: cueForIndex(i),
           label: s.label,
           mark: 'bar',
           d: projection.band(slice.start, slice.end, v0, v1),
@@ -562,6 +683,7 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
         const u0 = bandStart + slot * width
         marks.push({
           seriesKey: s.key,
+          seriesCue: cue,
           label: s.label,
           mark: 'bar',
           d: projection.band(u0, u0 + width, normalize(base, domain), normalize(top, domain)),
@@ -583,6 +705,7 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
     const curve = s.curve ?? 'linear'
     marks.push({
       seriesKey: s.key,
+      seriesCue: cue,
       label: s.label,
       mark: s.mark,
       d: s.mark === 'area' ? projection.area(upper, lower, curve) : projection.line(upper, curve),
@@ -594,6 +717,7 @@ const geometryOf = deriveOnce((state: ChartState): ChartGeometry => {
       const p = projection.point(upper[i]!.u, upper[i]!.v)
       vertices.push({
         seriesKey: s.key,
+        seriesCue: cue,
         index: i,
         x: p.x,
         y: p.y,
@@ -731,6 +855,9 @@ export interface ChartParts {
     'data-coord': Signal<'cartesian' | 'polar'>
     'data-domain': Signal<'value' | 'share'>
     'data-active': Signal<'' | undefined>
+    /** Per-instance forced-colors fill custom properties — see `connect()`'s
+     * own doc for why these must be per-chart rather than a shared global. */
+    style: string
   }
   /**
    * The `<svg>`. `role="img"` with a name and description is what a screen
@@ -783,6 +910,7 @@ export interface ChartParts {
     'data-scope': 'chart'
     'data-part': 'dot'
     'data-series': string
+    'data-series-cue': ChartSeriesCue
     'data-active': '' | undefined
     cx: number
     cy: number
@@ -792,9 +920,20 @@ export interface ChartParts {
     'data-scope': 'chart'
     'data-part': 'legend-item'
     'data-series': string
+    'data-series-cue': Signal<ChartSeriesCue>
     'data-dimmed': Signal<'' | undefined>
     'aria-pressed': Signal<boolean>
     onClick: (e: MouseEvent) => void
+  }
+  /** The legend's colour chip. Spreadable onto its own element (a `<span>` in
+   * both skins) so a forced-colors rule can key off `data-series-cue` the
+   * SAME way a mark does — a legend swatch that only carries `--mark-color`
+   * paints identically for every series once forced colors flattens author
+   * colour, which is the accessibility gap #264 review item 7 names. */
+  legendSwatch: (key: string) => {
+    'data-scope': 'chart'
+    'data-part': 'legend-swatch'
+    'data-series-cue': Signal<ChartSeriesCue>
   }
   /** Attributes for one drawn mark. Spread onto a `<path>` and pass `d`. */
   markProps: (mark: ChartMark) => {
@@ -802,6 +941,7 @@ export interface ChartParts {
     'data-part': 'mark'
     'data-mark': 'line' | 'area' | 'bar'
     'data-series': string
+    'data-series-cue': ChartSeriesCue
     'data-active': '' | undefined
     'data-dimmed': '' | undefined
     d: string
@@ -891,6 +1031,26 @@ export function connect(
     }
   }
 
+  // Per-instance forced-colors fill vars (#264 review item 3): each of these
+  // is a CSS custom property naming THIS chart's own pattern id, with an SVG
+  // paint-fallback token (`url(#…) CanvasText`) so a mark still paints solid
+  // if the reference somehow fails to resolve. Static (never varies with
+  // state), so it is computed once here rather than as a reactive binding.
+  // `--llui-chart-fill-solid` needs no per-instance id — solid is a flat
+  // fill with nothing to disambiguate — but is restated with the same
+  // fallback shape for symmetry.
+  const forcedColorFillVars = [
+    ['solid', 'CanvasText'],
+    ['short-dash', `url('#${patternId(opts.id, 'short-dash')}') CanvasText`],
+    ['dot', `url('#${patternId(opts.id, 'dot')}') CanvasText`],
+    ['long-dash', `url('#${patternId(opts.id, 'long-dash')}') CanvasText`],
+    ['dash-dot', `url('#${patternId(opts.id, 'dash-dot')}') CanvasText`],
+    ['grid', `url('#${patternId(opts.id, 'grid')}') CanvasText`],
+    ['cross-hatch', `url('#${patternId(opts.id, 'cross-hatch')}') CanvasText`],
+  ]
+    .map(([cue, value]) => `--llui-chart-fill-${cue}:${value}`)
+    .join(';')
+
   return {
     root: {
       'data-scope': 'chart',
@@ -898,6 +1058,7 @@ export function connect(
       'data-coord': state.map((s) => s.coord),
       'data-domain': state.map((s) => s.domain),
       'data-active': state.map((s) => (s.activeIndex !== null ? '' : undefined)),
+      style: forcedColorFillVars,
     },
     svg: {
       'data-scope': 'chart',
@@ -944,6 +1105,7 @@ export function connect(
       'data-scope': 'chart',
       'data-part': 'dot',
       'data-series': vertex.seriesKey,
+      'data-series-cue': vertex.seriesCue,
       'data-active': vertex.active ? '' : undefined,
       cx: vertex.x,
       cy: vertex.y,
@@ -953,6 +1115,7 @@ export function connect(
       'data-scope': 'chart',
       'data-part': 'legend-item',
       'data-series': key,
+      'data-series-cue': state.map((s) => seriesCue(s, key)),
       'data-dimmed': state.map((s) =>
         s.activeSeries !== null && s.activeSeries !== key ? '' : undefined,
       ),
@@ -962,11 +1125,17 @@ export function connect(
         send({ type: 'setActiveSeries', key: s.activeSeries === key ? null : key })
       }),
     }),
+    legendSwatch: (key) => ({
+      'data-scope': 'chart',
+      'data-part': 'legend-swatch',
+      'data-series-cue': state.map((s) => seriesCue(s, key)),
+    }),
     markProps: (mark) => ({
       'data-scope': 'chart',
       'data-part': 'mark',
       'data-mark': mark.mark,
       'data-series': mark.seriesKey,
+      'data-series-cue': mark.seriesCue,
       'data-active': mark.active ? '' : undefined,
       'data-dimmed': mark.dimmed ? '' : undefined,
       d: mark.d,

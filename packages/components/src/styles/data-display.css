@@ -9,9 +9,8 @@
 /* ─── Chip (value-hued categorical label) ─── */
 
 /*
- * The baseline half of `chipHue()`. Geometry matches the tags-input tag above
- * so the two sit on a line together; only the colour differs, and it is
- * DERIVED from the one custom property the consumer sets:
+ * The baseline half of `chipHue()`. Its colour is DERIVED from the one custom
+ * property the consumer sets:
  *
  *   span({ 'data-scope': 'chip', 'data-part': 'chip',
  *          'style.--chip-hue': String(chipHue(kind)) }, [text(kind)])
@@ -26,15 +25,12 @@
  * a chip carrying `--chip-hue: 188.5`, while the same expression declared on
  * the chip returned 188.5.
  *
- * No `.dark` override, for the same reason the derived tokens above need none:
+ * No `.dark` override, for the same reason the derived tokens need none:
  * `--background` and `--foreground` swap between themes, and `--chip-mix` is
- * one percentage for both ends, so the light ink and the dark fill come out
- * EXACTLY equal (OKLab L 0.359) and the other pair very nearly so — light fill
- * L 0.872 against dark ink L 0.863, since `--foreground` is 0.985 and not a
- * true white. That is why dark measures below light at every hue. Across all
- * 360 hues in both themes: 7.04:1–7.54:1 by CSS Color 4 gamut mapping,
- * 6.90:1–7.54:1 as Chrome rasterises it — versus 4.30:1–9.85:1, with 17 hues
- * under AA, for the same idea expressed in HSL.
+ * one percentage for both ends. Across all 360 hues in both themes the pair
+ * measures 7.04:1–7.54:1 by CSS Color 4 gamut mapping and 6.90:1–7.54:1 as
+ * Chrome rasterises it, versus 4.30:1–9.85:1 with 17 hues under AA for the
+ * equivalent HSL formulation.
  */
 [data-scope='chip'][data-part='chip'] {
   display: inline-flex;
@@ -43,11 +39,10 @@
   align-items: center;
   justify-content: center;
   gap: var(--llui-space-1);
-  padding: 0.125rem var(--llui-space-2);
+  overflow: hidden;
+  border: 1px solid transparent;
   border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 500;
-  white-space: nowrap;
+  padding: 0.125rem var(--llui-space-2);
   background: color-mix(
     in oklab,
     oklch(var(--chip-lightness) var(--chip-chroma) var(--chip-hue)) var(--chip-mix),
@@ -58,71 +53,359 @@
     oklch(var(--chip-lightness) var(--chip-chroma) var(--chip-hue)) var(--chip-mix),
     var(--foreground)
   );
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  transition:
+    border-color var(--llui-duration-fast),
+    box-shadow var(--llui-duration-fast);
 }
 
 /* ─── Avatar ─── */
 
 [data-scope='avatar'][data-part='root'] {
   position: relative;
-  height: 3rem;
-  width: 3rem;
+  display: flex;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
   overflow: hidden;
   border-radius: 9999px;
-  background: var(--accent-strong);
+  user-select: none;
+}
+
+[data-scope='avatar'][data-part='root'][data-density='compact'] {
+  /* #262: the shared semantic spacing scale, not a hard-coded rem value —
+     --llui-space-6 is 1.5rem, matching the registry's data-[size=sm] rung. */
+  width: var(--llui-space-6);
+  height: var(--llui-space-6);
 }
 
 [data-scope='avatar'][data-part='image'] {
-  height: 100%;
   width: 100%;
+  height: 100%;
   object-fit: cover;
 }
 
 [data-scope='avatar'][data-part='fallback'] {
-  position: absolute;
-  inset: 0;
   display: flex;
+  width: 100%;
+  height: 100%;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--foreground);
+  border-radius: inherit;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+[data-scope='avatar'][data-part='root'][data-density='compact']
+  [data-scope='avatar'][data-part='fallback'] {
+  /* Deliberately a bare value, not --llui-space-3 (#264 review LOW): that
+     token is 0.75rem too, but it names a SPACING step, not a type-scale
+     step — reusing it here for font-size would be numerically correct and
+     semantically wrong. This package has no type-scale token today. */
+  font-size: 0.75rem;
 }
 
 /* ─── Progress ─── */
 
+[data-scope='progress'][data-part='root'] {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+[data-scope='progress'][data-part='root'][data-orientation='vertical'] {
+  width: fit-content;
+  height: 100%;
+}
+
 [data-scope='progress'][data-part='track'] {
   position: relative;
-  height: 0.5rem;
   width: 100%;
+  height: 0.5rem;
   overflow: hidden;
   border-radius: 9999px;
-  background: var(--accent-strong);
+  background: color-mix(in oklab, var(--primary) 20%, transparent);
+}
+
+[data-scope='progress'][data-part='track'][data-orientation='vertical'] {
+  width: 0.5rem;
+  height: 100%;
+  min-height: 8rem;
 }
 
 [data-scope='progress'][data-part='range'] {
   height: 100%;
   border-radius: 9999px;
   background: var(--primary);
-  transition: width 300ms;
+  transition:
+    width var(--llui-duration-normal),
+    height var(--llui-duration-normal);
+}
+
+[data-scope='progress'][data-part='range'][data-orientation='vertical'] {
+  width: 100%;
 }
 
 [data-scope='progress'][data-part='range'][data-state='indeterminate'] {
   width: 33% !important;
-  animation: indeterminate 1.5s infinite ease-in-out;
+  animation: llui-progress-indeterminate 1.5s infinite ease-in-out;
 }
 
-@keyframes indeterminate {
-  0% {
+[data-scope='progress'][data-part='range'][data-orientation='vertical'][data-state='indeterminate'] {
+  width: 100% !important;
+  height: 33% !important;
+  animation-name: llui-progress-indeterminate-vertical;
+}
+
+@keyframes llui-progress-indeterminate {
+  from {
     margin-inline-start: -33%;
   }
-  100% {
+  to {
     margin-inline-start: 100%;
   }
 }
 
+@keyframes llui-progress-indeterminate-vertical {
+  from {
+    margin-block-start: -33%;
+  }
+  to {
+    margin-block-start: 100%;
+  }
+}
+
 [data-scope='progress'][data-part='label'] {
+  color: var(--foreground);
   font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* ─── Meter ─── */
+
+[data-scope='meter'][data-part='root'] {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+[data-scope='meter'][data-part='label'] {
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+[data-scope='meter'][data-part='track'] {
+  position: relative;
+  width: 100%;
+  height: 0.5rem;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: var(--muted);
+}
+
+[data-scope='meter'][data-part='range'] {
+  height: 100%;
+  border-radius: 9999px;
+  background: var(--primary);
+  transition: inline-size var(--llui-duration-normal);
+}
+
+[data-scope='meter'][data-part='range'][data-state='suboptimal'] {
+  background: var(--chart-4);
+}
+
+[data-scope='meter'][data-part='range'][data-state='critical'] {
+  background: var(--destructive);
+}
+
+[data-scope='meter'][data-part='band'] {
+  position: absolute;
+  inset-block: 0;
+  background: color-mix(in oklab, var(--muted-foreground) 15%, transparent);
+}
+
+[data-scope='meter'][data-part='band'][data-state='optimal'] {
+  background: color-mix(in oklab, var(--primary) 20%, transparent);
+}
+
+[data-scope='meter'][data-part='band'][data-state='suboptimal'] {
+  background: color-mix(in oklab, var(--chart-4) 25%, transparent);
+}
+
+[data-scope='meter'][data-part='band'][data-state='critical'] {
+  background: color-mix(in oklab, var(--destructive) 20%, transparent);
+}
+
+[data-scope='meter'][data-part='marker'] {
+  position: absolute;
+  inset-block: 0;
+  width: 0.125rem;
+  border-radius: 9999px;
+  background: var(--foreground);
+  transform: translateX(-50%);
+  transition: inset-inline-start var(--llui-duration-normal);
+}
+
+[dir='rtl'] [data-scope='meter'][data-part='marker'] {
+  transform: translateX(50%);
+}
+
+/* ─── Chart ─── */
+
+[data-scope='chart'][data-part='root'] {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 12rem;
+  aspect-ratio: 16 / 9;
+  flex-direction: column;
+  justify-content: center;
+  color: var(--foreground);
+  font-size: 0.75rem;
+}
+
+[data-scope='chart'][data-part='root'][data-coord='polar'] {
+  max-height: 26.25rem;
+  aspect-ratio: 1;
+}
+
+[data-scope='chart'][data-part='svg'] {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+  overflow: visible;
+  border-radius: var(--llui-radius-md);
+  outline: none;
+}
+
+[data-scope='chart'][data-part='grid'] {
+  fill: none;
+  stroke: color-mix(in oklab, var(--border) 50%, transparent);
+  stroke-width: 1;
+}
+
+[data-scope='chart'][data-part='axis-label'] {
+  fill: var(--muted-foreground);
+  font-size: 0.625rem;
+}
+
+[data-scope='chart'][data-part='axis-label'][data-active] {
+  fill: var(--foreground);
+  font-weight: 500;
+}
+
+[data-scope='chart'][data-part='mark'],
+[data-scope='chart'][data-part='dot'] {
+  --mark-color: var(--chart-1);
+
+  transition: opacity var(--llui-duration-fast);
+}
+
+[data-scope='chart'][data-part='mark'][data-mark='bar'] {
+  fill: var(--mark-color);
+  stroke: none;
+}
+
+[data-scope='chart'][data-part='mark'][data-mark='area'] {
+  fill: var(--mark-color);
+  stroke: none;
+  opacity: 0.7;
+}
+
+[data-scope='chart'][data-part='mark'][data-mark='line'] {
+  fill: none;
+  stroke: var(--mark-color);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+[data-scope='chart'][data-part='root'][data-domain='share'] [data-scope='chart'][data-part='mark'] {
+  stroke: var(--background);
+  stroke-width: 2;
+}
+
+[data-scope='chart'][data-part='mark'][data-dimmed] {
+  opacity: 0.25;
+}
+
+[data-scope='chart'][data-part='mark'][data-active] {
+  opacity: 1;
+}
+
+[data-scope='chart'][data-part='dot'] {
+  fill: var(--mark-color);
+  stroke: var(--background);
+  stroke-width: 2;
+  opacity: 0;
+}
+
+[data-scope='chart'][data-part='dot'][data-active] {
+  opacity: 1;
+}
+
+[data-scope='chart'][data-part='legend-item'] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border: 0;
+  border-radius: var(--llui-radius-sm);
+  background: transparent;
   color: var(--muted-foreground);
+  font-size: 0.75rem;
+  transition: opacity var(--llui-duration-fast);
+}
+
+[data-scope='chart'][data-part='legend-item'][data-dimmed] {
+  opacity: 0.4;
+}
+
+[data-scope='chart'][data-part='legend-swatch'] {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 2px;
+  background-color: var(--mark-color);
+}
+
+[data-scope='chart'][data-part='tooltip'] {
+  position: absolute;
+  z-index: 10;
+  display: grid;
+  min-width: 8rem;
+  gap: 0.375rem;
+  border: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+  border-radius: var(--llui-radius-lg);
+  padding: 0.375rem 0.625rem;
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.75rem;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 8px));
+  box-shadow: var(--llui-shadow-lg);
+}
+
+[data-scope='chart'][data-part='tooltip'][hidden] {
+  display: none;
+}
+
+[data-scope='chart'][data-part='table'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  margin: -1px;
+  border-width: 0;
+  padding: 0;
+  white-space: nowrap;
 }
 
 /* ─── Sparkline ───
@@ -136,30 +419,27 @@
 [data-scope='sparkline'][data-part='root'] {
   position: relative;
   display: inline-block;
-  line-height: 0;
+  line-height: 1;
+  vertical-align: middle;
 }
 
 [data-scope='sparkline'][data-part='svg'] {
   display: block;
+  width: 7.5rem;
+  height: 2rem;
   overflow: visible;
+  border-radius: var(--llui-radius-sm);
   outline: none;
 }
 
-[data-scope='sparkline'][data-part='svg']:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-  border-radius: var(--llui-radius-sm);
-}
-
 [data-scope='sparkline'][data-part='band'] {
-  fill: var(--primary);
-  opacity: 0.12;
+  fill: color-mix(in oklab, var(--primary) 15%, transparent);
   stroke: none;
 }
 
 [data-scope='sparkline'][data-part='grid'] {
   fill: none;
-  stroke: var(--border);
+  stroke: color-mix(in oklab, var(--border) 50%, transparent);
   stroke-width: 1;
 }
 
@@ -168,7 +448,7 @@
  * the last point would claim staleness the data does not have. */
 [data-scope='sparkline'][data-part='now'] {
   fill: none;
-  stroke: var(--border-hover);
+  stroke: var(--border);
   stroke-width: 1;
   stroke-dasharray: 2 2;
   opacity: 0;
@@ -186,11 +466,10 @@
   stroke-linejoin: round;
 }
 
-/* The base radius is an ATTRIBUTE the view passes, not a rule here. CSS
- * geometry properties (`r`/`cx`/`cy`) are SVG2 and reached Firefox only
- * recently; a presentation attribute has the lowest priority, so where CSS `r`
- * works the `[data-last]` rule below still wins, and where it does not the dot
- * keeps the attribute's radius instead of collapsing to zero. */
+/* The radius is an ATTRIBUTE supplied by the view, not CSS geometry. `r`/`cx`/
+ * `cy` are SVG2 CSS properties with younger cross-browser support; the
+ * presentation attribute keeps every dot visible while these rules own only
+ * paint and state emphasis. */
 [data-scope='sparkline'][data-part='dot'] {
   fill: var(--primary);
   stroke: none;
@@ -202,9 +481,8 @@
 
 /* Out of band. Both sides take the destructive colour — the state is "outside
  * the reference", and there is no token that means "too low" as opposed to
- * "too high". The two are still told apart, by FILL rather than by hue: the
- * low side is hollow. Inventing a second semantic colour would be asserting a
- * direction the theme never declared. */
+ * "too high". They remain distinguishable without inventing a second semantic
+ * hue: the low side is hollow. */
 [data-scope='sparkline'][data-part='dot'][data-tone='above'] {
   fill: var(--destructive);
 }
@@ -216,14 +494,18 @@
 }
 
 [data-scope='sparkline'][data-part='dot'][data-last] {
-  r: 2.5;
+  stroke: var(--background);
+  stroke-width: 2;
+}
+
+[data-scope='sparkline'][data-part='dot'][data-tone='below'][data-last] {
+  stroke: var(--destructive);
 }
 
 /* The granularity track. `data-grain` is free-form by design, so the baseline
  * styles the band and leaves the per-grain distinction to the consumer. */
 [data-scope='sparkline'][data-part='span'] {
-  fill: var(--muted-foreground);
-  opacity: 0.35;
+  fill: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
   stroke: none;
 }
 
@@ -231,37 +513,545 @@
   position: absolute;
   width: 1px;
   height: 1px;
-  padding: 0;
-  margin: -1px;
   overflow: hidden;
   clip-path: inset(50%);
-  white-space: nowrap;
+  margin: -1px;
   border-width: 0;
+  padding: 0;
+  white-space: nowrap;
 }
 
 [data-scope='sparkline'][data-part='tooltip'] {
   position: absolute;
-  z-index: var(--llui-z-tooltip);
-  transform: translate(-50%, calc(-100% - 6px));
-  pointer-events: none;
-  white-space: nowrap;
-  border-radius: var(--llui-radius-sm);
-  border: 1px solid var(--border);
-  background: var(--popover);
-  color: var(--popover-foreground);
+  z-index: 10;
+  border: 1px solid color-mix(in oklab, var(--border) 50%, transparent);
+  border-radius: var(--llui-radius-md);
   padding: 0.125rem 0.375rem;
+  background: var(--background);
+  color: var(--foreground);
   font-size: 0.75rem;
   line-height: 1rem;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, calc(-100% - 6px));
   box-shadow: var(--llui-shadow-md);
+}
+
+[data-scope='sparkline'][data-part='tooltip'][hidden] {
+  display: none;
+}
+
+/* ─── Table / data grid ─── */
+
+[data-scope='table'][data-part='viewport'] {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+
+[data-scope='table'][data-part='root'] {
+  width: 100%;
+  min-width: var(--llui-table-min-width, 40rem);
+  border-collapse: collapse;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  table-layout: fixed;
+}
+
+/* Keep the root a native table so header and body columns share one layout.
+ * Place it directly inside the public viewport part above; CSS cannot create
+ * that scrollport around a table without changing the table's display. */
+
+[data-scope='table'][data-part='column-header'] {
+  height: 2.5rem;
+  padding: 0 var(--llui-space-2);
+  color: var(--foreground);
+  font-weight: 500;
+  text-align: start;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+[data-scope='table'][data-part='column-header'][data-sortable] {
+  cursor: pointer;
+  user-select: none;
+}
+
+[data-scope='table'][data-part='column-header'][aria-sort='ascending']::after {
+  margin-inline-start: var(--llui-space-1);
+  content: '↑';
+}
+
+[data-scope='table'][data-part='column-header'][aria-sort='descending']::after {
+  margin-inline-start: var(--llui-space-1);
+  content: '↓';
+}
+
+[data-scope='table'][data-part='row'] {
+  border-block-start: 1px solid var(--border);
+  transition: background-color var(--llui-duration-fast);
+}
+
+[data-scope='table'][data-part='row']:hover {
+  background: color-mix(in oklab, var(--muted) 50%, transparent);
+}
+
+[data-scope='table'][data-part='row'][data-selected],
+[data-scope='table'][data-part='row'][aria-selected='true'] {
+  background: var(--muted);
+}
+
+[data-scope='table'][data-part='cell'] {
+  padding: var(--llui-space-2);
+  text-align: start;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+[data-scope='table'][data-part='root'][data-density='compact']
+  [data-scope='table'][data-part='column-header'] {
+  /* #262: --llui-space-8 is 2rem — the shared semantic scale. 0.375rem has no
+     exact token on this scale (between space-1's 0.25rem and space-2's
+     0.5rem) and stays a bare value, matching the same half-step elsewhere in
+     this file (e.g. foundation.css, form-controls.css, menus-overlays.css). */
+  height: var(--llui-space-8);
+  padding-inline: 0.375rem;
+}
+
+[data-scope='table'][data-part='root'][data-density='compact']
+  [data-scope='table'][data-part='cell'] {
+  padding: var(--llui-space-1) 0.375rem;
+}
+
+[data-scope='table'][data-part='row-checkbox'],
+[data-scope='table'][data-part='select-all'] {
+  display: inline-flex;
+  width: 1rem;
+  height: 1rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--input);
+  border-radius: var(--llui-radius-sm);
+  color: transparent;
+  vertical-align: middle;
+}
+
+[data-scope='table'][data-part='row-checkbox'][data-state='checked'],
+[data-scope='table'][data-part='row-checkbox'][data-state='indeterminate'],
+[data-scope='table'][data-part='select-all'][data-state='checked'],
+[data-scope='table'][data-part='select-all'][data-state='indeterminate'] {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+/* ─── Data table status surfaces ─── */
+
+[data-scope='data-table'][data-part='loading-overlay'] {
+  position: absolute;
+  z-index: 10;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--llui-radius-md);
+  background: color-mix(in oklab, var(--background) 60%, transparent);
+  backdrop-filter: blur(1px);
+}
+
+[data-scope='data-table'][data-part='empty-state'] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--llui-space-1);
+  padding: 3rem var(--llui-space-6);
+  color: var(--muted-foreground);
+  text-align: center;
+}
+
+[data-scope='data-table'][data-part='error-state'] {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--llui-space-2);
+  border: 1px solid color-mix(in oklab, var(--destructive) 50%, transparent);
+  border-radius: var(--llui-radius-md);
+  padding: 3rem var(--llui-space-6);
+  color: var(--destructive);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+[data-scope='data-table'][data-part][hidden] {
+  display: none;
 }
 
 /* ─── Marquee ─── */
 
-@keyframes marquee-scroll {
+[data-scope='marquee'][data-part='root'] {
+  position: relative;
+  display: flex;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+}
+
+[data-scope='marquee'][data-part='root'][data-axis='vertical'] {
+  flex-direction: column;
+  mask-image: linear-gradient(to bottom, transparent, black 10%, black 90%, transparent);
+}
+
+[data-scope='marquee'][data-part='content'] {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--llui-space-4);
+  animation-name: llui-marquee-scroll;
+  animation-duration: var(--marquee-duration, 20s);
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  animation-direction: var(--marquee-direction, normal);
+  animation-play-state: var(--marquee-playstate, running);
+}
+
+[data-scope='marquee'][data-part='root'][data-axis='vertical']
+  [data-scope='marquee'][data-part='content'] {
+  flex-direction: column;
+  animation-name: llui-marquee-scroll-vertical;
+}
+
+@keyframes llui-marquee-scroll {
   from {
     transform: translateX(0);
   }
   to {
     transform: translateX(-50%);
+  }
+}
+
+@keyframes llui-marquee-scroll-vertical {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+
+@media (forced-colors: active) {
+  [data-scope='chart'][data-part='svg'],
+  [data-scope='sparkline'][data-part='svg'],
+  [data-scope='meter'][data-part='track'] {
+    forced-color-adjust: none;
+    background: Canvas;
+  }
+
+  [data-scope='chart'][data-part='svg'],
+  [data-scope='sparkline'][data-part='svg'] {
+    background: Canvas;
+  }
+
+  /*
+   * `[data-mark]` (matching ANY value) rather than a bare `[data-part='mark']`
+   * (#264 review item 7): the non-forced `bar`/`area` rules earlier in this
+   * file (`[data-scope][data-part='mark'][data-mark='bar']`, etc.) carry
+   * THREE attribute selectors — `stroke: none` there OUTRANKS a two-attribute
+   * forced-colors rule regardless of media-query nesting, so a bar/area mark
+   * kept its authored `stroke: none` under `forced-colors: active` and never
+   * got the redundant CanvasText outline this block exists to give it. This
+   * selector matches the same specificity (three attribute selectors) and
+   * wins on source order, so the outline actually reaches bar/area marks.
+   */
+  [data-scope='chart'][data-part='mark'][data-mark],
+  [data-scope='chart'][data-part='dot'] {
+    opacity: 1;
+    stroke: CanvasText;
+    stroke-width: 2;
+  }
+
+  [data-scope='chart'][data-part='mark'][data-mark='bar'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'] {
+    /* Fallback for a mark whose `data-series-cue` is absent or unrecognized —
+       every real cue below overrides this with its own PATTERN fill. */
+    fill: CanvasText;
+  }
+
+  [data-scope='chart'][data-part='mark'][data-mark='line'] {
+    fill: none;
+    stroke: CanvasText;
+  }
+
+  /*
+   * `data-series-cue` is the ONE per-series-index vocabulary the chart
+   * machine assigns (`seriesCue()`), cycling five names. It already drives
+   * `stroke-dasharray` for LINE marks below — but a dash pattern on a
+   * `stroke` does nothing for a BAR/AREA mark, whose fill (not stroke) is
+   * what forced colors flattens to a uniform CanvasText: two bar series were
+   * genuinely indistinguishable (#264). Placing chartForcedColorPatterns(id)
+   * (from `@llui/components/chart`, with the SAME `id` given to `connect()`)
+   * once per mounted chart's `<svg>` defines five SVG `<pattern>` fills under
+   * that chart's own ids, so bar/area marks get a real redundant cue too —
+   * solid fill, two hatch angles, a dot pattern, and a crosshatch. A DOT
+   * marker instead varies (radius, filled vs hollow, stroke dash) — a fill
+   * pattern is illegible at marker size, so this is the "outline vs solid vs
+   * hatched" alternative the same accessibility requirement calls for, sized
+   * so five ADJACENT dots at typical chart mark spacing (Data Viz #1: the
+   * axis' `--llui-space-*` steps run 8px+) stay legible rather than
+   * overlapping.
+   *
+   * Every non-solid rule reads `var(--llui-chart-fill-<cue>)` rather than a
+   * hardcoded `url(#llui-chart-pattern-<cue>)` (#264 review item 3):
+   * `connect()` sets that custom property, inherited from the chart's own
+   * root, to THIS instance's own pattern id plus a `CanvasText` paint
+   * fallback — a fixed, shared id resolves to whichever same-named element
+   * the browser's id table returns, and a `<pattern>` sitting inside a
+   * hidden (`display:none`) chart earlier in the document made every OTHER,
+   * visible chart's marks paint nothing. The fallback value here (used only
+   * if `connect()`'s own inline style were somehow absent — this baseline
+   * sheet does not load `tailwind.css`'s separate `:root` default at all) is
+   * the historical global id plus the same `CanvasText` fallback.
+   */
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='solid'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='solid'] {
+    fill: CanvasText;
+  }
+
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='short-dash'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='short-dash'] {
+    fill: var(--llui-chart-fill-short-dash, url(#llui-chart-pattern-short-dash) CanvasText);
+  }
+
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='dot'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='dot'] {
+    fill: var(--llui-chart-fill-dot, url(#llui-chart-pattern-dot) CanvasText);
+  }
+
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='long-dash'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='long-dash'] {
+    fill: var(--llui-chart-fill-long-dash, url(#llui-chart-pattern-long-dash) CanvasText);
+  }
+
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='dash-dot'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='dash-dot'] {
+    fill: var(--llui-chart-fill-dash-dot, url(#llui-chart-pattern-dash-dot) CanvasText);
+  }
+
+  /* #264 review item 7: a chart with more than five series used to cycle
+     `% 5`, silently reusing 'solid' for the sixth series — `grid` and
+     `cross-hatch` are two more genuinely distinct redundant cues so seven
+     series stay distinguishable before any name repeats. */
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='grid'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='grid'] {
+    fill: var(--llui-chart-fill-grid, url(#llui-chart-pattern-grid) CanvasText);
+  }
+
+  [data-scope='chart'][data-part='mark'][data-mark='bar'][data-series-cue='cross-hatch'],
+  [data-scope='chart'][data-part='mark'][data-mark='area'][data-series-cue='cross-hatch'] {
+    fill: var(--llui-chart-fill-cross-hatch, url(#llui-chart-pattern-cross-hatch) CanvasText);
+  }
+
+  [data-scope='chart'] [data-series-cue='solid'] {
+    stroke-dasharray: none;
+  }
+
+  [data-scope='chart'] [data-series-cue='short-dash'] {
+    stroke-dasharray: 8 3;
+  }
+
+  [data-scope='chart'] [data-series-cue='dot'] {
+    stroke-dasharray: 2 3;
+  }
+
+  [data-scope='chart'] [data-series-cue='long-dash'] {
+    stroke-dasharray: 14 4;
+  }
+
+  [data-scope='chart'] [data-series-cue='dash-dot'] {
+    stroke-dasharray: 10 3 2 3;
+  }
+
+  [data-scope='chart'] [data-series-cue='grid'] {
+    stroke-dasharray: 3 3 1 3;
+  }
+
+  [data-scope='chart'] [data-series-cue='cross-hatch'] {
+    stroke-dasharray: 1 2 4 2;
+  }
+
+  /* A vertex/marker DOT: fill pattern is illegible at marker size, so the
+     redundant cue is (radius, filled vs hollow, stroke dash) instead — five
+     genuinely distinct treatments, not five shades of the same filled disc. */
+  [data-scope='chart'][data-part='dot'][data-series-cue='solid'] {
+    r: 4px;
+    fill: CanvasText;
+    stroke: Canvas;
+    stroke-width: 2px;
+    stroke-dasharray: none;
+  }
+
+  [data-scope='chart'][data-part='dot'][data-series-cue='short-dash'] {
+    r: 5px;
+    fill: CanvasText;
+    stroke: Canvas;
+    stroke-width: 2px;
+    stroke-dasharray: 2 2;
+  }
+
+  [data-scope='chart'][data-part='dot'][data-series-cue='dot'] {
+    r: 5px;
+    fill: Canvas;
+    stroke: CanvasText;
+    stroke-width: 2px;
+    stroke-dasharray: none;
+  }
+
+  [data-scope='chart'][data-part='dot'][data-series-cue='long-dash'] {
+    r: 6px;
+    fill: CanvasText;
+    stroke: Canvas;
+    stroke-width: 3px;
+    stroke-dasharray: none;
+  }
+
+  [data-scope='chart'][data-part='dot'][data-series-cue='dash-dot'] {
+    r: 3px;
+    fill: Canvas;
+    stroke: CanvasText;
+    stroke-width: 1.5px;
+    stroke-dasharray: 1 1;
+  }
+
+  [data-scope='chart'][data-part='dot'][data-series-cue='grid'] {
+    r: 6px;
+    fill: Canvas;
+    stroke: CanvasText;
+    stroke-width: 2.5px;
+    stroke-dasharray: none;
+  }
+
+  [data-scope='chart'][data-part='dot'][data-series-cue='cross-hatch'] {
+    r: 4.5px;
+    fill: CanvasText;
+    stroke: Canvas;
+    stroke-width: 1px;
+    stroke-dasharray: 1 1;
+  }
+
+  /* The legend chip: without a redundant cue it carries only `--mark-color`,
+     which forced colors flattens uniformly — every legend entry looked
+     identical (#264 review item 7). A repeating gradient per cue, distinct
+     from every other cue's, gives the swatch itself the same redundant
+     signal a mark or dot carries. */
+  [data-scope='chart'][data-part='legend-swatch'] {
+    forced-color-adjust: none;
+    border: 1px solid CanvasText;
+    background-color: Canvas;
+  }
+
+  [data-scope='chart'][data-part='legend-swatch'][data-series-cue='solid'] {
+    background-color: CanvasText;
+    background-image: none;
+  }
+
+  [data-scope='chart'][data-part='legend-swatch'][data-series-cue='short-dash'] {
+    background-image: repeating-linear-gradient(90deg, CanvasText 0 2px, Canvas 2px 5px);
+  }
+
+  [data-scope='chart'][data-part='legend-swatch'][data-series-cue='dot'] {
+    background-image: radial-gradient(circle, CanvasText 35%, Canvas 36%);
+    background-size: 4px 4px;
+  }
+
+  [data-scope='chart'][data-part='legend-swatch'][data-series-cue='long-dash'] {
+    background-image: repeating-linear-gradient(90deg, CanvasText 0 4px, Canvas 4px 6px);
+  }
+
+  [data-scope='chart'][data-part='legend-swatch'][data-series-cue='dash-dot'] {
+    background-image: repeating-linear-gradient(45deg, CanvasText 0 2px, Canvas 2px 4px);
+  }
+
+  [data-scope='chart'][data-part='legend-swatch'][data-series-cue='grid'] {
+    background-image:
+      repeating-linear-gradient(0deg, CanvasText 0 1px, transparent 1px 4px),
+      repeating-linear-gradient(90deg, CanvasText 0 1px, Canvas 1px 4px);
+  }
+
+  [data-scope='chart'][data-part='legend-swatch'][data-series-cue='cross-hatch'] {
+    background-image:
+      repeating-linear-gradient(45deg, CanvasText 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(-45deg, CanvasText 0 1px, Canvas 1px 3px);
+  }
+
+  [data-scope='chart'][data-part='grid'] {
+    stroke: GrayText;
+  }
+
+  [data-scope='chart'][data-part='axis-label'] {
+    fill: CanvasText;
+  }
+
+  [data-scope='meter'][data-part='band'] {
+    border: 1px solid CanvasText;
+    background-color: Canvas;
+  }
+
+  [data-scope='meter'][data-part='band'][data-state='optimal'] {
+    background-image: repeating-linear-gradient(90deg, CanvasText 0 2px, Canvas 2px 6px);
+  }
+
+  [data-scope='meter'][data-part='band'][data-state='suboptimal'] {
+    background-image: repeating-linear-gradient(45deg, CanvasText 0 2px, Canvas 2px 7px);
+  }
+
+  [data-scope='meter'][data-part='band'][data-state='critical'] {
+    background-image:
+      repeating-linear-gradient(45deg, CanvasText 0 2px, transparent 2px 7px),
+      repeating-linear-gradient(-45deg, CanvasText 0 2px, Canvas 2px 7px);
+  }
+
+  [data-scope='meter'][data-part='range'],
+  [data-scope='meter'][data-part='marker'] {
+    background: CanvasText;
+  }
+
+  [data-scope='sparkline'][data-part='line'],
+  [data-scope='sparkline'][data-part='dot'] {
+    stroke: CanvasText;
+  }
+
+  [data-scope='sparkline'][data-part='dot'][data-tone] {
+    fill: CanvasText;
+  }
+
+  [data-scope='sparkline'][data-part='dot'][data-tone='above'] {
+    r: 0.1875rem;
+    stroke: CanvasText;
+    stroke-width: 1;
+  }
+
+  [data-scope='sparkline'][data-part='dot'][data-tone='below'] {
+    r: 0.25rem;
+    stroke: Canvas;
+    stroke-width: 2;
+    stroke-dasharray: 1 1;
+  }
+
+  [data-scope='progress'][data-part='track'],
+  [data-scope='meter'][data-part='track'] {
+    border: 1px solid CanvasText;
+  }
+
+  [data-scope='table'][data-part='row'][data-selected],
+  [data-scope='table'][data-part='row'][aria-selected='true'] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  [data-scope='data-table'][data-part='error-state'] {
+    border-color: Mark;
+    color: Mark;
   }
 }

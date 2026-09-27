@@ -10,6 +10,7 @@ import {
   type TableSort,
   type TableColumn,
   type TableSelectionMode,
+  type TableDensity,
   type TableParts,
 } from '../components/table.js'
 import {
@@ -361,6 +362,8 @@ export interface DataTableParts extends DataTableStatusParts {
 export interface ConnectOptions {
   /** Element id base for the table (`grid`) root. */
   id: string
+  /** Presentation density forwarded to the composed table root. */
+  density?: TableDensity
   /** Accessible label for the pagination nav. */
   paginationLabel?: string
 }
@@ -403,7 +406,7 @@ export function connect(
           send({ type: 'tableKey', msg: m })
       }
     },
-    { id: opts.id },
+    { id: opts.id, density: opts.density },
   )
 
   const paginationParts = paginationConnect(
@@ -433,7 +436,7 @@ export function connect(
           return
       }
     },
-    { label: opts.paginationLabel },
+    { id: `${opts.id}:pagination`, label: opts.paginationLabel },
   )
 
   return {

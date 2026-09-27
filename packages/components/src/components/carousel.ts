@@ -1,7 +1,15 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Mountable, Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { carouselLocale } from '../locale/carousel.js'
-import { flipArrow } from '../utils/direction.js'
+import {
+  directionSyncMount,
+  eventDirection,
+  flipArrow,
+  initDirection,
+  setDirection,
+  syncDomDirection,
+  type DirectionSource,
+} from '../utils/direction.js'
 import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
 
 /**
@@ -56,7 +64,12 @@ export interface CarouselState {
   loop: boolean
   autoplay: boolean
   interval: number
+  /** Explicit application pause, independent from hover/focus interaction. */
   paused: boolean
+  /** Pointer is currently over the carousel root. */
+  hovered: boolean
+  /** DOM focus is currently contained by the carousel root. */
+  focusWithin: boolean
   /** Direction of the last transition — useful for entry animations. */
   direction: 'forward' | 'backward'
   /**
@@ -68,6 +81,8 @@ export interface CarouselState {
   dragging: CarouselDrag | null
   /** Reading direction. Under 'rtl' indicator horizontal arrow keys are flipped. */
   dir: 'ltr' | 'rtl'
+  /** Whether direction follows the mounted DOM or explicit init/setDir configuration. */
+  dirSource: DirectionSource
 }
 
 export type CarouselMsg =
@@ -83,6 +98,10 @@ export type CarouselMsg =
   | { type: 'pause' }
   /** @intent("Resume autoplay after a pause") */
   | { type: 'resume' }
+  /** @humanOnly */
+  | { type: 'setHovered'; hovered: boolean }
+  /** @humanOnly */
+  | { type: 'setFocusWithin'; focusWithin: boolean }
   /** @intent("Turn autoplay on or off") */
   | { type: 'setAutoplay'; autoplay: boolean }
   /**
@@ -106,6 +125,8 @@ export type CarouselMsg =
   | { type: 'dragEnd' }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: 'ltr' | 'rtl' }
 
 /**
  * Effects emitted by the carousel machine. Running the timer is the consumer's
@@ -132,6 +153,7 @@ export interface CarouselInit {
 }
 
 export function init(opts: CarouselInit = {}): CarouselState {
+  const direction = initDirection(opts.dir)
   return {
     current: finiteOrDefault(opts.current, 0),
     // `count` is the bound every index is clamped into, `interval` and
@@ -143,10 +165,12 @@ export function init(opts: CarouselInit = {}): CarouselState {
     autoplay: opts.autoplay ?? false,
     interval: finiteBound(opts.interval) ?? 5000,
     paused: false,
+    hovered: false,
+    focusWithin: false,
     direction: 'forward',
     swipeThreshold: finiteBound(opts.swipeThreshold) ?? 50,
     dragging: null,
-    dir: opts.dir ?? 'ltr',
+    ...direction,
   }
 }
 
@@ -202,6 +226,12 @@ function reduce(state: CarouselState, msg: CarouselMsg): CarouselState {
       return { ...state, paused: true }
     case 'resume':
       return { ...state, paused: false }
+    case 'setHovered':
+      return state.hovered === msg.hovered ? state : { ...state, hovered: msg.hovered }
+    case 'setFocusWithin':
+      return state.focusWithin === msg.focusWithin
+        ? state
+        : { ...state, focusWithin: msg.focusWithin }
     case 'setAutoplay':
       return { ...state, autoplay: msg.autoplay }
     case 'dragStart':
@@ -229,7 +259,9 @@ function reduce(state: CarouselState, msg: CarouselMsg): CarouselState {
       return { ...state, dragging: null }
     }
     case 'setDir':
-      return { ...state, dir: msg.dir }
+      return setDirection(state, msg.dir)
+    case 'syncDomDir':
+      return syncDomDirection(state, msg.dir)
   }
 }
 
@@ -239,7 +271,14 @@ function reduce(state: CarouselState, msg: CarouselMsg): CarouselState {
  * out from under the user's finger — the same condition `data-paused` exposes.
  */
 export function isAutoplayRunning(state: CarouselState): boolean {
-  return state.autoplay && !state.paused && state.dragging === null && state.count > 1
+  return (
+    state.autoplay &&
+    !state.paused &&
+    !state.hovered &&
+    !state.focusWithin &&
+    state.dragging === null &&
+    state.count > 1
+  )
 }
 
 /**
@@ -308,6 +347,8 @@ export interface CarouselSlideParts {
   indicator: {
     type: 'button'
     role: 'tab'
+    /** APG roving tab stop: only the selected indicator participates in Tab. */
+    tabindex: Signal<0 | -1>
     'aria-label': string
     'aria-selected': Signal<boolean>
     'aria-controls': string
@@ -322,6 +363,7 @@ export interface CarouselSlideParts {
 
 export interface CarouselParts {
   root: {
+    id: string
     role: 'region'
     'aria-roledescription': 'carousel'
     'aria-label': string
@@ -330,8 +372,8 @@ export interface CarouselParts {
     'data-paused': Signal<'' | undefined>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
-    onFocus: (e: FocusEvent) => void
-    onBlur: (e: FocusEvent) => void
+    onFocusIn: (e: FocusEvent) => void
+    onFocusOut: (e: FocusEvent) => void
   }
   viewport: {
     'data-scope': 'carousel'
@@ -344,10 +386,17 @@ export interface CarouselParts {
     'data-dragging': Signal<'' | undefined>
     /** Live track offset (px) to follow the finger: `translateX(var)`. */
     'data-drag-offset': Signal<string | undefined>
+    /** Physical pointer delta consumed by either skin's track transform. */
+    'style.--carousel-drag-offset': Signal<string | undefined>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
     onPointerCancel: (e: PointerEvent) => void
+  }
+  /** Place all slides directly inside this transform-bearing track. */
+  track: {
+    'data-scope': 'carousel'
+    'data-part': 'track'
   }
   indicatorGroup: {
     role: 'tablist'
@@ -372,6 +421,8 @@ export interface CarouselParts {
     onClick: (e: MouseEvent) => void
   }
   slide: (index: number) => CarouselSlideParts
+  /** Place once anywhere in the same build to keep automatic direction live. */
+  directionSync: Mountable
 }
 
 export interface ConnectOptions {
@@ -396,9 +447,40 @@ export function connect(
   const prevLabel = opts.prevLabel ?? locale.prev
   const slideLabelFn = opts.slideLabel ?? locale.slide
   const slideId = (i: number): string => `${opts.id}:slide:${i}`
+  /**
+   * APG's automatic-activation tab model moves both selection and real DOM
+   * focus. The reducer owns selection; this connector owns the DOM half and
+   * addresses another bare indicator through the semantic part/index attrs it
+   * already publishes. No renderer-specific wrapper or child is required.
+   *
+   * The search is scoped STRICTLY to this carousel's own indicator-group/root
+   * ancestor and never falls further out. An indicator carries only
+   * `data-scope`/`data-part`/`data-index` — nothing names WHICH carousel
+   * instance it belongs to — so a document-wide (or `origin`-relative bare
+   * element) fallback can match a DIFFERENT carousel's indicator sharing the
+   * same index. That is reachable in practice: a skin that renders its dot
+   * navigation without spreading `parts.indicatorGroup` (its own container,
+   * with no `data-part` at all) removes the one ancestor this search relies
+   * on, and two such carousels on the same page would steal keyboard focus
+   * into each other. If neither ancestor is found, this is a safe no-op — the
+   * reducer's `send` above has already moved selection; only the imperative
+   * "also move real DOM focus" convenience is skipped.
+   */
+  const focusIndicator = (origin: Element | null, index: number): void => {
+    if (origin === null) return
+    const root =
+      origin.closest('[data-scope="carousel"][data-part="indicator-group"]') ??
+      origin.closest('[data-scope="carousel"][data-part="root"]')
+    if (root === null) return
+    const target = root.querySelector(
+      `[data-scope="carousel"][data-part="indicator"][data-index="${index}"]`,
+    )
+    if (target instanceof HTMLElement) target.focus()
+  }
 
   return {
     root: {
+      id: opts.id,
       role: 'region',
       'aria-roledescription': 'carousel',
       'aria-label': label,
@@ -406,17 +488,36 @@ export function connect(
       'data-part': 'root',
       // Autoplay is suppressed both on explicit pause AND while a swipe is in
       // flight, so the slide doesn't advance out from under the user's finger.
-      'data-paused': state.map((s) => (s.paused || s.dragging !== null ? '' : undefined)),
-      onPointerEnter: tagSend(send, ['pause'], () => send({ type: 'pause' })),
-      onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume' })),
-      onFocus: tagSend(send, ['pause'], () => send({ type: 'pause' })),
-      onBlur: tagSend(send, ['resume'], () => send({ type: 'resume' })),
+      'data-paused': state.map((s) =>
+        s.paused || s.hovered || s.focusWithin || s.dragging !== null ? '' : undefined,
+      ),
+      onPointerEnter: tagSend(send, ['setHovered'], () =>
+        send({ type: 'setHovered', hovered: true }),
+      ),
+      onPointerLeave: tagSend(send, ['setHovered'], () =>
+        send({ type: 'setHovered', hovered: false }),
+      ),
+      onFocusIn: tagSend(send, ['setFocusWithin'], () =>
+        send({ type: 'setFocusWithin', focusWithin: true }),
+      ),
+      onFocusOut: tagSend(send, ['setFocusWithin'], (e) => {
+        const root = e.currentTarget
+        const next = e.relatedTarget
+        if (root instanceof Node && next instanceof Node && root.contains(next)) return
+        send({ type: 'setFocusWithin', focusWithin: false })
+      }),
     },
     viewport: {
       'data-scope': 'carousel',
       'data-part': 'viewport',
       'data-dragging': state.map((s) => (s.dragging !== null ? '' : undefined)),
       'data-drag-offset': state.map((s) =>
+        s.dragging !== null ? `${s.dragging.deltaX}px` : undefined,
+      ),
+      // `deltaX` is deliberately physical in both directions: the content
+      // follows the pointer itself. RTL flips horizontal keyboard arrows; a
+      // pointer delta and the swipe threshold remain physical screen motion.
+      'style.--carousel-drag-offset': state.map((s) =>
         s.dragging !== null ? `${s.dragging.deltaX}px` : undefined,
       ),
       onPointerDown: tagSend(send, ['dragStart'], (e) => {
@@ -446,6 +547,10 @@ export function connect(
         if (state.peek().dragging === null) return
         send({ type: 'dragEnd' })
       }),
+    },
+    track: {
+      'data-scope': 'carousel',
+      'data-part': 'track',
     },
     indicatorGroup: {
       role: 'tablist',
@@ -484,6 +589,7 @@ export function connect(
       indicator: {
         type: 'button',
         role: 'tab',
+        tabindex: state.map((s): 0 | -1 => (s.current === index ? 0 : -1)),
         'aria-label': locale.goToSlide(index),
         'aria-selected': state.map((s) => s.current === index),
         'aria-controls': slideId(index),
@@ -499,32 +605,34 @@ export function connect(
         onKeyDown: tagSend(send, ['goTo'], (e: KeyboardEvent) => {
           const s = state.peek()
           if (s.count === 0) return
-          const key = flipArrow(e.key, s.dir)
+          const key = flipArrow(e.key, eventDirection(s, e.currentTarget as Element | null))
+          const move = (targetIndex: number): void => {
+            e.preventDefault()
+            send({ type: 'goTo', index: targetIndex })
+            focusIndicator(e.currentTarget as Element | null, targetIndex)
+          }
           switch (key) {
             case 'ArrowRight': {
-              e.preventDefault()
-              send({ type: 'goTo', index: clampIndex(s, index + 1) })
+              move(clampIndex(s, index + 1))
               return
             }
             case 'ArrowLeft': {
-              e.preventDefault()
-              send({ type: 'goTo', index: clampIndex(s, index - 1) })
+              move(clampIndex(s, index - 1))
               return
             }
             case 'Home': {
-              e.preventDefault()
-              send({ type: 'goTo', index: 0 })
+              move(0)
               return
             }
             case 'End': {
-              e.preventDefault()
-              send({ type: 'goTo', index: s.count - 1 })
+              move(s.count - 1)
               return
             }
           }
         }),
       },
     }),
+    directionSync: directionSyncMount(opts.id, (dir) => send({ type: 'syncDomDir', dir })),
   }
 }
 

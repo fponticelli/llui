@@ -1,6 +1,7 @@
 import {
   div,
   button,
+  nav,
   span,
   h3,
   img,
@@ -24,7 +25,7 @@ import {
   svgDesc,
   svgTitle,
 } from '@llui/dom'
-import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import type { Send, Signal, Reactive, Mountable, Renderable } from '@llui/dom'
 import { tabs } from '@llui/components/tabs'
 import { accordion } from '@llui/components/accordion'
 import { collapsible } from '@llui/components/collapsible'
@@ -35,6 +36,7 @@ import { avatar } from '@llui/components/avatar'
 import { treeView } from '@llui/components/tree-view'
 import { listbox } from '@llui/components/listbox'
 import { table } from '@llui/components/table'
+import type { TableState } from '@llui/components/table'
 import { sortable } from '@llui/components/sortable'
 import { sparkline } from '@llui/components/sparkline'
 import type {
@@ -77,6 +79,18 @@ const tableColumns = [
   { id: 'role', sortable: true },
   { id: 'status', sortable: false },
 ]
+
+const carouselChevron = (direction: 'previous' | 'next'): Mountable =>
+  svg({ viewBox: '0 0 24 24', width: '16', height: '16', 'aria-hidden': 'true' }, [
+    path({
+      d: direction === 'previous' ? 'm15 18-6-6 6-6' : 'm9 18 6-6-6-6',
+      fill: 'none',
+      stroke: 'currentColor',
+      'stroke-width': '2',
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+    }),
+  ])
 
 // ── Sortable list initial order. The consumer owns the array; the machine
 // only tracks the drag. We reorder `order` on `drop`. ────────────────────
@@ -182,8 +196,9 @@ export const init = (): [State, Effect[]] => [
       items: ['what', 'why', 'how'],
       value: ['what'],
       collapsible: true,
+      animated: true,
     }),
-    collapsible: collapsible.init({ open: false }),
+    collapsible: collapsible.init({ open: false, animated: true }),
     pagination: pagination.init({ total: 100, pageSize: 10, page: 3 }),
     steps: steps.init({ steps: ['Account', 'Profile', 'Review'], current: 0, linear: true }),
     carousel: carousel.init({ count: 4, current: 0, loop: true }),
@@ -231,8 +246,30 @@ export const init = (): [State, Effect[]] => [
   ],
 ]
 
+/**
+ * `table.ts` tracks only sort STATE, by design — its own doc says the
+ * consumer "performs the actual data sort ... by feeding pre-sorted `rows`
+ * back in." Without this follow-up, `toggleSort` sets `aria-sort` on the
+ * header while every row stays in its original DOM position.
+ */
+function resolveTableSort(state: TableState): TableState {
+  const sort = state.sort
+  const sortedIds =
+    sort === null
+      ? tableRows.map((r) => r.id)
+      : [...tableRows]
+          .sort((a, b) => {
+            const key = sort.columnId as keyof Person
+            const cmp = String(a[key]).localeCompare(String(b[key]))
+            return sort.direction === 'asc' ? cmp : -cmp
+          })
+          .map((r) => r.id)
+  return table.update(state, { type: 'setRows', rows: sortedIds })[0]
+}
+
 // Custom glue: handle the sortable `drop` (reorder the consumer-owned array),
-// the `reorder` message, then fall through to the module composition.
+// the `reorder` message, the table's sort → resort follow-up, then fall
+// through to the generic module composition.
 const moduleUpdate = composeModules<State, Msg, Effect>(children)
 
 function sectionUpdate(state: State, msg: Msg): [State, Effect[]] | null {
@@ -244,6 +281,10 @@ function sectionUpdate(state: State, msg: Msg): [State, Effect[]] | null {
     const reordered = d ? sortable.reorder(state.order, d.startIndex, d.currentIndex) : state.order
     const [next] = sortable.update(state.sortable, msg.msg)
     return [{ ...state, sortable: next, order: reordered }, []]
+  }
+  if (msg.type === 'table' && (msg.msg.type === 'toggleSort' || msg.msg.type === 'setSort')) {
+    const [next] = table.update(state.table, msg.msg)
+    return [{ ...state, table: resolveTableSort(next) }, []]
   }
   return null
 }
@@ -322,7 +363,7 @@ function sparklineView(
 
     div({ ...sp.tooltip }, [
       text(sp.activeDot.map((d) => (d === null ? '' : String(d.value)))),
-      span({ class: 'ml-1 text-muted-foreground' }, [
+      span({ class: 'ms-1 text-muted-foreground' }, [
         text(sp.activeDot.map((d) => (d === null ? '' : sparkline.isoDay(d.at)))),
       ]),
     ]),
@@ -361,7 +402,13 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       id: 'coll-demo',
     },
   )
-  const pg = pagination.connect(state.at('pagination'), (m) => send({ type: 'pagination', msg: m }))
+  const pg = pagination.connect(
+    state.at('pagination'),
+    (m) => send({ type: 'pagination', msg: m }),
+    {
+      id: 'pagination-demo',
+    },
+  )
   const st = steps.connect(state.at('steps'), (m) => send({ type: 'steps', msg: m }), {
     label: 'Progress',
   })
@@ -396,7 +443,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           span([text(title)]),
           span(
             {
-              class: 'ml-2 transition-transform',
+              class: 'ms-2 transition-transform',
               'data-state': state
                 .at('accordion')
                 .map((a) => (a.value.includes(v) ? 'open' : 'closed')),
@@ -475,19 +522,19 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         span([text(label)]),
       ]),
       div(
-        { class: 'pl-4', hidden: state.at('treeView').map((tvs) => !tvs.expanded.includes(id)) },
+        { class: 'ps-4', hidden: state.at('treeView').map((tvs) => !tvs.expanded.includes(id)) },
         treeChildren,
       ),
     ])
   }
   const treeLeaf = (id: string, label: string, depth: number): Mountable => {
     const p = tv.item(id, depth, false)
-    return div({ ...p.item, class: 'pl-5' }, [span([text(label)])])
+    return div({ ...p.item, class: 'ps-5' }, [span([text(label)])])
   }
 
-  // ── Table (static data grid: sortable headers + multiple selection) ────
+  // ── Table (live sortable grid: sort actually reorders rows + multiple selection) ────
   const sortGlyph = (colId: string): Mountable =>
-    span({ class: 'ml-1 text-xs text-muted-foreground' }, [
+    span({ class: 'ms-1 text-xs text-muted-foreground' }, [
       text(
         state
           .at('table.sort')
@@ -495,40 +542,67 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       ),
     ])
 
+  // Both glyphs are rendered as ONE reactive text node, driven by the
+  // part's own `data-state` Signal — never a hardcoded "✓". The baseline
+  // stylesheet's `[data-state=checked|indeterminate]` rule only toggles
+  // COLOR (transparent → visible); it does not pick between glyphs, so the
+  // view is what has to answer "checked (✓), indeterminate (−), or neither".
+  const checkboxGlyph = (dataState: Signal<'checked' | 'unchecked' | 'indeterminate'>): Mountable =>
+    text(dataState.map((s) => (s === 'checked' ? '✓' : s === 'indeterminate' ? '−' : '')))
+
   const tableHeaderCell = (colId: string, label: string, sortableCol: boolean): Mountable => {
     const h = tbl.columnHeader(colId)
     return th(
       {
         ...h,
         class: sortableCol
-          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-left text-sm font-semibold hover:bg-accent'
-          : 'border-b border-border px-3 py-2 text-left text-sm font-semibold',
+          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-start text-sm font-semibold hover:bg-accent'
+          : 'border-b border-border px-3 py-2 text-start text-sm font-semibold',
       },
-      [text(label), sortableCol ? sortGlyph(colId) : span([])],
+      [
+        ...(colId === 'name'
+          ? (() => {
+              const selectAll = tbl.selectAllCheckbox(colId)
+              return [
+                span({ ...selectAll, class: 'me-2 inline-block' }, [
+                  checkboxGlyph(selectAll['data-state']),
+                ]),
+              ]
+            })()
+          : []),
+        text(label),
+        sortableCol ? sortGlyph(colId) : span([]),
+      ],
     )
   }
 
-  const tableBodyRow = (person: Person, index: number): Mountable => {
+  // `index` is `Reactive<number>` — a live Signal handle when the row comes
+  // from a keyed `each` (its only caller below), never `.peek()`'d. A keyed
+  // row is REUSED (moved, not rebuilt) on reorder, so freezing the index at
+  // build time would leave aria-rowindex/data-row-index and the row's own
+  // toggleRow/selectRange dispatch stuck at its ORIGINAL position forever.
+  const tableBodyRow = (person: Person, index: Reactive<number>): Mountable => {
     const r = tbl.row(person.id, index)
+    const rowCheckbox = tbl.rowCheckbox(person.id, index)
     return tr(
       {
         ...r,
         class: 'cursor-pointer border-b border-border hover:bg-accent',
       },
       [
-        td({ class: 'px-3 py-2 text-sm' }, [
+        td({ ...tbl.cell(index, 0), class: 'px-3 py-2 text-sm' }, [
           span(
             {
-              ...tbl.rowCheckbox(person.id, index),
+              ...rowCheckbox,
               class:
-                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
+                'me-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
             },
-            [text(state.at('table.selection').map((sel) => (sel.includes(person.id) ? '✓' : '')))],
+            [checkboxGlyph(rowCheckbox['data-state'])],
           ),
           text(person.name),
         ]),
-        td({ class: 'px-3 py-2 text-sm' }, [text(person.role)]),
-        td({ class: 'px-3 py-2 text-sm' }, [text(person.status)]),
+        td({ ...tbl.cell(index, 1), class: 'px-3 py-2 text-sm' }, [text(person.role)]),
+        td({ ...tbl.cell(index, 2), class: 'px-3 py-2 text-sm' }, [text(person.status)]),
       ],
     )
   }
@@ -634,13 +708,23 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       {
         ...h,
         class: sortableCol
-          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-left text-sm font-semibold hover:bg-accent'
-          : 'border-b border-border px-3 py-2 text-left text-sm font-semibold',
+          ? 'cursor-pointer select-none border-b border-border px-3 py-2 text-start text-sm font-semibold hover:bg-accent'
+          : 'border-b border-border px-3 py-2 text-start text-sm font-semibold',
       },
       [
+        ...(colId === 'name'
+          ? (() => {
+              const selectAll = dt.table.selectAllCheckbox(colId)
+              return [
+                span({ ...selectAll, class: 'me-2 inline-block' }, [
+                  checkboxGlyph(selectAll['data-state']),
+                ]),
+              ]
+            })()
+          : []),
         text(label),
         sortableCol
-          ? span({ class: 'ml-1 text-xs text-muted-foreground' }, [
+          ? span({ class: 'ms-1 text-xs text-muted-foreground' }, [
               text(
                 state
                   .at('dataTable.table.sort')
@@ -654,37 +738,53 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     )
   }
 
+  // `index` stays the row's live Signal handle all the way through — never
+  // `.peek()`'d — for the same reason `tableBodyRow` above does: a keyed
+  // `each` REUSES this row on reorder, so freezing the index at build time
+  // would leave aria-rowindex/data-row-index and the row's own
+  // toggleRow/selectRange dispatch stuck at its ORIGINAL position forever.
+  // Only the row's IDENTITY (`rowId`) is a legitimate one-shot `.peek()`: a
+  // keyed row's id never changes for the life of that row instance.
   const dtBodyRow = (id: Signal<string>, index: Signal<number>): Mountable[] => {
     const rowId = id.peek()
-    const idx = index.peek()
     const person = dtById.get(rowId)
-    const r = dt.table.row(rowId, idx)
+    const r = dt.table.row(rowId, index)
+    const rowCheckbox = dt.table.rowCheckbox(rowId, index)
     return [
       tr({ ...r, class: 'cursor-pointer border-b border-border hover:bg-accent' }, [
-        td({ class: 'px-3 py-2 text-sm' }, [
+        td({ ...dt.table.cell(index, 0), class: 'px-3 py-2 text-sm' }, [
           span(
             {
-              ...dt.table.rowCheckbox(rowId, idx),
+              ...rowCheckbox,
               class:
-                'mr-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
+                'me-2 inline-block h-4 w-4 cursor-pointer rounded border border-border text-center align-middle text-xs leading-4',
             },
-            [
-              text(
-                state
-                  .at('dataTable.table.selection')
-                  .map((sel) => (sel.includes(rowId) ? '✓' : '')),
-              ),
-            ],
+            [checkboxGlyph(rowCheckbox['data-state'])],
           ),
           text(person ? person.name : rowId),
         ]),
-        td({ class: 'px-3 py-2 text-sm' }, [text(person ? person.role : '')]),
-        td({ class: 'px-3 py-2 text-sm' }, [text(person ? person.status : '')]),
+        td({ ...dt.table.cell(index, 1), class: 'px-3 py-2 text-sm' }, [
+          text(person ? person.role : ''),
+        ]),
+        td({ ...dt.table.cell(index, 2), class: 'px-3 py-2 text-sm' }, [
+          text(person ? person.status : ''),
+        ]),
       ]),
     ]
   }
 
   return [
+    ta.directionSync,
+    pg.directionSync,
+    dt.pagination.directionSync,
+    cr.directionSync,
+    // A RETAINED close/toggle (one carrying `retain: true`, e.g. via
+    // `parts.close(...)`) on a no-exit-motion skin never settles without
+    // these placed (#264 review item 1) — discarded onMount()-backed
+    // Mountables are inert. A raw programmatic close with no `retain`
+    // closes instantly regardless and needs nothing here.
+    ac.exitCompletion,
+    cl.exitCompletion,
     // Placed so the sortable pointer-wiring onMount registers (discarded
     // onMount() is inert).
     sortableMount,
@@ -733,11 +833,15 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       ]),
       card('Carousel', [
         div({ ...cr.root }, [
-          div({ ...cr.viewport }, renderSlides()),
+          div({ ...cr.viewport }, [div({ ...cr.track }, renderSlides())]),
           div({ class: 'flex items-center justify-center gap-2' }, [
-            button({ ...cr.prevTrigger, class: 'btn btn-secondary btn-sm' }, [text('‹')]),
+            button({ ...cr.prevTrigger, class: 'btn btn-secondary btn-sm' }, [
+              carouselChevron('previous'),
+            ]),
             div({ ...cr.indicatorGroup }, renderIndicators()),
-            button({ ...cr.nextTrigger, class: 'btn btn-secondary btn-sm' }, [text('›')]),
+            button({ ...cr.nextTrigger, class: 'btn btn-secondary btn-sm' }, [
+              carouselChevron('next'),
+            ]),
           ]),
         ]),
       ]),
@@ -830,7 +934,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     ]),
     sectionGroup('Tables & sorting', [
       card('Table (data grid)', [
-        div({ class: 'overflow-x-auto' }, [
+        div({ ...tbl.viewport }, [
           tableEl({ ...tbl.root, class: 'w-full border-collapse' }, [
             thead([
               tr([
@@ -839,7 +943,20 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 tableHeaderCell('status', 'Status', false),
               ]),
             ]),
-            tbody(tableRows.map((person, i) => tableBodyRow(person, i))),
+            tbody([
+              // Keyed over the machine's OWN row-id order (`table.rows`) —
+              // the authoritative display order after sort — rather than a
+              // fixed `tableRows.map`, which is what let `aria-sort` change
+              // while every row stayed exactly where it started.
+              each(state.at('table.rows'), {
+                key: (id) => id,
+                render: (idSignal, index) => {
+                  const id = idSignal.peek()
+                  const person = tableRows.find((candidate) => candidate.id === id)
+                  return person === undefined ? [] : [tableBodyRow(person, index)]
+                },
+              }),
+            ]),
           ]),
         ]),
         div({ class: 'mt-3 flex items-center gap-3 text-sm text-muted-foreground' }, [
@@ -876,7 +993,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ]),
       ]),
       card('Data Table (paged · sortable · selectable)', [
-        div({ class: 'overflow-x-auto' }, [
+        div({ ...dt.table.viewport }, [
           tableEl({ ...dt.table.root, class: 'w-full border-collapse' }, [
             thead([
               tr([
@@ -898,7 +1015,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ]),
         div({ ...dt.emptyState, class: 'mt-2 text-sm text-muted-foreground' }, [text('No rows.')]),
         div({ ...dt.errorState, class: 'mt-2 text-sm text-red-600' }, [text('Failed to load.')]),
-        div({ class: 'mt-3 flex items-center gap-2' }, [
+        // The public `pagination.root` part — a real navigation landmark
+        // (`role="navigation"`/`aria-label`) — rather than a bare `div`, so
+        // this pagination is announced and addressable the same way the
+        // standalone Pagination demo's is (#264).
+        nav({ ...dt.pagination.root, class: 'mt-3 flex items-center gap-2' }, [
           button(
             {
               ...dt.pagination.prevTrigger,
@@ -923,7 +1044,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             },
             [text('Next ›')],
           ),
-          span({ class: 'ml-3 text-sm text-muted-foreground' }, [
+          span({ class: 'ms-3 text-sm text-muted-foreground' }, [
             text('Selected: '),
             text(state.at('dataTable.table.selection').map((sel) => String(sel.length))),
           ]),

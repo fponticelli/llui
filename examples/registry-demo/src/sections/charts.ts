@@ -1,5 +1,6 @@
 import { constant, each, noSend, text, type Mountable, type Send, type Signal } from '@llui/dom'
 import * as chartC from '@llui/components/chart'
+import { chartForcedColorPatterns } from '@llui/components/chart'
 import * as sparklineC from '@llui/components/sparkline'
 import {
   ChartAxisLabel,
@@ -279,6 +280,9 @@ function plot(
       // FIRST children of the <svg>: this is what `aria-labelledby` points at.
       ChartTitle({ ...parts.title }, [text(state.at('label'))]),
       ChartDesc({ ...parts.desc }, [text(state.at('description'))]),
+      // Static, stateless <defs> — the forced-colors fill patterns bar/area
+      // marks reference by id (see ChartMark's own comment).
+      chartForcedColorPatterns(id),
 
       // Grid UNDER the marks, labels OVER them — see the label layer at the
       // bottom. In polar the value axis runs straight through the plot, so a
@@ -411,7 +415,10 @@ function plot(
       opts.legend === null
         ? Object.keys(opts.config).map((key) =>
             ChartLegendItem({ ...parts.legendItem(key) }, [
-              ChartLegendSwatch({ style: `--mark-color:var(--color-${key})` }),
+              ChartLegendSwatch({
+                ...parts.legendSwatch(key),
+                style: `--mark-color:var(--color-${key})`,
+              }),
               text(opts.config[key]!.label),
             ]),
           )

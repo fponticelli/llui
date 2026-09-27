@@ -1,7 +1,16 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Mountable, Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { paginationLocale } from '../locale/pagination.js'
-import { flipArrow, type TextDirection } from '../utils/direction.js'
+import {
+  directionSyncMount,
+  eventDirection,
+  flipArrow,
+  initDirection,
+  setDirection,
+  syncDomDirection,
+  type DirectionSource,
+  type TextDirection,
+} from '../utils/direction.js'
 import {
   allFiniteNumbers,
   finiteBound,
@@ -23,6 +32,7 @@ export interface PaginationState {
   boundaries: number
   disabled: boolean
   dir: TextDirection
+  dirSource: DirectionSource
 }
 
 export type PaginationMsg =
@@ -42,6 +52,8 @@ export type PaginationMsg =
   | { type: 'setTotal'; total: number }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
 
 export interface PaginationInit {
   page?: number
@@ -54,6 +66,7 @@ export interface PaginationInit {
 }
 
 export function init(opts: PaginationInit = {}): PaginationState {
+  const direction = initDirection(opts.dir)
   return {
     page: finiteOrDefault(opts.page, 1),
     // `pageSize`/`total` are the bounds every page number is computed against
@@ -65,7 +78,7 @@ export function init(opts: PaginationInit = {}): PaginationState {
     siblings: finiteBound(opts.siblings) ?? 1,
     boundaries: finiteBound(opts.boundaries) ?? 1,
     disabled: opts.disabled ?? false,
-    dir: opts.dir ?? 'ltr',
+    ...direction,
   }
 }
 
@@ -86,8 +99,9 @@ function clampPage(page: number, total: number): number {
 }
 
 export function update(state: PaginationState, msg: PaginationMsg): [PaginationState, never[]] {
-  // `setDir` is a config change, not navigation — apply it even when disabled.
-  if (msg.type === 'setDir') return [{ ...state, dir: msg.dir }, []]
+  // Direction configuration/sync are not navigation — apply even when disabled.
+  if (msg.type === 'setDir') return [setDirection(state, msg.dir), []]
+  if (msg.type === 'syncDomDir') return [syncDomDirection(state, msg.dir), []]
   if (state.disabled) return [state, []]
   const pages = totalPages(state)
   switch (msg.type) {
@@ -231,6 +245,7 @@ export function onControlKeyDown(e: KeyboardEvent, dir?: TextDirection): void {
 
 export interface PaginationParts {
   root: {
+    id: string
     role: 'navigation'
     'aria-label': string
     'data-scope': 'pagination'
@@ -277,9 +292,12 @@ export interface PaginationParts {
     'data-part': 'ellipsis'
     'data-position': 'start' | 'end'
   }
+  /** Place once anywhere in the same build to keep automatic direction live. */
+  directionSync: Mountable
 }
 
 export interface ConnectOptions {
+  id: string
   label?: string
   prevLabel?: string
   nextLabel?: string
@@ -289,7 +307,7 @@ export interface ConnectOptions {
 export function connect(
   state: Signal<PaginationState>,
   send: Send<PaginationMsg>,
-  opts: ConnectOptions = {},
+  opts: ConnectOptions,
 ): PaginationParts {
   const locale = paginationLocale()
   const label = opts.label ?? locale.label
@@ -297,12 +315,15 @@ export function connect(
   const nextLabel = opts.nextLabel ?? locale.next
   const pageLabel = opts.pageLabel ?? locale.page
 
-  // Route roving focus through the direction stored in State (the source of
-  // truth `flipArrow` consumes), read one-shot at keydown time.
-  const onKeyDown = (e: KeyboardEvent): void => onControlKeyDown(e, state.peek().dir)
+  const onKeyDown = (e: KeyboardEvent): void => {
+    const current = state.peek()
+    const origin = e.currentTarget instanceof Element ? e.currentTarget : null
+    onControlKeyDown(e, eventDirection(current, origin))
+  }
 
   return {
     root: {
+      id: opts.id,
       role: 'navigation',
       'aria-label': label,
       'data-scope': 'pagination',
@@ -354,6 +375,7 @@ export function connect(
       'data-part': 'ellipsis',
       'data-position': position,
     }),
+    directionSync: directionSyncMount(opts.id, (dir) => send({ type: 'syncDomDir', dir })),
   }
 }
 

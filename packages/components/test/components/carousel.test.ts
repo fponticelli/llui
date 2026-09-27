@@ -13,12 +13,30 @@ import { rootSignal, signalOf, read } from '../_signal'
 
 describe('carousel reducer', () => {
   it('initializes at index 0', () => {
-    expect(init({ count: 3 })).toMatchObject({ current: 0, count: 3, loop: true, dir: 'ltr' })
+    expect(init({ count: 3 })).toMatchObject({
+      current: 0,
+      count: 3,
+      loop: true,
+      dir: 'ltr',
+      dirSource: 'dom',
+      paused: false,
+      hovered: false,
+      focusWithin: false,
+    })
+    expect(init({ count: 3, dir: 'rtl' })).toMatchObject({ dir: 'rtl', dirSource: 'explicit' })
   })
 
   it('setDir updates direction', () => {
     const [s] = update(init(), { type: 'setDir', dir: 'rtl' })
-    expect(s.dir).toBe('rtl')
+    expect(s).toMatchObject({ dir: 'rtl', dirSource: 'explicit' })
+  })
+
+  it('follows DOM direction only until public setDir becomes authoritative', () => {
+    const [observed] = update(init(), { type: 'syncDomDir', dir: 'rtl' })
+    expect(observed).toMatchObject({ dir: 'rtl', dirSource: 'dom' })
+    const [configured] = update(observed, { type: 'setDir', dir: 'ltr' })
+    expect(configured).toMatchObject({ dir: 'ltr', dirSource: 'explicit' })
+    expect(update(configured, { type: 'syncDomDir', dir: 'rtl' })[0]).toBe(configured)
   })
 
   it('next increments', () => {
@@ -62,6 +80,24 @@ describe('carousel reducer', () => {
     expect(s.paused).toBe(true)
     const [s2] = update(s, { type: 'resume' })
     expect(s2.paused).toBe(false)
+  })
+
+  it('keeps hover, focus-within, and manual pause reasons independent', () => {
+    const playing = init({ count: 3, autoplay: true })
+    const [hovered] = update(playing, { type: 'setHovered', hovered: true })
+    const [focused] = update(hovered, { type: 'setFocusWithin', focusWithin: true })
+    const [left] = update(focused, { type: 'setHovered', hovered: false })
+    expect(isAutoplayRunning(left)).toBe(false)
+    const [blurred] = update(left, { type: 'setFocusWithin', focusWithin: false })
+    expect(isAutoplayRunning(blurred)).toBe(true)
+
+    const [manual] = update(focused, { type: 'pause' })
+    const [clearedInteraction] = update(update(manual, { type: 'setHovered', hovered: false })[0], {
+      type: 'setFocusWithin',
+      focusWithin: false,
+    })
+    expect(isAutoplayRunning(clearedInteraction)).toBe(false)
+    expect(isAutoplayRunning(update(clearedInteraction, { type: 'resume' })[0])).toBe(true)
   })
 
   it('setCount clamps current if past new end', () => {
@@ -199,11 +235,11 @@ describe('navigation helpers', () => {
 describe('carousel.connect', () => {
   const p = connect(rootSignal(), vi.fn(), { id: 'c1' })
 
-  it('root pointerEnter sends pause', () => {
+  it('root pointerEnter records hover without conflating manual pause', () => {
     const send = vi.fn()
     const pc = connect(rootSignal(), send, { id: 'x' })
     pc.root.onPointerEnter(new PointerEvent('pointerenter'))
-    expect(send).toHaveBeenCalledWith({ type: 'pause' })
+    expect(send).toHaveBeenCalledWith({ type: 'setHovered', hovered: true })
   })
 
   it('nextTrigger disabled when cannot go next', () => {
@@ -224,6 +260,14 @@ describe('carousel.connect', () => {
     expect(send).toHaveBeenCalledWith({ type: 'goTo', index: 2 })
   })
 
+  it('only the selected indicator is in the tab sequence', () => {
+    const pc = connect(rootSignal(), vi.fn(), { id: 'x' })
+    const state = init({ count: 3, current: 1 })
+    expect(read(pc.slide(0).indicator.tabindex, state)).toBe(-1)
+    expect(read(pc.slide(1).indicator.tabindex, state)).toBe(0)
+    expect(read(pc.slide(2).indicator.tabindex, state)).toBe(-1)
+  })
+
   it('slide aria-controls matches id', () => {
     expect(p.slide(0).indicator['aria-controls']).toBe('c1:slide:0')
     expect(p.slide(0).slide.id).toBe('c1:slide:0')
@@ -234,6 +278,16 @@ describe('carousel.connect', () => {
       read(p.viewport['data-dragging'], { ...init(), dragging: { startX: 0, deltaX: 5 } }),
     ).toBe('')
     expect(read(p.viewport['data-dragging'], init())).toBeUndefined()
+  })
+
+  it('publishes drag geometry as a viewport custom property and an owned track part', () => {
+    const dragging = { ...init(), dragging: { startX: 10, deltaX: -36 } }
+    expect(read(p.viewport['style.--carousel-drag-offset'], dragging)).toBe('-36px')
+    expect(read(p.viewport['style.--carousel-drag-offset'], init())).toBeUndefined()
+    expect(p.track).toEqual({
+      'data-scope': 'carousel',
+      'data-part': 'track',
+    })
   })
 
   it('viewport pointerdown starts a drag', () => {
@@ -272,11 +326,36 @@ describe('carousel.connect', () => {
     expect(read(p.root['data-paused'], { ...init(), dragging: { startX: 0, deltaX: 1 } })).toBe('')
   })
 
-  it('indicator ArrowRight focuses next slide', () => {
-    const send = vi.fn()
-    const pc = connect(signalOf(init({ count: 3, current: 0 })), send, { id: 'x' })
-    pc.slide(0).indicator.onKeyDown(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+  it('indicator ArrowRight selects and moves DOM focus to the next indicator', () => {
+    let state = init({ count: 3, current: 0 })
+    const stateSignal = signalOf(state)
+    const send = vi.fn((msg) => {
+      state = update(state, msg)[0]
+    })
+    const pc = connect(stateSignal, send, { id: 'x' })
+    const group = document.createElement('div')
+    group.setAttribute('data-scope', 'carousel')
+    group.setAttribute('data-part', 'indicator-group')
+    const indicators = Array.from({ length: 3 }, (_, index) => {
+      const indicator = document.createElement('button')
+      indicator.setAttribute('data-scope', 'carousel')
+      indicator.setAttribute('data-part', 'indicator')
+      indicator.setAttribute('data-index', String(index))
+      indicator.addEventListener('keydown', pc.slide(index).indicator.onKeyDown)
+      group.append(indicator)
+      return indicator
+    })
+    document.body.append(group)
+    indicators[0]!.focus()
+
+    indicators[0]!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    )
+
     expect(send).toHaveBeenCalledWith({ type: 'goTo', index: 1 })
+    expect(state.current).toBe(1)
+    expect(document.activeElement).toBe(indicators[1])
+    group.remove()
   })
 
   it('indicator ArrowLeft focuses previous slide', () => {

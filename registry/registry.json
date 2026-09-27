@@ -195,15 +195,14 @@
           "importPath": "@llui/components/breadcrumbs"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "navigation-data",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -306,15 +305,14 @@
           "importPath": "@llui/components/chart"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "navigation-data",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -1092,15 +1090,15 @@
           "importPath": "@llui/components/marquee"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "navigation-data",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "partial",
+            "rationale": "The baseline directly owns clipping, axis layout, edge fading, and variable-driven animation; the consumer owns duplicated loop content and any presentation-specific spacing."
           },
           "registryTailwind": {
             "mode": "partial",
@@ -1204,15 +1202,14 @@
           "importPath": "@llui/components/meter"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "navigation-data",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -1997,15 +1994,14 @@
           "importPath": "@llui/components/table"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "navigation-data",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -2253,15 +2249,14 @@
           "importPath": "@llui/components/toc"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "navigation-data",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -2574,15 +2569,15 @@
           "importPath": "@llui/components/patterns/data-table"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "navigation-data",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "partial",
+            "rationale": "The baseline directly owns loading, empty, and error surfaces; the consumer composes the table, pagination, and filter products and positions the loading overlay around that surface."
           },
           "registryTailwind": {
             "mode": "partial",

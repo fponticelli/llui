@@ -407,11 +407,19 @@ describe('chart — connect', () => {
     expect(p.layer['data-part']).toBe('layer')
     expect(p.grid['data-part']).toBe('grid')
     expect(p.axisLabel['data-part']).toBe('axis-label')
-    const vertex = { seriesKey: 'desktop', index: 0, x: 5, y: 6, active: true }
+    const vertex = {
+      seriesKey: 'desktop',
+      seriesCue: 'solid' as const,
+      index: 0,
+      x: 5,
+      y: 6,
+      active: true,
+    }
     expect(p.dotProps(vertex)).toEqual({
       'data-scope': 'chart',
       'data-part': 'dot',
       'data-series': 'desktop',
+      'data-series-cue': 'solid',
       'data-active': '',
       cx: 5,
       cy: 6,
@@ -424,7 +432,14 @@ describe('chart — connect', () => {
     const props = p.markProps(mark)
     expect(props['data-mark']).toBe('bar')
     expect(props['data-series']).toBe('desktop')
+    expect(props['data-series-cue']).toBe('solid')
     expect(props['data-active']).toBe('')
     expect(props.d).toBe(mark.d)
+
+    const second = p.markProps(
+      geometry(base()).marks.find((entry) => entry.seriesKey === 'mobile')!,
+    )
+    expect(second['data-series-cue']).toBe('short-dash')
+    expect(read(p.legendItem('mobile')['data-series-cue'], base())).toBe('short-dash')
   })
 })

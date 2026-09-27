@@ -4,11 +4,10 @@ import { classPart } from '../../lib/utils'
 /**
  * Marquee — skin for `@llui/components/marquee`. No shadcn counterpart.
  *
- * The machine supplies the animation itself as an inline `style` on the
- * content, and publishes `data-axis`, `data-direction` and `data-running`. This
- * skin therefore owns only the CLIP and the edge fade: overriding the animation
- * from here would fight the inline style it cannot win against, and `-running`
- * is already reflected in the style the machine writes.
+ * The machine supplies animation variables as an inline `style` on the root
+ * and publishes `data-axis`, `data-direction` and `data-running`. This skin
+ * owns the CLIP, axis layout and edge fade; the consumer still supplies the
+ * duplicated loop content and an animation that reads those variables.
  *
  * The fade is a `mask-image`, not a pair of gradient overlays, so it works over
  * any background — an overlay has to know the surface colour, and gets it wrong
@@ -19,9 +18,9 @@ import { classPart } from '../../lib/utils'
  */
 export const Marquee = classPart(
   div,
-  'relative flex overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)] data-[axis=vertical]:flex-col',
+  'group/marquee relative flex overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_10%,black_90%,transparent)] data-[axis=vertical]:flex-col data-[axis=vertical]:[mask-image:linear-gradient(to_bottom,transparent,black_10%,black_90%,transparent)] data-[disabled]:opacity-50',
 )
 export const MarqueeContent = classPart(
   div,
-  'flex shrink-0 items-center gap-4 data-[axis=vertical]:flex-col',
+  'flex shrink-0 items-center gap-4 group-data-[axis=vertical]/marquee:flex-col',
 )

@@ -50,8 +50,8 @@ const TOOLS = ['bold', 'italic', 'underline']
 export const init = (): [State, never[]] => [
   {
     tabs: tabsC.init({ items: TABS.map((t) => t.value), value: 'account' }),
-    faq: accordionC.init({ items: FAQ.map((f) => f.value), value: ['own'] }),
-    details: collapsibleC.init({ open: false }),
+    faq: accordionC.init({ items: FAQ.map((f) => f.value), value: ['own'], animated: true }),
+    details: collapsibleC.init({ open: false, animated: true }),
     toolbar: toolbarC.init({ items: TOOLS }),
   },
   [],
@@ -87,6 +87,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   })
 
   return [
+    tabs.directionSync,
     section('Tabs, Accordion & Collapsible', 'Disclosure patterns.', [
       Tabs({ ...tabs.root }, [
         TabsList(
@@ -112,23 +113,29 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
             AccordionContent({ ...parts.content }, [text(f.a)]),
           ])
         }),
+        { exitCompletion: faq.exitCompletion },
       ),
 
-      Collapsible({ ...details.root }, [
-        // `CollapsibleTrigger` IS a <button>. Wrapping a `Button` in it nests one
-        // button inside another — invalid HTML, and the inner one swallows the
-        // click target. Borrow the button's LOOK via `buttonVariants` instead.
-        CollapsibleTrigger(
-          {
-            ...details.trigger,
-            class: `${buttonVariants({ variant: 'outline', size: 'sm' })} w-fit`,
-          },
-          [text('Toggle details')],
-        ),
-        CollapsibleContent({ ...details.content, class: 'text-muted-foreground' }, [
-          text('The content stays in the DOM and is hidden by data-[state=closed].'),
-        ]),
-      ]),
+      Collapsible(
+        { ...details.root },
+        [
+          // `CollapsibleTrigger` IS a <button>. Wrapping a `Button` in it nests
+          // one button inside another — invalid HTML, and the inner one
+          // swallows the click target. Borrow the button's LOOK via
+          // `buttonVariants` instead.
+          CollapsibleTrigger(
+            {
+              ...details.trigger,
+              class: `${buttonVariants({ variant: 'outline', size: 'sm' })} w-fit`,
+            },
+            [text('Toggle details')],
+          ),
+          CollapsibleContent({ ...details.content, class: 'text-muted-foreground' }, [
+            text('The content stays mounted and inert through its closing animation.'),
+          ]),
+        ],
+        { exitCompletion: details.exitCompletion },
+      ),
     ]),
 
     section('Toolbar', 'Roving focus across groups — arrow keys move, Tab leaves.', [

@@ -156,6 +156,77 @@ export function classPartWithDefaults(
 export type { ClassValue }
 
 /**
+ * A `classPart`-built root wrapper is a plain function; nothing stops a
+ * caller from constructing it without a machine's `exitCompletion` Mountable
+ * placed anywhere in the same build, and README.md used to claim "registry
+ * skins place it automatically" while `accordion.ts`/`collapsible.ts` were
+ * ordinary `classPart(div, ...)` wrappers that never touched it (#264 review
+ * item 2). `exitCompletion` settles a RETAINED close/toggle/setValue (one
+ * stamped `retain: true`, e.g. via `parts.close(...)`) on a skin with no
+ * exit motion; a raw programmatic `send` with no `retain` closes instantly
+ * and never enters `closing`, so there is nothing for it to settle.
+ *
+ * **Forgetting it is no longer a hang (#264 item F1).** Whether
+ * `exitCompletion` is CURRENTLY mounted lives in a runtime registry keyed by
+ * the machine's own `opts.id` (#264 review-264j — never in state or a
+ * message), and the reducer only ever retains `closing` when the
+ * closing-capable message itself carries `retain: true`, which `connect()`'s
+ * trigger handlers stamp from that registry — otherwise it closes instantly,
+ * with a synchronous, once-per-id dev-mode `console.warn` (never a build
+ * error). So `exitCompletion` is no longer required for SAFETY. It is kept
+ * REQUIRED here anyway, and a root wrapper still cannot forget to append
+ * what it is compile-time REQUIRED to accept.
+ *
+ * **`exitCompletion` is a SEPARATE third argument, never a field on the
+ * attribute props bag (#264 post-merge fix).** It used to be a non-optional
+ * field on `DisclosureRootProps = ElProps & { exitCompletion: Mountable }` —
+ * reasoning (correctly, for how the TYPE is declared) that an intersection
+ * of two separately-declared types does not force `exitCompletion` to
+ * conform to `ElProps`'s own string index signature the way an `interface X
+ * extends ElProps` would. That reasoning does not cover how a call site's
+ * own fresh object LITERAL is checked: assigning `{ ...parts.root,
+ * exitCompletion: parts.exitCompletion }` to `DisclosureRootProps` still
+ * fails, because TypeScript flattens an intersection when checking a fresh
+ * literal's properties against whichever index signature is reachable
+ * through ANY constituent — so `exitCompletion`, a `Mountable`, is checked
+ * against `ElProps`'s `AttrValue | ((e: Event) => void) | undefined` index
+ * signature and rejected. This was invisible in this package's own suite
+ * (which never assembled the literal that exact way in a real `tsc` run of
+ * a DEMO package) and surfaced only once one finally did. The fix: keep
+ * `exitCompletion` required, but pass it as its own argument — never
+ * intersected into the attribute bag at all, so there is no shared index
+ * signature for a fresh literal to be checked against in the first place.
+ * `Accordion({ ...parts.root }, [...])` (missing the third argument) is
+ * still a type error; `Accordion({ ...parts.root }, [...], {
+ * exitCompletion: parts.exitCompletion })` is the whole call.
+ */
+export interface ExitCompletionOptions {
+  /** `parts.exitCompletion` from the machine's `connect()` — see
+   * `@llui/components`'s README ("accordion / collapsible exit motion"). */
+  exitCompletion: Mountable
+}
+
+/**
+ * Wrap a `classPart`-built disclosure root so it owns appending its own
+ * machine's `exitCompletion` Mountable, rather than leaving that to callers
+ * (demos included) to remember. `part` is still built via `classPart`
+ * (never a bespoke `tag(...)` call) so the recipe string stays visible to
+ * `scripts/lib/registry-classes.mjs`'s AST extractor, which only recognizes
+ * string-literal recipes passed to a fixed set of call names.
+ */
+export function withExitCompletion(
+  part: PartHelper,
+): (props: ElProps, children: readonly ChildNode[], options: ExitCompletionOptions) => Mountable {
+  return (
+    props: ElProps,
+    children: readonly ChildNode[],
+    options: ExitCompletionOptions,
+  ): Mountable => {
+    return part(props, [...children, options.exitCompletion])
+  }
+}
+
+/**
  * `classPart` with variants: a tag plus a `createVariants` recipe, where the
  * caller's variant keys are destructured out of the props bag before the rest is
  * spread onto the element.

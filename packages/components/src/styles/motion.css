@@ -108,22 +108,22 @@
 
 @keyframes collapse-down {
   from {
-    height: 0;
+    block-size: 0;
     opacity: 0;
   }
   to {
-    height: var(--height);
+    block-size: var(--llui-disclosure-block-size, var(--height, auto));
     opacity: 1;
   }
 }
 
 @keyframes collapse-up {
   from {
-    height: var(--height);
+    block-size: var(--llui-disclosure-block-size, var(--height, auto));
     opacity: 1;
   }
   to {
-    height: 0;
+    block-size: 0;
     opacity: 0;
   }
 }
@@ -171,7 +171,8 @@
   animation: collapse-down var(--llui-duration-normal) ease-out;
 }
 
-[data-scope='collapsible'][data-part='content'][data-state='closed'] {
+[data-scope='collapsible'][data-part='content'][data-state='closing'] {
+  --llui-disclosure-exit-animation: collapse-up;
   animation: collapse-up var(--llui-duration-normal) ease-out;
 }
 

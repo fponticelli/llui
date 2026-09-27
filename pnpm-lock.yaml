@@ -600,6 +600,9 @@ importers:
         specifier: ^1.0.0
         version: 1.1.0
     devDependencies:
+      '@llui/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@llui/compiler':
         specifier: workspace:*
         version: link:../compiler
@@ -1073,6 +1076,9 @@ importers:
 
   registry:
     devDependencies:
+      '@llui/cli':
+        specifier: workspace:*
+        version: link:../packages/cli
       '@llui/components':
         specifier: workspace:*
         version: link:../packages/components

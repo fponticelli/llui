@@ -152,7 +152,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
               ),
             ]),
           ]),
-          ScrollAreaScrollbar({ ...sa.scrollbarY, class: 'absolute top-0 right-0' }, [
+          ScrollAreaScrollbar({ ...sa.scrollbarY, class: 'absolute top-0 end-0' }, [
             ScrollAreaThumb({ ...sa.thumbY }),
           ]),
         ]),

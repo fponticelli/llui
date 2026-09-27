@@ -256,21 +256,25 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **State** (`AccordionState`):
 
-| Field         | Type       |
-| ------------- | ---------- |
-| `value`       | `string[]` |
-| `multiple`    | `boolean`  |
-| `collapsible` | `boolean`  |
-| `disabled`    | `boolean`  |
-| `items`       | `string[]` |
+| Field             | Type                               |
+| ----------------- | ---------------------------------- |
+| `value`           | `string[]`                         |
+| `multiple`        | `boolean`                          |
+| `collapsible`     | `boolean`                          |
+| `disabled`        | `boolean`                          |
+| `items`           | `string[]`                         |
+| `closing`         | `string[]`                         |
+| `exitGenerations` | `RetainedExitGeneration<string>[]` |
+| `exitSequence`    | `number`                           |
+| `animated`        | `boolean`                          |
 
-**Messages:** `toggle`, `open`, `close`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`
+**Messages:** `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `exitComplete`
 
-**Init options:** `value?: string[], multiple?: boolean, collapsible?: boolean, disabled?: boolean, items?: string[]`
+**Init options:** `value?: string[], multiple?: boolean, collapsible?: boolean, disabled?: boolean, items?: string[], animated?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `item`
+**Parts:** `root`, `exitCompletion`, `close`, `item`
 
 **Utilities:** `focusTarget()`
 
@@ -386,18 +390,21 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `autoplay`       | `boolean`                 |
 | `interval`       | `number`                  |
 | `paused`         | `boolean`                 |
+| `hovered`        | `boolean`                 |
+| `focusWithin`    | `boolean`                 |
 | `direction`      | `'forward' \| 'backward'` |
 | `swipeThreshold` | `number`                  |
 | `dragging`       | `CarouselDrag \| null`    |
 | `dir`            | `'ltr' \| 'rtl'`          |
+| `dirSource`      | `DirectionSource`         |
 
-**Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setAutoplay`, `autoplayTick`, `dragStart`, `dragMove`, `dragEnd`, `setDir`
+**Messages:** `goTo`, `next`, `prev`, `setCount`, `pause`, `resume`, `setHovered`, `setFocusWithin`, `setAutoplay`, `autoplayTick`, `dragStart`, `dragMove`, `dragEnd`, `setDir`, `syncDomDir`
 
 **Init options:** `current?: number, count?: number, loop?: boolean, autoplay?: boolean, interval?: number, swipeThreshold?: number, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `viewport`, `indicatorGroup`, `nextTrigger`, `prevTrigger`, `slide`
+**Parts:** `root`, `viewport`, `track`, `indicatorGroup`, `nextTrigger`, `prevTrigger`, `slide`, `directionSync`
 
 **Utilities:** `canGoNext()`, `canGoPrev()`, `swipeDecision()`, `isAutoplayRunning()`, `autoplayEffects()`
 
@@ -455,9 +462,9 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Connect options:** `ChartConnectOptions`
 
-**Parts:** `root`, `svg`, `title`, `desc`, `table`, `tooltip`, `layer`, `grid`, `axisLabel`, `dotProps`, `legendItem`, `markProps`, `marks`, `vertices`, `gridLines`, `categoryTicks`, `tooltipRows`, `activeLabel`, `rows`, `series`
+**Parts:** `root`, `svg`, `title`, `desc`, `table`, `tooltip`, `layer`, `grid`, `axisLabel`, `dotProps`, `legendItem`, `legendSwatch`, `markProps`, `marks`, `vertices`, `gridLines`, `categoryTicks`, `tooltipRows`, `activeLabel`, `rows`, `series`
 
-**Utilities:** `geometry()`
+**Utilities:** `geometry()`, `chartForcedColorPatterns()`
 
 ---
 
@@ -504,18 +511,21 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **State** (`CollapsibleState`):
 
-| Field      | Type      |
-| ---------- | --------- |
-| `open`     | `boolean` |
-| `disabled` | `boolean` |
+| Field            | Type      |
+| ---------------- | --------- |
+| `open`           | `boolean` |
+| `disabled`       | `boolean` |
+| `closing`        | `boolean` |
+| `exitGeneration` | `number`  |
+| `animated`       | `boolean` |
 
-**Messages:** `toggle`, `open`, `close`, `setOpen`
+**Messages:** `exitComplete`
 
-**Init options:** `open?: boolean, disabled?: boolean`
+**Init options:** `open?: boolean, disabled?: boolean, animated?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `trigger`, `content`
+**Parts:** `root`, `trigger`, `content`, `exitCompletion`, `close`
 
 ---
 
@@ -1131,23 +1141,24 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **State** (`PaginationState`):
 
-| Field        | Type            |
-| ------------ | --------------- |
-| `page`       | `number`        |
-| `pageSize`   | `number`        |
-| `total`      | `number`        |
-| `siblings`   | `number`        |
-| `boundaries` | `number`        |
-| `disabled`   | `boolean`       |
-| `dir`        | `TextDirection` |
+| Field        | Type              |
+| ------------ | ----------------- |
+| `page`       | `number`          |
+| `pageSize`   | `number`          |
+| `total`      | `number`          |
+| `siblings`   | `number`          |
+| `boundaries` | `number`          |
+| `disabled`   | `boolean`         |
+| `dir`        | `TextDirection`   |
+| `dirSource`  | `DirectionSource` |
 
-**Messages:** `goTo`, `next`, `prev`, `first`, `last`, `setPageSize`, `setTotal`, `setDir`
+**Messages:** `goTo`, `next`, `prev`, `first`, `last`, `setPageSize`, `setTotal`, `setDir`, `syncDomDir`
 
 **Init options:** `page?: number, pageSize?: number, total?: number, siblings?: number, boundaries?: number, disabled?: boolean, dir?: TextDirection`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `prevTrigger`, `nextTrigger`, `item`, `ellipsis`
+**Parts:** `root`, `prevTrigger`, `nextTrigger`, `item`, `ellipsis`, `directionSync`
 
 **Utilities:** `totalPages()`, `pageItems()`, `onControlKeyDown()`
 
@@ -1603,7 +1614,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `columnHeader`, `row`, `cell`, `selectAllCheckbox`, `rowCheckbox`
+**Parts:** `viewport`, `root`, `columnHeader`, `row`, `cell`, `selectAllCheckbox`, `rowCheckbox`
 
 **Utilities:** `isRowSelected()`, `isAllSelected()`, `isSomeSelected()`, `sortDirectionFor()`
 
@@ -1615,25 +1626,26 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **State** (`TabsState`):
 
-| Field           | Type             |
-| --------------- | ---------------- |
-| `value`         | `string`         |
-| `items`         | `string[]`       |
-| `disabledItems` | `string[]`       |
-| `orientation`   | `Orientation`    |
-| `activation`    | `Activation`     |
-| `focused`       | `string \| null` |
-| `loopFocus`     | `boolean`        |
-| `deselectable`  | `boolean`        |
-| `dir`           | `'ltr' \| 'rtl'` |
+| Field           | Type              |
+| --------------- | ----------------- |
+| `value`         | `string`          |
+| `items`         | `string[]`        |
+| `disabledItems` | `string[]`        |
+| `orientation`   | `Orientation`     |
+| `activation`    | `Activation`      |
+| `focused`       | `string \| null`  |
+| `loopFocus`     | `boolean`         |
+| `deselectable`  | `boolean`         |
+| `dir`           | `'ltr' \| 'rtl'`  |
+| `dirSource`     | `DirectionSource` |
 
-**Messages:** `setValue`, `setItems`, `focusTab`, `activateTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`, `setDir`
+**Messages:** `setValue`, `setItems`, `focusTab`, `activateTab`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `activateFocused`, `setDir`, `syncDomDir`
 
 **Init options:** `value?: string, items?: string[], disabledItems?: string[], orientation?: Orientation, activation?: Activation, loopFocus?: boolean, deselectable?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `list`, `indicator`, `item`
+**Parts:** `root`, `list`, `indicator`, `item`, `directionSync`
 
 **Utilities:** `watchTabIndicator()`
 
@@ -3219,6 +3231,16 @@ function resetAnatomyIdCounter(): void
 Resolve the text direction for an element by walking up the DOM tree.
 Returns 'rtl' or 'ltr' (default).
 
+The walk crosses SHADOW boundaries: `Element.closest()` stops at the
+nearest shadow root and cannot see a `dir` set on an ancestor of the host,
+so an element inside a shadow tree whose host (or the host's own
+ancestors) declares `dir` would otherwise silently read as `ltr`. Continuing
+from `root.host` after `getRootNode()` returns a `ShadowRoot` walks out to
+the light-DOM ancestor and keeps going, arbitrarily many shadow levels
+deep. The final fallback reads `dir` off the element's OWN document
+(`ownerDocument`), never the global `document` — the global binding names a
+DIFFERENT document inside an iframe or any other multi-document context.
+
 ```typescript
 export declare function resolveDir(el: Element): TextDirection
 ```
@@ -3675,13 +3697,13 @@ export type AcceptValue = string | Record<string, string[]>
 ```typescript
 export type AccordionMsg =
   /** @intent("Toggle the named accordion item open/closed") */
-  | { type: 'toggle'; value: string }
+  | ({ type: 'toggle'; value: string } & Retain)
   /** @intent("Open the named accordion item") */
-  | { type: 'open'; value: string }
+  | ({ type: 'open'; value: string } & Retain)
   /** @intent("Close the named accordion item") */
-  | { type: 'close'; value: string }
+  | ({ type: 'close'; value: string } & Retain)
   /** @intent("Replace the set of currently-open items with the provided values") */
-  | { type: 'setValue'; value: string[] }
+  | ({ type: 'setValue'; value: string[] } & Retain)
   /** @humanOnly */
   | { type: 'setItems'; items: string[] }
   /** @humanOnly */
@@ -3692,6 +3714,10 @@ export type AccordionMsg =
   | { type: 'focusFirst' }
   /** @humanOnly */
   | { type: 'focusLast' }
+  /** @humanOnly — sent by the retained content's own animation end/cancel event,
+   * or by `exitCompletion`'s own cleanup settling every still-closing item once
+   * the last watcher for this `id` detaches. */
+  | { type: 'exitComplete'; value: string; generation: number }
 ```
 
 ##### `Activation` from `@llui/components`
@@ -3858,6 +3884,10 @@ export type CarouselMsg =
   | { type: 'pause' }
   /** @intent("Resume autoplay after a pause") */
   | { type: 'resume' }
+  /** @humanOnly */
+  | { type: 'setHovered'; hovered: boolean }
+  /** @humanOnly */
+  | { type: 'setFocusWithin'; focusWithin: boolean }
   /** @intent("Turn autoplay on or off") */
   | { type: 'setAutoplay'; autoplay: boolean }
   /**
@@ -3881,6 +3911,8 @@ export type CarouselMsg =
   | { type: 'dragEnd' }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: 'ltr' | 'rtl' }
 ```
 
 ##### `CascadeSelectMsg` from `@llui/components`
@@ -3980,13 +4012,17 @@ export type ClipboardMsg =
 ```typescript
 export type CollapsibleMsg =
   /** @intent("Toggle the collapsible panel open/closed") */
-  | { type: 'toggle' }
+  | ({ type: 'toggle' } & Retain)
   /** @intent("Expand the collapsible panel") */
-  | { type: 'open' }
+  | ({ type: 'open' } & Retain)
   /** @intent("Collapse the panel") */
-  | { type: 'close' }
+  | ({ type: 'close' } & Retain)
   /** @intent("Set the panel's open state to a specific value") */
-  | { type: 'setOpen'; open: boolean }
+  | ({ type: 'setOpen'; open: boolean } & Retain)
+  /** @humanOnly — sent by the retained content's own animation end/cancel event,
+   * or by `exitCompletion`'s own cleanup settling a still-closing panel once
+   * the last watcher for this `id` detaches. */
+  | { type: 'exitComplete'; generation: number }
 ```
 
 ##### `ColorModel` from `@llui/components`
@@ -5098,6 +5134,8 @@ export type PaginationMsg =
   | { type: 'setTotal'; total: number }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
 ```
 
 ##### `ParseGradientResult` from `@llui/components`
@@ -5744,6 +5782,8 @@ export type TabsMsg =
   | { type: 'activateFocused' }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: 'ltr' | 'rtl' }
 ```
 
 ##### `TagsInputMsg` from `@llui/components`
@@ -6189,6 +6229,11 @@ export interface AccordionInit {
   collapsible?: boolean
   disabled?: boolean
   items?: string[]
+  /**
+   * Retain closing content for an exit animation. Off by default so a missing
+   * stylesheet/event cannot leave hidden semantic content mounted forever.
+   */
+  animated?: boolean
 }
 ```
 
@@ -6214,10 +6259,19 @@ export interface AccordionItemParts {
     role: 'region'
     id: string
     'aria-labelledby': string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<'open' | 'closing' | 'closed'>
     'data-scope': 'accordion'
     'data-part': 'content'
+    'data-value': string
     hidden: Signal<boolean>
+    'aria-hidden': Signal<'true' | undefined>
+    inert: Signal<boolean>
+    onAnimationStart: (e: AnimationEvent) => void
+    onAnimationEnd: (e: AnimationEvent) => void
+    onAnimationCancel: (e: AnimationEvent) => void
+    onTransitionStart: (e: TransitionEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
+    onTransitionCancel: (e: TransitionEvent) => void
   }
   item: {
     'data-state': Signal<'open' | 'closed'>
@@ -6243,6 +6297,35 @@ export interface AccordionParts {
     'data-orientation': 'vertical'
   }
   item: (value: string) => AccordionItemParts
+  /**
+   * Settles a retained `closing` item once its content's own exit
+   * animation/transition ends — or immediately, if the skin runs no exit
+   * motion at all. This only ever has anything to settle for a
+   * PROGRAMMATIC close/toggle/setValue when that message carried
+   * `retain: true`, which `parts.close(value)` stamps for you; a raw
+   * `send({ type: 'close', value })` with no `retain` closes instantly and
+   * never enters `closing` at all, so there is nothing here to settle for
+   * it. Its mount ALSO reports whether it is placed at all (#264 item F1):
+   * `animated: true` only ever retains `closing` content while this is
+   * mounted — forgetting to place it degrades gracefully to an instant
+   * close (with a one-time dev warning) rather than hanging `closing` +
+   * `inert` forever, so placing it is no longer required for SAFETY, only
+   * for the requested exit animation to actually run on a retained close.
+   * A click-driven close is still safety-netted synchronously inside the
+   * trigger regardless of whether this is placed.
+   */
+  exitCompletion: Mountable
+  /**
+   * An animated-aware programmatic close (#264 review-264j): a raw
+   * `send({ type: 'close', value })` from app/agent code carries no
+   * `retain` and therefore closes INSTANTLY, even with `animated: true` and
+   * `exitCompletion` placed — documented, fail-safe behavior, since a bare
+   * message has no way to know whether a watcher happens to be mounted.
+   * `parts.close(value)` is the correct way for a host to close an item
+   * programmatically and still get the animated exit: it stamps `retain`
+   * from the SAME runtime registry the trigger handlers read.
+   */
+  close: (value: string) => void
 }
 ```
 
@@ -6266,6 +6349,14 @@ export interface AccordionState {
   disabled: boolean
   /** Ordered list of item values (for keyboard navigation). */
   items: string[]
+  /** Presentation-only items retained while their opted-in exit animation runs. */
+  closing: string[]
+  /** Monotonic exit generation per item, used to reject stale end events. */
+  exitGenerations: RetainedExitGeneration<string>[]
+  /** Monotonic source for collision-free exit generations; never grows by id. */
+  exitSequence: number
+  /** Whether closed content is retained until its own animation end/cancel event. */
+  animated: boolean
 }
 ```
 
@@ -6549,6 +6640,7 @@ export interface AvatarParts {
     'data-scope': 'avatar'
     'data-part': 'root'
     'data-status': Signal<ImageStatus>
+    'data-density': AvatarDensity | undefined
   }
   image: {
     'data-scope': 'avatar'
@@ -6747,6 +6839,7 @@ export interface CarouselInit {
 ```typescript
 export interface CarouselParts {
   root: {
+    id: string
     role: 'region'
     'aria-roledescription': 'carousel'
     'aria-label': string
@@ -6755,8 +6848,8 @@ export interface CarouselParts {
     'data-paused': Signal<'' | undefined>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
-    onFocus: (e: FocusEvent) => void
-    onBlur: (e: FocusEvent) => void
+    onFocusIn: (e: FocusEvent) => void
+    onFocusOut: (e: FocusEvent) => void
   }
   viewport: {
     'data-scope': 'carousel'
@@ -6769,10 +6862,17 @@ export interface CarouselParts {
     'data-dragging': Signal<'' | undefined>
     /** Live track offset (px) to follow the finger: `translateX(var)`. */
     'data-drag-offset': Signal<string | undefined>
+    /** Physical pointer delta consumed by either skin's track transform. */
+    'style.--carousel-drag-offset': Signal<string | undefined>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
     onPointerCancel: (e: PointerEvent) => void
+  }
+  /** Place all slides directly inside this transform-bearing track. */
+  track: {
+    'data-scope': 'carousel'
+    'data-part': 'track'
   }
   indicatorGroup: {
     role: 'tablist'
@@ -6797,6 +6897,8 @@ export interface CarouselParts {
     onClick: (e: MouseEvent) => void
   }
   slide: (index: number) => CarouselSlideParts
+  /** Place once anywhere in the same build to keep automatic direction live. */
+  directionSync: Mountable
 }
 ```
 
@@ -6818,6 +6920,8 @@ export interface CarouselSlideParts {
   indicator: {
     type: 'button'
     role: 'tab'
+    /** APG roving tab stop: only the selected indicator participates in Tab. */
+    tabindex: Signal<0 | -1>
     'aria-label': string
     'aria-selected': Signal<boolean>
     'aria-controls': string
@@ -6840,7 +6944,12 @@ export interface CarouselState {
   loop: boolean
   autoplay: boolean
   interval: number
+  /** Explicit application pause, independent from hover/focus interaction. */
   paused: boolean
+  /** Pointer is currently over the carousel root. */
+  hovered: boolean
+  /** DOM focus is currently contained by the carousel root. */
+  focusWithin: boolean
   /** Direction of the last transition — useful for entry animations. */
   direction: 'forward' | 'backward'
   /**
@@ -6852,6 +6961,8 @@ export interface CarouselState {
   dragging: CarouselDrag | null
   /** Reading direction. Under 'rtl' indicator horizontal arrow keys are flipped. */
   dir: 'ltr' | 'rtl'
+  /** Whether direction follows the mounted DOM or explicit init/setDir configuration. */
+  dirSource: DirectionSource
 }
 ```
 
@@ -7047,6 +7158,7 @@ A drawn mark: one series, one path.
 ```typescript
 export interface ChartMark {
   seriesKey: string
+  seriesCue: ChartSeriesCue
   label: string
   mark: MarkType
   /** The SVG path `d`. */
@@ -7082,6 +7194,9 @@ export interface ChartParts {
     'data-coord': Signal<'cartesian' | 'polar'>
     'data-domain': Signal<'value' | 'share'>
     'data-active': Signal<'' | undefined>
+    /** Per-instance forced-colors fill custom properties — see `connect()`'s
+     * own doc for why these must be per-chart rather than a shared global. */
+    style: string
   }
   /**
    * The `<svg>`. `role="img"` with a name and description is what a screen
@@ -7134,6 +7249,7 @@ export interface ChartParts {
     'data-scope': 'chart'
     'data-part': 'dot'
     'data-series': string
+    'data-series-cue': ChartSeriesCue
     'data-active': '' | undefined
     cx: number
     cy: number
@@ -7143,9 +7259,20 @@ export interface ChartParts {
     'data-scope': 'chart'
     'data-part': 'legend-item'
     'data-series': string
+    'data-series-cue': Signal<ChartSeriesCue>
     'data-dimmed': Signal<'' | undefined>
     'aria-pressed': Signal<boolean>
     onClick: (e: MouseEvent) => void
+  }
+  /** The legend's colour chip. Spreadable onto its own element (a `<span>` in
+   * both skins) so a forced-colors rule can key off `data-series-cue` the
+   * SAME way a mark does — a legend swatch that only carries `--mark-color`
+   * paints identically for every series once forced colors flattens author
+   * colour, which is the accessibility gap #264 review item 7 names. */
+  legendSwatch: (key: string) => {
+    'data-scope': 'chart'
+    'data-part': 'legend-swatch'
+    'data-series-cue': Signal<ChartSeriesCue>
   }
   /** Attributes for one drawn mark. Spread onto a `<path>` and pass `d`. */
   markProps: (mark: ChartMark) => {
@@ -7153,6 +7280,7 @@ export interface ChartParts {
     'data-part': 'mark'
     'data-mark': 'line' | 'area' | 'bar'
     'data-series': string
+    'data-series-cue': ChartSeriesCue
     'data-active': '' | undefined
     'data-dimmed': '' | undefined
     d: string
@@ -7266,6 +7394,7 @@ A vertex on a line or area series, for the dot layer and hit feedback.
 ```typescript
 export interface ChartVertex {
   seriesKey: string
+  seriesCue: ChartSeriesCue
   index: number
   x: number
   y: number
@@ -7410,6 +7539,8 @@ export interface ClipboardState {
 export interface CollapsibleInit {
   open?: boolean
   disabled?: boolean
+  /** Opt into retained exit motion. Defaults off to guarantee no event/no hang. */
+  animated?: boolean
 }
 ```
 
@@ -7440,10 +7571,42 @@ export interface CollapsibleParts {
     id: string
     'aria-labelledby': string
     hidden: Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<'open' | 'closing' | 'closed'>
     'data-scope': 'collapsible'
     'data-part': 'content'
+    'aria-hidden': Signal<'true' | undefined>
+    inert: Signal<boolean>
+    onAnimationStart: (e: AnimationEvent) => void
+    onAnimationEnd: (e: AnimationEvent) => void
+    onAnimationCancel: (e: AnimationEvent) => void
+    onTransitionStart: (e: TransitionEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
+    onTransitionCancel: (e: TransitionEvent) => void
   }
+  /**
+   * Settles a retained `closing` panel once the content's own exit
+   * animation/transition ends — or immediately, if the skin runs no exit
+   * motion at all. This only ever has anything to settle for a
+   * PROGRAMMATIC close/toggle/setOpen when that message carried
+   * `retain: true`, which `parts.close()` stamps for you; a raw
+   * `send({ type: 'close' })` with no `retain` closes instantly and never
+   * enters `closing` at all. Its mount ALSO reports whether it is placed at
+   * all: `animated: true` only ever retains `closing` while this is mounted
+   * (#264 item F1) — forgetting to place it degrades gracefully to an
+   * instant close (with a one-time dev warning) rather than hanging
+   * `closing` + `inert` forever, so placing it is no longer required for
+   * SAFETY, only for the requested exit animation to actually run on a
+   * retained close. A click-driven close is still safety-netted
+   * synchronously inside the trigger regardless of whether this is placed.
+   */
+  exitCompletion: Mountable
+  /**
+   * An animated-aware programmatic close (#264 review-264j) — see
+   * `accordion.ts`'s identical part for the full rationale. A raw
+   * `send({ type: 'close' })` carries no `retain` and closes INSTANTLY;
+   * `parts.close()` stamps `retain` from the runtime registry.
+   */
+  close: () => void
 }
 ```
 
@@ -7456,6 +7619,12 @@ accordion (no grouping, no keyboard navigation between siblings).
 export interface CollapsibleState {
   open: boolean
   disabled: boolean
+  /** Presentation-only retention while an opted-in exit animation runs. */
+  closing: boolean
+  /** Monotonic generation used to reject stale animation completion events. */
+  exitGeneration: number
+  /** Whether close waits for the content's own animation end/cancel event. */
+  animated: boolean
 }
 ```
 
@@ -11134,6 +11303,7 @@ export interface PaginationInit {
 ```typescript
 export interface PaginationParts {
   root: {
+    id: string
     role: 'navigation'
     'aria-label': string
     'data-scope': 'pagination'
@@ -11180,6 +11350,8 @@ export interface PaginationParts {
     'data-part': 'ellipsis'
     'data-position': 'start' | 'end'
   }
+  /** Place once anywhere in the same build to keep automatic direction live. */
+  directionSync: Mountable
 }
 ```
 
@@ -11198,6 +11370,7 @@ export interface PaginationState {
   boundaries: number
   disabled: boolean
   dir: TextDirection
+  dirSource: DirectionSource
 }
 ```
 
@@ -13335,9 +13508,11 @@ export interface TableCellParts {
   tabindex: Signal<number>
   'data-scope': 'table'
   'data-part': 'cell'
-  /** 0-based row index — addresses the cell for roving DOM focus. */
-  'data-row-index': number
-  /** 0-based column index — addresses the cell for roving DOM focus. */
+  /** 0-based row index — addresses the cell for roving DOM focus. Reactive
+   * for the same reason `TableRowParts`'s `aria-rowindex` is. */
+  'data-row-index': Signal<number>
+  /** 0-based column index — addresses the cell for roving DOM focus. Columns
+   * do not reorder, so this stays a plain number. */
   'data-col-index': number
   'data-focused': Signal<'' | undefined>
   onFocus: (e: FocusEvent) => void
@@ -13407,6 +13582,8 @@ export interface TableColumnHeaderParts {
 ```typescript
 export interface ConnectOptions {
   id: string
+  /** Presentation density published on the grid root for either skin to consume. */
+  density?: TableDensity
 }
 ```
 
@@ -13430,6 +13607,15 @@ export interface TableInit {
 
 ```typescript
 export interface TableParts {
+  /**
+   * Place the native table carrying {@link root} directly inside this owned
+   * scroll viewport. Wide grids then scroll locally without changing the
+   * table's native layout/ARIA semantics or overflowing the page.
+   */
+  viewport: {
+    'data-scope': 'table'
+    'data-part': 'viewport'
+  }
   root: {
     role: 'grid'
     id: string
@@ -13440,10 +13626,22 @@ export interface TableParts {
     'data-scope': 'table'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
+    'data-density': TableDensity | undefined
   }
   columnHeader: (columnId: string) => TableColumnHeaderParts
-  row: (id: string, index: number) => TableRowParts
-  cell: (rowIndex: number, colIndex: number) => TableCellParts
+  /**
+   * `index` accepts a plain `number` OR a `Signal<number>` (the row handle
+   * `each`/`virtualEach` passes its render callback) — a keyed row is REUSED
+   * (moved, not rebuilt) on reorder, so a plain number captured at build time
+   * would freeze `aria-rowindex` and the row's own `toggleRow`/`selectRange`
+   * dispatch at the row's ORIGINAL position forever. Pass the row's reactive
+   * index handle whenever rows can reorder (sorting, filtering); a plain
+   * number is still accepted for a table that never reorders.
+   */
+  row: (id: string, index: Reactive<number>) => TableRowParts
+  /** `rowIndex` has the same `Reactive<number>` contract as {@link row}'s
+   * `index` — the column index does not reorder and stays a plain `number`. */
+  cell: (rowIndex: Reactive<number>, colIndex: number) => TableCellParts
   /**
    * The select-all checkbox, for the `columnheader` of `columnId`.
    *
@@ -13462,7 +13660,8 @@ export interface TableParts {
    * roving stop, and its header will not send `toggleAll` either.
    */
   selectAllCheckbox: (columnId: string) => TableCheckboxParts
-  rowCheckbox: (id: string, index: number) => TableCheckboxParts
+  /** Same `Reactive<number>` contract as {@link row}'s `index`. */
+  rowCheckbox: (id: string, index: Reactive<number>) => TableCheckboxParts
 }
 ```
 
@@ -13472,7 +13671,11 @@ export interface TableParts {
 export interface TableRowParts {
   role: 'row'
   'aria-selected': Signal<boolean | undefined>
-  'aria-rowindex': number
+  /** Reactive: a row's DISPLAY position can change after sort/reorder without
+   * this row being rebuilt (`each` reuses rows by key), so the index this
+   * addresses must follow the row's live position rather than freeze at
+   * whatever it was when the row was first built. */
+  'aria-rowindex': Signal<number>
   'data-scope': 'table'
   'data-part': 'row'
   'data-row': string
@@ -13570,6 +13773,7 @@ export interface TabsItemParts {
 ```typescript
 export interface TabsParts {
   root: {
+    id: string
     'data-scope': 'tabs'
     'data-part': 'root'
     'data-orientation': Signal<Orientation>
@@ -13594,6 +13798,8 @@ export interface TabsParts {
     'data-part': 'list'
   }
   item: (value: string) => TabsItemParts
+  /** Place once anywhere in the same build to keep automatic direction live. */
+  directionSync: Mountable
 }
 ```
 
@@ -13614,6 +13820,7 @@ export interface TabsState {
   deselectable: boolean
   /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
   dir: 'ltr' | 'rtl'
+  dirSource: DirectionSource
 }
 ```
 
@@ -16399,6 +16606,16 @@ function resetAnatomyIdCounter(): void
 Resolve the text direction for an element by walking up the DOM tree.
 Returns 'rtl' or 'ltr' (default).
 
+The walk crosses SHADOW boundaries: `Element.closest()` stops at the
+nearest shadow root and cannot see a `dir` set on an ancestor of the host,
+so an element inside a shadow tree whose host (or the host's own
+ancestors) declares `dir` would otherwise silently read as `ltr`. Continuing
+from `root.host` after `getRootNode()` returns a `ShadowRoot` walks out to
+the light-DOM ancestor and keeps going, arbitrarily many shadow levels
+deep. The final fallback reads `dir` off the element's OWN document
+(`ownerDocument`), never the global `document` — the global binding names a
+DIFFERENT document inside an iframe or any other multi-document context.
+
 ```typescript
 export declare function resolveDir(el: Element): TextDirection
 ```
@@ -18572,6 +18789,27 @@ function membershipSet<T>(): (values: readonly T[] | null | undefined) => Readon
 
 #### Functions
 
+##### `directionSyncMount()` from `@llui/components/utils/direction`
+
+Observe the exact component root and its live ancestor chain after mount.
+Child-list observation covers relocation between differently directed
+ancestors; the Mountable cleanup disconnects all observation.
+
+```typescript
+function directionSyncMount(rootId: string, sync: (dir: 'ltr' | 'rtl') => void): Mountable
+```
+
+##### `eventDirection()` from `@llui/components/utils/direction`
+
+Resolve direction at event time so same-tick ancestor changes are correct.
+Routes through `@llui/interactions`' `resolveDir` — the package's documented
+single source of truth for DOM-derived direction — rather than a second,
+independently-maintained ancestor walk.
+
+```typescript
+function eventDirection(state: DirectionState, origin: Element | null): 'ltr' | 'rtl'
+```
+
 ##### `flipArrow()` from `@llui/components/utils/direction`
 
 Map a horizontal arrow key to its logical direction, accounting for RTL.
@@ -18592,10 +18830,28 @@ The second argument is the direction source:
 export declare function flipArrow(key: string, source: Element | null | TextDirection): string
 ```
 
+##### `initDirection()` from `@llui/components/utils/direction`
+
+Deterministic on the server; omitted direction is resolved only after mount.
+
+```typescript
+function initDirection(dir: 'ltr' | 'rtl' | undefined): DirectionState
+```
+
 ##### `resolveDir()` from `@llui/components/utils/direction`
 
 Resolve the text direction for an element by walking up the DOM tree.
 Returns 'rtl' or 'ltr' (default).
+
+The walk crosses SHADOW boundaries: `Element.closest()` stops at the
+nearest shadow root and cannot see a `dir` set on an ancestor of the host,
+so an element inside a shadow tree whose host (or the host's own
+ancestors) declares `dir` would otherwise silently read as `ltr`. Continuing
+from `root.host` after `getRootNode()` returns a `ShadowRoot` walks out to
+the light-DOM ancestor and keeps going, arbitrarily many shadow levels
+deep. The final fallback reads `dir` off the element's OWN document
+(`ownerDocument`), never the global `document` — the global binding names a
+DIFFERENT document inside an iframe or any other multi-document context.
 
 ```typescript
 export declare function resolveDir(el: Element): TextDirection
@@ -18613,7 +18869,29 @@ export declare function resolveTextDirection(
 ): TextDirection
 ```
 
+##### `setDirection()` from `@llui/components/utils/direction`
+
+Public configuration becomes authoritative over future ancestor observation.
+
+```typescript
+function setDirection<T extends DirectionState>(state: T, dir: 'ltr' | 'rtl'): T
+```
+
+##### `syncDomDirection()` from `@llui/components/utils/direction`
+
+Apply an internal DOM observation only while direction remains automatic.
+
+```typescript
+function syncDomDirection<T extends DirectionState>(state: T, dir: 'ltr' | 'rtl'): T
+```
+
 #### Types
+
+##### `DirectionSource` from `@llui/components/utils/direction`
+
+```typescript
+export type DirectionSource = 'dom' | 'explicit'
+```
 
 ##### `TextDirection` from `@llui/components/utils/direction`
 
@@ -18621,6 +18899,17 @@ Text reading direction. The single shared RTL vocabulary for the package.
 
 ```typescript
 export type TextDirection = 'ltr' | 'rtl'
+```
+
+#### Interfaces
+
+##### `DirectionState` from `@llui/components/utils/direction`
+
+```typescript
+export interface DirectionState {
+  readonly dir: 'ltr' | 'rtl'
+  readonly dirSource: DirectionSource
+}
 ```
 
 ### `@llui/components/utils/dismissable`
@@ -20028,6 +20317,16 @@ function resetAnatomyIdCounter(): void
 
 Resolve the text direction for an element by walking up the DOM tree.
 Returns 'rtl' or 'ltr' (default).
+
+The walk crosses SHADOW boundaries: `Element.closest()` stops at the
+nearest shadow root and cannot see a `dir` set on an ancestor of the host,
+so an element inside a shadow tree whose host (or the host's own
+ancestors) declares `dir` would otherwise silently read as `ltr`. Continuing
+from `root.host` after `getRootNode()` returns a `ShadowRoot` walks out to
+the light-DOM ancestor and keeps going, arbitrarily many shadow levels
+deep. The final fallback reads `dir` off the element's OWN document
+(`ownerDocument`), never the global `document` — the global binding names a
+DIFFERENT document inside an iframe or any other multi-document context.
 
 ```typescript
 export declare function resolveDir(el: Element): TextDirection
@@ -23861,13 +24160,13 @@ function update(state: AccordionState, msg: AccordionMsg): [AccordionState, neve
 ```typescript
 export type AccordionMsg =
   /** @intent("Toggle the named accordion item open/closed") */
-  | { type: 'toggle'; value: string }
+  | ({ type: 'toggle'; value: string } & Retain)
   /** @intent("Open the named accordion item") */
-  | { type: 'open'; value: string }
+  | ({ type: 'open'; value: string } & Retain)
   /** @intent("Close the named accordion item") */
-  | { type: 'close'; value: string }
+  | ({ type: 'close'; value: string } & Retain)
   /** @intent("Replace the set of currently-open items with the provided values") */
-  | { type: 'setValue'; value: string[] }
+  | ({ type: 'setValue'; value: string[] } & Retain)
   /** @humanOnly */
   | { type: 'setItems'; items: string[] }
   /** @humanOnly */
@@ -23878,6 +24177,10 @@ export type AccordionMsg =
   | { type: 'focusFirst' }
   /** @humanOnly */
   | { type: 'focusLast' }
+  /** @humanOnly — sent by the retained content's own animation end/cancel event,
+   * or by `exitCompletion`'s own cleanup settling every still-closing item once
+   * the last watcher for this `id` detaches. */
+  | { type: 'exitComplete'; value: string; generation: number }
 ```
 
 #### Interfaces
@@ -23891,6 +24194,11 @@ export interface AccordionInit {
   collapsible?: boolean
   disabled?: boolean
   items?: string[]
+  /**
+   * Retain closing content for an exit animation. Off by default so a missing
+   * stylesheet/event cannot leave hidden semantic content mounted forever.
+   */
+  animated?: boolean
 }
 ```
 
@@ -23916,10 +24224,19 @@ export interface AccordionItemParts {
     role: 'region'
     id: string
     'aria-labelledby': string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<'open' | 'closing' | 'closed'>
     'data-scope': 'accordion'
     'data-part': 'content'
+    'data-value': string
     hidden: Signal<boolean>
+    'aria-hidden': Signal<'true' | undefined>
+    inert: Signal<boolean>
+    onAnimationStart: (e: AnimationEvent) => void
+    onAnimationEnd: (e: AnimationEvent) => void
+    onAnimationCancel: (e: AnimationEvent) => void
+    onTransitionStart: (e: TransitionEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
+    onTransitionCancel: (e: TransitionEvent) => void
   }
   item: {
     'data-state': Signal<'open' | 'closed'>
@@ -23945,6 +24262,35 @@ export interface AccordionParts {
     'data-orientation': 'vertical'
   }
   item: (value: string) => AccordionItemParts
+  /**
+   * Settles a retained `closing` item once its content's own exit
+   * animation/transition ends — or immediately, if the skin runs no exit
+   * motion at all. This only ever has anything to settle for a
+   * PROGRAMMATIC close/toggle/setValue when that message carried
+   * `retain: true`, which `parts.close(value)` stamps for you; a raw
+   * `send({ type: 'close', value })` with no `retain` closes instantly and
+   * never enters `closing` at all, so there is nothing here to settle for
+   * it. Its mount ALSO reports whether it is placed at all (#264 item F1):
+   * `animated: true` only ever retains `closing` content while this is
+   * mounted — forgetting to place it degrades gracefully to an instant
+   * close (with a one-time dev warning) rather than hanging `closing` +
+   * `inert` forever, so placing it is no longer required for SAFETY, only
+   * for the requested exit animation to actually run on a retained close.
+   * A click-driven close is still safety-netted synchronously inside the
+   * trigger regardless of whether this is placed.
+   */
+  exitCompletion: Mountable
+  /**
+   * An animated-aware programmatic close (#264 review-264j): a raw
+   * `send({ type: 'close', value })` from app/agent code carries no
+   * `retain` and therefore closes INSTANTLY, even with `animated: true` and
+   * `exitCompletion` placed — documented, fail-safe behavior, since a bare
+   * message has no way to know whether a watcher happens to be mounted.
+   * `parts.close(value)` is the correct way for a host to close an item
+   * programmatically and still get the animated exit: it stamps `retain`
+   * from the SAME runtime registry the trigger handlers read.
+   */
+  close: (value: string) => void
 }
 ```
 
@@ -23968,6 +24314,14 @@ export interface AccordionState {
   disabled: boolean
   /** Ordered list of item values (for keyboard navigation). */
   items: string[]
+  /** Presentation-only items retained while their opted-in exit animation runs. */
+  closing: string[]
+  /** Monotonic exit generation per item, used to reject stale end events. */
+  exitGenerations: RetainedExitGeneration<string>[]
+  /** Monotonic source for collision-free exit generations; never grows by id. */
+  exitSequence: number
+  /** Whether closed content is retained until its own animation end/cancel event. */
+  animated: boolean
 }
 ```
 
@@ -24081,6 +24435,8 @@ export type TabsMsg =
   | { type: 'activateFocused' }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: 'ltr' | 'rtl' }
 ```
 
 #### Interfaces
@@ -24154,6 +24510,7 @@ export interface TabsItemParts {
 ```typescript
 export interface TabsParts {
   root: {
+    id: string
     'data-scope': 'tabs'
     'data-part': 'root'
     'data-orientation': Signal<Orientation>
@@ -24178,6 +24535,8 @@ export interface TabsParts {
     'data-part': 'list'
   }
   item: (value: string) => TabsItemParts
+  /** Place once anywhere in the same build to keep automatic direction live. */
+  directionSync: Mountable
 }
 ```
 
@@ -24198,6 +24557,7 @@ export interface TabsState {
   deselectable: boolean
   /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
   dir: 'ltr' | 'rtl'
+  dirSource: DirectionSource
 }
 ```
 
@@ -25687,13 +26047,17 @@ function update(state: CollapsibleState, msg: CollapsibleMsg): [CollapsibleState
 ```typescript
 export type CollapsibleMsg =
   /** @intent("Toggle the collapsible panel open/closed") */
-  | { type: 'toggle' }
+  | ({ type: 'toggle' } & Retain)
   /** @intent("Expand the collapsible panel") */
-  | { type: 'open' }
+  | ({ type: 'open' } & Retain)
   /** @intent("Collapse the panel") */
-  | { type: 'close' }
+  | ({ type: 'close' } & Retain)
   /** @intent("Set the panel's open state to a specific value") */
-  | { type: 'setOpen'; open: boolean }
+  | ({ type: 'setOpen'; open: boolean } & Retain)
+  /** @humanOnly — sent by the retained content's own animation end/cancel event,
+   * or by `exitCompletion`'s own cleanup settling a still-closing panel once
+   * the last watcher for this `id` detaches. */
+  | { type: 'exitComplete'; generation: number }
 ```
 
 #### Interfaces
@@ -25704,6 +26068,8 @@ export type CollapsibleMsg =
 export interface CollapsibleInit {
   open?: boolean
   disabled?: boolean
+  /** Opt into retained exit motion. Defaults off to guarantee no event/no hang. */
+  animated?: boolean
 }
 ```
 
@@ -25734,10 +26100,42 @@ export interface CollapsibleParts {
     id: string
     'aria-labelledby': string
     hidden: Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': Signal<'open' | 'closing' | 'closed'>
     'data-scope': 'collapsible'
     'data-part': 'content'
+    'aria-hidden': Signal<'true' | undefined>
+    inert: Signal<boolean>
+    onAnimationStart: (e: AnimationEvent) => void
+    onAnimationEnd: (e: AnimationEvent) => void
+    onAnimationCancel: (e: AnimationEvent) => void
+    onTransitionStart: (e: TransitionEvent) => void
+    onTransitionEnd: (e: TransitionEvent) => void
+    onTransitionCancel: (e: TransitionEvent) => void
   }
+  /**
+   * Settles a retained `closing` panel once the content's own exit
+   * animation/transition ends — or immediately, if the skin runs no exit
+   * motion at all. This only ever has anything to settle for a
+   * PROGRAMMATIC close/toggle/setOpen when that message carried
+   * `retain: true`, which `parts.close()` stamps for you; a raw
+   * `send({ type: 'close' })` with no `retain` closes instantly and never
+   * enters `closing` at all. Its mount ALSO reports whether it is placed at
+   * all: `animated: true` only ever retains `closing` while this is mounted
+   * (#264 item F1) — forgetting to place it degrades gracefully to an
+   * instant close (with a one-time dev warning) rather than hanging
+   * `closing` + `inert` forever, so placing it is no longer required for
+   * SAFETY, only for the requested exit animation to actually run on a
+   * retained close. A click-driven close is still safety-netted
+   * synchronously inside the trigger regardless of whether this is placed.
+   */
+  exitCompletion: Mountable
+  /**
+   * An animated-aware programmatic close (#264 review-264j) — see
+   * `accordion.ts`'s identical part for the full rationale. A raw
+   * `send({ type: 'close' })` carries no `retain` and closes INSTANTLY;
+   * `parts.close()` stamps `retain` from the runtime registry.
+   */
+  close: () => void
 }
 ```
 
@@ -25750,6 +26148,12 @@ accordion (no grouping, no keyboard navigation between siblings).
 export interface CollapsibleState {
   open: boolean
   disabled: boolean
+  /** Presentation-only retention while an opted-in exit animation runs. */
+  closing: boolean
+  /** Monotonic generation used to reject stale animation completion events. */
+  exitGeneration: number
+  /** Whether close waits for the content's own animation end/cancel event. */
+  animated: boolean
 }
 ```
 
@@ -26540,7 +26944,7 @@ const ratingGroup
 function connect(
   state: Signal<PaginationState>,
   send: Send<PaginationMsg>,
-  opts: ConnectOptions = {},
+  opts: ConnectOptions,
 ): PaginationParts
 ```
 
@@ -26615,6 +27019,8 @@ export type PaginationMsg =
   | { type: 'setTotal'; total: number }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
 ```
 
 #### Interfaces
@@ -26623,6 +27029,7 @@ export type PaginationMsg =
 
 ```typescript
 export interface ConnectOptions {
+  id: string
   label?: string
   prevLabel?: string
   nextLabel?: string
@@ -26649,6 +27056,7 @@ export interface PaginationInit {
 ```typescript
 export interface PaginationParts {
   root: {
+    id: string
     role: 'navigation'
     'aria-label': string
     'data-scope': 'pagination'
@@ -26695,6 +27103,8 @@ export interface PaginationParts {
     'data-part': 'ellipsis'
     'data-position': 'start' | 'end'
   }
+  /** Place once anywhere in the same build to keep automatic direction live. */
+  directionSync: Mountable
 }
 ```
 
@@ -26713,6 +27123,7 @@ export interface PaginationState {
   boundaries: number
   disabled: boolean
   dir: TextDirection
+  dirSource: DirectionSource
 }
 ```
 
@@ -28496,6 +28907,14 @@ function update(state: AvatarState, msg: AvatarMsg): [AvatarState, never[]]
 
 #### Types
 
+##### `AvatarDensity` from `@llui/components/avatar`
+
+Optional density of the styled avatar root; behavior remains unchanged.
+
+```typescript
+export type AvatarDensity = 'comfortable' | 'compact'
+```
+
 ##### `AvatarMsg` from `@llui/components/avatar`
 
 ```typescript
@@ -28538,6 +28957,7 @@ export interface AvatarParts {
     'data-scope': 'avatar'
     'data-part': 'root'
     'data-status': Signal<ImageStatus>
+    'data-density': AvatarDensity | undefined
   }
   image: {
     'data-scope': 'avatar'
@@ -28572,6 +28992,8 @@ export interface AvatarState {
 ```typescript
 export interface ConnectOptions {
   alt?: string
+  /** Presentation density published on the root for either skin to consume. */
+  density?: AvatarDensity
 }
 ```
 
@@ -35519,6 +35941,10 @@ export type CarouselMsg =
   | { type: 'pause' }
   /** @intent("Resume autoplay after a pause") */
   | { type: 'resume' }
+  /** @humanOnly */
+  | { type: 'setHovered'; hovered: boolean }
+  /** @humanOnly */
+  | { type: 'setFocusWithin'; focusWithin: boolean }
   /** @intent("Turn autoplay on or off") */
   | { type: 'setAutoplay'; autoplay: boolean }
   /**
@@ -35542,6 +35968,8 @@ export type CarouselMsg =
   | { type: 'dragEnd' }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: 'ltr' | 'rtl' }
 ```
 
 #### Interfaces
@@ -35578,6 +36006,7 @@ export interface CarouselInit {
 ```typescript
 export interface CarouselParts {
   root: {
+    id: string
     role: 'region'
     'aria-roledescription': 'carousel'
     'aria-label': string
@@ -35586,8 +36015,8 @@ export interface CarouselParts {
     'data-paused': Signal<'' | undefined>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
-    onFocus: (e: FocusEvent) => void
-    onBlur: (e: FocusEvent) => void
+    onFocusIn: (e: FocusEvent) => void
+    onFocusOut: (e: FocusEvent) => void
   }
   viewport: {
     'data-scope': 'carousel'
@@ -35600,10 +36029,17 @@ export interface CarouselParts {
     'data-dragging': Signal<'' | undefined>
     /** Live track offset (px) to follow the finger: `translateX(var)`. */
     'data-drag-offset': Signal<string | undefined>
+    /** Physical pointer delta consumed by either skin's track transform. */
+    'style.--carousel-drag-offset': Signal<string | undefined>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
     onPointerCancel: (e: PointerEvent) => void
+  }
+  /** Place all slides directly inside this transform-bearing track. */
+  track: {
+    'data-scope': 'carousel'
+    'data-part': 'track'
   }
   indicatorGroup: {
     role: 'tablist'
@@ -35628,6 +36064,8 @@ export interface CarouselParts {
     onClick: (e: MouseEvent) => void
   }
   slide: (index: number) => CarouselSlideParts
+  /** Place once anywhere in the same build to keep automatic direction live. */
+  directionSync: Mountable
 }
 ```
 
@@ -35649,6 +36087,8 @@ export interface CarouselSlideParts {
   indicator: {
     type: 'button'
     role: 'tab'
+    /** APG roving tab stop: only the selected indicator participates in Tab. */
+    tabindex: Signal<0 | -1>
     'aria-label': string
     'aria-selected': Signal<boolean>
     'aria-controls': string
@@ -35671,7 +36111,12 @@ export interface CarouselState {
   loop: boolean
   autoplay: boolean
   interval: number
+  /** Explicit application pause, independent from hover/focus interaction. */
   paused: boolean
+  /** Pointer is currently over the carousel root. */
+  hovered: boolean
+  /** DOM focus is currently contained by the carousel root. */
+  focusWithin: boolean
   /** Direction of the last transition — useful for entry animations. */
   direction: 'forward' | 'backward'
   /**
@@ -35683,6 +36128,8 @@ export interface CarouselState {
   dragging: CarouselDrag | null
   /** Reading direction. Under 'rtl' indicator horizontal arrow keys are flipped. */
   dir: 'ltr' | 'rtl'
+  /** Whether direction follows the mounted DOM or explicit init/setDir configuration. */
+  dirSource: DirectionSource
 }
 ```
 
@@ -36780,6 +37227,14 @@ by index, robust to virtualization.
 export type SortDirection = 'asc' | 'desc'
 ```
 
+##### `TableDensity` from `@llui/components/table`
+
+Optional density of the styled grid root; table behavior remains unchanged.
+
+```typescript
+export type TableDensity = 'comfortable' | 'compact'
+```
+
 ##### `TableMsg` from `@llui/components/table`
 
 ```typescript
@@ -36837,6 +37292,8 @@ export type TableSelectionMode = 'none' | 'single' | 'multiple'
 ```typescript
 export interface ConnectOptions {
   id: string
+  /** Presentation density published on the grid root for either skin to consume. */
+  density?: TableDensity
 }
 ```
 
@@ -36859,9 +37316,11 @@ export interface TableCellParts {
   tabindex: Signal<number>
   'data-scope': 'table'
   'data-part': 'cell'
-  /** 0-based row index — addresses the cell for roving DOM focus. */
-  'data-row-index': number
-  /** 0-based column index — addresses the cell for roving DOM focus. */
+  /** 0-based row index — addresses the cell for roving DOM focus. Reactive
+   * for the same reason `TableRowParts`'s `aria-rowindex` is. */
+  'data-row-index': Signal<number>
+  /** 0-based column index — addresses the cell for roving DOM focus. Columns
+   * do not reorder, so this stays a plain number. */
   'data-col-index': number
   'data-focused': Signal<'' | undefined>
   onFocus: (e: FocusEvent) => void
@@ -36946,6 +37405,15 @@ export interface TableInit {
 
 ```typescript
 export interface TableParts {
+  /**
+   * Place the native table carrying {@link root} directly inside this owned
+   * scroll viewport. Wide grids then scroll locally without changing the
+   * table's native layout/ARIA semantics or overflowing the page.
+   */
+  viewport: {
+    'data-scope': 'table'
+    'data-part': 'viewport'
+  }
   root: {
     role: 'grid'
     id: string
@@ -36956,10 +37424,22 @@ export interface TableParts {
     'data-scope': 'table'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
+    'data-density': TableDensity | undefined
   }
   columnHeader: (columnId: string) => TableColumnHeaderParts
-  row: (id: string, index: number) => TableRowParts
-  cell: (rowIndex: number, colIndex: number) => TableCellParts
+  /**
+   * `index` accepts a plain `number` OR a `Signal<number>` (the row handle
+   * `each`/`virtualEach` passes its render callback) — a keyed row is REUSED
+   * (moved, not rebuilt) on reorder, so a plain number captured at build time
+   * would freeze `aria-rowindex` and the row's own `toggleRow`/`selectRange`
+   * dispatch at the row's ORIGINAL position forever. Pass the row's reactive
+   * index handle whenever rows can reorder (sorting, filtering); a plain
+   * number is still accepted for a table that never reorders.
+   */
+  row: (id: string, index: Reactive<number>) => TableRowParts
+  /** `rowIndex` has the same `Reactive<number>` contract as {@link row}'s
+   * `index` — the column index does not reorder and stays a plain `number`. */
+  cell: (rowIndex: Reactive<number>, colIndex: number) => TableCellParts
   /**
    * The select-all checkbox, for the `columnheader` of `columnId`.
    *
@@ -36978,7 +37458,8 @@ export interface TableParts {
    * roving stop, and its header will not send `toggleAll` either.
    */
   selectAllCheckbox: (columnId: string) => TableCheckboxParts
-  rowCheckbox: (id: string, index: number) => TableCheckboxParts
+  /** Same `Reactive<number>` contract as {@link row}'s `index`. */
+  rowCheckbox: (id: string, index: Reactive<number>) => TableCheckboxParts
 }
 ```
 
@@ -36988,7 +37469,11 @@ export interface TableParts {
 export interface TableRowParts {
   role: 'row'
   'aria-selected': Signal<boolean | undefined>
-  'aria-rowindex': number
+  /** Reactive: a row's DISPLAY position can change after sort/reorder without
+   * this row being rebuilt (`each` reuses rows by key), so the index this
+   * addresses must follow the row's live position rather than freeze at
+   * whatever it was when the row was first built. */
+  'aria-rowindex': Signal<number>
   'data-scope': 'table'
   'data-part': 'row'
   'data-row': string
@@ -39233,6 +39718,8 @@ export interface ConfirmDialogViewOptions {
 export interface ConnectOptions {
   /** Element id base for the table (`grid`) root. */
   id: string
+  /** Presentation density forwarded to the composed table root. */
+  density?: TableDensity
   /** Accessible label for the pagination nav. */
   paginationLabel?: string
 }
@@ -40731,6 +41218,8 @@ export type DataTableMsg =
 export interface ConnectOptions {
   /** Element id base for the table (`grid`) root. */
   id: string
+  /** Presentation density forwarded to the composed table root. */
+  density?: TableDensity
   /** Accessible label for the pagination nav. */
   paginationLabel?: string
 }
@@ -41421,6 +41910,36 @@ const RESERVED_HUE_ARCS: readonly ReservedHueArc[]
 
 #### Functions
 
+##### `chartForcedColorPatterns()` from `@llui/components/chart`
+
+Five SVG `<pattern>` fills, one per {@link ChartSeriesCue} name — the SAME
+cue vocabulary `data-series-cue` already carries on every mark. A skin's
+`forced-colors` rule reads `fill: var(--llui-chart-fill-dot)` (say), which
+`connect()` below sets to THIS chart's own `url('#<id>:pattern-dot')
+CanvasText`, so a bar/area mark gets a REAL redundant cue: `fill:
+CanvasText` alone makes every bar/area series under `forced-colors: active`
+paint identically, since forced colors flattens author colors uniformly
+(#264) — a dash pattern (already used for LINE marks) does nothing for a
+filled shape's fill.
+
+Pure, static, stateless markup — not part of `connect()`'s REACTIVE parts
+(it never varies with data or state), but keyed by the SAME `id` `connect()`
+takes, and it MUST be. A fixed, globally-shared id (`id="llui-chart-pattern-
+dot"` on every chart instance) resolves a `url(#...)` reference to
+WHICHEVER same-named element the browser's id table happens to return —
+measured in real Chromium: when the first such element in the document sits
+inside a `display:none` ancestor (one hidden chart earlier on the page),
+every OTHER, visible chart's pattern-filled marks paint nothing, because a
+referenced paint server inside a non-rendered subtree does not paint even
+for a consumer outside it (#264 review item 3). Per-instance ids close the
+whole bug class rather than depending on document order: each chart only
+ever references its OWN copy. Place it once as the first child of
+`parts.svg` in either skin, passing the SAME `id` given to `connect()`.
+
+```typescript
+function chartForcedColorPatterns(id: string): Mountable
+```
+
 ##### `connect()` from `@llui/components/chart`
 
 ```typescript
@@ -41514,6 +42033,19 @@ export type ChartMsg =
   | { type: 'setInnerRadius'; value: number }
   /** @intent("Swap the cartesian axes for a horizontal bar chart") */
   | { type: 'setHorizontal'; horizontal: boolean }
+```
+
+##### `ChartSeriesCue` from `@llui/components/chart`
+
+```typescript
+export type ChartSeriesCue =
+  | 'solid'
+  | 'short-dash'
+  | 'dot'
+  | 'long-dash'
+  | 'dash-dot'
+  | 'grid'
+  | 'cross-hatch'
 ```
 
 ##### `MarkType` from `@llui/components/chart`
@@ -41620,6 +42152,7 @@ A drawn mark: one series, one path.
 ```typescript
 export interface ChartMark {
   seriesKey: string
+  seriesCue: ChartSeriesCue
   label: string
   mark: MarkType
   /** The SVG path `d`. */
@@ -41655,6 +42188,9 @@ export interface ChartParts {
     'data-coord': Signal<'cartesian' | 'polar'>
     'data-domain': Signal<'value' | 'share'>
     'data-active': Signal<'' | undefined>
+    /** Per-instance forced-colors fill custom properties — see `connect()`'s
+     * own doc for why these must be per-chart rather than a shared global. */
+    style: string
   }
   /**
    * The `<svg>`. `role="img"` with a name and description is what a screen
@@ -41707,6 +42243,7 @@ export interface ChartParts {
     'data-scope': 'chart'
     'data-part': 'dot'
     'data-series': string
+    'data-series-cue': ChartSeriesCue
     'data-active': '' | undefined
     cx: number
     cy: number
@@ -41716,9 +42253,20 @@ export interface ChartParts {
     'data-scope': 'chart'
     'data-part': 'legend-item'
     'data-series': string
+    'data-series-cue': Signal<ChartSeriesCue>
     'data-dimmed': Signal<'' | undefined>
     'aria-pressed': Signal<boolean>
     onClick: (e: MouseEvent) => void
+  }
+  /** The legend's colour chip. Spreadable onto its own element (a `<span>` in
+   * both skins) so a forced-colors rule can key off `data-series-cue` the
+   * SAME way a mark does — a legend swatch that only carries `--mark-color`
+   * paints identically for every series once forced colors flattens author
+   * colour, which is the accessibility gap #264 review item 7 names. */
+  legendSwatch: (key: string) => {
+    'data-scope': 'chart'
+    'data-part': 'legend-swatch'
+    'data-series-cue': Signal<ChartSeriesCue>
   }
   /** Attributes for one drawn mark. Spread onto a `<path>` and pass `d`. */
   markProps: (mark: ChartMark) => {
@@ -41726,6 +42274,7 @@ export interface ChartParts {
     'data-part': 'mark'
     'data-mark': 'line' | 'area' | 'bar'
     'data-series': string
+    'data-series-cue': ChartSeriesCue
     'data-active': '' | undefined
     'data-dimmed': '' | undefined
     d: string
@@ -41839,6 +42388,7 @@ A vertex on a line or area series, for the dot layer and hit feedback.
 ```typescript
 export interface ChartVertex {
   seriesKey: string
+  seriesCue: ChartSeriesCue
   index: number
   x: number
   y: number

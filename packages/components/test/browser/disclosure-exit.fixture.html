@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Disclosure exit completion (#264 item 4)</title>
+    <style>
+      [data-part='content'][hidden] {
+        display: none;
+      }
+
+      /* no-motion skin: deliberately NO animation/transition rule at all. */
+
+      /* custom animation skin: a real keyframes animation, WITHOUT the
+         --llui-disclosure-exit-animation custom property — proves a custom
+         skin that never opts into naming still completes. */
+      @keyframes disclosure-fade-out {
+        from {
+          opacity: 1;
+        }
+        to {
+          opacity: 0;
+        }
+      }
+      #host-anim [data-part='content'][data-state='closing'] {
+        animation: disclosure-fade-out 120ms;
+      }
+
+      /* transition-only skin: no @keyframes at all. */
+      #host-transition [data-part='content'] {
+        opacity: 1;
+        transition: opacity 120ms;
+      }
+      #host-transition [data-part='content'][data-state='closing'] {
+        opacity: 0;
+      }
+
+      /* reduced-motion skin: only animates when the OS has no reduced-motion
+         preference — under `prefers-reduced-motion: reduce` this genuinely
+         runs no motion at all, same as the no-motion skin. */
+      @media (prefers-reduced-motion: no-preference) {
+        #host-reduced [data-part='content'][data-state='closing'] {
+          animation: disclosure-fade-out 120ms;
+        }
+      }
+
+      /* Sibling-instance isolation fixture: two accordions sharing ONE
+         onMount build container, each with a DIFFERENT exit duration so a
+         cross-contaminated watcher settles the slow one early. */
+      @keyframes disclosure-fade-out-fast {
+        from {
+          opacity: 1;
+        }
+        to {
+          opacity: 0;
+        }
+      }
+      @keyframes disclosure-fade-out-slow {
+        from {
+          opacity: 1;
+        }
+        to {
+          opacity: 0;
+        }
+      }
+      #sib-a-root [data-part='content'][data-state='closing'] {
+        animation: disclosure-fade-out-fast 60ms;
+      }
+      #sib-b-root [data-part='content'][data-state='closing'] {
+        animation: disclosure-fade-out-slow 500ms;
+      }
+
+      /* no-part fixture: deliberately no exit motion at all, matching
+         host-none — the interesting variable here is that `exitCompletion`
+         is never placed in the view. */
+    </style>
+  </head>
+  <body>
+    <div id="host-none"></div>
+    <div id="host-anim"></div>
+    <div id="host-transition"></div>
+    <div id="host-reduced"></div>
+    <div id="host-collapsible"></div>
+    <div id="host-shadow"></div>
+    <div id="host-siblings"></div>
+    <div id="host-no-part"></div>
+    <script type="module" src="./disclosure-exit.fixture.ts"></script>
+  </body>
+</html>

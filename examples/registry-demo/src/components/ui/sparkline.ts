@@ -75,7 +75,7 @@ export const Sparkline = classPart(div, 'relative inline-block leading-none alig
  *  right edge is half outside the box. */
 export const SparklineSvg = classPart(
   svg,
-  'block h-8 w-30 overflow-visible focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-sm',
+  'block h-8 w-30 overflow-visible focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-sm [forced-color-adjust:none] forced-colors:bg-[Canvas]',
 )
 
 /** `<title>` / `<desc>` — what `parts.svg`'s `aria-labelledby` points at.
@@ -108,7 +108,7 @@ export const SparklineNow = classPart(
 /** The trend line. `fill-none` FIRST — see the module note. */
 export const SparklineLine = classPart(
   path,
-  'fill-none stroke-primary stroke-[1.5] [stroke-linecap:round] [stroke-linejoin:round]',
+  'fill-none stroke-primary stroke-[1.5] [stroke-linecap:round] [stroke-linejoin:round] forced-colors:stroke-[CanvasText]',
 )
 
 /**
@@ -126,7 +126,7 @@ export const SparklineLine = classPart(
  */
 export const SparklineDot = classPartWithDefaults(
   circle,
-  'fill-primary stroke-none data-[tone=none]:fill-muted-foreground data-[tone=above]:fill-destructive data-[tone=below]:fill-background data-[tone=below]:stroke-destructive data-[tone=below]:stroke-1 data-last:stroke-background data-last:stroke-2 data-[tone=below]:data-last:stroke-destructive',
+  'fill-primary stroke-none data-[tone=none]:fill-muted-foreground data-[tone=above]:fill-destructive data-[tone=below]:fill-background data-[tone=below]:stroke-destructive data-[tone=below]:stroke-1 data-last:stroke-background data-last:stroke-2 data-[tone=below]:data-last:stroke-destructive forced-colors:fill-[CanvasText]! forced-colors:stroke-[CanvasText]! forced-colors:data-[tone=above]:[r:3px] forced-colors:data-[tone=above]:stroke-1 forced-colors:data-[tone=below]:[r:4px] forced-colors:data-[tone=below]:stroke-[Canvas]! forced-colors:data-[tone=below]:stroke-2 forced-colors:data-[tone=below]:[stroke-dasharray:1_1]',
   { r: 2 },
 )
 
@@ -154,7 +154,7 @@ export const SparklineTooltipValue = classPart(
   'font-mono font-medium tabular-nums text-foreground',
 )
 
-export const SparklineTooltipDate = classPart(span, 'ml-1.5 text-muted-foreground')
+export const SparklineTooltipDate = classPart(span, 'ms-1.5 text-muted-foreground')
 
 /**
  * The visually-hidden data table, and the reason `SparklineSvg` can settle for

@@ -30,11 +30,11 @@ export const Meter = classPart(div, 'flex w-full flex-col gap-1.5')
 export const MeterLabel = classPart(span, 'text-sm font-medium')
 export const MeterTrack = classPart(
   div,
-  'relative h-2 w-full overflow-hidden rounded-full bg-muted',
+  'relative h-2 w-full overflow-hidden rounded-full bg-muted [forced-color-adjust:none] forced-colors:border forced-colors:border-[CanvasText] forced-colors:bg-[Canvas]',
 )
 export const MeterRange = classPart(
   div,
-  'h-full rounded-full bg-primary transition-all data-[state=critical]:bg-destructive data-[state=suboptimal]:bg-chart-4',
+  'h-full rounded-full bg-primary transition-all data-[state=critical]:bg-destructive data-[state=suboptimal]:bg-chart-4 motion-reduce:transition-none forced-colors:bg-[CanvasText]',
 )
 
 /**
@@ -44,7 +44,7 @@ export const MeterRange = classPart(
  */
 export const MeterBand = classPart(
   div,
-  'absolute inset-y-0 bg-muted-foreground/15 data-[state=optimal]:bg-primary/20 data-[state=suboptimal]:bg-chart-4/25 data-[state=critical]:bg-destructive/20',
+  'absolute inset-y-0 bg-muted-foreground/15 data-[state=optimal]:bg-primary/20 data-[state=suboptimal]:bg-chart-4/25 data-[state=critical]:bg-destructive/20 forced-colors:border forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:data-[state=optimal]:[background-image:repeating-linear-gradient(90deg,CanvasText_0_2px,Canvas_2px_6px)] forced-colors:data-[state=suboptimal]:[background-image:repeating-linear-gradient(45deg,CanvasText_0_2px,Canvas_2px_7px)] forced-colors:data-[state=critical]:[background-image:repeating-linear-gradient(135deg,CanvasText_0_2px,Canvas_2px_7px)]',
 )
 
 /**
@@ -69,5 +69,5 @@ export const MeterBand = classPart(
  */
 export const MeterMarker = classPart(
   div,
-  'absolute inset-y-0 w-0.5 -translate-x-1/2 rounded-full bg-foreground transition-all',
+  'absolute inset-y-0 w-0.5 -translate-x-1/2 rounded-full bg-foreground transition-all motion-reduce:transition-none rtl:translate-x-1/2 forced-colors:bg-[CanvasText]',
 )

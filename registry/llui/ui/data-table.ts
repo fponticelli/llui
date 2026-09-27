@@ -33,5 +33,5 @@ export const DataTableEmptyTitle = classPart(p, 'text-sm font-medium')
 export const DataTableEmptyDescription = classPart(p, 'text-sm text-muted-foreground')
 export const DataTableErrorState = classPart(
   div,
-  'flex flex-col items-center justify-center gap-2 rounded-md border border-destructive/50 px-6 py-12 text-center text-sm text-destructive',
+  'flex flex-col items-center justify-center gap-2 rounded-md border border-destructive/50 px-6 py-12 text-center text-sm text-destructive forced-colors:border-[Mark] forced-colors:text-[Mark]',
 )

@@ -87,19 +87,19 @@
 
 @keyframes accordion-down {
   from {
-    height: 0;
+    block-size: 0;
   }
   to {
-    height: var(--content-height, auto);
+    block-size: var(--llui-disclosure-block-size, var(--content-height, auto));
   }
 }
 
 @keyframes accordion-up {
   from {
-    height: var(--content-height, auto);
+    block-size: var(--llui-disclosure-block-size, var(--content-height, auto));
   }
   to {
-    height: 0;
+    block-size: 0;
   }
 }
 
@@ -144,4 +144,78 @@
     background-color: var(--background);
     color: var(--foreground);
   }
+}
+
+/*
+ * Forced-colors chart fill patterns, referenced by `ChartMark`'s
+ * `fill-(--llui-chart-fill-<cue>)` utilities (#264).
+ *
+ * These are declared as PLAIN CSS custom properties, not embedded directly
+ * as `fill-[url(#llui-chart-pattern-<cue>)]` Tailwind arbitrary values,
+ * because Tailwind v4's content scanner does not reliably candidate-detect
+ * an arbitrary value containing an unescaped `#` inside a long
+ * multi-variant chained utility (measured: the whole utility silently drops
+ * from the compiled output, and every bar/area series fell back to
+ * `fill: CanvasText` again — the exact bug this fix exists to close, this
+ * time hidden behind a passing `tailwind-classes.test.ts`, since that check
+ * compiles a candidate LIST directly rather than scanning it out of source).
+ * Percent-encoding the `#` (`url(%23...)`) sidesteps the scanner but breaks
+ * the CSS itself: an unquoted `url(%23id)` is a RELATIVE URL, not a
+ * same-document fragment reference, so the browser requests a nonexistent
+ * path instead of resolving the local `<pattern>`. Tailwind's `(--custom-
+ * property)` PAREN reference syntax (already used by `fill-(--mark-color)`
+ * in this same file) needs no bracket-content scanning at all — it just
+ * emits `var(--name)` — so the pattern reference lives here instead, in
+ * ordinary CSS the Tailwind build passes through unscanned.
+ *
+ * These `:root` values are a FALLBACK ONLY (#264 review item 3): every real
+ * chart instance overrides all five inline, from `connect()`, with ids
+ * derived from ITS OWN `id` rather than this fixed, shared one — a fixed id
+ * shared by every chart on the page resolves a `url(#...)` reference to
+ * whichever same-named element the browser's id table returns, and a
+ * `<pattern>` sitting inside a hidden (`display:none`) chart earlier in the
+ * document makes every OTHER chart's reference paint nothing. The trailing
+ * `CanvasText` on each is the SVG paint-server fallback token (`url(#…)
+ * CanvasText`): if a reference still fails to resolve for any reason, the
+ * mark paints solid instead of invisible.
+ */
+:root {
+  --llui-chart-fill-solid: CanvasText;
+  --llui-chart-fill-short-dash: url('#llui-chart-pattern-short-dash') CanvasText;
+  --llui-chart-fill-dot: url('#llui-chart-pattern-dot') CanvasText;
+  --llui-chart-fill-long-dash: url('#llui-chart-pattern-long-dash') CanvasText;
+  --llui-chart-fill-dash-dot: url('#llui-chart-pattern-dash-dot') CanvasText;
+  --llui-chart-fill-grid: url('#llui-chart-pattern-grid') CanvasText;
+  --llui-chart-fill-cross-hatch: url('#llui-chart-pattern-cross-hatch') CanvasText;
+}
+
+/**
+ * Legend-swatch forced-colors background images, one per {@link
+ * ChartSeriesCue} (#264 review item 7) — kept as plain `:root` custom
+ * properties rather than inline in `ChartLegendSwatch`'s Tailwind class
+ * string, because a `repeating-linear-gradient(...)`/`radial-gradient(...)`
+ * value's internal COMMAS and PARENTHESES do not reliably survive Tailwind
+ * v4's candidate scanner inside a long chained-variant utility — measured:
+ * every one of these classes silently compiled to `background-image: none`
+ * when spelled as `forced-colors:data-[series-cue=X]:[background-image:
+ * repeating-linear-gradient(...)]` directly. A single `var(--name)`
+ * reference (`[background-image:var(--llui-chart-swatch-short-dash)]`) has
+ * no such punctuation and scans reliably, matching the existing
+ * `fill-(--llui-chart-fill-*)` idiom above.
+ */
+:root {
+  --llui-chart-swatch-short-dash: repeating-linear-gradient(
+    90deg,
+    CanvasText 0 2px,
+    Canvas 2px 5px
+  );
+  --llui-chart-swatch-dot: radial-gradient(circle, CanvasText 35%, Canvas 36%);
+  --llui-chart-swatch-long-dash: repeating-linear-gradient(90deg, CanvasText 0 4px, Canvas 4px 6px);
+  --llui-chart-swatch-dash-dot: repeating-linear-gradient(45deg, CanvasText 0 2px, Canvas 2px 4px);
+  --llui-chart-swatch-grid:
+    repeating-linear-gradient(0deg, CanvasText 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, CanvasText 0 1px, Canvas 1px 4px);
+  --llui-chart-swatch-cross-hatch:
+    repeating-linear-gradient(45deg, CanvasText 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(-45deg, CanvasText 0 1px, Canvas 1px 3px);
 }

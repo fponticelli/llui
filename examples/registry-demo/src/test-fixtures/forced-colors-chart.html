@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Registry chart forced-colors fixture (test-only, not part of the demo)</title>
+    <link rel="stylesheet" href="/src/main.css" />
+  </head>
+  <body>
+    <!-- Hidden FIRST, on purpose (#264 review item 3): reproduces the exact
+         document order that used to break a global, shared pattern id — a
+         browser resolves a `url(#id)` reference to whichever same-named
+         element it finds first, and one sitting inside `display:none`
+         painted nothing for every LATER, visible chart referencing it. -->
+    <div id="hidden-app" style="display: none"></div>
+    <div id="app"></div>
+    <div id="app-seven"></div>
+    <div id="app-pie"></div>
+    <script type="module" src="./forced-colors-chart.ts"></script>
+  </body>
+</html>

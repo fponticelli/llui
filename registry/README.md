@@ -133,6 +133,15 @@ across the top of the group instead of a rule between the panels. It compiled,
 it spread, the suite was green — a render is the only thing that shows it.
 Check what an attribute MEANS on both sides before pairing them.
 
+**`PaginationLink` is a `<button>`, not upstream's `<a>` (#264 review item 9).**
+This is a deliberate, explained deviation, not drift: `@llui/components/pagination`
+publishes reactive `data-selected`/`aria-current` state and its roving-focus
+helper addresses BUTTON elements specifically (`focusRovingItem`'s `itemPart`
+convention), and pagination here is an in-app state change (the page the
+machine tracks), never a document navigation to a different URL — there is no
+`href` a `<a>` would meaningfully carry. Reverting to `<a>` would leave the
+keyboard roving-focus wiring unable to find the element it moves focus to.
+
 ## Rules for anything added here
 
 1. **Route `class` through `mergeClass`, never `cn` directly.** `class` is
@@ -154,6 +163,33 @@ Check what an attribute MEANS on both sides before pairing them.
 5. **Use an intersection for prop types**, not `interface X extends ElProps` — an
    interface extending `ElProps` drops its index signature, so `props.class` and every
    spread `data-*` key stop type-checking.
+6. **A disclosure root (`Accordion`/`Collapsible`) is built with `withExitCompletion`,
+   and `exitCompletion: Mountable` is a REQUIRED THIRD ARGUMENT, never a field on
+   the attribute props bag.** It used to be a field on the props object, but a
+   call site's own fresh literal (`{ ...parts.root, exitCompletion:
+   parts.exitCompletion }`) fails against `ElProps`'s index signature — TypeScript
+   checks every property of an intersected type against ANY reachable index
+   signature when the literal is fresh, regardless of which constituent declared
+   the property. `parts.exitCompletion` is the machine's own `connect()` part that
+   settles a RETAINED `close`/`toggle`/`setValue`/`setOpen` (one carrying
+   `retain: true`, e.g. via `parts.close(...)`) on a skin with no exit motion — a
+   raw programmatic close with no `retain` closes instantly and never enters
+   `closing`; `withExitCompletion` (in `llui/lib/utils.ts`) wraps a
+   `classPart`-built root so it appends that part after the caller's children
+   itself, and the required third argument means
+   `Accordion({ ...parts.root }, [...])` (missing it) is a type error, not a
+   runtime surprise — the whole call is
+   `Accordion({ ...parts.root }, [...], { exitCompletion: parts.exitCompletion })`.
+   Forgetting to place `parts.exitCompletion` at ALL is no longer a hang —
+   whether it is mounted lives in a runtime registry keyed by the machine's own
+   `opts.id`, never in state, and `@llui/components`' reducer only retains a
+   `closing` phase when the closing message itself carries `retain: true` (stamped
+   by `connect()`'s own trigger handlers from that registry) — a forgotten part
+   means the registry never counts an attach, so every close is instant instead,
+   with a synchronous, once-per-id dev-mode warning — so the required field here is
+   about not silently losing the requested exit ANIMATION in a registry skin, not
+   about avoiding a stuck instance. See `@llui/components`'s README (`accordion /
+collapsible exit motion`) for the full contract.
 
 ## Checks
 

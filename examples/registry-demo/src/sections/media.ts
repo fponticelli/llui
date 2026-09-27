@@ -161,32 +161,32 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const weekdays = state.at('calendar').map((s) => datePickerC.weekdayLabels(s.weekStartsOn))
 
   return [
+    car.directionSync,
     section(
       'Carousel',
       "shadcn wraps Embla and ships no dots; `@llui/components/carousel` owns the index, so the indicators are LLui's. Arrows, dots, drag and the APG tablist keyboard model all drive one `current`.",
       [
-        div({ class: 'px-12' }, [
-          Carousel({ ...car.root }, [
-            CarouselViewport({ ...car.viewport }, [
-              CarouselContent(
-                SLIDES.map((label, i) =>
-                  CarouselSlide({ ...car.slide(i).slide }, [
-                    div(
-                      {
-                        class:
-                          'grid aspect-[3/1] place-items-center rounded-md border bg-muted/40 text-sm',
-                      },
-                      [text(label)],
-                    ),
-                  ]),
-                ),
+        Carousel({ ...car.root }, [
+          CarouselViewport({ ...car.viewport }, [
+            CarouselContent(
+              { ...car.track },
+              SLIDES.map((label, i) =>
+                CarouselSlide({ ...car.slide(i).slide }, [
+                  div(
+                    {
+                      class:
+                        'grid aspect-[3/1] place-items-center rounded-md border bg-muted/40 text-sm',
+                    },
+                    [text(label)],
+                  ),
+                ]),
               ),
-            ]),
-            CarouselPrevious({ ...car.prevTrigger }, [ChevronLeftIcon({ class: 'size-4' })]),
-            CarouselNext({ ...car.nextTrigger }, [ChevronRightIcon({ class: 'size-4' })]),
-            CarouselIndicatorGroup({ ...car.indicatorGroup }, [
-              ...SLIDES.map((_, i) => CarouselIndicator({ ...car.slide(i).indicator })),
-            ]),
+            ),
+          ]),
+          CarouselPrevious({ ...car.prevTrigger }, [ChevronLeftIcon({ class: 'size-4' })]),
+          CarouselNext({ ...car.nextTrigger }, [ChevronRightIcon({ class: 'size-4' })]),
+          CarouselIndicatorGroup({ ...car.indicatorGroup }, [
+            ...SLIDES.map((_, i) => CarouselIndicator({ ...car.slide(i).indicator })),
           ]),
         ]),
       ],

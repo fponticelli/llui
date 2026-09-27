@@ -1,5 +1,5 @@
 import { div } from '@llui/dom'
-import { classPart } from '../../lib/utils'
+import { classPart, classPartWithDefaults } from '../../lib/utils'
 import { buttonVariants } from './button'
 import { mergeClass, splitArgs } from '../../lib/utils'
 import { button, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
@@ -18,8 +18,15 @@ import { ChevronLeftIcon, ChevronRightIcon } from './icons'
  * the current dot never highlighted; the class compiled, so nothing caught it.
  */
 export const Carousel = classPart(div, 'relative')
-export const CarouselViewport = classPart(div, 'overflow-hidden')
-export const CarouselContent = classPart(div, 'flex')
+export const CarouselViewport = classPart(
+  div,
+  'overflow-hidden data-[dragging]:[--carousel-track-duration:0ms]',
+)
+export const CarouselContent = classPartWithDefaults(
+  div,
+  'flex transition-transform ease-out [transition-duration:var(--carousel-track-duration,200ms)] [transform:translateX(var(--carousel-drag-offset,0px))] motion-reduce:transition-none!',
+  { 'data-scope': 'carousel', 'data-part': 'track' },
+)
 export const CarouselSlide = classPart(div, 'min-w-0 shrink-0 grow-0 basis-full')
 
 function arrow(position: string, glyph: (props?: ElProps) => Mountable) {
@@ -31,7 +38,7 @@ function arrow(position: string, glyph: (props?: ElProps) => Mountable) {
         type: 'button',
         ...rest,
         class: mergeClass(
-          `${buttonVariants({ variant: 'outline', size: 'icon' })} absolute size-8 rounded-full ${position}`,
+          `${buttonVariants({ variant: 'outline', size: 'icon' })} absolute size-8 rounded-full motion-reduce:transition-none! rtl:[&>svg]:rotate-180 ${position}`,
           className,
         ),
       },
@@ -40,13 +47,16 @@ function arrow(position: string, glyph: (props?: ElProps) => Mountable) {
   }
 }
 
-export const CarouselPrevious = arrow('top-1/2 -left-12 -translate-y-1/2', ChevronLeftIcon)
-export const CarouselNext = arrow('top-1/2 -right-12 -translate-y-1/2', ChevronRightIcon)
+// Outside the carousel (`-start-12`/`-end-12`), matching shadcn's upstream
+// recipe verbatim (#264 review item 9) — `start-2`/`end-2` moved the arrows
+// INSIDE the frame, a deviation with no stated acceptance criterion.
+export const CarouselPrevious = arrow('top-1/2 -start-12 -translate-y-1/2', ChevronLeftIcon)
+export const CarouselNext = arrow('top-1/2 -end-12 -translate-y-1/2', ChevronRightIcon)
 export const CarouselIndicatorGroup = classPart(
   div,
   'mt-3 flex items-center justify-center gap-1.5',
 )
 export const CarouselIndicator = classPart(
   button,
-  'size-2 rounded-full bg-border transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-active:bg-primary',
+  "inline-flex size-6 items-center justify-center rounded-full bg-transparent outline-none before:size-2 before:rounded-full before:bg-border before:content-[''] before:transition-colors focus-visible:ring-[3px] focus-visible:ring-ring/50 data-active:before:bg-primary aria-selected:before:bg-primary motion-reduce:before:transition-none!",
 )

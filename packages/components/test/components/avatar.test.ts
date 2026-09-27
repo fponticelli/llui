@@ -26,6 +26,14 @@ describe('avatar reducer', () => {
 describe('avatar.connect', () => {
   const p = connect(rootSignal(), vi.fn(), { alt: 'Profile' })
 
+  it('publishes an explicitly configured presentation density on the root part', () => {
+    const compact = connect(rootSignal(), vi.fn(), { density: 'compact' })
+    const comfortable = connect(rootSignal(), vi.fn())
+
+    expect(compact.root['data-density']).toBe('compact')
+    expect(comfortable.root['data-density']).toBeUndefined()
+  })
+
   it('image hidden until loaded', () => {
     expect(read(p.image.hidden, { status: 'loading' })).toBe(true)
     expect(read(p.image.hidden, { status: 'loaded' })).toBe(false)

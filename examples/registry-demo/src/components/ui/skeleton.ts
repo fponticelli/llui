@@ -9,6 +9,6 @@ export function Skeleton(props?: ElProps): Mountable {
   return div({
     ...rest,
     'aria-hidden': 'true',
-    class: mergeClass('animate-pulse rounded-md bg-accent', className),
+    class: mergeClass('animate-pulse rounded-md bg-accent motion-reduce:animate-none', className),
   })
 }

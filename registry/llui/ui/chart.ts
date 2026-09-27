@@ -118,7 +118,7 @@ export const ChartContainer = classPart(
  *  plot radius by design, and the default clip would cut every one of them. */
 export const ChartSvg = classPart(
   svg,
-  'min-h-0 w-full flex-1 overflow-visible focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-md',
+  'min-h-0 w-full flex-1 overflow-visible focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 rounded-md [forced-color-adjust:none] forced-colors:bg-[Canvas]',
 )
 
 /**
@@ -142,25 +142,61 @@ export const ChartDesc: ElementHelper = svgDesc
  * the cursor. Both are bare attributes, matching every boolean `data-*` in
  * `@llui/components`.
  */
+/**
+ * `forced-colors:fill-[CanvasText]!` alone (main, pre-#264) made every
+ * bar/area series identical under forced colors — a dash pattern on `stroke`
+ * (below) does nothing for a FILLED shape's fill. The eight
+ * `data-[mark=…]:data-[series-cue=…]:fill-(--llui-chart-fill-…)!` rules read
+ * five CSS custom properties, defaulted once in `tailwind.css`'s `:root` but
+ * overridden PER CHART INSTANCE by `connect()` itself (a fixed, shared
+ * pattern id resolves a `url(#...)` reference to whichever same-named
+ * element the browser's id table returns, so a hidden chart earlier on the
+ * page can blank every other chart's fill — #264 review item 3), each an SVG
+ * `url('#<id>:pattern-…') CanvasText` reference into the `<pattern>` ids
+ * `chartForcedColorPatterns(id)` (from `@llui/components/chart`, given the
+ * SAME `id` as `connect()`) defines — place it once as the first child of
+ * `parts.svg`. The pattern reference lives in a custom property, not inline
+ * as `fill-[url('#…')]`, because
+ * Tailwind v4's content scanner does not reliably candidate-detect an
+ * arbitrary value containing an unescaped `#` inside a long chained-variant
+ * utility (measured: the whole utility silently dropped from the compiled
+ * output). `fill-(--name)` needs no bracket-content scanning at all — see
+ * `tailwind.css`'s own comment on these properties for the full story.
+ * `data-series-cue=solid` keeps the flat `CanvasText` fill (no override
+ * needed for it, matching the base fallback), so only four override pairs
+ * are declared per mark type.
+ */
 export const ChartMark = classPart(
   path,
-  'transition-opacity data-dimmed:opacity-25 data-[mark=bar]:fill-(--mark-color) data-[mark=area]:fill-(--mark-color) data-[mark=area]:opacity-70 data-[mark=line]:fill-none data-[mark=line]:stroke-(--mark-color) data-[mark=line]:stroke-2 data-[mark=line]:[stroke-linecap:round] data-[mark=line]:[stroke-linejoin:round] data-active:opacity-100',
+  'transition-opacity data-dimmed:opacity-25 data-[mark=bar]:fill-(--mark-color) data-[mark=area]:fill-(--mark-color) data-[mark=area]:opacity-70 data-[mark=line]:fill-none data-[mark=line]:stroke-(--mark-color) data-[mark=line]:stroke-2 data-[mark=line]:[stroke-linecap:round] data-[mark=line]:[stroke-linejoin:round] data-active:opacity-100 motion-reduce:transition-none forced-colors:opacity-100! forced-colors:fill-[CanvasText]! forced-colors:stroke-[CanvasText]! forced-colors:stroke-2 forced-colors:data-[mark=line]:fill-none! forced-colors:data-[series-cue=solid]:[stroke-dasharray:none] forced-colors:data-[series-cue=short-dash]:[stroke-dasharray:8_3] forced-colors:data-[series-cue=dot]:[stroke-dasharray:2_3] forced-colors:data-[series-cue=long-dash]:[stroke-dasharray:14_4] forced-colors:data-[series-cue=dash-dot]:[stroke-dasharray:10_3_2_3] forced-colors:data-[series-cue=grid]:[stroke-dasharray:3_3_1_3] forced-colors:data-[series-cue=cross-hatch]:[stroke-dasharray:1_2_4_2] forced-colors:data-[mark=bar]:data-[series-cue=short-dash]:fill-(--llui-chart-fill-short-dash)! forced-colors:data-[mark=bar]:data-[series-cue=dot]:fill-(--llui-chart-fill-dot)! forced-colors:data-[mark=bar]:data-[series-cue=long-dash]:fill-(--llui-chart-fill-long-dash)! forced-colors:data-[mark=bar]:data-[series-cue=dash-dot]:fill-(--llui-chart-fill-dash-dot)! forced-colors:data-[mark=bar]:data-[series-cue=grid]:fill-(--llui-chart-fill-grid)! forced-colors:data-[mark=bar]:data-[series-cue=cross-hatch]:fill-(--llui-chart-fill-cross-hatch)! forced-colors:data-[mark=area]:data-[series-cue=short-dash]:fill-(--llui-chart-fill-short-dash)! forced-colors:data-[mark=area]:data-[series-cue=dot]:fill-(--llui-chart-fill-dot)! forced-colors:data-[mark=area]:data-[series-cue=long-dash]:fill-(--llui-chart-fill-long-dash)! forced-colors:data-[mark=area]:data-[series-cue=dash-dot]:fill-(--llui-chart-fill-dash-dot)! forced-colors:data-[mark=area]:data-[series-cue=grid]:fill-(--llui-chart-fill-grid)! forced-colors:data-[mark=area]:data-[series-cue=cross-hatch]:fill-(--llui-chart-fill-cross-hatch)!',
 )
 
-/** A vertex dot on a line or area series. Hidden until its row is active, which
- *  is what makes the keyboard cursor visible without a permanent dot layer. */
+/**
+ * A vertex dot on a line or area series. Hidden until its row is active, which
+ * is what makes the keyboard cursor visible without a permanent dot layer.
+ *
+ * A fill PATTERN (as `ChartMark` uses for bar/area) is illegible at marker
+ * size, so the redundant forced-colors cue here instead varies radius, fill
+ * vs hollow, and stroke dash — five genuinely distinct treatments per
+ * `data-series-cue`, not five shades of the same filled disc. These replace
+ * (not add to) the base `forced-colors:fill-[CanvasText]!`/`stroke-[Canvas]!`
+ * pair, since `dot`/`dash-dot` deliberately swap which one is CanvasText.
+ */
 export const ChartDot = classPart(
   circle,
-  'fill-(--mark-color) stroke-background stroke-2 opacity-0 transition-opacity data-active:opacity-100',
+  'fill-(--mark-color) stroke-background stroke-2 opacity-0 transition-opacity data-active:opacity-100 motion-reduce:transition-none forced-colors:opacity-100! forced-colors:data-[series-cue=solid]:fill-[CanvasText]! forced-colors:data-[series-cue=solid]:stroke-[Canvas]! forced-colors:data-[series-cue=solid]:[r:4px] forced-colors:data-[series-cue=solid]:[stroke-dasharray:none] forced-colors:data-[series-cue=short-dash]:fill-[CanvasText]! forced-colors:data-[series-cue=short-dash]:stroke-[Canvas]! forced-colors:data-[series-cue=short-dash]:[r:5px] forced-colors:data-[series-cue=short-dash]:[stroke-dasharray:2_2] forced-colors:data-[series-cue=dot]:fill-[Canvas]! forced-colors:data-[series-cue=dot]:stroke-[CanvasText]! forced-colors:data-[series-cue=dot]:[r:5px] forced-colors:data-[series-cue=dot]:[stroke-dasharray:none] forced-colors:data-[series-cue=long-dash]:fill-[CanvasText]! forced-colors:data-[series-cue=long-dash]:stroke-[Canvas]! forced-colors:data-[series-cue=long-dash]:[r:6px] forced-colors:data-[series-cue=long-dash]:[stroke-width:3px] forced-colors:data-[series-cue=long-dash]:[stroke-dasharray:none] forced-colors:data-[series-cue=dash-dot]:fill-[Canvas]! forced-colors:data-[series-cue=dash-dot]:stroke-[CanvasText]! forced-colors:data-[series-cue=dash-dot]:[r:3px] forced-colors:data-[series-cue=dash-dot]:[stroke-width:1.5px] forced-colors:data-[series-cue=dash-dot]:[stroke-dasharray:1_1] forced-colors:data-[series-cue=grid]:fill-[Canvas]! forced-colors:data-[series-cue=grid]:stroke-[CanvasText]! forced-colors:data-[series-cue=grid]:[r:6px] forced-colors:data-[series-cue=grid]:[stroke-width:2.5px] forced-colors:data-[series-cue=grid]:[stroke-dasharray:none] forced-colors:data-[series-cue=cross-hatch]:fill-[CanvasText]! forced-colors:data-[series-cue=cross-hatch]:stroke-[Canvas]! forced-colors:data-[series-cue=cross-hatch]:[r:4.5px] forced-colors:data-[series-cue=cross-hatch]:[stroke-width:1px] forced-colors:data-[series-cue=cross-hatch]:[stroke-dasharray:1_1]',
 )
 
 /** The value gridlines. */
-export const ChartGrid = classPart(path, 'fill-none stroke-border/50 stroke-1')
+export const ChartGrid = classPart(
+  path,
+  'fill-none stroke-border/50 stroke-1 forced-colors:stroke-[GrayText]',
+)
 
 /** An axis label — category names and value ticks. */
 export const ChartAxisLabel = classPart(
   svgText,
-  'fill-muted-foreground text-[10px] data-active:fill-foreground data-active:font-medium',
+  'fill-muted-foreground text-[10px] data-active:fill-foreground data-active:font-medium forced-colors:fill-[CanvasText]',
 )
 
 /** A `<g>` layer, so marks / dots / labels stack in a defined order. */
@@ -196,7 +232,7 @@ export const ChartTooltipName = classPart(span, 'text-muted-foreground')
 
 export const ChartTooltipValue = classPart(
   span,
-  'ml-auto font-mono font-medium tabular-nums text-foreground',
+  'ms-auto font-mono font-medium tabular-nums text-foreground',
 )
 
 // ── Legend (ported verbatim) ──────────────────────────────────────────────
@@ -207,10 +243,16 @@ export const ChartLegend = classPart(div, 'flex items-center justify-center gap-
  *  `aria-pressed`, and isolating a series must be reachable from the keyboard. */
 export const ChartLegendItem = classPart(
   button,
-  'flex cursor-pointer items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 text-xs text-muted-foreground transition-opacity data-dimmed:opacity-40 [&>svg]:h-3 [&>svg]:w-3',
+  'flex cursor-pointer items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 text-xs text-muted-foreground transition-opacity data-dimmed:opacity-40 motion-reduce:transition-none [&>svg]:h-3 [&>svg]:w-3',
 )
 
-export const ChartLegendSwatch = classPart(span, 'size-2 shrink-0 rounded-[2px] bg-(--mark-color)')
+/** `parts.legendSwatch(key)` spreads `data-series-cue`: without it the chip
+ *  carries only `--mark-color`, which forced colors flattens to one uniform
+ *  system colour across every legend entry (#264 review item 7). */
+export const ChartLegendSwatch = classPart(
+  span,
+  'size-2 shrink-0 rounded-[2px] bg-(--mark-color) forced-colors:[forced-color-adjust:none] forced-colors:border forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:data-[series-cue=solid]:bg-[CanvasText] forced-colors:data-[series-cue=solid]:bg-none forced-colors:data-[series-cue=short-dash]:[background-image:var(--llui-chart-swatch-short-dash)] forced-colors:data-[series-cue=dot]:[background-image:var(--llui-chart-swatch-dot)] forced-colors:data-[series-cue=dot]:[background-size:4px_4px] forced-colors:data-[series-cue=long-dash]:[background-image:var(--llui-chart-swatch-long-dash)] forced-colors:data-[series-cue=dash-dot]:[background-image:var(--llui-chart-swatch-dash-dot)] forced-colors:data-[series-cue=grid]:[background-image:var(--llui-chart-swatch-grid)] forced-colors:data-[series-cue=cross-hatch]:[background-image:var(--llui-chart-swatch-cross-hatch)]',
+)
 
 // ── Accessible fallback ───────────────────────────────────────────────────
 

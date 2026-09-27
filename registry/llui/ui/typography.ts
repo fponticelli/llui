@@ -27,9 +27,9 @@ export const TypographySmall = classPart(p, 'text-sm leading-none font-medium')
 export const TypographyMuted = classPart(p, 'text-sm text-muted-foreground')
 export const TypographyBlockquote = classPart(
   blockquote,
-  'mt-6 border-l-2 border-border pl-6 italic',
+  'mt-6 border-s-2 border-border ps-6 italic',
 )
-export const TypographyList = classPart(ul, 'my-6 ml-6 list-disc [&>li]:mt-2')
+export const TypographyList = classPart(ul, 'my-6 ms-6 list-disc [&>li]:mt-2')
 export const TypographyListItem = classPart(li, '')
 export const TypographyInlineCode = classPart(
   code,
