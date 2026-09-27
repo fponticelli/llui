@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { component, mountApp, button, div, text } from '@llui/dom'
 import { init, update, connect, overlay } from '../../src/components/menubar'
 import type { MenubarState, MenubarMsg } from '../../src/components/menubar'
+import type { TextDirection } from '../../src/utils/direction'
 
 type Ctx = { mb: MenubarState }
 
@@ -29,7 +30,7 @@ describe('menubar.overlay integration', () => {
     triggerId: string
   }
 
-  function makeApp(renderTriggers = true): Harness {
+  function makeApp(renderTriggers = true, dir: TextDirection = 'ltr'): Harness {
     let sendRef!: (m: MenubarMsg) => void
     let stateRef!: () => MenubarState
     let triggerIdRef!: string
@@ -38,6 +39,7 @@ describe('menubar.overlay integration', () => {
       init: () => [
         {
           mb: init({
+            dir,
             menus: [
               {
                 id: 'file',
@@ -128,6 +130,60 @@ describe('menubar.overlay integration', () => {
     expect(h.peek().open).toBeNull()
     expect(document.querySelector('[data-scope="menu"][data-part="content"]')).toBeNull()
   })
+
+  it.each([
+    { dir: 'ltr', nextKey: 'ArrowRight', previousKey: 'ArrowLeft' },
+    { dir: 'rtl', nextKey: 'ArrowLeft', previousKey: 'ArrowRight' },
+  ] as const)(
+    'moves real trigger focus and delegates open-panel $dir arrows by semantic direction',
+    async ({ dir, nextKey, previousKey }) => {
+      const h = makeApp(true, dir)
+      const file = document.querySelector<HTMLElement>(
+        '[data-scope="menubar"][data-part="trigger"][data-value="file"]',
+      )!
+      const edit = document.querySelector<HTMLElement>(
+        '[data-scope="menubar"][data-part="trigger"][data-value="edit"]',
+      )!
+      file.focus()
+
+      const next = new KeyboardEvent('keydown', { key: nextKey, bubbles: true, cancelable: true })
+      file.dispatchEvent(next)
+      await tick()
+      expect(next.defaultPrevented).toBe(true)
+      expect(h.peek().focused).toBe('edit')
+      expect(document.activeElement).toBe(edit)
+
+      const previous = new KeyboardEvent('keydown', {
+        key: previousKey,
+        bubbles: true,
+        cancelable: true,
+      })
+      edit.dispatchEvent(previous)
+      await tick()
+      expect(previous.defaultPrevented).toBe(true)
+      expect(h.peek().focused).toBe('file')
+      expect(document.activeElement).toBe(file)
+
+      file.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }),
+      )
+      await tick()
+      expect(h.peek().open).toBe('file')
+      const content = document.querySelector<HTMLElement>(
+        '[data-scope="menu"][data-part="content"]',
+      )!
+      const panelNext = new KeyboardEvent('keydown', {
+        key: nextKey,
+        bubbles: true,
+        cancelable: true,
+      })
+      content.dispatchEvent(panelNext)
+      await tick()
+      expect(panelNext.defaultPrevented).toBe(true)
+      expect(h.peek().open).toBe('edit')
+      expect(h.peek().focused).toBe('edit')
+    },
+  )
 
   it('warns about unresolved ownership before a missing placement trigger bails out', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})

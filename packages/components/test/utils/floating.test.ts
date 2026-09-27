@@ -1,10 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { attachFloating, type Placement } from '../../src/utils/floating'
-import {
-  init as menuInit,
-  update as menuUpdate,
-  floatingDir as menuFloatingDir,
-} from '../../src/components/menu'
+import { init as menuInit, update as menuUpdate } from '../../src/components/menu'
 
 /**
  * RTL alignment is negated by `@floating-ui/core` itself whenever
@@ -142,54 +138,59 @@ describe('attachFloating placement under rtl', () => {
 
 /**
  * `menu.overlay` is `attachFloating`'s only in-repo caller that passes `dir`,
- * and it passed `state.dir` unconditionally while `init` defaulted it to
- * `'ltr'`. Once `dir` became AUTHORITATIVE that default started SUPPRESSING an
- * RTL page: measured in Chromium, a menu on `<html dir="rtl">` moved from
- * x=20 (RTL-correct) to x=100 (LTR) — the headline fix regressing its only
- * live caller (#138 review, blocking 4).
- *
- * `MenuState.dir` is now `TextDirection | null`, `null` meaning "the host never
- * said — let the page decide", and `menuFloatingDir` is the one place that
- * decision is made.
+ * and it now passes `state.dir` UNCONDITIONALLY — `MenuState` was migrated
+ * onto the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+ * so `dir` is always a concrete `'ltr' | 'rtl'` and `dirSource` (`'dom'` |
+ * `'explicit'`) is what records whether the host ever said. `init` is
+ * DETERMINISTIC on the server (`dirSource: 'dom'`, `dir: 'ltr'`) and the real
+ * page direction is resolved only after mount, by `directionSync` dispatching
+ * `syncDomDir` — the same contract `navigation-menu`/`tabs`/`carousel`/
+ * `pagination` all share. `setDir` is EXPLICIT and sticky: once a host calls
+ * it, a later DOM observation cannot overwrite it (there is no longer a way to
+ * clear back to "follow the page" — a breaking, documented change).
  */
-describe('menu never overrides the page direction it was not given', () => {
+describe('menu direction follows the shared direction-sync seam', () => {
   afterEach(() => {
     document.body.innerHTML = ''
   })
 
-  it('an unset dir reaches attachFloating as undefined', () => {
-    expect(menuInit().dir).toBeNull()
-    expect(menuFloatingDir(menuInit())).toBeUndefined()
+  it('an unconfigured dir is deterministic (dom-sourced, ltr) before any sync', () => {
+    expect(menuInit().dir).toBe('ltr')
+    expect(menuInit().dirSource).toBe('dom')
   })
 
-  it('an explicit dir is still authoritative', () => {
-    expect(menuFloatingDir(menuInit({ dir: 'rtl' }))).toBe('rtl')
-    expect(menuFloatingDir(menuInit({ dir: 'ltr' }))).toBe('ltr')
+  it('an explicit dir is authoritative from init', () => {
+    const rtl = menuInit({ dir: 'rtl' })
+    expect(rtl.dir).toBe('rtl')
+    expect(rtl.dirSource).toBe('explicit')
+    expect(menuInit({ dir: 'ltr' }).dir).toBe('ltr')
   })
 
-  it('unset dir on an RTL page keeps the RTL coordinate', async () => {
-    const state = menuInit()
+  it('a DOM-sourced rtl sync keeps the RTL coordinate', async () => {
+    const [state] = menuUpdate(menuInit(), { type: 'syncDomDir', dir: 'rtl' })
     const placed = await placeX({
       placement: 'bottom-start',
-      dir: menuFloatingDir(state),
+      dir: state.dir,
       computedRtl: true,
     })
     expect(placed.x).toBe(RIGHT_EDGE)
   })
 
-  it('unset dir on an LTR page keeps the LTR coordinate', async () => {
+  it('the deterministic pre-sync ltr default keeps the LTR coordinate', async () => {
     const placed = await placeX({
       placement: 'bottom-start',
-      dir: menuFloatingDir(menuInit()),
+      dir: menuInit().dir,
     })
     expect(placed.x).toBe(LEFT_EDGE)
   })
 
-  it('setDir clears back to "let the page decide"', () => {
+  it('setDir is explicit and sticky against a later DOM sync', () => {
     const [s1] = menuUpdate(menuInit(), { type: 'setDir', dir: 'rtl' })
-    expect(menuFloatingDir(s1)).toBe('rtl')
-    const [s2] = menuUpdate(s1, { type: 'setDir', dir: null })
-    expect(menuFloatingDir(s2)).toBeUndefined()
+    expect(s1.dir).toBe('rtl')
+    expect(s1.dirSource).toBe('explicit')
+    const [s2] = menuUpdate(s1, { type: 'syncDomDir', dir: 'ltr' })
+    expect(s2.dir).toBe('rtl')
+    expect(s2.dirSource).toBe('explicit')
   })
 })
 

@@ -8,11 +8,13 @@ import {
   init as comboboxInit,
   update as comboboxUpdate,
   connect as comboboxConnect,
+  loadProjection,
   type ComboboxState,
   type ComboboxMsg,
   type ComboboxGroup,
   type SelectionMode,
   type AsyncStatus,
+  type LoadProjection,
 } from '../components/combobox.js'
 
 /**
@@ -41,11 +43,12 @@ import {
  *   trigger — there is no hard dependency.
  *
  * Async option loading and option groups are inherited from `combobox` as
- * passthrough: pass `groups`, drive `loadStart`/`loadSuccess`/`loadError`
- * through `combobox` messages via `setItems`, etc. (see `combobox` docs).
+ * passthrough: pass `groups`, then drive the pattern's typed
+ * `loadStart`/`loadSuccess`/`loadError` messages (see `combobox` docs). Request
+ * ids retain combobox's stale-response protection unchanged.
  */
 
-export type { SelectionMode, AsyncStatus, ComboboxGroup }
+export type { SelectionMode, AsyncStatus, ComboboxGroup, LoadProjection }
 
 export interface SearchableSelectState {
   /** Whether the popup is open. Mirrors `combobox.open`; kept at the top level
@@ -92,6 +95,19 @@ export type SearchableSelectMsg =
   | { type: 'triggerType'; char: string }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  /** @intent("Mark an async option fetch as started; pass the request's id") */
+  | { type: 'loadStart'; requestId: number }
+  /** @humanOnly — atomic replacement passthrough to `combobox`; see its own
+   * `loadSuccess` doc for the reconciliation this performs in one step. */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
+  /** @humanOnly */
+  | { type: 'loadError'; requestId: number; error: string }
 
 export interface SearchableSelectInit {
   value?: string[]
@@ -217,6 +233,12 @@ export function update(
       })
       return [lift(state, c), []]
     }
+    case 'loadStart':
+    case 'loadSuccess':
+    case 'loadError': {
+      const [c] = comboboxUpdate(state.combobox, msg)
+      return c === state.combobox ? [state, []] : [lift(state, c), []]
+    }
   }
 }
 
@@ -331,9 +353,20 @@ export interface SearchableSelectParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11); mirrors the
+     * top-level `loadState` signal. See `combobox`'s `LoadProjection`. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'searchable-select'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'` — never
+   * independent booleans that can contradict each other. Documents the
+   * stale-while-revalidate policy: `'stale-results'` means a fetch is in
+   * flight while the previous items are still mounted and selectable;
+   * `'error'` is reported the same whether or not stale items remain
+   * mounted underneath it. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */
@@ -348,7 +381,10 @@ export interface SearchableSelectParts {
     'data-part': 'clear'
     onClick: (e: MouseEvent) => void
   }
-  /** Polite live region announcing the no-results / result count. */
+  /** Polite live region announcing the no-results / result count once the
+   * list is settled (`loadState` is `'success'` or `'initial-empty'`), the
+   * error text on `'error'`, and nothing while a fetch is in flight
+   * (`'loading'` / `'stale-results'`). */
   liveRegion: {
     role: 'status'
     'aria-live': 'polite'
@@ -357,7 +393,9 @@ export interface SearchableSelectParts {
     'data-part': 'live-region'
     text: Signal<string>
   }
-  /** Empty-state container (render when the filtered list is empty). */
+  /** Empty-state container. `hidden` is false only when the SETTLED filtered
+   * list is empty — never while loading, revalidating, or after a failed
+   * fetch (the live region / an error slot own those). */
   empty: {
     'data-scope': 'searchable-select'
     'data-part': 'empty'
@@ -374,6 +412,13 @@ export interface ConnectOptions {
 }
 
 const SCOPE = 'searchable-select' as const
+
+/** Whether the list on hand is the FINAL answer for the current query: nothing
+ * is in flight and the last fetch (if any) did not fail. Only then may an empty
+ * filtered list be reported as "No results". */
+function isSettled(load: LoadProjection): boolean {
+  return load === 'success' || load === 'initial-empty'
+}
 
 function triggerLabelOf(s: SearchableSelectState): string {
   const value = s.combobox.value
@@ -435,7 +480,21 @@ export function connect(
       case 'setItems':
         send({ type: 'setItems', items: m.items, disabled: m.disabled })
         return
-      // async load messages are driven by the consumer directly; ignore here
+      case 'loadStart':
+        send({ type: 'loadStart', requestId: m.requestId })
+        return
+      case 'loadSuccess':
+        send({
+          type: 'loadSuccess',
+          requestId: m.requestId,
+          items: m.items,
+          groups: m.groups,
+          disabled: m.disabled,
+        })
+        return
+      case 'loadError':
+        send({ type: 'loadError', requestId: m.requestId, error: m.error })
+        return
       default:
         return
     }
@@ -530,9 +589,11 @@ export function connect(
       tabindex: -1,
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-status': cb.content['data-status'],
+      'data-load-state': state.map((s) => loadProjection(s.combobox)),
       'data-scope': SCOPE,
       'data-part': 'content',
     },
+    loadState: state.map((s) => loadProjection(s.combobox)),
     item: (value: string): SearchableSelectItemParts => {
       const inner = cb.item(value).item
       return {
@@ -586,10 +647,16 @@ export function connect(
       'aria-atomic': 'true',
       'data-scope': SCOPE,
       'data-part': 'live-region',
+      // Derived from the load projection, never from `filteredItems` alone
+      // (#265 G4): an empty list while a fetch is in flight — or after one
+      // failed — is not "No results". Stale-while-revalidate stays silent
+      // until the fetch settles, so a filter matching none of the STALE rows
+      // never announces a verdict the fresh rows may overturn.
       text: state.map((s) => {
         const cbs = s.combobox
-        if (cbs.status === 'error') return cbs.error ?? ''
-        if (!s.open) return ''
+        const load = loadProjection(cbs)
+        if (load === 'error') return cbs.error ?? ''
+        if (!s.open || !isSettled(load)) return ''
         const n = cbs.filteredItems.length
         if (n === 0) return emptyText
         return n === 1 ? '1 result' : `${n} results`
@@ -598,7 +665,9 @@ export function connect(
     empty: {
       'data-scope': SCOPE,
       'data-part': 'empty',
-      hidden: state.map((s) => s.combobox.filteredItems.length > 0),
+      hidden: state.map(
+        (s) => !isSettled(loadProjection(s.combobox)) || s.combobox.filteredItems.length > 0,
+      ),
     },
   }
 }

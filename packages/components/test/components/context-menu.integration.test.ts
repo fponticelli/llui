@@ -20,13 +20,17 @@ describe('context-menu.overlay integration', () => {
     document.body.innerHTML = ''
   })
 
-  function makeApp(initialOpen = false): { send: (m: ContextMenuMsg) => void } {
+  function makeApp(
+    initialOpen = false,
+    skipAnimations = true,
+  ): { send: (m: ContextMenuMsg) => void } {
     let sendRef!: (m: ContextMenuMsg) => void
     const initial = init({
       items: [
         { value: 'copy', kind: 'action' },
         { value: 'delete', kind: 'action' },
       ],
+      skipAnimations,
     })
     if (initialOpen) {
       initial.open = true
@@ -113,6 +117,39 @@ describe('context-menu.overlay integration', () => {
     send({ type: 'openAt', x: 30, y: 40 })
     await new Promise((r) => setTimeout(r, 0))
 
+    expect(getNestedLayers('focus', region)).toEqual([])
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('did not resolve'))
+    warn.mockRestore()
+  })
+
+  it('releases nested ownership at the close request while animated content remains mounted', async () => {
+    const { send } = makeApp(false, false)
+    const region = document.getElementById('cm-region')!
+    region.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 8, clientY: 9 }),
+    )
+    await new Promise((r) => setTimeout(r, 0))
+
+    const content = document.getElementById('cm:content')!
+    expect(content.dataset['state']).toBe('opening')
+    content.dispatchEvent(new Event('animationend', { bubbles: true }))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(content.dataset['state']).toBe('open')
+    expect(getNestedLayers('focus', region)).toEqual([content])
+
+    send({ type: 'close' })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(content.isConnected).toBe(true)
+    expect(content.dataset['state']).toBe('closing')
+    expect(getNestedLayers('focus', region)).toEqual([])
+
+    content.dispatchEvent(new Event('animationend', { bubbles: true }))
+    await new Promise((r) => setTimeout(r, 0))
+    expect(content.isConnected).toBe(false)
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    send({ type: 'openAt', x: 30, y: 40 })
+    await new Promise((r) => setTimeout(r, 0))
     expect(getNestedLayers('focus', region)).toEqual([])
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('did not resolve'))
     warn.mockRestore()

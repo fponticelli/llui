@@ -21,7 +21,7 @@ import { SearchIcon } from './icons'
  */
 export const Command = classPart(
   div,
-  'flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground',
+  'flex h-full w-full max-w-[calc(100vw-2rem)] min-w-0 flex-col overflow-hidden rounded-md bg-popover text-popover-foreground wrap-break-word forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]',
 )
 const commandInputWrapperRecipe = 'flex h-9 items-center gap-2 border-b px-3'
 const commandInputRecipe =
@@ -48,7 +48,7 @@ export function CommandInput(props: ElProps = {}): Mountable {
 }
 export const CommandList = classPart(
   div,
-  'max-h-[300px] scroll-py-1 overflow-x-hidden overflow-y-auto',
+  'max-h-[min(300px,calc(100dvh-2rem))] scroll-py-1 overflow-x-hidden overflow-y-auto overscroll-contain wrap-break-word',
 )
 export const CommandEmpty = classPart(div, 'py-6 text-center text-sm')
 export const CommandGroup = classPart(div, 'overflow-hidden p-1 text-foreground')
@@ -58,10 +58,10 @@ export const CommandGroupLabel = classPart(
 )
 export const CommandItem = classPart(
   div,
-  "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-hidden select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
+  "relative flex min-w-0 cursor-default items-center gap-2 rounded-sm px-2 py-1.5 text-sm wrap-break-word outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground forced-colors:data-[highlighted]:bg-[Highlight] forced-colors:data-[highlighted]:text-[HighlightText] forced-colors:data-[highlighted]:[outline:2px_solid_Highlight] forced-colors:data-[highlighted]:outline-offset-[-2px] forced-colors:data-[disabled]:text-[GrayText] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
 )
 export const CommandShortcut = classPart(
   span,
-  'ml-auto text-xs tracking-widest text-muted-foreground',
+  'ms-auto shrink-0 text-xs tracking-widest text-muted-foreground',
 )
 export const CommandSeparator = classPart(div, '-mx-1 h-px bg-border')

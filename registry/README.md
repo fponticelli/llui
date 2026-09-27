@@ -97,12 +97,15 @@ and not in a `--chip-fill` token.
 
 What remains is not approximation. It is, in order of size:
 
-1. **Radix runtime variables.** `origin-(--radix-…-transform-origin)`,
-   `max-h-(--radix-…-available-height)`,
+1. **Radix runtime variables.** `origin-(--radix-…-transform-origin)` and
    `h-[var(--radix-navigation-menu-viewport-height)]`. Radix's positioner writes
    these; LLui's floating layer does not, so the classes would resolve to
    `var(--undefined)`. Dropping them costs the zoom animation its trigger-edge
-   origin — the only visual difference in those files.
+   origin — the only visual difference in those files. The one Radix variable
+   LLui DOES have an equivalent for is translated, not dropped:
+   `max-h-(--radix-…-available-height)` becomes
+   `max-h-[var(--llui-floating-available-height,calc(100dvh-2rem))]`, written by
+   `attachFloating` (the fallback covers the frame before the first measure).
 2. **`cmdk` selectors.** `command`'s `[&_[cmdk-group-heading]]` block targets
    that library's own attributes. There is no cmdk here;
    `@llui/components/patterns/command-menu` publishes `data-highlighted` like
@@ -153,7 +156,14 @@ keyboard roving-focus wiring unable to find the element it moves focus to.
    unchecked. Prefer `createVariants` over a template literal for a conditional recipe:
    the checker reads a template's static text only.
 3. **Express state with `data-*` variants**, not computed classes. Every part bag emits
-   `data-state` / `data-disabled` / `data-orientation` / `data-side`.
+   `data-state` / `data-disabled` / `data-orientation` / `data-side`. **Breaking
+   (#265): `registry/llui/ui/sonner.ts`'s `Toast`/`Sonner` recipe no longer takes a
+   `variant` prop.** The six `ToastType` visuals (background/border tint, icon,
+   forced-colors border style) are driven entirely by `data-[type=…]:` selectors
+   reading the machine's own reactive `data-type` attribute, never a `variant`
+   resolved once from a peeked value at the call site — the same freeze bug this
+   rule exists to prevent. Spread `parts.root` straight through; there is nothing
+   else to pass.
 4. **Do not wrap a `Button` in a part that is already a `<button>`.** Many parts
    render one — `CollapsibleTrigger`, `SidebarTrigger`, `AccordionTrigger`,
    `DialogClose`, `Checkbox`, `Switch`. Nesting gives invalid HTML and the inner

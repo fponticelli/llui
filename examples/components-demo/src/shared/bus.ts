@@ -10,7 +10,16 @@
  * call the exposed functions. Fire-and-forget; no responses.
  */
 
-export type ToastKind = 'info' | 'success' | 'error'
+import type { ToastType } from '@llui/components/toast'
+
+/**
+ * The bus carries the REAL `ToastType` union (all six values), not a
+ * demo-local subset — #265 finding 3 requires both demos to exercise the
+ * exact `info`/`success`/`warning`/`error`/`loading`/`custom` vocabulary, and
+ * a narrower bus alias here silently hid three of them from every section
+ * that only ever imports `ToastKind`.
+ */
+export type ToastKind = ToastType
 
 let onToast: (kind: ToastKind, title: string, description: string) => void = () => {}
 let onConfirm: (

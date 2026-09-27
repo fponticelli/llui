@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { ProductContractSchema } from '../../packages/cli/src/product-contract'
 import { extractClassCandidates } from '../lib/registry-classes.mjs'
+import { readBaselineCss } from '../lib/baseline-css.mjs'
 import {
   attrsInCandidate,
   attrValuePairsInCandidate,
@@ -87,7 +88,6 @@ const ALLOWED: Record<string, Allowance> = {
   '*: data-slot': {
     reason: 'upstream leftover, guarded separately — see the data-slot rule in CLAUDE.md',
   },
-  '*: data-side': { reason: 'overlay positioners: written by the floating engine, not a part bag' },
   '*: aria-invalid': { reason: 'set by the consumer on any control' },
   '*: aria-selected': { reason: 'set by the consumer on any option' },
   '*: aria-checked': { reason: 'set by the consumer on any toggle' },
@@ -108,6 +108,12 @@ const ALLOWED: Record<string, Allowance> = {
       'upstream\'s own spelling for "no date chosen yet", set by the CONSUMER — ' +
       '`@llui/components/date-picker` has no trigger part at all, because the trigger ' +
       'belongs to whatever surface is hosting the calendar.',
+  },
+  'sidebar.ts: data-side': {
+    reason:
+      'a presentational edge ("left"/"right") the consumer sets on the sidebar root — the ' +
+      'sidebar skin has no machine of its own (mapped to `collapsible`), so this is not a ' +
+      'floating-content `data-side` and does not belong on the universal `*` key',
   },
   'sidebar.ts: data-variant': { reason: 'a presentational variant the consumer sets' },
   'sidebar.ts: data-size': { reason: 'a menu-button size the consumer sets' },
@@ -568,17 +574,7 @@ describe('registry recipes only style attributes their machine publishes', () =>
 const STYLES = path.join(ROOT, 'packages/components/src/styles')
 
 /** Read the concrete modules composed by the public complete-theme entry. */
-async function baselineCss(): Promise<string> {
-  const entry = await readFile(path.join(STYLES, 'theme.css'), 'utf8')
-  const imports = [
-    ...entry.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/@import ['"]\.\/([^'"]+)['"]/g),
-  ]
-    .map((match) => match[1])
-    .filter((file): file is string => file !== undefined)
-  return (await Promise.all(imports.map((file) => readFile(path.join(STYLES, file), 'utf8')))).join(
-    '\n',
-  )
-}
+const baselineCss = (): string => readBaselineCss(STYLES)
 
 /** scope → the `data-*` / `aria-*` names its rules select on. */
 function themeAttrsByScope(css: string): Map<string, Set<string>> {
@@ -663,9 +659,39 @@ const THEME_MACHINE_OF: Record<string, readonly string[]> = {
  */
 const THEME_VALUE_ALLOWED: Record<string, Allowance> = {}
 
+/**
+ * Baseline `scope: data-attr` NAMES the scope's machine never publishes, with the
+ * reason — the theme sheet's analogue of the per-file `ALLOWED` entries.
+ *
+ * Keyed by SCOPE for the same reason `THEME_VALUE_ALLOWED` is (#265 G5): these
+ * used to be bare `*: data-variant` / `*: data-icon` keys in `ALLOWED`, which
+ * also switched the check off for every REGISTRY skin, where no file sets
+ * either attribute. Every entry must be used (asserted below), so a stale one
+ * cannot quietly outlive the rule that earned it.
+ */
+const MENU_VARIANT: Allowance = {
+  reason:
+    'MenuNode / option items intentionally have no visual variant state — the consumer opts ' +
+    'an applicable item into the destructive hierarchy with `data-variant="destructive"`, the ' +
+    'idiom the registry `dropdown-menu` skin uses for the same concept',
+}
+const THEME_ALLOWED: Record<string, Allowance> = {
+  'menu: data-variant': MENU_VARIANT,
+  'context-menu: data-variant': MENU_VARIANT,
+  'select: data-variant': MENU_VARIANT,
+  'combobox: data-variant': MENU_VARIANT,
+  'searchable-select: data-variant': MENU_VARIANT,
+  'toast: data-icon': {
+    reason:
+      "the consumer's own always-mounted per-ToastType glyph marker — never published by " +
+      "toast.ts's part bag; visibility is CSS-gated on the machine's real data-type via a " +
+      'descendant selector',
+  },
+}
+
 describe('the baseline stylesheet only styles attributes its machine publishes', () => {
-  it('maps every styled scope to a machine', async () => {
-    const byScope = themeAttrsByScope(await baselineCss())
+  it('maps every styled scope to a machine', () => {
+    const byScope = themeAttrsByScope(baselineCss())
     expect(byScope.size).toBeGreaterThan(20)
     const unmapped = [...byScope.keys()].filter(
       (s) =>
@@ -680,21 +706,30 @@ describe('the baseline stylesheet only styles attributes its machine publishes',
   })
 
   it('reports no dead rule', async () => {
-    const byScope = themeAttrsByScope(await baselineCss())
+    const byScope = themeAttrsByScope(baselineCss())
     const problems: string[] = []
+    const used = new Set<string>()
     for (const [scope, attrs] of byScope) {
       const published = await machineAttrs(THEME_MACHINE_OF[scope] ?? [scope])
       if (published.size === 0) continue
       for (const attr of [...attrs].sort()) {
         if (published.has(attr) || ALLOWED[`*: ${attr}`] !== undefined) continue
+        const key = `${scope}: ${attr}`
+        if (THEME_ALLOWED[key] !== undefined) {
+          used.add(key)
+          continue
+        }
         problems.push(`  [data-scope='${scope}'] … [${attr}] — the machine never publishes it`)
       }
     }
     expect(problems, 'These baseline rules can never match:\n' + problems.join('\n')).toEqual([])
+    // Every scoped exemption must still be earned — the same exact-set
+    // assertion `VALUE_ALLOWED` and `UNRESOLVED_ALLOWED` carry.
+    expect([...used].sort()).toEqual(Object.keys(THEME_ALLOWED).sort())
   })
 
   it('reports no dead rule VALUE', async () => {
-    const byScope = themeAttrValuesByScope(await baselineCss())
+    const byScope = themeAttrValuesByScope(baselineCss())
     const problems: string[] = []
     let judged = 0
     for (const [scope, pairs] of byScope) {

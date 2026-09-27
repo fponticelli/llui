@@ -1,16 +1,31 @@
-import { div, button, span, h3, p, input, svg, path, each, text, onMount } from '@llui/dom'
-import type { Send, Signal, Renderable } from '@llui/dom'
+import {
+  div,
+  button,
+  span,
+  h3,
+  p,
+  input,
+  svg,
+  path,
+  each,
+  text,
+  onMount,
+  select as domSelect,
+  option as domOption,
+} from '@llui/dom'
+import type { Send, Signal, Renderable, Mountable } from '@llui/dom'
 import { popover } from '@llui/components/popover'
 import { tooltip } from '@llui/components/tooltip'
 import { hoverCard } from '@llui/components/hover-card'
-import { menu, type MenuItem } from '@llui/components/menu'
-import { contextMenu } from '@llui/components/context-menu'
+import { menu, type MenuItem, type MenuParts } from '@llui/components/menu'
+import { contextMenu, type ContextMenuParts } from '@llui/components/context-menu'
 import { select } from '@llui/components/select'
 import { combobox } from '@llui/components/combobox'
 import { drawer } from '@llui/components/drawer'
 import { dialog } from '@llui/components/dialog'
 import { alertDialog } from '@llui/components/alert-dialog'
 import { toast, nextToastId } from '@llui/components/toast'
+import type { ToastPlacement } from '@llui/components/toast'
 import {
   confirmDialog,
   type ConfirmDialogState,
@@ -76,9 +91,22 @@ const FRUITS = [
 // independent and the highlight appears when both land.
 //
 // Declared once and used by BOTH `init` and the view so the two cannot drift.
+// `Share` and `More` are real nested submenus (`children`), not decoration —
+// they're what exercises the machine's per-level `openPath`, hover-intent
+// timers, and (via `menu.subOverlay`/`contextMenu.subOverlay`) a REAL,
+// engine-owned floating overlay per level instead of the fixed top-left
+// corner the stub positioner used to render at (#265 A4).
 const MENU_ITEMS: MenuItem[] = [
   { value: 'Edit', kind: 'action' },
   { value: 'Duplicate', kind: 'action' },
+  {
+    value: 'Share',
+    kind: 'action',
+    children: [
+      { value: 'Email', kind: 'action' },
+      { value: 'Copy Link', kind: 'action' },
+    ],
+  },
   { value: 'Archive', kind: 'action' },
   { value: 'Delete', kind: 'action' },
 ]
@@ -86,11 +114,30 @@ const CONTEXT_MENU_ITEMS: MenuItem[] = [
   { value: 'Cut', kind: 'action' },
   { value: 'Copy', kind: 'action' },
   { value: 'Paste', kind: 'action' },
+  {
+    value: 'More',
+    kind: 'action',
+    children: [
+      { value: 'Rename', kind: 'action' },
+      { value: 'Duplicate', kind: 'action' },
+    ],
+  },
   { value: 'Delete', kind: 'action' },
 ]
 
 // Select options, shared by `init` and the view for the same reason.
 const COLORS = ['Red', 'Green', 'Blue', 'Purple', 'Orange']
+
+// Non-color cue per ToastType — see `toastTypeIcons()` in `view` below and
+// `menus-overlays.css`'s matching `[data-icon]` rules.
+const TOAST_TYPE_GLYPHS: Record<string, string> = {
+  info: 'ℹ',
+  success: '✓',
+  warning: '⚠',
+  error: '✕',
+  loading: '⟳',
+  custom: '✦',
+}
 
 // Command palette commands. JSON-serializable: execution is surfaced as an
 // `execute` effect keyed by `id`, handled in `onEffect` below.
@@ -161,7 +208,11 @@ export const init = (): [State, Effect[]] => [
     drawer: drawer.init({ open: false }),
     dialog: dialog.init({ open: false }),
     alertDialog: alertDialog.init({ open: false }),
-    toast: toast.init({ placement: 'bottom-end' }),
+    // #265 finding 3: `animated: true` is what makes the exit lifecycle real
+    // (create → dismiss/tick → closing → animationEnd → removal) rather than
+    // a synchronous removal with nothing for `motion.css`'s closing rules to
+    // ever apply to.
+    toast: toast.init({ placement: 'bottom-end', animated: true }),
     commandMenu: commandMenu.init({ commands: COMMANDS }),
     searchSelect: searchableSelect.init({
       items: FRUITS,
@@ -195,7 +246,9 @@ export const update = mergeHandlers<State, Msg, Effect>(
         type: msg.kind,
         title: msg.title,
         description: msg.description,
-        duration: 3000,
+        // `loading` is in-progress work: it stays until something resolves it
+        // (see the async demo below), exactly like the registry demo.
+        duration: msg.kind === 'loading' ? null : 3000,
         dismissable: true,
       },
     })
@@ -299,26 +352,108 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   // Global ⌘K / Ctrl+K hotkey opens the command palette.
   const hotkeyMount = onMount(() => watchHotkey((m) => send({ type: 'commandMenu', msg: m })))
 
+  // #265 finding 3: the machine owns no interval of its own by design (see
+  // `toast.ts`'s header) — it expects the CONSUMER to drive `tick(id,
+  // elapsedMs)`. Without a real driver, a finite-`duration` toast's countdown
+  // never advances and create→tick→closing→animationEnd→removal is only ever
+  // demonstrated by an explicit dismiss, never by real elapsed time. This
+  // ticks every counting-down toast every 250ms with the actual wall-clock
+  // delta, so the reducer's own `remainingMs <= 0` branch drives the real
+  // close (animated, since `toast.init({ animated: true })` above).
+  const toastTickMount = onMount(() => {
+    let last = Date.now()
+    const id = setInterval(() => {
+      const now = Date.now()
+      const elapsedMs = now - last
+      last = now
+      for (const t of state.peek().toast.toasts) {
+        if (t.duration !== null) {
+          send({ type: 'toast', msg: { type: 'tick', id: t.id, elapsedMs } })
+        }
+      }
+    }, 250)
+    return () => clearInterval(id)
+  })
+
+  // Every ToastType's own glyph, always mounted (six per toast row) and
+  // shown only under its own `data-type` via menus-overlays.css — never
+  // resolved once from the toast's `type` in JS, so an `update` patching a
+  // mounted toast's `type` (the loading→success demo below) swaps the
+  // visible glyph reactively with no rebuild (#265 finding: `loading` used
+  // to be distinguished only by `cursor: progress`).
+  const toastTypeIcons = (): Mountable[] =>
+    Object.entries(TOAST_TYPE_GLYPHS).map(([type, glyph]) =>
+      span(
+        {
+          'data-scope': 'toast',
+          'data-part': 'type-icon',
+          'data-icon': type,
+          'aria-hidden': 'true',
+        },
+        [text(glyph)],
+      ),
+    )
+
   const selectItems = (): Renderable =>
     COLORS.map((v, i) => div({ ...se.item(v, i).item }, [text(v)]))
+  // Recursive: a `children` node renders a real subTrigger + an ENGINE-OWNED
+  // submenu overlay (`menu.subOverlay`/`contextMenu.subOverlay`, #265 A4) —
+  // `subOverlayFor` closes over the right per-machine state/parts so this
+  // helper itself stays state-shape-agnostic, and builds both the
+  // subpositioner and subcontent wrapper divs itself (real anchored floating
+  // geometry, gated on `openPath` membership internally).
+  const renderMenuTree = (
+    items: MenuItem[],
+    parts: Pick<
+      MenuParts | ContextMenuParts,
+      'item' | 'subTrigger' | 'subPositioner' | 'subContent'
+    >,
+    subOverlayFor: (value: string, content: () => Renderable) => Mountable,
+  ): Renderable =>
+    items.flatMap((it): Renderable => {
+      if (it.children && it.children.length > 0) {
+        return [
+          div({ ...parts.subTrigger(it.value) }, [text(it.value), text(' ›')]),
+          subOverlayFor(it.value, () => [
+            div(
+              { ...parts.subContent(it.value) },
+              renderMenuTree(it.children!, parts, subOverlayFor),
+            ),
+          ]),
+        ]
+      }
+      return [div({ ...parts.item(it.value).item }, [text(it.value)])]
+    })
   const menuItems = (): Renderable =>
-    MENU_ITEMS.map((it) => div({ ...me.item(it.value).item }, [text(it.value)]))
+    renderMenuTree(MENU_ITEMS, me, (value, content) =>
+      menu.subOverlay({ value, state: state.at('menu'), parts: me, content }),
+    )
   const ctxMenuItems = (): Renderable =>
-    CONTEXT_MENU_ITEMS.map((it) => div({ ...cm.item(it.value).item }, [text(it.value)]))
+    renderMenuTree(CONTEXT_MENU_ITEMS, cm, (value, content) =>
+      contextMenu.subOverlay({ value, state: state.at('contextMenu'), parts: cm, content }),
+    )
 
+  // Per-row parts come from the machine's own `toast(item)` builder (never
+  // hand-rolled attributes) so the demo proves the REAL contract: reactive
+  // role/aria-live/data-type (an `update` patching `type` on a mounted toast
+  // repaints all three with no rebuild), plus the close trigger and the
+  // pause-on-hover/focus wiring — #265 findings 3 and 8.
   const toastRegion = div({ ...toastParts.region }, [
     each(state.at('toast.toasts'), {
       key: (t) => t.id,
-      render: (item) => [
-        div({ 'data-scope': 'toast', 'data-part': 'root', 'data-type': item.at('type') }, [
-          div({ 'data-scope': 'toast', 'data-part': 'title' }, [
-            text(item.map((t) => t.title ?? '')),
+      render: (item) => {
+        const parts = toastParts.toast(item)
+        return [
+          div({ ...parts.root }, [
+            ...toastTypeIcons(),
+            div({ class: 'flex flex-col gap-1' }, [
+              div({ ...parts.title }, [text(item.map((t) => t.title ?? ''))]),
+              div({ ...parts.description }, [text(item.map((t) => t.description ?? ''))]),
+            ]),
+            button({ ...parts.closeTrigger }, [text('×')]),
           ]),
-          div({ 'data-scope': 'toast', 'data-part': 'description' }, [
-            text(item.map((t) => t.description ?? '')),
-          ]),
-        ]),
-      ],
+        ]
+      },
     }),
   ])
 
@@ -332,7 +467,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     state: state.at('drawer'),
     send: (m) => send({ type: 'drawer', msg: m }),
     parts: dr,
+    // `backdrop` renders BEFORE `content` — both share the same
+    // `--llui-z-dialog` z-index (see menus-overlays.css), so DOM order alone
+    // decides paint order and content always wins (#265 finding 4).
     content: () => [
+      div({ ...dr.backdrop }),
       div({ ...dr.content }, [
         h3({ ...dr.title, class: 'text-lg font-semibold' }, [text('Drawer panel')]),
         p({ class: 'mt-2 text-sm text-muted-foreground' }, [
@@ -347,7 +486,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     state: state.at('dialog'),
     send: (m) => send({ type: 'dialog', msg: m }),
     parts: dlg,
+    // `backdrop` renders BEFORE `content` — both share the same
+    // `--llui-z-dialog` z-index (see menus-overlays.css), so DOM order alone
+    // decides paint order and content always wins (#265 finding 4).
     content: () => [
+      div({ ...dlg.backdrop }),
       div({ ...dlg.content }, [
         button({ ...dlg.closeTrigger }, [text('×')]),
         h3({ ...dlg.title }, [text('Edit profile')]),
@@ -381,7 +524,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     state: state.at('alertDialog'),
     send: (m) => send({ type: 'alertDialog', msg: m }),
     parts: adlg,
+    // `backdrop` renders BEFORE `content` — both share the same
+    // `--llui-z-dialog` z-index (see menus-overlays.css), so DOM order alone
+    // decides paint order and content always wins (#265 finding 4).
     content: () => [
+      div({ ...adlg.backdrop }),
       div({ ...adlg.content }, [
         button({ ...adlg.closeTrigger }, [text('×')]),
         h3({ ...adlg.title }, [text('Revoke API key?')]),
@@ -417,7 +564,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       if (m.type === 'close') send({ type: 'commandMenu', msg: { type: 'escape' } })
     },
     parts: cmd.dialog,
+    // `backdrop` renders BEFORE `content` — both share the same
+    // `--llui-z-dialog` z-index (see menus-overlays.css), so DOM order alone
+    // decides paint order and content always wins (#265 finding 4).
     content: () => [
+      div({ ...cmd.dialog.backdrop }),
       div(
         {
           ...cmd.dialog.content,
@@ -545,8 +696,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   })
 
   return [
-    // Placed so the ⌘K hotkey onMount registers (a discarded onMount() is inert).
+    // Placed so the ⌘K hotkey and toast-tick onMounts register (a discarded
+    // onMount() is inert).
     hotkeyMount,
+    toastTickMount,
     sectionGroup('Overlays', [
       card('Popover', [
         button({ ...po.trigger, class: 'btn btn-primary' }, [text('Show info')]),
@@ -568,10 +721,12 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 button({ ...po.closeTrigger, class: 'btn btn-secondary mt-3 btn-sm' }, [
                   text('Got it'),
                 ]),
+                div({ ...po.arrow }),
               ],
             ),
           ],
           placement: 'bottom-start',
+          arrowSelector: "[data-part='arrow']",
         }),
       ]),
       card('Tooltip', [
@@ -580,7 +735,10 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           state: state.at('tooltip'),
           send: (m) => send({ type: 'tooltip', msg: m }),
           parts: tp,
-          content: () => [div({ ...tp.content }, [text('This is a tooltip')])],
+          content: () => [
+            div({ ...tp.content }, [text('This is a tooltip'), div({ ...tp.arrow })]),
+          ],
+          arrowSelector: "[data-part='arrow']",
         }),
       ]),
       card('Hover Card', [
@@ -597,11 +755,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
               p({ class: 'mt-1 text-xs text-muted-foreground' }, [
                 text('Full keyboard, screen-reader, pointer support.'),
               ]),
+              div({ ...hc.arrow }),
             ]),
           ],
+          arrowSelector: "[data-part='arrow']",
         }),
       ]),
       card('Menu', [
+        me.directionSync,
         button({ ...me.trigger, class: 'btn btn-secondary flex items-center gap-1.5' }, [
           text('Actions'),
           svg(
@@ -628,6 +789,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         }),
       ]),
       card('Context Menu', [
+        cm.directionSync,
         div(
           {
             ...cm.trigger,
@@ -758,9 +920,56 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ]),
       ]),
       card('Toast', [
-        div({ class: 'flex gap-2' }, [
+        // #265 A6: a real placement control + a real direction toggle, so the
+        // region's six `ToastPlacement`s and their LTR/RTL logical mirroring
+        // (menus-overlays.css's `inset-inline-start`/`inset-inline-end`) are
+        // reachable from the ACTUAL demo, not only from an isolated scenario
+        // renderer — see `registry/test/toast-live-demos.browser.test.ts`.
+        div({ class: 'mb-3 flex flex-wrap items-center gap-2' }, [
+          span({ id: 'toast-placement-label', class: 'text-sm font-medium' }, [text('Placement')]),
+          (() => {
+            const options: { value: ToastPlacement; label: string }[] = [
+              { value: 'top', label: 'Top' },
+              { value: 'top-start', label: 'Top start' },
+              { value: 'top-end', label: 'Top end' },
+              { value: 'bottom', label: 'Bottom' },
+              { value: 'bottom-start', label: 'Bottom start' },
+              { value: 'bottom-end', label: 'Bottom end' },
+            ]
+            return domSelect(
+              {
+                id: 'toast-placement-select',
+                class: 'btn btn-secondary btn-sm',
+                'aria-labelledby': 'toast-placement-label',
+                value: state.at('toast.placement'),
+                onChange: (e: Event) => {
+                  const placement = (e.target as HTMLSelectElement).value as ToastPlacement
+                  send({ type: 'toast', msg: { type: 'setPlacement', placement } })
+                },
+              },
+              options.map((o) => domOption({ value: o.value }, [text(o.label)])),
+            )
+          })(),
           button(
             {
+              id: 'toast-direction-toggle',
+              class: 'btn btn-secondary btn-sm',
+              type: 'button',
+              onClick: () => {
+                const root = document.documentElement
+                root.dir = root.dir === 'rtl' ? 'ltr' : 'rtl'
+              },
+            },
+            [text('Toggle direction (LTR/RTL)')],
+          ),
+        ]),
+        // #265 finding 3: both demos exercise the exact six-value ToastType
+        // vocabulary (`ToastKind` is a direct alias of `ToastType` — see
+        // `../shared/bus.ts`), not a demo-local subset.
+        div({ class: 'flex flex-wrap gap-2' }, [
+          button(
+            {
+              id: 'toast-trigger-info',
               class: 'btn btn-secondary btn-sm',
               onClick: () =>
                 showToast('info', 'For your information', 'This is an informational message.'),
@@ -769,6 +978,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ),
           button(
             {
+              id: 'toast-trigger-success',
               class: 'btn btn-primary btn-sm',
               onClick: () => showToast('success', 'Saved!', 'Your changes have been saved.'),
             },
@@ -776,10 +986,81 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ),
           button(
             {
+              id: 'toast-trigger-warning',
+              class: 'btn btn-secondary btn-sm',
+              onClick: () => showToast('warning', 'Quota nearly full', 'Storage is above 90%.'),
+            },
+            [text('Warning')],
+          ),
+          button(
+            {
+              id: 'toast-trigger-error',
               class: 'btn btn-danger btn-sm',
               onClick: () => showToast('error', 'Something went wrong', 'Please try again later.'),
             },
             [text('Error')],
+          ),
+          button(
+            {
+              id: 'toast-trigger-custom',
+              class: 'btn btn-secondary btn-sm',
+              onClick: () =>
+                showToast('custom', 'Review requested', 'A teammate requested your review.'),
+            },
+            [text('Custom')],
+          ),
+          button(
+            {
+              id: 'toast-trigger-loading',
+              class: 'btn btn-secondary btn-sm',
+              onClick: () => showToast('loading', 'Working on it', 'This may take a moment.'),
+            },
+            [text('Loading')],
+          ),
+          button(
+            {
+              id: 'toast-trigger-async',
+              class: 'btn btn-secondary btn-sm',
+              // #265 findings 3 & 8: create a real 'loading' toast, then PATCH
+              // the SAME mounted row's type/title/description to 'success' —
+              // never creating a second toast — proving the update contract
+              // (reactive `data-type`/role/aria-live/text) live rather than in
+              // a unit test alone. The id is captured here so the follow-up
+              // `update` targets the exact row `create` just mounted.
+              onClick: () => {
+                const id = nextToastId()
+                send({
+                  type: 'toast',
+                  msg: {
+                    type: 'create',
+                    toast: {
+                      id,
+                      type: 'loading',
+                      title: 'Deploying',
+                      description: 'Uploading the release bundle…',
+                      duration: null,
+                      dismissable: true,
+                    },
+                  },
+                })
+                setTimeout(() => {
+                  send({
+                    type: 'toast',
+                    msg: {
+                      type: 'update',
+                      id,
+                      patch: {
+                        type: 'success',
+                        title: 'Deploy complete',
+                        description: 'The release is live.',
+                        duration: 3000,
+                      },
+                    },
+                  })
+                }, 1200)
+              },
+            },
+            [text('Async (loading → success)')],
           ),
         ]),
       ]),

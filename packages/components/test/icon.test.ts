@@ -105,6 +105,25 @@ describe('icon — the empty box before the glyph arrives', () => {
   })
 })
 
+describe('icon — its glyph identity', () => {
+  // #265 H3: a glyph needs an identity a test (or a stylesheet) can read
+  // without fetching and comparing its paths — the registry toast shows ONE
+  // of six glyphs by a CSS gate, and a swapped gate must be detectable. The
+  // name is deterministic, so this keeps the byte-identical guarantee above.
+  it('publishes the Iconify name it renders as data-glyph', () => {
+    fetchMock.mockResolvedValue(ok(lucide({})))
+    expect(mount(icon('lucide:circle-check')).getAttribute('data-glyph')).toBe(
+      'lucide:circle-check',
+    )
+  })
+
+  it('follows a signal name', () => {
+    fetchMock.mockResolvedValue(ok(lucide({})))
+    const svg = mount(icon(constant('lucide:info')))
+    expect(svg.getAttribute('data-glyph')).toBe('lucide:info')
+  })
+})
+
 describe('icon — loading', () => {
   it('paints the glyph once it resolves', async () => {
     fetchMock.mockResolvedValue(ok(lucide({ check: { body: CHECK_BODY } })))
@@ -237,7 +256,10 @@ describe('icon — a reactive name', () => {
     await settle()
     expect(svg.querySelector('path')!.getAttribute('d')).toBe('M1 1')
 
+    expect(svg.getAttribute('data-glyph')).toBe('lucide:first')
+
     handle.send({ type: 'setName', name: 'lucide:second' })
+    expect(svg.getAttribute('data-glyph')).toBe('lucide:second')
     // Cleared synchronously so a slow fetch never shows the wrong glyph.
     expect(svg.querySelector('path')).toBeNull()
     await settle()

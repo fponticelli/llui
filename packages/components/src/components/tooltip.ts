@@ -297,6 +297,8 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
   /** Dismiss on Escape regardless of where focus is (default: true). */
   closeOnEscape?: boolean

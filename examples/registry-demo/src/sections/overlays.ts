@@ -16,7 +16,14 @@ import {
   DialogFooter,
   DialogTitle,
 } from '../components/ui/dialog'
-import { AlertDialogActions } from '../components/ui/alert-dialog'
+import {
+  AlertDialogActions,
+  AlertDialogBackdrop,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogHeader,
+  AlertDialogTitleText,
+} from '../components/ui/alert-dialog'
 import {
   DrawerBackdrop,
   DrawerClose,
@@ -36,7 +43,7 @@ import {
 } from '../components/ui/sheet'
 import { PopoverArrow, PopoverContent } from '../components/ui/popover'
 import { TooltipArrow, TooltipContent } from '../components/ui/tooltip'
-import { HoverCardContent } from '../components/ui/hover-card'
+import { HoverCardArrow, HoverCardContent } from '../components/ui/hover-card'
 import {
   DropdownMenuContent,
   DropdownMenuItem,
@@ -201,15 +208,17 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       parts: cfm,
       positionerClass: 'fixed inset-0 z-dialog grid place-items-center p-4',
       content: () => [
-        DialogBackdrop({ ...cfm.backdrop }),
-        DialogContent({ ...cfm.content, class: 'max-w-md' }, [
-          DialogTitle({ ...cfm.title }, [text('Delete project?')]),
-          DialogDescription({ ...cfm.description }, [
-            text('This cannot be undone. An outside click will NOT dismiss this one.'),
+        AlertDialogBackdrop({ ...cfm.backdrop }),
+        AlertDialogContent({ ...cfm.content }, [
+          AlertDialogHeader([
+            AlertDialogTitleText({ ...cfm.title }, [text('Delete project?')]),
+            AlertDialogDescription({ ...cfm.description }, [
+              text('This cannot be undone. An outside click will NOT dismiss this one.'),
+            ]),
           ]),
           // No corner ✕ here on purpose: a destructive confirmation gets an
           // explicit cancel/confirm pair, not an ambiguous dismiss affordance.
-          AlertDialogActions([
+          AlertDialogActions({ 'data-demo-alert-actions': '' }, [
             Button({ ...cfm.closeTrigger, variant: 'outline' }, [text('Cancel')]),
             Button({ ...cfm.closeTrigger, variant: 'destructive' }, [text('Delete')]),
           ]),
@@ -228,7 +237,9 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
           SheetHeader([
             SheetTitle({ ...sht.title }, [text('Panel')]),
             SheetDescription({ ...sht.description }, [
-              text('`side` is a variant on the content — the machine only owns open/close.'),
+              text(
+                'The drawer machine publishes its configured edge as machine-owned data-side; the Sheet recipe consumes that state directly.',
+              ),
             ]),
           ]),
           Button({ ...sht.closeTrigger, variant: 'outline', class: 'w-fit' }, [text('Close')]),
@@ -292,9 +303,12 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       send: tipSend,
       parts: tip,
       positionerClass: 'z-tooltip',
+      arrowSelector: "[data-part='arrow']",
       content: () => [
-        TooltipContent({ ...tip.content }, [text('Tooltips open on hover AND focus.')]),
-        TooltipArrow({ ...tip.arrow }),
+        TooltipContent({ ...tip.content }, [
+          text('Tooltips open on hover AND focus.'),
+          TooltipArrow({ ...tip.arrow }),
+        ]),
       ],
     }),
 
@@ -303,6 +317,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       send: hcSend,
       parts: hc,
       positionerClass: 'z-popover',
+      arrowSelector: "[data-part='arrow']",
       content: () => [
         HoverCardContent({ ...hc.content }, [
           div({ class: 'flex gap-3' }, [
@@ -312,6 +327,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
               div({ class: 'text-xs text-muted-foreground' }, [text('Builds LLui.')]),
             ]),
           ]),
+          HoverCardArrow({ ...hc.arrow }),
         ]),
       ],
     }),

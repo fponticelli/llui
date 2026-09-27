@@ -898,6 +898,26 @@ const { text: liveText, ...liveAttrs } = parts.liveRegion
 ComboboxLiveRegion({ ...liveAttrs }, [text(liveText)])
 ```
 
+**A portaled overlay follows its trigger's direction.** Menus, selects, popovers and
+tooltips portal to `<body>`, but read `ltr`/`rtl` from their trigger. Put `dir="rtl"` on any
+container and the overlays opened from inside it mirror too: placement, text, arrow keys and
+submenus. Pass `dir` to `init()` only to force a direction regardless of the page.
+
+**An async list keeps its old rows while it refetches.** `combobox` and `searchableSelect`
+are stale-while-revalidate: `loadStart` never clears `items`, so the previous results stay
+on screen, filterable and selectable, until the matching `loadSuccess`/`loadError` lands.
+Read `parts.loadState` (`'initial-empty' | 'loading' | 'stale-results' | 'success' |
+'error'`) instead of combining `status` with `items.length` yourself. Three things follow:
+
+- `loadSuccess` replaces the whole list. Omitting `groups` resets to no groups; it does not
+  keep the previous load's groups. A highlight the new list drops (filtered out, or now
+  disabled) moves to the first enabled match while open, and to `null` while closed.
+- A closed control never gets a highlight from a background load. Opening sets it.
+- `searchableSelect`'s `empty` part and "No results" announcement appear only when the list
+  is settled (`'success'` or `'initial-empty'`). While `'loading'` or `'stale-results'` the
+  live region says nothing and `empty` stays hidden. On `'error'` it announces the error
+  text and `empty` stays hidden. An empty list mid-fetch is not "no results".
+
 **Do not wrap a field in a panel recipe.** `ComboboxRoot` is the `Command` recipe — a full
 palette _surface_ with `overflow-hidden`, for the dropdown. Wrapping a labelled input in it
 clips the input's focus ring on three sides, which paints as a thick dark band along one

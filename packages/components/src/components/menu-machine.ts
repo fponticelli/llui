@@ -1,7 +1,18 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
 import { tagSend } from '@llui/dom'
-import { flipArrow, type TextDirection } from '../utils/direction.js'
+import {
+  eventDirection,
+  flipArrow,
+  floatingDir,
+  setDirection,
+  syncDomDirection,
+  type DirectionState,
+  type TextDirection,
+} from '../utils/direction.js'
+import { type Placement } from '../utils/floating.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
+import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
+import { resolvePortalTarget } from '../utils/portal-target.js'
 import { presence, type PresenceStatus } from './presence.js'
 import {
   typeaheadAccumulate,
@@ -49,7 +60,7 @@ export interface MenuNode {
 
 /** The state fields every menu-tree component shares. Concrete component states
  * (MenuState / ContextMenuState) extend this with their own extras (e.g. x/y). */
-export interface MenuTreeState {
+export interface MenuTreeState extends DirectionState {
   open: boolean
   status: PresenceStatus
   skipAnimations: boolean
@@ -65,13 +76,16 @@ export interface MenuTreeState {
   typeahead: string
   typeaheadExpiresAt: number
   /**
-   * Reading direction, or `null` for "the host never said — let the page
-   * decide". `null` is not a stylistic default: a menu portals into `<body>`,
-   * and the direction it is given is AUTHORITATIVE over the direction the
-   * floating element computes to, so a concrete default here SUPPRESSES
-   * `<html dir="rtl">` (#138 review, blocking 4).
+   * Reading direction, routed through the shared `@llui/interactions`
+   * direction-sync seam (`../utils/direction.js`) rather than a second,
+   * independently-maintained resolver — `dirSource` (from `DirectionState`)
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). A menu
+   * portals into `<body>`, and an EXPLICIT direction is AUTHORITATIVE over
+   * the direction the floating element would otherwise compute to (#138
+   * review, blocking 4) — `dirSource: 'explicit'` is what makes that
+   * override stick instead of being overwritten by the next DOM observation.
    */
-  dir: TextDirection | null
 }
 
 /** The messages shared by every menu-tree component. Component-specific opens
@@ -89,16 +103,19 @@ export type MenuTreeMsg =
   | { type: 'closeSub' }
   | { type: 'setItems'; items: MenuNode[] }
   | { type: 'typeahead'; level: string; char: string; now: number }
-  | { type: 'setDir'; dir: TextDirection | null }
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   | { type: 'animationEnd' }
 
 // ---- presence lifecycle (composes presence.update; never reinvents it) ----
 
-/** Advance the root content's presence status on an OPEN. With no enter
- * animation wired for menus, opening resolves directly to 'open'. */
-export function statusOnOpen(status: PresenceStatus): PresenceStatus {
+/** Advance the root content's presence status on an OPEN. The default
+ * synchronous path lands on `open`; an animated menu stays at `opening` until
+ * its content's real animation-end event resolves the shared presence machine. */
+export function statusOnOpen(status: PresenceStatus, skipAnimations: boolean): PresenceStatus {
   const [next] = presence.update({ status, unmountOnExit: true }, { type: 'open' })
-  return next.status === 'opening' ? 'open' : next.status
+  return skipAnimations && next.status === 'opening' ? 'open' : next.status
 }
 
 /** Advance the root content's presence status on a CLOSE REQUEST. With
@@ -511,7 +528,9 @@ export function reduceMenuTree<S extends MenuTreeState>(state: S, msg: MenuTreeM
       ]
     }
     case 'setDir':
-      return [{ ...state, dir: msg.dir }, []]
+      return [setDirection(state, msg.dir), []]
+    case 'syncDomDir':
+      return [syncDomDirection(state, msg.dir), []]
     case 'animationEnd': {
       const [next] = presence.update(
         { status: state.status, unmountOnExit: true },
@@ -840,7 +859,14 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
         const item = findItem(s.items, value)
         return item != null && !item.disabled && !!item.children && item.children.length > 0
       }
-      const key = flipArrow(e.key, s?.dir ?? null)
+      // Resolved at event time (`eventDirection`) so a same-tick ancestor `dir`
+      // change is read correctly even before any `syncDomDir` message lands —
+      // the same reason `navigation-menu.ts` resolves it here instead of off a
+      // bare `s.dir` (#265 finding 6).
+      const key = flipArrow(
+        e.key,
+        s === undefined ? null : eventDirection(s, e.currentTarget as Element | null),
+      )
       switch (key) {
         case 'ArrowDown':
           e.preventDefault()
@@ -943,7 +969,10 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
       onPointerEnter: () => scheduleOpenSub(value),
       onPointerLeave: () => scheduleCloseSub(value),
       onKeyDown: tagSend(send, ['openSub', 'highlightNext', 'highlightPrev', 'close'], (e) => {
-        const key = flipArrow(e.key, state.peek().dir)
+        const key = flipArrow(
+          e.key,
+          eventDirection(state.peek(), e.currentTarget as Element | null),
+        )
         switch (key) {
           case 'ArrowRight':
           case 'Enter':
@@ -997,7 +1026,10 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
           'typeahead',
         ],
         (e: KeyboardEvent): void => {
-          const key = flipArrow(e.key, state.peek().dir)
+          const key = flipArrow(
+            e.key,
+            eventDirection(state.peek(), e.currentTarget as Element | null),
+          )
           switch (key) {
             case 'ArrowDown':
               e.preventDefault()
@@ -1035,4 +1067,146 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
     }),
     rootKeyNav,
   }
+}
+
+// ---- engine-owned per-level submenu overlays (#265 A4) ----
+//
+// Replaces the consumer-wired `watchSubmenuPositioning` (a MutationObserver
+// polling the build root for `[data-part="subcontent"]` nodes and hand-rolling
+// `attachFloating` over them). Each submenu level is now its own
+// `createOverlay` instance — SINGLE-phase (no `visibleWhen`: a submenu level
+// is a synchronous boolean machine, exactly like select/combobox, so mount and
+// floating attach/detach happen together) with an explicit
+// `nestedLayerOwner` naming its own subTrigger, which is what keeps #171's fix
+// (a modal opened over an open menu leaves it inert) working per LEVEL rather
+// than per root menu.
+
+export interface SubOverlayOptions<Scope extends string, S> {
+  /** The subTrigger value this level opens under. */
+  value: string
+  state: Signal<S>
+  /** The subTrigger/subPositioner/subContent part builders for this scope
+   * (from `parts` as returned by `createMenuTreeParts`/`connect()`). */
+  parts: Pick<MenuTreeParts<Scope>, 'subTrigger' | 'subPositioner' | 'subContent'>
+  /** The submenu's own content — typically a nested recursive render of
+   * `it.children`, wrapped in `div({ ...parts.subContent(value) }, […])`
+   * (`contentId` below must match that div's id, i.e. `parts.subContent(value).id`). */
+  content: () => Renderable
+  /** Whether this level should be mounted, given the FULL state `s` passed to
+   * `state`. For `menu`/`context-menu`, `s.openPath.includes(value)`; for
+   * `menubar`, `s` is the root `MenubarState` and this reaches into the one
+   * embedded menu's `openPath`. */
+  isOpen: (s: S) => boolean
+  /** The direction-relevant slice of state for this level's placement, given
+   * the full state `s` — `s` itself for `menu`/`context-menu`, the embedded
+   * menu's state for `menubar`. */
+  direction: (s: S) => Pick<MenuTreeState, 'dir' | 'dirSource'>
+  /** Portal host (default: `body`, matching every other overlay in this file). */
+  target?: string | HTMLElement
+  positionerClass?: string
+  /** Cross-axis alignment against the subTrigger (default: 'start' — the top
+   * edge of the trigger, matching every other overlay's `*-start` default). */
+  align?: 'start' | 'end'
+  /** Gap between the subTrigger and its submenu, in px (default: 2, closing the
+   * visible seam a hovering pointer would otherwise have to cross). */
+  offset?: number
+  /** Flip to the opposite side when there isn't room (default: true). */
+  flip?: boolean
+  /** Shift along the cross axis to stay in view (default: true). */
+  shift?: boolean
+}
+
+/**
+ * The physical placement for a submenu opening off its subTrigger: away from
+ * the reading-direction inline-start edge, i.e. to the right under 'ltr' and
+ * to the left under 'rtl' — the one call site that turns reading direction
+ * into a physical side for this primitive (direction ITSELF is resolved by
+ * the shared `eventDirection`/`resolveDir` seam, never re-derived here).
+ */
+function submenuPlacement(dir: TextDirection, align: 'start' | 'end'): Placement {
+  const side = dir === 'rtl' ? 'left' : 'right'
+  return `${side}-${align}` as Placement
+}
+
+/**
+ * Build a per-level submenu overlay, anchored on its own subTrigger.
+ *
+ * Direction is resolved through `eventDirection(direction(state.peek()), trigger)`
+ * — the SAME shared seam every keyboard handler in this file resolves through
+ * (#265 finding 6), not an isolated `resolveDir` call: while `dirSource` is
+ * `'dom'` it falls through to `resolveDir(trigger)`, so a submenu nested under
+ * an RTL ancestor still opens the correct way even if the root menu itself is
+ * LTR; once a consumer EXPLICITLY configures/`setDir`s a direction, that
+ * explicit value wins here too. The placement is a THUNK
+ * (`OverlayFloatingConfig.placement`), resolved fresh at attach time. `dir`
+ * passes only an EXPLICIT direction (`floatingDir`), exactly like the root
+ * `overlay()`s: while direction is automatic the engine resolves it from this
+ * level's anchor (the subTrigger, inside the parent level's portaled subtree)
+ * and writes it on the level's floating element (#265 finding 6).
+ *
+ * A runtime direction change WHILE a level stays open cannot be picked up by
+ * `attachFloating`'s own `autoUpdate` — a physical `placement` string
+ * (`'right-start'`) is resolved once at attach and a repeated
+ * `computePosition` pass with the SAME closed-over string can never flip
+ * sides. A DOM change (an ancestor `dir`) re-attaches through the engine's own
+ * anchor-direction watch. A STATE change the DOM does not show (an explicit
+ * `setDir`) re-attaches through `floating.reattachKey`: the positioner this
+ * function builds carries `data-llui-reattach-key` bound to
+ * `${dir}:${dirSource}`, and the engine re-runs the whole attach whenever that
+ * attribute's value changes while mounted.
+ *
+ * No `dismiss` config: Escape and outside-click stay owned by the ROOT
+ * overlay's dismissable layer plus this file's own subContent/subTrigger key
+ * handlers (`ArrowLeft`/`Escape` -> `closeSub`). This level still registers as
+ * a NESTED LAYER (owner: its own subTrigger) with the `outside` aspect, which
+ * is what keeps a click inside it from being misread as "outside" the root
+ * content (and, transitively, "outside" an ancestor level's own registration)
+ * — see `nested-layer.ts`'s per-layer, per-aspect design.
+ */
+export function subOverlay<Scope extends string, S>(opts: SubOverlayOptions<Scope, S>): Mountable {
+  const { value, state, parts } = opts
+  const align = opts.align ?? 'start'
+  const triggerId = parts.subTrigger(value).id
+  const contentId = parts.subContent(value).id
+
+  const directionKey = (s: S): string => {
+    const d = opts.direction(s)
+    return `${d.dir}:${d.dirSource}`
+  }
+  const resolvedDir = (): TextDirection => {
+    const trigger = typeof document === 'undefined' ? null : document.getElementById(triggerId)
+    return eventDirection(opts.direction(state.peek()), trigger)
+  }
+
+  return createOverlay({
+    state,
+    host: resolvePortalTarget(opts.target ?? 'body'),
+    // The reactive `data-llui-reattach-key` marker lives HERE, on the
+    // positioner wrapper `createOverlay` builds around `content()` — not as
+    // an extra child inside content, which this file does not control (the
+    // caller builds the `contentId`'d div itself). The engine finds it via
+    // `content.closest(...)` (ancestor-or-self), which reaches this wrapper.
+    positioner: positionerProps(
+      { ...parts.subPositioner(value), 'data-llui-reattach-key': state.map(directionKey) },
+      opts.positionerClass,
+    ),
+    content: opts.content,
+    contentId,
+    relationships: {
+      placementAnchor: { id: triggerId },
+      nestedLayerOwner: { id: triggerId },
+      dismissIgnore: [{ id: triggerId }],
+    },
+    mountWhen: (s) => opts.isOpen(s),
+    // No `dismiss` config — see the doc comment above.
+    onDismiss: () => {},
+    floating: {
+      placement: () => submenuPlacement(resolvedDir(), align),
+      offset: opts.offset ?? 2,
+      flip: opts.flip !== false,
+      shift: opts.shift !== false,
+      dir: () => floatingDir(opts.direction(state.peek())),
+      reattachKey: () => directionKey(state.peek()),
+    },
+  })
 }

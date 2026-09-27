@@ -3,10 +3,22 @@ import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
+import { isEngineFocusInProgress } from '../utils/engine-focus.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { firstEnabled, rovingTabStop } from '../utils/list-navigation.js'
 import { deriveOnceN } from '../utils/derive.js'
 import { wrapChildSend } from '../utils/child-send.js'
+import {
+  directionSyncMount,
+  eventDirection,
+  flipArrow,
+  floatingDir,
+  initDirection,
+  setDirection,
+  syncDomDirection,
+  type DirectionSource,
+  type TextDirection,
+} from '../utils/direction.js'
 import {
   init as menuInit,
   update as menuUpdate,
@@ -16,6 +28,7 @@ import {
   type MenuItem,
   type MenuParts,
 } from './menu.js'
+import { subOverlay as machineSubOverlay } from './menu-machine.js'
 
 /**
  * Menubar — a desktop-style application menu bar (File / Edit / View …).
@@ -71,6 +84,16 @@ export interface MenubarState {
   disabledMenus: string[]
   /** Embedded per-menu machine states, keyed by menu id. */
   menuStates: Record<string, MenuState>
+  /** Reading direction for both the bar and its delegated menu trees. Routed
+   * through the shared `@llui/interactions` direction-sync seam
+   * (`../utils/direction.js`) rather than a second resolver — `dirSource`
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). Every
+   * embedded `MenuState`'s own `dir` is kept explicitly in sync with this one
+   * (see `syncEmbeddedDir` below), so a delegated menu never disagrees with
+   * the bar that owns it. */
+  dir: TextDirection
+  dirSource: DirectionSource
 }
 
 export type MenubarMsg =
@@ -81,27 +104,59 @@ export type MenubarMsg =
   /** @intent("Move roving focus to the menu with the given id (switches the open menu in open mode)") */
   | { type: 'focusMenu'; id: string }
   /** @humanOnly */
+  | { type: 'syncTriggerFocus'; id: string }
+  /** @humanOnly */
   | { type: 'focusNext' }
   /** @humanOnly */
   | { type: 'focusPrev' }
   /** @humanOnly */
   | { type: 'menuMsg'; id: string; msg: MenuMsg }
+  /** @intent("Set the reading direction") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
 
 export interface MenubarInit {
   menus: MenubarMenu[]
   /** Initially-focused menu id (defaults to the first enabled menu). */
   focused?: string | null
+  /** Reading direction for horizontal keys and delegated menus. Omit to
+   * follow the page's own direction (see {@link MenubarState}'s `dir`/
+   * `dirSource`, resolved from the mounted root by `directionSync`). */
+  dir?: TextDirection
 }
 
 export function init(opts: MenubarInit): MenubarState {
+  const direction = initDirection(opts.dir)
   const menus = opts.menus.map((m) => m.id)
   const disabledMenus = opts.menus.filter((m) => m.disabled).map((m) => m.id)
   const menuStates: Record<string, MenuState> = {}
   for (const m of opts.menus) {
-    menuStates[m.id] = menuInit({ items: m.items, closeOnSelect: m.closeOnSelect })
+    menuStates[m.id] = menuInit({
+      items: m.items,
+      closeOnSelect: m.closeOnSelect,
+      dir: direction.dir,
+    })
   }
   const focused = opts.focused !== undefined ? opts.focused : firstEnabled(menus, disabledMenus)
-  return { menus, open: null, focused, disabledMenus, menuStates }
+  return { menus, open: null, focused, disabledMenus, menuStates, ...direction }
+}
+
+/** Push the bar's OWN resolved direction down into every embedded menu as an
+ * explicit `setDir`, so a delegated menu's floating geometry / keyboard
+ * handling never disagrees with the bar that owns it (#265 finding 6). The
+ * embedded menus never observe the DOM themselves — the bar is the single
+ * point of DOM observation for the whole composite. */
+function syncEmbeddedDir(
+  menuStates: Record<string, MenuState>,
+  dir: TextDirection,
+): Record<string, MenuState> {
+  return Object.fromEntries(
+    Object.entries(menuStates).map(([id, menuState]) => [
+      id,
+      menuUpdate(menuState, { type: 'setDir', dir })[0],
+    ]),
+  )
 }
 
 // ---- pure helpers ----
@@ -172,6 +227,14 @@ export function update(state: MenubarState, msg: MenubarMsg): [MenubarState, nev
       if (state.open) return [openMenuState(state, msg.id), []]
       return [{ ...state, focused: msg.id }, []]
     }
+    case 'syncTriggerFocus': {
+      if (state.disabledMenus.includes(msg.id)) return [state, []]
+      // An old overlay may conditionally restore focus to its own trigger while
+      // the bar is switching to a sibling. Ignore that stale DOM focus; the
+      // explicit keyboard/pointer/click message already selected the new menu.
+      if (state.open !== null && state.open !== msg.id) return [state, []]
+      return [{ ...state, focused: msg.id }, []]
+    }
     case 'focusNext': {
       const to = nextMenu(state.menus, state.disabledMenus, state.focused, 1)
       if (to === null) return [state, []]
@@ -192,6 +255,16 @@ export function update(state: MenubarState, msg: MenubarMsg): [MenubarState, nev
       // If the delegated msg closed the menu, clear the top-level open marker.
       const open = state.open === msg.id && !next.open ? null : state.open
       return [{ ...state, open, menuStates }, []]
+    }
+    case 'setDir': {
+      const next = setDirection(state, msg.dir)
+      if (next === state) return [state, []]
+      return [{ ...next, menuStates: syncEmbeddedDir(state.menuStates, next.dir) }, []]
+    }
+    case 'syncDomDir': {
+      const next = syncDomDirection(state, msg.dir)
+      if (next === state) return [state, []]
+      return [{ ...next, menuStates: syncEmbeddedDir(state.menuStates, next.dir) }, []]
     }
   }
 }
@@ -218,6 +291,11 @@ export interface MenubarTriggerParts {
 
 export interface MenubarParts {
   root: {
+    // `id` is REQUIRED — it is the scope `directionSync` (below) looks the
+    // live root up by, the same contract `navigation-menu`'s own `root.id`
+    // already honours (#265 finding 6). A consumer that overrides it with a
+    // DIFFERENT id breaks the direction sync silently.
+    id: string
     role: 'menubar'
     'aria-label': string
     'data-scope': 'menubar'
@@ -226,6 +304,10 @@ export interface MenubarParts {
   menuTrigger: (id: string) => MenubarTriggerParts
   /** Delegated per-menu part bag (content/item/checkboxItem/submenu/…). */
   menu: (id: string) => MenuParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6). A
+   * discarded `Mountable` is inert, so this must be placed in the view. */
+  directionSync: Mountable
 }
 
 export interface ConnectOptions {
@@ -330,16 +412,15 @@ export function connect(
     (e: KeyboardEvent): void => {
       delegated.content.onKeyDown(e)
       if (e.defaultPrevented) return
-      // Raw `e.key`, matching the trigger handler above: the bar's own axis is
-      // the visual left/right of the strip, and the panel has already applied
-      // its own direction handling to the keys it took.
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+      const key = flipArrow(e.key, eventDirection(state.peek(), e.currentTarget as Element | null))
       e.preventDefault()
-      send(e.key === 'ArrowRight' ? { type: 'focusNext' } : { type: 'focusPrev' })
+      send(key === 'ArrowRight' ? { type: 'focusNext' } : { type: 'focusPrev' })
     }
 
   return {
     root: {
+      id: base,
       role: 'menubar',
       'aria-label': opts.label ?? 'Menu',
       'data-scope': 'menubar',
@@ -371,7 +452,9 @@ export function connect(
           send({ type: 'focusMenu', id })
         }
       }),
-      onFocus: tagSend(send, ['focusMenu'], () => send({ type: 'focusMenu', id })),
+      onFocus: tagSend(send, ['focusMenu', 'syncTriggerFocus'], () =>
+        send({ type: isEngineFocusInProgress() ? 'syncTriggerFocus' : 'focusMenu', id }),
+      ),
       onKeyDown: tagSend(send, ['focusNext', 'focusPrev', 'openMenu'], (e: KeyboardEvent) => {
         const origin = e.currentTarget as Element | null
         // After roving the focused trigger in state, move REAL DOM focus to it —
@@ -380,7 +463,11 @@ export function connect(
           const focused = state.peek()?.focused
           if (focused != null) focusRovingItem(origin, 'menubar', focused, { itemPart: 'trigger' })
         }
-        switch (e.key) {
+        const key =
+          e.key === 'ArrowRight' || e.key === 'ArrowLeft'
+            ? flipArrow(e.key, eventDirection(state.peek(), origin))
+            : e.key
+        switch (key) {
           case 'ArrowRight':
             e.preventDefault()
             send({ type: 'focusNext' })
@@ -401,6 +488,7 @@ export function connect(
       }),
     }),
     menu: menuBag,
+    directionSync: directionSyncMount(base, (dir) => send({ type: 'syncDomDir', dir })),
   }
 }
 
@@ -472,6 +560,7 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
       offset: opts.offset ?? 4,
       flip: opts.flip !== false,
       shift: opts.shift !== false,
+      dir: () => floatingDir(opts.state.peek()),
     },
     dismiss: {
       // Escape unwinds ONE submenu level of the currently-open menu before
@@ -491,4 +580,49 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
   })
 }
 
-export const menubar = { init, update, connect, overlay }
+export interface SubOverlayOptions {
+  /** The open menu's id (`opts.menuId` of the enclosing `overlay()`). */
+  menuId: string
+  /** The subTrigger value this level opens under. */
+  value: string
+  /** The ROOT `Signal<MenubarState>` — the same one passed to `connect()`. */
+  state: Signal<MenubarState>
+  parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
+  align?: 'start' | 'end'
+  offset?: number
+  flip?: boolean
+  shift?: boolean
+}
+
+/**
+ * Engine-owned floating overlay for one submenu level of an embedded menu
+ * (#265 A4) — replaces the consumer-wired `watchSubmenuPositioning` (removed).
+ * Unlike `menu`/`context-menu`'s own `subOverlay`, this one reads the ROOT
+ * `MenubarState` and reaches into the one open menu's embedded `MenuState`
+ * (`s.menuStates[menuId]`) for both open-membership and direction, because a
+ * menubar's `overlay()` is likewise keyed on root state (`s.open === menuId`)
+ * rather than on the embedded menu's own state. See
+ * `menu-machine.ts:subOverlay`'s doc comment for the shared contract.
+ */
+export function subOverlay(opts: SubOverlayOptions): Mountable {
+  const { menuId, value } = opts
+  return machineSubOverlay({
+    value,
+    state: opts.state,
+    parts: opts.parts,
+    content: opts.content,
+    isOpen: (s) => (s.menuStates[menuId]?.openPath ?? []).includes(value),
+    direction: (s) => s.menuStates[menuId] ?? s,
+    target: opts.target,
+    positionerClass: opts.positionerClass,
+    align: opts.align,
+    offset: opts.offset,
+    flip: opts.flip,
+    shift: opts.shift,
+  })
+}
+
+export const menubar = { init, update, connect, overlay, subOverlay }

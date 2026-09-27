@@ -113,12 +113,51 @@ export type ComboboxMsg =
   | { type: 'highlight'; value: string | null }
   /** @intent("Pick the currently-highlighted option in the filtered list") */
   | { type: 'selectHighlighted' }
-  /** @humanOnly */
+  /**
+   * @humanOnly
+   *
+   * Replace `items` (and optionally `disabled`) synchronously — the same
+   * highlight-resolution policy as `loadSuccess` applies: a highlight that no
+   * longer survives the fresh list moves to the first enabled match WHILE
+   * OPEN, or to `null` WHILE CLOSED (#265 G3), since a background refresh
+   * must not manufacture a highlight before the control is ever opened.
+   */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
-  /** @humanOnly */
-  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /**
+   * @humanOnly
+   *
+   * Atomic replacement: `items` is required. `disabled` is an OPTIONAL
+   * companion that replaces `disabledItems` when present (omitted ⇒
+   * unchanged). `groups` is different: omitting it RESETS to no groups
+   * (`[]`), the same as `init()` with no `groups` option — a fresh
+   * replacement with no `groups` describes a flat result, and carrying a
+   * PREVIOUS load's groups forward would keep describing options this
+   * replacement never mentioned as belonging to a group that may no longer
+   * apply (#265 A3). Every field the fresh `items`/`disabled`/`groups` makes
+   * inconsistent is reconciled in this SAME reducer step, never in a
+   * follow-up message. `value` (selection) is dropped when it no longer
+   * names a value in the new `items` (after the new `disabled` is applied).
+   * `highlightedValue` is kept only when it is BOTH still in the fresh
+   * filtered list AND not newly disabled. Otherwise the fallback depends on
+   * whether the listbox is open: WHILE OPEN it moves to the first enabled
+   * match (or `null` when none is enabled) — never left dangling for a
+   * render in between, and never left naming an option that is now
+   * disabled. WHILE CLOSED it always resolves to `null` instead, even when
+   * the fresh list has enabled options: the listbox content is unmounted
+   * while closed, so there is no option `aria-activedescendant` could
+   * correctly name, and a background load (a prefetch, a poll) must not
+   * manufacture a highlight before the control is ever opened — re-opening
+   * always reseeds the highlight itself (#265 G3).
+   */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
   /** @humanOnly */
   | { type: 'loadError'; requestId: number; error: string }
 
@@ -191,6 +230,39 @@ export function isCreateOption(value: string): boolean {
 }
 
 /**
+ * A single, mutually-exclusive summary of the async load lifecycle, derived
+ * from `status` and whether any items are currently on hand. This exists so a
+ * consumer never has to reconcile independent booleans (`isLoading`,
+ * `isEmpty`, `hasError`) that can read true at the same time — exactly the
+ * defect #265 finding 11 named test-first. There are five states partitioning
+ * every reachable `(status, items.length)` pair:
+ *
+ * - `'initial-empty'` — nothing has ever loaded and none were given
+ *   synchronously (`status === 'idle'`, no items).
+ * - `'loading'` — a fetch is in flight and there is nothing yet to show (a
+ *   first-ever load).
+ * - `'stale-results'` — the STALE-WHILE-REVALIDATE state: a fetch is in
+ *   flight while a previous list is still on screen. `loadStart` never
+ *   clears `items`, so the previous results keep rendering, filterable and
+ *   selectable, until the matching `loadSuccess`/`loadError` lands.
+ * - `'success'` — the current items are the result of a completed load, or
+ *   were given synchronously and never superseded by a failed fetch.
+ * - `'error'` — the most recent fetch failed. Per the same policy, items from
+ *   an earlier successful load are left mounted and selectable; only the
+ *   live region / a consumer's own error slot communicate the failure, so
+ *   `'error'` is reported the same whether or not stale items remain.
+ */
+export type LoadProjection = 'initial-empty' | 'loading' | 'stale-results' | 'success' | 'error'
+
+export function loadProjection(state: Pick<ComboboxState, 'status' | 'items'>): LoadProjection {
+  if (state.status === 'error') return 'error'
+  if (state.status === 'loading') return state.items.length > 0 ? 'stale-results' : 'loading'
+  if (state.status === 'loaded') return 'success'
+  // 'idle': items supplied synchronously (or not at all) and never fetched.
+  return state.items.length > 0 ? 'success' : 'initial-empty'
+}
+
+/**
  * The disabled list as the shared navigation helpers see it. The "create new"
  * row is a synthetic option, never a real item, so it can never be disabled —
  * that carve-out is the only thing separating combobox's navigation from
@@ -218,6 +290,40 @@ function indexOfValue(items: string[], value: string | null): number | null {
 /** The first-enabled option's VALUE in `items`, or null. */
 function firstEnabledValue(items: string[], disabled: string[]): string | null {
   return valueAt(items, firstEnabledIndex(items, navigableDisabled(disabled)))
+}
+
+/**
+ * Resolve the highlight after an `items`/`disabled` replacement
+ * (`setItems`/`loadSuccess`, #265 A3): keep the current highlight only when
+ * it survives BOTH the fresh filtered list AND the fresh disabled set.
+ * Otherwise, the fallback depends on whether the listbox is OPEN right now
+ * (#265 G3): while open, move to the first enabled match in the fresh list,
+ * because `aria-activedescendant` must keep naming a selectable option for
+ * the keyboard user currently navigating it — a highlight that merely stayed
+ * in `filteredItems` but became disabled in this same replacement must not
+ * linger. While CLOSED, fall back to `null` instead: the listbox content is
+ * unmounted, so there is no option `aria-activedescendant` could correctly
+ * name, and a background `setItems`/`loadSuccess` (a prefetch, a poll) must
+ * not manufacture a highlight nobody asked for — main never did, and doing
+ * so left `aria-activedescendant` naming an unmounted option the moment data
+ * arrived before the control was ever opened. Re-opening always reseeds the
+ * highlight itself (`case 'open'`), so returning to `null` here loses
+ * nothing.
+ */
+function resolveHighlightAfterReplace(
+  highlightedValue: string | null,
+  filteredItems: string[],
+  disabledItems: string[],
+  open: boolean,
+): string | null {
+  if (
+    highlightedValue !== null &&
+    filteredItems.includes(highlightedValue) &&
+    !disabledItems.includes(highlightedValue)
+  ) {
+    return highlightedValue
+  }
+  return open ? firstEnabledValue(filteredItems, disabledItems) : null
 }
 
 /** Commit a normal (non-create) option pick. */
@@ -370,12 +476,17 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
       const disabled = msg.disabled ?? state.disabledItems
       const value = state.value.filter((v) => msg.items.includes(v) && !disabled.includes(v))
       const filteredItems = computeFiltered(msg.items, state.inputValue, state.allowCreate)
-      // Value-keyed clamp: keep the highlight only when its value survives in the
-      // new filtered list, otherwise drop it (never dangle aria-activedescendant).
-      const highlightedValue =
-        state.highlightedValue !== null && filteredItems.includes(state.highlightedValue)
-          ? state.highlightedValue
-          : null
+      // Value-keyed clamp: keep the highlight only when its value survives in
+      // the new filtered list AND is not newly disabled; otherwise move to
+      // the first enabled match while OPEN, or null while CLOSED — never
+      // dangle aria-activedescendant on a filtered-out/disabled option, and
+      // never manufacture one while closed (#265 A3, G3).
+      const highlightedValue = resolveHighlightAfterReplace(
+        state.highlightedValue,
+        filteredItems,
+        disabled,
+        state.open,
+      )
       return [
         {
           ...state,
@@ -391,14 +502,43 @@ export function update(state: ComboboxState, msg: ComboboxMsg): [ComboboxState, 
     case 'loadStart':
       return [{ ...state, status: 'loading', requestId: msg.requestId, error: null }, []]
     case 'loadSuccess': {
-      // Drop responses from superseded requests (stale-response protection).
+      // Drop responses from superseded requests (stale-response protection,
+      // #265 finding 10): a partially-stale write is worse than a dropped one,
+      // so the whole message either applies as ONE swap or not at all.
       if (msg.requestId !== state.requestId) return [state, []]
+      // `groups` is OPTIONAL but not "unchanged when omitted": an atomic
+      // replacement with no `groups` is a flat (ungrouped) result, exactly
+      // like `init()` with no `groups` option — carrying a PREVIOUS load's
+      // groups forward would describe options this replacement never
+      // mentioned as still belonging to a group that may no longer apply
+      // (#265 A3).
+      const groups = msg.groups ?? []
+      const disabledItems = msg.disabled ?? state.disabledItems
+      const filteredItems = computeFiltered(msg.items, state.inputValue, state.allowCreate)
+      // Atomic replacement: items/groups/disabled/selected/filtering/highlight
+      // all move together. A selection the fresh items (or the fresh disabled
+      // list) no longer support is dropped in this same step — never left
+      // dangling for a render in between. The highlight is resolved the same
+      // way `setItems` does: kept only if still filtered-in AND still
+      // enabled, otherwise moved to the first enabled match while open, or
+      // null while closed (#265 G3) — a background load must not manufacture
+      // a highlight before the control is ever opened.
+      const value = state.value.filter((v) => msg.items.includes(v) && !disabledItems.includes(v))
+      const highlightedValue = resolveHighlightAfterReplace(
+        state.highlightedValue,
+        filteredItems,
+        disabledItems,
+        state.open,
+      )
       return [
         {
           ...state,
           items: msg.items,
-          filteredItems: computeFiltered(msg.items, state.inputValue, state.allowCreate),
-          highlightedValue: null,
+          groups,
+          disabledItems,
+          value,
+          filteredItems,
+          highlightedValue,
           status: 'loaded',
           error: null,
         },
@@ -497,9 +637,17 @@ export interface ComboboxParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11) — see
+     * {@link LoadProjection}. Mirrors the top-level `loadState` signal. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'combobox'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'`. A single
+   * signal instead of independent `isLoading`/`isEmpty`/`hasError` booleans,
+   * so it can never contradict itself. See {@link LoadProjection}. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — it is NOT used for identity (highlight,
    * selection and ids are all value-keyed), so a reused row is never stale. */
@@ -646,9 +794,11 @@ export function connect(
       tabindex: -1,
       'data-state': state.map((s) => (s.open ? 'open' : 'closed')),
       'data-status': state.map((s) => s.status),
+      'data-load-state': state.map(loadProjection),
       'data-scope': 'combobox',
       'data-part': 'content',
     },
+    loadState: state.map(loadProjection),
     item: (value: string): ComboboxItemParts => {
       const isCreate = value === CREATE_OPTION_VALUE
       return {

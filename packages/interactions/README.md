@@ -15,6 +15,32 @@ runtime instance.
 import { attachFloating, pushDismissable, pushFocusTrap } from '@llui/interactions'
 ```
 
+## Capping a floating surface at the space it has
+
+`attachFloating` writes the space left beside the anchor, on the side the element actually
+lands, as two custom properties on the floating element: `--llui-floating-available-height`
+and `--llui-floating-available-width` (exported as `FLOATING_AVAILABLE_HEIGHT` /
+`FLOATING_AVAILABLE_WIDTH`). They are LLui's version of Radix's
+`--radix-*-content-available-height`. Cap a tall surface with them, and keep a viewport cap as
+the fallback for the frame before the first measurement:
+
+```css
+.my-menu {
+  max-height: var(--llui-floating-available-height, calc(100dvh - 2rem));
+  overflow-y: auto;
+}
+```
+
+A viewport cap alone is not enough: an anchor halfway down the page leaves far less than the
+viewport below it, and the surface runs off the bottom edge. Like every inline style it writes,
+both properties are restored to their prior values on cleanup.
+
+## Focus traps always take focus
+
+`pushFocusTrap` focuses `initialFocus`, else the first tab-reachable descendant, else the
+container itself, giving it a temporary `tabindex="-1"` when it has none (removed on release).
+Focus never stays behind the trap, even in a modal with nothing focusable inside it.
+
 ## Why this is a separate package
 
 The Step-1 demand check for [#49](https://github.com/fponticelli/llui/issues/49) found two

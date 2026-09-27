@@ -29,11 +29,17 @@
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
   --ring: oklch(0.708 0 0);
-  /* A caution/attention cue distinct from `--destructive` (an error) and the
-   * `--chart-*` scale (no fixed meaning) — `color-picker`'s out-of-gamut
-   * indicator is its first consumer. Border/ring use only; not paired with a
-   * `-foreground` token, so it is outside `token-contrast.test.ts`'s scope. */
-  --warning: oklch(0.75 0.15 70);
+  /* STATUS cues, beside `--destructive` (an error) and apart from the
+   * `--chart-*` scale (no fixed meaning): `--info`, `--success`, `--warning`.
+   * Toasts tint their surfaces with them and draw their glyphs in them;
+   * `color-picker`'s out-of-gamut indicator uses `--warning`. Each value is
+   * dark enough (light) / light enough (dark) to clear 3:1 NON-TEXT contrast
+   * as a glyph on `--popover` — measured by the live toast contrast test —
+   * which is why `--warning` is amber-600 rather than a paler amber. Not
+   * paired with a `-foreground` token, so outside `token-contrast.test.ts`. */
+  --info: oklch(0.588 0.158 241.966);
+  --success: oklch(0.596 0.145 163.225);
+  --warning: oklch(0.666 0.179 58.318);
 
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);

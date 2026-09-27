@@ -2,7 +2,7 @@ import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@ll
 import { tagSend } from '@llui/dom'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
-import { type TextDirection } from '../utils/direction.js'
+import { directionSyncMount, initDirection, type TextDirection } from '../utils/direction.js'
 import { presence, type PresenceStatus } from './presence.js'
 import { presenceEndProps } from '../utils/presence-end.js'
 import {
@@ -21,6 +21,7 @@ import {
   firstNav,
   createMenuTreeParts,
   activeMenuHighlight,
+  subOverlay as machineSubOverlay,
 } from './menu-machine.js'
 import { allFiniteNumbers } from '../utils/number.js'
 
@@ -32,6 +33,10 @@ import { allFiniteNumbers } from '../utils/number.js'
  * Shares the menu's JSON-serializable item tree: submenus, checkbox/radio
  * items, groups, and separators. The root content is positioned at the
  * pointer (raw x/y); submenus position against their trigger via floating-ui.
+ * The real DOM region that dispatches `contextmenu` is captured outside state
+ * as the nested-layer owner for that visible interaction only. Ownership is
+ * cleared at the close request (before any retained exit content unmounts), so
+ * a replayed/programmatic `openAt` cannot inherit a stale modal relationship.
  */
 
 /** Kind of a context-menu item. */
@@ -75,8 +80,10 @@ export type ContextMenuMsg =
   | { type: 'setItems'; items: ContextMenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
-  | { type: 'setDir'; dir: TextDirection | null }
+  /** @intent("Set the reading direction — 'ltr' or 'rtl'") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   /** @humanOnly */
   | { type: 'animationEnd' }
 
@@ -84,10 +91,12 @@ export interface ContextMenuInit {
   items?: ContextMenuItem[]
   checked?: string[]
   closeOnSelect?: boolean
-  /** Omit to follow the page's own direction (see `MenuState.dir`). */
-  dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** Omit to follow the page's own direction (see {@link ContextMenuState}'s
+   * `dir`/`dirSource`, resolved from the mounted trigger by `directionSync`). */
+  dir?: TextDirection
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 
@@ -105,7 +114,7 @@ export function init(opts: ContextMenuInit = {}): ContextMenuState {
     closeOnSelect: opts.closeOnSelect ?? false,
     typeahead: '',
     typeaheadExpiresAt: 0,
-    dir: opts.dir ?? null,
+    ...initDirection(opts.dir),
   }
 }
 
@@ -143,7 +152,7 @@ export function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMe
         {
           ...state,
           open: true,
-          status: statusOnOpen(state.status),
+          status: statusOnOpen(state.status, state.skipAnimations),
           x: msg.x,
           y: msg.y,
           openPath: [],
@@ -171,8 +180,11 @@ export type ContextMenuSubPositionerParts = MenuSubPositionerPartsOf<'context-me
 export type ContextMenuSubContentParts = MenuSubContentPartsOf<'context-menu'>
 
 export interface ContextMenuParts {
-  /** The element users right-click to open the menu. */
+  /** The element users right-click to open the menu. `id` is REQUIRED — it is
+   * the scope `directionSync` (below) observes for live ancestor `dir`
+   * changes, since it (unlike `content`) is always mounted (#265 finding 6). */
   trigger: {
+    id: string
     'data-scope': 'context-menu'
     'data-part': 'trigger'
     onContextMenu: (e: MouseEvent) => void
@@ -205,6 +217,12 @@ export interface ContextMenuParts {
   subTrigger: (value: string) => ContextMenuSubTriggerParts
   subPositioner: (value: string) => ContextMenuSubPositionerParts
   subContent: (value: string) => ContextMenuSubContentParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * observing the TRIGGER (always mounted, unlike the content) as this
+   * instance's root. A discarded `Mountable` is inert, so this must be placed
+   * in the view. */
+  directionSync: Mountable
 }
 
 interface ContextMenuRuntime {
@@ -232,6 +250,7 @@ export function connect(
   opts: ConnectOptions,
 ): ContextMenuParts {
   const base = opts.id
+  const triggerId = `${base}:trigger`
   const contentId = `${base}:content`
   const itemId = (v: string): string => `${base}:item:${v}`
   const subContentId = (v: string): string => `${base}:sub:${v}:content`
@@ -254,6 +273,7 @@ export function connect(
   const runtime: ContextMenuRuntime = { owner: null }
   const connected: ContextMenuParts = {
     trigger: {
+      id: triggerId,
       'data-scope': 'context-menu',
       'data-part': 'trigger',
       onContextMenu: tagSend(send, ['openAt'], (e) => {
@@ -289,6 +309,7 @@ export function connect(
     subTrigger: parts.subTrigger,
     subPositioner: parts.subPositioner,
     subContent: parts.subContent,
+    directionSync: directionSyncMount(triggerId, (dir) => send({ type: 'syncDomDir', dir })),
   }
   runtimeByParts.set(connected, runtime)
   return connected
@@ -357,4 +378,48 @@ export function overlay(opts: OverlayOptions): Mountable {
   })
 }
 
-export const contextMenu = { init, update, connect, overlay, isPresent, isMounted }
+export interface SubOverlayOptions {
+  /** The subTrigger value this level opens under. */
+  value: string
+  state: Signal<ContextMenuState>
+  parts: Pick<ContextMenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
+  align?: 'start' | 'end'
+  offset?: number
+  flip?: boolean
+  shift?: boolean
+}
+
+/**
+ * Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
+ * consumer-wired `watchSubmenuPositioning` (removed). See
+ * `menu-machine.ts:subOverlay`'s doc comment for the full contract.
+ */
+export function subOverlay(opts: SubOverlayOptions): Mountable {
+  return machineSubOverlay({
+    value: opts.value,
+    state: opts.state,
+    parts: opts.parts,
+    content: opts.content,
+    isOpen: (s) => s.openPath.includes(opts.value),
+    direction: (s) => s,
+    target: opts.target,
+    positionerClass: opts.positionerClass,
+    align: opts.align,
+    offset: opts.offset,
+    flip: opts.flip,
+    shift: opts.shift,
+  })
+}
+
+export const contextMenu = {
+  init,
+  update,
+  connect,
+  overlay,
+  subOverlay,
+  isPresent,
+  isMounted,
+}

@@ -4,13 +4,13 @@
   "title": "Hover Card",
   "description": "Skin for @llui/components/hover-card.",
   "dependencies": ["@llui/dom", "@llui/components"],
-  "registryDependencies": ["utils"],
+  "registryDependencies": ["floating-motion", "utils"],
   "files": [
     {
       "path": "registry/llui/ui/hover-card.ts",
       "type": "registry:ui",
       "target": "hover-card.ts",
-      "content": "import { div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\n\n/** Ported verbatim from shadcn/ui (MIT © 2023 shadcn), minus\n * `origin-(--radix-hover-card-content-transform-origin)` — see `popover.ts`. */\nexport const HoverCardContent = classPart(\n  div,\n  'z-50 w-64 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',\n)\nexport const HoverCardArrow = classPart(\n  div,\n  'size-2.5 rotate-45 rounded-[2px] border border-border bg-popover',\n)\n"
+      "content": "import { div } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { floatingOverlayMotionRecipe } from '@/lib/floating-motion'\n\n/** Ported from shadcn/ui (MIT © 2023 shadcn), with LLui's shared presence,\n * viewport-containment, and forced-colors policies. The Radix-specific\n * `origin-(--radix-hover-card-content-transform-origin)` is omitted; see\n * `popover.ts`. */\nexport const HoverCardContent = classPart(\n  div,\n  `z-50 w-64 max-w-[calc(100vw-2rem)] max-h-[var(--llui-floating-available-height,calc(100dvh-2rem))] overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] ${floatingOverlayMotionRecipe}`,\n)\nexport const HoverCardArrow = classPart(\n  div,\n  'absolute size-2.5 rotate-45 rounded-[2px] border border-border bg-popover forced-colors:border-[CanvasText] forced-colors:bg-[Canvas]',\n)\n"
     }
   ]
 }

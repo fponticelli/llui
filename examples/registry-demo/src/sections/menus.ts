@@ -1,15 +1,26 @@
-import { div, each, li, nav, onMount, show, span, text, ul } from '@llui/dom'
+import { div, each, li, onMount, show, span, text, ul } from '@llui/dom'
 import type { Mountable, Send, Signal } from '@llui/dom'
+import * as menuC from '@llui/components/menu'
 import * as contextMenuC from '@llui/components/context-menu'
 import * as menubarC from '@llui/components/menubar'
 import * as navMenuC from '@llui/components/navigation-menu'
 import * as commandMenuC from '@llui/components/patterns/command-menu'
 import * as comboboxC from '@llui/components/combobox'
 import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from '../components/ui/dropdown-menu'
+import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuShortcut,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
 } from '../components/ui/context-menu'
 import {
   Menubar,
@@ -17,6 +28,8 @@ import {
   MenubarItem,
   MenubarSeparator,
   MenubarShortcut,
+  MenubarSubContent,
+  MenubarSubTrigger,
   MenubarTrigger,
 } from '../components/ui/menubar'
 import {
@@ -50,22 +63,66 @@ import {
 } from '../components/ui/combobox'
 import { Input } from '../components/ui/input'
 import { Label } from '../components/ui/label'
+import { Button } from '../components/ui/button'
 import { ChevronDownIcon } from '../components/ui/icons'
+import type { PartHelper } from '../lib/utils'
 import { section } from './shared'
 
-const CONTEXT_ITEMS = [
+/** A label/shortcut tree — the display half of a menu item. A `children`
+ * array is what makes an entry a real SUBMENU: `toMenuItems` below turns this
+ * same tree into the machine's item tree (#265 finding 7), so the two can
+ * never drift the way a parallel items/labels pair would. */
+interface MenuItemSpec {
+  readonly value: string
+  readonly label: string
+  readonly shortcut?: string
+  readonly children?: readonly MenuItemSpec[]
+}
+
+/** `MenuItemSpec` → the machine's JSON item tree (`MenuItem`/`MenuNode`). */
+function toMenuItems(specs: readonly MenuItemSpec[]): menuC.MenuItem[] {
+  return specs.map((s) => ({
+    value: s.value,
+    kind: 'action',
+    ...(s.children ? { children: toMenuItems(s.children) } : {}),
+  }))
+}
+
+const CONTEXT_ITEMS: readonly MenuItemSpec[] = [
   { value: 'back', label: 'Back', shortcut: '⌘[' },
   { value: 'forward', label: 'Forward', shortcut: '⌘]' },
   { value: 'reload', label: 'Reload', shortcut: '⌘R' },
+  {
+    value: 'share',
+    label: 'Share',
+    children: [
+      { value: 'share-email', label: 'Email link' },
+      { value: 'share-copy', label: 'Copy link' },
+    ],
+  },
 ]
 
-const MENUBAR_MENUS = [
+interface MenubarMenuSpec {
+  readonly id: string
+  readonly label: string
+  readonly items: readonly MenuItemSpec[]
+}
+
+const MENUBAR_MENUS: readonly MenubarMenuSpec[] = [
   {
     id: 'file',
     label: 'File',
     items: [
       { value: 'new', label: 'New Tab', shortcut: '⌘T' },
       { value: 'open', label: 'Open…', shortcut: '⌘O' },
+      {
+        value: 'export',
+        label: 'Export',
+        children: [
+          { value: 'export-pdf', label: 'PDF' },
+          { value: 'export-csv', label: 'CSV' },
+        ],
+      },
       { value: 'print', label: 'Print', shortcut: '⌘P' },
     ],
   },
@@ -77,7 +134,89 @@ const MENUBAR_MENUS = [
       { value: 'redo', label: 'Redo', shortcut: '⇧⌘Z' },
     ],
   },
-] as const
+]
+
+const DROPDOWN_ITEMS: readonly MenuItemSpec[] = [
+  { value: 'profile', label: 'Profile', shortcut: '⇧⌘P' },
+  { value: 'billing', label: 'Billing', shortcut: '⌘B' },
+  {
+    value: 'team',
+    label: 'Team',
+    children: [
+      { value: 'invite', label: 'Invite members' },
+      { value: 'manage', label: 'Manage roles' },
+    ],
+  },
+  { value: 'logout', label: 'Log out' },
+]
+
+/**
+ * The part-bag SHAPE every one of the three menu surfaces (dropdown menu,
+ * context menu, menubar's dropped panels) shares for items/submenus — the
+ * SAME `menu.ts`/`menu-machine.ts` machine underneath each of `menuC`,
+ * `contextMenuC`, and `menubarC.menu(id)`, differing only in their literal
+ * `data-scope` (`'menu'` / `'context-menu'` / `'menubar'`). Structural rather
+ * than `Pick<menuC.MenuParts, …>`, so `ContextMenuParts`/menubar's per-menu
+ * parts type — whose `item()`/`subTrigger()` etc. return a DIFFERENT literal
+ * `data-scope` — still satisfy it; each concrete `data-*` field is a plain
+ * string/Signal, assignable to `ElProps`'s permissive index signature either
+ * way. `renderMenuTree` is generic over it so each call site infers its own
+ * concrete parts type instead of forcing all three into one shared shape.
+ */
+interface MenuTreeParts {
+  item: (value: string) => { item: object }
+  subTrigger: (value: string) => object
+  subPositioner: (value: string) => object
+  subContent: (value: string) => object
+}
+
+/** The per-surface recipe set a real submenu needs, so ONE recursive renderer
+ * covers dropdown menu, context menu, and menubar instead of three
+ * hand-rolled copies (#265 A4/finding 9). No `SubPositioner` recipe: the
+ * engine-owned `subOverlay` (`menuC`/`contextMenuC`/`menubarC`) builds that
+ * wrapper itself now. */
+interface MenuTreeRecipes {
+  Item: PartHelper
+  Shortcut: PartHelper
+  SubTrigger: PartHelper
+  SubContent: PartHelper
+}
+
+/**
+ * Recursively renders a label/shortcut tree against a real menu machine's
+ * part bag. A `children` entry becomes a real subTrigger + an ENGINE-OWNED
+ * submenu overlay (#265 A4) — `subOverlayFor` closes over the right
+ * per-surface `menuC.subOverlay`/`contextMenuC.subOverlay`/
+ * `menubarC.subOverlay` call (differing in menubar's case by an extra
+ * `menuId`), so this renderer stays agnostic to which of the three it is
+ * building for.
+ */
+function renderMenuTree<P extends MenuTreeParts>(
+  specs: readonly MenuItemSpec[],
+  parts: P,
+  subOverlayFor: (value: string, content: () => Mountable[]) => Mountable,
+  recipes: MenuTreeRecipes,
+): Mountable[] {
+  return specs.flatMap((s): Mountable[] => {
+    if (s.children && s.children.length > 0) {
+      return [
+        recipes.SubTrigger({ ...parts.subTrigger(s.value) }, [text(s.label)]),
+        subOverlayFor(s.value, () => [
+          recipes.SubContent(
+            { ...parts.subContent(s.value) },
+            renderMenuTree(s.children!, parts, subOverlayFor, recipes),
+          ),
+        ]),
+      ]
+    }
+    return [
+      recipes.Item({ ...parts.item(s.value).item }, [
+        text(s.label),
+        ...(s.shortcut ? [recipes.Shortcut([text(s.shortcut)])] : []),
+      ]),
+    ]
+  })
+}
 
 const NAV_ITEMS = [
   {
@@ -108,6 +247,7 @@ const COMMANDS: commandMenuC.Command[] = [
 ]
 
 export interface State {
+  dropdown: menuC.MenuState
   context: contextMenuC.ContextMenuState
   menubar: menubarC.MenubarState
   navMenu: navMenuC.NavMenuState
@@ -119,6 +259,7 @@ export interface State {
 }
 
 export type Msg =
+  | { type: 'dropdown'; msg: menuC.MenuMsg }
   | { type: 'context'; msg: contextMenuC.ContextMenuMsg }
   | { type: 'menubar'; msg: menubarC.MenubarMsg }
   | { type: 'navMenu'; msg: navMenuC.NavMenuMsg }
@@ -127,13 +268,14 @@ export type Msg =
 
 export const init = (): [State, never[]] => [
   {
+    dropdown: menuC.init({ items: toMenuItems(DROPDOWN_ITEMS) }),
     context: contextMenuC.init({
-      items: CONTEXT_ITEMS.map((i) => ({ value: i.value, kind: 'action' as const })),
+      items: toMenuItems(CONTEXT_ITEMS),
     }),
     menubar: menubarC.init({
       menus: MENUBAR_MENUS.map((m) => ({
         id: m.id,
-        items: m.items.map((i) => ({ value: i.value, kind: 'action' as const })),
+        items: toMenuItems(m.items),
       })),
     }),
     navMenu: navMenuC.init({
@@ -151,6 +293,8 @@ export const init = (): [State, never[]] => [
 
 export function update(state: State, msg: Msg): [State, never[]] {
   switch (msg.type) {
+    case 'dropdown':
+      return [{ ...state, dropdown: menuC.update(state.dropdown, msg.msg)[0] }, []]
     case 'context':
       return [{ ...state, context: contextMenuC.update(state.context, msg.msg)[0] }, []]
     case 'menubar':
@@ -183,12 +327,33 @@ export function update(state: State, msg: Msg): [State, never[]] {
   }
 }
 
+const CONTEXT_RECIPES: MenuTreeRecipes = {
+  Item: ContextMenuItem,
+  Shortcut: ContextMenuShortcut,
+  SubTrigger: ContextMenuSubTrigger,
+  SubContent: ContextMenuSubContent,
+}
+const MENUBAR_RECIPES: MenuTreeRecipes = {
+  Item: MenubarItem,
+  Shortcut: MenubarShortcut,
+  SubTrigger: MenubarSubTrigger,
+  SubContent: MenubarSubContent,
+}
+const DROPDOWN_RECIPES: MenuTreeRecipes = {
+  Item: DropdownMenuItem,
+  Shortcut: DropdownMenuShortcut,
+  SubTrigger: DropdownMenuSubTrigger,
+  SubContent: DropdownMenuSubContent,
+}
+
 export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[] {
+  const ddSend = (m: menuC.MenuMsg): void => send({ type: 'dropdown', msg: m })
   const ctxSend = (m: contextMenuC.ContextMenuMsg): void => send({ type: 'context', msg: m })
   const barSend = (m: menubarC.MenubarMsg): void => send({ type: 'menubar', msg: m })
   const navSend = (m: navMenuC.NavMenuMsg): void => send({ type: 'navMenu', msg: m })
   const palSend = (m: commandMenuC.CommandMenuMsg): void => send({ type: 'palette', msg: m })
 
+  const dd = menuC.connect(state.at('dropdown'), ddSend, { id: 'demo-dropdown' })
   const ctx = contextMenuC.connect(state.at('context'), ctxSend, { id: 'demo-context' })
   const bar = menubarC.connect(state.at('menubar'), barSend, { id: 'demo-menubar' })
   const navm = navMenuC.connect(state.at('navMenu'), navSend, { id: 'demo-nav' })
@@ -196,12 +361,44 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const cbSend = (m: comboboxC.ComboboxMsg): void => send({ type: 'combobox', msg: m })
   const cb = comboboxC.connect(state.at('combobox'), cbSend, { id: 'demo-combobox' })
   const { text: liveText, ...liveAttrs } = cb.liveRegion
+  const ddSubOverlay = (value: string, content: () => Mountable[]): Mountable =>
+    menuC.subOverlay({ value, state: state.at('dropdown'), parts: dd, content })
+  const ctxSubOverlay = (value: string, content: () => Mountable[]): Mountable =>
+    contextMenuC.subOverlay({ value, state: state.at('context'), parts: ctx, content })
 
   return [
     section(
-      'Context Menu',
-      'Right-click the surface. The menu is pointer-positioned, so it has no anchor — its nested-layer owner is the region that delivered the `contextmenu` event.',
+      'Dropdown Menu',
+      'A real subTrigger/subContent submenu (`Team`), anchored to its own subTrigger via an engine-owned floating overlay — not a fixed top-left corner (#265 A4).',
       [
+        // shadcn wraps a real `<Button>` in `DropdownMenuTrigger asChild` —
+        // the trigger IS the button, not a second wrapping element — so this
+        // spreads `dd.trigger` straight onto `Button` rather than importing
+        // the (unstyled, `classPart(button, '')`) `DropdownMenuTrigger`.
+        dd.directionSync,
+        Button({ ...dd.trigger, variant: 'outline' }, [text('Account')]),
+      ],
+    ),
+    menuC.overlay({
+      state: state.at('dropdown'),
+      send: ddSend,
+      parts: dd,
+      positionerClass: 'z-popover',
+      content: () => [
+        DropdownMenuContent({ ...dd.content }, [
+          ...DROPDOWN_ITEMS.flatMap((i, index) => [
+            ...renderMenuTree([i], dd, ddSubOverlay, DROPDOWN_RECIPES),
+            ...(index === 1 ? [DropdownMenuSeparator({ ...dd.separator() })] : []),
+          ]),
+        ]),
+      ],
+    }),
+
+    section(
+      'Context Menu',
+      'Right-click the surface. The menu is pointer-positioned, so it has no anchor — its nested-layer owner is the region that delivered the `contextmenu` event. `Share` is a real anchored submenu.',
+      [
+        ctx.directionSync,
         div(
           {
             ...ctx.trigger,
@@ -219,21 +416,19 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       positionerClass: 'z-popover',
       content: () => [
         ContextMenuContent({ ...ctx.content }, [
-          ...CONTEXT_ITEMS.map((i, index) => [
-            ContextMenuItem({ ...ctx.item(i.value).item }, [
-              text(i.label),
-              ContextMenuShortcut([text(i.shortcut)]),
-            ]),
+          ...CONTEXT_ITEMS.flatMap((i, index) => [
+            ...renderMenuTree([i], ctx, ctxSubOverlay, CONTEXT_RECIPES),
             ...(index === 1 ? [ContextMenuSeparator({ ...ctx.separator() })] : []),
-          ]).flat(),
+          ]),
         ]),
       ],
     }),
 
     section(
       'Menubar',
-      'One machine owns the bar AND every dropped menu — `menu(id)` delegates a full menu bag per entry, so arrow keys walk between menus with one open.',
+      'One machine owns the bar AND every dropped menu — `menu(id)` delegates a full menu bag per entry, so arrow keys walk between menus with one open. `File › Export` is a real anchored submenu.',
       [
+        bar.directionSync,
         Menubar({ ...bar.root }, [
           ...MENUBAR_MENUS.map((m) =>
             MenubarTrigger({ ...bar.menuTrigger(m.id) }, [text(m.label)]),
@@ -243,6 +438,18 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
     ),
     ...MENUBAR_MENUS.map((m) => {
       const menu = bar.menu(m.id)
+      // Each top-level menu embeds its OWN `MenuState` (keyed by id) inside the
+      // bar's `menuStates` — `menubarC.subOverlay` reaches into THIS menu's
+      // `openPath` reactively via that `menuId`, so it knows which submenu
+      // LEVEL of THIS menu (not a sibling top-level menu) is open.
+      const menuSubOverlay = (value: string, content: () => Mountable[]): Mountable =>
+        menubarC.subOverlay({
+          menuId: m.id,
+          value,
+          state: state.at('menubar'),
+          parts: menu,
+          content,
+        })
       return menubarC.overlay({
         state: state.at('menubar'),
         send: barSend,
@@ -252,11 +459,8 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
         content: () => [
           MenubarContent({ ...menu.content }, [
             ...m.items
-              .map((i, index) => [
-                MenubarItem({ ...menu.item(i.value).item }, [
-                  text(i.label),
-                  MenubarShortcut([text(i.shortcut)]),
-                ]),
+              .flatMap((i, index) => [
+                ...renderMenuTree([i], menu, menuSubOverlay, MENUBAR_RECIPES),
                 ...(index === 0 && m.items.length > 2
                   ? [MenubarSeparator({ ...menu.separator() })]
                   : []),
@@ -271,8 +475,14 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'Navigation Menu',
       'A `nav` landmark with disclosure buttons — NOT menubar/menu roles, because site navigation is not an application menu. Panels render inline, so the root sets `data-viewport="false"`.',
       [
-        NavigationMenu({ 'data-viewport': 'false', class: 'w-full max-w-none justify-start' }, [
-          nav({ ...navm.root, id: 'demo-nav' }, [
+        NavigationMenu(
+          {
+            ...navm.root,
+            id: 'demo-nav',
+            'data-viewport': 'false',
+            class: 'w-full max-w-none justify-start',
+          },
+          [
             // The machine answers WHETHER the arrow shows (`indicator`'s
             // data-state); where it sits is layout, so the watcher measures the
             // open trigger and writes --indicator-left/--indicator-width onto
@@ -290,6 +500,11 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
               const el = root.querySelector('#demo-nav')
               return el instanceof HTMLElement ? navMenuC.watchNavMenuIndicator(el) : undefined
             }),
+            // Keeps `dir` synchronized with the mounted root's live ancestor
+            // `dir` attribute through the shared `@llui/interactions`
+            // direction-sync seam (#265 finding 6) — a discarded Mountable is
+            // inert, so this must be placed too, not just called for effect.
+            navm.directionSync,
             NavigationMenuList({ class: 'justify-start' }, [
               ...NAV_ITEMS.map((n) => {
                 const item = navm.item(n.id, { isBranch: true })
@@ -316,8 +531,8 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
             // A sibling of the list, inside the positioned root: the track is
             // `absolute` and resolves its offset against `NavigationMenu`.
             NavigationMenuIndicatorTrack({ ...navm.indicator }, [NavigationMenuIndicatorArrow()]),
-          ]),
-        ]),
+          ],
+        ),
       ],
     ),
 

@@ -207,7 +207,7 @@ Hard constraints. Several are not enforced by types or CI. **Before touching a s
 ### Styling & registry — `docs/agents/styling.md`
 
 - **Every registry class must compile under real Tailwind** (`scripts/test/tailwind-classes.test.ts`). No untested class-string layers.
-- **Recipes are shadcn/ui ported VERBATIM.** Only two translations: `focus:` → `data-[highlighted]:` on menu-like surfaces, `data-slot=` → `data-part=`.
+- **Recipes are shadcn/ui ported VERBATIM.** Only four translations: `focus:` → `data-[highlighted]:` on menu-like surfaces, `data-slot=` → `data-part=`, physical → exact logical utilities, and `--radix-…-available-height` → `--llui-floating-available-height`.
 - **`scripts/test/registry-attrs.test.ts` checks recipe attributes and VALUES against what machines publish.** Allowlists are keyed `file.ts: attr`, never a bare name. Boolean `data-*` are published BARE.
 - **`scripts/test/token-contrast.test.ts`** asserts AA contrast for all token pairs in all six theme cells. Its allowlist is closed at both ends.
 - `theme.css` (plain CSS baseline) and `tokens.css` (Tailwind v4 registry) are independent; never style the same parts from both. Tailwind namespaces (`--transition-duration-*`, `--z-index-*`) matter only in `tailwind.css`.

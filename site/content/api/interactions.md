@@ -69,7 +69,13 @@ function _scrollLockCount(): number
 ### `attachFloating()`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Applies `left` + `top` styles to the floating element. Returns a cleanup.
+Owns `position`, `top`, `left`, `transform` and the two available-size
+custom properties ({@link FLOATING_AVAILABLE_HEIGHT}) on `floating`; `position` and
+all four physical inset properties on an optional arrow; and placement
+attributes on `stateTarget`. The arrow's static-side inset is half its
+untransformed layout size, so a square arrow straddles the resolved edge.
+Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
+exact prior values (including priority) or absence of those properties.
 
 ```typescript
 function attachFloating(opts: FloatingOptions): () => void
@@ -306,6 +312,16 @@ An explicit `'ltr' | 'rtl'` wins; an `Element` is resolved from the DOM;
 function resolveTextDirection(source: Element | null | undefined | TextDirection): TextDirection
 ```
 
+### `restoreInlineStyles()`
+
+```typescript
+function restoreInlineStyles(
+  element: HTMLElement,
+  snapshots: readonly InlineStyleSnapshot[],
+  hadStyleAttribute: boolean,
+): void
+```
+
 ### `runEngineFocus()`
 
 Run `body` with engine-focus suppression active. Any `focusin` raised inside
@@ -353,6 +369,12 @@ function runEngineFocus<T>(body: () => SyncEngineFocusBody<T>): T
 function setAriaHiddenOutside(target: Element): () => void
 ```
 
+### `snapshotInlineStyle()`
+
+```typescript
+function snapshotInlineStyle(element: HTMLElement, property: string): InlineStyleSnapshot
+```
+
 ### `watchInteractOutside()`
 
 Watch for pointer or focus events outside a given element. Returns a
@@ -384,6 +406,24 @@ Shared DOM helpers used by interaction utilities.
 
 ```typescript
 export type ElementSource<T extends Element = Element> = T | T[] | (() => T | T[] | null)
+```
+
+### `InlineStyleSnapshot`
+
+One inline style property's exact prior state (present or absent, value and
+priority), so `restoreInlineStyles` can put it back byte-for-byte rather
+than merely clearing whatever this attachment wrote. Exported so a caller
+that imperatively sets a SINGLE inline style outside `attachFloating`
+itself (`overlay-engine.ts`'s `sameWidth` handling) shares this snapshot
+discipline instead of re-implementing it (#265 LOW).
+
+```typescript
+export type InlineStyleSnapshot = {
+  property: string
+  present: boolean
+  value: string
+  priority: string
+}
 ```
 
 ### `NestedLayerAspect`
@@ -514,6 +554,12 @@ export interface FloatingOptions {
   anchor: Element
   /** The floating element (content). */
   floating: HTMLElement
+  /**
+   * Element that receives the resolved full `data-placement` and physical
+   * `data-side`. Defaults to `floating`. Use a separate content element when
+   * `floating` is a geometry-only positioner wrapper.
+   */
+  stateTarget?: HTMLElement
   /** Preferred placement (default: 'bottom'). */
   placement?: Placement
   /** Gap between anchor and floating, in px (default: 0). */
@@ -548,7 +594,9 @@ export interface FloatingOptions {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to first focusable. */
+  /** Element to focus when the trap activates. Defaults to the first
+   * tab-reachable descendant, else the container itself (given a temporary
+   * `tabindex="-1"` when it has none). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -639,6 +687,23 @@ Every aspect — the default for a registration that names none.
 
 ```typescript
 const ALL_NESTED_LAYER_ASPECTS: readonly NestedLayerAspect[]
+```
+
+### `FLOATING_AVAILABLE_HEIGHT`
+
+The px space left beside the anchor on the resolved side, published on the
+floating element so a surface can cap itself with
+`max-height: var(--llui-floating-available-height, …)` — the LLui
+counterpart of Radix's `--radix-*-content-available-height`.
+
+```typescript
+const FLOATING_AVAILABLE_HEIGHT
+```
+
+### `FLOATING_AVAILABLE_WIDTH`
+
+```typescript
+const FLOATING_AVAILABLE_WIDTH
 ```
 
 <!-- auto-api:end -->

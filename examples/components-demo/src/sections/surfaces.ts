@@ -5,6 +5,7 @@ import {
   a,
   nav,
   ol,
+  ul,
   li,
   h3,
   p,
@@ -21,6 +22,7 @@ import { navigationMenu } from '@llui/components/navigation-menu'
 import { scrollArea } from '@llui/components/scroll-area'
 import { breadcrumbs } from '@llui/components/breadcrumbs'
 import { menubar } from '@llui/components/menubar'
+import type { MenuItem, MenuParts } from '@llui/components/menu'
 import { toolbar } from '@llui/components/toolbar'
 import { sectionGroup, card } from '../shared/ui'
 import {
@@ -110,6 +112,14 @@ export const init = (): [State, never[]] => [
           items: [
             { value: 'zoom-in', kind: 'action' },
             { value: 'zoom-out', kind: 'action' },
+            {
+              value: 'more',
+              kind: 'action',
+              children: [
+                { value: 'reset-zoom', kind: 'action' },
+                { value: 'fit-width', kind: 'action' },
+              ],
+            },
           ],
         },
       ],
@@ -222,48 +232,92 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     find: 'Find & Replace',
     'zoom-in': 'Zoom In',
     'zoom-out': 'Zoom Out',
+    more: 'More',
+    'reset-zoom': 'Reset Zoom',
+    'fit-width': 'Fit Width',
   }
 
-  // Render one top-level menu: its trigger plus a dropdown gated on
-  // `state.open === id`, using the delegated `menu(id)` part bag.
-  const renderMenu = (id: string, items: Array<{ value: string; kind: string }>): Mountable => {
-    const menuParts = mb.menu(id)
-    return div({ class: 'relative' }, [
-      button(
-        {
-          ...mb.menuTrigger(id),
-          class: 'px-3 py-1.5 rounded font-medium text-sm hover:bg-accent',
-        },
-        [text(menuLabels[id] ?? id)],
-      ),
-      show(
-        state.at('menubar').map((s) => s.open === id),
-        () => [
+  // Recursive: mirrors the `overlays` section's real submenu renderer. A
+  // `children` node is a real subTrigger + an ENGINE-OWNED submenu overlay
+  // (`menubar.subOverlay`, #265 A4) — it reaches into the delegated menu's
+  // OWN `openPath` internally (`state.menuStates[menuId].openPath`) rather
+  // than the bar's `open` field (which only names WHICH top-level menu is
+  // open, not its submenu chain).
+  const renderMenuItems = (items: MenuItem[], menuId: string, parts: MenuParts): Renderable =>
+    items.flatMap((it): Renderable => {
+      if (it.kind === 'separator') {
+        return [div({ ...parts.separator(), class: 'my-1 border-t border-border' }, [])]
+      }
+      if (it.children && it.children.length > 0) {
+        return [
           div(
             {
-              ...menuParts.content,
+              ...parts.subTrigger(it.value),
               class:
-                'absolute top-full start-0 mt-1 min-w-44 bg-card border border-border rounded-md shadow-lg p-1 z-50 outline-none',
+                'px-2 py-1.5 rounded text-sm cursor-pointer flex items-center justify-between gap-2 data-[highlighted]:bg-accent',
             },
-            items.map((it) =>
-              it.kind === 'separator'
-                ? div({ ...menuParts.separator(), class: 'my-1 border-t border-border' }, [])
-                : div(
-                    {
-                      ...menuParts.item(it.value).item,
-                      class:
-                        'px-2 py-1.5 rounded text-sm cursor-pointer data-[state=highlighted]:bg-accent',
-                    },
-                    [text(itemLabels[it.value] ?? it.value)],
-                  ),
-            ),
+            [text(itemLabels[it.value] ?? it.value), text('›')],
           ),
-        ],
-      ),
-    ])
+          menubar.subOverlay({
+            menuId,
+            value: it.value,
+            state: state.at('menubar'),
+            parts,
+            content: () => [
+              div(
+                {
+                  ...parts.subContent(it.value),
+                  class:
+                    'min-w-44 bg-card border border-border rounded-md shadow-lg p-1 outline-none',
+                },
+                renderMenuItems(it.children!, menuId, parts),
+              ),
+            ],
+          }),
+        ]
+      }
+      return [
+        div(
+          {
+            ...parts.item(it.value).item,
+            class: 'px-2 py-1.5 rounded text-sm cursor-pointer data-[highlighted]:bg-accent',
+          },
+          [text(itemLabels[it.value] ?? it.value)],
+        ),
+      ]
+    })
+
+  // Render one top-level menu: its bar trigger (placed inline in `mb.root`)
+  // and a REAL floating overlay (placed as a top-level sibling, portalled to
+  // body) — replacing a prior hand-rolled fixed-corner div with no floating
+  // geometry, no dismiss layer, no focus trap and no submenu support (#265
+  // finding 9).
+  const renderMenuTrigger = (id: string): Mountable =>
+    button(
+      { ...mb.menuTrigger(id), class: 'px-3 py-1.5 rounded font-medium text-sm hover:bg-accent' },
+      [text(menuLabels[id] ?? id)],
+    )
+  const renderMenuOverlay = (id: string, items: MenuItem[]): Mountable => {
+    const menuParts = mb.menu(id)
+    return menubar.overlay({
+      state: state.at('menubar'),
+      send: (m) => send({ type: 'menubar', msg: m }),
+      menuId: id,
+      parts: menuParts,
+      positionerClass: 'z-50',
+      content: () => [
+        div(
+          {
+            ...menuParts.content,
+            class: 'min-w-44 bg-card border border-border rounded-md shadow-lg p-1 outline-none',
+          },
+          renderMenuItems(items, id, menuParts),
+        ),
+      ],
+    })
   }
 
-  const menuDefs: Array<{ id: string; items: Array<{ value: string; kind: string }> }> = [
+  const menuDefs: Array<{ id: string; items: MenuItem[] }> = [
     {
       id: 'file',
       items: [
@@ -287,9 +341,18 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
       items: [
         { value: 'zoom-in', kind: 'action' },
         { value: 'zoom-out', kind: 'action' },
+        {
+          value: 'more',
+          kind: 'action',
+          children: [
+            { value: 'reset-zoom', kind: 'action' },
+            { value: 'fit-width', kind: 'action' },
+          ],
+        },
       ],
     },
   ]
+  const menubarOverlays = menuDefs.map((m) => renderMenuOverlay(m.id, m.items))
 
   // ---- Toolbar: a roving-focus item button ----
   const toolbarBtn = (value: string, glyph: string, title: string): Mountable =>
@@ -406,72 +469,136 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ]),
       ]),
       card('Navigation Menu', [
-        div(
+        // A native `nav` landmark, `ul`/`li` list, and real `a` links inside
+        // each panel — NOT menubar/menu roles, since site navigation is not
+        // an application menu (registry's own doc comment on this
+        // component). Panels render inline (`data-viewport="false"`) rather
+        // than into a shared viewport. #265 finding 9: the prior version used
+        // `div`s throughout, with no indicator and no landmark/list/link
+        // semantics for assistive tech or keyboard users to find.
+        nav(
           {
             ...nv.root,
+            id: 'nav-demo',
+            'data-viewport': 'false',
             class: 'relative flex gap-1 text-sm',
           },
           [
-            div({ class: 'relative' }, [
-              button(
-                {
-                  ...nv.item('file', { isBranch: true }).trigger,
-                  class: 'px-3 py-1.5 rounded font-medium hover:bg-accent',
-                },
-                [text('File')],
-              ),
-              div(
-                {
-                  ...nv.item('file', { isBranch: true }).content,
-                  class:
-                    'absolute top-full start-0 mt-1 min-w-36 bg-card border border-border rounded-md shadow-lg p-1 z-50',
-                },
-                [
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
-                    text('New File'),
-                  ]),
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
-                    text('Open...'),
-                  ]),
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
-                    text('Save'),
-                  ]),
-                ],
-              ),
+            // The machine answers WHETHER the arrow shows (`indicator`'s
+            // `data-state`); WHERE it sits is layout, so the watcher measures
+            // the open trigger and writes `--indicator-left`/`--indicator-width`
+            // onto the track below. `onMount` hands the callback the BUILD's
+            // root container, not the element the call sits inside, so this
+            // is scoped to `#nav-demo` — handing it the raw root would let a
+            // second nav on the page track this one's arrow (#123's shape).
+            onMount((root) => {
+              const el = (root as HTMLElement).querySelector('#nav-demo')
+              return el instanceof HTMLElement
+                ? navigationMenu.watchNavMenuIndicator(el)
+                : undefined
+            }),
+            // Keeps `dir` synchronized with the mounted root's live ancestor
+            // `dir` attribute through the shared `@llui/interactions`
+            // direction-sync seam (#265 finding 6) — a discarded Mountable is
+            // inert, so this must be placed too, not just called for effect.
+            nv.directionSync,
+            ul({ class: 'flex list-none gap-1' }, [
+              li({ class: 'relative' }, [
+                button(
+                  {
+                    ...nv.item('file', { isBranch: true }).trigger,
+                    class: 'px-3 py-1.5 rounded font-medium hover:bg-accent',
+                  },
+                  [text('File')],
+                ),
+                div(
+                  {
+                    ...nv.item('file', { isBranch: true }).content,
+                    class:
+                      'absolute top-full start-0 mt-1 min-w-36 bg-card border border-border rounded-md shadow-lg p-1 z-50',
+                  },
+                  [
+                    ul({ class: 'grid gap-0.5 list-none' }, [
+                      li([
+                        a({ href: '#', class: 'block px-2 py-1.5 rounded hover:bg-accent' }, [
+                          text('New File'),
+                        ]),
+                      ]),
+                      li([
+                        a({ href: '#', class: 'block px-2 py-1.5 rounded hover:bg-accent' }, [
+                          text('Open...'),
+                        ]),
+                      ]),
+                      li([
+                        a({ href: '#', class: 'block px-2 py-1.5 rounded hover:bg-accent' }, [
+                          text('Save'),
+                        ]),
+                      ]),
+                    ]),
+                  ],
+                ),
+              ]),
+              li({ class: 'relative' }, [
+                button(
+                  {
+                    ...nv.item('edit', { isBranch: true }).trigger,
+                    class: 'px-3 py-1.5 rounded font-medium hover:bg-accent',
+                  },
+                  [text('Edit')],
+                ),
+                div(
+                  {
+                    ...nv.item('edit', { isBranch: true }).content,
+                    class:
+                      'absolute top-full start-0 mt-1 min-w-36 bg-card border border-border rounded-md shadow-lg p-1 z-50',
+                  },
+                  [
+                    ul({ class: 'grid gap-0.5 list-none' }, [
+                      li([
+                        a({ href: '#', class: 'block px-2 py-1.5 rounded hover:bg-accent' }, [
+                          text('Undo'),
+                        ]),
+                      ]),
+                      li([
+                        a({ href: '#', class: 'block px-2 py-1.5 rounded hover:bg-accent' }, [
+                          text('Redo'),
+                        ]),
+                      ]),
+                      li([
+                        a({ href: '#', class: 'block px-2 py-1.5 rounded hover:bg-accent' }, [
+                          text('Find & Replace'),
+                        ]),
+                      ]),
+                    ]),
+                  ],
+                ),
+              ]),
+              li([
+                button(
+                  {
+                    ...nv.item('help', { isBranch: false }).trigger,
+                    class: 'px-3 py-1.5 rounded font-medium hover:bg-accent',
+                  },
+                  [text('Help')],
+                ),
+              ]),
             ]),
-            div({ class: 'relative' }, [
-              button(
-                {
-                  ...nv.item('edit', { isBranch: true }).trigger,
-                  class: 'px-3 py-1.5 rounded font-medium hover:bg-accent',
-                },
-                [text('Edit')],
-              ),
-              div(
-                {
-                  ...nv.item('edit', { isBranch: true }).content,
-                  class:
-                    'absolute top-full start-0 mt-1 min-w-36 bg-card border border-border rounded-md shadow-lg p-1 z-50',
-                },
-                [
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
-                    text('Undo'),
-                  ]),
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
-                    text('Redo'),
-                  ]),
-                  div({ class: 'px-2 py-1.5 rounded cursor-pointer hover:bg-accent' }, [
-                    text('Find & Replace'),
-                  ]),
-                ],
-              ),
-            ]),
-            button(
+            // A sibling of the list, inside the positioned root: the track is
+            // `absolute` and resolves its offset against the `nav` — driven
+            // purely by the `--indicator-left`/`--indicator-width` custom
+            // properties the watcher above writes, never a JS-computed class.
+            div(
               {
-                ...nv.item('help', { isBranch: false }).trigger,
-                class: 'px-3 py-1.5 rounded font-medium hover:bg-accent',
+                ...nv.indicator,
+                class:
+                  'absolute left-0 top-full z-[1] flex h-1.5 w-(--indicator-width) translate-x-(--indicator-left) items-end justify-center overflow-hidden opacity-0 transition-[translate,width,opacity] duration-200 data-[state=visible]:opacity-100',
               },
-              [text('Help')],
+              [
+                div(
+                  { class: 'relative top-[60%] size-2 rotate-45 rounded-tl-sm bg-border shadow' },
+                  [],
+                ),
+              ],
             ),
           ],
         ),
@@ -575,14 +702,16 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ]),
       ]),
       card('Menubar', [
+        mb.directionSync,
         div(
           { ...mb.root, class: 'flex gap-1' },
-          menuDefs.map((m) => renderMenu(m.id, m.items)),
+          menuDefs.map((m) => renderMenuTrigger(m.id)),
         ),
         div({ class: 'mt-3 text-xs text-muted-foreground' }, [
           text('Open menu: '),
           text(state.at('menubar').map((s) => s.open ?? '(none)')),
         ]),
+        ...menubarOverlays,
       ]),
       /*
        * The baseline stylesheet's `.btn` recipe, in full. Not a component — it is

@@ -6,249 +6,417 @@
  * or import theme.css for the deterministic complete theme.
  */
 
-/* ─── Dialog ─── */
+/* ─── Layer and surface policy ─── */
 
-[data-scope='dialog'][data-part='backdrop'] {
+:is(
+  [data-scope='menu'],
+  [data-scope='context-menu'],
+  [data-scope='select'],
+  [data-scope='combobox'],
+  [data-scope='searchable-select'],
+  [data-scope='popover'],
+  [data-scope='hover-card']
+)[data-part='positioner'],
+:is([data-scope='menu'], [data-scope='context-menu'])[data-part='subpositioner'] {
+  z-index: var(--llui-z-popover);
+}
+
+[data-scope='tooltip'][data-part='positioner'] {
+  z-index: var(--llui-z-tooltip);
+}
+
+:is(
+  [data-scope='menu'],
+  [data-scope='context-menu'],
+  [data-scope='select'],
+  [data-scope='combobox'],
+  [data-scope='searchable-select']
+):is([data-part='content'], [data-part='subcontent']) {
+  min-width: 8rem;
+  max-width: calc(100vw - 2rem);
+  max-height: var(--llui-floating-available-height, calc(100dvh - 2rem));
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: var(--llui-radius-md);
+  background: var(--popover);
+  color: var(--popover-foreground);
+  padding: var(--llui-space-1);
+  line-height: 1.5;
+  box-shadow: var(--llui-shadow-md);
+  outline: none;
+}
+
+/* ─── Dialog / alert dialog ─── */
+
+/*
+ * The backdrop is the ONE element responsible for dimming the page — the
+ * positioner below carries no background of its own. Both it and `content`
+ * share the SAME explicit z-index token (`--llui-z-dialog`): an explicit
+ * z-index (even equal) starts a real stacking layer, so leaving `content`
+ * at its implicit `z-index: auto` while `backdrop` carries a POSITIVE
+ * z-index would paint the backdrop ABOVE the content regardless of DOM
+ * order — auto/0 always loses to any positive z-index in the same stacking
+ * context. With both explicit and equal, DOM order breaks the tie, which is
+ * why the consumer must render `backdrop` BEFORE `content` (see
+ * `docs/agents` / the registry's own `DialogBackdrop`/`DialogContent` pair,
+ * which uses the identical equal-z-index-plus-DOM-order pattern). This is
+ * #265 finding 4: a backdrop rendered with a higher effective stacking order
+ * than the content it is behind breaks hit-testing (the scrim intercepts
+ * clicks meant for the dialog) and focus (assistive tech reads the wrong
+ * paint order at the same z-level).
+ */
+[data-scope='dialog'][data-part='backdrop'],
+[data-scope='drawer'][data-part='backdrop'] {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
   z-index: var(--llui-z-dialog);
+  background: rgb(0 0 0 / 0.5);
   opacity: 0;
   transition: opacity var(--llui-duration-normal);
 }
 
-[data-scope='dialog'][data-part='backdrop'][data-state='open'] {
+[data-scope='dialog'][data-part='backdrop'][data-state='open'],
+[data-scope='drawer'][data-part='backdrop'][data-state='open'] {
   opacity: 1;
+}
+
+@media (forced-colors: active) {
+  /* Same specificity (`[data-scope][data-part][data-state]`, 0-3-0) as the
+     `[data-state='open']{opacity:1}` rule above, so this — coming later in
+     the cascade — wins the tie rather than losing to it: forced-colors
+     always renders the scrim at a fixed, translucent 0.5, in every presence
+     state that would otherwise be fully opaque. */
+  [data-scope='dialog'][data-part='backdrop'][data-state='open'],
+  [data-scope='drawer'][data-part='backdrop'][data-state='open'] {
+    background: CanvasText;
+    opacity: 0.5;
+  }
 }
 
 [data-scope='dialog'][data-part='positioner'] {
   position: fixed;
   inset: 0;
+  z-index: var(--llui-z-dialog);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: var(--llui-space-4);
-  z-index: var(--llui-z-dialog);
-  background: rgba(0, 0, 0, 0.4);
+}
+
+/* Fallback scrim for a consumer who renders no `backdrop` part at all — a
+   BOX's own `background` always paints below every child regardless of
+   z-index, so this can never create the stacking hazard a sibling `backdrop`
+   ELEMENT can (#265 finding 4). `:has()` keeps it from DOUBLING with a real
+   `backdrop`'s own translucent layer once one is present. */
+[data-scope='dialog'][data-part='positioner']:not(:has([data-part='backdrop'])) {
+  background: rgb(0 0 0 / 0.4);
 }
 
 [data-scope='dialog'][data-part='content'] {
-  background: var(--popover);
-  border-radius: var(--llui-radius-xl);
-  box-shadow: var(--llui-shadow-lg);
-  padding: var(--llui-space-6);
-  max-width: 32rem;
-  width: 100%;
   position: relative;
+  z-index: var(--llui-z-dialog);
+  width: 100%;
+  max-width: 32rem;
+  max-height: calc(100dvh - 2rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: var(--llui-radius-xl);
+  background: var(--background);
+  color: var(--foreground);
+  padding: var(--llui-space-6);
+  box-shadow: var(--llui-shadow-lg);
+  outline: none;
+}
+
+:is([data-scope='dialog'], [data-scope='drawer'])[data-part='title'] {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 [data-scope='dialog'][data-part='title'] {
-  font-size: 1.125rem;
-  font-weight: 600;
   margin-bottom: var(--llui-space-2);
 }
 
-[data-scope='dialog'][data-part='description'] {
+:is([data-scope='dialog'], [data-scope='drawer'])[data-part='description'] {
   color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+[data-scope='dialog'][data-part='description'] {
   margin-bottom: var(--llui-space-4);
+}
+
+:is([data-scope='dialog'], [data-scope='drawer'])[data-part='close-trigger'],
+[data-scope='popover'][data-part='close-trigger'] {
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  line-height: 1;
+  transition: color var(--llui-duration-fast);
 }
 
 [data-scope='dialog'][data-part='close-trigger'] {
   position: absolute;
-  top: var(--llui-space-4);
+  inset-block-start: var(--llui-space-4);
   inset-inline-end: var(--llui-space-4);
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--muted-foreground);
-  font-size: 1.25rem;
-  line-height: 1;
   padding: var(--llui-space-1);
-  transition: color var(--llui-duration-fast);
+  font-size: 1.25rem;
 }
 
-[data-scope='dialog'][data-part='close-trigger']:hover {
+:is(
+    [data-scope='dialog'],
+    [data-scope='drawer'],
+    [data-scope='popover']
+  )[data-part='close-trigger']:hover:not(:disabled):not([aria-disabled='true']) {
   color: var(--foreground);
 }
 
-/* ─── Select ─── */
+/* ─── Selection controls ─── */
 
-[data-scope='select'][data-part='trigger'] {
+:is([data-scope='select'], [data-scope='searchable-select'])[data-part='trigger'],
+:is([data-scope='combobox'], [data-scope='searchable-select'])[data-part='input'] {
   display: flex;
   width: 100%;
+  min-height: 2.25rem;
   align-items: center;
   justify-content: space-between;
-  border-radius: var(--llui-radius-md);
   border: 1px solid var(--border);
+  border-radius: var(--llui-radius-md);
   background: var(--popover);
+  color: var(--popover-foreground);
   padding: var(--llui-space-2) var(--llui-space-3);
   font-size: 0.875rem;
-  cursor: pointer;
 }
 
-[data-scope='select'][data-part='trigger']:focus {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+:is([data-scope='combobox'], [data-scope='searchable-select'])[data-part='root'] {
+  position: relative;
 }
 
-[data-scope='select'][data-part='content'] {
-  max-height: 15rem;
-  min-width: 8rem;
-  overflow: auto;
-  border-radius: var(--llui-radius-md);
-  border: 1px solid var(--border);
-  background: var(--popover);
-  padding: var(--llui-space-1);
-  box-shadow: var(--llui-shadow-lg);
-  outline: none;
+[data-scope='searchable-select'][data-part='clear'] {
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
 }
 
-[data-scope='select'][data-part='item'] {
-  cursor: pointer;
+/* ─── Menu and option state hierarchy ─── */
+
+:is(
+  [data-scope='menu'],
+  [data-scope='context-menu'],
+  [data-scope='select'],
+  [data-scope='combobox'],
+  [data-scope='searchable-select']
+):is([data-part='item'], [data-part='subtrigger']) {
+  position: relative;
+  display: flex;
+  min-height: 2rem;
+  align-items: center;
+  gap: var(--llui-space-2);
   border-radius: var(--llui-radius-sm);
   padding: 0.375rem var(--llui-space-2);
   font-size: 0.875rem;
+  line-height: 1.25rem;
+  cursor: pointer;
+  user-select: none;
+  overflow-wrap: anywhere;
+  outline: none;
 }
 
-[data-scope='select'][data-part='item'][data-highlighted=''] {
-  background: color-mix(in srgb, var(--primary) 15%, transparent);
-  color: var(--primary-soft-foreground);
+:is(
+    [data-scope='menu'],
+    [data-scope='context-menu'],
+    [data-scope='select'],
+    [data-scope='combobox'],
+    [data-scope='searchable-select']
+  ):is([data-part='item'], [data-part='subtrigger']):where(
+    [data-highlighted],
+    :hover:where(:not([data-disabled], [aria-disabled='true']))
+  ) {
+  background: var(--accent);
+  color: var(--accent-foreground);
 }
 
-[data-scope='select'][data-part='item'][data-state='selected'] {
+:is(
+    [data-scope='select'],
+    [data-scope='combobox'],
+    [data-scope='searchable-select']
+  )[data-part='item'][data-state='selected'] {
+  background: var(--accent);
+  color: var(--accent-foreground);
   font-weight: 500;
 }
 
-/* ─── Menu ─── */
+:is(
+    [data-scope='menu'],
+    [data-scope='context-menu'],
+    [data-scope='select'],
+    [data-scope='combobox'],
+    [data-scope='searchable-select']
+  )[data-part='item']:is([aria-selected='true'], [aria-checked='true']) {
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-weight: 500;
+}
 
-[data-scope='menu'][data-part='content'] {
-  min-width: 12rem;
-  border-radius: var(--llui-radius-md);
+/* MenuNode intentionally has no visual variant state. Consumers opt into the
+   quiet destructive hierarchy on an applicable item with this attribute — the
+   same `data-variant="destructive"` idiom the registry skin's dropdown-menu.ts
+   recipe already uses for the identical concept (#265 LOW: this used to be a
+   `.menu-item-destructive` CLASS, the one styling idiom this file's own
+   convention rejects — "the state-driven styling idiom is data-*, not a
+   computed class"). */
+:is(
+    [data-scope='menu'],
+    [data-scope='context-menu'],
+    [data-scope='select'],
+    [data-scope='combobox'],
+    [data-scope='searchable-select']
+  )[data-part='item'][data-variant='destructive'] {
+  color: var(--destructive);
+}
+
+:is(
+    [data-scope='menu'],
+    [data-scope='context-menu'],
+    [data-scope='select'],
+    [data-scope='combobox'],
+    [data-scope='searchable-select']
+  )[data-part='item'][data-variant='destructive']:where([data-highlighted], :hover) {
+  background: color-mix(in oklab, var(--destructive) 10%, transparent);
+  color: var(--destructive);
+}
+
+:is(
+    [data-scope='menu'],
+    [data-scope='context-menu'],
+    [data-scope='select'],
+    [data-scope='combobox'],
+    [data-scope='searchable-select']
+  ):is([data-part='item'], [data-part='subtrigger']):is([data-disabled], [aria-disabled='true']) {
+  pointer-events: none;
+}
+
+:is(
+  [data-scope='menu'],
+  [data-scope='context-menu'],
+  [data-scope='select'],
+  [data-scope='combobox'],
+  [data-scope='searchable-select']
+)[data-part='group-label'] {
+  padding: var(--llui-space-2) var(--llui-space-2) var(--llui-space-1);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+:is(
+  [data-scope='menu'],
+  [data-scope='context-menu'],
+  [data-scope='select'],
+  [data-scope='combobox'],
+  [data-scope='searchable-select']
+)[data-part='separator'] {
+  height: 1px;
+  margin: var(--llui-space-1) calc(var(--llui-space-1) * -1);
+  background: var(--border);
+}
+
+:is(
+  [data-scope='menu'],
+  [data-scope='context-menu'],
+  [data-scope='select'],
+  [data-scope='combobox'],
+  [data-scope='searchable-select'],
+  [data-scope='command-menu']
+)[data-part='empty'] {
+  padding: var(--llui-space-6) var(--llui-space-2);
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+:is(
+    [data-scope='combobox'],
+    [data-scope='searchable-select']
+  )[data-part='content'][aria-busy='true'] {
+  cursor: progress;
+}
+
+/* ─── Popover, hover card, and tooltip ─── */
+
+/* Every engine-positioned surface caps its height at the space the floating
+   engine measured beside its anchor (`--llui-floating-available-height`,
+   written by `attachFloating`), falling back to the viewport cap before the
+   first measurement. A viewport cap alone let a tall surface spill past the
+   bottom edge whenever its anchor sat below the top (#265 G2). */
+
+:is([data-scope='popover'], [data-scope='hover-card'])[data-part='content'] {
+  max-width: min(18rem, calc(100vw - 2rem));
+  max-height: var(--llui-floating-available-height, calc(100dvh - 2rem));
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
   border: 1px solid var(--border);
+  border-radius: var(--llui-radius-md);
   background: var(--popover);
-  padding: var(--llui-space-2);
-  box-shadow: var(--llui-shadow-lg);
+  color: var(--popover-foreground);
+  padding: var(--llui-space-4);
+  box-shadow: var(--llui-shadow-md);
   outline: none;
 }
-
-[data-scope='menu'][data-part='item'] {
-  cursor: pointer;
-  border-radius: var(--llui-radius-sm);
-  padding: 0.375rem var(--llui-space-2);
-  font-size: 0.875rem;
-}
-
-[data-scope='menu'][data-part='item']:hover {
-  background: var(--accent);
-}
-
-[data-scope='menu'][data-part='item'][data-highlighted=''] {
-  background: color-mix(in srgb, var(--primary) 15%, transparent);
-  color: var(--primary-soft-foreground);
-}
-
-/* ─── Context Menu ─── */
-
-[data-scope='context-menu'][data-part='content'] {
-  min-width: 10rem;
-  border: 1px solid var(--border);
-  background: var(--popover);
-  border-radius: var(--llui-radius-md);
-  padding: var(--llui-space-1);
-  box-shadow: var(--llui-shadow-lg);
-  outline: 0;
-}
-
-[data-scope='context-menu'][data-part='item'] {
-  padding: 0.375rem var(--llui-space-2);
-  border-radius: var(--llui-radius-sm);
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
-[data-scope='context-menu'][data-part='item']:hover {
-  background: var(--accent);
-}
-
-[data-scope='context-menu'][data-part='item'][data-highlighted=''] {
-  background: color-mix(in srgb, var(--primary) 15%, transparent);
-  color: var(--primary-soft-foreground);
-}
-
-/* ─── Combobox ─── */
-
-[data-scope='combobox'][data-part='input'] {
-  width: 100%;
-  padding: var(--llui-space-2) var(--llui-space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--llui-radius-md);
-  background: var(--popover);
-  font-size: 0.875rem;
-}
-
-[data-scope='combobox'][data-part='input']:focus {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
-}
-
-[data-scope='combobox'][data-part='content'] {
-  max-height: 12rem;
-  overflow-y: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--llui-radius-md);
-  background: var(--popover);
-  padding: var(--llui-space-1);
-  box-shadow: var(--llui-shadow-lg);
-}
-
-[data-scope='combobox'][data-part='item'] {
-  padding: 0.375rem var(--llui-space-2);
-  border-radius: var(--llui-radius-sm);
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-
-[data-scope='combobox'][data-part='item']:hover {
-  background: var(--accent);
-}
-
-[data-scope='combobox'][data-part='item'][data-highlighted=''] {
-  background: color-mix(in srgb, var(--primary) 15%, transparent);
-  color: var(--primary-soft-foreground);
-}
-
-/* ─── Popover ─── */
 
 [data-scope='popover'][data-part='content'] {
-  min-width: 12rem;
-  border-radius: var(--llui-radius-md);
-  border: 1px solid var(--border);
-  background: var(--popover);
-  padding: var(--llui-space-2);
-  box-shadow: var(--llui-shadow-lg);
-  outline: none;
+  width: min(18rem, calc(100vw - 2rem));
 }
-
-/* ─── Tooltip ─── */
-
-[data-scope='tooltip'][data-part='content'] {
-  background: var(--foreground);
-  color: var(--primary-foreground);
-  font-size: 0.75rem;
-  padding: var(--llui-space-1) var(--llui-space-2);
-  border-radius: var(--llui-radius-sm);
-  box-shadow: var(--llui-shadow-md);
-}
-
-/* ─── Hover Card ─── */
 
 [data-scope='hover-card'][data-part='content'] {
-  background: var(--popover);
+  width: min(16rem, calc(100vw - 2rem));
+}
+
+[data-scope='popover'][data-part='title'] {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+[data-scope='popover'][data-part='description'] {
+  margin-top: var(--llui-space-1);
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+[data-scope='tooltip'][data-part='content'] {
+  max-width: min(20rem, calc(100vw - 2rem));
+  max-height: var(--llui-floating-available-height, calc(100dvh - 2rem));
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-radius: var(--llui-radius-sm);
+  background: var(--foreground);
+  color: var(--background);
+  padding: 0.375rem var(--llui-space-3);
+  box-shadow: var(--llui-shadow-md);
+  font-size: 0.75rem;
+  line-height: 1rem;
+  overflow-wrap: anywhere;
+}
+
+:is([data-scope='popover'], [data-scope='hover-card'], [data-scope='tooltip'])[data-part='arrow'] {
+  position: absolute;
+  width: 0.5rem;
+  height: 0.5rem;
+  transform: rotate(45deg);
   border: 1px solid var(--border);
-  border-radius: var(--llui-radius-lg);
-  padding: 0.875rem;
-  box-shadow: var(--llui-shadow-lg);
-  max-width: 18rem;
+  background: var(--popover);
+}
+
+[data-scope='tooltip'][data-part='arrow'] {
+  border-color: var(--foreground);
+  background: var(--foreground);
 }
 
 /* ─── Drawer ─── */
@@ -257,22 +425,35 @@
   position: fixed;
   inset: 0;
   z-index: var(--llui-z-dialog);
-  background: rgba(0, 0, 0, 0.4);
+}
+
+/* Fallback scrim — see the identical dialog positioner rule above. */
+[data-scope='drawer'][data-part='positioner']:not(:has([data-part='backdrop'])) {
+  background: rgb(0 0 0 / 0.4);
 }
 
 [data-scope='drawer'][data-part='content'] {
   position: absolute;
-  background: var(--popover);
+  /* Same equal-z-index-plus-DOM-order contract as the dialog above: the
+     backdrop dims the page and must render BEFORE this content, both at
+     `--llui-z-dialog`, so content always wins the paint order. */
+  z-index: var(--llui-z-dialog);
+  max-width: 100vw;
+  max-height: 100dvh;
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
   padding: var(--llui-space-6);
   box-shadow: var(--llui-shadow-lg);
   outline: none;
 }
 
-[data-scope='drawer'][data-part='content'][data-side='left'],
-[data-scope='drawer'][data-part='content'][data-side='right'] {
-  top: 0;
-  bottom: 0;
-  width: 20rem;
+[data-scope='drawer'][data-part='content']:is([data-side='left'], [data-side='right']) {
+  inset-block: 0;
+  width: min(20rem, 100vw);
 }
 
 [data-scope='drawer'][data-part='content'][data-side='left'] {
@@ -283,69 +464,132 @@
   right: 0;
 }
 
-[data-scope='drawer'][data-part='content'][data-side='top'],
-[data-scope='drawer'][data-part='content'][data-side='bottom'] {
-  left: 0;
-  right: 0;
-  height: 20rem;
+[data-scope='drawer'][data-part='content']:is([data-side='top'], [data-side='bottom']) {
+  inset-inline: 0;
+  height: min(20rem, 100dvh);
 }
 
 [data-scope='drawer'][data-part='content'][data-side='top'] {
-  top: 0;
+  inset-block-start: 0;
 }
 
 [data-scope='drawer'][data-part='content'][data-side='bottom'] {
-  bottom: 0;
-}
-
-[data-scope='drawer'][data-part='title'] {
-  font-size: 1.125rem;
-  font-weight: 600;
+  inset-block-end: 0;
 }
 
 [data-scope='drawer'][data-part='description'] {
   margin-top: var(--llui-space-2);
-  font-size: 0.875rem;
-  color: var(--muted-foreground);
-}
-
-[data-scope='drawer'][data-part='close-trigger'] {
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: var(--muted-foreground);
-}
-
-[data-scope='drawer'][data-part='close-trigger']:hover {
-  color: var(--foreground);
 }
 
 /* ─── Toast ─── */
 
 [data-scope='toast'][data-part='region'] {
   position: fixed;
-  bottom: 1rem;
-  inset-inline-end: 1rem;
+  inset: auto;
   z-index: var(--llui-z-dialog);
   display: flex;
-  width: 20rem;
+  width: min(20rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
   flex-direction: column;
   gap: var(--llui-space-2);
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-wrap: anywhere;
+}
+
+[data-scope='toast'][data-part='region'][data-placement^='top'] {
+  inset-block-start: var(--llui-space-4);
+}
+
+[data-scope='toast'][data-part='region'][data-placement^='bottom'] {
+  inset-block-end: var(--llui-space-4);
+}
+
+[data-scope='toast'][data-part='region'][data-placement$='start'] {
+  inset-inline-start: var(--llui-space-4);
+}
+
+[data-scope='toast'][data-part='region'][data-placement$='end'] {
+  inset-inline-end: var(--llui-space-4);
+}
+
+[data-scope='toast'][data-part='region']:is([data-placement='top'], [data-placement='bottom']) {
+  left: 50%;
+  transform: translateX(-50%);
 }
 
 [data-scope='toast'][data-part='root'] {
+  position: relative;
+  border: 1px solid var(--border);
   border-radius: var(--llui-radius-lg);
   background: var(--popover);
+  color: var(--popover-foreground);
   padding: var(--llui-space-4);
   box-shadow: var(--llui-shadow-lg);
-  border: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Every ToastType also carries a real NON-COLOR cue: a `[data-part=
+ * 'type-icon']` glyph, always mounted (six per toast) and shown only under
+ * its own type via the `[data-icon]` attribute selector below — the same
+ * always-mounted/CSS-gated idiom `registry/llui/ui/sonner.ts` uses for its
+ * Lucide icon set, so an `update` patching a mounted toast's `type` swaps the
+ * visible glyph with no JS on this side. `loading` used to be distinguished
+ * ONLY by `cursor: progress` in light/dark mode — invisible to anyone not
+ * hovering with a mouse — and now gets the same glyph treatment as the other
+ * five.
+ */
+[data-scope='toast'][data-part='type-icon'] {
+  display: none;
+  flex-shrink: 0;
+  margin-inline-end: var(--llui-space-2);
+}
+
+[data-scope='toast'][data-part='root'][data-type='info'] [data-part='type-icon'][data-icon='info'],
+[data-scope='toast'][data-part='root'][data-type='success']
+  [data-part='type-icon'][data-icon='success'],
+[data-scope='toast'][data-part='root'][data-type='warning']
+  [data-part='type-icon'][data-icon='warning'],
+[data-scope='toast'][data-part='root'][data-type='error']
+  [data-part='type-icon'][data-icon='error'],
+[data-scope='toast'][data-part='root'][data-type='loading']
+  [data-part='type-icon'][data-icon='loading'],
+[data-scope='toast'][data-part='root'][data-type='custom']
+  [data-part='type-icon'][data-icon='custom'] {
+  display: inline-flex;
+}
+
+[data-scope='toast'][data-part='type-icon'][data-icon='loading'] {
+  animation: spin 1s linear infinite;
+}
+
+/*
+ * All six ToastType values get a distinguishing background/border tint in
+ * light/dark mode AND a distinct `border-inline-start-style` under forced
+ * colors, where tints are suppressed to system colors (#265 finding 12). Two
+ * of the six (`info`/`custom`) used to fall through to the plain neutral
+ * `[data-part='root']` rule above — visually IDENTICAL to each other and to
+ * an untyped toast, in every color scheme. `registry/llui/ui/sonner.ts`
+ * mirrors this exact six-way split; `packages/components/test/styles/
+ * menus-overlays-live-render.browser.test.ts` and `scripts/test/
+ * token-contrast.test.ts` both assert all six render distinctly (real
+ * painted border colors / contrast; six distinct forced-colors border
+ * styles; a distinct glyph per type, `loading` included).
+ */
+[data-scope='toast'][data-part='root'][data-type='info'] {
+  background: color-mix(in srgb, var(--info) 14%, var(--popover));
+  border-color: color-mix(in srgb, var(--info) 40%, var(--popover));
 }
 
 [data-scope='toast'][data-part='root'][data-type='success'] {
-  /* Tint the current surface rather than hardcoding a light green, so the
-     accent reads in both themes (subtle green wash on white / on dark navy). */
-  background: color-mix(in srgb, rgb(34 197 94) 14%, var(--popover));
-  border-color: color-mix(in srgb, rgb(34 197 94) 40%, var(--popover));
+  background: color-mix(in srgb, var(--success) 14%, var(--popover));
+  border-color: color-mix(in srgb, var(--success) 40%, var(--popover));
+}
+
+[data-scope='toast'][data-part='root'][data-type='warning'] {
+  background: color-mix(in srgb, var(--warning) 14%, var(--popover));
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--popover));
 }
 
 [data-scope='toast'][data-part='root'][data-type='error'] {
@@ -353,32 +597,224 @@
   border-color: color-mix(in srgb, var(--destructive) 40%, var(--popover));
 }
 
+[data-scope='toast'][data-part='root'][data-type='loading'] {
+  cursor: progress;
+}
+
+/* `custom` has no status meaning (it is the consumer's own type), so no status
+   token speaks for it: its default cue is a decorative violet accent. */
+[data-scope='toast'][data-part='root'][data-type='custom'] {
+  background: color-mix(in srgb, rgb(139 92 246) 14%, var(--popover));
+  border-color: color-mix(in srgb, rgb(139 92 246) 40%, var(--popover));
+}
+
 [data-scope='toast'][data-part='title'] {
+  padding-inline-end: var(--llui-space-6);
   font-size: 0.875rem;
   font-weight: 500;
 }
 
 [data-scope='toast'][data-part='description'] {
-  font-size: 0.75rem;
+  margin-top: var(--llui-space-1);
   color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+[data-scope='toast'][data-part='close-trigger'] {
+  position: absolute;
+  inset-block-start: var(--llui-space-2);
+  inset-inline-end: var(--llui-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+[data-scope='toast'][data-part='close-trigger']:hover:not(:disabled) {
+  color: var(--foreground);
+}
+
+@media (forced-colors: active) {
+  /* The positioner is a plain layout wrapper with no visual role (the
+     `backdrop` rule above owns the scrim, including its forced-colors
+     treatment) — it carries no background here on purpose. Do not disable
+     forced-color adjustment on the subtree: descendants must keep mapping to
+     system colors. */
+
+  :is(
+    [data-scope='dialog'],
+    [data-scope='drawer'],
+    [data-scope='menu'],
+    [data-scope='context-menu'],
+    [data-scope='select'],
+    [data-scope='combobox'],
+    [data-scope='searchable-select'],
+    [data-scope='popover'],
+    [data-scope='hover-card'],
+    [data-scope='toast']
+  ):is([data-part='content'], [data-part='subcontent'], [data-part='root']) {
+    border-color: CanvasText;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  :is(
+      [data-scope='menu'],
+      [data-scope='context-menu'],
+      [data-scope='select'],
+      [data-scope='combobox'],
+      [data-scope='searchable-select']
+    ):is([data-part='item'], [data-part='subtrigger'])[data-highlighted] {
+    background: Highlight;
+    color: HighlightText;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  :is(
+      [data-scope='select'],
+      [data-scope='combobox'],
+      [data-scope='searchable-select']
+    )[data-part='item'][data-state='selected'] {
+    border-color: Highlight;
+    background: Canvas;
+    color: CanvasText;
+    font-weight: 600;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  :is(
+      [data-scope='menu'],
+      [data-scope='context-menu'],
+      [data-scope='select'],
+      [data-scope='combobox'],
+      [data-scope='searchable-select']
+    )[data-part='item']:is([aria-selected='true'], [aria-checked='true']) {
+    border-color: Highlight;
+    background: Canvas;
+    color: CanvasText;
+    font-weight: 600;
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+
+  :is(
+      [data-scope='menu'],
+      [data-scope='context-menu'],
+      [data-scope='select'],
+      [data-scope='combobox'],
+      [data-scope='searchable-select']
+    ):is([data-part='item'], [data-part='subtrigger']):is([data-disabled], [aria-disabled='true']) {
+    color: GrayText;
+  }
+
+  :is(
+      [data-scope='menu'],
+      [data-scope='context-menu'],
+      [data-scope='select'],
+      [data-scope='combobox'],
+      [data-scope='searchable-select']
+    )[data-part='item'][data-variant='destructive'] {
+    color: LinkText;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.15em;
+  }
+
+  :is(
+      [data-scope='menu'],
+      [data-scope='context-menu'],
+      [data-scope='select'],
+      [data-scope='combobox'],
+      [data-scope='searchable-select']
+    )[data-part='item'][data-variant='destructive'][data-highlighted] {
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  /*
+   * Every ToastType gets its own border-inline-start WIDTH + STYLE combination
+   * so the six types stay distinguishable once forced-colors strips all author
+   * color (background/border-color/color all collapse to the Canvas triad
+   * above). Width and style are independent axes precisely so no two types
+   * share an identical combination — 'info' and 'custom' both being 4px solid
+   * would be a real regression (a swapped recipe passes unnoticed): 'custom'
+   * is deliberately WIDER (8px) rather than a different style, since the four
+   * CSS border-style keywords Tailwind's registry twin can emit (solid /
+   * dashed / dotted / double) are already spoken for by info/error, warning,
+   * loading and success respectively.
+   */
+  [data-scope='toast'][data-part='root'][data-type='info'],
+  [data-scope='toast'][data-part='root'][data-type='success'],
+  [data-scope='toast'][data-part='root'][data-type='warning'],
+  [data-scope='toast'][data-part='root'][data-type='error'],
+  [data-scope='toast'][data-part='root'][data-type='loading'],
+  [data-scope='toast'][data-part='root'][data-type='custom'] {
+    border-color: CanvasText;
+    border-inline-start-width: 4px;
+    background: Canvas;
+    color: CanvasText;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='info'] {
+    border-inline-start-style: solid;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='success'] {
+    border-inline-start-style: double;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='warning'] {
+    border-inline-start-style: dashed;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='error'] {
+    border-inline-start-style: solid;
+    color: LinkText;
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='loading'] {
+    border-inline-start-style: dotted;
+  }
+
+  [data-scope='toast'][data-part='root'][data-type='custom'] {
+    border-inline-start-style: solid;
+    border-inline-start-width: 8px;
+  }
+
+  [data-scope='tooltip']:is([data-part='content'], [data-part='arrow']) {
+    border-color: CanvasText;
+    background: CanvasText;
+    color: Canvas;
+  }
 }
 
 /* ─── Confirm Dialog (pattern) ─── */
 
 .confirm-dialog {
+  box-sizing: border-box;
   position: relative;
-  z-index: 10;
   width: 100%;
-  max-width: 28rem;
+  max-width: min(28rem, calc(100vw - 2rem));
+  max-height: calc(100dvh - 2rem);
+  margin-inline: auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
   border-radius: var(--llui-radius-lg);
-  background: var(--card);
+  background: var(--background);
+  color: var(--foreground);
   padding: var(--llui-space-6);
-  box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+  box-shadow: var(--llui-shadow-lg);
+  overflow-wrap: anywhere;
 }
 
 .confirm-dialog__actions {
   margin-top: var(--llui-space-6);
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: var(--llui-space-3);
 }

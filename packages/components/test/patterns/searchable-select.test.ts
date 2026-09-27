@@ -93,6 +93,98 @@ describe('searchableSelect reducer', () => {
     expect(s.combobox.value).toEqual([])
   })
 
+  it('forwards async loading, success, error, and stale-request semantics to combobox', () => {
+    let s = init({ items: ['Existing'] })
+    s = apply(s, { type: 'loadStart', requestId: 1 })
+    expect(s.combobox).toMatchObject({ status: 'loading', requestId: 1, error: null })
+
+    s = apply(s, { type: 'loadStart', requestId: 2 })
+    const stale = apply(s, { type: 'loadSuccess', requestId: 1, items: ['Stale'] })
+    expect(stale).toBe(s)
+
+    s = apply(s, { type: 'loadSuccess', requestId: 2, items: ['Fresh'] })
+    expect(s.combobox).toMatchObject({
+      status: 'loaded',
+      requestId: 2,
+      items: ['Fresh'],
+      filteredItems: ['Fresh'],
+    })
+
+    s = apply(s, { type: 'loadStart', requestId: 3 })
+    s = apply(s, { type: 'loadError', requestId: 3, error: 'Network unavailable' })
+    expect(s.combobox).toMatchObject({
+      status: 'error',
+      requestId: 3,
+      error: 'Network unavailable',
+    })
+  })
+
+  /**
+   * #265 finding 10 (pattern-level): a fresh success must atomically replace
+   * items/groups/disabled/selected/filtering/highlight through the wrapper too
+   * — not just in the nested combobox machine directly.
+   */
+  it('loadSuccess atomically replaces items, groups, disabled, and drops a stale selection', () => {
+    let s = init({
+      items: ['old-a', 'old-b'],
+      value: ['old-a'],
+      groups: [{ id: 'g1', label: 'G1', items: ['old-a', 'old-b'] }],
+    })
+    s = apply(s, { type: 'loadStart', requestId: 1 })
+    s = apply(s, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['new-a', 'new-b'],
+      groups: [{ id: 'g2', label: 'G2', items: ['new-a', 'new-b'] }],
+      disabled: ['new-b'],
+    })
+    expect(s.combobox.items).toEqual(['new-a', 'new-b'])
+    expect(s.combobox.groups).toEqual([{ id: 'g2', label: 'G2', items: ['new-a', 'new-b'] }])
+    expect(s.combobox.disabledItems).toEqual(['new-b'])
+    // 'old-a' no longer exists in the fresh items — the stale selection is gone.
+    expect(s.combobox.value).toEqual([])
+  })
+
+  /** #265 A3 (pattern-level): the highlight-pruning and groups-reset fixes
+   * to combobox's `loadSuccess` reach the pattern too, since it delegates
+   * directly to the combobox reducer. */
+  it('loadSuccess prunes a highlight that became newly disabled and resets groups when omitted', () => {
+    let s = init({
+      items: ['apple', 'banana', 'cherry'],
+      groups: [{ id: 'g1', label: 'G1', items: ['apple', 'banana', 'cherry'] }],
+    })
+    s = apply(s, { type: 'setItems', items: ['apple', 'banana', 'cherry'] })
+    s = { ...s, combobox: { ...s.combobox, highlightedValue: 'banana', open: true } }
+    s = apply(s, { type: 'loadStart', requestId: 1 })
+    s = apply(s, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['apple', 'banana', 'cherry'],
+      disabled: ['banana'],
+    })
+    expect(s.combobox.filteredItems).toContain('banana')
+    expect(s.combobox.highlightedValue).toBe('apple')
+    expect(s.combobox.groups).toEqual([])
+  })
+
+  // #265 G3: a background loadSuccess/setItems must never manufacture a
+  // highlight while the listbox is closed — the option it would name is
+  // unmounted, and re-opening reseeds the highlight itself.
+  it('loadSuccess while CLOSED never manufactures a highlight, even when the prior one is pruned', () => {
+    let s = init({ items: ['apple', 'banana', 'cherry'] })
+    expect(s.combobox.open).toBe(false)
+    s = { ...s, combobox: { ...s.combobox, highlightedValue: 'banana' } }
+    s = apply(s, { type: 'loadStart', requestId: 1 })
+    s = apply(s, {
+      type: 'loadSuccess',
+      requestId: 1,
+      items: ['apple', 'banana', 'cherry'],
+      disabled: ['banana'],
+    })
+    expect(s.combobox.open).toBe(false)
+    expect(s.combobox.highlightedValue).toBeNull()
+  })
+
   describe('multiple mode', () => {
     it('toggles values and stays open', () => {
       let s = init({ items: ['Apple', 'Banana', 'Cherry'], selectionMode: 'multiple' })
@@ -185,6 +277,165 @@ describe('searchableSelect connect parts', () => {
     expect(parts.clear['data-part']).toBe('clear')
     expect(parts.empty['data-part']).toBe('empty')
     expect(parts.liveRegion['aria-live']).toBe('polite')
+  })
+
+  it('projects the real async machine state into listbox ARIA and live output', () => {
+    const loading = apply(init({ items: ['Apple'] }), { type: 'loadStart', requestId: 1 })
+    expect(read(parts.content['data-status'], loading)).toBe('loading')
+    expect(read(parts.content['aria-busy'], loading)).toBe('true')
+
+    const failed = apply(loading, {
+      type: 'loadError',
+      requestId: 1,
+      error: 'Could not load fruit',
+    })
+    expect(read(parts.content['data-status'], failed)).toBe('error')
+    expect(read(parts.content['aria-busy'], failed)).toBeUndefined()
+    expect(read(parts.liveRegion.text, failed)).toBe('Could not load fruit')
+  })
+
+  /**
+   * #265 finding 11 — the pattern's load projection must stay truthful and
+   * mutually exclusive through the whole documented stale-while-revalidate
+   * lifecycle: initial-empty -> loading -> success -> (revalidate) ->
+   * stale-results -> success, and a failed revalidation reports 'error' even
+   * though the previous items are still mounted underneath it.
+   */
+  it('loadState walks initial-empty -> loading -> success -> stale-results -> error truthfully', () => {
+    let s = init({ items: [] })
+    expect(read(parts.loadState, s)).toBe('initial-empty')
+
+    s = apply(s, { type: 'loadStart', requestId: 1 })
+    expect(read(parts.loadState, s)).toBe('loading')
+
+    s = apply(s, { type: 'loadSuccess', requestId: 1, items: ['Apple', 'Banana'] })
+    expect(read(parts.loadState, s)).toBe('success')
+
+    // Revalidating: a fresh request starts while 'Apple'/'Banana' stay mounted.
+    s = apply(s, { type: 'loadStart', requestId: 2 })
+    expect(read(parts.loadState, s)).toBe('stale-results')
+    expect(s.combobox.items).toEqual(['Apple', 'Banana'])
+
+    s = apply(s, { type: 'loadError', requestId: 2, error: 'Network unavailable' })
+    expect(read(parts.loadState, s)).toBe('error')
+    // stale-while-revalidate: the previous items are untouched by the failure.
+    expect(s.combobox.items).toEqual(['Apple', 'Banana'])
+  })
+
+  /**
+   * #265 G4 — the live region and the empty state derive from the load
+   * projection, never from `filteredItems.length` alone: a list that is empty
+   * because a fetch is still in flight (or failed) is not "No results".
+   * Stale-while-revalidate keeps previous rows on screen during a refetch and
+   * stays silent until the fetch settles, so a filter that matches none of the
+   * STALE rows does not announce a verdict the fresh rows may overturn.
+   */
+  describe('liveRegion / empty derive from loadState (#265 G4)', () => {
+    const opened = (s: SearchableSelectState): SearchableSelectState => apply(s, { type: 'open' })
+    const filtered = (s: SearchableSelectState, value: string): SearchableSelectState =>
+      apply(s, { type: 'setFilter', value })
+    const loaded = (items: string[]): SearchableSelectState =>
+      apply(apply(opened(init({ items: [] })), { type: 'loadStart', requestId: 1 }), {
+        type: 'loadSuccess',
+        requestId: 1,
+        items,
+      })
+    const revalidating = (s: SearchableSelectState): SearchableSelectState =>
+      apply(s, { type: 'loadStart', requestId: 2 })
+
+    const cases: ReadonlyArray<{
+      name: string
+      state: () => SearchableSelectState
+      load: string
+      live: string
+      emptyHidden: boolean
+    }> = [
+      {
+        name: 'initial-empty: nothing given, nothing fetched',
+        state: () => opened(init({ items: [] })),
+        load: 'initial-empty',
+        live: 'No results',
+        emptyHidden: false,
+      },
+      {
+        name: 'loading: first fetch in flight, nothing to show yet',
+        state: () => apply(opened(init({ items: [] })), { type: 'loadStart', requestId: 1 }),
+        load: 'loading',
+        live: '',
+        emptyHidden: true,
+      },
+      {
+        name: 'success with matches',
+        state: () => loaded(['Apple', 'Banana']),
+        load: 'success',
+        live: '2 results',
+        emptyHidden: true,
+      },
+      {
+        name: 'success, filter matches nothing',
+        state: () => filtered(loaded(['Apple', 'Banana']), 'zz'),
+        load: 'success',
+        live: 'No results',
+        emptyHidden: false,
+      },
+      {
+        name: 'stale-results, filter matches a stale row',
+        state: () => filtered(revalidating(loaded(['Apple', 'Banana'])), 'app'),
+        load: 'stale-results',
+        live: '',
+        emptyHidden: true,
+      },
+      {
+        name: 'stale-results, filter matches no stale row',
+        state: () => filtered(revalidating(loaded(['Apple', 'Banana'])), 'zz'),
+        load: 'stale-results',
+        live: '',
+        emptyHidden: true,
+      },
+      {
+        name: 'error on a first fetch (no items at all)',
+        state: () =>
+          apply(apply(opened(init({ items: [] })), { type: 'loadStart', requestId: 1 }), {
+            type: 'loadError',
+            requestId: 1,
+            error: 'Offline',
+          }),
+        load: 'error',
+        live: 'Offline',
+        emptyHidden: true,
+      },
+      {
+        name: 'error on a revalidation, filter matches no stale row',
+        state: () =>
+          filtered(
+            apply(revalidating(loaded(['Apple', 'Banana'])), {
+              type: 'loadError',
+              requestId: 2,
+              error: 'Offline',
+            }),
+            'zz',
+          ),
+        load: 'error',
+        live: 'Offline',
+        emptyHidden: true,
+      },
+      {
+        name: 'closed and settled: silent',
+        state: () => apply(loaded(['Apple']), { type: 'close' }),
+        load: 'success',
+        live: '',
+        emptyHidden: true,
+      },
+    ]
+
+    for (const c of cases) {
+      it(c.name, () => {
+        const s = c.state()
+        expect(read(parts.loadState, s)).toBe(c.load)
+        expect(read(parts.liveRegion.text, s)).toBe(c.live)
+        expect(read(parts.empty.hidden, s)).toBe(c.emptyHidden)
+      })
+    }
   })
 
   it('item parts carry aria-selected wiring', () => {

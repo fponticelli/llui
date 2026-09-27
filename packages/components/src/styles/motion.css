@@ -8,6 +8,15 @@
 
 /* ─── Animations ─── */
 
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -106,6 +115,42 @@
   }
 }
 
+@keyframes slide-out-to-left {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes slide-out-to-right {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes drawer-slide-out-to-top {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-100%);
+  }
+}
+
+@keyframes drawer-slide-out-to-bottom {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(100%);
+  }
+}
+
 @keyframes collapse-down {
   from {
     block-size: 0;
@@ -128,14 +173,31 @@
   }
 }
 
-/* Dialog / drawer enter */
+/* Dialog / drawer presence. `opening`/`closing` are the animated machine
+   phases; `open` keeps the default synchronous path styled. There is no
+   `closed` exit rule anywhere below: every overlay here unmounts its content in
+   the same pass that reaches `closed` (`isMounted` is `status !== 'closed'`),
+   so such a rule could never match (#265 finding 5;
+   `scripts/test/overlay-motion-policy.test.ts` forbids it). */
+[data-scope='dialog'][data-part='backdrop'][data-state='opening'],
 [data-scope='dialog'][data-part='backdrop'][data-state='open'],
+[data-scope='drawer'][data-part='backdrop'][data-state='opening'],
 [data-scope='drawer'][data-part='backdrop'][data-state='open'] {
   animation: fade-in var(--llui-duration-normal) ease-out;
 }
 
+[data-scope='dialog'][data-part='backdrop'][data-state='closing'],
+[data-scope='drawer'][data-part='backdrop'][data-state='closing'] {
+  animation: fade-out var(--llui-duration-normal) ease-in;
+}
+
+[data-scope='dialog'][data-part='content'][data-state='opening'],
 [data-scope='dialog'][data-part='content'][data-state='open'] {
   animation: scale-in var(--llui-duration-normal) ease-out;
+}
+
+[data-scope='dialog'][data-part='content'][data-state='closing'] {
+  animation: scale-out var(--llui-duration-normal) ease-in;
 }
 
 /* `data-side`, not `data-placement` — the drawer machine publishes the former
@@ -143,27 +205,71 @@
    baseline drawer entered with no slide at all. Found by cross-checking this
    sheet against the machines' part-bag types, the same check
    `scripts/test/registry-attrs.test.ts` runs over the registry recipes. */
+[data-scope='drawer'][data-part='content'][data-state='opening'][data-side='right'],
 [data-scope='drawer'][data-part='content'][data-state='open'][data-side='right'] {
   animation: slide-in-from-right var(--llui-duration-normal) ease-out;
 }
 
+[data-scope='drawer'][data-part='content'][data-state='opening'][data-side='left'],
 [data-scope='drawer'][data-part='content'][data-state='open'][data-side='left'] {
   animation: slide-in-from-left var(--llui-duration-normal) ease-out;
 }
 
+[data-scope='drawer'][data-part='content'][data-state='opening'][data-side='top'],
 [data-scope='drawer'][data-part='content'][data-state='open'][data-side='top'] {
   animation: drawer-slide-in-from-top var(--llui-duration-normal) ease-out;
 }
 
+[data-scope='drawer'][data-part='content'][data-state='opening'][data-side='bottom'],
 [data-scope='drawer'][data-part='content'][data-state='open'][data-side='bottom'] {
   animation: drawer-slide-in-from-bottom var(--llui-duration-normal) ease-out;
 }
 
-/* Popover / Tooltip / Hover Card enter */
+[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='right'] {
+  animation: slide-out-to-right var(--llui-duration-normal) ease-in;
+}
+
+[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='left'] {
+  animation: slide-out-to-left var(--llui-duration-normal) ease-in;
+}
+
+[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='top'] {
+  animation: drawer-slide-out-to-top var(--llui-duration-normal) ease-in;
+}
+
+[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='bottom'] {
+  animation: drawer-slide-out-to-bottom var(--llui-duration-normal) ease-in;
+}
+
+/* Floating overlays and menus */
+[data-scope='popover'][data-part='content'][data-state='opening'],
 [data-scope='popover'][data-part='content'][data-state='open'],
+[data-scope='tooltip'][data-part='content'][data-state='opening'],
 [data-scope='tooltip'][data-part='content'][data-state='open'],
-[data-scope='hover-card'][data-part='content'][data-state='open'] {
+[data-scope='hover-card'][data-part='content'][data-state='opening'],
+[data-scope='hover-card'][data-part='content'][data-state='open'],
+[data-scope='menu'][data-part='content'][data-state='opening'],
+[data-scope='menu'][data-part='content'][data-state='open'],
+[data-scope='context-menu'][data-part='content'][data-state='opening'],
+[data-scope='context-menu'][data-part='content'][data-state='open'] {
   animation: scale-in var(--llui-duration-fast) ease-out;
+}
+
+/* Select, combobox, and searchable-select are synchronous boolean machines:
+   `open` is their only mounted entry state. Close removes the node immediately,
+   so no baseline exit selector can run until those machines gain presence. */
+[data-scope='select'][data-part='content'][data-state='open'],
+[data-scope='combobox'][data-part='content'][data-state='open'],
+[data-scope='searchable-select'][data-part='content'][data-state='open'] {
+  animation: scale-in var(--llui-duration-fast) ease-out;
+}
+
+[data-scope='popover'][data-part='content'][data-state='closing'],
+[data-scope='tooltip'][data-part='content'][data-state='closing'],
+[data-scope='hover-card'][data-part='content'][data-state='closing'],
+[data-scope='menu'][data-part='content'][data-state='closing'],
+[data-scope='context-menu'][data-part='content'][data-state='closing'] {
+  animation: scale-out var(--llui-duration-fast) ease-in;
 }
 
 /* Collapsible enter/exit */
@@ -176,7 +282,13 @@
   animation: collapse-up var(--llui-duration-normal) ease-out;
 }
 
-/* Toast enter */
+/* Toast presence. Toasts are born `open`, so entry does not gate the machine;
+   animated dismissal retains `closing` until this real end event removes the
+   row. `closed` is intentionally absent because it is never mounted. */
 [data-scope='toast'][data-part='root'][data-state='open'] {
   animation: slide-in-from-bottom var(--llui-duration-normal) ease-out;
+}
+
+[data-scope='toast'][data-part='root'][data-state='closing'] {
+  animation: fade-out var(--llui-duration-fast) ease-in;
 }

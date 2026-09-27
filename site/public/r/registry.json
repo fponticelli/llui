@@ -3500,7 +3500,7 @@
       "title": "Alert Dialog",
       "description": "Skin for @llui/components/alert-dialog — a confirmation that will not dismiss on an outside click.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["dialog", "utils"],
+      "registryDependencies": ["dialog", "floating-motion", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/alert-dialog.ts",
@@ -3815,7 +3815,7 @@
       "title": "Context Menu",
       "description": "Skin for @llui/components/context-menu; reuses the dropdown recipes.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["dropdown-menu", "utils"],
+      "registryDependencies": ["dropdown-menu", "floating-motion", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/context-menu.ts",
@@ -3875,7 +3875,7 @@
       "title": "Dialog",
       "description": "Skin for @llui/components/dialog — backdrop, content, title, close, footer.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["icons", "utils"],
+      "registryDependencies": ["floating-motion", "icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/dialog.ts",
@@ -3890,7 +3890,7 @@
       "title": "Drawer",
       "description": "vaul-style edge panel — rounded entering edge, 80vh cap, grab handle.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["icons", "utils"],
+      "registryDependencies": ["floating-motion", "icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/drawer.ts",
@@ -3905,7 +3905,7 @@
       "title": "Dropdown Menu",
       "description": "Skin for @llui/components/menu, with groups, submenus and shortcuts.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["icons", "utils"],
+      "registryDependencies": ["floating-motion", "icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/dropdown-menu.ts",
@@ -4025,7 +4025,7 @@
       "title": "Hover Card",
       "description": "Skin for @llui/components/hover-card.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["floating-motion", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/hover-card.ts",
@@ -4175,7 +4175,7 @@
       "title": "Menubar",
       "description": "Skin for @llui/components/menubar; reuses the dropdown recipes.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["dropdown-menu", "utils"],
+      "registryDependencies": ["dropdown-menu", "floating-motion", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/menubar.ts",
@@ -4205,7 +4205,7 @@
       "title": "Navigation Menu",
       "description": "Skin for @llui/components/navigation-menu.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["floating-motion", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/navigation-menu.ts",
@@ -4265,7 +4265,7 @@
       "title": "Popover",
       "description": "Skin for @llui/components/popover, with data-[side] enter animations.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["floating-motion", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/popover.ts",
@@ -4385,7 +4385,7 @@
       "title": "Select",
       "description": "Skin for @llui/components/select, including the hidden native form control.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["icons", "utils"],
+      "registryDependencies": ["floating-motion", "icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/select.ts",
@@ -4413,9 +4413,9 @@
       "name": "sheet",
       "type": "registry:ui",
       "title": "Sheet / Drawer",
-      "description": "Skin for @llui/components/drawer — an edge-anchored panel, side as a variant.",
+      "description": "Skin for @llui/components/drawer — an edge-anchored panel driven by the machine's data-side attribute.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["icons", "utils"],
+      "registryDependencies": ["floating-motion", "icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/sheet.ts",
@@ -4490,7 +4490,7 @@
       "title": "Sonner / Toast",
       "description": "Skin for @llui/components/toast, with one shared live region.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["floating-motion", "icons", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/sonner.ts",
@@ -4745,7 +4745,7 @@
       "title": "Tooltip",
       "description": "Skin for @llui/components/tooltip.",
       "dependencies": ["@llui/dom", "@llui/components"],
-      "registryDependencies": ["utils"],
+      "registryDependencies": ["floating-motion", "utils"],
       "files": [
         {
           "path": "registry/llui/ui/tooltip.ts",
@@ -4796,6 +4796,21 @@
           "path": "registry/llui/ui/typography.ts",
           "type": "registry:ui",
           "target": "typography.ts"
+        }
+      ]
+    },
+    {
+      "name": "floating-motion",
+      "type": "registry:lib",
+      "title": "Overlay motion",
+      "description": "Shared presence, physical-side, and nonzero reduced-motion policy for overlay and transient skins.",
+      "dependencies": [],
+      "registryDependencies": [],
+      "files": [
+        {
+          "path": "registry/llui/lib/floating-motion.ts",
+          "type": "registry:lib",
+          "target": "floating-motion.ts"
         }
       ]
     },

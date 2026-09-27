@@ -583,9 +583,9 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `input`, `trigger`, `positioner`, `content`, `item`, `group`, `liveRegion`, `empty`
+**Parts:** `root`, `input`, `trigger`, `positioner`, `content`, `loadState`, `item`, `group`, `liveRegion`, `empty`
 
-**Utilities:** `overlay()`, `isCreateOption()`
+**Utilities:** `overlay()`, `isCreateOption()`, `loadProjection()`
 
 **Constants:** `CREATE_OPTION_VALUE`
 
@@ -600,15 +600,15 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `x`   | `number` |
 | `y`   | `number` |
 
-**Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
+**Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `syncDomDir`, `animationEnd`
 
-**Init options:** `items?: ContextMenuItem[], checked?: string[], closeOnSelect?: boolean, dir?: TextDirection | null, skipAnimations?: boolean`
+**Init options:** `items?: ContextMenuItem[], checked?: string[], closeOnSelect?: boolean, dir?: TextDirection, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
+**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`, `directionSync`
 
-**Utilities:** `overlay()`, `isPresent()`, `isMounted()`
+**Utilities:** `overlay()`, `subOverlay()`, `isPresent()`, `isMounted()`
 
 ---
 
@@ -1028,17 +1028,16 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `closeOnSelect`      | `boolean`                        |
 | `typeahead`          | `string`                         |
 | `typeaheadExpiresAt` | `number`                         |
-| `dir`                | `TextDirection \| null`          |
 
-**Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
+**Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `syncDomDir`, `animationEnd`
 
-**Init options:** `open?: boolean, items?: MenuItem[], highlighted?: string | null, checked?: string[], closeOnSelect?: boolean, dir?: TextDirection | null, skipAnimations?: boolean`
+**Init options:** `open?: boolean, items?: MenuItem[], highlighted?: string | null, checked?: string[], closeOnSelect?: boolean, dir?: TextDirection, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
+**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`, `directionSync`
 
-**Utilities:** `overlay()`, `isPresent()`, `isMounted()`, `floatingDir()`
+**Utilities:** `overlay()`, `subOverlay()`, `isPresent()`, `isMounted()`
 
 ---
 
@@ -1053,16 +1052,18 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `focused`       | `string \| null`            |
 | `disabledMenus` | `string[]`                  |
 | `menuStates`    | `Record<string, MenuState>` |
+| `dir`           | `TextDirection`             |
+| `dirSource`     | `DirectionSource`           |
 
-**Messages:** `openMenu`, `closeMenu`, `focusMenu`, `focusNext`, `focusPrev`, `menuMsg`
+**Messages:** `openMenu`, `closeMenu`, `focusMenu`, `syncTriggerFocus`, `focusNext`, `focusPrev`, `menuMsg`, `setDir`, `syncDomDir`
 
-**Init options:** `menus: MenubarMenu[], focused?: string | null`
+**Init options:** `menus: MenubarMenu[], focused?: string | null, dir?: TextDirection`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `menuTrigger`, `menu`
+**Parts:** `root`, `menuTrigger`, `menu`, `directionSync`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `subOverlay()`
 
 ---
 
@@ -1093,21 +1094,22 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **State** (`NavMenuState`):
 
-| Field      | Type             |
-| ---------- | ---------------- |
-| `open`     | `string[]`       |
-| `focused`  | `string \| null` |
-| `items`    | `string[]`       |
-| `disabled` | `boolean`        |
-| `dir`      | `'ltr' \| 'rtl'` |
+| Field       | Type              |
+| ----------- | ----------------- |
+| `open`      | `string[]`        |
+| `focused`   | `string \| null`  |
+| `items`     | `string[]`        |
+| `disabled`  | `boolean`         |
+| `dir`       | `'ltr' \| 'rtl'`  |
+| `dirSource` | `DirectionSource` |
 
-**Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`, `setDir`, `setItems`
+**Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`, `setDir`, `syncDomDir`, `setItems`
 
 **Init options:** `open?: string[], focused?: string | null, items?: string[], disabled?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `indicator`, `item`
+**Parts:** `root`, `indicator`, `directionSync`, `item`
 
 **Utilities:** `isOpen()`, `watchNavMenuIndicator()`
 
@@ -1752,7 +1754,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `placement` | `ToastPlacement` |
 | `animated`  | `boolean`        |
 
-**Messages:** `create`, `dismiss`, `dismissAll`, `update`, `tick`, `pause`, `resume`, `pauseAll`, `resumeAll`, `animationEnd`
+**Messages:** `create`, `dismiss`, `dismissAll`, `setPlacement`, `update`, `tick`, `pause`, `resume`, `pauseAll`, `resumeAll`, `animationEnd`
 
 **Init options:** `max?: number, placement?: ToastPlacement, animated?: boolean`
 
@@ -1760,7 +1762,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `region`, `toast`, `progress`, `isPresent`
 
-**Utilities:** `nextToastId()`, `politeness()`, `progress()`, `isPresent()`
+**Utilities:** `nextToastId()`, `politeness()`, `progress()`, `isPresent()`, `isPaused()`
 
 ---
 
@@ -2119,7 +2121,13 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Applies `left` + `top` styles to the floating element. Returns a cleanup.
+Owns `position`, `top`, `left`, `transform` and the two available-size
+custom properties ({@link FLOATING_AVAILABLE_HEIGHT}) on `floating`; `position` and
+all four physical inset properties on an optional arrow; and placement
+attributes on `stateTarget`. The arrow's static-side inset is half its
+untransformed layout size, so a square arrow straddles the resolved edge.
+Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
+exact prior values (including priority) or absence of those properties.
 
 ```typescript
 export declare function attachFloating(opts: FloatingOptions): () => void
@@ -4136,12 +4144,51 @@ export type ComboboxMsg =
   | { type: 'highlight'; value: string | null }
   /** @intent("Pick the currently-highlighted option in the filtered list") */
   | { type: 'selectHighlighted' }
-  /** @humanOnly */
+  /**
+   * @humanOnly
+   *
+   * Replace `items` (and optionally `disabled`) synchronously — the same
+   * highlight-resolution policy as `loadSuccess` applies: a highlight that no
+   * longer survives the fresh list moves to the first enabled match WHILE
+   * OPEN, or to `null` WHILE CLOSED (#265 G3), since a background refresh
+   * must not manufacture a highlight before the control is ever opened.
+   */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
-  /** @humanOnly */
-  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /**
+   * @humanOnly
+   *
+   * Atomic replacement: `items` is required. `disabled` is an OPTIONAL
+   * companion that replaces `disabledItems` when present (omitted ⇒
+   * unchanged). `groups` is different: omitting it RESETS to no groups
+   * (`[]`), the same as `init()` with no `groups` option — a fresh
+   * replacement with no `groups` describes a flat result, and carrying a
+   * PREVIOUS load's groups forward would keep describing options this
+   * replacement never mentioned as belonging to a group that may no longer
+   * apply (#265 A3). Every field the fresh `items`/`disabled`/`groups` makes
+   * inconsistent is reconciled in this SAME reducer step, never in a
+   * follow-up message. `value` (selection) is dropped when it no longer
+   * names a value in the new `items` (after the new `disabled` is applied).
+   * `highlightedValue` is kept only when it is BOTH still in the fresh
+   * filtered list AND not newly disabled. Otherwise the fallback depends on
+   * whether the listbox is open: WHILE OPEN it moves to the first enabled
+   * match (or `null` when none is enabled) — never left dangling for a
+   * render in between, and never left naming an option that is now
+   * disabled. WHILE CLOSED it always resolves to `null` instead, even when
+   * the fresh list has enabled options: the listbox content is unmounted
+   * while closed, so there is no option `aria-activedescendant` could
+   * correctly name, and a background load (a prefetch, a poll) must not
+   * manufacture a highlight before the control is ever opened — re-opening
+   * always reseeds the highlight itself (#265 G3).
+   */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
   /** @humanOnly */
   | { type: 'loadError'; requestId: number; error: string }
 ```
@@ -4211,8 +4258,10 @@ export type ContextMenuMsg =
   | { type: 'setItems'; items: ContextMenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
-  | { type: 'setDir'; dir: TextDirection | null }
+  /** @intent("Set the reading direction — 'ltr' or 'rtl'") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   /** @humanOnly */
   | { type: 'animationEnd' }
 ```
@@ -4917,11 +4966,17 @@ export type MenubarMsg =
   /** @intent("Move roving focus to the menu with the given id (switches the open menu in open mode)") */
   | { type: 'focusMenu'; id: string }
   /** @humanOnly */
+  | { type: 'syncTriggerFocus'; id: string }
+  /** @humanOnly */
   | { type: 'focusNext' }
   /** @humanOnly */
   | { type: 'focusPrev' }
   /** @humanOnly */
   | { type: 'menuMsg'; id: string; msg: MenuMsg }
+  /** @intent("Set the reading direction") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
 ```
 
 ##### `MenuCheckItemParts` from `@llui/components`
@@ -4991,8 +5046,10 @@ export type MenuMsg =
   | { type: 'setItems'; items: MenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
-  | { type: 'setDir'; dir: TextDirection | null }
+  /** @intent("Set the reading direction — 'ltr' or 'rtl'") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   /** @humanOnly */
   | { type: 'animationEnd' }
 ```
@@ -5049,6 +5106,8 @@ export type NavMenuMsg =
   | { type: 'focus'; id: string | null }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: 'ltr' | 'rtl' }
   /** @intent("Replace the list of ids eligible for the roving tab stop, in document order") */
   | { type: 'setItems'; items: string[] }
 ```
@@ -5950,33 +6009,80 @@ export type ToasterMsg =
   | { type: 'dismiss'; id: string }
   /** @intent("Dismiss every toast currently visible") */
   | { type: 'dismissAll' }
-  /** @intent("Patch fields on the toast with the given id (title, description, type, etc.)") */
-  | { type: 'update'; id: string; patch: Partial<Toast> }
+  /** @intent("Move the toast region to a different corner/edge of the viewport") */
+  | { type: 'setPlacement'; placement: ToastPlacement }
+  /** @intent("Patch mutable presentation fields on the toast with the given id (title, description, type, etc.); `id` cannot be patched") */
+  | { type: 'update'; id: string; patch: ToastPatch }
   /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
   | { type: 'tick'; id: string; elapsedMs: number }
   /** @intent("Pause auto-dismiss countdown for the toast with the given id") */
-  | { type: 'pause'; id: string }
-  /** @intent("Resume auto-dismiss countdown for the toast with the given id") */
-  | { type: 'resume'; id: string }
+  | { type: 'pause'; id: string; reason?: ToastPauseReason }
+  /** @intent("Resume auto-dismiss countdown for the toast with the given id (releases only the given reason, default manual)") */
+  | { type: 'resume'; id: string; reason?: ToastPauseReason }
   /** @intent("Pause auto-dismiss for every visible toast") */
-  | { type: 'pauseAll' }
-  /** @intent("Resume auto-dismiss for every visible toast") */
-  | { type: 'resumeAll' }
+  | { type: 'pauseAll'; reason?: ToastPauseReason }
+  /** @intent("Resume auto-dismiss for every visible toast (releases only the given reason, default manual)") */
+  | { type: 'resumeAll'; reason?: ToastPauseReason }
   /** @humanOnly Exit animation finished for the toast with the given id — remove it from the queue. */
   | { type: 'animationEnd'; id: string }
 ```
 
 ##### `ToastInput` from `@llui/components`
 
-A new toast as supplied to `create`. `remainingMs`/`paused`/`status` are
-optional — seeded from `duration`/`false`/`'open'` when omitted.
+A new toast as supplied to `create`. `remainingMs`/`pausedBy`/`status` are
+optional — seeded from `duration`/`[]`/`'open'` when omitted.
 
 ```typescript
-export type ToastInput = Omit<Toast, 'remainingMs' | 'paused' | 'status'> & {
+export type ToastInput = Omit<Toast, 'remainingMs' | 'pausedBy' | 'status'> & {
   remainingMs?: number
-  paused?: boolean
+  pausedBy?: readonly ToastPauseReason[]
   status?: PresenceStatus
 }
+```
+
+##### `ToastPatch` from `@llui/components`
+
+Fields an `update` message may patch on a mounted toast. `id` is the ONE
+truly immutable field — a toast is created once and dismissed once, never
+structurally replaced with a different id for the same row — so it is
+excluded here rather than silently ignored by the reducer. `type` and
+`ariaLive` (among others) ARE genuine mutable presentation fields (the
+`toast.promise`-style loading→success/error flow patches `type`, `title`
+and `description` on the same mounted toast) and `connect()`'s `toast()`
+builder binds every one of these reactively (never via a one-shot
+`peek()`), so a patch here is visible wherever it renders.
+
+`status`/`remainingMs`/`pausedBy` are excluded: they are LIFECYCLE fields the
+reducer itself owns (presence transitions, the tick-driven countdown,
+pause/resume) and a patch is the wrong channel for them — `dismiss`/`tick`/
+`pause`/`resume` already exist and a caller patching `remainingMs` directly
+would race the reducer's own countdown math. `duration` stays patchable
+(it IS presentation — the toast.promise flow moves a sticky `loading`
+toast to a finite `success`/`error` duration), so `update` re-seeds
+`remainingMs` from the new `duration` whenever `duration` is part of the
+patch (#265 A2) — otherwise a toast created sticky (duration: null,
+remainingMs frozen at 0) that is later patched to a finite duration would
+inherit that frozen 0 and dismiss on the very next tick instead of lasting
+its new duration.
+
+`undefined` on a REQUIRED field (`type`, `duration`, `dismissable`) means
+"not patched", the same as an absent key (#265 G6): `{ duration: undefined }`
+leaves the countdown alone rather than re-seeding it to 0 — patch
+`duration: null` to make a toast sticky. On an OPTIONAL field (`title`,
+`description`, `ariaLive`) `undefined` clears it, so a loading -> success
+patch can drop a description the success toast should not keep.
+
+```typescript
+export type ToastPatch = Partial<Omit<Toast, 'id' | 'status' | 'remainingMs' | 'pausedBy'>>
+```
+
+##### `ToastPauseReason` from `@llui/components`
+
+Why a toast's countdown is paused. The row's own handlers use `'hover'` and
+`'focus'`; a `pause`/`resume` message without a reason uses `'manual'`.
+
+```typescript
+export type ToastPauseReason = (typeof PAUSE_REASONS)[number]
 ```
 
 ##### `ToastPlacement` from `@llui/components`
@@ -6009,11 +6115,15 @@ Architecture (timer-free, tick-driven — same division of labor as timer.ts):
 
 - `toast.toaster` state manages a collection of toasts. Each toast carries
   its own countdown in state: `duration` (null = sticky), `remainingMs`,
-  and `paused`.
+  and `pausedBy` (the set of reasons currently holding it paused).
 - The machine owns NO interval. The consumer drives the countdown with a
   `tick(id, elapsedMs)` message (e.g. via @llui/effects `interval`),
-  subtracting the elapsed wall time since the last tick. A `paused` toast
-  freezes its `remainingMs` (ticks are ignored).
+  subtracting the elapsed wall time since the last tick. A paused toast
+  (any reason held) freezes its `remainingMs` (ticks are ignored).
+- Pause REASONS are independent (#265 G6): the row's hover pauses/resumes
+  `'hover'`, focus entering/leaving the row pauses/resumes `'focus'`, and
+  `pause`/`resume` with no reason use `'manual'`. Pointer-leave therefore
+  never resumes a toast whose close button still has keyboard focus.
 - When `remainingMs` hits 0 the REDUCER dismisses that toast itself, so
   there is no consumer/runtime race over who removes it.
 
@@ -8073,9 +8183,17 @@ export interface ComboboxParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11) — see
+     * {@link LoadProjection}. Mirrors the top-level `loadState` signal. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'combobox'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'`. A single
+   * signal instead of independent `isLoading`/`isEmpty`/`hasError` booleans,
+   * so it can never contradict itself. See {@link LoadProjection}. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — it is NOT used for identity (highlight,
    * selection and ids are all value-keyed), so a reused row is never stale. */
@@ -8135,10 +8253,12 @@ export interface ContextMenuInit {
   items?: ContextMenuItem[]
   checked?: string[]
   closeOnSelect?: boolean
-  /** Omit to follow the page's own direction (see `MenuState.dir`). */
-  dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** Omit to follow the page's own direction (see {@link ContextMenuState}'s
+   * `dir`/`dirSource`, resolved from the mounted trigger by `directionSync`). */
+  dir?: TextDirection
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 ```
@@ -8175,8 +8295,11 @@ export interface OverlayOptions {
 
 ```typescript
 export interface ContextMenuParts {
-  /** The element users right-click to open the menu. */
+  /** The element users right-click to open the menu. `id` is REQUIRED — it is
+   * the scope `directionSync` (below) observes for live ancestor `dir`
+   * changes, since it (unlike `content`) is always mounted (#265 finding 6). */
   trigger: {
+    id: string
     'data-scope': 'context-menu'
     'data-part': 'trigger'
     onContextMenu: (e: MouseEvent) => void
@@ -8209,6 +8332,12 @@ export interface ContextMenuParts {
   subTrigger: (value: string) => ContextMenuSubTriggerParts
   subPositioner: (value: string) => ContextMenuSubPositionerParts
   subContent: (value: string) => ContextMenuSubContentParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * observing the TRIGGER (always mounted, unlike the content) as this
+   * instance's root. A discarded `Mountable` is inert, so this must be placed
+   * in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -9341,6 +9470,12 @@ export interface FloatingOptions {
   anchor: Element
   /** The floating element (content). */
   floating: HTMLElement
+  /**
+   * Element that receives the resolved full `data-placement` and physical
+   * `data-side`. Defaults to `floating`. Use a separate content element when
+   * `floating` is a geometry-only positioner wrapper.
+   */
+  stateTarget?: HTMLElement
   /** Preferred placement (default: 'bottom'). */
   placement?: Placement
   /** Gap between anchor and floating, in px (default: 0). */
@@ -9512,7 +9647,9 @@ export interface FocusRestoreQuery {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to first focusable. */
+  /** Element to focus when the trap activates. Defaults to the first
+   * tab-reachable descendant, else the container itself (given a temporary
+   * `tabindex="-1"` when it has none). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -10134,6 +10271,8 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
 }
 ```
@@ -10590,6 +10729,10 @@ export interface MenubarInit {
   menus: MenubarMenu[]
   /** Initially-focused menu id (defaults to the first enabled menu). */
   focused?: string | null
+  /** Reading direction for horizontal keys and delegated menus. Omit to
+   * follow the page's own direction (see {@link MenubarState}'s `dir`/
+   * `dirSource`, resolved from the mounted root by `directionSync`). */
+  dir?: TextDirection
 }
 ```
 
@@ -10649,6 +10792,11 @@ export interface MenubarOverlayOptions {
 ```typescript
 export interface MenubarParts {
   root: {
+    // `id` is REQUIRED — it is the scope `directionSync` (below) looks the
+    // live root up by, the same contract `navigation-menu`'s own `root.id`
+    // already honours (#265 finding 6). A consumer that overrides it with a
+    // DIFFERENT id breaks the direction sync silently.
+    id: string
     role: 'menubar'
     'aria-label': string
     'data-scope': 'menubar'
@@ -10657,6 +10805,10 @@ export interface MenubarParts {
   menuTrigger: (id: string) => MenubarTriggerParts
   /** Delegated per-menu part bag (content/item/checkboxItem/submenu/…). */
   menu: (id: string) => MenuParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6). A
+   * discarded `Mountable` is inert, so this must be placed in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -10674,6 +10826,16 @@ export interface MenubarState {
   disabledMenus: string[]
   /** Embedded per-menu machine states, keyed by menu id. */
   menuStates: Record<string, MenuState>
+  /** Reading direction for both the bar and its delegated menu trees. Routed
+   * through the shared `@llui/interactions` direction-sync seam
+   * (`../utils/direction.js`) rather than a second resolver — `dirSource`
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). Every
+   * embedded `MenuState`'s own `dir` is kept explicitly in sync with this one
+   * (see `syncEmbeddedDir` below), so a delegated menu never disagrees with
+   * the bar that owns it. */
+  dir: TextDirection
+  dirSource: DirectionSource
 }
 ```
 
@@ -10708,10 +10870,12 @@ export interface MenuInit {
   highlighted?: string | null
   checked?: string[]
   closeOnSelect?: boolean
-  /** Omit to follow the page's own direction (see {@link MenuState.dir}). */
-  dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** Omit to follow the page's own direction (see {@link MenuState}'s `dir`/
+   * `dirSource`, resolved from the mounted root by `directionSync`). */
+  dir?: TextDirection
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 ```
@@ -10794,6 +10958,12 @@ export interface MenuParts {
   subTrigger: (value: string) => MenuSubTriggerParts
   subPositioner: (value: string) => MenuSubPositionerParts
   subContent: (value: string) => MenuSubContentParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * observing the TRIGGER (always mounted, unlike the content) as this
+   * instance's root. A discarded `Mountable` is inert, so this must be placed
+   * in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -10825,17 +10995,14 @@ export interface MenuState extends MenuTreeState {
   /** Accumulator for typeahead search (scoped to the deepest matching level). */
   typeahead: string
   typeaheadExpiresAt: number
-  /**
-   * Reading direction, or `null` for "the host never said — let the page
-   * decide". Under 'rtl', ArrowLeft/ArrowRight swap meaning, and the overlay's
-   * `*-start`/`*-end` alignment tracks the inline-start/inline-end edge.
-   *
-   * `null` rather than an `'ltr'` default because the value is AUTHORITATIVE
-   * once it reaches `attachFloating`: a concrete default overrode the page, so
-   * a menu on `<html dir="rtl">` was laid out LTR (#138 review, blocking 4).
-   * See {@link floatingDir}.
-   */
-  dir: TextDirection | null
+  // `dir` + `dirSource` come from `MenuTreeState` (extends `DirectionState`) —
+  // the shared `@llui/interactions` direction-sync seam (#265 finding 6).
+  // Under 'rtl', ArrowLeft/ArrowRight swap meaning, and the overlay's
+  // `*-start`/`*-end` alignment tracks the inline-start/inline-end edge. An
+  // EXPLICIT direction is AUTHORITATIVE once it reaches `attachFloating`: a
+  // silently-overridden page direction laid a menu on `<html dir="rtl">` out
+  // LTR (#138 review, blocking 4) — `dirSource: 'explicit'` is what keeps
+  // that override from being overwritten by the next DOM observation.
 }
 ```
 
@@ -11011,6 +11178,13 @@ export interface NavMenuInit {
 ```typescript
 export interface NavMenuParts {
   root: {
+    // `id` is REQUIRED — it is the scope `directionSyncMount` (below) looks
+    // the live root up by, the same contract `tabs`/`carousel`/`pagination`'s
+    // own `root.id` already honours. A consumer that overrides it with a
+    // DIFFERENT id breaks the direction sync silently (#265 finding 6): the
+    // watcher would observe nothing, since `getElementByIdInScope` would
+    // never find this element under the id it was given.
+    id: string
     // Site navigation is NOT an application menu: it uses a `nav` landmark with
     // disclosure buttons, not menubar/menu/menuitem roles. Render the root as a
     // `<nav>` element; `aria-label` names the landmark.
@@ -11046,6 +11220,11 @@ export interface NavMenuParts {
     'data-part': 'indicator'
     'data-state': Signal<'visible' | 'hidden'>
   }
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * same as `tabs`/`carousel`/`pagination`'s own `directionSync` part. A
+   * discarded `Mountable` is inert, so this must be placed in the view. */
+  directionSync: Mountable
   /**
    * Parts for one trigger (+ its panel when it is a branch).
    *
@@ -11113,8 +11292,13 @@ export interface NavMenuState {
    */
   items: string[]
   disabled: boolean
-  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning.
+   * Routed through the shared `@llui/interactions` direction-sync seam
+   * (`../utils/direction.js`) rather than a second resolver — `dirSource`
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). */
   dir: 'ltr' | 'rtl'
+  dirSource: DirectionSource
 }
 ```
 
@@ -11664,7 +11848,8 @@ export interface OverlayOptions {
   restoreFocus?: boolean
   /** Portal target (default: 'body'). */
   target?: string | HTMLElement
-  /** Arrow element selector within content (optional). */
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
 }
 ```
@@ -14135,10 +14320,14 @@ export interface Toast {
   duration: number | null
   /** ms left before auto-dismiss. Counts down via `tick`. */
   remainingMs: number
-  /** Whether the toast can be manually dismissed. */
+  /** Whether the USER can dismiss the toast: `false` hides the close trigger
+   * (`closeTrigger.hidden`) and ignores its click. A `dismiss` message from
+   * code still removes it. Patchable. */
   dismissable: boolean
-  /** Pause flag — frozen countdown while set (consumer sets on hover/focus). */
-  paused: boolean
+  /** The reasons currently holding the countdown paused, as a canonical set
+   * (unique, in {@link ToastPauseReason} order). Empty = running. Owned by the
+   * reducer: change it with `pause`/`resume`, read it with {@link isPaused}. */
+  pausedBy: ToastPauseReason[]
   /** Optional per-toast politeness override; otherwise derived from `type`. */
   ariaLive?: ToastPoliteness
   /**
@@ -14178,10 +14367,11 @@ export interface ToasterParts {
    * Build the per-row part descriptors for one toast. Takes the row's
    * `Signal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
    * consumers don't `.peek()` in a reactive slot (which the signal compiler
-   * rejects). A toast's `id`/`type`/`ariaLive` are immutable for its lifetime —
-   * created then dismissed, never structurally replaced — so this reads the
-   * value once internally to build the id/role wiring; the keyed `each`
-   * rebuilds the row if `id` changes.
+   * rejects). Only `id` is immutable for a toast's lifetime — created then
+   * dismissed, never structurally replaced — so this reads `id` once
+   * internally to build id-derived wiring (the keyed `each` rebuilds the row
+   * if `id` changes); every other field (`type`, `ariaLive`, `status`, …) is
+   * bound reactively so an `update` patch renders wherever it appears.
    */
   toast: (toast: Signal<Toast>) => ToastItemParts
   /**
@@ -14223,21 +14413,33 @@ export interface ToasterState {
 ```typescript
 export interface ToastItemParts {
   root: {
-    role: 'status' | 'alert'
+    /**
+     * Reactive: derived from the toast's current `type`/`ariaLive` (see
+     * {@link politeness}), never frozen at mount — an `update` patching
+     * either is visible here.
+     */
+    role: Signal<'status' | 'alert'>
     'aria-atomic': 'true'
-    'aria-live': ToastPoliteness
+    /** Reactive — see `role` above. */
+    'aria-live': Signal<ToastPoliteness>
     id: string
     'data-scope': 'toast'
     'data-part': 'root'
-    'data-type': ToastType
+    /** Reactive: an `update` patching `type` (e.g. a promise toast moving
+     * loading → success) is visible here, not frozen at mount. */
+    'data-type': Signal<ToastType>
     'data-id': string
     /** Reactive presence status (closed/opening/open/closing) for CSS-driven
      * enter/exit animations. */
     'data-state': Signal<PresenceStatus>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
-    onFocus: (e: FocusEvent) => void
-    onBlur: (e: FocusEvent) => void
+    /** Bubbling — a plain (non-bubbling) `onFocus`/`onBlur` here would never
+     * fire for the only naturally focusable descendant, the close button,
+     * so pause-on-focus would be dead: nothing but the row itself receives
+     * `focus`/`blur` directly, and it carries no `tabindex`. */
+    onFocusIn: (e: FocusEvent) => void
+    onFocusOut: (e: FocusEvent) => void
     /** Advance past the exit animation: a `'closing'` toast is removed from the
      * queue once its animation/transition ends. */
     onAnimationEnd: (e: AnimationEvent) => void
@@ -14258,6 +14460,12 @@ export interface ToastItemParts {
     'aria-label': string
     'data-scope': 'toast'
     'data-part': 'close-trigger'
+    /** Reactive: true while the toast is not `dismissable` — the button leaves
+     * the accessibility tree and the tab order. Hiding it while it has focus
+     * is safe for the `'focus'` pause reason: the browser's focus fixup fires
+     * `blur`/`focusout` on the row (verified in Chromium), which releases it. */
+    hidden: Signal<boolean>
+    /** Dismisses the toast; ignored while it is not `dismissable`. */
     onClick: (e: MouseEvent) => void
   }
 }
@@ -14596,6 +14804,8 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
   /** Dismiss on Escape regardless of where focus is (default: true). */
   closeOnEscape?: boolean
@@ -15644,7 +15854,13 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components/utils`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Applies `left` + `top` styles to the floating element. Returns a cleanup.
+Owns `position`, `top`, `left`, `transform` and the two available-size
+custom properties ({@link FLOATING_AVAILABLE_HEIGHT}) on `floating`; `position` and
+all four physical inset properties on an optional arrow; and placement
+attributes on `stateTarget`. The arrow's static-side inset is half its
+untransformed layout size, so a square arrow straddles the resolved edge.
+Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
+exact prior values (including priority) or absence of those properties.
 
 ```typescript
 export declare function attachFloating(opts: FloatingOptions): () => void
@@ -17296,6 +17512,12 @@ export interface FloatingOptions {
   anchor: Element
   /** The floating element (content). */
   floating: HTMLElement
+  /**
+   * Element that receives the resolved full `data-placement` and physical
+   * `data-side`. Defaults to `floating`. Use a separate content element when
+   * `floating` is a geometry-only positioner wrapper.
+   */
+  stateTarget?: HTMLElement
   /** Preferred placement (default: 'bottom'). */
   placement?: Placement
   /** Gap between anchor and floating, in px (default: 0). */
@@ -17371,7 +17593,9 @@ export interface FocusRestoreQuery {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to first focusable. */
+  /** Element to focus when the trap activates. Defaults to the first
+   * tab-reachable descendant, else the container itself (given a temporary
+   * `tabindex="-1"` when it has none). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -18830,6 +19054,23 @@ The second argument is the direction source:
 export declare function flipArrow(key: string, source: Element | null | TextDirection): string
 ```
 
+##### `floatingDir()` from `@llui/components/utils/direction`
+
+The EXPLICIT direction to hand an overlay's `floating.dir`, or `undefined`
+while direction is still automatic (`dirSource === 'dom'`). `undefined` is
+not "unknown": the overlay engine then resolves the direction from the
+overlay's placement ANCHOR — the trigger, in the app's own container — and
+writes it on the portaled floating element, so geometry, CSS and key
+handlers inside the portal all agree with the trigger (#265 finding 6).
+Passing the state's `dir` unconditionally (#265 A1) mirrored every floating
+surface on an RTL page as LTR: the untouched state default said `'ltr'`
+while the DOM said `'rtl'`. Once a consumer calls `setDir`/passes `dir`,
+`dirSource` is `'explicit'` and that value wins over the DOM.
+
+```typescript
+function floatingDir(state: DirectionState): 'ltr' | 'rtl' | undefined
+```
+
 ##### `initDirection()` from `@llui/components/utils/direction`
 
 Deterministic on the server; omitted direction is resolved only after mount.
@@ -18883,6 +19124,20 @@ Apply an internal DOM observation only while direction remains automatic.
 
 ```typescript
 function syncDomDirection<T extends DirectionState>(state: T, dir: 'ltr' | 'rtl'): T
+```
+
+##### `watchDirection()` from `@llui/components/utils/direction`
+
+Watch every `dir` that can decide `target()`'s resolved direction: `dir`
+attributes on the element and its live ancestor chain (across shadow
+roots), and child-list changes that relocate it between differently
+directed ancestors. Calls `onChange` after any such mutation — the caller
+re-resolves — then re-observes the chain `target()` names NOW, so a
+relocated or replaced element keeps being watched. Returns a disconnect.
+A no-op where `MutationObserver` does not exist (SSR).
+
+```typescript
+function watchDirection(target: () => Element | null, onChange: () => void): () => void
 ```
 
 #### Types
@@ -19111,13 +19366,56 @@ export type SyncEngineFocusBodyRequired = {
 ##### `attachFloating()` from `@llui/components/utils/floating`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Applies `left` + `top` styles to the floating element. Returns a cleanup.
+Owns `position`, `top`, `left`, `transform` and the two available-size
+custom properties ({@link FLOATING_AVAILABLE_HEIGHT}) on `floating`; `position` and
+all four physical inset properties on an optional arrow; and placement
+attributes on `stateTarget`. The arrow's static-side inset is half its
+untransformed layout size, so a square arrow straddles the resolved edge.
+Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
+exact prior values (including priority) or absence of those properties.
 
 ```typescript
 export declare function attachFloating(opts: FloatingOptions): () => void
 ```
 
+##### `restoreInlineStyles()` from `@llui/components/utils/floating`
+
+```typescript
+export declare function restoreInlineStyles(
+  element: HTMLElement,
+  snapshots: readonly InlineStyleSnapshot[],
+  hadStyleAttribute: boolean,
+): void
+```
+
+##### `snapshotInlineStyle()` from `@llui/components/utils/floating`
+
+```typescript
+export declare function snapshotInlineStyle(
+  element: HTMLElement,
+  property: string,
+): InlineStyleSnapshot
+```
+
 #### Types
+
+##### `InlineStyleSnapshot` from `@llui/components/utils/floating`
+
+One inline style property's exact prior state (present or absent, value and
+priority), so `restoreInlineStyles` can put it back byte-for-byte rather
+than merely clearing whatever this attachment wrote. Exported so a caller
+that imperatively sets a SINGLE inline style outside `attachFloating`
+itself (`overlay-engine.ts`'s `sameWidth` handling) shares this snapshot
+discipline instead of re-implementing it (#265 LOW).
+
+```typescript
+export type InlineStyleSnapshot = {
+  property: string
+  present: boolean
+  value: string
+  priority: string
+}
+```
 
 ##### `Placement` from `@llui/components/utils/floating`
 
@@ -19135,6 +19433,12 @@ export interface FloatingOptions {
   anchor: Element
   /** The floating element (content). */
   floating: HTMLElement
+  /**
+   * Element that receives the resolved full `data-placement` and physical
+   * `data-side`. Defaults to `floating`. Use a separate content element when
+   * `floating` is a geometry-only positioner wrapper.
+   */
+  stateTarget?: HTMLElement
   /** Preferred placement (default: 'bottom'). */
   placement?: Placement
   /** Gap between anchor and floating, in px (default: 0). */
@@ -19249,7 +19553,9 @@ export declare function pushFocusTrap(opts: FocusTrapOptions): () => void
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to first focusable. */
+  /** Element to focus when the trap activates. Defaults to the first
+   * tab-reachable descendant, else the container itself (given a temporary
+   * `tabindex="-1"` when it has none). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -19356,7 +19662,13 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components/utils/index`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Applies `left` + `top` styles to the floating element. Returns a cleanup.
+Owns `position`, `top`, `left`, `transform` and the two available-size
+custom properties ({@link FLOATING_AVAILABLE_HEIGHT}) on `floating`; `position` and
+all four physical inset properties on an optional arrow; and placement
+attributes on `stateTarget`. The arrow's static-side inset is half its
+untransformed layout size, so a square arrow straddles the resolved edge.
+Cleanup is idempotent, suppresses pending writes/callbacks, and restores the
+exact prior values (including priority) or absence of those properties.
 
 ```typescript
 export declare function attachFloating(opts: FloatingOptions): () => void
@@ -21008,6 +21320,12 @@ export interface FloatingOptions {
   anchor: Element
   /** The floating element (content). */
   floating: HTMLElement
+  /**
+   * Element that receives the resolved full `data-placement` and physical
+   * `data-side`. Defaults to `floating`. Use a separate content element when
+   * `floating` is a geometry-only positioner wrapper.
+   */
+  stateTarget?: HTMLElement
   /** Preferred placement (default: 'bottom'). */
   placement?: Placement
   /** Gap between anchor and floating, in px (default: 0). */
@@ -21083,7 +21401,9 @@ export interface FocusRestoreQuery {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to first focusable. */
+  /** Element to focus when the trap activates. Defaults to the first
+   * tab-reachable descendant, else the container itself (given a temporary
+   * `tabindex="-1"` when it has none). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -22225,7 +22545,14 @@ export interface OverlayEngineOptions<S> {
 
 ```typescript
 export interface OverlayFloatingConfig {
-  placement: Placement
+  /**
+   * Preferred placement. A function so it can be resolved AT ATTACH TIME
+   * (#265 A4) — a per-level submenu chooses its physical side (`right-start`
+   * under 'ltr', `left-start` under 'rtl') from the reading direction in
+   * effect when the level opens, the same way `dir` below is already
+   * resolved lazily rather than captured at declaration time.
+   */
+  placement: Placement | (() => Placement)
   offset: number
   flip: boolean
   shift: boolean
@@ -22233,12 +22560,47 @@ export interface OverlayFloatingConfig {
   arrowSelector?: string
   /** Match the floating element's min-width to the anchor's width. */
   sameWidth?: boolean
-  /** Reading direction — a function so it can be peeked at mount time (menu). */
+  /**
+   * An EXPLICIT reading direction — a function so it can be peeked at attach
+   * time (menu). Return `undefined` (or omit it) while direction is automatic:
+   * the engine then resolves it from the placement ANCHOR, never from where
+   * the portal landed (#265 finding 6). Whichever wins is handed to
+   * `attachFloating` and written as `dir` on the floating element, so the
+   * whole portaled subtree — CSS logical properties, key handlers resolving
+   * from `e.currentTarget`, and nested overlays anchored inside it — reads
+   * the same direction as the trigger it belongs to.
+   */
   dir?: TextDirection | (() => TextDirection | undefined)
   /** Attach positioning in the MOUNT phase (survives the exit animation) rather
-   * than the interaction phase. Used by popover, whose content stays anchored
-   * while the close transition plays. */
+   * than the interaction phase. Required when `visibleWhen` unwinds interactions
+   * before `mountWhen` releases retained exit content; the engine rejects that
+   * two-phase lifetime unless placement persists with the mounted node. */
   persistent?: boolean
+  /**
+   * Re-run floating attachment (detach then reattach, re-evaluating the
+   * `placement`/`dir` thunks fresh) whenever this key's value CHANGES while
+   * mounted. Needed because `placement`/`dir` are otherwise resolved ONCE at
+   * attach and `autoUpdate` never re-polls them — a physical `placement`
+   * string (`'right-start'`) encodes a reading-direction decision that a
+   * later `computePosition` pass with the same closed-over string cannot
+   * correct (#265 A4: a submenu whose menu tree flips direction while the
+   * level stays open must re-place, not just re-run the same geometry). A DOM
+   * direction change needs no key — the engine watches the anchor's
+   * direction itself; this is for STATE the DOM does not show (an explicit
+   * `setDir`).
+   *
+   * There is no public imperative signal-subscribe seam for framework-internal
+   * code running inside a mount callback (`@llui/dom`'s reactivity is
+   * binding-driven, not subscription-driven) — a caller declares this key by
+   * binding it reactively as a `data-llui-reattach-key` attribute on the
+   * content element or an ancestor it controls (`subOverlay` puts it on the
+   * positioner it builds), and the engine watches that ATTRIBUTE with a
+   * `MutationObserver`, the same declarative-binding-to-DOM-observation idiom
+   * `direction.ts:watchDirection` uses in the other direction. The marker is
+   * found with `content.closest('[data-llui-reattach-key]')`; supplying
+   * `reattachKey` without one is an authoring error (`LluiFrameworkError`).
+   */
+  reattachKey?: () => string | number
 }
 ```
 
@@ -25130,7 +25492,8 @@ export interface OverlayOptions {
   restoreFocus?: boolean
   /** Portal target (default: 'body'). */
   target?: string | HTMLElement
-  /** Arrow element selector within content (optional). */
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
 }
 ```
@@ -25329,6 +25692,8 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
   /** Dismiss on Escape regardless of where focus is (default: true). */
   closeOnEscape?: boolean
@@ -25442,17 +25807,6 @@ const tooltip
 function connect(state: Signal<MenuState>, send: Send<MenuMsg>, opts: ConnectOptions): MenuParts
 ```
 
-##### `floatingDir()` from `@llui/components/menu`
-
-The direction to hand `attachFloating`. `undefined` means "do not declare
-one" — floating-ui then reads the floating element's own computed direction,
-which is what an RTL page wants. Anything else overrides the page, so it is
-only produced when the host actually asked for it (#138 review, blocking 4).
-
-```typescript
-function floatingDir(state: MenuState): TextDirection | undefined
-```
-
 ##### `init()` from `@llui/components/menu`
 
 ```typescript
@@ -25472,6 +25826,21 @@ function isPresent(state: MenuState): boolean
 
 ```typescript
 function overlay(opts: OverlayOptions): Mountable
+```
+
+##### `subOverlay()` from `@llui/components/menu`
+
+Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
+consumer-wired `watchSubmenuPositioning` (removed). Call once per
+`children`-bearing item, alongside its `subTrigger`, in place of the old
+hand-rolled `show(isOpen, () => [div(subPositioner, [div(subContent, …)])])`:
+`subOverlay` builds both wrapper divs itself and owns mount/floating/
+nested-layer-ownership. See `menu-machine.ts:subOverlay`'s doc comment for
+the full contract (direction resolution, no-`dismiss` design, runtime
+direction-change re-placement).
+
+```typescript
+function subOverlay(opts: SubOverlayOptions): Mountable
 ```
 
 ##### `update()` from `@llui/components/menu`
@@ -25549,8 +25918,10 @@ export type MenuMsg =
   | { type: 'setItems'; items: MenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
-  | { type: 'setDir'; dir: TextDirection | null }
+  /** @intent("Set the reading direction — 'ltr' or 'rtl'") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   /** @humanOnly */
   | { type: 'animationEnd' }
 ```
@@ -25604,10 +25975,12 @@ export interface MenuInit {
   highlighted?: string | null
   checked?: string[]
   closeOnSelect?: boolean
-  /** Omit to follow the page's own direction (see {@link MenuState.dir}). */
-  dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** Omit to follow the page's own direction (see {@link MenuState}'s `dir`/
+   * `dirSource`, resolved from the mounted root by `directionSync`). */
+  dir?: TextDirection
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 ```
@@ -25658,6 +26031,12 @@ export interface MenuParts {
   subTrigger: (value: string) => MenuSubTriggerParts
   subPositioner: (value: string) => MenuSubPositionerParts
   subContent: (value: string) => MenuSubContentParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * observing the TRIGGER (always mounted, unlike the content) as this
+   * instance's root. A discarded `Mountable` is inert, so this must be placed
+   * in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -25689,17 +26068,14 @@ export interface MenuState extends MenuTreeState {
   /** Accumulator for typeahead search (scoped to the deepest matching level). */
   typeahead: string
   typeaheadExpiresAt: number
-  /**
-   * Reading direction, or `null` for "the host never said — let the page
-   * decide". Under 'rtl', ArrowLeft/ArrowRight swap meaning, and the overlay's
-   * `*-start`/`*-end` alignment tracks the inline-start/inline-end edge.
-   *
-   * `null` rather than an `'ltr'` default because the value is AUTHORITATIVE
-   * once it reaches `attachFloating`: a concrete default overrode the page, so
-   * a menu on `<html dir="rtl">` was laid out LTR (#138 review, blocking 4).
-   * See {@link floatingDir}.
-   */
-  dir: TextDirection | null
+  // `dir` + `dirSource` come from `MenuTreeState` (extends `DirectionState`) —
+  // the shared `@llui/interactions` direction-sync seam (#265 finding 6).
+  // Under 'rtl', ArrowLeft/ArrowRight swap meaning, and the overlay's
+  // `*-start`/`*-end` alignment tracks the inline-start/inline-end edge. An
+  // EXPLICIT direction is AUTHORITATIVE once it reaches `attachFloating`: a
+  // silently-overridden page direction laid a menu on `<html dir="rtl">` out
+  // LTR (#138 review, blocking 4) — `dirSource: 'explicit'` is what keeps
+  // that override from being overwritten by the next DOM observation.
 }
 ```
 
@@ -25732,6 +26108,24 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+}
+```
+
+##### `SubOverlayOptions` from `@llui/components/menu`
+
+```typescript
+export interface SubOverlayOptions {
+  /** The subTrigger value this level opens under. */
+  value: string
+  state: Signal<MenuState>
+  parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
+  align?: 'start' | 'end'
+  offset?: number
+  flip?: boolean
+  shift?: boolean
 }
 ```
 
@@ -27555,6 +27949,14 @@ function connect(
 function init(opts: ToasterInit = {}): ToasterState
 ```
 
+##### `isPaused()` from `@llui/components/toast`
+
+Whether any reason currently holds the toast's countdown paused.
+
+```typescript
+function isPaused(t: Pick<Toast, 'pausedBy'>): boolean
+```
+
 ##### `isPresent()` from `@llui/components/toast`
 
 Whether a toast with the given id is in the queue (mounted). Stays true
@@ -27606,33 +28008,80 @@ export type ToasterMsg =
   | { type: 'dismiss'; id: string }
   /** @intent("Dismiss every toast currently visible") */
   | { type: 'dismissAll' }
-  /** @intent("Patch fields on the toast with the given id (title, description, type, etc.)") */
-  | { type: 'update'; id: string; patch: Partial<Toast> }
+  /** @intent("Move the toast region to a different corner/edge of the viewport") */
+  | { type: 'setPlacement'; placement: ToastPlacement }
+  /** @intent("Patch mutable presentation fields on the toast with the given id (title, description, type, etc.); `id` cannot be patched") */
+  | { type: 'update'; id: string; patch: ToastPatch }
   /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
   | { type: 'tick'; id: string; elapsedMs: number }
   /** @intent("Pause auto-dismiss countdown for the toast with the given id") */
-  | { type: 'pause'; id: string }
-  /** @intent("Resume auto-dismiss countdown for the toast with the given id") */
-  | { type: 'resume'; id: string }
+  | { type: 'pause'; id: string; reason?: ToastPauseReason }
+  /** @intent("Resume auto-dismiss countdown for the toast with the given id (releases only the given reason, default manual)") */
+  | { type: 'resume'; id: string; reason?: ToastPauseReason }
   /** @intent("Pause auto-dismiss for every visible toast") */
-  | { type: 'pauseAll' }
-  /** @intent("Resume auto-dismiss for every visible toast") */
-  | { type: 'resumeAll' }
+  | { type: 'pauseAll'; reason?: ToastPauseReason }
+  /** @intent("Resume auto-dismiss for every visible toast (releases only the given reason, default manual)") */
+  | { type: 'resumeAll'; reason?: ToastPauseReason }
   /** @humanOnly Exit animation finished for the toast with the given id — remove it from the queue. */
   | { type: 'animationEnd'; id: string }
 ```
 
 ##### `ToastInput` from `@llui/components/toast`
 
-A new toast as supplied to `create`. `remainingMs`/`paused`/`status` are
-optional — seeded from `duration`/`false`/`'open'` when omitted.
+A new toast as supplied to `create`. `remainingMs`/`pausedBy`/`status` are
+optional — seeded from `duration`/`[]`/`'open'` when omitted.
 
 ```typescript
-export type ToastInput = Omit<Toast, 'remainingMs' | 'paused' | 'status'> & {
+export type ToastInput = Omit<Toast, 'remainingMs' | 'pausedBy' | 'status'> & {
   remainingMs?: number
-  paused?: boolean
+  pausedBy?: readonly ToastPauseReason[]
   status?: PresenceStatus
 }
+```
+
+##### `ToastPatch` from `@llui/components/toast`
+
+Fields an `update` message may patch on a mounted toast. `id` is the ONE
+truly immutable field — a toast is created once and dismissed once, never
+structurally replaced with a different id for the same row — so it is
+excluded here rather than silently ignored by the reducer. `type` and
+`ariaLive` (among others) ARE genuine mutable presentation fields (the
+`toast.promise`-style loading→success/error flow patches `type`, `title`
+and `description` on the same mounted toast) and `connect()`'s `toast()`
+builder binds every one of these reactively (never via a one-shot
+`peek()`), so a patch here is visible wherever it renders.
+
+`status`/`remainingMs`/`pausedBy` are excluded: they are LIFECYCLE fields the
+reducer itself owns (presence transitions, the tick-driven countdown,
+pause/resume) and a patch is the wrong channel for them — `dismiss`/`tick`/
+`pause`/`resume` already exist and a caller patching `remainingMs` directly
+would race the reducer's own countdown math. `duration` stays patchable
+(it IS presentation — the toast.promise flow moves a sticky `loading`
+toast to a finite `success`/`error` duration), so `update` re-seeds
+`remainingMs` from the new `duration` whenever `duration` is part of the
+patch (#265 A2) — otherwise a toast created sticky (duration: null,
+remainingMs frozen at 0) that is later patched to a finite duration would
+inherit that frozen 0 and dismiss on the very next tick instead of lasting
+its new duration.
+
+`undefined` on a REQUIRED field (`type`, `duration`, `dismissable`) means
+"not patched", the same as an absent key (#265 G6): `{ duration: undefined }`
+leaves the countdown alone rather than re-seeding it to 0 — patch
+`duration: null` to make a toast sticky. On an OPTIONAL field (`title`,
+`description`, `ariaLive`) `undefined` clears it, so a loading -> success
+patch can drop a description the success toast should not keep.
+
+```typescript
+export type ToastPatch = Partial<Omit<Toast, 'id' | 'status' | 'remainingMs' | 'pausedBy'>>
+```
+
+##### `ToastPauseReason` from `@llui/components/toast`
+
+Why a toast's countdown is paused. The row's own handlers use `'hover'` and
+`'focus'`; a `pause`/`resume` message without a reason uses `'manual'`.
+
+```typescript
+export type ToastPauseReason = (typeof PAUSE_REASONS)[number]
 ```
 
 ##### `ToastPlacement` from `@llui/components/toast`
@@ -27665,11 +28114,15 @@ Architecture (timer-free, tick-driven — same division of labor as timer.ts):
 
 - `toast.toaster` state manages a collection of toasts. Each toast carries
   its own countdown in state: `duration` (null = sticky), `remainingMs`,
-  and `paused`.
+  and `pausedBy` (the set of reasons currently holding it paused).
 - The machine owns NO interval. The consumer drives the countdown with a
   `tick(id, elapsedMs)` message (e.g. via @llui/effects `interval`),
-  subtracting the elapsed wall time since the last tick. A `paused` toast
-  freezes its `remainingMs` (ticks are ignored).
+  subtracting the elapsed wall time since the last tick. A paused toast
+  (any reason held) freezes its `remainingMs` (ticks are ignored).
+- Pause REASONS are independent (#265 G6): the row's hover pauses/resumes
+  `'hover'`, focus entering/leaving the row pauses/resumes `'focus'`, and
+  `pause`/`resume` with no reason use `'manual'`. Pointer-leave therefore
+  never resumes a toast whose close button still has keyboard focus.
 - When `remainingMs` hits 0 the REDUCER dismisses that toast itself, so
   there is no consumer/runtime race over who removes it.
 
@@ -27711,10 +28164,14 @@ export interface Toast {
   duration: number | null
   /** ms left before auto-dismiss. Counts down via `tick`. */
   remainingMs: number
-  /** Whether the toast can be manually dismissed. */
+  /** Whether the USER can dismiss the toast: `false` hides the close trigger
+   * (`closeTrigger.hidden`) and ignores its click. A `dismiss` message from
+   * code still removes it. Patchable. */
   dismissable: boolean
-  /** Pause flag — frozen countdown while set (consumer sets on hover/focus). */
-  paused: boolean
+  /** The reasons currently holding the countdown paused, as a canonical set
+   * (unique, in {@link ToastPauseReason} order). Empty = running. Owned by the
+   * reducer: change it with `pause`/`resume`, read it with {@link isPaused}. */
+  pausedBy: ToastPauseReason[]
   /** Optional per-toast politeness override; otherwise derived from `type`. */
   ariaLive?: ToastPoliteness
   /**
@@ -27754,10 +28211,11 @@ export interface ToasterParts {
    * Build the per-row part descriptors for one toast. Takes the row's
    * `Signal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
    * consumers don't `.peek()` in a reactive slot (which the signal compiler
-   * rejects). A toast's `id`/`type`/`ariaLive` are immutable for its lifetime —
-   * created then dismissed, never structurally replaced — so this reads the
-   * value once internally to build the id/role wiring; the keyed `each`
-   * rebuilds the row if `id` changes.
+   * rejects). Only `id` is immutable for a toast's lifetime — created then
+   * dismissed, never structurally replaced — so this reads `id` once
+   * internally to build id-derived wiring (the keyed `each` rebuilds the row
+   * if `id` changes); every other field (`type`, `ariaLive`, `status`, …) is
+   * bound reactively so an `update` patch renders wherever it appears.
    */
   toast: (toast: Signal<Toast>) => ToastItemParts
   /**
@@ -27799,21 +28257,33 @@ export interface ToasterState {
 ```typescript
 export interface ToastItemParts {
   root: {
-    role: 'status' | 'alert'
+    /**
+     * Reactive: derived from the toast's current `type`/`ariaLive` (see
+     * {@link politeness}), never frozen at mount — an `update` patching
+     * either is visible here.
+     */
+    role: Signal<'status' | 'alert'>
     'aria-atomic': 'true'
-    'aria-live': ToastPoliteness
+    /** Reactive — see `role` above. */
+    'aria-live': Signal<ToastPoliteness>
     id: string
     'data-scope': 'toast'
     'data-part': 'root'
-    'data-type': ToastType
+    /** Reactive: an `update` patching `type` (e.g. a promise toast moving
+     * loading → success) is visible here, not frozen at mount. */
+    'data-type': Signal<ToastType>
     'data-id': string
     /** Reactive presence status (closed/opening/open/closing) for CSS-driven
      * enter/exit animations. */
     'data-state': Signal<PresenceStatus>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
-    onFocus: (e: FocusEvent) => void
-    onBlur: (e: FocusEvent) => void
+    /** Bubbling — a plain (non-bubbling) `onFocus`/`onBlur` here would never
+     * fire for the only naturally focusable descendant, the close button,
+     * so pause-on-focus would be dead: nothing but the row itself receives
+     * `focus`/`blur` directly, and it carries no `tabindex`. */
+    onFocusIn: (e: FocusEvent) => void
+    onFocusOut: (e: FocusEvent) => void
     /** Advance past the exit animation: a `'closing'` toast is removed from the
      * queue once its animation/transition ends. */
     onAnimationEnd: (e: AnimationEvent) => void
@@ -27834,6 +28304,12 @@ export interface ToastItemParts {
     'aria-label': string
     'data-scope': 'toast'
     'data-part': 'close-trigger'
+    /** Reactive: true while the toast is not `dismissable` — the button leaves
+     * the accessibility tree and the tab order. Hiding it while it has focus
+     * is safe for the `'focus'` pause reason: the browser's focus fixup fires
+     * `blur`/`focusout` on the row (verified in Chromium), which releases it. */
+    hidden: Signal<boolean>
+    /** Dismisses the toast; ignored while it is not `dismissable`. */
     onClick: (e: MouseEvent) => void
   }
 }
@@ -28345,6 +28821,12 @@ function init(opts: ComboboxInit = {}): ComboboxState
 function isCreateOption(value: string): boolean
 ```
 
+##### `loadProjection()` from `@llui/components/combobox`
+
+```typescript
+function loadProjection(state: Pick<ComboboxState, 'status' | 'items'>): LoadProjection
+```
+
 ##### `overlay()` from `@llui/components/combobox`
 
 ```typescript
@@ -28405,14 +28887,81 @@ export type ComboboxMsg =
   | { type: 'highlight'; value: string | null }
   /** @intent("Pick the currently-highlighted option in the filtered list") */
   | { type: 'selectHighlighted' }
-  /** @humanOnly */
+  /**
+   * @humanOnly
+   *
+   * Replace `items` (and optionally `disabled`) synchronously — the same
+   * highlight-resolution policy as `loadSuccess` applies: a highlight that no
+   * longer survives the fresh list moves to the first enabled match WHILE
+   * OPEN, or to `null` WHILE CLOSED (#265 G3), since a background refresh
+   * must not manufacture a highlight before the control is ever opened.
+   */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
-  /** @humanOnly */
-  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /**
+   * @humanOnly
+   *
+   * Atomic replacement: `items` is required. `disabled` is an OPTIONAL
+   * companion that replaces `disabledItems` when present (omitted ⇒
+   * unchanged). `groups` is different: omitting it RESETS to no groups
+   * (`[]`), the same as `init()` with no `groups` option — a fresh
+   * replacement with no `groups` describes a flat result, and carrying a
+   * PREVIOUS load's groups forward would keep describing options this
+   * replacement never mentioned as belonging to a group that may no longer
+   * apply (#265 A3). Every field the fresh `items`/`disabled`/`groups` makes
+   * inconsistent is reconciled in this SAME reducer step, never in a
+   * follow-up message. `value` (selection) is dropped when it no longer
+   * names a value in the new `items` (after the new `disabled` is applied).
+   * `highlightedValue` is kept only when it is BOTH still in the fresh
+   * filtered list AND not newly disabled. Otherwise the fallback depends on
+   * whether the listbox is open: WHILE OPEN it moves to the first enabled
+   * match (or `null` when none is enabled) — never left dangling for a
+   * render in between, and never left naming an option that is now
+   * disabled. WHILE CLOSED it always resolves to `null` instead, even when
+   * the fresh list has enabled options: the listbox content is unmounted
+   * while closed, so there is no option `aria-activedescendant` could
+   * correctly name, and a background load (a prefetch, a poll) must not
+   * manufacture a highlight before the control is ever opened — re-opening
+   * always reseeds the highlight itself (#265 G3).
+   */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
   /** @humanOnly */
   | { type: 'loadError'; requestId: number; error: string }
+```
+
+##### `LoadProjection` from `@llui/components/combobox`
+
+A single, mutually-exclusive summary of the async load lifecycle, derived
+from `status` and whether any items are currently on hand. This exists so a
+consumer never has to reconcile independent booleans (`isLoading`,
+`isEmpty`, `hasError`) that can read true at the same time — exactly the
+defect #265 finding 11 named test-first. There are five states partitioning
+every reachable `(status, items.length)` pair:
+
+- `'initial-empty'` — nothing has ever loaded and none were given
+  synchronously (`status === 'idle'`, no items).
+- `'loading'` — a fetch is in flight and there is nothing yet to show (a
+  first-ever load).
+- `'stale-results'` — the STALE-WHILE-REVALIDATE state: a fetch is in
+  flight while a previous list is still on screen. `loadStart` never
+  clears `items`, so the previous results keep rendering, filterable and
+  selectable, until the matching `loadSuccess`/`loadError` lands.
+- `'success'` — the current items are the result of a completed load, or
+  were given synchronously and never superseded by a failed fetch.
+- `'error'` — the most recent fetch failed. Per the same policy, items from
+  an earlier successful load are left mounted and selectable; only the
+  live region / a consumer's own error slot communicate the failure, so
+  `'error'` is reported the same whether or not stale items remain.
+
+```typescript
+export type LoadProjection = 'initial-empty' | 'loading' | 'stale-results' | 'success' | 'error'
 ```
 
 ##### `SelectionMode` from `@llui/components/combobox`
@@ -28581,9 +29130,17 @@ export interface ComboboxParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11) — see
+     * {@link LoadProjection}. Mirrors the top-level `loadState` signal. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'combobox'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'`. A single
+   * signal instead of independent `isLoading`/`isEmpty`/`hasError` booleans,
+   * so it can never contradict itself. See {@link LoadProjection}. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — it is NOT used for identity (highlight,
    * selection and ids are all value-keyed), so a reused row is never stale. */
@@ -28867,6 +29424,8 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+  /** Selector for an arrow rendered inside the content element. When present,
+   * floating positioning owns its absolute edge geometry transactionally. */
   arrowSelector?: string
 }
 ```
@@ -30480,6 +31039,16 @@ function isPresent(state: ContextMenuState): boolean
 function overlay(opts: OverlayOptions): Mountable
 ```
 
+##### `subOverlay()` from `@llui/components/context-menu`
+
+Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
+consumer-wired `watchSubmenuPositioning` (removed). See
+`menu-machine.ts:subOverlay`'s doc comment for the full contract.
+
+```typescript
+function subOverlay(opts: SubOverlayOptions): Mountable
+```
+
 ##### `update()` from `@llui/components/context-menu`
 
 ```typescript
@@ -30553,8 +31122,10 @@ export type ContextMenuMsg =
   | { type: 'setItems'; items: ContextMenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
-  | { type: 'setDir'; dir: TextDirection | null }
+  /** @intent("Set the reading direction — 'ltr' or 'rtl'") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   /** @humanOnly */
   | { type: 'animationEnd' }
 ```
@@ -30605,10 +31176,12 @@ export interface ContextMenuInit {
   items?: ContextMenuItem[]
   checked?: string[]
   closeOnSelect?: boolean
-  /** Omit to follow the page's own direction (see `MenuState.dir`). */
-  dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** Omit to follow the page's own direction (see {@link ContextMenuState}'s
+   * `dir`/`dirSource`, resolved from the mounted trigger by `directionSync`). */
+  dir?: TextDirection
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 ```
@@ -30617,8 +31190,11 @@ export interface ContextMenuInit {
 
 ```typescript
 export interface ContextMenuParts {
-  /** The element users right-click to open the menu. */
+  /** The element users right-click to open the menu. `id` is REQUIRED — it is
+   * the scope `directionSync` (below) observes for live ancestor `dir`
+   * changes, since it (unlike `content`) is always mounted (#265 finding 6). */
   trigger: {
+    id: string
     'data-scope': 'context-menu'
     'data-part': 'trigger'
     onContextMenu: (e: MouseEvent) => void
@@ -30651,6 +31227,12 @@ export interface ContextMenuParts {
   subTrigger: (value: string) => ContextMenuSubTriggerParts
   subPositioner: (value: string) => ContextMenuSubPositionerParts
   subContent: (value: string) => ContextMenuSubContentParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * observing the TRIGGER (always mounted, unlike the content) as this
+   * instance's root. A discarded `Mountable` is inert, so this must be placed
+   * in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -30691,6 +31273,24 @@ export interface OverlayOptions {
    */
   transition?: TransitionOptions
   target?: string | HTMLElement
+}
+```
+
+##### `SubOverlayOptions` from `@llui/components/context-menu`
+
+```typescript
+export interface SubOverlayOptions {
+  /** The subTrigger value this level opens under. */
+  value: string
+  state: Signal<ContextMenuState>
+  parts: Pick<ContextMenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
+  align?: 'start' | 'end'
+  offset?: number
+  flip?: boolean
+  shift?: boolean
 }
 ```
 
@@ -35462,6 +36062,8 @@ export type NavMenuMsg =
   | { type: 'focus'; id: string | null }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: 'ltr' | 'rtl' }
   /** @intent("Replace the list of ids eligible for the roving tab stop, in document order") */
   | { type: 'setItems'; items: string[] }
 ```
@@ -35535,6 +36137,13 @@ export interface NavMenuInit {
 ```typescript
 export interface NavMenuParts {
   root: {
+    // `id` is REQUIRED — it is the scope `directionSyncMount` (below) looks
+    // the live root up by, the same contract `tabs`/`carousel`/`pagination`'s
+    // own `root.id` already honours. A consumer that overrides it with a
+    // DIFFERENT id breaks the direction sync silently (#265 finding 6): the
+    // watcher would observe nothing, since `getElementByIdInScope` would
+    // never find this element under the id it was given.
+    id: string
     // Site navigation is NOT an application menu: it uses a `nav` landmark with
     // disclosure buttons, not menubar/menu/menuitem roles. Render the root as a
     // `<nav>` element; `aria-label` names the landmark.
@@ -35570,6 +36179,11 @@ export interface NavMenuParts {
     'data-part': 'indicator'
     'data-state': Signal<'visible' | 'hidden'>
   }
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * same as `tabs`/`carousel`/`pagination`'s own `directionSync` part. A
+   * discarded `Mountable` is inert, so this must be placed in the view. */
+  directionSync: Mountable
   /**
    * Parts for one trigger (+ its panel when it is a branch).
    *
@@ -35637,8 +36251,13 @@ export interface NavMenuState {
    */
   items: string[]
   disabled: boolean
-  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning.
+   * Routed through the shared `@llui/interactions` direction-sync seam
+   * (`../utils/direction.js`) rather than a second resolver — `dirSource`
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). */
   dir: 'ltr' | 'rtl'
+  dirSource: DirectionSource
 }
 ```
 
@@ -37574,6 +38193,21 @@ dismissable stack the menu machine uses.
 function overlay(opts: MenubarOverlayOptions): Mountable
 ```
 
+##### `subOverlay()` from `@llui/components/menubar`
+
+Engine-owned floating overlay for one submenu level of an embedded menu
+(#265 A4) — replaces the consumer-wired `watchSubmenuPositioning` (removed).
+Unlike `menu`/`context-menu`'s own `subOverlay`, this one reads the ROOT
+`MenubarState` and reaches into the one open menu's embedded `MenuState`
+(`s.menuStates[menuId]`) for both open-membership and direction, because a
+menubar's `overlay()` is likewise keyed on root state (`s.open === menuId`)
+rather than on the embedded menu's own state. See
+`menu-machine.ts:subOverlay`'s doc comment for the shared contract.
+
+```typescript
+function subOverlay(opts: SubOverlayOptions): Mountable
+```
+
 ##### `update()` from `@llui/components/menubar`
 
 ```typescript
@@ -37593,11 +38227,17 @@ export type MenubarMsg =
   /** @intent("Move roving focus to the menu with the given id (switches the open menu in open mode)") */
   | { type: 'focusMenu'; id: string }
   /** @humanOnly */
+  | { type: 'syncTriggerFocus'; id: string }
+  /** @humanOnly */
   | { type: 'focusNext' }
   /** @humanOnly */
   | { type: 'focusPrev' }
   /** @humanOnly */
   | { type: 'menuMsg'; id: string; msg: MenuMsg }
+  /** @intent("Set the reading direction") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
 ```
 
 #### Interfaces
@@ -37620,6 +38260,10 @@ export interface MenubarInit {
   menus: MenubarMenu[]
   /** Initially-focused menu id (defaults to the first enabled menu). */
   focused?: string | null
+  /** Reading direction for horizontal keys and delegated menus. Omit to
+   * follow the page's own direction (see {@link MenubarState}'s `dir`/
+   * `dirSource`, resolved from the mounted root by `directionSync`). */
+  dir?: TextDirection
 }
 ```
 
@@ -37679,6 +38323,11 @@ export interface MenubarOverlayOptions {
 ```typescript
 export interface MenubarParts {
   root: {
+    // `id` is REQUIRED — it is the scope `directionSync` (below) looks the
+    // live root up by, the same contract `navigation-menu`'s own `root.id`
+    // already honours (#265 finding 6). A consumer that overrides it with a
+    // DIFFERENT id breaks the direction sync silently.
+    id: string
     role: 'menubar'
     'aria-label': string
     'data-scope': 'menubar'
@@ -37687,6 +38336,10 @@ export interface MenubarParts {
   menuTrigger: (id: string) => MenubarTriggerParts
   /** Delegated per-menu part bag (content/item/checkboxItem/submenu/…). */
   menu: (id: string) => MenuParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6). A
+   * discarded `Mountable` is inert, so this must be placed in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -37704,6 +38357,16 @@ export interface MenubarState {
   disabledMenus: string[]
   /** Embedded per-menu machine states, keyed by menu id. */
   menuStates: Record<string, MenuState>
+  /** Reading direction for both the bar and its delegated menu trees. Routed
+   * through the shared `@llui/interactions` direction-sync seam
+   * (`../utils/direction.js`) rather than a second resolver — `dirSource`
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). Every
+   * embedded `MenuState`'s own `dir` is kept explicitly in sync with this one
+   * (see `syncEmbeddedDir` below), so a delegated menu never disagrees with
+   * the bar that owns it. */
+  dir: TextDirection
+  dirSource: DirectionSource
 }
 ```
 
@@ -37726,6 +38389,27 @@ export interface MenubarTriggerParts {
   onPointerEnter: (e: PointerEvent) => void
   onFocus: (e: FocusEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
+}
+```
+
+##### `SubOverlayOptions` from `@llui/components/menubar`
+
+```typescript
+export interface SubOverlayOptions {
+  /** The open menu's id (`opts.menuId` of the enclosing `overlay()`). */
+  menuId: string
+  /** The subTrigger value this level opens under. */
+  value: string
+  /** The ROOT `Signal<MenubarState>` — the same one passed to `connect()`. */
+  state: Signal<MenubarState>
+  parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
+  align?: 'start' | 'end'
+  offset?: number
+  flip?: boolean
+  shift?: boolean
 }
 ```
 
@@ -39446,6 +40130,19 @@ export type SearchableSelectMsg =
   | { type: 'triggerType'; char: string }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  /** @intent("Mark an async option fetch as started; pass the request's id") */
+  | { type: 'loadStart'; requestId: number }
+  /** @humanOnly — atomic replacement passthrough to `combobox`; see its own
+   * `loadSuccess` doc for the reconciliation this performs in one step. */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
+  /** @humanOnly */
+  | { type: 'loadError'; requestId: number; error: string }
 ```
 
 ##### `SearchableSelectSelectionMode` from `@llui/components/patterns`
@@ -40202,9 +40899,20 @@ export interface SearchableSelectParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11); mirrors the
+     * top-level `loadState` signal. See `combobox`'s `LoadProjection`. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'searchable-select'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'` — never
+   * independent booleans that can contradict each other. Documents the
+   * stale-while-revalidate policy: `'stale-results'` means a fetch is in
+   * flight while the previous items are still mounted and selectable;
+   * `'error'` is reported the same whether or not stale items remain
+   * mounted underneath it. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */
@@ -40219,7 +40927,10 @@ export interface SearchableSelectParts {
     'data-part': 'clear'
     onClick: (e: MouseEvent) => void
   }
-  /** Polite live region announcing the no-results / result count. */
+  /** Polite live region announcing the no-results / result count once the
+   * list is settled (`loadState` is `'success'` or `'initial-empty'`), the
+   * error text on `'error'`, and nothing while a fetch is in flight
+   * (`'loading'` / `'stale-results'`). */
   liveRegion: {
     role: 'status'
     'aria-live': 'polite'
@@ -40228,7 +40939,9 @@ export interface SearchableSelectParts {
     'data-part': 'live-region'
     text: Signal<string>
   }
-  /** Empty-state container (render when the filtered list is empty). */
+  /** Empty-state container. `hidden` is false only when the SETTLED filtered
+   * list is empty — never while loading, revalidating, or after a failed
+   * fetch (the live region / an error slot own those). */
   empty: {
     'data-scope': 'searchable-select'
     'data-part': 'empty'
@@ -41409,6 +42122,34 @@ function update(
 export type AsyncStatus = 'idle' | 'loading' | 'loaded' | 'error'
 ```
 
+##### `LoadProjection` from `@llui/components/patterns/searchable-select`
+
+A single, mutually-exclusive summary of the async load lifecycle, derived
+from `status` and whether any items are currently on hand. This exists so a
+consumer never has to reconcile independent booleans (`isLoading`,
+`isEmpty`, `hasError`) that can read true at the same time — exactly the
+defect #265 finding 11 named test-first. There are five states partitioning
+every reachable `(status, items.length)` pair:
+
+- `'initial-empty'` — nothing has ever loaded and none were given
+  synchronously (`status === 'idle'`, no items).
+- `'loading'` — a fetch is in flight and there is nothing yet to show (a
+  first-ever load).
+- `'stale-results'` — the STALE-WHILE-REVALIDATE state: a fetch is in
+  flight while a previous list is still on screen. `loadStart` never
+  clears `items`, so the previous results keep rendering, filterable and
+  selectable, until the matching `loadSuccess`/`loadError` lands.
+- `'success'` — the current items are the result of a completed load, or
+  were given synchronously and never superseded by a failed fetch.
+- `'error'` — the most recent fetch failed. Per the same policy, items from
+  an earlier successful load are left mounted and selectable; only the
+  live region / a consumer's own error slot communicate the failure, so
+  `'error'` is reported the same whether or not stale items remain.
+
+```typescript
+export type LoadProjection = 'initial-empty' | 'loading' | 'stale-results' | 'success' | 'error'
+```
+
 ##### `SearchableSelectMsg` from `@llui/components/patterns/searchable-select`
 
 ```typescript
@@ -41441,6 +42182,19 @@ export type SearchableSelectMsg =
   | { type: 'triggerType'; char: string }
   /** @humanOnly */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
+  /** @intent("Mark an async option fetch as started; pass the request's id") */
+  | { type: 'loadStart'; requestId: number }
+  /** @humanOnly — atomic replacement passthrough to `combobox`; see its own
+   * `loadSuccess` doc for the reconciliation this performs in one step. */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
+  /** @humanOnly */
+  | { type: 'loadError'; requestId: number; error: string }
 ```
 
 ##### `SelectionMode` from `@llui/components/patterns/searchable-select`
@@ -41670,9 +42424,20 @@ export interface SearchableSelectParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11); mirrors the
+     * top-level `loadState` signal. See `combobox`'s `LoadProjection`. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'searchable-select'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'` — never
+   * independent booleans that can contradict each other. Documents the
+   * stale-while-revalidate policy: `'stale-results'` means a fetch is in
+   * flight while the previous items are still mounted and selectable;
+   * `'error'` is reported the same whether or not stale items remain
+   * mounted underneath it. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */
@@ -41687,7 +42452,10 @@ export interface SearchableSelectParts {
     'data-part': 'clear'
     onClick: (e: MouseEvent) => void
   }
-  /** Polite live region announcing the no-results / result count. */
+  /** Polite live region announcing the no-results / result count once the
+   * list is settled (`loadState` is `'success'` or `'initial-empty'`), the
+   * error text on `'error'`, and nothing while a fetch is in flight
+   * (`'loading'` / `'stale-results'`). */
   liveRegion: {
     role: 'status'
     'aria-live': 'polite'
@@ -41696,7 +42464,9 @@ export interface SearchableSelectParts {
     'data-part': 'live-region'
     text: Signal<string>
   }
-  /** Empty-state container (render when the filtered list is empty). */
+  /** Empty-state container. `hidden` is false only when the SETTLED filtered
+   * list is empty — never while loading, revalidating, or after a failed
+   * fetch (the live region / an error slot own those). */
   empty: {
     'data-scope': 'searchable-select'
     'data-part': 'empty'

@@ -122,6 +122,37 @@ async function decodePngColors(pngBase64: string): Promise<string[]> {
 }
 
 /**
+ * The real COMPOSITED pixel at viewport point (`x`, `y`): a 1x1 page
+ * screenshot, decoded in the page. It is what the user sees there — every
+ * layer's paint, in paint order — where a computed style is only one
+ * element's own value. That is the only way to prove PAINT order: a scrim
+ * painted over a surface changes this pixel while leaving every computed
+ * style, and every hit-test through an inert scrim, untouched.
+ */
+export async function screenPixel(page: Page, x: number, y: number): Promise<RGB> {
+  const shot = await page.screenshot({ clip: { x, y, width: 1, height: 1 } })
+  return page.evaluate(decodePngFirstPixel, shot.toString('base64'))
+}
+
+/** Self-contained: decodes a base64 PNG and returns its top-left pixel. */
+async function decodePngFirstPixel(pngBase64: string): Promise<RGB> {
+  const image = new Image()
+  const loaded = new Promise<void>((res, rej) => {
+    image.onload = () => res()
+    image.onerror = () => rej(new Error('image failed to decode'))
+  })
+  image.src = `data:image/png;base64,${pngBase64}`
+  await loaded
+  const canvas = document.createElement('canvas')
+  canvas.width = image.naturalWidth
+  canvas.height = image.naturalHeight
+  const ctx = canvas.getContext('2d')!
+  ctx.drawImage(image, 0, 0)
+  const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data
+  return { r: r!, g: g!, b: b! }
+}
+
+/**
  * Self-contained: decodes a base64 PNG and returns a normalized SPATIAL
  * fingerprint — the element scaled to a fixed 12x12 grid (`drawImage` with
  * explicit destination width/height, which resamples rather than merely

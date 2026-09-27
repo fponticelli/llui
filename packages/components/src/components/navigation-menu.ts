@@ -1,7 +1,15 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Mountable, Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { navigationMenuLocale } from '../locale/navigation-menu.js'
-import { flipArrow } from '../utils/direction.js'
+import {
+  directionSyncMount,
+  eventDirection,
+  flipArrow,
+  initDirection,
+  setDirection,
+  syncDomDirection,
+  type DirectionSource,
+} from '../utils/direction.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
 import { rovingTabStop } from '../utils/list-navigation.js'
 import { deriveOnceN } from '../utils/derive.js'
@@ -56,8 +64,13 @@ export interface NavMenuState {
    */
   items: string[]
   disabled: boolean
-  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning.
+   * Routed through the shared `@llui/interactions` direction-sync seam
+   * (`../utils/direction.js`) rather than a second resolver — `dirSource`
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). */
   dir: 'ltr' | 'rtl'
+  dirSource: DirectionSource
 }
 
 export type NavMenuMsg =
@@ -73,6 +86,8 @@ export type NavMenuMsg =
   | { type: 'focus'; id: string | null }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: 'ltr' | 'rtl' }
   /** @intent("Replace the list of ids eligible for the roving tab stop, in document order") */
   | { type: 'setItems'; items: string[] }
 
@@ -92,12 +107,13 @@ export function init(opts: NavMenuInit = {}): NavMenuState {
     focused: opts.focused ?? null,
     items: opts.items ?? [],
     disabled: opts.disabled ?? false,
-    dir: opts.dir ?? 'ltr',
+    ...initDirection(opts.dir),
   }
 }
 
 export function update(state: NavMenuState, msg: NavMenuMsg): [NavMenuState, never[]] {
-  if (msg.type === 'setDir') return [{ ...state, dir: msg.dir }, []]
+  if (msg.type === 'setDir') return [setDirection(state, msg.dir), []]
+  if (msg.type === 'syncDomDir') return [syncDomDirection(state, msg.dir), []]
   // Accepted while disabled: it is presentation order, not an interaction.
   if (msg.type === 'setItems') return [{ ...state, items: msg.items }, []]
   if (state.disabled) return [state, []]
@@ -168,6 +184,13 @@ export interface NavItemParts {
 
 export interface NavMenuParts {
   root: {
+    // `id` is REQUIRED — it is the scope `directionSyncMount` (below) looks
+    // the live root up by, the same contract `tabs`/`carousel`/`pagination`'s
+    // own `root.id` already honours. A consumer that overrides it with a
+    // DIFFERENT id breaks the direction sync silently (#265 finding 6): the
+    // watcher would observe nothing, since `getElementByIdInScope` would
+    // never find this element under the id it was given.
+    id: string
     // Site navigation is NOT an application menu: it uses a `nav` landmark with
     // disclosure buttons, not menubar/menu/menuitem roles. Render the root as a
     // `<nav>` element; `aria-label` names the landmark.
@@ -203,6 +226,11 @@ export interface NavMenuParts {
     'data-part': 'indicator'
     'data-state': Signal<'visible' | 'hidden'>
   }
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * same as `tabs`/`carousel`/`pagination`'s own `directionSync` part. A
+   * discarded `Mountable` is inert, so this must be placed in the view. */
+  directionSync: Mountable
   /**
    * Parts for one trigger (+ its panel when it is a branch).
    *
@@ -371,6 +399,7 @@ export function connect(
 
   return {
     root: {
+      id: opts.id,
       'aria-label': opts.label ?? locale.label,
       'data-scope': 'navigation-menu',
       'data-part': 'root',
@@ -386,6 +415,7 @@ export function connect(
       // list always has a top-level entry — the one the arrow points at.
       'data-state': state.map((st) => (st.open.length > 0 ? 'visible' : 'hidden')),
     },
+    directionSync: directionSyncMount(opts.id, (dir) => send({ type: 'syncDomDir', dir })),
     item: (id: string, options: { isBranch: boolean; ancestorIds?: string[] }): NavItemParts => {
       const ancestorIds = options.ancestorIds ?? []
       // First call wins the position, so re-mounting a row keeps document
@@ -423,7 +453,10 @@ export function connect(
           // branch and is never flipped.
           onKeyDown: tagSend(send, ['openBranch', 'closeBranch'], (e: KeyboardEvent) => {
             if (!options.isBranch) return
-            const key = flipArrow(e.key, state.peek().dir)
+            const key = flipArrow(
+              e.key,
+              eventDirection(state.peek(), e.currentTarget as Element | null),
+            )
             if (key === 'ArrowRight' || e.key === 'ArrowDown') {
               e.preventDefault()
               send({ type: 'openBranch', id, ancestorIds })

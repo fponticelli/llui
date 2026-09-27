@@ -1,13 +1,16 @@
 import { div } from '@llui/dom'
 import { classPart } from '@/lib/utils'
+import { floatingOverlayMotionRecipe } from '@/lib/floating-motion'
 
-/** Ported verbatim from shadcn/ui (MIT © 2023 shadcn), minus
- * `origin-(--radix-hover-card-content-transform-origin)` — see `popover.ts`. */
+/** Ported from shadcn/ui (MIT © 2023 shadcn), with LLui's shared presence,
+ * viewport-containment, and forced-colors policies. The Radix-specific
+ * `origin-(--radix-hover-card-content-transform-origin)` is omitted; see
+ * `popover.ts`. */
 export const HoverCardContent = classPart(
   div,
-  'z-50 w-64 rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+  `z-50 w-64 max-w-[calc(100vw-2rem)] max-h-[var(--llui-floating-available-height,calc(100dvh-2rem))] overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] ${floatingOverlayMotionRecipe}`,
 )
 export const HoverCardArrow = classPart(
   div,
-  'size-2.5 rotate-45 rounded-[2px] border border-border bg-popover',
+  'absolute size-2.5 rotate-45 rounded-[2px] border border-border bg-popover forced-colors:border-[CanvasText] forced-colors:bg-[Canvas]',
 )

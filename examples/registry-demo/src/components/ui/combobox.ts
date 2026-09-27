@@ -39,6 +39,6 @@ export { SelectContent as ComboboxContent } from './select'
 
 export const ComboboxTrigger = classPart(
   button,
-  'absolute top-0 right-0 flex size-9 items-center justify-center text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50',
+  'absolute top-0 end-0 flex size-9 items-center justify-center text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 forced-colors:text-[CanvasText]',
 )
 export const ComboboxLiveRegion = classPart(div, 'sr-only')

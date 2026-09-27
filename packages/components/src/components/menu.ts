@@ -1,7 +1,12 @@
 import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
-import { type TextDirection } from '../utils/direction.js'
+import {
+  directionSyncMount,
+  floatingDir,
+  initDirection,
+  type TextDirection,
+} from '../utils/direction.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
 import { presenceEndProps } from '../utils/presence-end.js'
@@ -24,6 +29,7 @@ import {
   setHighlight,
   createMenuTreeParts,
   activeMenuHighlight,
+  subOverlay as machineSubOverlay,
 } from './menu-machine.js'
 
 /**
@@ -71,17 +77,14 @@ export interface MenuState extends MenuTreeState {
   /** Accumulator for typeahead search (scoped to the deepest matching level). */
   typeahead: string
   typeaheadExpiresAt: number
-  /**
-   * Reading direction, or `null` for "the host never said — let the page
-   * decide". Under 'rtl', ArrowLeft/ArrowRight swap meaning, and the overlay's
-   * `*-start`/`*-end` alignment tracks the inline-start/inline-end edge.
-   *
-   * `null` rather than an `'ltr'` default because the value is AUTHORITATIVE
-   * once it reaches `attachFloating`: a concrete default overrode the page, so
-   * a menu on `<html dir="rtl">` was laid out LTR (#138 review, blocking 4).
-   * See {@link floatingDir}.
-   */
-  dir: TextDirection | null
+  // `dir` + `dirSource` come from `MenuTreeState` (extends `DirectionState`) —
+  // the shared `@llui/interactions` direction-sync seam (#265 finding 6).
+  // Under 'rtl', ArrowLeft/ArrowRight swap meaning, and the overlay's
+  // `*-start`/`*-end` alignment tracks the inline-start/inline-end edge. An
+  // EXPLICIT direction is AUTHORITATIVE once it reaches `attachFloating`: a
+  // silently-overridden page direction laid a menu on `<html dir="rtl">` out
+  // LTR (#138 review, blocking 4) — `dirSource: 'explicit'` is what keeps
+  // that override from being overwritten by the next DOM observation.
 }
 
 export type MenuMsg =
@@ -113,8 +116,10 @@ export type MenuMsg =
   | { type: 'setItems'; items: MenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
-  | { type: 'setDir'; dir: TextDirection | null }
+  /** @intent("Set the reading direction — 'ltr' or 'rtl'") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   /** @humanOnly */
   | { type: 'animationEnd' }
 
@@ -124,10 +129,12 @@ export interface MenuInit {
   highlighted?: string | null
   checked?: string[]
   closeOnSelect?: boolean
-  /** Omit to follow the page's own direction (see {@link MenuState.dir}). */
-  dir?: TextDirection | null
-  /** When false, closing the menu plays an exit animation and the content stays
-   * mounted (status 'closing') until an `animationEnd`. Default true: instant. */
+  /** Omit to follow the page's own direction (see {@link MenuState}'s `dir`/
+   * `dirSource`, resolved from the mounted root by `directionSync`). */
+  dir?: TextDirection
+  /** When false, opening and closing play enter/exit animations and the content
+   * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
+   * Default true: instant. */
   skipAnimations?: boolean
 }
 
@@ -144,18 +151,8 @@ export function init(opts: MenuInit = {}): MenuState {
     closeOnSelect: opts.closeOnSelect ?? false,
     typeahead: '',
     typeaheadExpiresAt: 0,
-    dir: opts.dir ?? null,
+    ...initDirection(opts.dir),
   }
-}
-
-/**
- * The direction to hand `attachFloating`. `undefined` means "do not declare
- * one" — floating-ui then reads the floating element's own computed direction,
- * which is what an RTL page wants. Anything else overrides the page, so it is
- * only produced when the host actually asked for it (#138 review, blocking 4).
- */
-export function floatingDir(state: MenuState): TextDirection | undefined {
-  return state.dir ?? undefined
 }
 
 // ---- presence lifecycle (composes the shared machine's status helpers) ----
@@ -187,7 +184,7 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
         {
           ...state,
           open: true,
-          status: statusOnOpen(state.status),
+          status: statusOnOpen(state.status, state.skipAnimations),
           highlights: setHighlight(state.highlights, '', highlighted),
         },
         [],
@@ -201,7 +198,7 @@ export function update(state: MenuState, msg: MenuMsg): [MenuState, never[]] {
         {
           ...state,
           open: true,
-          status: statusOnOpen(state.status),
+          status: statusOnOpen(state.status, state.skipAnimations),
           highlights: setHighlight(
             state.highlights,
             '',
@@ -272,6 +269,12 @@ export interface MenuParts {
   subTrigger: (value: string) => MenuSubTriggerParts
   subPositioner: (value: string) => MenuSubPositionerParts
   subContent: (value: string) => MenuSubContentParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * observing the TRIGGER (always mounted, unlike the content) as this
+   * instance's root. A discarded `Mountable` is inert, so this must be placed
+   * in the view. */
+  directionSync: Mountable
 }
 
 export interface ConnectOptions {
@@ -362,6 +365,7 @@ export function connect(
     subTrigger: parts.subTrigger,
     subPositioner: parts.subPositioner,
     subContent: parts.subContent,
+    directionSync: directionSyncMount(triggerId, (dir) => send({ type: 'syncDomDir', dir })),
   }
 }
 
@@ -419,6 +423,7 @@ export function overlay(opts: OverlayOptions): Mountable {
       flip: opts.flip !== false,
       shift: opts.shift !== false,
       dir: () => floatingDir(opts.state.peek()),
+      persistent: true,
     },
     dismiss: {
       // Escape unwinds ONE submenu level while a submenu is open; only when no
@@ -437,4 +442,53 @@ export function overlay(opts: OverlayOptions): Mountable {
   })
 }
 
-export const menu = { init, update, connect, overlay, isPresent, isMounted, floatingDir }
+export interface SubOverlayOptions {
+  /** The subTrigger value this level opens under. */
+  value: string
+  state: Signal<MenuState>
+  parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
+  align?: 'start' | 'end'
+  offset?: number
+  flip?: boolean
+  shift?: boolean
+}
+
+/**
+ * Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
+ * consumer-wired `watchSubmenuPositioning` (removed). Call once per
+ * `children`-bearing item, alongside its `subTrigger`, in place of the old
+ * hand-rolled `show(isOpen, () => [div(subPositioner, [div(subContent, …)])])`:
+ * `subOverlay` builds both wrapper divs itself and owns mount/floating/
+ * nested-layer-ownership. See `menu-machine.ts:subOverlay`'s doc comment for
+ * the full contract (direction resolution, no-`dismiss` design, runtime
+ * direction-change re-placement).
+ */
+export function subOverlay(opts: SubOverlayOptions): Mountable {
+  return machineSubOverlay({
+    value: opts.value,
+    state: opts.state,
+    parts: opts.parts,
+    content: opts.content,
+    isOpen: (s) => s.openPath.includes(opts.value),
+    direction: (s) => s,
+    target: opts.target,
+    positionerClass: opts.positionerClass,
+    align: opts.align,
+    offset: opts.offset,
+    flip: opts.flip,
+    shift: opts.shift,
+  })
+}
+
+export const menu = {
+  init,
+  update,
+  connect,
+  overlay,
+  subOverlay,
+  isPresent,
+  isMounted,
+}

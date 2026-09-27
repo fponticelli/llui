@@ -1,10 +1,13 @@
 import { button, div, p, type ChildNode, type ElProps, type Mountable } from '@llui/dom'
 import { classPart, mergeClass, splitArgs } from '../../lib/utils'
+import { overlayReducedMotionRecipe } from '../../lib/floating-motion'
 import { XIcon } from './icons'
 
 /**
- * Sheet — ported verbatim from shadcn/ui (MIT © 2023 shadcn). shadcn calls it
- * Sheet; LLui's machine is `drawer`, and both drive that same machine.
+ * Sheet — ported from shadcn/ui (MIT © 2023 shadcn), then adapted to LLui's
+ * presence, viewport-containment, forced-colors, and logical-direction
+ * contracts. shadcn calls it Sheet; LLui's machine is `drawer`, and both drive
+ * that same machine.
  *
  * These used to be re-exported under `Drawer*` names, which conflated two
  * DIFFERENT upstream components: shadcn's `drawer.tsx` wraps vaul and is
@@ -20,7 +23,7 @@ import { XIcon } from './icons'
  */
 export const SheetBackdrop = classPart(
   div,
-  'fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0',
+  `fixed inset-0 z-50 bg-black/50 forced-colors:bg-[CanvasText] forced-colors:opacity-50 data-[state=opening]:animate-in data-[state=opening]:fade-in-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closing]:animate-out data-[state=closing]:fade-out-0 ${overlayReducedMotionRecipe}`,
 )
 
 /**
@@ -37,7 +40,7 @@ export const SheetBackdrop = classPart(
  */
 export const SheetContent = classPart(
   div,
-  'fixed z-50 flex flex-col gap-4 bg-background shadow-lg transition ease-in-out data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500 data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=right]:data-[state=closed]:slide-out-to-right data-[side=right]:data-[state=open]:slide-in-from-right data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=left]:data-[state=closed]:slide-out-to-left data-[side=left]:data-[state=open]:slide-in-from-left data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=top]:data-[state=closed]:slide-out-to-top data-[side=top]:data-[state=open]:slide-in-from-top data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=bottom]:data-[state=closed]:slide-out-to-bottom data-[side=bottom]:data-[state=open]:slide-in-from-bottom sm:data-[side=right]:max-w-sm sm:data-[side=left]:max-w-sm',
+  `fixed z-50 flex max-w-full max-h-full flex-col gap-4 overflow-y-auto overscroll-contain wrap-break-word bg-background shadow-lg transition ease-in-out forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] data-[state=opening]:animate-in data-[state=opening]:duration-500 data-[state=open]:animate-in data-[state=open]:duration-500 data-[state=closing]:animate-out data-[state=closing]:duration-300 data-[side=right]:inset-y-0 data-[side=right]:right-0 data-[side=right]:h-full data-[side=right]:w-3/4 data-[side=right]:border-l data-[side=right]:data-[state=opening]:slide-in-from-right data-[side=right]:data-[state=open]:slide-in-from-right data-[side=right]:data-[state=closing]:slide-out-to-right data-[side=left]:inset-y-0 data-[side=left]:left-0 data-[side=left]:h-full data-[side=left]:w-3/4 data-[side=left]:border-r data-[side=left]:data-[state=opening]:slide-in-from-left data-[side=left]:data-[state=open]:slide-in-from-left data-[side=left]:data-[state=closing]:slide-out-to-left data-[side=top]:inset-x-0 data-[side=top]:top-0 data-[side=top]:h-auto data-[side=top]:border-b data-[side=top]:data-[state=opening]:slide-in-from-top data-[side=top]:data-[state=open]:slide-in-from-top data-[side=top]:data-[state=closing]:slide-out-to-top data-[side=bottom]:inset-x-0 data-[side=bottom]:bottom-0 data-[side=bottom]:h-auto data-[side=bottom]:border-t data-[side=bottom]:data-[state=opening]:slide-in-from-bottom data-[side=bottom]:data-[state=open]:slide-in-from-bottom data-[side=bottom]:data-[state=closing]:slide-out-to-bottom sm:data-[side=right]:max-w-sm sm:data-[side=left]:max-w-sm ${overlayReducedMotionRecipe}`,
 )
 
 export const SheetHeader = classPart(div, 'flex flex-col gap-1.5 p-4')
@@ -45,7 +48,7 @@ export const SheetFooter = classPart(div, 'mt-auto flex flex-col gap-2 p-4')
 export const SheetTitle = classPart(div, 'font-semibold text-foreground')
 export const SheetDescription = classPart(p, 'text-sm text-muted-foreground')
 const sheetCloseRecipe =
-  'absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary'
+  'absolute top-4 end-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-secondary'
 
 /** Renders its own ✕, as shadcn's does. */
 export function SheetClose(

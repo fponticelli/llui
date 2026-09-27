@@ -14,11 +14,15 @@ import type { PresenceStatus } from './presence.js'
  * Architecture (timer-free, tick-driven — same division of labor as timer.ts):
  *   - `toast.toaster` state manages a collection of toasts. Each toast carries
  *     its own countdown in state: `duration` (null = sticky), `remainingMs`,
- *     and `paused`.
+ *     and `pausedBy` (the set of reasons currently holding it paused).
  *   - The machine owns NO interval. The consumer drives the countdown with a
  *     `tick(id, elapsedMs)` message (e.g. via @llui/effects `interval`),
- *     subtracting the elapsed wall time since the last tick. A `paused` toast
- *     freezes its `remainingMs` (ticks are ignored).
+ *     subtracting the elapsed wall time since the last tick. A paused toast
+ *     (any reason held) freezes its `remainingMs` (ticks are ignored).
+ *   - Pause REASONS are independent (#265 G6): the row's hover pauses/resumes
+ *     `'hover'`, focus entering/leaving the row pauses/resumes `'focus'`, and
+ *     `pause`/`resume` with no reason use `'manual'`. Pointer-leave therefore
+ *     never resumes a toast whose close button still has keyboard focus.
  *   - When `remainingMs` hits 0 the REDUCER dismisses that toast itself, so
  *     there is no consumer/runtime race over who removes it.
  *
@@ -45,6 +49,13 @@ export type ToastPlacement =
 /** aria-live politeness for a toast's announcement region. */
 export type ToastPoliteness = 'polite' | 'assertive'
 
+/** Every pause reason, in the canonical order `pausedBy` keeps them. */
+const PAUSE_REASONS = ['focus', 'hover', 'manual'] as const
+
+/** Why a toast's countdown is paused. The row's own handlers use `'hover'` and
+ * `'focus'`; a `pause`/`resume` message without a reason uses `'manual'`. */
+export type ToastPauseReason = (typeof PAUSE_REASONS)[number]
+
 export interface Toast {
   id: string
   type: ToastType
@@ -54,10 +65,14 @@ export interface Toast {
   duration: number | null
   /** ms left before auto-dismiss. Counts down via `tick`. */
   remainingMs: number
-  /** Whether the toast can be manually dismissed. */
+  /** Whether the USER can dismiss the toast: `false` hides the close trigger
+   * (`closeTrigger.hidden`) and ignores its click. A `dismiss` message from
+   * code still removes it. Patchable. */
   dismissable: boolean
-  /** Pause flag — frozen countdown while set (consumer sets on hover/focus). */
-  paused: boolean
+  /** The reasons currently holding the countdown paused, as a canonical set
+   * (unique, in {@link ToastPauseReason} order). Empty = running. Owned by the
+   * reducer: change it with `pause`/`resume`, read it with {@link isPaused}. */
+  pausedBy: ToastPauseReason[]
   /** Optional per-toast politeness override; otherwise derived from `type`. */
   ariaLive?: ToastPoliteness
   /**
@@ -81,13 +96,46 @@ export interface ToasterState {
   animated: boolean
 }
 
-/** A new toast as supplied to `create`. `remainingMs`/`paused`/`status` are
- * optional — seeded from `duration`/`false`/`'open'` when omitted. */
-export type ToastInput = Omit<Toast, 'remainingMs' | 'paused' | 'status'> & {
+/** A new toast as supplied to `create`. `remainingMs`/`pausedBy`/`status` are
+ * optional — seeded from `duration`/`[]`/`'open'` when omitted. */
+export type ToastInput = Omit<Toast, 'remainingMs' | 'pausedBy' | 'status'> & {
   remainingMs?: number
-  paused?: boolean
+  pausedBy?: readonly ToastPauseReason[]
   status?: PresenceStatus
 }
+
+/**
+ * Fields an `update` message may patch on a mounted toast. `id` is the ONE
+ * truly immutable field — a toast is created once and dismissed once, never
+ * structurally replaced with a different id for the same row — so it is
+ * excluded here rather than silently ignored by the reducer. `type` and
+ * `ariaLive` (among others) ARE genuine mutable presentation fields (the
+ * `toast.promise`-style loading→success/error flow patches `type`, `title`
+ * and `description` on the same mounted toast) and `connect()`'s `toast()`
+ * builder binds every one of these reactively (never via a one-shot
+ * `peek()`), so a patch here is visible wherever it renders.
+ *
+ * `status`/`remainingMs`/`pausedBy` are excluded: they are LIFECYCLE fields the
+ * reducer itself owns (presence transitions, the tick-driven countdown,
+ * pause/resume) and a patch is the wrong channel for them — `dismiss`/`tick`/
+ * `pause`/`resume` already exist and a caller patching `remainingMs` directly
+ * would race the reducer's own countdown math. `duration` stays patchable
+ * (it IS presentation — the toast.promise flow moves a sticky `loading`
+ * toast to a finite `success`/`error` duration), so `update` re-seeds
+ * `remainingMs` from the new `duration` whenever `duration` is part of the
+ * patch (#265 A2) — otherwise a toast created sticky (duration: null,
+ * remainingMs frozen at 0) that is later patched to a finite duration would
+ * inherit that frozen 0 and dismiss on the very next tick instead of lasting
+ * its new duration.
+ *
+ * `undefined` on a REQUIRED field (`type`, `duration`, `dismissable`) means
+ * "not patched", the same as an absent key (#265 G6): `{ duration: undefined }`
+ * leaves the countdown alone rather than re-seeding it to 0 — patch
+ * `duration: null` to make a toast sticky. On an OPTIONAL field (`title`,
+ * `description`, `ariaLive`) `undefined` clears it, so a loading -> success
+ * patch can drop a description the success toast should not keep.
+ */
+export type ToastPatch = Partial<Omit<Toast, 'id' | 'status' | 'remainingMs' | 'pausedBy'>>
 
 export type ToasterMsg =
   /** @intent("Show a new toast notification") */
@@ -96,18 +144,20 @@ export type ToasterMsg =
   | { type: 'dismiss'; id: string }
   /** @intent("Dismiss every toast currently visible") */
   | { type: 'dismissAll' }
-  /** @intent("Patch fields on the toast with the given id (title, description, type, etc.)") */
-  | { type: 'update'; id: string; patch: Partial<Toast> }
+  /** @intent("Move the toast region to a different corner/edge of the viewport") */
+  | { type: 'setPlacement'; placement: ToastPlacement }
+  /** @intent("Patch mutable presentation fields on the toast with the given id (title, description, type, etc.); `id` cannot be patched") */
+  | { type: 'update'; id: string; patch: ToastPatch }
   /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
   | { type: 'tick'; id: string; elapsedMs: number }
   /** @intent("Pause auto-dismiss countdown for the toast with the given id") */
-  | { type: 'pause'; id: string }
-  /** @intent("Resume auto-dismiss countdown for the toast with the given id") */
-  | { type: 'resume'; id: string }
+  | { type: 'pause'; id: string; reason?: ToastPauseReason }
+  /** @intent("Resume auto-dismiss countdown for the toast with the given id (releases only the given reason, default manual)") */
+  | { type: 'resume'; id: string; reason?: ToastPauseReason }
   /** @intent("Pause auto-dismiss for every visible toast") */
-  | { type: 'pauseAll' }
-  /** @intent("Resume auto-dismiss for every visible toast") */
-  | { type: 'resumeAll' }
+  | { type: 'pauseAll'; reason?: ToastPauseReason }
+  /** @intent("Resume auto-dismiss for every visible toast (releases only the given reason, default manual)") */
+  | { type: 'resumeAll'; reason?: ToastPauseReason }
   /** @humanOnly Exit animation finished for the toast with the given id — remove it from the queue. */
   | { type: 'animationEnd'; id: string }
 
@@ -134,6 +184,51 @@ function isCountingDown(t: Toast): boolean {
   return t.duration !== null
 }
 
+/** Whether any reason currently holds the toast's countdown paused. */
+export function isPaused(t: Pick<Toast, 'pausedBy'>): boolean {
+  return t.pausedBy.length > 0
+}
+
+/** `reasons` as a canonical set: unique, in {@link PAUSE_REASONS} order. */
+function canonicalReasons(reasons: readonly ToastPauseReason[]): ToastPauseReason[] {
+  return PAUSE_REASONS.filter((r) => reasons.includes(r))
+}
+
+/**
+ * Add (`held: true`) or release `reason` on the toasts `match` selects. A toast
+ * whose set would not change is returned as-is, and when none change the SAME
+ * state is returned, so a repeated pointerenter/focusin is a true no-op.
+ */
+function setPauseReason(
+  state: ToasterState,
+  match: (t: Toast) => boolean,
+  reason: ToastPauseReason,
+  held: boolean,
+): ToasterState {
+  let changed = false
+  const toasts = state.toasts.map((t) => {
+    if (!match(t) || t.pausedBy.includes(reason) === held) return t
+    changed = true
+    const pausedBy = held
+      ? canonicalReasons([...t.pausedBy, reason])
+      : t.pausedBy.filter((r) => r !== reason)
+    return { ...t, pausedBy }
+  })
+  return changed ? { ...state, toasts } : state
+}
+
+/** `toast` with `patch` applied — see {@link ToastPatch} for what an
+ * `undefined` value means per field. */
+function applyPatch(toast: Toast, patch: ToastPatch): Toast {
+  return {
+    ...toast,
+    ...patch,
+    type: patch.type ?? toast.type,
+    duration: patch.duration === undefined ? toast.duration : patch.duration,
+    dismissable: patch.dismissable ?? toast.dismissable,
+  }
+}
+
 /**
  * Close the toasts whose id matches `match`. When the toaster is animated this
  * moves them to `'closing'` (kept mounted, exit animation plays, removed later
@@ -157,10 +252,10 @@ export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, nev
   if (!allFiniteNumbers(msg)) return [state, []]
   switch (msg.type) {
     case 'create': {
-      const { remainingMs, paused, status, ...rest } = msg.toast
+      const { remainingMs, pausedBy, status, ...rest } = msg.toast
       const toast: Toast = {
         ...rest,
-        paused: paused ?? false,
+        pausedBy: canonicalReasons(pausedBy ?? []),
         remainingMs: remainingMs ?? rest.duration ?? 0,
         status: status ?? 'open',
       }
@@ -173,6 +268,8 @@ export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, nev
       return [closeToasts(state, (t) => t.id === msg.id), []]
     case 'dismissAll':
       return [closeToasts(state, () => true), []]
+    case 'setPlacement':
+      return [{ ...state, placement: msg.placement }, []]
     case 'animationEnd':
       // Exit animation done — remove the now-`'closing'` toast from the queue.
       return [
@@ -182,23 +279,45 @@ export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, nev
         },
         [],
       ]
-    case 'update':
+    case 'update': {
+      const { patch } = msg
       return [
         {
           ...state,
-          toasts: state.toasts.map((t) => (t.id === msg.id ? { ...t, ...msg.patch } : t)),
+          toasts: state.toasts.map((t) => {
+            if (t.id !== msg.id) return t
+            const patched = applyPatch(t, patch)
+            // A `duration` patch re-seeds the countdown — a sticky toast
+            // (duration: null) moving to a finite duration must start
+            // ticking fresh from that duration, not from the 0 it was
+            // frozen at while sticky (#265 A2).
+            if (patch.duration !== undefined) {
+              return { ...patched, remainingMs: patched.duration ?? 0 }
+            }
+            return patched
+          }),
         },
         [],
       ]
+    }
     case 'tick': {
       const target = state.toasts.find((t) => t.id === msg.id)
       if (!target) return [state, []]
       // Sticky, paused, or already-closing toasts freeze their countdown.
-      if (!isCountingDown(target) || target.paused || target.status === 'closing') {
+      // Elapsed wall time is never negative: a negative tick (clock skew, a
+      // bad subtraction) would EXTEND the countdown, so it is dropped (#265
+      // G6). A non-finite one never reaches here (`allFiniteNumbers` above),
+      // and finite minus finite-non-negative stays finite for the finite
+      // `remainingMs` state always holds.
+      if (
+        !isCountingDown(target) ||
+        isPaused(target) ||
+        target.status === 'closing' ||
+        msg.elapsedMs < 0
+      ) {
         return [state, []]
       }
       const remainingMs = target.remainingMs - msg.elapsedMs
-      if (!Number.isFinite(remainingMs)) return [state, []]
       // Reducer owns expiry: dismiss self once the countdown is spent (moves to
       // `'closing'` when animated, removes synchronously otherwise).
       if (remainingMs <= 0) {
@@ -213,25 +332,13 @@ export function update(state: ToasterState, msg: ToasterMsg): [ToasterState, nev
       ]
     }
     case 'pause':
-      return [
-        {
-          ...state,
-          toasts: state.toasts.map((t) => (t.id === msg.id ? { ...t, paused: true } : t)),
-        },
-        [],
-      ]
+      return [setPauseReason(state, (t) => t.id === msg.id, msg.reason ?? 'manual', true), []]
     case 'resume':
-      return [
-        {
-          ...state,
-          toasts: state.toasts.map((t) => (t.id === msg.id ? { ...t, paused: false } : t)),
-        },
-        [],
-      ]
+      return [setPauseReason(state, (t) => t.id === msg.id, msg.reason ?? 'manual', false), []]
     case 'pauseAll':
-      return [{ ...state, toasts: state.toasts.map((t) => ({ ...t, paused: true })) }, []]
+      return [setPauseReason(state, () => true, msg.reason ?? 'manual', true), []]
     case 'resumeAll':
-      return [{ ...state, toasts: state.toasts.map((t) => ({ ...t, paused: false })) }, []]
+      return [setPauseReason(state, () => true, msg.reason ?? 'manual', false), []]
   }
 }
 
@@ -259,21 +366,33 @@ export function progress(state: ToasterState, id: string): number {
 
 export interface ToastItemParts {
   root: {
-    role: 'status' | 'alert'
+    /**
+     * Reactive: derived from the toast's current `type`/`ariaLive` (see
+     * {@link politeness}), never frozen at mount — an `update` patching
+     * either is visible here.
+     */
+    role: Signal<'status' | 'alert'>
     'aria-atomic': 'true'
-    'aria-live': ToastPoliteness
+    /** Reactive — see `role` above. */
+    'aria-live': Signal<ToastPoliteness>
     id: string
     'data-scope': 'toast'
     'data-part': 'root'
-    'data-type': ToastType
+    /** Reactive: an `update` patching `type` (e.g. a promise toast moving
+     * loading → success) is visible here, not frozen at mount. */
+    'data-type': Signal<ToastType>
     'data-id': string
     /** Reactive presence status (closed/opening/open/closing) for CSS-driven
      * enter/exit animations. */
     'data-state': Signal<PresenceStatus>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
-    onFocus: (e: FocusEvent) => void
-    onBlur: (e: FocusEvent) => void
+    /** Bubbling — a plain (non-bubbling) `onFocus`/`onBlur` here would never
+     * fire for the only naturally focusable descendant, the close button,
+     * so pause-on-focus would be dead: nothing but the row itself receives
+     * `focus`/`blur` directly, and it carries no `tabindex`. */
+    onFocusIn: (e: FocusEvent) => void
+    onFocusOut: (e: FocusEvent) => void
     /** Advance past the exit animation: a `'closing'` toast is removed from the
      * queue once its animation/transition ends. */
     onAnimationEnd: (e: AnimationEvent) => void
@@ -294,6 +413,12 @@ export interface ToastItemParts {
     'aria-label': string
     'data-scope': 'toast'
     'data-part': 'close-trigger'
+    /** Reactive: true while the toast is not `dismissable` — the button leaves
+     * the accessibility tree and the tab order. Hiding it while it has focus
+     * is safe for the `'focus'` pause reason: the browser's focus fixup fires
+     * `blur`/`focusout` on the row (verified in Chromium), which releases it. */
+    hidden: Signal<boolean>
+    /** Dismisses the toast; ignored while it is not `dismissable`. */
     onClick: (e: MouseEvent) => void
   }
 }
@@ -311,10 +436,11 @@ export interface ToasterParts {
    * Build the per-row part descriptors for one toast. Takes the row's
    * `Signal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
    * consumers don't `.peek()` in a reactive slot (which the signal compiler
-   * rejects). A toast's `id`/`type`/`ariaLive` are immutable for its lifetime —
-   * created then dismissed, never structurally replaced — so this reads the
-   * value once internally to build the id/role wiring; the keyed `each`
-   * rebuilds the row if `id` changes.
+   * rejects). Only `id` is immutable for a toast's lifetime — created then
+   * dismissed, never structurally replaced — so this reads `id` once
+   * internally to build id-derived wiring (the keyed `each` rebuilds the row
+   * if `id` changes); every other field (`type`, `ariaLive`, `status`, …) is
+   * bound reactively so an `update` patch renders wherever it appears.
    */
   toast: (toast: Signal<Toast>) => ToastItemParts
   /**
@@ -357,36 +483,53 @@ export function connect(
       'data-placement': state.map((s) => s.placement),
     },
     toast: (toastSig: Signal<Toast>): ToastItemParts => {
-      // A toast's identity-bearing fields (id, type, ariaLive) are immutable for
-      // its id's lifetime (created → dismissed, never structurally replaced), so
-      // read it once to build the id/role-derived descriptors. The keyed `each`
-      // rebuilds this row if `id` changes.
-      const toast = toastSig.peek()
-      const live = politeness(toast)
+      // `id` is the only identity-bearing field that is immutable for a
+      // toast's lifetime (created → dismissed, never structurally replaced),
+      // so it alone is read once to build id-derived descriptors and event
+      // payloads. The keyed `each` rebuilds this row if `id` changes.
+      // `type`/`ariaLive` are documented MUTABLE presentation fields (a
+      // `toast.promise`-style flow patches `type` on a mounted toast), so the
+      // ARIA politeness/role bag below is bound REACTIVELY off `toastSig`
+      // rather than frozen from a one-shot peek (#265 finding #8).
+      const id = toastSig.peek().id
+      const liveSig = toastSig.map((t) => politeness(t))
       return {
         root: {
-          role: live === 'assertive' ? 'alert' : 'status',
+          role: liveSig.map((live) => (live === 'assertive' ? 'alert' : 'status')),
           'aria-atomic': 'true',
-          'aria-live': live,
-          id: `${toast.id}:root`,
+          'aria-live': liveSig,
+          id: `${id}:root`,
           'data-scope': 'toast',
           'data-part': 'root',
-          'data-type': toast.type,
-          'data-id': toast.id,
+          'data-type': toastSig.map((t) => t.type),
+          'data-id': id,
           'data-state': toastSig.map((t) => t.status),
-          onPointerEnter: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
-          onPointerLeave: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
-          onFocus: tagSend(send, ['pause'], () => send({ type: 'pause', id: toast.id })),
-          onBlur: tagSend(send, ['resume'], () => send({ type: 'resume', id: toast.id })),
-          ...presenceEndProps(send, { type: 'animationEnd', id: toast.id }),
+          onPointerEnter: tagSend(send, ['pause'], () =>
+            send({ type: 'pause', id, reason: 'hover' }),
+          ),
+          onPointerLeave: tagSend(send, ['resume'], () =>
+            send({ type: 'resume', id, reason: 'hover' }),
+          ),
+          onFocusIn: tagSend(send, ['pause'], () => send({ type: 'pause', id, reason: 'focus' })),
+          // Guarded like carousel.ts's own `onFocusOut`: `focusout` fires
+          // when focus moves BETWEEN two descendants of the same row too,
+          // which must not resume the countdown while focus is still
+          // somewhere inside this toast.
+          onFocusOut: tagSend(send, ['resume'], (e) => {
+            const root = e.currentTarget
+            const next = e.relatedTarget
+            if (root instanceof Node && next instanceof Node && root.contains(next)) return
+            send({ type: 'resume', id, reason: 'focus' })
+          }),
+          ...presenceEndProps(send, { type: 'animationEnd', id }),
         },
         title: {
-          id: `${toast.id}:title`,
+          id: `${id}:title`,
           'data-scope': 'toast',
           'data-part': 'title',
         },
         description: {
-          id: `${toast.id}:description`,
+          id: `${id}:description`,
           'data-scope': 'toast',
           'data-part': 'description',
         },
@@ -395,7 +538,10 @@ export function connect(
           'aria-label': closeLabel,
           'data-scope': 'toast',
           'data-part': 'close-trigger',
-          onClick: tagSend(send, ['dismiss'], () => send({ type: 'dismiss', id: toast.id })),
+          hidden: toastSig.map((t) => !t.dismissable),
+          onClick: tagSend(send, ['dismiss'], () => {
+            if (toastSig.peek().dismissable) send({ type: 'dismiss', id })
+          }),
         },
       }
     },
@@ -418,4 +564,5 @@ export const toast = {
   politeness,
   progress,
   isPresent,
+  isPaused,
 }

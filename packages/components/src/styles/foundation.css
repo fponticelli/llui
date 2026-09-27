@@ -8,10 +8,13 @@
 
 /* ─── Cross-family state and platform foundations ─── */
 
+/* No `direction` here. It already inherits, so `direction: inherit` only ever
+   did one thing: override a `dir` ATTRIBUTE on the part itself. That broke the
+   overlay engine's `dir` on a portaled positioner (#265 finding 6), leaving a
+   menu under an RTL app container laid out LTR once portaled to `<body>`. */
 [data-scope][data-part],
 .btn {
   box-sizing: border-box;
-  direction: inherit;
   text-align: start;
 }
 
