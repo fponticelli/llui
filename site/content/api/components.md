@@ -267,15 +267,14 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `exitGenerations` | `RetainedExitGeneration<string>[]` |
 | `exitSequence`    | `number`                           |
 | `animated`        | `boolean`                          |
-| `exitWatchers`    | `ExitWatchers`                     |
 
-**Messages:** `toggle`, `open`, `close`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `exitComplete`, `exitWatcherAttach`, `exitWatcherDetach`
+**Messages:** `toggle`, `open`, `close`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `exitComplete`
 
 **Init options:** `value?: string[], multiple?: boolean, collapsible?: boolean, disabled?: boolean, items?: string[], animated?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `exitCompletion`, `item`
+**Parts:** `root`, `exitCompletion`, `close`, `item`
 
 **Utilities:** `focusTarget()`
 
@@ -512,22 +511,21 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **State** (`CollapsibleState`):
 
-| Field            | Type           |
-| ---------------- | -------------- |
-| `open`           | `boolean`      |
-| `disabled`       | `boolean`      |
-| `closing`        | `boolean`      |
-| `exitGeneration` | `number`       |
-| `animated`       | `boolean`      |
-| `exitWatchers`   | `ExitWatchers` |
+| Field            | Type      |
+| ---------------- | --------- |
+| `open`           | `boolean` |
+| `disabled`       | `boolean` |
+| `closing`        | `boolean` |
+| `exitGeneration` | `number`  |
+| `animated`       | `boolean` |
 
-**Messages:** `toggle`, `open`, `close`, `setOpen`, `exitComplete`, `exitWatcherAttach`, `exitWatcherDetach`
+**Messages:** `toggle`, `open`, `close`, `setOpen`, `exitComplete`
 
 **Init options:** `open?: boolean, disabled?: boolean, animated?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `trigger`, `content`, `exitCompletion`
+**Parts:** `root`, `trigger`, `content`, `exitCompletion`, `close`
 
 ---
 
@@ -3699,13 +3697,13 @@ export type AcceptValue = string | Record<string, string[]>
 ```typescript
 export type AccordionMsg =
   /** @intent("Toggle the named accordion item open/closed") */
-  | { type: 'toggle'; value: string }
+  | { type: 'toggle'; value: string; retain?: boolean }
   /** @intent("Open the named accordion item") */
-  | { type: 'open'; value: string }
+  | { type: 'open'; value: string; retain?: boolean }
   /** @intent("Close the named accordion item") */
-  | { type: 'close'; value: string }
+  | { type: 'close'; value: string; retain?: boolean }
   /** @intent("Replace the set of currently-open items with the provided values") */
-  | { type: 'setValue'; value: string[] }
+  | { type: 'setValue'; value: string[]; retain?: boolean }
   /** @humanOnly */
   | { type: 'setItems'; items: string[] }
   /** @humanOnly */
@@ -3716,12 +3714,10 @@ export type AccordionMsg =
   | { type: 'focusFirst' }
   /** @humanOnly */
   | { type: 'focusLast' }
-  /** @humanOnly — sent by the retained content's own animation end/cancel event. */
+  /** @humanOnly — sent by the retained content's own animation end/cancel event,
+   * or by `exitCompletion`'s own cleanup settling every still-closing item once
+   * the last watcher for this `id` detaches. */
   | { type: 'exitComplete'; value: string; generation: number }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own mount, once placed. */
-  | { type: 'exitWatcherAttach' }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own cleanup, on unmount. */
-  | { type: 'exitWatcherDetach' }
 ```
 
 ##### `Activation` from `@llui/components`
@@ -4016,19 +4012,17 @@ export type ClipboardMsg =
 ```typescript
 export type CollapsibleMsg =
   /** @intent("Toggle the collapsible panel open/closed") */
-  | { type: 'toggle' }
+  | { type: 'toggle'; retain?: boolean }
   /** @intent("Expand the collapsible panel") */
-  | { type: 'open' }
+  | { type: 'open'; retain?: boolean }
   /** @intent("Collapse the panel") */
-  | { type: 'close' }
+  | { type: 'close'; retain?: boolean }
   /** @intent("Set the panel's open state to a specific value") */
-  | { type: 'setOpen'; open: boolean }
-  /** @humanOnly */
+  | { type: 'setOpen'; open: boolean; retain?: boolean }
+  /** @humanOnly — sent by the retained content's own animation end/cancel event,
+   * or by `exitCompletion`'s own cleanup settling a still-closing panel once
+   * the last watcher for this `id` detaches. */
   | { type: 'exitComplete'; generation: number }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own mount, once placed. */
-  | { type: 'exitWatcherAttach' }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own cleanup, on unmount. */
-  | { type: 'exitWatcherDetach' }
 ```
 
 ##### `ColorModel` from `@llui/components`
@@ -6307,9 +6301,9 @@ export interface AccordionParts {
    * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
    * host app, bypassing the trigger's click handler) once its content's own
    * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. Its mount ALSO reports whether it is placed at all:
-   * `animated: true` only ever retains `closing` content while this is
-   * mounted (#264 item F1) — forgetting to place it degrades gracefully to
+   * exit motion at all. Its mount ALSO reports whether it is placed at all
+   * (#264 item F1): `animated: true` only ever retains `closing` content
+   * while this is mounted — forgetting to place it degrades gracefully to
    * an instant close (with a one-time dev warning) rather than hanging
    * `closing` + `inert` forever, so placing it is no longer required for
    * SAFETY, only for the requested exit animation to actually run on a
@@ -6317,6 +6311,17 @@ export interface AccordionParts {
    * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
+  /**
+   * An animated-aware programmatic close (#264 review-264j): a raw
+   * `send({ type: 'close', value })` from app/agent code carries no
+   * `retain` and therefore closes INSTANTLY, even with `animated: true` and
+   * `exitCompletion` placed — documented, fail-safe behavior, since a bare
+   * message has no way to know whether a watcher happens to be mounted.
+   * `parts.close(value)` is the correct way for a host to close an item
+   * programmatically and still get the animated exit: it stamps `retain`
+   * from the SAME runtime registry the trigger handlers read.
+   */
+  close: (value: string) => void
 }
 ```
 
@@ -6348,22 +6353,6 @@ export interface AccordionState {
   exitSequence: number
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
-  /**
-   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
-   * per-JS-realm session token — see `ExitWatchers`'s own header in
-   * `disclosure-motion.ts` for the full rationale (#264 review-264i: this
-   * replaced a closure-owned counter keyed by dispatcher identity, which
-   * broke when two `connect()` calls over the same slice used two DIFFERENT
-   * inline `send` wrappers). `closing` retention only ever engages when
-   * `animated && isExitWatched(exitWatchers)` — never `animated` alone — so
-   * a forgotten `exitCompletion` placement closes instantly instead of
-   * hanging `closing` + `inert` forever, and a state slice RESTORED from a
-   * past session (its `session` necessarily foreign to this realm) reads as
-   * unwatched regardless of its `count`, so it can never resurrect a hang
-   * either. Never a caller-facing init option; `init()` always starts it at
-   * `initExitWatchers()` (this realm's session, count 0).
-   */
-  exitWatchers: ExitWatchers
 }
 ```
 
@@ -7604,6 +7593,13 @@ export interface CollapsibleParts {
    * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
+  /**
+   * An animated-aware programmatic close (#264 review-264j) — see
+   * `accordion.ts`'s identical part for the full rationale. A raw
+   * `send({ type: 'close' })` carries no `retain` and closes INSTANTLY;
+   * `parts.close()` stamps `retain` from the runtime registry.
+   */
+  close: () => void
 }
 ```
 
@@ -7622,16 +7618,6 @@ export interface CollapsibleState {
   exitGeneration: number
   /** Whether close waits for the content's own animation end/cancel event. */
   animated: boolean
-  /**
-   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
-   * per-JS-realm session token. See `accordion.ts`'s identical field, and
-   * `ExitWatchers`'s own header in `disclosure-motion.ts`, for the full
-   * rationale (#264 review-264i) — a restored slice's `session` is foreign
-   * to this realm and reads as unwatched regardless of its `count`, so it
-   * can never resurrect a hang. Never a caller-facing init option;
-   * `init()` always starts it at `initExitWatchers()`.
-   */
-  exitWatchers: ExitWatchers
 }
 ```
 
@@ -24167,13 +24153,13 @@ function update(state: AccordionState, msg: AccordionMsg): [AccordionState, neve
 ```typescript
 export type AccordionMsg =
   /** @intent("Toggle the named accordion item open/closed") */
-  | { type: 'toggle'; value: string }
+  | { type: 'toggle'; value: string; retain?: boolean }
   /** @intent("Open the named accordion item") */
-  | { type: 'open'; value: string }
+  | { type: 'open'; value: string; retain?: boolean }
   /** @intent("Close the named accordion item") */
-  | { type: 'close'; value: string }
+  | { type: 'close'; value: string; retain?: boolean }
   /** @intent("Replace the set of currently-open items with the provided values") */
-  | { type: 'setValue'; value: string[] }
+  | { type: 'setValue'; value: string[]; retain?: boolean }
   /** @humanOnly */
   | { type: 'setItems'; items: string[] }
   /** @humanOnly */
@@ -24184,12 +24170,10 @@ export type AccordionMsg =
   | { type: 'focusFirst' }
   /** @humanOnly */
   | { type: 'focusLast' }
-  /** @humanOnly — sent by the retained content's own animation end/cancel event. */
+  /** @humanOnly — sent by the retained content's own animation end/cancel event,
+   * or by `exitCompletion`'s own cleanup settling every still-closing item once
+   * the last watcher for this `id` detaches. */
   | { type: 'exitComplete'; value: string; generation: number }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own mount, once placed. */
-  | { type: 'exitWatcherAttach' }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own cleanup, on unmount. */
-  | { type: 'exitWatcherDetach' }
 ```
 
 #### Interfaces
@@ -24275,9 +24259,9 @@ export interface AccordionParts {
    * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
    * host app, bypassing the trigger's click handler) once its content's own
    * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. Its mount ALSO reports whether it is placed at all:
-   * `animated: true` only ever retains `closing` content while this is
-   * mounted (#264 item F1) — forgetting to place it degrades gracefully to
+   * exit motion at all. Its mount ALSO reports whether it is placed at all
+   * (#264 item F1): `animated: true` only ever retains `closing` content
+   * while this is mounted — forgetting to place it degrades gracefully to
    * an instant close (with a one-time dev warning) rather than hanging
    * `closing` + `inert` forever, so placing it is no longer required for
    * SAFETY, only for the requested exit animation to actually run on a
@@ -24285,6 +24269,17 @@ export interface AccordionParts {
    * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
+  /**
+   * An animated-aware programmatic close (#264 review-264j): a raw
+   * `send({ type: 'close', value })` from app/agent code carries no
+   * `retain` and therefore closes INSTANTLY, even with `animated: true` and
+   * `exitCompletion` placed — documented, fail-safe behavior, since a bare
+   * message has no way to know whether a watcher happens to be mounted.
+   * `parts.close(value)` is the correct way for a host to close an item
+   * programmatically and still get the animated exit: it stamps `retain`
+   * from the SAME runtime registry the trigger handlers read.
+   */
+  close: (value: string) => void
 }
 ```
 
@@ -24316,22 +24311,6 @@ export interface AccordionState {
   exitSequence: number
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
-  /**
-   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
-   * per-JS-realm session token — see `ExitWatchers`'s own header in
-   * `disclosure-motion.ts` for the full rationale (#264 review-264i: this
-   * replaced a closure-owned counter keyed by dispatcher identity, which
-   * broke when two `connect()` calls over the same slice used two DIFFERENT
-   * inline `send` wrappers). `closing` retention only ever engages when
-   * `animated && isExitWatched(exitWatchers)` — never `animated` alone — so
-   * a forgotten `exitCompletion` placement closes instantly instead of
-   * hanging `closing` + `inert` forever, and a state slice RESTORED from a
-   * past session (its `session` necessarily foreign to this realm) reads as
-   * unwatched regardless of its `count`, so it can never resurrect a hang
-   * either. Never a caller-facing init option; `init()` always starts it at
-   * `initExitWatchers()` (this realm's session, count 0).
-   */
-  exitWatchers: ExitWatchers
 }
 ```
 
@@ -26057,19 +26036,17 @@ function update(state: CollapsibleState, msg: CollapsibleMsg): [CollapsibleState
 ```typescript
 export type CollapsibleMsg =
   /** @intent("Toggle the collapsible panel open/closed") */
-  | { type: 'toggle' }
+  | { type: 'toggle'; retain?: boolean }
   /** @intent("Expand the collapsible panel") */
-  | { type: 'open' }
+  | { type: 'open'; retain?: boolean }
   /** @intent("Collapse the panel") */
-  | { type: 'close' }
+  | { type: 'close'; retain?: boolean }
   /** @intent("Set the panel's open state to a specific value") */
-  | { type: 'setOpen'; open: boolean }
-  /** @humanOnly */
+  | { type: 'setOpen'; open: boolean; retain?: boolean }
+  /** @humanOnly — sent by the retained content's own animation end/cancel event,
+   * or by `exitCompletion`'s own cleanup settling a still-closing panel once
+   * the last watcher for this `id` detaches. */
   | { type: 'exitComplete'; generation: number }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own mount, once placed. */
-  | { type: 'exitWatcherAttach' }
-  /** @humanOnly — sent by `parts.exitCompletion`'s own cleanup, on unmount. */
-  | { type: 'exitWatcherDetach' }
 ```
 
 #### Interfaces
@@ -26138,6 +26115,13 @@ export interface CollapsibleParts {
    * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
+  /**
+   * An animated-aware programmatic close (#264 review-264j) — see
+   * `accordion.ts`'s identical part for the full rationale. A raw
+   * `send({ type: 'close' })` carries no `retain` and closes INSTANTLY;
+   * `parts.close()` stamps `retain` from the runtime registry.
+   */
+  close: () => void
 }
 ```
 
@@ -26156,16 +26140,6 @@ export interface CollapsibleState {
   exitGeneration: number
   /** Whether close waits for the content's own animation end/cancel event. */
   animated: boolean
-  /**
-   * How many `parts.exitCompletion` mounts are CURRENTLY live, keyed by a
-   * per-JS-realm session token. See `accordion.ts`'s identical field, and
-   * `ExitWatchers`'s own header in `disclosure-motion.ts`, for the full
-   * rationale (#264 review-264i) — a restored slice's `session` is foreign
-   * to this realm and reads as unwatched regardless of its `count`, so it
-   * can never resurrect a hang. Never a caller-facing init option;
-   * `init()` always starts it at `initExitWatchers()`.
-   */
-  exitWatchers: ExitWatchers
 }
 ```
 
