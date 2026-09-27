@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -46,14 +47,58 @@ const DEMOS = [
  */
 const RECIPE_FREE = new Set(['ui/icons.ts'])
 
-async function sourceFiles(dir: string): Promise<string[]> {
+// Enumeration is `git ls-files --cached --others --exclude-standard`, never a
+// filesystem walk (#264 review follow-up) — CLAUDE.md's standing rule: a
+// `readdirSync`/`readdir` walk rooted above `.claude/worktrees/` (a gitignored
+// full checkout of every sibling lane) would silently sweep every other
+// branch's files as if they were this repo's own, and a `length > N` floor
+// cannot tell over-collection from a correct count. This walk is rooted at
+// `registry/llui` or an example app's `src/`, neither of which is anywhere
+// near `.claude/worktrees/`, but the discipline is the same one CLAUDE.md
+// names generally and the git-based enumeration additionally covers a
+// brand-new file the author has not yet `git add`ed (`--others
+// --exclude-standard`), which a bare `git ls-files` would miss.
+function gitLsFiles(dir: string): string[] {
+  const relDir = path.relative(ROOT, dir)
+  const out = execFileSync(
+    'git',
+    ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', relDir],
+    { cwd: ROOT, encoding: 'utf8' },
+  )
+  return out
+    .split('\0')
+    .filter((p) => p.length > 0)
+    .filter((p) => p.endsWith('.ts'))
+    .map((p) => path.join(ROOT, p))
+    .sort()
+}
+
+/**
+ * Independent enumeration, walking the real filesystem rather than asking
+ * git — used ONLY by the vacuity test below to cross-check `gitLsFiles`'s
+ * membership, never as the corpus a real sweep runs against.
+ */
+async function walkSourceFiles(dir: string): Promise<string[]> {
   const out: string[] = []
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name)
-    if (entry.isDirectory()) out.push(...(await sourceFiles(full)))
+    if (entry.isDirectory()) out.push(...(await walkSourceFiles(full)))
     else if (entry.name.endsWith('.ts')) out.push(full)
   }
   return out.sort()
+}
+
+async function sourceFiles(dir: string): Promise<string[]> {
+  // Real repo sweeps (the registry, both demos' `src/`) go through git — see
+  // `gitLsFiles` above. A handful of tests in this file build a SYNTHETIC
+  // fixture app under `mkdtemp(tmpdir())`, which sits outside this repo's
+  // working tree entirely and is never git-tracked, so `git ls-files` there
+  // fails outright (`fatal: … is outside repository`); those fall back to a
+  // plain filesystem walk, which is the only enumeration such a fixture can
+  // have and is not the corpus the review's git-ls-files requirement is about.
+  const relDir = path.relative(ROOT, dir)
+  const insideRepo = relDir !== '' && !relDir.startsWith('..') && !path.isAbsolute(relDir)
+  return insideRepo ? gitLsFiles(dir) : walkSourceFiles(dir)
 }
 
 // #264 review M2: every `UNRESOLVED_RECIPE_ALLOWED` key `extractClassCandidates`
@@ -306,5 +351,17 @@ describe('registry Tailwind classes', () => {
     // identifier would already have thrown during the sweep above, failing
     // this test for the OTHER reason.
     expect([...usedAllowlistKeys].sort()).toEqual(Object.keys(UNRESOLVED_RECIPE_ALLOWED).sort())
+  })
+
+  it('git ls-files enumeration matches an independent filesystem walk, exactly (#264 review follow-up)', async () => {
+    // A `length > N` floor only detects UNDER-collection; it cannot see the
+    // git-based enumeration silently missing a file the walk would still
+    // find, or the reverse. Assert EXACT set equality against a differently
+    // derived corpus, over every root a real sweep runs against.
+    for (const dir of [REGISTRY, ...DEMOS.map((d) => path.join(d, 'src'))]) {
+      const viaGit = gitLsFiles(dir)
+      const viaWalk = await walkSourceFiles(dir)
+      expect(viaGit.sort()).toEqual(viaWalk.sort())
+    }
   })
 })
