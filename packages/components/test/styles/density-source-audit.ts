@@ -22,6 +22,13 @@ const propName = (name: ts.PropertyName | undefined): string | undefined =>
     ? name.text
     : undefined
 
+/** One parse, reused by every check below that needs it (#264 review LOW —
+ * `hasDensityOrSizeProperty` used to parse the SAME source TWICE, once per
+ * sub-check it delegates to, on what `navigation-data-contract.test.ts`
+ * calls once per `checkedSources` entry across every density-N/A product). */
+const parse = (source: string, fileName: string): ts.SourceFile =>
+  ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+
 /** `connect()`'s options interface (always named `ConnectOptions` in this
  * package's components) or an `init()` options interface (named `*Init`,
  * e.g. `AccordionInit`) — the two shapes this codebase spells a public
@@ -42,8 +49,7 @@ const isOptionsInterfaceName = (name: string): boolean =>
  * walk, never as a substring of something else (`fontSize`,
  * `densityRationale`).
  */
-export function optionsInterfacePropertyNames(source: string, fileName = 'source.ts'): string[] {
-  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+function optionsInterfacePropertyNamesFromSf(sf: ts.SourceFile): string[] {
   const names: string[] = []
   const visit = (node: ts.Node): void => {
     if (ts.isInterfaceDeclaration(node) && isOptionsInterfaceName(node.name.text)) {
@@ -58,6 +64,10 @@ export function optionsInterfacePropertyNames(source: string, fileName = 'source
   }
   visit(sf)
   return names
+}
+
+export function optionsInterfacePropertyNames(source: string, fileName = 'source.ts'): string[] {
+  return optionsInterfacePropertyNamesFromSf(parse(source, fileName))
 }
 
 /**
@@ -123,12 +133,13 @@ function findVariantsObjects(
  * `createVariants({ variants: { <axis>: {...} } })`'s AXIS names (the top
  * level keys of the `variants` object) — this is the registry recipe
  * equivalent of a `ConnectOptions` field, and the shape a `size`/`density`
- * variant axis actually takes (`registry/llui/ui/avatar.ts`'s `data-size`
- * driven by exactly such an axis on avatar's OWN recipe, as opposed to a
- * borrowed one like the carousel case above).
+ * variant axis actually takes (`registry/llui/ui/badge.ts`'s `size` axis,
+ * added via the same `variants`-shorthand-over-a-module-const spelling
+ * `button.ts` uses, is the in-repo example — NOT `avatar.ts`, whose `size`
+ * scale is a plain string recipe with `data-[size=…]` conditionals, never a
+ * `createVariants` call at all, #264 review LOW).
  */
-export function createVariantsAxisNames(source: string, fileName = 'source.ts'): string[] {
-  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+function createVariantsAxisNamesFromSf(sf: ts.SourceFile): string[] {
   const objectConsts = indexObjectConsts(sf)
   const names: string[] = []
   for (const variantsObj of findVariantsObjects(sf, objectConsts)) {
@@ -143,6 +154,10 @@ export function createVariantsAxisNames(source: string, fileName = 'source.ts'):
   return names
 }
 
+export function createVariantsAxisNames(source: string, fileName = 'source.ts'): string[] {
+  return createVariantsAxisNamesFromSf(parse(source, fileName))
+}
+
 /** The option KEYS of one named `createVariants` axis (e.g. `size`'s
  * `{ default, sm, lg }` -> `['default', 'sm', 'lg']`) — used to assert how
  * many real rungs a recipe's variant scale actually has, rather than
@@ -152,7 +167,7 @@ export function createVariantsAxisValueNames(
   axisName: string,
   fileName = 'source.ts',
 ): string[] {
-  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const sf = parse(source, fileName)
   const objectConsts = indexObjectConsts(sf)
   const names: string[] = []
   for (const variantsObj of findVariantsObjects(sf, objectConsts)) {
@@ -196,7 +211,7 @@ export function typeAliasUnionLiteralMembers(
   aliasName: string,
   fileName = 'source.ts',
 ): string[] {
-  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const sf = parse(source, fileName)
   const members: string[] = []
   for (const stmt of sf.statements) {
     if (!ts.isTypeAliasDeclaration(stmt) || stmt.name.text !== aliasName) continue
@@ -212,12 +227,14 @@ export function typeAliasUnionLiteralMembers(
 
 /** True if the file declares ANY interface property or `createVariants` axis
  * named exactly `density` or `size` (case-insensitive on the whole name,
- * never a substring match). */
+ * never a substring match). Parses `source` ONCE (#264 review LOW) and
+ * shares that single `SourceFile` between both sub-checks, rather than each
+ * of `optionsInterfacePropertyNames`/`createVariantsAxisNames` re-parsing it
+ * independently — this is the hot path `navigation-data-contract.test.ts`
+ * calls once per `checkedSources` entry across every density-N/A product. */
 export function hasDensityOrSizeProperty(source: string, fileName?: string): boolean {
-  const names = [
-    ...optionsInterfacePropertyNames(source, fileName),
-    ...createVariantsAxisNames(source, fileName),
-  ]
+  const sf = parse(source, fileName ?? 'source.ts')
+  const names = [...optionsInterfacePropertyNamesFromSf(sf), ...createVariantsAxisNamesFromSf(sf)]
   return names.some((name) => DENSITY_LIKE_NAMES.has(name.toLowerCase()))
 }
 
