@@ -197,6 +197,59 @@ describe('navigation', () => {
     await page.close()
   })
 
+  it('applies a declared dark theme and reduced motion inside the document, not the shell', async () => {
+    // dialog/modal declares theme, direction, motion and forced colors.
+    const probe = async (query: string) => {
+      const page = await open(query)
+      const frame = await readyFrame(page, 'baseline')
+      const facts = await frame.evaluate(() => {
+        const seconds = (value: string) =>
+          Math.max(...value.split(',').map((part) => parseFloat(part) || 0))
+        let longest = 0
+        for (const element of Array.from(document.querySelectorAll('*'))) {
+          const style = getComputedStyle(element)
+          longest = Math.max(
+            longest,
+            seconds(style.transitionDuration),
+            seconds(style.animationDuration),
+          )
+        }
+        // Tokens are oklch()/color-mix(), which computed style returns
+        // VERBATIM (docs/agents/styling.md): paint the colour and read the
+        // pixel back instead of parsing the string.
+        const canvas = document.createElement('canvas')
+        canvas.width = 1
+        canvas.height = 1
+        const context = canvas.getContext('2d')!
+        context.fillStyle = getComputedStyle(document.body).backgroundColor
+        context.fillRect(0, 0, 1, 1)
+        const [red, green, blue] = context.getImageData(0, 0, 1, 1).data
+        return {
+          theme: document.documentElement.dataset.theme,
+          motion: document.documentElement.dataset.motion,
+          background: [red!, green!, blue!],
+          longestMotionSeconds: longest,
+        }
+      })
+      const shellTheme = await page.locator('.gallery').getAttribute('data-theme')
+      await page.close()
+      return { ...facts, shellTheme }
+    }
+    const full = await probe('?entry=dialog&case=modal')
+    const reduced = await probe('?entry=dialog&case=modal&theme=dark&motion=reduced')
+
+    expect(full).toMatchObject({ theme: 'light', motion: 'full' })
+    expect(reduced).toMatchObject({ theme: 'dark', motion: 'reduced' })
+    // Dark tokens reached the document's own surface.
+    expect(Math.min(...full.background)).toBeGreaterThan(200)
+    expect(Math.max(...reduced.background)).toBeLessThan(80)
+    // The scenario really animates at full motion, and the axis collapses it.
+    expect(full.longestMotionSeconds).toBeGreaterThan(0.05)
+    expect(reduced.longestMotionSeconds).toBeLessThanOrEqual(0.001)
+    // The shell's own scheme is independent of the scenario's.
+    expect(reduced.shellTheme).toBe('system')
+  })
+
   it('pins a narrow viewport into the framed document', async () => {
     // table/default declares the viewport axis.
     const page = await open('?entry=table&case=default&viewport=narrow')
