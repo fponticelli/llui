@@ -11,7 +11,7 @@
 // not implement it, so a jsdom probe of this fix would read 'ltr' either way
 // and prove nothing.
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
 import { createServer, type ViteDevServer } from 'vite'
 import { dirname, resolve } from 'node:path'
