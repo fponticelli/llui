@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Clipboard",
   "description": "Skin for @llui/components/clipboard — copy field with a live-region indicator.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["input", "utils"],
   "files": [
     {

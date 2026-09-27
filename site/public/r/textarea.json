@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Textarea",
   "description": "Multi-line text input, same caller-owns-the-value contract as Input.",
-  "dependencies": ["@llui/dom"],
+  "dependencies": ["@llui/dom@^0.14.0"],
   "registryDependencies": ["utils"],
   "files": [
     {

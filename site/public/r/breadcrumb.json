@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Breadcrumb",
   "description": "Skin for @llui/components/breadcrumbs, with ellipsis overflow.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["icons", "utils"],
   "files": [
     {

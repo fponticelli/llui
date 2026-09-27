@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Color Picker",
   "description": "Skin for @llui/components/color-picker — HSV/OKLCH models, 2D area (canvas in OKLCH mode), native range sliders, an EyeDropper trigger and preset swatches.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["input", "utils"],
   "files": [
     {

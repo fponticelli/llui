@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Chart",
   "description": "Skin for @llui/components/chart — shadcn's container, tooltip and legend recipes over a cartesian/polar plotting machine.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["utils"],
   "files": [
     {

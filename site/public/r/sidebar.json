@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Sidebar",
   "description": "Skin for a collapsible app sidebar — header, groups, menu, submenus, rail and inset. Presentation only; the open/closed state stays in your app.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["utils"],
   "files": [
     {

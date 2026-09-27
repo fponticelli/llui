@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
+  assertDependencySpecs,
   assertSafeTarget,
   collectDependencies,
+  parseDependencySpec,
+  RegistryItemSchema,
   resolveItems,
   RegistrySchema,
   type Registry,
@@ -115,15 +118,103 @@ describe('RegistrySchema', () => {
 })
 
 describe('collectDependencies', () => {
-  it('dedupes and sorts across items', () => {
+  it('dedupes and sorts across items, exposing each @llui/* minimum', () => {
     const items = [
-      { ...item('a'), dependencies: ['@llui/dom', 'clsx'] },
-      { ...item('b'), dependencies: ['clsx', '@llui/components'] },
+      { ...item('a'), dependencies: ['@llui/dom@^0.14.0', 'clsx'] },
+      { ...item('b'), dependencies: ['clsx', '@llui/components@^0.20.1'] },
     ]
     expect(collectDependencies(items).dependencies).toEqual([
-      '@llui/components',
-      '@llui/dom',
-      'clsx',
+      {
+        name: '@llui/components',
+        spec: '@llui/components@^0.20.1',
+        minimum: '0.20.1',
+        requiredBy: ['b'],
+      },
+      { name: '@llui/dom', spec: '@llui/dom@^0.14.0', minimum: '0.14.0', requiredBy: ['a'] },
+      { name: 'clsx', spec: 'clsx', minimum: null, requiredBy: ['a', 'b'] },
     ])
+  })
+
+  it('keeps the HIGHEST minimum when two items disagree about one @llui/* package', () => {
+    // Cannot happen in a registry built from one workspace, but a hand-assembled
+    // third-party registry can mix vintages; the floor that satisfies both wins.
+    const items = [
+      { ...item('old'), dependencies: ['@llui/components@^0.19.0'] },
+      { ...item('new'), dependencies: ['@llui/components@^0.20.1'] },
+      { ...item('pre'), dependencies: ['@llui/components@^0.20.1-rc.1'] },
+    ]
+    expect(collectDependencies(items).dependencies).toEqual([
+      {
+        name: '@llui/components',
+        spec: '@llui/components@^0.20.1',
+        minimum: '0.20.1',
+        requiredBy: ['old', 'new', 'pre'],
+      },
+    ])
+  })
+
+  it('reports dev dependencies separately, with the same shape', () => {
+    const items = [{ ...item('a'), devDependencies: ['@llui/test@^0.3.0', 'vitest'] }]
+    const { dependencies, devDependencies } = collectDependencies(items)
+    expect(dependencies).toEqual([])
+    expect(devDependencies.map((d) => [d.name, d.minimum])).toEqual([
+      ['@llui/test', '0.3.0'],
+      ['vitest', null],
+    ])
+  })
+})
+
+describe('parseDependencySpec', () => {
+  it.each([
+    ['clsx', 'clsx', null],
+    ['clsx@^2.1.1', 'clsx', '^2.1.1'],
+    ['@llui/dom', '@llui/dom', null],
+    ['@llui/components@^0.20.1', '@llui/components', '^0.20.1'],
+    ['@llui/components@workspace:^', '@llui/components', 'workspace:^'],
+  ])('%s', (spec, name, range) => {
+    expect(parseDependencySpec(spec)).toEqual({ name, range })
+  })
+})
+
+describe('assertDependencySpecs', () => {
+  const withDeps = (dependencies: string[], devDependencies: string[] = []) =>
+    RegistryItemSchema.parse({ ...item('sonner'), dependencies, devDependencies })
+
+  it('accepts a built @llui/* spec and leaves non-@llui deps alone', () => {
+    expect(() =>
+      assertDependencySpecs(withDeps(['@llui/components@^0.20.1', 'clsx', 'x@*']), 'built'),
+    ).not.toThrow()
+  })
+
+  it.each([
+    ['@llui/components', /"sonner".*"@llui\/components" without a minimum version/s],
+    ['@llui/components@0.20.1', /"sonner".*"@llui\/components@0\.20\.1"/s],
+    ['@llui/components@>=0.20.1', /"sonner".*"@llui\/components@>=0\.20\.1"/s],
+    ['@llui/components@^0.20', /"sonner".*"@llui\/components@\^0\.20"/s],
+    ['@llui/components@^banana', /"sonner".*"@llui\/components@\^banana"/s],
+  ])('rejects %s with an error naming the item and the expected form', (spec, message) => {
+    const err = (() => {
+      try {
+        assertDependencySpecs(withDeps([spec]), 'built')
+      } catch (e) {
+        return e
+      }
+      return null
+    })()
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toMatch(message)
+    expect((err as Error).message).toContain('@llui/components@^<version>')
+  })
+
+  it('checks devDependencies too', () => {
+    expect(() => assertDependencySpecs(withDeps([], ['@llui/test']), 'built')).toThrow(
+      /"@llui\/test" without a minimum version/,
+    )
+  })
+
+  it('accepts the workspace:^ source form only in a workspace (unbuilt) registry', () => {
+    const source = withDeps(['@llui/components@workspace:^'])
+    expect(() => assertDependencySpecs(source, 'workspace')).not.toThrow()
+    expect(() => assertDependencySpecs(source, 'built')).toThrow(/unbuilt source spec/)
   })
 })

@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Radio Group",
   "description": "Skin for @llui/components/radio-group.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["icons", "utils"],
   "files": [
     {

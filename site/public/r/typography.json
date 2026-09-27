@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Typography",
   "description": "Prose primitives — headings, paragraphs, lists, code, blockquote.",
-  "dependencies": ["@llui/dom"],
+  "dependencies": ["@llui/dom@^0.14.0"],
   "registryDependencies": ["utils"],
   "files": [
     {

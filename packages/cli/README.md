@@ -32,7 +32,7 @@ components makes every one of their classes lose, with nothing to tell you.
 |                      |                                                                                           |
 | -------------------- | ----------------------------------------------------------------------------------------- |
 | `llui init`          | Write `components.json`. `--ui`/`--lib` set target dirs, `--alias` sets an import prefix. |
-| `llui add <item...>` | Copy items and their `registryDependencies`. `--overwrite`, `--dry-run`.                  |
+| `llui add <item...>` | Copy items and their `registryDependencies`. `--overwrite`, `--force`, `--dry-run`.       |
 | `llui list`          | Show copied artifacts beside their related public machine imports and styling modes.      |
 
 All commands accept `--registry <url|path>` and `--cwd <dir>`.
@@ -224,6 +224,58 @@ nowhere, which is a worse outcome than a longer path.
   content, so `..` and absolute paths are rejected before anything is written.
 - **Unknown registry keys are ignored**, so a registry that is ahead of your CLI still
   installs rather than failing closed.
+- **`@llui/*` versions are checked before anything is written.** See below; `--force`
+  is the opt-in.
+
+## `@llui/*` minimum versions
+
+A registry item is written against a specific release of the packages it imports — a
+`sonner` skin may use a token or part attribute that an older `@llui/components` does
+not have, and would copy cleanly and then break at runtime. So every item records a
+minimum for each `@llui/*` dependency, in shadcn's own `dependencies` spec form:
+
+```json
+{ "name": "sonner", "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"] }
+```
+
+The minimum is the version of that package the registry was built against, derived
+by the registry build, never hand-maintained. `llui add` reads the caret as a floor
+only: a newer install passes even past the caret's upper bound. Non-`@llui`
+dependencies are relayed as written.
+
+Before writing any file, `llui add` resolves your project's version of each `@llui/*`
+package the requested items need — including ones reached only through
+`registryDependencies`:
+
+1. the **installed** package, `node_modules/<pkg>/package.json`, looked up from the
+   project directory and then each ancestor, as Node resolves an import;
+2. otherwise the **`package.json` range** (`dependencies`, `devDependencies`,
+   `optionalDependencies`, `peerDependencies`), compared by the lowest version it
+   allows — `^0.19.2` counts as 0.19.2, `>=1.2 <2` as 1.2.0, `^1 || ^2` as 1.0.0 —
+   because that is what a fresh install may resolve. A range with no determinable
+   floor (`latest`, `*`, a git or file spec) is a warning, not a failure.
+
+Versions are ordered by semver precedence, so a prerelease ranks below its release:
+`0.21.0-rc.1` does not satisfy a `0.21.0` minimum, but does satisfy `0.20.1`.
+
+| Project has                  | Result                                                                            |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| the minimum or newer         | copies as usual                                                                   |
+| an older version             | exits non-zero, writes nothing, names each package, both versions and the upgrade |
+| an older version + `--force` | copies anyway and prints the same report as a warning                             |
+| the package not installed    | copies, and the `Install:` line carries the minimum: `@llui/components@^0.20.1`   |
+
+```text
+These registry items need newer @llui packages than this project has:
+  @llui/components: installed 0.19.0, requires >= 0.20.1 (sonner)
+Upgrade: pnpm add @llui/components@^0.20.1
+Nothing was written. Pass --force to copy the files anyway.
+```
+
+The upgrade command follows the nearest lockfile (`pnpm add`, `yarn add`, `bun add`,
+else `npm install`). A registry whose items list an `@llui/*` package without a minimum
+is rejected with an error naming the item — rebuild it with
+`node scripts/build-registry.mjs`.
 
 ## Using a different registry
 
@@ -236,4 +288,7 @@ llui add button --registry https://example.com/r
 ```
 
 A local source may leave file contents on disk (`files[].path`); a remote one must serve
-them inlined (`files[].content`), which `scripts/build-registry.mjs` produces.
+them inlined (`files[].content`), which `scripts/build-registry.mjs` produces. Likewise
+a local source may declare `@llui/<pkg>@workspace:^`, which the CLI resolves from the
+registry directory's own `node_modules` exactly as the build does; a remote registry
+must serve the built `@llui/<pkg>@^<version>`.

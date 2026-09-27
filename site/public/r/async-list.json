@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Async List",
   "description": "Skin for @llui/components/async-list — infinite list with sentinel, retry and error text.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["button", "utils"],
   "files": [
     {

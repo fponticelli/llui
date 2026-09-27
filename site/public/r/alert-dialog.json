@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Alert Dialog",
   "description": "Skin for @llui/components/alert-dialog — a confirmation that will not dismiss on an outside click.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["dialog", "floating-motion", "utils"],
   "files": [
     {

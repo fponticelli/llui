@@ -32,7 +32,7 @@ pnpm llui add button card dialog
 | Command              | Does                                                                                        |
 | -------------------- | ------------------------------------------------------------------------------------------- |
 | `llui init`          | Write `components.json`. `--ui` / `--lib` set target dirs; `--alias` sets an import prefix. |
-| `llui add <item...>` | Copy items and their `registryDependencies`. `--overwrite`, `--dry-run`.                    |
+| `llui add <item...>` | Copy items and their `registryDependencies`. `--overwrite`, `--force`, `--dry-run`.         |
 | `llui list`          | Show what the registry offers.                                                              |
 
 All commands accept `--registry <url\|path>` and `--cwd <dir>`.
@@ -62,6 +62,43 @@ type-checks nowhere, which is a worse failure than a longer path.
   content, so `..` and absolute paths are rejected before anything touches the disk.
 - **Unknown registry keys are ignored**, so a registry ahead of your CLI still installs
   instead of failing closed.
+- **`@llui/*` versions are checked before anything is written** — see below.
+
+## `@llui/*` minimum versions
+
+A registry item is written against a specific release of the packages it imports. A
+`sonner` skin that uses a token or part attribute an older `@llui/components` lacks
+would copy cleanly and then break at runtime, so every item records a minimum for each
+`@llui/*` dependency, in shadcn's own `dependencies` spec form:
+
+```json
+{ "name": "sonner", "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"] }
+```
+
+The minimum is the version of that package the registry was built against — derived
+by the registry build, never hand-maintained. The caret is read as a floor only: a
+newer install passes even past the caret's upper bound. Non-`@llui` dependencies are
+relayed as written.
+
+Before writing any file, `llui add` resolves the project's version of every `@llui/*`
+package the requested items need, including those reached only through
+`registryDependencies`: first the **installed** `node_modules/<pkg>/package.json`
+(looked up from the project directory and each ancestor, as Node resolves an import),
+otherwise the **`package.json` range**, compared by the lowest version it allows
+(`^0.19.2` counts as 0.19.2) because that is what a fresh install may resolve. A range
+with no determinable floor (`latest`, `*`, a git or file spec) produces a warning, not
+a failure. Versions are ordered by semver precedence, so `0.21.0-rc.1` does not satisfy
+a `0.21.0` minimum.
+
+| Project has                  | Result                                                                            |
+| ---------------------------- | --------------------------------------------------------------------------------- |
+| the minimum or newer         | copies as usual                                                                   |
+| an older version             | exits non-zero, writes nothing, names each package, both versions and the upgrade |
+| an older version + `--force` | copies anyway and prints the same report as a warning                             |
+| the package not installed    | copies, and the `Install:` line carries the minimum: `@llui/components@^0.20.1`   |
+
+A registry that lists an `@llui/*` package without a minimum is rejected with an error
+naming the item.
 
 ## Using another registry
 
@@ -74,7 +111,9 @@ llui add button --registry https://example.com/r
 ```
 
 A local source may leave file contents on disk (`files[].path`); a remote one must serve
-them inlined (`files[].content`).
+them inlined (`files[].content`). Likewise a local source may declare
+`@llui/<pkg>@workspace:^`, resolved from the registry directory's own `node_modules`;
+a remote one must serve the built `@llui/<pkg>@^<version>`.
 
 <!-- auto-api:start -->
 
@@ -90,6 +129,11 @@ source, which they are expected to edit. A second `llui add button` after
 those edits must not silently discard them, so an existing file is reported
 as skipped and `--overwrite` is the explicit opt-in.
 
+The version pre-flight runs before the first write for the same reason: a
+skin built against a newer `@llui/components` copies cleanly and then fails
+at runtime, and a half-installed set of files is worse than none. `--force`
+is its opt-in, mirroring `--overwrite`.
+
 ```typescript
 function add(options: AddOptions): Promise<AddResult>
 ```
@@ -100,6 +144,33 @@ The alias KEY a registry `@/`-import maps to (`@/lib/utils` -> 'lib').
 
 ```typescript
 function aliasKeyOf(specifier: string): 'ui' | 'lib' | null
+```
+
+### `assertDependencySpecs()`
+
+Every `@llui/*` dependency must say which version its item was written
+against, as `@llui/<pkg>@^<version>`. A skin that uses something new in
+`@llui/components` (a token, a part attribute, a floating CSS variable)
+otherwise copies cleanly into a project on an older release and breaks
+silently at runtime — which is why `llui add` checks that floor before it
+writes anything, and why an item that does not declare one is REJECTED here
+rather than waved through unchecked.
+
+The form is shadcn's own: a `dependencies` entry is an npm spec, and
+shadcn's CLI passes `name@range` straight to the package manager. Only the
+caret-on-a-full-version form is accepted, because it is the only one the
+registry build emits and the only one whose floor is unambiguous. `llui add`
+reads the caret as a MINIMUM: a newer install passes even past the caret's
+upper bound. Non-`@llui` entries are relayed untouched.
+
+`kind` says where the item came from. A `'workspace'` registry — an unbuilt
+`registry/registry.json` read from a local path — may instead say
+`@llui/<pkg>@workspace:^`, pnpm's protocol for "this workspace's version",
+which the loader then resolves exactly as the build does. A `'built'`
+registry (anything fetched) must never carry that source form.
+
+```typescript
+function assertDependencySpecs(item: RegistryItem, kind: 'built' | 'workspace'): void
 ```
 
 ### `assertSafeTarget()`
@@ -113,15 +184,55 @@ site is several calls away from the place a reviewer would think to look.
 function assertSafeTarget(target: string, itemName: string): void
 ```
 
+### `checkVersions()`
+
+Compare every requirement that carries a minimum against the project.
+
+```typescript
+function checkVersions(
+  cwd: string,
+  requirements: readonly DependencyRequirement[],
+): Promise<VersionCheck[]>
+```
+
 ### `collectDependencies()`
 
-Collect the npm packages the given items need, deduped and sorted.
+Collect the npm packages the given items need — the union over every
+resolved item, so a package reached only through `registryDependencies` is
+here too — deduped and sorted by name.
+
+An `@llui/*` package is keyed by NAME and carries the highest minimum any
+item declares (the one floor that satisfies all of them). Anything else is
+keyed by its whole spec, as before: the CLI relays third-party ranges, it
+does not interpret them.
 
 ```typescript
 function collectDependencies(items: readonly RegistryItem[]): {
-  dependencies: string[]
-  devDependencies: string[]
+  dependencies: DependencyRequirement[]
+  devDependencies: DependencyRequirement[]
 }
+```
+
+### `compareVersions()`
+
+Semver 2.0 precedence: -1 if `a` < `b`, 0 if equal, 1 if `a` > `b`. Build metadata is ignored.
+
+```typescript
+function compareVersions(a: string, b: string): -1 | 0 | 1
+```
+
+### `findInstalled()`
+
+The installed `name` visible from `fromDir`, walking up the `node_modules`
+chain the way Node resolves a bare import. Reads `package.json` directly
+rather than `require.resolve`-ing it: a package's `exports` map may not
+expose `./package.json`.
+
+```typescript
+function findInstalled(
+  fromDir: string,
+  name: string,
+): Promise<{ version: string; packageJson: string } | null>
 ```
 
 ### `formatProductList()`
@@ -168,6 +279,49 @@ registry needs no equivalent: its `path` still points at a real file on disk.
 
 ```typescript
 function loadRemoteItem(source: string, name: string): Promise<RegistryItem>
+```
+
+### `minimumOfRange()`
+
+The lowest version a `package.json` dependency range admits, or `null` when
+that is not determinable (`*`, `latest`, `>1.2.3`, an upper bound alone, a
+git/file/link/URL spec, `workspace:*`).
+
+This is how `llui add` compares a DECLARED-but-not-installed dependency
+against a registry minimum: a project whose `package.json` says `^0.19.0`
+may resolve 0.19.0 on a fresh install, so 0.19.0 is the version it can
+promise. `workspace:` and `npm:<name>@` prefixes are unwrapped; `a || b`
+takes the lower of the two floors, and a compound set (`>=1.2.3 <2`) the
+highest lower bound in it.
+
+```typescript
+function minimumOfRange(range: string): string | null
+```
+
+### `parseDependencySpec()`
+
+Split an npm dependency spec (`clsx`, `clsx@^2`, `@llui/dom@^0.14.0`) into its
+package name and the range after the `@`, if any. A scoped name's leading `@`
+is part of the NAME, so the separator is the first `@` after position 0.
+
+```typescript
+function parseDependencySpec(spec: string): { name: string; range: string | null }
+```
+
+### `parseVersion()`
+
+Parse a FULL version (`1.2.3`, `1.2.3-rc.1+build`), or `null`.
+
+```typescript
+function parseVersion(text: string): Version | null
+```
+
+### `projectVersion()`
+
+The project's version of `name`: installed, declared, or missing (see the module doc).
+
+```typescript
+function projectVersion(cwd: string, name: string): Promise<ProjectVersion>
 ```
 
 ### `readConfig()`
@@ -287,6 +441,17 @@ export type ProductCategory =
   | 'utilities'
 ```
 
+### `ProjectVersion`
+
+Where a project's version of a package came from.
+
+```typescript
+export type ProjectVersion =
+  | { kind: 'installed'; version: string; packageJson: string }
+  | { kind: 'declared'; range: string; version: string | null }
+  | { kind: 'missing' }
+```
+
 ### `Registry`
 
 ```typescript
@@ -327,6 +492,12 @@ export type ResolvedProductIdentity = {
 }
 ```
 
+### `VersionStatus`
+
+```typescript
+export type VersionStatus = 'ok' | 'older' | 'missing' | 'unverified'
+```
+
 ## Interfaces
 
 ### `AddOptions`
@@ -338,6 +509,12 @@ export interface AddOptions {
   names: readonly string[]
   /** Replace files that already exist. Default false — see `AddResult.skipped`. */
   overwrite?: boolean
+  /**
+   * Copy even when an installed `@llui/*` package is older than an item needs.
+   * Default false — `add` then throws `VersionMismatchError` before writing.
+   * With it, the mismatches are returned in `AddResult.mismatches` instead.
+   */
+  force?: boolean
   /** Resolve and report without touching the filesystem. */
   dryRun?: boolean
 }
@@ -351,8 +528,18 @@ export interface AddResult {
   /** Files that already existed and were LEFT ALONE. */
   skipped: string[]
   items: RegistryItem[]
-  dependencies: string[]
-  devDependencies: string[]
+  /** Every npm package the items need, including via `registryDependencies`. */
+  dependencies: DependencyRequirement[]
+  devDependencies: DependencyRequirement[]
+  /** One check per `@llui/*` requirement, against the project's version. */
+  versions: VersionCheck[]
+  /** Installed packages older than required. Non-empty only under `force`. */
+  mismatches: VersionMismatch[]
+  /** Install-command arguments: a bare name when the project already satisfies
+   * it, `name@^<min>` when it is missing or too old. */
+  install: { dependencies: string[]; devDependencies: string[] }
+  /** The command that upgrades every mismatch, or `null` when there are none. */
+  upgradeCommand: string | null
 }
 ```
 
@@ -375,6 +562,22 @@ export interface CopiedArtifact {
   artifactKind: 'skin' | 'presentational' | 'pattern'
   styling: StylingSupport
   scenarioId?: string
+}
+```
+
+### `DependencyRequirement`
+
+One npm package the resolved items need.
+
+```typescript
+export interface DependencyRequirement {
+  name: string
+  /** What to install when the project lacks it (`@llui/dom@^0.14.0`, `clsx`). */
+  spec: string
+  /** The lowest acceptable version — set for every `@llui/*` package, `null` otherwise. */
+  minimum: string | null
+  /** The items that declare it, in resolution order. */
+  requiredBy: string[]
 }
 ```
 
@@ -488,6 +691,72 @@ export interface StylingSupport {
 }
 ```
 
+### `Version`
+
+The small slice of semver `llui add` needs: parse a version, order two of
+them, and find the lowest version a `package.json` range admits.
+
+Hand-written rather than a dependency on purpose — the CLI's only runtime
+dependency is zod, and the question it asks is narrow: "is the installed
+`@llui/*` package at least as new as the one this registry item was built
+against?". That is an ORDERING question (semver 2.0 §11 precedence), not a
+range-satisfaction one, so npm's rule that a range excludes prereleases of
+other tuples does not apply: `0.21.0-beta.0` installed against a `0.20.1`
+floor is newer, and passes.
+
+```typescript
+export interface Version {
+  major: number
+  minor: number
+  patch: number
+  /** Dot-separated identifiers; numeric ones are numbers. Empty = release. */
+  prerelease: (string | number)[]
+}
+```
+
+### `VersionCheck`
+
+```typescript
+export interface VersionCheck {
+  name: string
+  minimum: string
+  requiredBy: string[]
+  project: ProjectVersion
+  status: VersionStatus
+}
+```
+
+### `VersionMismatch`
+
+A package the project has, older than the items need.
+
+```typescript
+export interface VersionMismatch {
+  name: string
+  /** The version compared: installed, or the declared range's floor. */
+  installed: string
+  minimum: string
+  requiredBy: string[]
+  /** Set when `installed` is a `package.json` range's floor, not an installed package. */
+  declared?: string
+}
+```
+
+## Classes
+
+### `VersionMismatchError`
+
+Thrown by `add()` BEFORE anything is written when an installed `@llui/*`
+package is older than an item needs. `--force` turns it into a warning.
+
+```typescript
+class VersionMismatchError extends Error {
+  mismatches: VersionMismatch[]
+  upgradeCommand: string
+  constructor(mismatches: VersionMismatch[], upgradeCommand: string)
+}
+```
+
 ## Constants
 
 ### `ComposedPresentationCoverageSchema`
@@ -520,6 +789,14 @@ const CopiedArtifactSchema
 
 ```typescript
 const DEFAULT_CONFIG: Config
+```
+
+### `LLUI_SCOPE`
+
+The npm scope whose packages registry items must declare with a minimum.
+
+```typescript
+const LLUI_SCOPE
 ```
 
 ### `MachineFreeSchema`
@@ -651,11 +928,46 @@ const StylelessPresentationCoverageSchema
 const StylingSupportSchema
 ```
 
+### `WORKSPACE_SPEC`
+
+The source-registry spec `scripts/build-registry.mjs` replaces with `^<workspace version>`.
+
+```typescript
+const WORKSPACE_SPEC
+```
+
 ## Public Entry Points
 
 ### `@llui/cli/registry`
 
 #### Functions
+
+##### `assertDependencySpecs()` from `@llui/cli/registry`
+
+Every `@llui/*` dependency must say which version its item was written
+against, as `@llui/<pkg>@^<version>`. A skin that uses something new in
+`@llui/components` (a token, a part attribute, a floating CSS variable)
+otherwise copies cleanly into a project on an older release and breaks
+silently at runtime — which is why `llui add` checks that floor before it
+writes anything, and why an item that does not declare one is REJECTED here
+rather than waved through unchecked.
+
+The form is shadcn's own: a `dependencies` entry is an npm spec, and
+shadcn's CLI passes `name@range` straight to the package manager. Only the
+caret-on-a-full-version form is accepted, because it is the only one the
+registry build emits and the only one whose floor is unambiguous. `llui add`
+reads the caret as a MINIMUM: a newer install passes even past the caret's
+upper bound. Non-`@llui` entries are relayed untouched.
+
+`kind` says where the item came from. A `'workspace'` registry — an unbuilt
+`registry/registry.json` read from a local path — may instead say
+`@llui/<pkg>@workspace:^`, pnpm's protocol for "this workspace's version",
+which the loader then resolves exactly as the build does. A `'built'`
+registry (anything fetched) must never carry that source form.
+
+```typescript
+function assertDependencySpecs(item: RegistryItem, kind: 'built' | 'workspace'): void
+```
 
 ##### `assertSafeTarget()` from `@llui/cli/registry`
 
@@ -670,12 +982,19 @@ function assertSafeTarget(target: string, itemName: string): void
 
 ##### `collectDependencies()` from `@llui/cli/registry`
 
-Collect the npm packages the given items need, deduped and sorted.
+Collect the npm packages the given items need — the union over every
+resolved item, so a package reached only through `registryDependencies` is
+here too — deduped and sorted by name.
+
+An `@llui/*` package is keyed by NAME and carries the highest minimum any
+item declares (the one floor that satisfies all of them). Anything else is
+keyed by its whole spec, as before: the CLI relays third-party ranges, it
+does not interpret them.
 
 ```typescript
 function collectDependencies(items: readonly RegistryItem[]): {
-  dependencies: string[]
-  devDependencies: string[]
+  dependencies: DependencyRequirement[]
+  devDependencies: DependencyRequirement[]
 }
 ```
 
@@ -713,6 +1032,16 @@ registry needs no equivalent: its `path` still points at a real file on disk.
 function loadRemoteItem(source: string, name: string): Promise<RegistryItem>
 ```
 
+##### `parseDependencySpec()` from `@llui/cli/registry`
+
+Split an npm dependency spec (`clsx`, `clsx@^2`, `@llui/dom@^0.14.0`) into its
+package name and the range after the `@`, if any. A scoped name's leading `@`
+is part of the NAME, so the separator is the first `@` after position 0.
+
+```typescript
+function parseDependencySpec(spec: string): { name: string; range: string | null }
+```
+
 ##### `resolveItems()` from `@llui/cli/registry`
 
 Resolve the requested names plus everything they depend on, in dependency-first
@@ -747,7 +1076,33 @@ export type RegistryFile = z.infer<typeof RegistryFileSchema>
 export type RegistryItem = z.infer<typeof RegistryItemSchema>
 ```
 
+#### Interfaces
+
+##### `DependencyRequirement` from `@llui/cli/registry`
+
+One npm package the resolved items need.
+
+```typescript
+export interface DependencyRequirement {
+  name: string
+  /** What to install when the project lacks it (`@llui/dom@^0.14.0`, `clsx`). */
+  spec: string
+  /** The lowest acceptable version — set for every `@llui/*` package, `null` otherwise. */
+  minimum: string | null
+  /** The items that declare it, in resolution order. */
+  requiredBy: string[]
+}
+```
+
 #### Constants
+
+##### `LLUI_SCOPE` from `@llui/cli/registry`
+
+The npm scope whose packages registry items must declare with a minimum.
+
+```typescript
+const LLUI_SCOPE
+```
 
 ##### `RegistryFileSchema` from `@llui/cli/registry`
 
@@ -774,6 +1129,14 @@ const RegistryItemSchema
 
 ```typescript
 const RegistrySchema
+```
+
+##### `WORKSPACE_SPEC` from `@llui/cli/registry`
+
+The source-registry spec `scripts/build-registry.mjs` replaces with `^<workspace version>`.
+
+```typescript
+const WORKSPACE_SPEC
 ```
 
 ### `@llui/cli/presentation-scenarios`

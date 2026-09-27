@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Sparkline",
   "description": "Skin for @llui/components/sparkline — a cell-sized time-series trend against a reference band, with calendar gridlines.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["utils"],
   "files": [
     {

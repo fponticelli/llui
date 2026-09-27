@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Table of Contents",
   "description": "Skin for @llui/components/toc — depth-indented outline with scroll tracking.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["utils"],
   "files": [
     {

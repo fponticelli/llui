@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "QR Code",
   "description": "Skin for @llui/components/qr-code — rendered code with a download trigger.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["button", "utils"],
   "files": [
     {
