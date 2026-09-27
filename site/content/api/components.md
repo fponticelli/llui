@@ -267,8 +267,10 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `exitGenerations` | `RetainedExitGeneration<string>[]` |
 | `exitSequence`    | `number`                           |
 | `animated`        | `boolean`                          |
+| `exitWatcher`     | `boolean`                          |
+| `exitWarned`      | `boolean`                          |
 
-**Messages:** `toggle`, `open`, `close`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `exitComplete`
+**Messages:** `toggle`, `open`, `close`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `exitComplete`, `exitWatcherAttach`, `exitWatcherDetach`
 
 **Init options:** `value?: string[], multiple?: boolean, collapsible?: boolean, disabled?: boolean, items?: string[], animated?: boolean`
 
@@ -518,8 +520,10 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `closing`        | `boolean` |
 | `exitGeneration` | `number`  |
 | `animated`       | `boolean` |
+| `exitWatcher`    | `boolean` |
+| `exitWarned`     | `boolean` |
 
-**Messages:** `toggle`, `open`, `close`, `setOpen`, `exitComplete`
+**Messages:** `toggle`, `open`, `close`, `setOpen`, `exitComplete`, `exitWatcherAttach`, `exitWatcherDetach`
 
 **Init options:** `open?: boolean, disabled?: boolean, animated?: boolean`
 
@@ -3716,6 +3720,10 @@ export type AccordionMsg =
   | { type: 'focusLast' }
   /** @humanOnly — sent by the retained content's own animation end/cancel event. */
   | { type: 'exitComplete'; value: string; generation: number }
+  /** @humanOnly — sent by `parts.exitCompletion`'s own mount, once placed. */
+  | { type: 'exitWatcherAttach' }
+  /** @humanOnly — sent by `parts.exitCompletion`'s own cleanup, on unmount. */
+  | { type: 'exitWatcherDetach' }
 ```
 
 ##### `Activation` from `@llui/components`
@@ -4019,6 +4027,10 @@ export type CollapsibleMsg =
   | { type: 'setOpen'; open: boolean }
   /** @humanOnly */
   | { type: 'exitComplete'; generation: number }
+  /** @humanOnly — sent by `parts.exitCompletion`'s own mount, once placed. */
+  | { type: 'exitWatcherAttach' }
+  /** @humanOnly — sent by `parts.exitCompletion`'s own cleanup, on unmount. */
+  | { type: 'exitWatcherDetach' }
 ```
 
 ##### `ColorModel` from `@llui/components`
@@ -6297,11 +6309,14 @@ export interface AccordionParts {
    * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
    * host app, bypassing the trigger's click handler) once its content's own
    * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. MUST be placed in the rendered view (`#264` review
-   * item 1); a click-driven close is still safety-netted synchronously
-   * inside the trigger regardless of whether this is placed, but nothing
-   * else settles a programmatic close on a no-motion skin, which otherwise
-   * hangs `closing` + `inert` forever.
+   * exit motion at all. Its mount ALSO reports whether it is placed at all:
+   * `animated: true` only ever retains `closing` content while this is
+   * mounted (#264 item F1) — forgetting to place it degrades gracefully to
+   * an instant close (with a one-time dev warning) rather than hanging
+   * `closing` + `inert` forever, so placing it is no longer required for
+   * SAFETY, only for the requested exit animation to actually run on a
+   * programmatic close. A click-driven close is still safety-netted
+   * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
 }
@@ -6335,6 +6350,21 @@ export interface AccordionState {
   exitSequence: number
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
+  /**
+   * Whether `parts.exitCompletion` is CURRENTLY placed/mounted (#264 item
+   * F1). `closing` retention only ever engages when `animated && exitWatcher`
+   * both hold — never `animated` alone — so a forgotten `exitCompletion`
+   * placement closes instantly instead of hanging `closing` + `inert`
+   * forever. Flipped by the `exitWatcherAttach`/`exitWatcherDetach` messages
+   * that mount sends on mount/cleanup; never a caller-facing init option.
+   */
+  exitWatcher: boolean
+  /**
+   * Set once a close was reduced with `animated: true` but `exitWatcher:
+   * false` — throttles the dev-mode "you forgot to place exitCompletion"
+   * warning to fire at most once per instance. Never reset back to `false`.
+   */
+  exitWarned: boolean
 }
 ```
 
@@ -7565,11 +7595,14 @@ export interface CollapsibleParts {
    * Settles a PROGRAMMATIC `close`/`toggle`/`setOpen` (sent directly by the
    * host app, bypassing the trigger's click handler) once the content's own
    * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. MUST be placed in the rendered view (`#264` review
-   * item 1); a click-driven close is still safety-netted synchronously
-   * inside the trigger regardless of whether this is placed, but nothing
-   * else settles a programmatic close on a no-motion skin, which otherwise
-   * hangs `closing` + `inert` forever.
+   * exit motion at all. Its mount ALSO reports whether it is placed at all:
+   * `animated: true` only ever retains `closing` while this is mounted
+   * (#264 item F1) — forgetting to place it degrades gracefully to an
+   * instant close (with a one-time dev warning) rather than hanging
+   * `closing` + `inert` forever, so placing it is no longer required for
+   * SAFETY, only for the requested exit animation to actually run on a
+   * programmatic close. A click-driven close is still safety-netted
+   * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
 }
@@ -7590,6 +7623,21 @@ export interface CollapsibleState {
   exitGeneration: number
   /** Whether close waits for the content's own animation end/cancel event. */
   animated: boolean
+  /**
+   * Whether `parts.exitCompletion` is CURRENTLY placed/mounted (#264 item
+   * F1). `closing` retention only ever engages when `animated && exitWatcher`
+   * both hold — never `animated` alone — so a forgotten `exitCompletion`
+   * placement closes instantly instead of hanging `closing` + `inert`
+   * forever. Flipped by the `exitWatcherAttach`/`exitWatcherDetach` messages
+   * that mount sends on mount/cleanup; never a caller-facing init option.
+   */
+  exitWatcher: boolean
+  /**
+   * Set once a close was reduced with `animated: true` but `exitWatcher:
+   * false` — throttles the dev-mode "you forgot to place exitCompletion"
+   * warning to fire at most once per instance. Never reset back to `false`.
+   */
+  exitWarned: boolean
 }
 ```
 
@@ -24144,6 +24192,10 @@ export type AccordionMsg =
   | { type: 'focusLast' }
   /** @humanOnly — sent by the retained content's own animation end/cancel event. */
   | { type: 'exitComplete'; value: string; generation: number }
+  /** @humanOnly — sent by `parts.exitCompletion`'s own mount, once placed. */
+  | { type: 'exitWatcherAttach' }
+  /** @humanOnly — sent by `parts.exitCompletion`'s own cleanup, on unmount. */
+  | { type: 'exitWatcherDetach' }
 ```
 
 #### Interfaces
@@ -24229,11 +24281,14 @@ export interface AccordionParts {
    * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
    * host app, bypassing the trigger's click handler) once its content's own
    * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. MUST be placed in the rendered view (`#264` review
-   * item 1); a click-driven close is still safety-netted synchronously
-   * inside the trigger regardless of whether this is placed, but nothing
-   * else settles a programmatic close on a no-motion skin, which otherwise
-   * hangs `closing` + `inert` forever.
+   * exit motion at all. Its mount ALSO reports whether it is placed at all:
+   * `animated: true` only ever retains `closing` content while this is
+   * mounted (#264 item F1) — forgetting to place it degrades gracefully to
+   * an instant close (with a one-time dev warning) rather than hanging
+   * `closing` + `inert` forever, so placing it is no longer required for
+   * SAFETY, only for the requested exit animation to actually run on a
+   * programmatic close. A click-driven close is still safety-netted
+   * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
 }
@@ -24267,6 +24322,21 @@ export interface AccordionState {
   exitSequence: number
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
+  /**
+   * Whether `parts.exitCompletion` is CURRENTLY placed/mounted (#264 item
+   * F1). `closing` retention only ever engages when `animated && exitWatcher`
+   * both hold — never `animated` alone — so a forgotten `exitCompletion`
+   * placement closes instantly instead of hanging `closing` + `inert`
+   * forever. Flipped by the `exitWatcherAttach`/`exitWatcherDetach` messages
+   * that mount sends on mount/cleanup; never a caller-facing init option.
+   */
+  exitWatcher: boolean
+  /**
+   * Set once a close was reduced with `animated: true` but `exitWatcher:
+   * false` — throttles the dev-mode "you forgot to place exitCompletion"
+   * warning to fire at most once per instance. Never reset back to `false`.
+   */
+  exitWarned: boolean
 }
 ```
 
@@ -26001,6 +26071,10 @@ export type CollapsibleMsg =
   | { type: 'setOpen'; open: boolean }
   /** @humanOnly */
   | { type: 'exitComplete'; generation: number }
+  /** @humanOnly — sent by `parts.exitCompletion`'s own mount, once placed. */
+  | { type: 'exitWatcherAttach' }
+  /** @humanOnly — sent by `parts.exitCompletion`'s own cleanup, on unmount. */
+  | { type: 'exitWatcherDetach' }
 ```
 
 #### Interfaces
@@ -26059,11 +26133,14 @@ export interface CollapsibleParts {
    * Settles a PROGRAMMATIC `close`/`toggle`/`setOpen` (sent directly by the
    * host app, bypassing the trigger's click handler) once the content's own
    * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. MUST be placed in the rendered view (`#264` review
-   * item 1); a click-driven close is still safety-netted synchronously
-   * inside the trigger regardless of whether this is placed, but nothing
-   * else settles a programmatic close on a no-motion skin, which otherwise
-   * hangs `closing` + `inert` forever.
+   * exit motion at all. Its mount ALSO reports whether it is placed at all:
+   * `animated: true` only ever retains `closing` while this is mounted
+   * (#264 item F1) — forgetting to place it degrades gracefully to an
+   * instant close (with a one-time dev warning) rather than hanging
+   * `closing` + `inert` forever, so placing it is no longer required for
+   * SAFETY, only for the requested exit animation to actually run on a
+   * programmatic close. A click-driven close is still safety-netted
+   * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
 }
@@ -26084,6 +26161,21 @@ export interface CollapsibleState {
   exitGeneration: number
   /** Whether close waits for the content's own animation end/cancel event. */
   animated: boolean
+  /**
+   * Whether `parts.exitCompletion` is CURRENTLY placed/mounted (#264 item
+   * F1). `closing` retention only ever engages when `animated && exitWatcher`
+   * both hold — never `animated` alone — so a forgotten `exitCompletion`
+   * placement closes instantly instead of hanging `closing` + `inert`
+   * forever. Flipped by the `exitWatcherAttach`/`exitWatcherDetach` messages
+   * that mount sends on mount/cleanup; never a caller-facing init option.
+   */
+  exitWatcher: boolean
+  /**
+   * Set once a close was reduced with `animated: true` but `exitWatcher:
+   * false` — throttles the dev-mode "you forgot to place exitCompletion"
+   * warning to fire at most once per instance. Never reset back to `false`.
+   */
+  exitWarned: boolean
 }
 ```
 
