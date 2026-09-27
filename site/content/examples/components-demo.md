@@ -1,6 +1,6 @@
 ---
-title: 'Components Demo'
-description: 'A gallery of the headless @llui/components primitives.'
+title: 'Baseline theme showcase'
+description: 'A curated app of @llui/components machines styled by the Baseline theme.'
 ---
 
 <div class="example-embed">
@@ -9,12 +9,14 @@ description: 'A gallery of the headless @llui/components primitives.'
     <span class="example-embed-url">/apps/components-demo/</span>
     <a class="example-embed-open" href="/apps/components-demo/" target="_blank" rel="noopener">Open ↗</a>
   </div>
-  <iframe class="example-embed-frame" src="/apps/components-demo/" title="Components Demo — live demo" loading="lazy"></iframe>
+  <iframe class="example-embed-frame" src="/apps/components-demo/" title="Baseline theme showcase — live demo" loading="lazy"></iframe>
 </div>
 
 <p class="example-source"><a href="https://github.com/fponticelli/llui/tree/main/examples/components-demo" target="_blank" rel="noopener">View source on GitHub ↗</a></p>
 
-A gallery of LLui's headless component library (`@llui/components`). Each section wires up one family of accessible, unstyled primitives with live controls.
+A curated app over LLui's headless component library (`@llui/components`), styled by the **Baseline theme** (`@llui/components/styles/theme.css`). Each section wires up one family of accessible primitives with live controls, composed the way a real app composes them.
+
+For every component once — with deterministic scenarios, on both the Baseline theme and the Registry skins path — use the [Component Gallery](https://github.com/fponticelli/llui/tree/main/examples/component-gallery) instead (`pnpm gallery`).
 
 ## What it demonstrates
 

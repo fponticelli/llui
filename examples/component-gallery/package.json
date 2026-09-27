@@ -11,7 +11,7 @@
     "build:registry": "vite build -c vite.registry.config.ts",
     "preview": "vite preview",
     "check": "tsc --noEmit -p tsconfig.json",
-    "lint": "eslint src test vite.config.ts vite.baseline.config.ts vite.registry.config.ts gallery.config.ts",
+    "lint": "eslint src test vite.config.ts vite.baseline.config.ts vite.registry.config.ts vitest.config.ts gallery.config.ts",
     "test": "vitest run"
   },
   "dependencies": {

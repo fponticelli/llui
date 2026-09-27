@@ -1,6 +1,8 @@
-# Components Demo
+# Baseline theme showcase
 
-A gallery of LLui's headless component library (`@llui/components`). Each section wires up one family of accessible, unstyled primitives with live controls.
+A curated app over LLui's headless component library (`@llui/components`), styled by the **Baseline theme** (`@llui/components/styles/theme.css`). Each section wires up one family of accessible primitives with live controls, composed the way a real app composes them.
+
+For every component once — with deterministic scenarios, on both the Baseline theme and the Registry skins path — use the [Component Gallery](../component-gallery) instead (`pnpm gallery`).
 
 ## What it demonstrates
 

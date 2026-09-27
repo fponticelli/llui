@@ -41,6 +41,7 @@ pnpm lint:scripts         # ESLint ALL of scripts/, TYPE-AWARE (.ts + .mjs) — 
 pnpm turbo test           # Run tests (vitest) across all packages
 pnpm format               # Prettier format everything
 pnpm format:check         # Check formatting without writing
+pnpm gallery              # Component Gallery: shell + Baseline theme + Registry skins on one origin
 
 pnpm test:durations       # Record the per-file test-duration baseline from a full run (#193)
 pnpm check:test-durations # Re-run and diff against that baseline (load-normalized, see below)

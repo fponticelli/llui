@@ -17,9 +17,11 @@ You can use either half alone. A machine with no skin is a fully accessible head
 component; a skin with no machine is a styled element. This page walks the normal case:
 both, together.
 
-> Everything here is live in [the registry demo](/examples). Its sections render
-> machine-backed skins, patterns and intentionally machine-free presentational items; the
-> copied source is the closest thing to a reference implementation.
+> Every component is live in the [Component Gallery](/apps/component-gallery/): search for it
+> once and open its deterministic scenarios (disabled, invalid, open, loading, …) on either
+> path — **Baseline theme** or **Registry skins** — side by side, in two isolated documents.
+> The [Registry skins showcase](/examples/registry-demo) is the copied source in a real app,
+> the closest thing to a reference implementation.
 
 ## Choosing a styling path
 

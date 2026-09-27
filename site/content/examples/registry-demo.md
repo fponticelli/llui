@@ -1,6 +1,6 @@
 ---
-title: 'Registry Demo'
-description: 'Every registry component, from source copied into the app by `llui add`.'
+title: 'Registry skins showcase'
+description: 'A curated app built on the Registry skins path: source copied in by `llui add`.'
 ---
 
 <div class="example-embed">
@@ -9,15 +9,19 @@ description: 'Every registry component, from source copied into the app by `llui
     <span class="example-embed-url">/apps/registry-demo/</span>
     <a class="example-embed-open" href="/apps/registry-demo/" target="_blank" rel="noopener">Open ↗</a>
   </div>
-  <iframe class="example-embed-frame" src="/apps/registry-demo/" title="Registry Demo — live demo" loading="lazy"></iframe>
+  <iframe class="example-embed-frame" src="/apps/registry-demo/" title="Registry skins showcase — live demo" loading="lazy"></iframe>
 </div>
 
 <p class="example-source"><a href="https://github.com/fponticelli/llui/tree/main/examples/registry-demo" target="_blank" rel="noopener">View source on GitHub ↗</a></p>
 
-All 58 components in the [LLui registry](https://github.com/fponticelli/llui/tree/main/registry), rendered from source that
-`llui add` copied into this app. Nothing on the page is imported from a styling
-package — `src/components/ui/` is ordinary project source, and editing it changes what
-you see.
+A curated app on the **Registry skins** path: every item in the
+[LLui registry](https://github.com/fponticelli/llui/tree/main/registry), rendered from source that `llui add` copied into this app.
+Nothing on the page is imported from a styling package — `src/components/ui/` is ordinary
+project source, and editing it changes what you see.
+
+For each component's deterministic scenarios side by side with the Baseline theme, use the
+[Component Gallery](https://github.com/fponticelli/llui/tree/main/examples/component-gallery) (`pnpm gallery`) — its Registry skins document
+renders these same copied files.
 
 Coverage is shadcn/ui parity minus Chart and Sidebar, plus the components LLui has and
 shadcn does not (rating group, tags input, tree view, steps, meter, number input,

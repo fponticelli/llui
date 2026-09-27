@@ -6,6 +6,10 @@ description: 'Live, runnable LLui example apps — each one embedded and describ
 Every example below is a real LLui app, built from source and embedded live. Open one to see it running, read what it demonstrates, and jump to its source on GitHub.
 
 <div class="example-grid">
+  <a class="example-card" href="/examples/component-gallery">
+    <h3>Component Gallery</h3>
+    <p>Every component once, with deterministic scenarios, on both styling paths: Baseline theme and Registry skins.</p>
+  </a>
   <a class="example-card" href="/examples/counter">
     <h3>Counter</h3>
     <p>The smallest possible LLui app — increment, decrement, reset.</p>
@@ -19,12 +23,12 @@ Every example below is a real LLui app, built from source and embedded live. Ope
     <p>A sign-up form with Zod schema validation and live field errors.</p>
   </a>
   <a class="example-card" href="/examples/registry-demo">
-    <h3>Registry Demo</h3>
-    <p>Every registry component, from source copied into the app by `llui add`.</p>
+    <h3>Registry skins showcase</h3>
+    <p>A curated app built on the Registry skins path: source copied in by `llui add`.</p>
   </a>
   <a class="example-card" href="/examples/components-demo">
-    <h3>Components Demo</h3>
-    <p>A gallery of the headless @llui/components primitives.</p>
+    <h3>Baseline theme showcase</h3>
+    <p>A curated app of @llui/components machines styled by the Baseline theme.</p>
   </a>
   <a class="example-card" href="/examples/dashboard">
     <h3>Dashboard</h3>

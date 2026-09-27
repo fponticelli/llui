@@ -130,6 +130,7 @@ describe('the vitest configuration set', () => {
   // an exact count, and it is one line.
   it('sweeps exactly the configs this repository owns', () => {
     expect(configPaths).toEqual([
+      'examples/component-gallery/vitest.config.ts',
       'packages/a2ui/vitest.config.ts',
       'packages/agent-bridge/vitest.config.ts',
       'packages/agent-e2e/vitest.config.ts',
