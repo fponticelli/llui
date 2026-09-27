@@ -937,7 +937,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             return domSelect(
               {
                 id: 'toast-placement-select',
-                class: 'select select-sm',
+                class: 'btn btn-secondary btn-sm',
                 'aria-labelledby': 'toast-placement-label',
                 value: state.at('toast.placement'),
                 onChange: (e: Event) => {

@@ -101,6 +101,10 @@ const ALLOWED: Record<string, Allowance> = {
   '*: aria-hidden': { reason: 'set by the consumer on decorative content' },
   '*: aria-busy': { reason: 'set by the consumer during a load' },
   '*: aria-readonly': { reason: 'set by the consumer on any control' },
+  '*: data-icon': {
+    reason:
+      "the consumer's own always-mounted per-ToastType glyph marker (#265 task item 2) — never published by toast.ts's part bag; visibility is CSS-gated on the machine's real data-type via a descendant selector",
+  },
 
   'navigation-menu.ts: data-viewport': {
     reason: 'the consumer sets it to pick inline vs shared-viewport presentation',

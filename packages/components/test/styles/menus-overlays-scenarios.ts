@@ -928,7 +928,11 @@ export const MENUS_OVERLAYS_DEFINITIONS = {
             animated: false,
             dismissable: true,
           } satisfies ToastCaseInput,
-          environmentAxes: toastType === 'success' ? AX.dirSurface : AX.none,
+          // Every ToastType case supports theme/forced-colors (#265 task
+          // item 2 — per-type contrast is measured in light, dark, AND
+          // forced colors, not only the default case); `success` additionally
+          // supports direction (its own dedicated placement/RTL coverage).
+          environmentAxes: toastType === 'success' ? AX.dirSurface : AX.surface,
         }),
       ),
       ...(['top', 'top-start', 'top-end', 'bottom', 'bottom-start', 'bottom-end'] as const).map(

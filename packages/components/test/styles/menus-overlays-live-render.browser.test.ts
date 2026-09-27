@@ -41,6 +41,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../../../scripts/lib/vite-source-aliases.mjs'
 import { paintedColors, bucketedKey } from './pixel-probe.js'
+import { contrast, srgb8ToLinear } from '../../../../scripts/lib/oklch.mjs'
 import { ProductContractSchema } from '@llui/cli'
 
 const repoRoot = resolve(import.meta.dirname, '../../../..')
@@ -338,6 +339,66 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
       // discipline: a hidden/backgrounded tab freezes a mid-flight
       // transition and would misreport a live one as reduced).
       expect(['0s', '']).toContain(duration.split(',')[0]!.trim())
+    })
+
+    it('every ToastType clears AA text contrast (>=4.5:1) and non-text contrast (>=3:1) in light, dark, and forced colors', async () => {
+      const types = ['info', 'success', 'warning', 'error', 'loading', 'custom'] as const
+      const modes = ['light', 'dark', 'forced'] as const
+      const toTriple = (c: { r: number; g: number; b: number }): [number, number, number] => [
+        c.r,
+        c.g,
+        c.b,
+      ]
+      const ratio = (a: [number, number, number], b: [number, number, number]): number =>
+        contrast(srgb8ToLinear(a), srgb8ToLinear(b))
+
+      for (const toastType of types) {
+        for (const mode of modes) {
+          const page =
+            mode === 'forced'
+              ? await openCase(path, 'component:toast', toastType, { forcedColors: 'active' })
+              : await openCase(path, 'component:toast', toastType, { theme: mode })
+          if (mode === 'forced') await page.emulateMedia({ forcedColors: 'active' })
+
+          const root = page.locator('#case [data-scope="toast"][data-part="root"]')
+          const read = await root.evaluate((node) => {
+            const rootStyle = getComputedStyle(node)
+            const titleEl = node.querySelector('[data-part="title"]') ?? node
+            const textStyle = getComputedStyle(titleEl)
+            // The type glyph — baseline's `[data-part='type-icon']` or
+            // registry's per-type Lucide `<svg>` — is the NON-TEXT visual
+            // cue (#265 task item 2). Its contrast is measured against the
+            // toast's own surface, the same adjacency a border or icon is
+            // actually read against on a real page (a toast floats over
+            // arbitrary page content, so "the surrounding page" has no
+            // fixed color to measure against; its own fill does).
+            const candidates = Array.from(
+              node.querySelectorAll('[data-part="type-icon"], svg[class*="/toast:"]'),
+            )
+            const icon = candidates.find((el) => getComputedStyle(el).display !== 'none') ?? titleEl
+            const iconStyle = getComputedStyle(icon)
+            return {
+              surface: rootStyle.backgroundColor,
+              ink: textStyle.color,
+              iconColor: iconStyle.color,
+            }
+          })
+          const [surface, ink, iconColor] = await paintedColors(page, [
+            read.surface,
+            read.ink,
+            read.iconColor,
+          ])
+          const textRatio = ratio(toTriple(surface!), toTriple(ink!))
+          const nonTextRatio = ratio(toTriple(surface!), toTriple(iconColor!))
+          expect(textRatio, `${path}/${toastType}/${mode} text contrast`).toBeGreaterThanOrEqual(
+            4.5,
+          )
+          expect(
+            nonTextRatio,
+            `${path}/${toastType}/${mode} non-text (glyph) contrast`,
+          ).toBeGreaterThanOrEqual(3)
+        }
+      }
     })
 
     it('places every real ToastType and every real toast placement, LTR and RTL', async () => {

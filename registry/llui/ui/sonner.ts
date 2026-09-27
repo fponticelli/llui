@@ -63,15 +63,27 @@ const ToastRoot = classPart(
 /** One icon per `ToastType`, always mounted, shown only under its own
  * `group-data-[type=…]/toast:` match — a pure-CSS gate on the root's own
  * (reactive) `data-type`, so it tracks an `update` with no JS on this side. */
-const TOAST_ICON_BASE = 'mt-0.5 hidden size-4 shrink-0'
+// `forced-colors:text-[CanvasText]` on every icon (#265 task item 2): unlike
+// the root's own text color, an icon's `text-*` utility sets `color`
+// DIRECTLY on the `<svg>` and wins over any inherited forced-colors
+// override on an ancestor, so each icon needs its own system-color
+// override to stay visible under forced-colors rather than painting a
+// literal (invisible-on-Canvas) hue. `sky-500`/`amber-500` alone measured
+// under AA non-text contrast (>=3:1 against the toast's own surface):
+// light mode gave 2.71:1 / 2.13:1 — `sky-600`/`amber-600` (with a lighter
+// `dark:` twin so DARK mode, already passing at the -500 shade, does not
+// regress) clear the floor in both.
+const TOAST_ICON_BASE = 'mt-0.5 hidden size-4 shrink-0 forced-colors:text-[CanvasText]'
 function toastIcons(): Mountable[] {
   return [
-    InfoIcon({ class: `${TOAST_ICON_BASE} text-sky-500 group-data-[type=info]/toast:block` }),
+    InfoIcon({
+      class: `${TOAST_ICON_BASE} text-sky-600 dark:text-sky-400 group-data-[type=info]/toast:block`,
+    }),
     CircleCheckIcon({
       class: `${TOAST_ICON_BASE} text-primary group-data-[type=success]/toast:block`,
     }),
     TriangleAlertIcon({
-      class: `${TOAST_ICON_BASE} text-amber-500 group-data-[type=warning]/toast:block`,
+      class: `${TOAST_ICON_BASE} text-amber-600 dark:text-amber-400 group-data-[type=warning]/toast:block`,
     }),
     CircleAlertIcon({
       class: `${TOAST_ICON_BASE} text-destructive group-data-[type=error]/toast:block`,
