@@ -22,6 +22,10 @@
     "./presentation-scenarios": {
       "types": "./dist/presentation-scenarios.d.ts",
       "import": "./dist/presentation-scenarios.js"
+    },
+    "./gallery": {
+      "types": "./dist/gallery.d.ts",
+      "import": "./dist/gallery.js"
     }
   },
   "files": [
