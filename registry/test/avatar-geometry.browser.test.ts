@@ -17,10 +17,19 @@ import { Avatar, AvatarBadge, AvatarFallback } from '../llui/ui/avatar'
  * measured, the compiled stylesheet resolved that tie back to the DEFAULT
  * look (badge 10px) rather than the COMPACT one (8px), silently un-mapping
  * density for exactly the sub-part shape this file's own #264 F5 fix claimed
- * to cover. This sweeps EVERY avatar sub-part (root, badge, badge's icon
- * visibility, fallback text) at EVERY size x density combination a real
- * `avatar.connect()` + the registry skin can produce, against a REAL
- * Chromium layout — never a hand-typed class string.
+ * to cover.
+ *
+ * A follow-up review LOW found the same class of bug one rung over:
+ * `size=lg` + `density=compact` resolved NON-DETERMINISTICALLY — root/badge
+ * WIDTH happened to follow `lg`, but the badge's icon visibility and the
+ * fallback's font size did not, resolving to `compact`'s instead, a tie
+ * broken by Tailwind's internal declaration order rather than anything
+ * this file states. Every density-driven declaration is now a genuine
+ * compound selector gated on `data-size=default`, so an explicit `sm`/`lg`
+ * deterministically wins by construction. This sweeps EVERY avatar sub-part
+ * (root, badge, badge's icon visibility, fallback text) across the FULL
+ * size x density matrix a real `avatar.connect()` + the registry skin can
+ * produce, against a REAL Chromium layout — never a hand-typed class string.
  */
 
 const ROOT = resolve(import.meta.dirname, '../..')
@@ -37,17 +46,47 @@ interface Case {
   }
 }
 
-// The two machine-wired cases (no explicit `data-size` — a live `connect()`
-// consumer never sets one) are the ones the regression above hit; the three
-// `data-size`-only cases pin upstream's own verbatim scale is untouched.
+// The FULL 3 (data-size: defaulted/sm/lg) x 3 (density: none/comfortable/
+// compact) matrix — #264 review LOW: `size=lg` + `density=compact` used to
+// resolve NON-DETERMINISTICALLY (root/badge WIDTH happened to follow `lg`,
+// but the badge's icon visibility and the fallback's font size did NOT,
+// resolving to `compact`'s instead — a tie broken by Tailwind's internal
+// declaration order, invisible from the source). Every density-driven
+// declaration is now gated on `data-size=default` as a genuine compound
+// selector, so an EXPLICIT `sm`/`lg` deterministically wins over density —
+// by construction, not by stylesheet-order luck — which this full matrix
+// exists to pin for every combination, not only the two the original
+// regression happened to hit.
 const CASES: readonly Case[] = [
   {
     name: 'default size, no density (bare, static render)',
     expect: { root: 32, badge: 10, svgHidden: false, fallbackFontPx: 14 },
   },
   {
+    name: 'default size, density=comfortable',
+    density: 'comfortable',
+    expect: { root: 32, badge: 10, svgHidden: false, fallbackFontPx: 14 },
+  },
+  {
+    name: 'default size, density=compact (the original regression case)',
+    density: 'compact',
+    expect: { root: 24, badge: 8, svgHidden: true, fallbackFontPx: 12 },
+  },
+  {
     name: 'data-size=sm, no density',
     dataSize: 'sm',
+    expect: { root: 24, badge: 8, svgHidden: true, fallbackFontPx: 12 },
+  },
+  {
+    name: 'data-size=sm, density=comfortable (explicit size wins)',
+    dataSize: 'sm',
+    density: 'comfortable',
+    expect: { root: 24, badge: 8, svgHidden: true, fallbackFontPx: 12 },
+  },
+  {
+    name: 'data-size=sm, density=compact (both agree)',
+    dataSize: 'sm',
+    density: 'compact',
     expect: { root: 24, badge: 8, svgHidden: true, fallbackFontPx: 12 },
   },
   {
@@ -56,14 +95,16 @@ const CASES: readonly Case[] = [
     expect: { root: 40, badge: 12, svgHidden: false, fallbackFontPx: 14 },
   },
   {
-    name: 'machine density=compact, default data-size (the regression case)',
-    density: 'compact',
-    expect: { root: 24, badge: 8, svgHidden: true, fallbackFontPx: 12 },
+    name: 'data-size=lg, density=comfortable (explicit size wins)',
+    dataSize: 'lg',
+    density: 'comfortable',
+    expect: { root: 40, badge: 12, svgHidden: false, fallbackFontPx: 14 },
   },
   {
-    name: 'machine density=comfortable, default data-size',
-    density: 'comfortable',
-    expect: { root: 32, badge: 10, svgHidden: false, fallbackFontPx: 14 },
+    name: 'data-size=lg, density=compact (deterministic tie-break: explicit lg must win)',
+    dataSize: 'lg',
+    density: 'compact',
+    expect: { root: 40, badge: 12, svgHidden: false, fallbackFontPx: 14 },
   },
 ]
 
