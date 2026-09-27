@@ -311,6 +311,16 @@ An explicit `'ltr' | 'rtl'` wins; an `Element` is resolved from the DOM;
 function resolveTextDirection(source: Element | null | undefined | TextDirection): TextDirection
 ```
 
+### `restoreInlineStyles()`
+
+```typescript
+function restoreInlineStyles(
+  element: HTMLElement,
+  snapshots: readonly InlineStyleSnapshot[],
+  hadStyleAttribute: boolean,
+): void
+```
+
 ### `runEngineFocus()`
 
 Run `body` with engine-focus suppression active. Any `focusin` raised inside
@@ -358,6 +368,12 @@ function runEngineFocus<T>(body: () => SyncEngineFocusBody<T>): T
 function setAriaHiddenOutside(target: Element): () => void
 ```
 
+### `snapshotInlineStyle()`
+
+```typescript
+function snapshotInlineStyle(element: HTMLElement, property: string): InlineStyleSnapshot
+```
+
 ### `watchInteractOutside()`
 
 Watch for pointer or focus events outside a given element. Returns a
@@ -389,6 +405,24 @@ Shared DOM helpers used by interaction utilities.
 
 ```typescript
 export type ElementSource<T extends Element = Element> = T | T[] | (() => T | T[] | null)
+```
+
+### `InlineStyleSnapshot`
+
+One inline style property's exact prior state (present or absent, value and
+priority), so `restoreInlineStyles` can put it back byte-for-byte rather
+than merely clearing whatever this attachment wrote. Exported so a caller
+that imperatively sets a SINGLE inline style outside `attachFloating`
+itself (`overlay-engine.ts`'s `sameWidth` handling) shares this snapshot
+discipline instead of re-implementing it (#265 LOW).
+
+```typescript
+export type InlineStyleSnapshot = {
+  property: string
+  present: boolean
+  value: string
+  priority: string
+}
 ```
 
 ### `NestedLayerAspect`

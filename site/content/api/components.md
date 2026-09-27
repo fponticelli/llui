@@ -19287,7 +19287,44 @@ exact prior values (including priority) or absence of those properties.
 export declare function attachFloating(opts: FloatingOptions): () => void
 ```
 
+##### `restoreInlineStyles()` from `@llui/components/utils/floating`
+
+```typescript
+export declare function restoreInlineStyles(
+  element: HTMLElement,
+  snapshots: readonly InlineStyleSnapshot[],
+  hadStyleAttribute: boolean,
+): void
+```
+
+##### `snapshotInlineStyle()` from `@llui/components/utils/floating`
+
+```typescript
+export declare function snapshotInlineStyle(
+  element: HTMLElement,
+  property: string,
+): InlineStyleSnapshot
+```
+
 #### Types
+
+##### `InlineStyleSnapshot` from `@llui/components/utils/floating`
+
+One inline style property's exact prior state (present or absent, value and
+priority), so `restoreInlineStyles` can put it back byte-for-byte rather
+than merely clearing whatever this attachment wrote. Exported so a caller
+that imperatively sets a SINGLE inline style outside `attachFloating`
+itself (`overlay-engine.ts`'s `sameWidth` handling) shares this snapshot
+discipline instead of re-implementing it (#265 LOW).
+
+```typescript
+export type InlineStyleSnapshot = {
+  property: string
+  present: boolean
+  value: string
+  priority: string
+}
+```
 
 ##### `Placement` from `@llui/components/utils/floating`
 
