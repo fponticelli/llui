@@ -53,9 +53,11 @@ const floatingPresenceCandidates = [
   'data-[state=closing]:animate-out',
   'data-[state=closing]:fade-out-0',
   'data-[state=closing]:zoom-out-95',
-  'data-[state=closed]:animate-out',
-  'data-[state=closed]:fade-out-0',
-  'data-[state=closed]:zoom-out-95',
+  // `closed` is never an animating phase — a real four-phase presence
+  // machine unmounts its content in the same reconcile pass that flips
+  // `status` to `closed` (`isMounted` is `status !== 'closed'`), so a
+  // `data-[state=closed]:animate-out`-family selector could never match
+  // (#265 finding 5). See floating-motion.ts's header for the full argument.
 ] as const
 
 const floatingSideCandidates = [
@@ -145,6 +147,85 @@ const demoArrowOverlays = (file: string, source: string): DemoArrowOverlay[] => 
 }
 
 /**
+ * AST-based classifiers, in place of a `source.includes(...)` substring
+ * match (#265 finding 4). A substring match is satisfied by a code COMMENT
+ * mentioning the same text with no corresponding real construct — measured
+ * on this exact file's own predecessor: `menubar.ts`'s only occurrence of
+ * `skipAnimations` was a comment, and a substring `isPresenceAware` check
+ * would have false-positived on it (avoided here only because that check
+ * additionally requires a `presence.js` import). Parsing once per source and
+ * walking for a real node is the fix that generalizes: a prose mention
+ * parses to nothing that satisfies any of these.
+ */
+const parseModule = (source: string): ts.SourceFile =>
+  ts.createSourceFile('module.ts', source, ts.ScriptTarget.Latest, true)
+
+/** A top-level `import … from '<moduleSpecifier>'`, matched exactly. */
+const importsFromModule = (source: string, moduleSpecifier: string): boolean => {
+  let found = false
+  parseModule(source).forEachChild((node) => {
+    if (
+      ts.isImportDeclaration(node) &&
+      ts.isStringLiteral(node.moduleSpecifier) &&
+      node.moduleSpecifier.text === moduleSpecifier
+    ) {
+      found = true
+    }
+  })
+  return found
+}
+
+/** A real CALL to one of `names` (`createOverlay(...)`, never a mention of
+ * the word). */
+const callsAnyOf = (source: string, names: readonly string[]): boolean => {
+  let found = false
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      names.includes(node.expression.text)
+    ) {
+      found = true
+    }
+    node.forEachChild(visit)
+  }
+  visit(parseModule(source))
+  return found
+}
+
+/** A real reference to identifier `name` — an import specifier or a use, as
+ * an actual `Identifier` token. The compiler's own tokenizer already excludes
+ * comments and string/template text, so this cannot be satisfied by prose. */
+const referencesIdentifier = (source: string, name: string): boolean => {
+  let found = false
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) && node.text === name) found = true
+    node.forEachChild(visit)
+  }
+  visit(parseModule(source))
+  return found
+}
+
+/** An object-literal property named `key` anywhere in the source — used to
+ * detect `connect(state, send, { floating: {...} })`'s `floating` option
+ * without depending on its exact formatting. */
+const declaresObjectLiteralKey = (source: string, key: string): boolean => {
+  let found = false
+  const visit = (node: ts.Node): void => {
+    if (
+      (ts.isPropertyAssignment(node) || ts.isShorthandPropertyAssignment(node)) &&
+      ts.isIdentifier(node.name) &&
+      node.name.text === key
+    ) {
+      found = true
+    }
+    node.forEachChild(visit)
+  }
+  visit(parseModule(source))
+  return found
+}
+
+/**
  * Derive direct consumers from the canonical family and implementation
  * capability instead of maintaining another component list: a public machine
  * uses the floating engine, and its copied artifact owns a concrete Content
@@ -152,7 +233,7 @@ const demoArrowOverlays = (file: string, source: string): DemoArrowOverlay[] => 
  */
 const directFloatingArtifacts = familyEntries.flatMap((entry) => {
   if (entry.machine.kind !== 'public') return []
-  if (!/\bfloating:\s*\{/.test(machineSource(entry.machine.importPath))) return []
+  if (!declaresObjectLiteralKey(machineSource(entry.machine.importPath), 'floating')) return []
   return entry.copiedArtifacts.flatMap((artifact) => {
     const source = artifactSource(artifact.name)
     return /export const \w*Content\s*=\s*classPart(?:WithDefaults)?\s*\(/.test(source)
@@ -200,9 +281,9 @@ const hasOwnContentExport = (name: string): boolean =>
 const presenceArtifacts = familyEntries.flatMap((entry) => {
   if (entry.machine.kind !== 'public') return []
   const source = machineSource(entry.machine.importPath)
-  const isOverlay = source.includes('createOverlay') || source.includes('dialogOverlay')
+  const isOverlay = callsAnyOf(source, ['createOverlay', 'dialogOverlay'])
   const isPresenceAware =
-    source.includes("from './presence.js'") || source.includes('dialogOverlay')
+    importsFromModule(source, './presence.js') || callsAnyOf(source, ['dialogOverlay'])
   if (!isOverlay || !isPresenceAware) return []
   return entry.copiedArtifacts.flatMap((artifact) =>
     hasOwnContentExport(artifact.name) ? [artifact.name] : [],
@@ -213,7 +294,8 @@ const presenceArtifacts = familyEntries.flatMap((entry) => {
  * recipe or its synchronous (`open`/`closed`-only) twin — see
  * `registry/llui/lib/floating-motion.ts`'s two exports. */
 const appliesSharedMotionRecipe = (source: string): boolean =>
-  source.includes('floatingOverlayMotionRecipe') || source.includes('floatingSyncMotionRecipe')
+  referencesIdentifier(source, 'floatingOverlayMotionRecipe') ||
+  referencesIdentifier(source, 'floatingSyncMotionRecipe')
 
 const animatedArtifacts = [
   ...new Set(
@@ -281,11 +363,33 @@ describe('menus-overlays registry motion policy', () => {
   })
 
   it('routes every animated family skin through the nonzero reduced-motion policy', () => {
-    expect(animatedArtifacts.length).toBeGreaterThan(0)
+    // Exact set, not a floor: a floor only catches the corpus going to zero,
+    // never a member silently dropping out (#265 finding 1's own discipline,
+    // applied to this file's derived arrays).
+    expect([...animatedArtifacts].sort()).toEqual(
+      [
+        'alert-dialog',
+        'context-menu',
+        'dialog',
+        'drawer',
+        'dropdown-menu',
+        'hover-card',
+        'menubar',
+        'navigation-menu',
+        'popover',
+        'select',
+        'sheet',
+        'sonner',
+        'tooltip',
+      ].sort(),
+    )
     const violations: string[] = []
     for (const name of animatedArtifacts) {
       const source = artifactSource(name)
-      if (!appliesSharedMotionRecipe(source) && !source.includes('overlayReducedMotionRecipe')) {
+      if (
+        !appliesSharedMotionRecipe(source) &&
+        !referencesIdentifier(source, 'overlayReducedMotionRecipe')
+      ) {
         violations.push(`${name}: no shared reduced-motion recipe`)
       }
       const item = sourceRegistry.items.find((candidate) => candidate.name === name)
@@ -297,11 +401,13 @@ describe('menus-overlays registry motion policy', () => {
   })
 
   it('makes every direct floating-content caller import and declare the shared policy', () => {
-    expect(directFloatingArtifacts.length).toBeGreaterThan(0)
+    expect([...directFloatingArtifacts].sort()).toEqual(
+      ['dropdown-menu', 'hover-card', 'menubar', 'popover', 'select', 'tooltip'].sort(),
+    )
     const violations: string[] = []
     for (const name of directFloatingArtifacts) {
       const source = artifactSource(name)
-      if (!source.includes("from '@/lib/floating-motion'")) {
+      if (!importsFromModule(source, '@/lib/floating-motion')) {
         violations.push(`${name}: missing floating-motion import`)
       }
       // A REAL four-phase presence machine must apply the presence recipe
@@ -338,7 +444,7 @@ describe('menus-overlays registry motion policy', () => {
     const syncArtifacts = directFloatingArtifacts.filter(
       (name) => !presenceArtifacts.includes(name),
     )
-    expect(syncArtifacts.length).toBeGreaterThan(0)
+    expect([...syncArtifacts].sort()).toEqual(['menubar', 'select'].sort())
     const violations: string[] = []
     for (const name of syncArtifacts) {
       const source = artifactSource(name)
@@ -352,7 +458,9 @@ describe('menus-overlays registry motion policy', () => {
   })
 
   it('wires every exported floating arrow through both demo runtimes and content roots', () => {
-    expect(arrowArtifacts.length).toBeGreaterThan(0)
+    expect([...arrowArtifacts.map(({ name }) => name)].sort()).toEqual(
+      ['hover-card', 'popover', 'tooltip'].sort(),
+    )
     const demoFiles = [
       path.join(ROOT, 'examples/components-demo/src/sections/overlays.ts'),
       path.join(ROOT, 'examples/registry-demo/src/sections/overlays.ts'),
@@ -381,20 +489,38 @@ describe('menus-overlays registry motion policy', () => {
   })
 
   it('keeps opening/closing machine truth and open/closed compatibility synchronized', () => {
-    expect(presenceArtifacts.length).toBeGreaterThan(0)
+    expect([...presenceArtifacts].sort()).toEqual(
+      [
+        'alert-dialog',
+        'context-menu',
+        'dialog',
+        'drawer',
+        'dropdown-menu',
+        'hover-card',
+        'popover',
+        'sheet',
+        'tooltip',
+      ].sort(),
+    )
     const shared = supportCandidates()
     const required = [
       'data-[state=opening]:animate-in',
       'data-[state=open]:animate-in',
       'data-[state=closing]:animate-out',
-      'data-[state=closed]:animate-out',
+      // No `data-[state=closed]:animate-out` entry: `closed` is never an
+      // animating phase for a real presence machine (#265 finding 5) —
+      // `floatingOverlayMotionRecipe` no longer carries it. Artifacts that
+      // hand-inline the four-phase classes rather than import the shared
+      // recipe (dialog/alert-dialog/drawer/sheet/context-menu) still carry
+      // the dead selector; harmless (it can never match) but out of this
+      // policy's REQUIRED set, which only pins what must be present.
     ]
     const violations: string[] = []
     for (const name of presenceArtifacts) {
       const file = path.join(REGISTRY_UI, `${name}.ts`)
       const source = readFileSync(file, 'utf8')
       const local = extractClassCandidates(file, source)
-      const resolved = source.includes("from '@/lib/floating-motion'")
+      const resolved = importsFromModule(source, '@/lib/floating-motion')
         ? [...new Set([...local, ...shared])]
         : local
       for (const candidate of required) {
