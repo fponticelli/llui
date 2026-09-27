@@ -124,6 +124,166 @@ export function asObjectLiteral(node, objectConsts) {
 const TAG_FIRST_CALLS = new Set(['classPart', 'classPartWithDefaults'])
 
 /**
+ * The set of names bound in every DIRECT binding pattern (a destructured
+ * parameter or variable), so a genuinely dynamic value — a function
+ * parameter, a destructured prop — is never mistaken for an unresolved
+ * module-level recipe reference.
+ *
+ * Module-level (not a closure inside `extractClassCandidates`) so
+ * {@link scopeIntroduces} can be exported and tested directly against
+ * `@llui/compiler`'s real implementation — see
+ * `scripts/test/scope-introduces-parity.test.ts` (#264 review follow-up).
+ *
+ * @param {ts.BindingName} name
+ * @returns {Set<string>}
+ */
+export function bindingNames(name) {
+  /** @type {Set<string>} */
+  const out = new Set()
+  /** @param {ts.BindingName} n */
+  const collect = (n) => {
+    if (ts.isIdentifier(n)) {
+      out.add(n.text)
+      return
+    }
+    for (const el of n.elements) {
+      if (ts.isBindingElement(el)) collect(el.name)
+    }
+  }
+  collect(name)
+  return out
+}
+
+/**
+ * True when `root` (a function/arrow/method/constructor/accessor BODY, or
+ * the whole source file) contains a plain `var` (never `let`/`const`)
+ * declaring `name`, at ANY nesting depth that does not cross into a
+ * NESTED function scope — `var` hoists to the nearest function/module
+ * scope regardless of how many blocks lie between, so `if (1) { var c =
+ * 1 }` binds `c` for the WHOLE enclosing function, not just that `if`
+ * block (#264 review LOW 3: the previous, block-only check missed this).
+ *
+ * @param {ts.Node} root
+ * @param {string} name
+ * @returns {boolean}
+ */
+function containsVarBinding(root, name) {
+  let found = false
+  /** @param {ts.Node} n */
+  const walk = (n) => {
+    if (found || (n !== root && ts.isFunctionLike(n))) return
+    if (
+      ts.isVariableDeclarationList(n) &&
+      (n.flags & ts.NodeFlags.BlockScoped) === 0 &&
+      n.declarations.some((d) => bindingNames(d.name).has(name))
+    ) {
+      found = true
+      return
+    }
+    ts.forEachChild(n, walk)
+  }
+  walk(root)
+  return found
+}
+
+/**
+ * True when `node` — a scope-introducing node in the ancestor walk below —
+ * declares a binding named `name` over its own subtree. Ported from
+ * `@llui/compiler`'s `scopeIntroduces` (`packages/compiler/src/signals/
+ * helper-bindings.ts`), which is not part of that package's public exports
+ * (`isShadowed`/`scopeIntroduces` "appear in no public signature" by
+ * design) and so cannot simply be imported here (#264 review M2) — the
+ * SEMANTICS are ported instead, including the two cases a narrower
+ * hand-rolled version had missed: a `switch` `case`/`default` block's own
+ * `const`/`let`/`function`/`class` (`ts.isCaseBlock`, alongside
+ * `ts.isBlock` — a switch body is not a `Block`), and a function/class
+ * EXPRESSION's own name binding over its own subtree (how a self-recursive
+ * `function send(m) { send(m) }` expression calls itself).
+ *
+ * `scripts/test/scope-introduces-parity.test.ts` runs a shared fixture
+ * corpus through THIS function and the compiler's real one and asserts
+ * identical verdicts, so any future divergence between the port and its
+ * source of truth fails the build rather than silently drifting.
+ *
+ * @param {ts.Node} node
+ * @param {string} name
+ * @returns {boolean}
+ */
+export function scopeIntroduces(node, name) {
+  if ((ts.isFunctionExpression(node) || ts.isClassExpression(node)) && node.name?.text === name) {
+    return true
+  }
+  if (ts.isFunctionLike(node) && 'parameters' in node) {
+    return node.parameters.some((p) => bindingNames(p.name).has(name))
+  }
+  if (ts.isBlock(node) || ts.isCaseBlock(node)) {
+    const statements = ts.isBlock(node)
+      ? node.statements
+      : node.clauses.flatMap((c) => [...c.statements])
+    for (const st of statements) {
+      if (
+        ts.isVariableStatement(st) &&
+        st.declarationList.declarations.some((d) => bindingNames(d.name).has(name))
+      ) {
+        return true
+      }
+      if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st)) && st.name?.text === name) {
+        return true
+      }
+    }
+    return false
+  }
+  if (ts.isForStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node)) {
+    const init = node.initializer
+    if (init !== undefined && ts.isVariableDeclarationList(init)) {
+      return init.declarations.some((d) => bindingNames(d.name).has(name))
+    }
+    return false
+  }
+  if (ts.isCatchClause(node)) {
+    return node.variableDeclaration !== undefined
+      ? bindingNames(node.variableDeclaration.name).has(name)
+      : false
+  }
+  return false
+}
+
+/**
+ * True when `node`'s name is bound by an ENCLOSING scope (walking the
+ * ancestor chain via `scopeIntroduces`), OR by `var` hoisting (which
+ * `scopeIntroduces` deliberately does not cover, since `var` crosses block
+ * boundaries the compiler's own callers never needed to follow) at any
+ * nesting depth reaching a function/module boundary — i.e. a genuinely
+ * dynamic, caller-provided value (`mergeClass(recipe, className)` inside
+ * this very file's own `classPart`/`classPartWithDefaults` definitions)
+ * that a recipe position may legitimately carry and which is never
+ * expected to resolve against a module-level const.
+ *
+ * @param {ts.Identifier} node
+ * @param {ts.SourceFile} sf
+ * @returns {boolean}
+ */
+function isLocallyBound(node, sf) {
+  const name = node.text
+  /** @type {ts.Node | undefined} */
+  let current = node.parent
+  while (current !== undefined && !ts.isSourceFile(current)) {
+    if (scopeIntroduces(current, name)) return true
+    // `var` hoists past every intervening block to the nearest function
+    // scope — checked once per enclosing function-like, against its WHOLE
+    // body, rather than per `Block`/`CaseBlock` above (which only see
+    // block-scoped `let`/`const`, matching `scopeIntroduces`'s own
+    // contract).
+    if (ts.isFunctionLike(current) && 'body' in current && current.body !== undefined) {
+      if (containsVarBinding(current.body, name)) return true
+    }
+    current = current.parent
+  }
+  // A top-level `var` in the module itself (function-less script code).
+  return containsVarBinding(sf, name)
+}
+
+/**
  * @param {string} fileName
  * @param {string} source
  * @param {Set<string>} [usedAllowlistKeys] Optional accumulator: every
@@ -239,154 +399,7 @@ export function extractClassCandidates(fileName, source, usedAllowlistKeys) {
     return undefined
   }
 
-  /**
-   * The set of names bound in every DIRECT binding pattern (a destructured
-   * parameter or variable), so a genuinely dynamic value — a function
-   * parameter, a destructured prop — is never mistaken for an unresolved
-   * module-level recipe reference.
-   *
-   * @param {ts.BindingName} name
-   * @returns {Set<string>}
-   */
-  const bindingNames = (name) => {
-    /** @type {Set<string>} */
-    const out = new Set()
-    /** @param {ts.BindingName} n */
-    const collect = (n) => {
-      if (ts.isIdentifier(n)) {
-        out.add(n.text)
-        return
-      }
-      for (const el of n.elements) {
-        if (ts.isBindingElement(el)) collect(el.name)
-      }
-    }
-    collect(name)
-    return out
-  }
-
-  /**
-   * True when `root` (a function/arrow/method/constructor/accessor BODY, or
-   * the whole source file) contains a plain `var` (never `let`/`const`)
-   * declaring `name`, at ANY nesting depth that does not cross into a
-   * NESTED function scope — `var` hoists to the nearest function/module
-   * scope regardless of how many blocks lie between, so `if (1) { var c =
-   * 1 }` binds `c` for the WHOLE enclosing function, not just that `if`
-   * block (#264 review LOW 3: the previous, block-only check missed this).
-   *
-   * @param {ts.Node} root
-   * @param {string} name
-   * @returns {boolean}
-   */
-  const containsVarBinding = (root, name) => {
-    let found = false
-    /** @param {ts.Node} n */
-    const walk = (n) => {
-      if (found || (n !== root && ts.isFunctionLike(n))) return
-      if (
-        ts.isVariableDeclarationList(n) &&
-        (n.flags & ts.NodeFlags.BlockScoped) === 0 &&
-        n.declarations.some((d) => bindingNames(d.name).has(name))
-      ) {
-        found = true
-        return
-      }
-      ts.forEachChild(n, walk)
-    }
-    walk(root)
-    return found
-  }
-
-  /**
-   * True when `node` — a scope-introducing node in the ancestor walk below —
-   * declares a binding named `name` over its own subtree. Ported from
-   * `@llui/compiler`'s `scopeIntroduces` (`packages/compiler/src/signals/
-   * helper-bindings.ts`), which is not part of that package's public exports
-   * (`isShadowed`/`scopeIntroduces` "appear in no public signature" by
-   * design) and so cannot simply be imported here (#264 review M2) — the
-   * SEMANTICS are ported instead, including the two cases a narrower
-   * hand-rolled version had missed: a `switch` `case`/`default` block's own
-   * `const`/`let`/`function`/`class` (`ts.isCaseBlock`, alongside
-   * `ts.isBlock` — a switch body is not a `Block`), and a function/class
-   * EXPRESSION's own name binding over its own subtree (how a self-recursive
-   * `function send(m) { send(m) }` expression calls itself).
-   *
-   * @param {ts.Node} node
-   * @param {string} name
-   * @returns {boolean}
-   */
-  const scopeIntroduces = (node, name) => {
-    if ((ts.isFunctionExpression(node) || ts.isClassExpression(node)) && node.name?.text === name) {
-      return true
-    }
-    if (ts.isFunctionLike(node) && 'parameters' in node) {
-      return node.parameters.some((p) => bindingNames(p.name).has(name))
-    }
-    if (ts.isBlock(node) || ts.isCaseBlock(node)) {
-      const statements = ts.isBlock(node)
-        ? node.statements
-        : node.clauses.flatMap((c) => [...c.statements])
-      for (const st of statements) {
-        if (
-          ts.isVariableStatement(st) &&
-          st.declarationList.declarations.some((d) => bindingNames(d.name).has(name))
-        ) {
-          return true
-        }
-        if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st)) && st.name?.text === name) {
-          return true
-        }
-      }
-      return false
-    }
-    if (ts.isForStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node)) {
-      const init = node.initializer
-      if (init !== undefined && ts.isVariableDeclarationList(init)) {
-        return init.declarations.some((d) => bindingNames(d.name).has(name))
-      }
-      return false
-    }
-    if (ts.isCatchClause(node)) {
-      return node.variableDeclaration !== undefined
-        ? bindingNames(node.variableDeclaration.name).has(name)
-        : false
-    }
-    return false
-  }
-
-  /**
-   * True when `node`'s name is bound by an ENCLOSING scope (walking the
-   * ancestor chain via `scopeIntroduces`), OR by `var` hoisting (which
-   * `scopeIntroduces` deliberately does not cover, since `var` crosses block
-   * boundaries the compiler's own callers never needed to follow) at any
-   * nesting depth reaching a function/module boundary — i.e. a genuinely
-   * dynamic, caller-provided value (`mergeClass(recipe, className)` inside
-   * this very file's own `classPart`/`classPartWithDefaults` definitions)
-   * that a recipe position may legitimately carry and which is never
-   * expected to resolve against a module-level const.
-   *
-   * @param {ts.Identifier} node
-   * @returns {boolean}
-   */
-  const isLocallyBound = (node) => {
-    const name = node.text
-    /** @type {ts.Node | undefined} */
-    let current = node.parent
-    while (current !== undefined && !ts.isSourceFile(current)) {
-      if (scopeIntroduces(current, name)) return true
-      // `var` hoists past every intervening block to the nearest function
-      // scope — checked once per enclosing function-like, against its WHOLE
-      // body, rather than per `Block`/`CaseBlock` above (which only see
-      // block-scoped `let`/`const`, matching `scopeIntroduces`'s own
-      // contract).
-      if (ts.isFunctionLike(current) && 'body' in current && current.body !== undefined) {
-        if (containsVarBinding(current.body, name)) return true
-      }
-      current = current.parent
-    }
-    // A top-level `var` in the module itself (function-less script code).
-    return containsVarBinding(sf, name)
-  }
+  const isLocallyBoundInFile = (node) => isLocallyBound(node, sf)
 
   // Template literals contribute their STATIC text only. An interpolated span is
   // an arbitrary expression whose value this pass cannot know, so reading it is
@@ -412,7 +425,7 @@ export function extractClassCandidates(fileName, source, usedAllowlistKeys) {
       // A genuinely dynamic value (a parameter, a destructured prop, a `var`
       // reached through hoisting) is not expected to name a recipe — skip it
       // silently, same as before (#264 review LOW 3).
-      if (isLocallyBound(node)) return
+      if (isLocallyBoundInFile(node)) return
       // An imported recipe const is resolved and checked in ITS OWN file —
       // a missed check here at worst, never a false failure.
       if (importedNames.has(node.text)) return
