@@ -25,7 +25,13 @@ export type { NestedLayerAspect, NestedLayerOptions, NestedLayerScope } from './
 export { getFocusables, isFocusable } from './focusables.js'
 export type { ElementSource } from './dom.js'
 
-export { attachFloating, snapshotInlineStyle, restoreInlineStyles } from './floating.js'
+export {
+  attachFloating,
+  snapshotInlineStyle,
+  restoreInlineStyles,
+  FLOATING_AVAILABLE_HEIGHT,
+  FLOATING_AVAILABLE_WIDTH,
+} from './floating.js'
 export type { FloatingOptions, Placement, InlineStyleSnapshot } from './floating.js'
 
 export { resolveDir, flipArrow, resolveTextDirection } from './direction.js'

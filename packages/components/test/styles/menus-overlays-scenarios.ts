@@ -282,6 +282,26 @@ const baseMenuItems: readonly MenuItemCaseInput[] = [
 ]
 
 /**
+ * The placements every floating product is proven at in real Chromium (#265
+ * G2): all four SIDES, and all three ALIGNMENTS (center, start, end). Only
+ * `bottom-end` declares the `direction` axis — `@floating-ui/core` mirrors the
+ * inline-axis alignment of a top/bottom placement under RTL, while a side and
+ * a left/right placement's block-axis alignment are direction-invariant.
+ */
+export const FLOATING_PLACEMENT_PROBES = ['top', 'right-start', 'bottom-end', 'left'] as const
+
+/** One `placement-<placement>` case per {@link FLOATING_PLACEMENT_PROBES}
+ * entry, each the product's own open `base` input at that placement. */
+function placementCases<Input extends { readonly placement: FloatingPlacement }>(base: Input) {
+  return FLOATING_PLACEMENT_PROBES.map((placement) => ({
+    id: `placement-${placement}`,
+    label: `Placement ${placement}`,
+    input: { ...base, placement },
+    environmentAxes: placement === 'bottom-end' ? AX.dir : AX.none,
+  }))
+}
+
+/**
  * Family-owned definitions keyed by ProductContract `scenarioId`, joined
  * against `compileScenarioFamily`'s exactness check below.
  */
@@ -490,6 +510,12 @@ export const MENUS_OVERLAYS_DEFINITIONS = {
         } satisfies FloatingPresenceCaseInput,
         environmentAxes: AX.motion,
       },
+      ...placementCases({
+        presence: 'open',
+        skipAnimations: true,
+        placement: 'bottom',
+        label: '@franco',
+      } satisfies FloatingPresenceCaseInput),
     ],
   },
   'component:popover': {
@@ -602,6 +628,12 @@ export const MENUS_OVERLAYS_DEFINITIONS = {
         } satisfies FloatingPresenceCaseInput,
         environmentAxes: AX.narrow,
       },
+      ...placementCases({
+        presence: 'open',
+        skipAnimations: true,
+        placement: 'bottom',
+        label: 'Dimensions',
+      } satisfies FloatingPresenceCaseInput),
     ],
   },
   'component:tooltip': {
@@ -640,6 +672,15 @@ export const MENUS_OVERLAYS_DEFINITIONS = {
         } satisfies TooltipCaseInput,
         environmentAxes: AX.motion,
       },
+      // Long enough to wrap under the 20rem cap: the probe needs the content
+      // to differ from its anchor by >= 8px on BOTH axes, or a wrong
+      // alignment would land inside the geometry tolerance.
+      ...placementCases({
+        presence: 'open',
+        animated: false,
+        placement: 'top',
+        label: 'Save the document to disk and keep every open editor tab exactly where it was',
+      } satisfies TooltipCaseInput),
     ],
   },
   'component:menu': {
@@ -715,6 +756,25 @@ export const MENUS_OVERLAYS_DEFINITIONS = {
         } satisfies MenuCaseInput,
         environmentAxes: AX.narrow,
       },
+      // One wide entry, so the content is clearly wider than its trigger
+      // (see the tooltip's probe above for why).
+      ...placementCases({
+        presence: 'open',
+        skipAnimations: true,
+        placement: 'bottom-start',
+        items: [
+          ...baseMenuItems,
+          {
+            value: 'export',
+            label: 'Export as a portable document',
+            kind: 'action',
+            disabled: false,
+          },
+        ],
+        highlighted: 'copy',
+        checked: ['bold'],
+        nestedOpen: false,
+      } satisfies MenuCaseInput),
     ],
   },
   'component:context-menu': {

@@ -14,7 +14,7 @@ import { floatingOverlayMotionRecipe } from '../../lib/floating-motion'
  */
 export const TooltipContent = classPart(
   div,
-  `z-50 w-fit max-w-[min(20rem,calc(100vw-2rem))] max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain wrap-break-word rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background forced-colors:border forced-colors:border-[CanvasText] forced-colors:bg-[CanvasText] forced-colors:text-[Canvas] ${floatingOverlayMotionRecipe}`,
+  `z-50 w-fit max-w-[min(20rem,calc(100vw-2rem))] max-h-[var(--llui-floating-available-height,calc(100dvh-2rem))] overflow-y-auto overscroll-contain wrap-break-word rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background forced-colors:border forced-colors:border-[CanvasText] forced-colors:bg-[CanvasText] forced-colors:text-[Canvas] ${floatingOverlayMotionRecipe}`,
 )
 export const TooltipArrow = classPart(
   div,

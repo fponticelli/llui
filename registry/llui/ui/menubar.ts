@@ -42,5 +42,5 @@ export const MenubarTrigger = classPart(
  */
 export const MenubarContent = classPart(
   div,
-  `z-50 min-w-[12rem] max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-x-hidden overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover p-1 text-popover-foreground shadow-md forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] ${floatingSyncMotionRecipe}`,
+  `z-50 min-w-[12rem] max-w-[calc(100vw-2rem)] max-h-[var(--llui-floating-available-height,calc(100dvh-2rem))] overflow-x-hidden overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover p-1 text-popover-foreground shadow-md forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] ${floatingSyncMotionRecipe}`,
 )

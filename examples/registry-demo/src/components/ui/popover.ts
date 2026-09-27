@@ -17,7 +17,7 @@ import { floatingOverlayMotionRecipe } from '../../lib/floating-motion'
  */
 export const PopoverContent = classPart(
   div,
-  `z-50 w-72 max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] ${floatingOverlayMotionRecipe}`,
+  `z-50 w-72 max-w-[calc(100vw-2rem)] max-h-[var(--llui-floating-available-height,calc(100dvh-2rem))] overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] ${floatingOverlayMotionRecipe}`,
 )
 export const PopoverHeader = classPart(div, 'flex flex-col gap-1 text-sm')
 export const PopoverArrow = classPart(

@@ -34,7 +34,7 @@
 ):is([data-part='content'], [data-part='subcontent']) {
   min-width: 8rem;
   max-width: calc(100vw - 2rem);
-  max-height: calc(100dvh - 2rem);
+  max-height: var(--llui-floating-available-height, calc(100dvh - 2rem));
   overflow: auto;
   overscroll-behavior: contain;
   overflow-wrap: anywhere;
@@ -350,9 +350,15 @@
 
 /* ─── Popover, hover card, and tooltip ─── */
 
+/* Every engine-positioned surface caps its height at the space the floating
+   engine measured beside its anchor (`--llui-floating-available-height`,
+   written by `attachFloating`), falling back to the viewport cap before the
+   first measurement. A viewport cap alone let a tall surface spill past the
+   bottom edge whenever its anchor sat below the top (#265 G2). */
+
 :is([data-scope='popover'], [data-scope='hover-card'])[data-part='content'] {
   max-width: min(18rem, calc(100vw - 2rem));
-  max-height: calc(100dvh - 2rem);
+  max-height: var(--llui-floating-available-height, calc(100dvh - 2rem));
   overflow: auto;
   overscroll-behavior: contain;
   overflow-wrap: anywhere;
@@ -386,7 +392,7 @@
 
 [data-scope='tooltip'][data-part='content'] {
   max-width: min(20rem, calc(100vw - 2rem));
-  max-height: calc(100dvh - 2rem);
+  max-height: var(--llui-floating-available-height, calc(100dvh - 2rem));
   overflow: auto;
   overscroll-behavior: contain;
   border-radius: var(--llui-radius-sm);

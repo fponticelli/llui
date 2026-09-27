@@ -17,15 +17,17 @@ import { ChevronRightIcon } from './icons'
  * never match anything. Every menu-like surface in this registry — dropdown,
  * context menu, menubar, select, combobox, command — carries the same swap.
  *
- * Also dropped: `max-h-(--radix-…-available-height)` and
- * `origin-(--radix-…-transform-origin)`, both written by Radix's positioner.
+ * `max-h-(--radix-…-available-height)` becomes
+ * `max-h-[var(--llui-floating-available-height,…)]`, the same measurement written
+ * by LLui's floating engine. Dropped: `origin-(--radix-…-transform-origin)`,
+ * which only Radix's positioner writes.
  *
  * `cursor-default`, not `cursor-pointer`: that is shadcn's choice for menu items
  * and matches native menus.
  */
 export const DropdownMenuTrigger = classPart(button, '')
 const dropdownMenuSurfaceRecipe =
-  'max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-x-hidden overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover p-1 text-popover-foreground forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]'
+  'max-w-[calc(100vw-2rem)] max-h-[var(--llui-floating-available-height,calc(100dvh-2rem))] overflow-x-hidden overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover p-1 text-popover-foreground forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText]'
 const dropdownInteractiveStateRecipe =
   'outline-none data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 forced-colors:data-[highlighted]:bg-[Highlight] forced-colors:data-[highlighted]:text-[HighlightText] forced-colors:data-[highlighted]:[outline:2px_solid_Highlight] forced-colors:data-[highlighted]:outline-offset-[-2px] forced-colors:data-[disabled]:text-[GrayText]'
 export const DropdownMenuContent = classPart(

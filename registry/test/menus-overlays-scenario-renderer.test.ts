@@ -19,6 +19,7 @@ import {
   joinMenusOverlaysScenarios,
   applicableMenusOverlaysScenarios,
   MENUS_OVERLAYS_DEFINITIONS,
+  FLOATING_PLACEMENT_PROBES,
   type MenusOverlaysDefinitionScenarioId,
 } from '../../packages/components/test/styles/menus-overlays-scenarios'
 import {
@@ -32,6 +33,7 @@ import type { PresentationScenarioEnvironment } from '@llui/cli/presentation-sce
 import {
   fieldAssertionFor,
   GEOMETRY_ALLOWLIST,
+  ENV_AXIS_PROOFS,
   NESTED_ITEM_FIELD_ASSERTIONS,
   NESTED_MENUBAR_MENU_FIELD_ASSERTIONS,
   type FieldAssertion,
@@ -206,6 +208,22 @@ describe('registry menus-overlays scenario renderer', () => {
       'presence rests at "open"; only a transition reads this flag',
     'component:tooltip/open.animated':
       'presence rests at "open"; only a transition reads this flag',
+    // The #265 G2 placement probes: every one is an open, resting case.
+    ...Object.fromEntries(
+      (
+        [
+          ['component:hover-card', 'skipAnimations'],
+          ['component:popover', 'skipAnimations'],
+          ['component:menu', 'skipAnimations'],
+          ['component:tooltip', 'animated'],
+        ] as const
+      ).flatMap(([scenarioId, field]) =>
+        FLOATING_PLACEMENT_PROBES.map((placement) => [
+          `${scenarioId}/placement-${placement}.${field}`,
+          'presence rests at "open"; only a transition reads this flag',
+        ]),
+      ),
+    ),
     'component:context-menu/opening.presence':
       'status is derived from skipAnimations, not a redundant explicit branch on this label',
     'component:menubar/open.focused':
@@ -653,16 +671,11 @@ describe('registry menus-overlays scenario renderer', () => {
   })
 
   /** Every axis reflected as a host attribute (`direction`/`theme`/
-   * `viewport`/`forcedColors`) is asserted exactly; `motion` is NOT reflected
-   * as a host attribute at all (`applyEnvironmentAttrs` never sets one for
-   * it — real reduced-motion behavior is a CSS media query, proven in a real
-   * browser), so it is closed-at-both-ends via `ENV_AXIS_ALLOWLIST` rather
-   * than silently skipped. */
-  const ENV_AXIS_ALLOWLIST: Record<string, string> = {
-    motion:
-      'not reflected as a host attribute (applyEnvironmentAttrs sets dir/data-theme/data-viewport/data-forced-colors only); real reduced-motion behavior is proven in menus-overlays-live-render.browser.test.ts ("reduces a real opening transition…"/"reduces a real toast exit animation…under prefers-reduced-motion")',
-  }
-
+   * `viewport`/`forcedColors`) is asserted exactly here — the adapter's own
+   * WIRING. What the axis does to the PRODUCT is proven live, per
+   * `ENV_AXIS_PROOFS`, which every declared axis must have; `motion` writes
+   * no host attribute at all (it is a media query), so only its live proof
+   * applies. */
   it('a case declaring an environment axis materially changes the exact mount host attribute for that axis, or is documented as unobservable in jsdom', () => {
     const usedAxisAllowances = new Set<string>()
     for (const [scenarioId, definition] of Object.entries(MENUS_OVERLAYS_DEFINITIONS)) {
@@ -670,11 +683,9 @@ describe('registry menus-overlays scenario renderer', () => {
       const typedAdapter = adapter as TypedAdapter
       for (const scenarioCase of definition.cases) {
         for (const axis of scenarioCase.environmentAxes) {
-          if (axis === 'motion') {
-            expect(ENV_AXIS_ALLOWLIST[axis], axis).toBeDefined()
-            usedAxisAllowances.add(axis)
-            continue
-          }
+          expect(ENV_AXIS_PROOFS[axis].proofs.length, axis).toBeGreaterThan(0)
+          usedAxisAllowances.add(axis)
+          if (axis === 'motion') continue
           const mutatedEnvironment: PresentationScenarioEnvironment = {
             ...DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
             ...(axis === 'direction' ? { direction: 'rtl' } : {}),
@@ -697,8 +708,6 @@ describe('registry menus-overlays scenario renderer', () => {
         }
       }
     }
-    for (const axis of Object.keys(ENV_AXIS_ALLOWLIST)) {
-      expect(usedAxisAllowances.has(axis), `unused env axis allowance: ${axis}`).toBe(true)
-    }
+    expect([...usedAxisAllowances].sort()).toEqual(Object.keys(ENV_AXIS_PROOFS).sort())
   })
 })

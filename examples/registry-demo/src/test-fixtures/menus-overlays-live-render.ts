@@ -55,6 +55,14 @@ window.__mountMenusOverlaysRegistryCase = (contract, request) => {
   }
   const host = document.createElement('section')
   host.id = request.hostId
+  // The host is the case's THEMED CONTAINER, so it paints like one: a
+  // subtree theme (`data-theme` on the host, written by the renderer) only
+  // re-scopes the tokens; the container itself must paint the surface and
+  // text colour, or its unpainted descendants show the page's theme through
+  // it. Measured against a page-level theme in
+  // `menus-overlays-product-effects.browser.test.ts`.
+  host.style.background = 'var(--background)'
+  host.style.color = 'var(--foreground)'
   document.body.append(host)
   const disposable = (adapter as (host: HTMLElement, input: unknown, ctx: unknown) => Disposable)(
     host,

@@ -5,6 +5,7 @@ import {
   offset as offsetMw,
   flip as flipMw,
   shift as shiftMw,
+  size as sizeMw,
   arrow as arrowMw,
   type Placement,
   type Middleware,
@@ -155,9 +156,17 @@ export interface FloatingOptions {
   }) => void
 }
 
+/** The px space left beside the anchor on the resolved side, published on the
+ * floating element so a surface can cap itself with
+ * `max-height: var(--llui-floating-available-height, …)` — the LLui
+ * counterpart of Radix's `--radix-*-content-available-height`. */
+export const FLOATING_AVAILABLE_HEIGHT = '--llui-floating-available-height'
+export const FLOATING_AVAILABLE_WIDTH = '--llui-floating-available-width'
+
 /**
  * Position `floating` relative to `anchor` with live updates on scroll/resize.
- * Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+ * Owns `position`, `top`, `left`, `transform` and the two available-size
+ * custom properties ({@link FLOATING_AVAILABLE_HEIGHT}) on `floating`; `position` and
  * all four physical inset properties on an optional arrow; and placement
  * attributes on `stateTarget`. The arrow's static-side inset is half its
  * untransformed layout size, so a square arrow straddles the resolved edge.
@@ -178,9 +187,14 @@ export function attachFloating(opts: FloatingOptions): () => void {
     onUpdate,
   } = opts
 
-  const floatingStyles = ['position', 'top', 'left', 'transform'].map((property) =>
-    snapshotInlineStyle(floating, property),
-  )
+  const floatingStyles = [
+    'position',
+    'top',
+    'left',
+    'transform',
+    FLOATING_AVAILABLE_HEIGHT,
+    FLOATING_AVAILABLE_WIDTH,
+  ].map((property) => snapshotInlineStyle(floating, property))
   const floatingHadStyleAttribute = floating.hasAttribute('style')
   const arrowStyles = arrow
     ? ['position', 'left', 'top', 'right', 'bottom'].map((property) =>
@@ -201,13 +215,23 @@ export function attachFloating(opts: FloatingOptions): () => void {
 
   const platform = dir === undefined ? undefined : directedPlatform(dir)
 
+  const padding = typeof shift === 'object' ? (shift.padding ?? 8) : 8
+  // Filled by `size` DURING a computation and written with the rest of that
+  // result in the `.then` below, so every write shares the one disposal check.
+  let available: { width: number; height: number } | undefined
   const middleware: Middleware[] = []
   if (offset > 0) middleware.push(offsetMw(offset))
   if (flip) middleware.push(flipMw())
-  if (shift !== false) {
-    const padding = typeof shift === 'object' ? (shift.padding ?? 8) : 8
-    middleware.push(shiftMw({ padding }))
-  }
+  if (shift !== false) middleware.push(shiftMw({ padding }))
+  // After flip/shift, so it measures the side the content actually lands on.
+  middleware.push(
+    sizeMw({
+      padding,
+      apply: ({ availableWidth, availableHeight }) => {
+        available = { width: availableWidth, height: availableHeight }
+      },
+    }),
+  )
   if (arrow) middleware.push(arrowMw({ element: arrow }))
 
   floating.style.position = 'absolute'
@@ -224,6 +248,11 @@ export function attachFloating(opts: FloatingOptions): () => void {
     }).then(({ x, y, placement: actual, middlewareData }) => {
       if (disposed) return
       floating.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
+      if (available !== undefined) {
+        const px = (value: number): string => `${Math.max(0, Math.floor(value))}px`
+        floating.style.setProperty(FLOATING_AVAILABLE_HEIGHT, px(available.height))
+        floating.style.setProperty(FLOATING_AVAILABLE_WIDTH, px(available.width))
+      }
       const actualSide = PHYSICAL_SIDE_BY_PLACEMENT[actual]
       stateTarget.dataset.placement = actual
       stateTarget.dataset.side = actualSide

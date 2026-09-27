@@ -14,10 +14,12 @@ import { CheckIcon, ChevronDownIcon } from '@/ui/icons'
 
 /**
  * Ported from shadcn/ui (MIT © 2023 shadcn) with the same `focus:` →
- * `data-[highlighted]:` translation `dropdown-menu.ts` explains, and with the
- * Radix positioning variables dropped (`max-h-(--radix-select-content-available-height)`,
- * `origin-(--radix-select-content-transform-origin)`, and the trigger-width
- * clamp on the viewport — all written by Radix's positioner, not LLui's).
+ * `data-[highlighted]:` translation `dropdown-menu.ts` explains.
+ * `max-h-(--radix-select-content-available-height)` becomes LLui's
+ * `--llui-floating-available-height` (see `dropdown-menu.ts`); the other Radix
+ * positioning variables (`origin-(--radix-select-content-transform-origin)` and
+ * the trigger-width clamp on the viewport) are dropped — only Radix's positioner
+ * writes them.
  *
  * Two things to actually render:
  *  - `hiddenSelect` / `hiddenOption`, which carry the value into a native form
@@ -75,7 +77,7 @@ export const SelectValue = classPart(span, 'min-w-0 truncate')
  */
 export const SelectContent = classPart(
   div,
-  `relative z-50 min-w-[8rem] max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-2rem)] overflow-x-hidden overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover text-popover-foreground shadow-md forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] ${floatingSyncMotionRecipe}`,
+  `relative z-50 min-w-[8rem] max-w-[calc(100vw-2rem)] max-h-[var(--llui-floating-available-height,calc(100dvh-2rem))] overflow-x-hidden overflow-y-auto overscroll-contain wrap-break-word rounded-md border bg-popover text-popover-foreground shadow-md forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] ${floatingSyncMotionRecipe}`,
 )
 export const SelectViewport = classPart(div, 'p-1')
 export const SelectItem = classPart(

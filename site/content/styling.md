@@ -214,6 +214,12 @@ moment you style with utilities:
 - **The backdrop is yours to render**, inside `content()`. The engine does not emit one.
   It sits _inside_ the positioner, so it wants `absolute inset-0`, not `fixed`.
 
+A floating surface (menu, select, popover, tooltip) should cap its height at the space it
+actually has, not at the viewport. The positioning engine writes that space as
+`--llui-floating-available-height` on the positioner, and the shipped recipes use it as
+`max-h-[var(--llui-floating-available-height,calc(100dvh-2rem))]`. Keep that when you edit a
+recipe: with only the `100dvh` cap, a menu opened halfway down the page runs off the bottom.
+
 ```ts
 dialogOverlay({
   state, send, parts,

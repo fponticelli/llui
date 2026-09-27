@@ -33,144 +33,20 @@
  * and assert on their real rendered output — not to invent new scenario
  * data, which already exists and is unit-tested in
  * `menus-overlays-scenarios.test.ts`.
+ *
+ * Per-axis environment effects (theme, direction, forced colors, motion,
+ * viewport) and the per-product placement probes are proven exhaustively over
+ * every declaring case in `menus-overlays-product-effects.browser.test.ts`;
+ * this file keeps the product-specific geometry and interaction scenarios.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type Alias, type ViteDevServer } from 'vite'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { sourceAliasesFromExports } from '../../../../scripts/lib/vite-source-aliases.mjs'
+import { describe, expect, it } from 'vitest'
+import type { Page } from 'playwright'
 import { paintedColors, bucketedKey } from './pixel-probe.js'
 import { contrast, srgb8ToLinear } from '../../../../scripts/lib/oklch.mjs'
-import { ProductContractSchema } from '@llui/cli'
-
-const repoRoot = resolve(import.meta.dirname, '../../../..')
-
-interface RawContract {
-  productContract?: unknown
-}
-const registryJson = JSON.parse(
-  readFileSync(resolve(repoRoot, 'registry/registry.json'), 'utf8'),
-) as RawContract
-const contract = ProductContractSchema.parse(registryJson.productContract)
-
-const sourceAliases: Alias[] = [
-  ...sourceAliasesFromExports({
-    packageName: '@llui/components',
-    packageJsonPath: resolve(repoRoot, 'packages/components/package.json'),
-    srcDir: resolve(repoRoot, 'packages/components/src'),
-  }),
-  ...sourceAliasesFromExports({
-    packageName: '@llui/dom',
-    packageJsonPath: resolve(repoRoot, 'packages/dom/package.json'),
-    srcDir: resolve(repoRoot, 'packages/dom/src'),
-  }),
-  ...sourceAliasesFromExports({
-    packageName: '@llui/interactions',
-    packageJsonPath: resolve(repoRoot, 'packages/interactions/package.json'),
-    srcDir: resolve(repoRoot, 'packages/interactions/src'),
-  }),
-  ...sourceAliasesFromExports({
-    packageName: '@llui/cli',
-    packageJsonPath: resolve(repoRoot, 'packages/cli/package.json'),
-    srcDir: resolve(repoRoot, 'packages/cli/src'),
-  }),
-  { find: '@/lib', replacement: resolve(repoRoot, 'registry/llui/lib') },
-  { find: '@/ui', replacement: resolve(repoRoot, 'registry/llui/ui') },
-]
-
-async function startExample(directory: string): Promise<{ server: ViteDevServer; url: string }> {
-  const server = await createServer({
-    root: resolve(repoRoot, directory),
-    logLevel: 'error',
-    resolve: { alias: sourceAliases },
-    server: { host: '127.0.0.1', port: 0 },
-  })
-  await server.listen()
-  const address = server.httpServer?.address()
-  if (address === null || address === undefined || typeof address === 'string') {
-    throw new Error(`Vite did not bind ${directory} to a TCP port`)
-  }
-  return { server, url: `http://127.0.0.1:${address.port}/` }
-}
-
-type Path = 'baseline' | 'registryTailwind'
-
-interface MountRequest {
-  readonly scenarioId: string
-  readonly caseId: string
-  readonly environment?: Record<string, unknown>
-  readonly hostId: string
-}
-
-declare global {
-  interface Window {
-    __mountMenusOverlaysBaselineCase?: (contract: unknown, request: MountRequest) => void
-    __disposeMenusOverlaysBaselineCase?: (hostId: string) => void
-    __mountMenusOverlaysRegistryCase?: (contract: unknown, request: MountRequest) => void
-    __disposeMenusOverlaysRegistryCase?: (hostId: string) => void
-  }
-}
-
-const MOUNT_FN: Record<
-  Path,
-  '__mountMenusOverlaysBaselineCase' | '__mountMenusOverlaysRegistryCase'
-> = {
-  baseline: '__mountMenusOverlaysBaselineCase',
-  registryTailwind: '__mountMenusOverlaysRegistryCase',
-}
+import { useMenusOverlaysLiveHarness } from './menus-overlays-live-harness.js'
 
 describe('menus-overlays scenario renderer, mounted live in Chromium (#265 finding #1/#2, part 3)', () => {
-  let browser: Browser
-  let servers: ViteDevServer[] = []
-  let urls: Record<Path, string> = { baseline: '', registryTailwind: '' }
-  const openPages: Page[] = []
-
-  beforeAll(async () => {
-    const [baseline, registryTailwind] = await Promise.all([
-      startExample('examples/components-demo'),
-      startExample('examples/registry-demo'),
-    ])
-    servers = [baseline.server, registryTailwind.server]
-    urls = {
-      baseline: `${baseline.url}src/test-fixtures/menus-overlays-live-render.html`,
-      registryTailwind: `${registryTailwind.url}src/test-fixtures/menus-overlays-live-render.html`,
-    }
-    browser = await chromium.launch({ headless: true })
-  }, 120_000)
-
-  afterEach(async () => {
-    for (const page of openPages.splice(0)) await page.close().catch(() => {})
-  })
-
-  afterAll(async () => {
-    await browser?.close()
-    await Promise.all(servers.map((server) => server.close()))
-  })
-
-  /** Every scenario mounts in its OWN isolated page — never a shared style
-   * universe between two cases, and never between the two renderer paths. */
-  async function openCase(
-    path: Path,
-    scenarioId: string,
-    caseId: string,
-    environment?: Record<string, unknown>,
-    viewport?: { width: number; height: number },
-  ): Promise<Page> {
-    const page = await browser.newPage({ viewport: viewport ?? { width: 1024, height: 768 } })
-    openPages.push(page)
-    await page.goto(urls[path])
-    const fn = MOUNT_FN[path]
-    await page.waitForFunction((name) => typeof window[name as keyof Window] === 'function', fn)
-    await page.evaluate(
-      ({ fn, contract, request }) => {
-        const mount = window[fn as keyof Window] as (c: unknown, r: MountRequest) => void
-        mount(contract, request)
-      },
-      { fn, contract, request: { scenarioId, caseId, environment, hostId: 'case' } },
-    )
-    return page
-  }
+  const { newPage, mount, openCase } = useMenusOverlaysLiveHarness()
 
   describe.each(['baseline', 'registryTailwind'] as const)('%s renderer', (path) => {
     it('anchors ContextMenu at the real virtual pointer coordinates it was opened with', async () => {
@@ -190,8 +66,7 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
 
     it('flips/shifts ContextMenu content to stay inside the viewport at a real edge anchor', async () => {
       const page = await openCase(path, 'component:context-menu', 'edge-anchor', undefined, {
-        width: 320,
-        height: 240,
+        viewport: { width: 320, height: 240 },
       })
       const rect = await page
         .locator('#case [data-scope="context-menu"][data-part="content"]')
@@ -234,8 +109,7 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
       // (packages/interactions/src/floating.ts ~:199): without it the
       // content overflows the viewport's left edge with the side unchanged.
       const page = await openCase(path, 'component:popover', 'shift-required', undefined, {
-        width: 150,
-        height: 400,
+        viewport: { width: 150, height: 400 },
       })
       const content = page.locator('#case [data-scope="popover"][data-part="content"]')
       const [side, rect] = await Promise.all([
@@ -308,28 +182,21 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
       // ('start') regardless of requested direction — this test instead
       // pads the body symmetrically first so there is genuine room on
       // BOTH sides and only the requested alignment is ever in play.
-      const openPadded = async (dir: 'ltr' | 'rtl'): Promise<Page> => {
-        const page = await browser.newPage({ viewport: { width: 1600, height: 768 } })
-        openPages.push(page)
-        await page.goto(urls[path])
-        const fn = MOUNT_FN[path]
-        await page.waitForFunction((name) => typeof window[name as keyof Window] === 'function', fn)
-        await page.evaluate(
-          ({ fn, contract, dir }) => {
-            document.body.style.paddingLeft = '500px'
-            document.body.style.paddingRight = '500px'
-            const mount = window[fn as keyof Window] as (c: unknown, r: MountRequest) => void
-            mount(contract, {
-              scenarioId: 'component:popover',
-              caseId: 'top-end',
-              environment: { direction: dir },
-              hostId: 'case',
-            })
+      const openPadded = (dir: 'ltr' | 'rtl'): Promise<Page> =>
+        openCase(
+          path,
+          'component:popover',
+          'top-end',
+          { direction: dir },
+          {
+            viewport: { width: 1600, height: 768 },
+            beforeMount: (page) =>
+              page.evaluate(() => {
+                document.body.style.paddingLeft = '500px'
+                document.body.style.paddingRight = '500px'
+              }),
           },
-          { fn, contract, dir },
         )
-        return page
-      }
       const ltrPage = await openPadded('ltr')
       const rtlPage = await openPadded('rtl')
       const [ltrRect, rtlRect, ltrTrigger, rtlTrigger] = await Promise.all([
@@ -357,26 +224,13 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
 
     it('contains a dialog inside a narrow viewport', async () => {
       const page = await openCase(path, 'component:dialog', 'modal', undefined, {
-        width: 320,
-        height: 480,
+        viewport: { width: 320, height: 480 },
       })
       const rect = await page
         .locator('#case [data-scope="dialog"][data-part="content"]')
         .boundingBox()
       expect(rect).not.toBeNull()
       expect(rect!.width).toBeLessThanOrEqual(320)
-    })
-
-    it('gives the dialog surface a different real background/border under dark vs light', async () => {
-      const lightPage = await openCase(path, 'component:dialog', 'modal', { theme: 'light' })
-      const darkPage = await openCase(path, 'component:dialog', 'modal', { theme: 'dark' })
-      const visual = async (page: Page) =>
-        page.locator('#case [data-scope="dialog"][data-part="content"]').evaluate((node) => {
-          const style = getComputedStyle(node)
-          return { background: style.backgroundColor, border: style.borderColor }
-        })
-      const [light, dark] = await Promise.all([visual(lightPage), visual(darkPage)])
-      expect(dark.background).not.toBe(light.background)
     })
 
     it('paints the highlighted menu item using real system colors under forced-colors', async () => {
@@ -391,6 +245,8 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
       expect(bucketedKey(black!)).toBe('0,0,0')
       expect(bucketedKey(white!)).toBe('256,256,256')
 
+      // The `open` case seeds `highlighted: 'copy'`, so the item MUST exist —
+      // a missing one is a failure, never a skip (#265 G2).
       const highlighted = await page
         .locator('#case [data-scope="menu"][data-highlighted]')
         .first()
@@ -398,20 +254,14 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
           const style = getComputedStyle(node)
           return { background: style.backgroundColor, color: style.color }
         })
-        .catch(() => null)
-      // Not every case necessarily seeds a highlighted item on every path;
-      // when it does, its painted colors must resolve to the system
-      // Highlight/HighlightText pair, never an inert light-mode literal.
-      if (highlighted !== null) {
-        const [systemBg, systemFg, ownBg, ownFg] = await paintedColors(page, [
-          'Highlight',
-          'HighlightText',
-          highlighted.background,
-          highlighted.color,
-        ])
-        expect(bucketedKey(ownBg!)).toBe(bucketedKey(systemBg!))
-        expect(bucketedKey(ownFg!)).toBe(bucketedKey(systemFg!))
-      }
+      const [systemBg, systemFg, ownBg, ownFg] = await paintedColors(page, [
+        'Highlight',
+        'HighlightText',
+        highlighted.background,
+        highlighted.color,
+      ])
+      expect(bucketedKey(ownBg!)).toBe(bucketedKey(systemBg!))
+      expect(bucketedKey(ownFg!)).toBe(bucketedKey(systemFg!))
     })
 
     it('drives a real four-phase presence lifecycle for a modal dialog', async () => {
@@ -432,40 +282,6 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
       expect(await stateOf(openPage)).toBe('open')
       const closingPage = await openCase(path, 'component:dialog', 'closing', { motion: 'full' })
       expect(await stateOf(closingPage)).toBe('closing')
-    })
-
-    it('reduces a real opening transition to (near) zero duration under prefers-reduced-motion', async () => {
-      const page = await openCase(path, 'component:popover', 'opening', { motion: 'reduced' })
-      const duration = await page
-        .locator('#case [data-scope="popover"][data-part="content"]')
-        .evaluate((node) => getComputedStyle(node).transitionDuration)
-      // Kill the transition rather than waiting on it (verification
-      // discipline: a hidden/backgrounded tab freezes a mid-flight
-      // transition and would misreport a live one as reduced).
-      expect(['0s', '']).toContain(duration.split(',')[0]!.trim())
-    })
-
-    it('reduces a real toast exit animation to (near) zero duration under prefers-reduced-motion', async () => {
-      // Mounts ALREADY `closing` (the scenario's own `closing: true` input)
-      // rather than racing a live dismiss — deterministic, and the real
-      // discriminating proof that the DURATION itself collapsed, which a
-      // "removed within some timeout" race (see
-      // `registry/test/toast-live-demos.browser.test.ts`'s own reduced-
-      // motion test) cannot tell apart from a merely-fast normal exit.
-      const page = await openCase(path, 'component:toast', 'closing', { motion: 'reduced' })
-      // `data-motion` alone only reaches case SELECTION — the actual
-      // reduced-duration repaint requires the browser's real
-      // `prefers-reduced-motion: reduce` media query (mirrors the
-      // forced-colors case a few tests up).
-      await page.emulateMedia({ reducedMotion: 'reduce' })
-      const duration = await page
-        .locator('#case [data-scope="toast"][data-part="root"]')
-        .evaluate((node) => getComputedStyle(node).animationDuration)
-      // Kill the animation rather than waiting on it (verification
-      // discipline: a hidden/backgrounded tab freezes a mid-flight
-      // animation and would misreport a live one as reduced). Chromium
-      // renders 0.01ms as '1e-05s'; accept any near-zero spelling.
-      expect(['0s', '1e-05s', '']).toContain(duration.split(',')[0]!.trim())
     })
 
     it('every ToastType clears AA text contrast (>=4.5:1) and non-text contrast (>=3:1) in light, dark, and forced colors', async () => {
@@ -628,22 +444,17 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
     // structural shape the review's "stacked/nested overlays" finding names
     // (z-order, dismissal ownership, focus). Both are mounted through the
     // baseline renderer's per-case mount, into two different host ids.
-    const page = await browser.newPage({ viewport: { width: 1024, height: 768 } })
-    openPages.push(page)
-    await page.goto(urls.baseline)
-    await page.waitForFunction(() => typeof window.__mountMenusOverlaysBaselineCase === 'function')
-    await page.evaluate(
-      ({ contract }) => {
-        const mount = window.__mountMenusOverlaysBaselineCase!
-        mount(contract, { scenarioId: 'component:dialog', caseId: 'modal', hostId: 'dialog-host' })
-        mount(contract, {
-          scenarioId: 'component:context-menu',
-          caseId: 'open',
-          hostId: 'menu-host',
-        })
-      },
-      { contract },
-    )
+    const page = await newPage('baseline')
+    await mount(page, 'baseline', {
+      scenarioId: 'component:dialog',
+      caseId: 'modal',
+      hostId: 'dialog-host',
+    })
+    await mount(page, 'baseline', {
+      scenarioId: 'component:context-menu',
+      caseId: 'open',
+      hostId: 'menu-host',
+    })
     const dialogContent = page.locator('#dialog-host [data-scope="dialog"][data-part="content"]')
     expect(await dialogContent.isVisible()).toBe(true)
     const menuItem = page
@@ -674,19 +485,9 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
         first: { scenarioId: string; caseId: string; hostId: string },
         second: { scenarioId: string; caseId: string; hostId: string },
       ): Promise<Page> {
-        const page = await browser.newPage({ viewport: { width: 1024, height: 768 } })
-        openPages.push(page)
-        await page.goto(urls[path])
-        const fn = MOUNT_FN[path]
-        await page.waitForFunction((name) => typeof window[name as keyof Window] === 'function', fn)
-        await page.evaluate(
-          ({ fn, contract, first, second }) => {
-            const mount = window[fn as keyof Window] as (c: unknown, r: MountRequest) => void
-            mount(contract, first)
-            mount(contract, second)
-          },
-          { fn, contract, first, second },
-        )
+        const page = await newPage(path)
+        await mount(page, path, first)
+        await mount(page, path, second)
         return page
       }
 
@@ -718,13 +519,11 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
         // real outside POINTER press (`page.mouse`, never a synthetic
         // `.evaluate(node => node.click())`), at a point outside both the
         // menu's own content and the dialog's content.
-        await page.evaluate(
-          ({ fn, contract }) => {
-            const mount = window[fn as keyof Window] as (c: unknown, r: MountRequest) => void
-            mount(contract, { scenarioId: 'component:menu', caseId: 'open', hostId: 'menu-host-2' })
-          },
-          { fn: MOUNT_FN[path], contract },
-        )
+        await mount(page, path, {
+          scenarioId: 'component:menu',
+          caseId: 'open',
+          hostId: 'menu-host-2',
+        })
         const menuContent2 = page.locator('#menu-host-2 [data-scope="menu"][data-part="content"]')
         expect(await menuContent2.isVisible()).toBe(true)
         await page.mouse.click(2, 2)

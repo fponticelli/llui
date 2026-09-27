@@ -455,14 +455,118 @@ export const NESTED_MENUBAR_MENU_FIELD_ASSERTIONS: Record<string, FieldAssertion
   disabled: menubarMenuDisabledAssertion,
 }
 
+/** A real-browser test that proves what jsdom cannot observe: the
+ * repo-relative test file and the EXACT `it()` title as written in its source
+ * (a generated per-case title is its template text, `${…}` included).
+ * `menus-overlays-baseline-renderer.test.ts` checks every one exists, so an
+ * allowance cannot cite a renamed or deleted test (#265 G2). */
+export interface LiveProof {
+  readonly file: string
+  readonly test: string
+}
+
+export interface LiveAllowance {
+  readonly reason: string
+  readonly proofs: readonly LiveProof[]
+}
+
+const LIVE_RENDER = 'packages/components/test/styles/menus-overlays-live-render.browser.test.ts'
+const PRODUCT_EFFECTS =
+  'packages/components/test/styles/menus-overlays-product-effects.browser.test.ts'
+const CONTEXT_MENU_ANCHOR: LiveProof = {
+  file: LIVE_RENDER,
+  test: 'anchors ContextMenu at the real virtual pointer coordinates it was opened with',
+}
+
 /** Fields genuinely unobservable in jsdom (real `floating-ui` layout
- * measurement / a real `getBoundingClientRect`), with the exact real-browser
- * test that proves them instead — the closed-at-both-ends counterpart to
- * `INSENSITIVE_DIMENSIONS` in each renderer's own test file. Every entry in
- * a renderer's `SKIPPED_FIELDS` must have one of these. */
-export const GEOMETRY_ALLOWLIST: Record<string, string> = {
-  placement:
-    'measured only via floating-ui autoUpdate + a real getBoundingClientRect, which jsdom never performs; proven in packages/components/test/styles/menus-overlays-live-render.browser.test.ts ("mirrors floating placement under RTL", "places every real ToastType and every real toast placement") and menu-overlay-rtl-floating.browser.test.ts',
-  x: 'the virtual anchor point is resolved only through a real getBoundingClientRect; proven in menus-overlays-live-render.browser.test.ts ("anchors ContextMenu at the real virtual pointer coordinates it was opened with")',
-  y: 'same as x — see menus-overlays-live-render.browser.test.ts ("anchors ContextMenu at the real virtual pointer coordinates it was opened with")',
+ * measurement / a real `getBoundingClientRect`), with the real-browser tests
+ * that prove them instead — the closed-at-both-ends counterpart to
+ * `INSENSITIVE_DIMENSIONS` in each renderer's own test file. Every entry in a
+ * renderer's `SKIPPED_FIELDS` must have one of these. */
+export const GEOMETRY_ALLOWLIST: Record<string, LiveAllowance> = {
+  placement: {
+    reason:
+      'resolved only by floating-ui against real layout (autoUpdate + getBoundingClientRect), which jsdom never performs',
+    proofs: [
+      {
+        file: PRODUCT_EFFECTS,
+        test: 'resolves every placement probe of every floating product to its real side and alignment',
+      },
+      {
+        file: LIVE_RENDER,
+        test: 'mirrors floating end-alignment under RTL: LTR flush-right becomes RTL flush-left',
+      },
+      {
+        file: LIVE_RENDER,
+        test: 'places every real ToastType and every real toast placement, LTR and RTL',
+      },
+      {
+        file: 'packages/components/test/components/menu-overlay-rtl-floating.browser.test.ts',
+        test: 'mirrors floating placement under page dir="rtl" with NO directionSync part and NO explicit setDir',
+      },
+    ],
+  },
+  x: {
+    reason: 'the virtual anchor point is resolved only through a real getBoundingClientRect',
+    proofs: [CONTEXT_MENU_ANCHOR],
+  },
+  y: {
+    reason: 'the virtual anchor point is resolved only through a real getBoundingClientRect',
+    proofs: [CONTEXT_MENU_ANCHOR],
+  },
+}
+
+/** What every environment axis DOES to the product, proven live. The renderer
+ * unit tests only see the host attribute the adapter wrote (and `motion`
+ * writes none: it is a media query), which stays green when the product
+ * ignores it; these are the proofs that do not. */
+export const ENV_AXIS_PROOFS: Record<
+  'theme' | 'direction' | 'motion' | 'forcedColors' | 'viewport',
+  LiveAllowance
+> = {
+  theme: {
+    reason: 'painted colours and their contrast exist only in a real renderer',
+    proofs: [
+      {
+        file: PRODUCT_EFFECTS,
+        test: 'theme: ${scenarioId}/${caseId} paints as a page-level theme does, at AA contrast',
+      },
+    ],
+  },
+  direction: {
+    reason: 'computed direction and layout exist only in a real renderer',
+    proofs: [
+      {
+        file: PRODUCT_EFFECTS,
+        test: 'direction: ${scenarioId}/${caseId} computes and lays out as a page-level dir does',
+      },
+    ],
+  },
+  motion: {
+    reason: 'not reflected as a host attribute at all: reduced motion is a CSS media query',
+    proofs: [
+      {
+        file: PRODUCT_EFFECTS,
+        test: 'motion: ${scenarioId}/${caseId} animates at full motion and collapses under reduced motion',
+      },
+    ],
+  },
+  forcedColors: {
+    reason: 'system colours are painted only under real forced-colors emulation',
+    proofs: [
+      {
+        file: PRODUCT_EFFECTS,
+        test: 'forcedColors: ${scenarioId}/${caseId} paints system colours at AA, with a visible edge when floating',
+      },
+    ],
+  },
+  viewport: {
+    reason: 'containment needs a real viewport and real layout',
+    proofs: [
+      {
+        file: PRODUCT_EFFECTS,
+        test: 'viewport: ${scenarioId}/${caseId} stays inside a narrow viewport',
+      },
+    ],
+  },
 }
