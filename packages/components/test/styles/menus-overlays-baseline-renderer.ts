@@ -157,13 +157,19 @@ function dialogLikeAdapter(
           skipAnimations: input.skipAnimations,
         })
         if (input.presence === 'opening')
-          return machine.update(machine.init({ open: false, skipAnimations: false }), {
-            type: 'open',
-          })[0]
+          return machine.update(
+            machine.init({ open: false, skipAnimations: input.skipAnimations }),
+            {
+              type: 'open',
+            },
+          )[0]
         if (input.presence === 'closing')
-          return machine.update(machine.init({ open: true, skipAnimations: false }), {
-            type: 'close',
-          })[0]
+          return machine.update(
+            machine.init({ open: true, skipAnimations: input.skipAnimations }),
+            {
+              type: 'close',
+            },
+          )[0]
         return seed
       },
       machine.update,
@@ -172,6 +178,7 @@ function dialogLikeAdapter(
         return [
           button({ ...parts.trigger }, [text('Open')]),
           machine.overlay({
+            target: host,
             state,
             send,
             parts,
@@ -201,11 +208,11 @@ const drawerAdapter: Adapter<DrawerCaseInput> = (host, input, ctx) =>
     'drawer',
     () => {
       if (input.presence === 'opening')
-        return drawer.update(drawer.init({ open: false, skipAnimations: false }), {
+        return drawer.update(drawer.init({ open: false, skipAnimations: input.skipAnimations }), {
           type: 'open',
         })[0]
       if (input.presence === 'closing')
-        return drawer.update(drawer.init({ open: true, skipAnimations: false }), {
+        return drawer.update(drawer.init({ open: true, skipAnimations: input.skipAnimations }), {
           type: 'close',
         })[0]
       return drawer.init({
@@ -219,6 +226,7 @@ const drawerAdapter: Adapter<DrawerCaseInput> = (host, input, ctx) =>
       return [
         button({ ...parts.trigger }, [text('Open')]),
         drawer.overlay({
+          target: host,
           state,
           send,
           parts,
@@ -244,13 +252,19 @@ const hoverCardAdapter: Adapter<FloatingPresenceCaseInput> = (host, input, ctx) 
     'hover-card',
     () => {
       if (input.presence === 'opening')
-        return hoverCard.update(hoverCard.init({ open: false, skipAnimations: false }), {
-          type: 'show',
-        })[0]
+        return hoverCard.update(
+          hoverCard.init({ open: false, skipAnimations: input.skipAnimations }),
+          {
+            type: 'show',
+          },
+        )[0]
       if (input.presence === 'closing')
-        return hoverCard.update(hoverCard.init({ open: true, skipAnimations: false }), {
-          type: 'hide',
-        })[0]
+        return hoverCard.update(
+          hoverCard.init({ open: true, skipAnimations: input.skipAnimations }),
+          {
+            type: 'hide',
+          },
+        )[0]
       return hoverCard.init({
         open: input.presence !== 'closed',
         skipAnimations: input.skipAnimations,
@@ -262,6 +276,7 @@ const hoverCardAdapter: Adapter<FloatingPresenceCaseInput> = (host, input, ctx) 
       return [
         button({ ...parts.trigger }, [text('Trigger')]),
         hoverCard.overlay({
+          target: host,
           state,
           send,
           parts,
@@ -279,11 +294,11 @@ const popoverAdapter: Adapter<FloatingPresenceCaseInput> = (host, input, ctx) =>
     'popover',
     () => {
       if (input.presence === 'opening')
-        return popover.update(popover.init({ open: false, skipAnimations: false }), {
+        return popover.update(popover.init({ open: false, skipAnimations: input.skipAnimations }), {
           type: 'open',
         })[0]
       if (input.presence === 'closing')
-        return popover.update(popover.init({ open: true, skipAnimations: false }), {
+        return popover.update(popover.init({ open: true, skipAnimations: input.skipAnimations }), {
           type: 'close',
         })[0]
       return popover.init({
@@ -297,6 +312,7 @@ const popoverAdapter: Adapter<FloatingPresenceCaseInput> = (host, input, ctx) =>
       return [
         button({ ...parts.trigger }, [text('Trigger')]),
         popover.overlay({
+          target: host,
           state,
           send,
           parts,
@@ -317,9 +333,13 @@ const tooltipAdapter: Adapter<TooltipCaseInput> = (host, input, ctx) =>
     'tooltip',
     () => {
       if (input.presence === 'opening')
-        return tooltip.update(tooltip.init({ open: false, animated: true }), { type: 'show' })[0]
+        return tooltip.update(tooltip.init({ open: false, animated: input.animated }), {
+          type: 'show',
+        })[0]
       if (input.presence === 'closing')
-        return tooltip.update(tooltip.init({ open: true, animated: true }), { type: 'hide' })[0]
+        return tooltip.update(tooltip.init({ open: true, animated: input.animated }), {
+          type: 'hide',
+        })[0]
       return tooltip.init({ open: input.presence !== 'closed', animated: input.animated })
     },
     tooltip.update,
@@ -328,6 +348,7 @@ const tooltipAdapter: Adapter<TooltipCaseInput> = (host, input, ctx) =>
       return [
         button({ ...parts.trigger }, [text('Hover')]),
         tooltip.overlay({
+          target: host,
           state,
           send,
           parts,
@@ -341,30 +362,52 @@ const tooltipAdapter: Adapter<TooltipCaseInput> = (host, input, ctx) =>
 // ---------------------------------------------------------------------------
 // component:menu
 
+/** Synthetic value for the ONE submenu this renderer adds when `nestedOpen`
+ * asks for one — structural rendering fixture, not case data (mirrors how
+ * `navigation-data-scenarios.ts` keeps shared fixture SHAPE out of case
+ * inputs). Real machine state: a `MenuNode` with `children`, opened via the
+ * real `openSub` message. */
+const SUBMENU_VALUE = '__submenu'
+const SUBMENU_CHILD_VALUE = '__submenu-item'
+
 const menuAdapter: Adapter<MenuCaseInput> = (host, input, ctx) =>
   mountMachine(
     host,
     ctx,
     'menu',
     () => {
-      const items: menu.MenuItem[] = input.items.map((item) => ({
-        value: item.value,
-        kind: item.kind,
-        disabled: item.disabled,
-      }))
+      const items: menu.MenuItem[] = [
+        ...input.items.map((item) => ({
+          value: item.value,
+          kind: item.kind,
+          disabled: item.disabled,
+        })),
+        ...(input.nestedOpen
+          ? [
+              {
+                value: SUBMENU_VALUE,
+                kind: 'action' as const,
+                children: [{ value: SUBMENU_CHILD_VALUE, kind: 'action' as const }],
+              },
+            ]
+          : []),
+      ]
       const seedOpts = { items, checked: [...input.checked], skipAnimations: input.skipAnimations }
       let state =
         input.presence === 'opening'
-          ? menu.update(menu.init({ ...seedOpts, open: false, skipAnimations: false }), {
+          ? menu.update(menu.init({ ...seedOpts, open: false }), {
               type: 'open',
             })[0]
           : input.presence === 'closing'
-            ? menu.update(menu.init({ ...seedOpts, open: true, skipAnimations: false }), {
+            ? menu.update(menu.init({ ...seedOpts, open: true }), {
                 type: 'close',
               })[0]
             : menu.init({ ...seedOpts, open: input.presence !== 'closed' })
       if (input.highlighted !== null && input.presence !== 'closed') {
         state = menu.update(state, { type: 'highlight', level: '', value: input.highlighted })[0]
+      }
+      if (input.nestedOpen && input.presence === 'open') {
+        state = menu.update(state, { type: 'openSub', value: SUBMENU_VALUE })[0]
       }
       return state
     },
@@ -375,11 +418,26 @@ const menuAdapter: Adapter<MenuCaseInput> = (host, input, ctx) =>
         button({ ...parts.trigger }, [text('Open menu')]),
         parts.directionSync,
         menu.overlay({
+          target: host,
           state,
           send,
           parts,
           placement: input.placement,
-          content: () => renderMenuItems(parts, input.items),
+          content: () => [
+            div({ ...parts.content }, [
+              ...renderMenuItems(parts, input.items),
+              ...(input.nestedOpen
+                ? [
+                    div({ ...parts.subTrigger(SUBMENU_VALUE) }, [text('More')]),
+                    div({ ...parts.subPositioner(SUBMENU_VALUE) }, [
+                      div({ ...parts.subContent(SUBMENU_VALUE) }, [
+                        div({ ...parts.item(SUBMENU_CHILD_VALUE).item }, [text('Submenu item')]),
+                      ]),
+                    ]),
+                  ]
+                : []),
+            ]),
+          ],
         }),
       ]
     },
@@ -394,17 +452,28 @@ const contextMenuAdapter: Adapter<ContextMenuCaseInput> = (host, input, ctx) =>
     ctx,
     'context-menu',
     () => {
-      const items: contextMenu.ContextMenuItem[] = input.items.map((item) => ({
-        value: item.value,
-        kind: item.kind,
-        disabled: item.disabled,
-      }))
+      const items: contextMenu.ContextMenuItem[] = [
+        ...input.items.map((item) => ({
+          value: item.value,
+          kind: item.kind,
+          disabled: item.disabled,
+        })),
+        ...(input.nestedOpen
+          ? [
+              {
+                value: SUBMENU_VALUE,
+                kind: 'action' as const,
+                children: [{ value: SUBMENU_CHILD_VALUE, kind: 'action' as const }],
+              },
+            ]
+          : []),
+      ]
       let state = contextMenu.init({ items, skipAnimations: input.skipAnimations })
       if (input.presence !== 'closed') {
         state = contextMenu.update(state, { type: 'openAt', x: input.x, y: input.y })[0]
       }
       if (input.presence === 'closing') {
-        state = contextMenu.update({ ...state, skipAnimations: false }, { type: 'close' })[0]
+        state = contextMenu.update(state, { type: 'close' })[0]
       }
       if (input.highlighted !== null && input.presence !== 'closed') {
         state = contextMenu.update(state, {
@@ -413,18 +482,39 @@ const contextMenuAdapter: Adapter<ContextMenuCaseInput> = (host, input, ctx) =>
           value: input.highlighted,
         })[0]
       }
+      if (input.nestedOpen && input.presence === 'open') {
+        state = contextMenu.update(state, { type: 'openSub', value: SUBMENU_VALUE })[0]
+      }
       return state
     },
     contextMenu.update,
     (state, send) => {
       const parts = contextMenu.connect(state, send, { id: 'cm' })
+      const menuParts = parts as unknown as menu.MenuParts
       return [
         div({ ...parts.trigger }, [text('Right-click target')]),
         contextMenu.overlay({
+          target: host,
           state,
           send,
           parts,
-          content: () => renderMenuItems(parts as unknown as menu.MenuParts, input.items),
+          content: () => [
+            div({ ...parts.content }, [
+              ...renderMenuItems(menuParts, input.items),
+              ...(input.nestedOpen
+                ? [
+                    div({ ...menuParts.subTrigger(SUBMENU_VALUE) }, [text('More')]),
+                    div({ ...menuParts.subPositioner(SUBMENU_VALUE) }, [
+                      div({ ...menuParts.subContent(SUBMENU_VALUE) }, [
+                        div({ ...menuParts.item(SUBMENU_CHILD_VALUE).item }, [
+                          text('Submenu item'),
+                        ]),
+                      ]),
+                    ]),
+                  ]
+                : []),
+            ]),
+          ],
         }),
       ]
     },
@@ -468,11 +558,12 @@ const menubarAdapter: Adapter<MenubarCaseInput> = (host, input, ctx) =>
         ...input.menus.map((m) => {
           const menuParts = parts.menu(m.id)
           return menubar.overlay({
+            target: host,
             state,
             send,
             menuId: m.id,
             parts: menuParts,
-            content: () => renderMenuItems(menuParts, m.items),
+            content: () => [div({ ...menuParts.content }, renderMenuItems(menuParts, m.items))],
           })
         }),
       ]
@@ -540,11 +631,16 @@ const selectAdapter: Adapter<SelectCaseInput> = (host, input, ctx) =>
       return [
         button({ ...parts.trigger }, [text('Select')]),
         select.overlay({
+          target: host,
           state,
           send,
           parts,
-          content: () =>
-            input.items.map((value) => div({ ...parts.item(value).item }, [text(value)])),
+          content: () => [
+            div(
+              { ...parts.content },
+              input.items.map((value) => div({ ...parts.item(value).item }, [text(value)])),
+            ),
+          ],
         }),
       ]
     },
@@ -577,13 +673,18 @@ const comboboxAdapter: Adapter<ComboboxCaseInput> = (host, caseInput, ctx) =>
       return [
         input({ ...parts.input }),
         combobox.overlay({
+          target: host,
           state,
           send,
           parts,
-          content: () =>
-            caseInput.items.length === 0
-              ? [div({ 'data-scope': 'combobox', 'data-part': 'empty' }, [text('No results')])]
-              : caseInput.items.map((value) => div({ ...parts.item(value).item }, [text(value)])),
+          content: () => [
+            div(
+              { ...parts.content },
+              caseInput.items.length === 0
+                ? [div({ 'data-scope': 'combobox', 'data-part': 'empty' }, [text('No results')])]
+                : caseInput.items.map((value) => div({ ...parts.item(value).item }, [text(value)])),
+            ),
+          ],
         }),
       ]
     },
@@ -605,6 +706,12 @@ const searchableSelectAdapter: Adapter<ComboboxCaseInput> = (host, caseInput, ct
         combobox: { ...state.combobox, status: caseInput.status, inputValue: caseInput.inputValue },
       }
       if (caseInput.open) state = searchableSelect.update(state, { type: 'open' })[0]
+      if (caseInput.highlightedValue !== null) {
+        state = {
+          ...state,
+          combobox: { ...state.combobox, highlightedValue: caseInput.highlightedValue },
+        }
+      }
       return state
     },
     searchableSelect.update,
@@ -613,17 +720,23 @@ const searchableSelectAdapter: Adapter<ComboboxCaseInput> = (host, caseInput, ct
       return [
         button({ ...parts.trigger }, [text('Searchable select')]),
         searchableSelect.overlay({
+          target: host,
           state,
           send,
           parts,
-          content: () =>
-            caseInput.items.length === 0
-              ? [
-                  div({ 'data-scope': 'searchable-select', 'data-part': 'empty' }, [
-                    text('No results'),
-                  ]),
-                ]
-              : caseInput.items.map((value) => div({ ...parts.item(value).item }, [text(value)])),
+          content: () => [
+            div({ ...parts.content }, [input({ ...parts.input })]),
+            div(
+              { 'data-scope': 'searchable-select', 'data-part': 'list' },
+              caseInput.items.length === 0
+                ? [
+                    div({ 'data-scope': 'searchable-select', 'data-part': 'empty' }, [
+                      text('No results'),
+                    ]),
+                  ]
+                : caseInput.items.map((value) => div({ ...parts.item(value).item }, [text(value)])),
+            ),
+          ],
         }),
       ]
     },
@@ -668,7 +781,7 @@ const toastAdapter: Adapter<ToastCaseInput> = (host, input, ctx) =>
             return div({ ...itemParts.root }, [
               h2({ ...itemParts.title }, [text(t.title ?? '')]),
               p({ ...itemParts.description }, [text(t.description ?? '')]),
-              button({ ...itemParts.closeTrigger }, [text('Dismiss')]),
+              ...(t.dismissable ? [button({ ...itemParts.closeTrigger }, [text('Dismiss')])] : []),
             ])
           }),
         ]),
@@ -723,6 +836,7 @@ const commandMenuAdapter: Adapter<CommandMenuCaseInput> = (host, caseInput, ctx)
       return [
         button({ ...parts.dialog.trigger }, [text('Open command menu')]),
         dialog.overlay({
+          target: host,
           state: state.map((s) => ({ open: s.open })),
           send: (m) => {
             if (m.type === 'close') send({ type: 'close' })
@@ -767,7 +881,54 @@ const confirmDialogAdapter: Adapter<ConfirmDialogCaseInput> = (host, input, ctx)
       )[0]
     },
     confirmDialog.update,
-    (state, send) => [confirmDialog.view({ state, send, id: 'confirm' })],
+    // `confirmDialog.view()` composes `dialog.connect`/`dialog.overlay`
+    // internally (see `patterns/confirm-dialog.ts`) but does not expose a
+    // `target` option, so its content always portals to the document body —
+    // outside this renderer's per-case `host`. Reproduced inline here with
+    // `target: host` added, using the SAME real `dialogConnect`/`dialogOverlay`
+    // composition `view()` itself performs (never a fabricated stand-in).
+    (state, send) => {
+      const parts = dialog.connect(
+        state.map((s) => ({ open: s.open })),
+        () => {
+          /* unused — buttons dispatch confirm-dialog messages directly */
+        },
+        { id: 'confirm', role: 'alertdialog', closeLabel: 'Cancel' },
+      )
+      return [
+        dialog.overlay({
+          target: host,
+          state: state.map((s) => ({ open: s.open })),
+          send: (m) => {
+            if (m.type === 'close') send({ type: 'cancel' })
+          },
+          parts,
+          content: () => [
+            div({ ...parts.content, class: 'confirm-dialog' }, [
+              h2({ ...parts.title }, [text(state.map((s) => s.title))]),
+              p({ ...parts.description }, [text(state.map((s) => s.description))]),
+              button(
+                {
+                  type: 'button',
+                  class: 'btn btn-secondary',
+                  onClick: () => send({ type: 'cancel' }),
+                },
+                [text(state.map((s) => s.cancelLabel))],
+              ),
+              button(
+                {
+                  type: 'button',
+                  class: state.map((s) => (s.destructive ? 'btn btn-danger' : 'btn btn-primary')),
+                  onClick: () => send({ type: 'confirm' }),
+                },
+                [text(state.map((s) => s.confirmLabel))],
+              ),
+            ]),
+          ],
+          closeOnOutsideClick: false,
+        }),
+      ]
+    },
   )
 
 /** Adapters for every one of the 17 menus-overlays ProductContract scenarios. */
