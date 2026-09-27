@@ -165,6 +165,24 @@ function renderMenuItems<Scope extends string>(
 // ---------------------------------------------------------------------------
 // component:alert-dialog / component:dialog — shared DialogState shape.
 
+/** The real machine state a dialog-like case's `presence` names: an
+ * 'opening'/'closing' case drives a REAL transition, gated by
+ * `skipAnimations`; 'open'/'closed' seed the final status directly. */
+function seedDialogLike(
+  machine: typeof dialog | typeof alertDialog,
+  input: DialogLikeCaseInput,
+): dialog.DialogState {
+  if (input.presence === 'opening')
+    return machine.update(machine.init({ open: false, skipAnimations: input.skipAnimations }), {
+      type: 'open',
+    })[0]
+  if (input.presence === 'closing')
+    return machine.update(machine.init({ open: true, skipAnimations: input.skipAnimations }), {
+      type: 'close',
+    })[0]
+  return machine.init({ open: input.presence !== 'closed', skipAnimations: input.skipAnimations })
+}
+
 function dialogLikeAdapter(
   machine: typeof dialog | typeof alertDialog,
 ): Adapter<DialogLikeCaseInput> {
@@ -173,27 +191,7 @@ function dialogLikeAdapter(
       host,
       ctx,
       'dialog-like',
-      () => {
-        const seed = machine.init({
-          open: input.presence !== 'closed',
-          skipAnimations: input.skipAnimations,
-        })
-        if (input.presence === 'opening')
-          return machine.update(
-            machine.init({ open: false, skipAnimations: input.skipAnimations }),
-            {
-              type: 'open',
-            },
-          )[0]
-        if (input.presence === 'closing')
-          return machine.update(
-            machine.init({ open: true, skipAnimations: input.skipAnimations }),
-            {
-              type: 'close',
-            },
-          )[0]
-        return seed
-      },
+      () => seedDialogLike(machine, input),
       machine.update,
       (state, send) => {
         const parts = machine.connect(state, send, { id: 'd', modal: input.modal })
@@ -206,9 +204,7 @@ function dialogLikeAdapter(
             parts,
             // `backdrop` BEFORE `content` — the equal-z-index-plus-DOM-order
             // stacking contract `menus-overlays.css` documents (#265 finding
-            // 4). Without it, real hit-testing/z-index proof in
-            // `modal-stacking.browser.test.ts` has no backdrop element to
-            // test against at all.
+            // 4), proven on real pixels in `modal-stacking.browser.test.ts`.
             content: () => [
               div({ ...parts.backdrop }),
               div({ ...parts.content }, [
@@ -223,8 +219,91 @@ function dialogLikeAdapter(
     )
 }
 
+interface NestedDialogState {
+  readonly outer: dialog.DialogState
+  readonly inner: dialog.DialogState
+}
+/** Routed by `type`: which of the two machines the message is for. */
+type NestedDialogMsg = { readonly type: 'outer' | 'inner'; readonly msg: dialog.DialogMsg }
+
+/**
+ * `component:dialog/nested` (#265 finding 2): a second modal dialog opened
+ * from INSIDE the first — two real machines with their own ids, the inner
+ * trigger inside the outer content, both portaled to the case host. Both are
+ * open, so the inner one is the top modal layer.
+ */
+function nestedDialogAdapter(
+  host: HTMLElement,
+  input: DialogLikeCaseInput,
+  nestedTitle: string,
+  ctx: RenderContext,
+): Disposable {
+  return mountMachine<NestedDialogState, NestedDialogMsg>(
+    host,
+    ctx,
+    'nested-dialog',
+    () => ({
+      outer: seedDialogLike(dialog, input),
+      inner: dialog.init({ open: true, skipAnimations: true }),
+    }),
+    (state, { type, msg }) => {
+      const [next] = dialog.update(state[type], msg)
+      return [{ ...state, [type]: next }, []]
+    },
+    (state, send) => {
+      const sendTo =
+        (level: 'outer' | 'inner'): Send<dialog.DialogMsg> =>
+        (msg) =>
+          send({ type: level, msg })
+      const outer = dialog.connect(state.at('outer'), sendTo('outer'), {
+        id: 'd',
+        modal: input.modal,
+      })
+      const inner = dialog.connect(state.at('inner'), sendTo('inner'), {
+        id: 'd-nested',
+        modal: true,
+      })
+      return [
+        button({ ...outer.trigger }, [text('Open')]),
+        dialog.overlay({
+          target: host,
+          state: state.at('outer'),
+          send: sendTo('outer'),
+          parts: outer,
+          content: () => [
+            div({ ...outer.backdrop }),
+            div({ ...outer.content }, [
+              h2({ ...outer.title }, [text(input.title)]),
+              p({ ...outer.description }, [text(input.description)]),
+              button({ ...inner.trigger }, [text('Discard')]),
+              button({ ...outer.closeTrigger }, [text('Close')]),
+              dialog.overlay({
+                target: host,
+                state: state.at('inner'),
+                send: sendTo('inner'),
+                parts: inner,
+                content: () => [
+                  div({ ...inner.backdrop }),
+                  div({ ...inner.content }, [
+                    h2({ ...inner.title }, [text(nestedTitle)]),
+                    button({ ...inner.closeTrigger }, [text('Keep editing')]),
+                  ]),
+                ],
+              }),
+            ]),
+          ],
+        }),
+      ]
+    },
+  )
+}
+
 const alertDialogAdapter = dialogLikeAdapter(alertDialog)
-const dialogAdapter = dialogLikeAdapter(dialog)
+const plainDialogAdapter = dialogLikeAdapter(dialog)
+const dialogAdapter: Adapter<DialogLikeCaseInput> = (host, input, ctx) =>
+  input.nested === undefined
+    ? plainDialogAdapter(host, input, ctx)
+    : nestedDialogAdapter(host, input, input.nested, ctx)
 
 // ---------------------------------------------------------------------------
 // component:drawer

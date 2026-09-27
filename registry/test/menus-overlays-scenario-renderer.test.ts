@@ -178,6 +178,8 @@ describe('registry menus-overlays scenario renderer', () => {
       'presence rests at "open"; only a transition reads this flag',
     'component:dialog/modal.skipAnimations':
       'presence rests at "open"; only a transition reads this flag',
+    'component:dialog/nested.skipAnimations':
+      'presence rests at "open"; only a transition reads this flag',
     'component:dialog/non-modal.skipAnimations':
       'presence rests at "open"; only a transition reads this flag',
     'component:drawer/right.skipAnimations':

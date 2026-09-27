@@ -526,10 +526,12 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
    * `page.keyboard`, `locator.click()` — never `.evaluate(node => node.click())`,
    * a synthetic DOM dispatch that bypasses the real hit-testing/focus
    * machinery this is meant to prove). Covers #265's "stacked/nested
-   * overlays" finding: z-order via `elementFromPoint`, Escape/outside
-   * dismissing only the TOP layer, focus trap on the top modal, focus
-   * restore to its own trigger on close, and `aria-hidden`/`inert` on the
-   * layer(s) beneath a modal.
+   * overlays" finding (finding 2): Escape and outside presses dismissing
+   * only the TOP layer (menu over dialog, submenu inside menu, dialog over
+   * dialog), and for nested modal dialogs z-order via `elementFromPoint`,
+   * the focus trap and real Tab cycling on the top one, `inert` on the one
+   * beneath, and focus returning to it when the top one closes. Focus
+   * restore to a TRIGGER is proven per surface in `modal-stacking.browser.test.ts`.
    */
   describe.each(['baseline', 'registryTailwind'] as const)(
     '%s renderer, stacked overlays',
@@ -602,31 +604,70 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
         expect(await rootContent.isVisible()).toBe(true)
       })
 
-      it('nested Dialogs (both modal): focus stays trapped in a dialog, and Escape/outside-press dismiss only the top (later-mounted) one', async () => {
-        const page = await openTwo(
-          { scenarioId: 'component:dialog', caseId: 'modal', hostId: 'outer' },
-          { scenarioId: 'component:dialog', caseId: 'modal', hostId: 'inner' },
-        )
-        const outerContent = page.locator('#outer [data-scope="dialog"][data-part="content"]')
-        const innerContent = page.locator('#inner [data-scope="dialog"][data-part="content"]')
-        expect(await outerContent.isVisible()).toBe(true)
-        expect(await innerContent.isVisible()).toBe(true)
+      it('nested modal Dialogs: the TOP one paints and hit-tests on top, owns focus and Tab, inerts the one beneath, and Escape unwinds only it', async () => {
+        // The REAL nested shape: the inner dialog is opened from inside the
+        // outer one, with its own machine and ids. (Two mounts of one case
+        // would duplicate every id, so each overlay would resolve the FIRST
+        // dialog's content — a fixture artifact, not a product state.)
+        const page = await openCase(path, 'component:dialog', 'nested', undefined, {
+          beforeMount: (p) => p.emulateMedia({ reducedMotion: 'reduce' }),
+        })
+        const outerId = path === 'baseline' ? 'd' : 'rd'
+        const innerId = `${outerId}-nested`
+        const outer = page.locator(`[id="${outerId}:content"]`)
+        const inner = page.locator(`[id="${innerId}:content"]`)
+        await Promise.all([
+          outer.waitFor({ state: 'visible' }),
+          inner.waitFor({ state: 'visible' }),
+        ])
 
-        // Focus trap: SOME dialog's content owns focus on mount (never the
-        // page body/background) — each modal dialog activates its own trap
-        // on mount, in mount order.
-        const activeInsideADialog = await page.evaluate(
-          () =>
-            document.activeElement?.closest('[data-scope="dialog"][data-part="content"]') !==
-              null && document.activeElement?.tagName !== 'BODY',
-        )
-        expect(activeInsideADialog).toBe(true)
+        // Which dialog (innermost first) an element belongs to.
+        const dialogOf = (probe: 'active' | 'centre') =>
+          page.evaluate(
+            ({ probe, innerSel, outerSel }) => {
+              const el =
+                probe === 'active'
+                  ? document.activeElement
+                  : document.elementFromPoint(window.innerWidth / 2, window.innerHeight / 2)
+              if (el?.closest(innerSel)) return 'inner'
+              if (el?.closest(outerSel)) return 'outer'
+              return null
+            },
+            {
+              probe,
+              innerSel: `[id="${innerId}:content"]`,
+              outerSel: `[id="${outerId}:content"]`,
+            },
+          )
+        const inertOf = (dialogId: string) =>
+          page.evaluate(
+            (id) => document.getElementById(`${id}:content`)?.closest('[inert]') != null,
+            dialogId,
+          )
 
-        // A real outside pointer press dismisses only the top (later-mounted,
-        // inner) layer — the outer modal Dialog stays open and mounted.
+        // Z-ORDER: both are centred, so they overlap at the centre; the point
+        // resolves to the TOP (inner) dialog.
+        expect(await dialogOf('centre')).toBe('inner')
+        // The layer beneath is inert while the top modal is open.
+        expect([await inertOf(outerId), await inertOf(innerId)]).toEqual([true, false])
+        // FOCUS: the top dialog owns it, and real Tab presses cycle inside it.
+        expect(await dialogOf('active')).toBe('inner')
+        for (let press = 0; press < 4; press++) {
+          await page.keyboard.press('Tab')
+          expect(await dialogOf('active'), `after Tab ${press + 1}`).toBe('inner')
+        }
+
+        // ESCAPE unwinds only the top layer; the one beneath comes back to
+        // life (no longer inert) and gets focus back.
+        await page.keyboard.press('Escape')
+        await inner.waitFor({ state: 'hidden' })
+        expect(await outer.isVisible()).toBe(true)
+        expect(await inertOf(outerId)).toBe(false)
+        expect(await dialogOf('active')).toBe('outer')
+
+        // And an outside press now dismisses the remaining (outer) one.
         await page.mouse.click(2, 2)
-        await innerContent.waitFor({ state: 'hidden' })
-        expect(await outerContent.isVisible()).toBe(true)
+        await outer.waitFor({ state: 'hidden' })
       })
     },
   )

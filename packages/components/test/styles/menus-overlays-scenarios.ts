@@ -106,6 +106,10 @@ export interface DialogLikeCaseInput {
   readonly modal?: boolean
   readonly title: string
   readonly description: string
+  /** The title of a SECOND modal dialog opened from inside this one — its
+   * own machine, ids and trigger (inside this dialog's content). Present
+   * only on `component:dialog`'s `nested` case (#265 finding 2). */
+  readonly nested?: string
 }
 
 /** component:drawer — real `DrawerState`/`DrawerInit` plus its `side` prop. */
@@ -358,6 +362,19 @@ export const MENUS_OVERLAYS_DEFINITIONS = {
           description: 'Update your account details.',
         } satisfies DialogLikeCaseInput,
         environmentAxes: AX.modal,
+      },
+      {
+        id: 'nested',
+        label: 'Nested modal dialog',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          modal: true,
+          title: 'Edit profile',
+          description: 'Update your account details.',
+          nested: 'Discard changes?',
+        } satisfies DialogLikeCaseInput,
+        environmentAxes: AX.none,
       },
       {
         id: 'non-modal',

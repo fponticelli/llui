@@ -389,6 +389,9 @@ export const FIELD_ASSERTIONS: Record<string, FieldAssertion> = {
   'pattern:searchable-select.highlightedValue': highlightedValueAssertion,
   'pattern:searchable-select.status': statusAssertion,
 
+  // The nested dialog's own title (#265 finding 2): its text is the fact.
+  'component:dialog.nested': textFieldAssertion,
+
   'component:toast.toastType': toastTypeAssertion,
   'component:toast.title': textFieldAssertion,
   'component:toast.description': textFieldAssertion,
@@ -498,7 +501,7 @@ export const GEOMETRY_ALLOWLIST: Record<string, LiveAllowance> = {
       },
       {
         file: LIVE_RENDER,
-        test: 'places every real ToastType and every real toast placement, LTR and RTL',
+        test: 'places every real toast placement, LTR and RTL',
       },
       {
         file: 'packages/components/test/components/menu-overlay-rtl-floating.browser.test.ts',
