@@ -205,7 +205,14 @@ const CELLS = [
 type Exemption = { reason: string; atLeast: number }
 
 const ALLOWED_BELOW_AA: Record<string, Exemption> = Object.fromEntries(
-  ['examples/components-demo/src/main.css', 'examples/registry-demo/src/main.css'].flatMap((file) =>
+  [
+    'examples/components-demo/src/main.css',
+    'examples/registry-demo/src/main.css',
+    // The #266 live-render fixture is `@import '../main.css'` plus two
+    // `@source` lines, so it IS registry-demo's palette, measured separately
+    // because it is its own entry. Same pair, same cells, same 4.349:1.
+    'examples/registry-demo/src/test-fixtures/specialized-tools-live-render.css',
+  ].flatMap((file) =>
     ['os=light x pref=light', 'os=light x pref=system', 'os=dark x pref=light'].map((cell) => [
       `${file}: muted: ${cell}`,
       {
