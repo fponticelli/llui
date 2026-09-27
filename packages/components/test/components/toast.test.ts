@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import { init, update, connect, nextToastId } from '../../src/components/toast'
+import { pathHandle } from '@llui/dom'
+import { init, update, connect, nextToastId, isPaused } from '../../src/components/toast'
 import type { Toast } from '../../src/components/toast'
 import { rootSignal, read, signalOf } from '../_signal'
 
@@ -11,7 +12,7 @@ function makeToast(overrides: Partial<Toast> = {}): Toast {
     duration,
     remainingMs: duration ?? 0,
     dismissable: true,
-    paused: false,
+    pausedBy: [],
     status: 'open',
     ...overrides,
   }
@@ -28,7 +29,7 @@ describe('toast reducer', () => {
     const [s] = update(init(), { type: 'create', toast: makeToast({ title: 'Hi' }) })
     expect(s.toasts).toHaveLength(1)
     expect(s.toasts[0]!.title).toBe('Hi')
-    expect(s.toasts[0]!.paused).toBe(false)
+    expect(s.toasts[0]!.pausedBy).toEqual([])
   })
 
   it('create seeds remainingMs from duration when omitted', () => {
@@ -37,7 +38,7 @@ describe('toast reducer', () => {
       toast: { id: 'x', type: 'info', duration: 3000, dismissable: true },
     })
     expect(s.toasts[0]!.remainingMs).toBe(3000)
-    expect(s.toasts[0]!.paused).toBe(false)
+    expect(s.toasts[0]!.pausedBy).toEqual([])
   })
 
   it('create with null duration is sticky (remainingMs Infinity-free, never auto-dismisses)', () => {
@@ -114,13 +115,15 @@ describe('toast reducer', () => {
     expect(s2.toasts[0]!.remainingMs).toBe(4000)
   })
 
-  it('pause/resume flip paused flag', () => {
+  it('pause/resume without a reason use the manual reason', () => {
     let s = init()
     s = update(s, { type: 'create', toast: makeToast({ id: 'x' }) })[0]
     s = update(s, { type: 'pause', id: 'x' })[0]
-    expect(s.toasts[0]!.paused).toBe(true)
+    expect(s.toasts[0]!.pausedBy).toEqual(['manual'])
+    expect(isPaused(s.toasts[0]!)).toBe(true)
     s = update(s, { type: 'resume', id: 'x' })[0]
-    expect(s.toasts[0]!.paused).toBe(false)
+    expect(s.toasts[0]!.pausedBy).toEqual([])
+    expect(isPaused(s.toasts[0]!)).toBe(false)
   })
 
   it('pauseAll/resumeAll', () => {
@@ -128,9 +131,124 @@ describe('toast reducer', () => {
     s = update(s, { type: 'create', toast: makeToast({ id: 'x' }) })[0]
     s = update(s, { type: 'create', toast: makeToast({ id: 'y' }) })[0]
     s = update(s, { type: 'pauseAll' })[0]
-    expect(s.toasts.every((t) => t.paused)).toBe(true)
+    expect(s.toasts.map((t) => t.pausedBy)).toEqual([['manual'], ['manual']])
     s = update(s, { type: 'resumeAll' })[0]
-    expect(s.toasts.every((t) => !t.paused)).toBe(true)
+    expect(s.toasts.map((t) => t.pausedBy)).toEqual([[], []])
+  })
+
+  /**
+   * #265 G6: hover and focus are independent pause REASONS. One boolean let
+   * pointer-leave resume a toast whose close button still had keyboard focus
+   * (and blur resume one still under the pointer).
+   */
+  it('each pause reason is released only by its own resume', () => {
+    let s = init()
+    s = update(s, { type: 'create', toast: makeToast({ id: 'x', duration: 1000 }) })[0]
+    s = update(s, { type: 'pause', id: 'x', reason: 'focus' })[0]
+    s = update(s, { type: 'pause', id: 'x', reason: 'hover' })[0]
+    expect(s.toasts[0]!.pausedBy).toEqual(['focus', 'hover'])
+    // Pointer leaves while focus stays inside: still paused.
+    s = update(s, { type: 'resume', id: 'x', reason: 'hover' })[0]
+    expect(s.toasts[0]!.pausedBy).toEqual(['focus'])
+    s = update(s, { type: 'tick', id: 'x', elapsedMs: 5000 })[0]
+    expect(s.toasts[0]!.remainingMs).toBe(1000)
+    // A manual resume does not release a real focus either.
+    s = update(s, { type: 'resume', id: 'x' })[0]
+    expect(s.toasts[0]!.pausedBy).toEqual(['focus'])
+    s = update(s, { type: 'resumeAll' })[0]
+    expect(s.toasts[0]!.pausedBy).toEqual(['focus'])
+    // Focus leaves: now it runs.
+    s = update(s, { type: 'resume', id: 'x', reason: 'focus' })[0]
+    expect(s.toasts[0]!.pausedBy).toEqual([])
+    s = update(s, { type: 'tick', id: 'x', elapsedMs: 400 })[0]
+    expect(s.toasts[0]!.remainingMs).toBe(600)
+  })
+
+  it('pausedBy is a canonical set: repeats are no-ops and order is fixed', () => {
+    let s = init()
+    s = update(s, { type: 'create', toast: makeToast({ id: 'x' }) })[0]
+    s = update(s, { type: 'pause', id: 'x', reason: 'manual' })[0]
+    s = update(s, { type: 'pause', id: 'x', reason: 'hover' })[0]
+    const before = s
+    // An already-held reason returns the SAME state (no spurious reconcile).
+    expect(update(s, { type: 'pause', id: 'x', reason: 'hover' })[0]).toBe(before)
+    s = update(s, { type: 'pause', id: 'x', reason: 'focus' })[0]
+    expect(s.toasts[0]!.pausedBy).toEqual(['focus', 'hover', 'manual'])
+    // Releasing a reason nobody holds, or on an unknown id, is a no-op too.
+    expect(update(s, { type: 'resume', id: 'y' })[0]).toBe(s)
+    const released = update(s, { type: 'resume', id: 'x', reason: 'hover' })[0]
+    expect(update(released, { type: 'resume', id: 'x', reason: 'hover' })[0]).toBe(released)
+  })
+
+  it('create seeds pausedBy from the input, canonicalized', () => {
+    const [s] = update(init(), {
+      type: 'create',
+      toast: {
+        id: 'x',
+        type: 'info',
+        duration: 1000,
+        dismissable: true,
+        pausedBy: ['manual', 'focus', 'manual'],
+      },
+    })
+    expect(s.toasts[0]!.pausedBy).toEqual(['focus', 'manual'])
+  })
+
+  it('pauseAll/resumeAll take a reason too', () => {
+    let s = init()
+    s = update(s, { type: 'create', toast: makeToast({ id: 'x' }) })[0]
+    s = update(s, { type: 'pause', id: 'x', reason: 'hover' })[0]
+    s = update(s, { type: 'pauseAll', reason: 'focus' })[0]
+    expect(s.toasts[0]!.pausedBy).toEqual(['focus', 'hover'])
+    s = update(s, { type: 'resumeAll', reason: 'focus' })[0]
+    expect(s.toasts[0]!.pausedBy).toEqual(['hover'])
+  })
+
+  /**
+   * #265 G6 / E4: elapsed wall time is never negative. A negative tick (clock
+   * skew, a bad subtraction) used to EXTEND the countdown past `duration`.
+   */
+  it('ignores a negative tick', () => {
+    let s = init()
+    s = update(s, { type: 'create', toast: makeToast({ id: 'x', duration: 1000 }) })[0]
+    s = update(s, { type: 'tick', id: 'x', elapsedMs: 300 })[0]
+    expect(update(s, { type: 'tick', id: 'x', elapsedMs: -5000 })[0]).toBe(s)
+    expect(s.toasts[0]!.remainingMs).toBe(700)
+  })
+
+  it('ignores a non-finite tick', () => {
+    let s = init()
+    s = update(s, { type: 'create', toast: makeToast({ id: 'x', duration: 1000 }) })[0]
+    for (const elapsedMs of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+      expect(update(s, { type: 'tick', id: 'x', elapsedMs })[0]).toBe(s)
+    }
+  })
+
+  /**
+   * #265 G6: `undefined` in a patch means "not patched". A present-but-
+   * undefined `duration` used to re-seed the countdown to 0 and dismiss the
+   * toast on the next tick.
+   */
+  it('an undefined patch value leaves that field alone', () => {
+    let s = init()
+    s = update(s, {
+      type: 'create',
+      toast: makeToast({ id: 'x', duration: 3000, title: 'T' }),
+    })[0]
+    s = update(s, { type: 'tick', id: 'x', elapsedMs: 1000 })[0]
+    s = update(s, {
+      type: 'update',
+      id: 'x',
+      patch: { duration: undefined, title: undefined, description: 'D' },
+    })[0]
+    expect(s.toasts[0]).toMatchObject({
+      duration: 3000,
+      remainingMs: 2000,
+      title: 'T',
+      description: 'D',
+    })
+    s = update(s, { type: 'tick', id: 'x', elapsedMs: 1000 })[0]
+    expect(s.toasts.map((t) => t.remainingMs)).toEqual([1000])
   })
 
   it('init defaults placement to bottom-end', () => {
@@ -414,14 +532,80 @@ describe('toast.connect', () => {
     expect(send).toHaveBeenCalledWith({ type: 'dismiss', id: 'x' })
   })
 
-  it('pointerEnter pauses, pointerLeave resumes', () => {
+  /**
+   * #265 G6: `dismissable` is a live, patchable field. `false` hides the close
+   * button (out of the accessibility tree and tab order) and a click that
+   * still reaches it is ignored; `dismiss` from code keeps working.
+   */
+  it('dismissable gates the close trigger reactively', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send)
+    let s = init()
+    s = update(s, { type: 'create', toast: makeToast({ id: 'x', dismissable: true }) })[0]
+    const live = pathHandle<Toast>(() => s.toasts[0]!, '')
+    const close = p.toast(live).closeTrigger
+    expect(read(close.hidden, s.toasts[0]!)).toBe(false)
+
+    s = update(s, { type: 'update', id: 'x', patch: { dismissable: false } })[0]
+    expect(read(close.hidden, s.toasts[0]!)).toBe(true)
+    close.onClick(new MouseEvent('click'))
+    expect(send).not.toHaveBeenCalled()
+    expect(update(s, { type: 'dismiss', id: 'x' })[0].toasts).toEqual([])
+
+    s = update(s, { type: 'update', id: 'x', patch: { dismissable: true } })[0]
+    expect(read(close.hidden, s.toasts[0]!)).toBe(false)
+    close.onClick(new MouseEvent('click'))
+    expect(send.mock.calls).toEqual([[{ type: 'dismiss', id: 'x' }]])
+  })
+
+  it('pointerEnter/Leave pause and resume the HOVER reason', () => {
     const send = vi.fn()
     const p = connect(rootSignal(), send)
     const t = makeToast({ id: 'x' })
     p.toast(signalOf(t)).root.onPointerEnter(new PointerEvent('pointerenter'))
     p.toast(signalOf(t)).root.onPointerLeave(new PointerEvent('pointerleave'))
-    expect(send).toHaveBeenNthCalledWith(1, { type: 'pause', id: 'x' })
-    expect(send).toHaveBeenNthCalledWith(2, { type: 'resume', id: 'x' })
+    expect(send.mock.calls).toEqual([
+      [{ type: 'pause', id: 'x', reason: 'hover' }],
+      [{ type: 'resume', id: 'x', reason: 'hover' }],
+    ])
+  })
+
+  /**
+   * #265 G6 / E7: `focusout` also fires when focus moves BETWEEN two
+   * descendants of the same row. Only leaving the row releases the focus
+   * reason.
+   */
+  it('focusIn/Out pause and resume the FOCUS reason, ignoring moves inside the row', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal(), send)
+    const root = p.toast(signalOf(makeToast({ id: 'x' }))).root
+    const rowEl = document.createElement('div')
+    const second = document.createElement('button')
+    const outside = document.createElement('button')
+    rowEl.append(document.createElement('button'), second)
+    document.body.append(rowEl, outside)
+    const focusOut = (relatedTarget: EventTarget | null): FocusEvent => {
+      const e = new FocusEvent('focusout', { relatedTarget })
+      Object.defineProperty(e, 'currentTarget', { value: rowEl })
+      return e
+    }
+    try {
+      root.onFocusIn(new FocusEvent('focusin'))
+      root.onFocusOut(focusOut(second))
+      expect(send.mock.calls).toEqual([[{ type: 'pause', id: 'x', reason: 'focus' }]])
+      root.onFocusOut(focusOut(outside))
+      root.onFocusIn(new FocusEvent('focusin'))
+      root.onFocusOut(focusOut(null))
+      expect(send.mock.calls).toEqual([
+        [{ type: 'pause', id: 'x', reason: 'focus' }],
+        [{ type: 'resume', id: 'x', reason: 'focus' }],
+        [{ type: 'pause', id: 'x', reason: 'focus' }],
+        [{ type: 'resume', id: 'x', reason: 'focus' }],
+      ])
+    } finally {
+      rowEl.remove()
+      outside.remove()
+    }
   })
 
   it('root data-state reflects the toast status reactively', () => {

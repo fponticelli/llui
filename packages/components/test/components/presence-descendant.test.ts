@@ -81,7 +81,7 @@ describe('descendant animation/transition end does not advance presence', () => 
       duration: 5000,
       remainingMs: 5000,
       dismissable: true,
-      paused: false,
+      pausedBy: [],
       status: 'closing',
     }
     return toast.connect(rootSignal(), send).toast(signalOf(item)).root

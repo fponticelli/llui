@@ -352,6 +352,8 @@ export type {
   ToastPlacement,
   ToastPoliteness,
   ToastInput,
+  ToastPatch,
+  ToastPauseReason,
 } from './toast.js'
 export type {
   ListboxState,

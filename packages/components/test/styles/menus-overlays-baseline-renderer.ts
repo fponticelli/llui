@@ -804,7 +804,7 @@ const toastAdapter: Adapter<ToastCaseInput> = (host, input, ctx) =>
             remainingMs: 0,
             dismissable: input.dismissable,
             status: input.closing ? 'closing' : 'open',
-            paused: false,
+            pausedBy: [],
           },
         ],
       }

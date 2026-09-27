@@ -238,6 +238,44 @@ describe('actual Toast demos in Chromium (#265 task item 1)', () => {
         await root2.waitFor({ state: 'detached', timeout: 5000 })
       })
 
+      // #265 G6: hover and focus are independent pause reasons. With ONE
+      // `paused` flag, leaving with the pointer resumed a toast whose close
+      // button still held keyboard focus (and vice versa).
+      it('stays paused while EITHER hover or focus remains — mixed hover + focus, both release orders', async () => {
+        const rowFor = async (): Promise<ReturnType<Page['locator']>> => {
+          await page.locator(demo.trigger('success')).click()
+          const row = page.locator(`${ROOT}[data-type="success"]`).last()
+          await row.waitFor({ state: 'attached' })
+          return row
+        }
+        const pausedAfter = async (row: ReturnType<Page['locator']>): Promise<void> => {
+          await page.clock.fastForward(10_000)
+          expect(await row.getAttribute('data-state')).toBe('open')
+        }
+
+        // Order 1: focus, hover, LEAVE pointer (focus still inside) -> paused;
+        // then blur -> expires.
+        const first = await rowFor()
+        await first.locator('button').last().focus()
+        await first.hover()
+        await page.mouse.move(0, 0)
+        await pausedAfter(first)
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+        await page.clock.fastForward(10_000)
+        await first.waitFor({ state: 'detached', timeout: 5000 })
+
+        // Order 2: hover, focus, BLUR (pointer still over it) -> paused; then
+        // leave -> expires.
+        const second = await rowFor()
+        await second.hover()
+        await second.locator('button').last().focus()
+        await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())
+        await pausedAfter(second)
+        await page.mouse.move(0, 0)
+        await page.clock.fastForward(10_000)
+        await second.waitFor({ state: 'detached', timeout: 5000 })
+      })
+
       it('create -> tick-expiry -> closing -> animationend -> removal, in normal motion', async () => {
         await page.locator(demo.trigger('warning')).click()
         const root = page.locator(`${ROOT}[data-type="warning"]`).last()
