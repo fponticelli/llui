@@ -69,7 +69,16 @@ async function candidatesUnder(dir: string): Promise<Map<string, string[]>> {
   const byFile = new Map<string, string[]>()
   for (const file of await sourceFiles(dir)) {
     const source = await readFile(file, 'utf8')
-    byFile.set(path.relative(dir, file), extractClassCandidates(file, source, usedAllowlistKeys))
+    // The REPO-relative path is what UNRESOLVED_RECIPE_ALLOWED keys on (#264
+    // review follow-up) — `avatar.ts` exists at BOTH `registry/llui/ui/` and
+    // `examples/registry-demo/src/components/ui/`, both swept by this same
+    // file, so a directory-relative (or bare basename) key would let one
+    // file's exemption silently also excuse the other's.
+    const relToRepo = path.relative(ROOT, file)
+    byFile.set(
+      path.relative(dir, file),
+      extractClassCandidates(relToRepo, source, usedAllowlistKeys),
+    )
   }
   return byFile
 }

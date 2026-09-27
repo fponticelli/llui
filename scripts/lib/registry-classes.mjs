@@ -33,7 +33,6 @@
 // / `text-text-muted` on `<body>` and `<p>`, all of the dead `bg-surface-2`
 // token family, all compiling to no CSS, and no check in the repo opened the
 // file.
-import { basename } from 'node:path'
 import ts from 'typescript'
 
 const CLASS_CALLS = new Set(['cn', 'mergeClass', 'classPart', 'classPartWithDefaults'])
@@ -47,13 +46,20 @@ const CLASS_CALLS = new Set(['cn', 'mergeClass', 'classPart', 'classPartWithDefa
  * hoisted recipe with a dead class inside it went unchecked in the first
  * place (the earlier revision that skipped any "module-declared but
  * unresolvable" identifier failed OPEN). A genuine exception is allowed ONLY
- * through this per-file allowlist, keyed `${basename(file)}: ${identifier}`,
- * with a WRITTEN REASON — never a silent carve-out in the resolver itself.
- * Empty today. Closed at BOTH ends by `scripts/test/tailwind-classes.test.ts`:
- * every entry here must actually be consulted by a real sweep of the
- * registry (an entry nothing needs any more is exactly the kind of allowlist
- * rot CLAUDE.md warns about), and the sweep must never silently swallow an
- * identifier that ISN'T listed here (that still throws).
+ * through this per-file allowlist, keyed `${fileName}: ${identifier}` where
+ * `fileName` is the REPO-RELATIVE path the caller passes to
+ * `extractClassCandidates` (never a bare basename, #264 review follow-up —
+ * `avatar.ts` exists at BOTH `registry/llui/ui/avatar.ts` and
+ * `examples/registry-demo/src/components/ui/avatar.ts`, which a
+ * single-sweep test file covering both corpora reaches in the SAME run, so a
+ * basename-only key would let one file's exemption silently also excuse the
+ * other's), with a WRITTEN, NON-EMPTY REASON — never a silent carve-out in
+ * the resolver itself. Empty today. Closed at BOTH ends by
+ * `scripts/test/tailwind-classes.test.ts`: every entry here must actually be
+ * consulted by a real sweep of the registry (an entry nothing needs any more
+ * is exactly the kind of allowlist rot CLAUDE.md warns about), and the sweep
+ * must never silently swallow an identifier that ISN'T listed here (that
+ * still throws).
  *
  * @type {Record<string, { reason: string }>}
  */
@@ -437,9 +443,16 @@ export function extractClassCandidates(fileName, source, usedAllowlistKeys) {
       // recipe with a dead class inside it went unchecked in the first
       // place, so this fails loudly UNLESS explicitly allowlisted with a
       // written reason.
-      const allowKey = `${basename(fileName)}: ${node.text}`
+      const allowKey = `${fileName}: ${node.text}`
       const allowed = UNRESOLVED_RECIPE_ALLOWED[allowKey]
       if (allowed !== undefined) {
+        if (typeof allowed.reason !== 'string' || allowed.reason.trim() === '') {
+          throw new Error(
+            `registry-classes: UNRESOLVED_RECIPE_ALLOWED["${allowKey}"] has no ` +
+              'non-empty `reason` — an allowlist entry must say WHY it is a ' +
+              'genuine exception, never a silent carve-out.',
+          )
+        }
         usedAllowlistKeys?.add(allowKey)
         return
       }
