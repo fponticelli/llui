@@ -341,11 +341,15 @@ const avatarAdapter: Adapter<AvatarCaseInput> = (host, input, ctx) =>
     (state, send) => {
       void ctx
       const parts = avatar.connect(state, send, { alt: input.label, density: input.density })
-      // `registry/llui/ui/avatar.ts` now reads `data-density` directly
-      // (#264 review item 7) — the SAME attribute `parts.root` already
-      // carries, so a bare spread is the whole adapter. No translation to a
-      // separate `data-size` vocabulary is needed (or possible: upstream's
-      // `lg` rung has no `AvatarDensity` value to key off at all).
+      // `registry/llui/ui/avatar.ts` reads `data-density` directly (#264
+      // review item 7) — the SAME attribute `parts.root` already carries, so
+      // a bare spread is the whole adapter. `data-size` is a SEPARATE axis
+      // this skin restores verbatim from upstream (#264 item F5): `compact`
+      // density maps onto the same geometry as `data-size='sm'` in CSS, so
+      // no hand-rolled translation is needed here either way, and upstream's
+      // `lg` rung (which has no `AvatarDensity` equivalent) stays reachable
+      // for a consumer that sets `data-size='lg'` explicitly — this scenario
+      // renderer just never needs to, since none of its cases exercise it.
       return Avatar({ ...parts.root }, [
         AvatarImage({ ...parts.image, src: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' }),
         AvatarFallback({ ...parts.fallback }, [text(input.initials)]),
