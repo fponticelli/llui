@@ -6,6 +6,7 @@ import {
   extractClassCandidates,
   extractHtmlClassCandidates,
   isPureReExport,
+  UNRESOLVED_RECIPE_ALLOWED,
 } from '../lib/registry-classes.mjs'
 import {
   appEntry,
@@ -55,11 +56,20 @@ async function sourceFiles(dir: string): Promise<string[]> {
   return out.sort()
 }
 
+// #264 review M2: every `UNRESOLVED_RECIPE_ALLOWED` key `extractClassCandidates`
+// actually consults across every sweep this file runs (registry + both demos),
+// accumulated here so the "closed at both ends" test below can assert it
+// against the allowlist's own key set — closed at ONE end by the resolver
+// itself (an unlisted unresolvable identifier still throws, failing this
+// suite), and at the OTHER by this accumulator (an entry nothing needed any
+// more is exactly the allowlist rot CLAUDE.md warns about).
+const usedAllowlistKeys = new Set<string>()
+
 async function candidatesUnder(dir: string): Promise<Map<string, string[]>> {
   const byFile = new Map<string, string[]>()
   for (const file of await sourceFiles(dir)) {
     const source = await readFile(file, 'utf8')
-    byFile.set(path.relative(dir, file), extractClassCandidates(file, source))
+    byFile.set(path.relative(dir, file), extractClassCandidates(file, source, usedAllowlistKeys))
   }
   return byFile
 }
@@ -271,5 +281,21 @@ describe('registry Tailwind classes', () => {
     expect(selectorFor('data-[state=open]:bg-muted')).toBe('.data-\\[state\\=open\\]\\:bg-muted')
     const { dead } = await compileCandidates(['bg-black/50', 'data-[state=open]:bg-muted'])
     expect(dead).toEqual([])
+  })
+
+  it('UNRESOLVED_RECIPE_ALLOWED is closed at both ends (#264 review M2)', async () => {
+    // Runs its OWN sweep (rather than relying on earlier tests in this file
+    // to have populated `usedAllowlistKeys`, which would make this test's
+    // pass/fail depend on execution order) over every corpus this file
+    // checks — the registry itself plus both demos, the same roots
+    // `allCandidates`/`appCandidates` cover elsewhere.
+    usedAllowlistKeys.clear()
+    await allCandidates()
+    for (const demo of DEMOS) await appCandidates(demo)
+    // An entry that resolves to nothing needed any more is exactly the
+    // allowlist rot CLAUDE.md warns about; an unlisted unresolvable
+    // identifier would already have thrown during the sweep above, failing
+    // this test for the OTHER reason.
+    expect([...usedAllowlistKeys].sort()).toEqual(Object.keys(UNRESOLVED_RECIPE_ALLOWED).sort())
   })
 })

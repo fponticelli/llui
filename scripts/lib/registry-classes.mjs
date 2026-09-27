@@ -33,9 +33,31 @@
 // / `text-text-muted` on `<body>` and `<p>`, all of the dead `bg-surface-2`
 // token family, all compiling to no CSS, and no check in the repo opened the
 // file.
+import { basename } from 'node:path'
 import ts from 'typescript'
 
 const CLASS_CALLS = new Set(['cn', 'mergeClass', 'classPart', 'classPartWithDefaults'])
+
+/**
+ * A recipe-position identifier that this extractor CANNOT statically resolve
+ * to a string — a `let` (reassignable elsewhere in the file, so trusting any
+ * one initializer risks reporting STALE classes) or a `const` whose
+ * initializer isn't a literal/`+`-concatenation (`const B = pick()`) — fails
+ * LOUDLY by default (#264 review M2): a SILENT skip here is exactly how a
+ * hoisted recipe with a dead class inside it went unchecked in the first
+ * place (the earlier revision that skipped any "module-declared but
+ * unresolvable" identifier failed OPEN). A genuine exception is allowed ONLY
+ * through this per-file allowlist, keyed `${basename(file)}: ${identifier}`,
+ * with a WRITTEN REASON — never a silent carve-out in the resolver itself.
+ * Empty today. Closed at BOTH ends by `scripts/test/tailwind-classes.test.ts`:
+ * every entry here must actually be consulted by a real sweep of the
+ * registry (an entry nothing needs any more is exactly the kind of allowlist
+ * rot CLAUDE.md warns about), and the sweep must never silently swallow an
+ * identifier that ISN'T listed here (that still throws).
+ *
+ * @type {Record<string, { reason: string }>}
+ */
+export const UNRESOLVED_RECIPE_ALLOWED = {}
 
 /**
  * Index a module's top-level `const X = { … }` object-literal declarations
@@ -98,9 +120,13 @@ const TAG_FIRST_CALLS = new Set(['classPart', 'classPartWithDefaults'])
 /**
  * @param {string} fileName
  * @param {string} source
+ * @param {Set<string>} [usedAllowlistKeys] Optional accumulator: every
+ *   `UNRESOLVED_RECIPE_ALLOWED` key this call actually consulted is added to
+ *   it, so a caller sweeping the whole registry can assert exhaustiveness
+ *   (every allowlist entry gets used at least once across the corpus).
  * @returns {string[]} whitespace-split class candidates, deduped.
  */
-export function extractClassCandidates(fileName, source) {
+export function extractClassCandidates(fileName, source, usedAllowlistKeys) {
   const sf = ts.createSourceFile(
     fileName,
     source,
@@ -128,34 +154,25 @@ export function extractClassCandidates(fileName, source) {
   // skipped, no candidates contributed, no error.
   //
   // `moduleConstInitializers` indexes EVERY module-level `const`'s raw
-  // initializer (whatever shape it is), which is what makes the SKIP-vs-THROW
-  // decision below sound: a const declared with a non-literal initializer
-  // (`const B = pick()`) is real and just unresolvable — SKIP, never throw —
-  // while a name that resolves NOWHERE at all (no local binding, no import, no
-  // module declaration) really is a typo/dangling reference. `moduleNames` is
-  // the coarser "does ANY module-level declaration (const/let/var/function/
-  // class) bind this name" check used for exactly that skip, deliberately
-  // including `let`/`var` (#264 review LOW 3 — a `let` must NOT be resolved as
-  // if it were a stable `const`: it can be reassigned elsewhere in the file,
-  // so trusting its first initializer risks reporting STALE classes; a `let`
-  // is skipped, same as `pick()`, never resolved and never thrown on).
+  // initializer (whatever shape it is), used two ways below: a literal/
+  // `+`-concatenation resolves via `evaluateLiteralString`; anything else
+  // (`const B = pick()`) is a real declaration this extractor cannot reduce
+  // to a string, and — like a module-level `let` (reassignable elsewhere in
+  // the file, so trusting any one initializer risks reporting STALE
+  // classes) — FAILS LOUDLY unless explicitly allowlisted (#264 review M2;
+  // an earlier revision skipped both silently, which failed OPEN — a hoisted
+  // recipe with a dead class inside it would have gone unchecked exactly
+  // like the original defect this whole identifier-resolution path exists
+  // to catch).
   /** @type {Map<string, ts.Expression>} */
   const moduleConstInitializers = new Map()
-  /** @type {Set<string>} */
-  const moduleNames = new Set()
   for (const stmt of sf.statements) {
-    if (ts.isFunctionDeclaration(stmt) && stmt.name !== undefined) {
-      moduleNames.add(stmt.name.text)
-    } else if (ts.isClassDeclaration(stmt) && stmt.name !== undefined) {
-      moduleNames.add(stmt.name.text)
-    } else if (ts.isVariableStatement(stmt)) {
-      const isConst = (stmt.declarationList.flags & ts.NodeFlags.Const) !== 0
-      for (const decl of stmt.declarationList.declarations) {
-        if (!ts.isIdentifier(decl.name)) continue
-        moduleNames.add(decl.name.text)
-        if (isConst && decl.initializer !== undefined) {
-          moduleConstInitializers.set(decl.name.text, decl.initializer)
-        }
+    if (!ts.isVariableStatement(stmt)) continue
+    const isConst = (stmt.declarationList.flags & ts.NodeFlags.Const) !== 0
+    if (!isConst) continue
+    for (const decl of stmt.declarationList.declarations) {
+      if (ts.isIdentifier(decl.name) && decl.initializer !== undefined) {
+        moduleConstInitializers.set(decl.name.text, decl.initializer)
       }
     }
   }
@@ -275,15 +292,72 @@ export function extractClassCandidates(fileName, source) {
   }
 
   /**
-   * True when `node`'s name is bound by an ENCLOSING function/constructor/
-   * accessor parameter (including destructuring), a `for`/`for-of`/`for-in`
-   * loop variable, a `catch` clause, a local `let`/`const`/`var` (at any
-   * nesting depth `var` hoisting reaches), or a local function/class
-   * declaration — i.e. a genuinely dynamic, caller-provided value
-   * (`mergeClass(recipe, className)` inside this very file's own
-   * `classPart`/`classPartWithDefaults` definitions) that a recipe position
-   * may legitimately carry and which is never expected to resolve against a
-   * module-level const.
+   * True when `node` — a scope-introducing node in the ancestor walk below —
+   * declares a binding named `name` over its own subtree. Ported from
+   * `@llui/compiler`'s `scopeIntroduces` (`packages/compiler/src/signals/
+   * helper-bindings.ts`), which is not part of that package's public exports
+   * (`isShadowed`/`scopeIntroduces` "appear in no public signature" by
+   * design) and so cannot simply be imported here (#264 review M2) — the
+   * SEMANTICS are ported instead, including the two cases a narrower
+   * hand-rolled version had missed: a `switch` `case`/`default` block's own
+   * `const`/`let`/`function`/`class` (`ts.isCaseBlock`, alongside
+   * `ts.isBlock` — a switch body is not a `Block`), and a function/class
+   * EXPRESSION's own name binding over its own subtree (how a self-recursive
+   * `function send(m) { send(m) }` expression calls itself).
+   *
+   * @param {ts.Node} node
+   * @param {string} name
+   * @returns {boolean}
+   */
+  const scopeIntroduces = (node, name) => {
+    if ((ts.isFunctionExpression(node) || ts.isClassExpression(node)) && node.name?.text === name) {
+      return true
+    }
+    if (ts.isFunctionLike(node) && 'parameters' in node) {
+      return node.parameters.some((p) => bindingNames(p.name).has(name))
+    }
+    if (ts.isBlock(node) || ts.isCaseBlock(node)) {
+      const statements = ts.isBlock(node)
+        ? node.statements
+        : node.clauses.flatMap((c) => [...c.statements])
+      for (const st of statements) {
+        if (
+          ts.isVariableStatement(st) &&
+          st.declarationList.declarations.some((d) => bindingNames(d.name).has(name))
+        ) {
+          return true
+        }
+        if ((ts.isFunctionDeclaration(st) || ts.isClassDeclaration(st)) && st.name?.text === name) {
+          return true
+        }
+      }
+      return false
+    }
+    if (ts.isForStatement(node) || ts.isForOfStatement(node) || ts.isForInStatement(node)) {
+      const init = node.initializer
+      if (init !== undefined && ts.isVariableDeclarationList(init)) {
+        return init.declarations.some((d) => bindingNames(d.name).has(name))
+      }
+      return false
+    }
+    if (ts.isCatchClause(node)) {
+      return node.variableDeclaration !== undefined
+        ? bindingNames(node.variableDeclaration.name).has(name)
+        : false
+    }
+    return false
+  }
+
+  /**
+   * True when `node`'s name is bound by an ENCLOSING scope (walking the
+   * ancestor chain via `scopeIntroduces`), OR by `var` hoisting (which
+   * `scopeIntroduces` deliberately does not cover, since `var` crosses block
+   * boundaries the compiler's own callers never needed to follow) at any
+   * nesting depth reaching a function/module boundary — i.e. a genuinely
+   * dynamic, caller-provided value (`mergeClass(recipe, className)` inside
+   * this very file's own `classPart`/`classPartWithDefaults` definitions)
+   * that a recipe position may legitimately carry and which is never
+   * expected to resolve against a module-level const.
    *
    * @param {ts.Identifier} node
    * @returns {boolean}
@@ -293,50 +367,12 @@ export function extractClassCandidates(fileName, source) {
     /** @type {ts.Node | undefined} */
     let current = node.parent
     while (current !== undefined && !ts.isSourceFile(current)) {
-      if (
-        ts.isFunctionLike(current) &&
-        'parameters' in current &&
-        current.parameters.some((p) => bindingNames(p.name).has(name))
-      ) {
-        return true
-      }
-      if (
-        ts.isCatchClause(current) &&
-        current.variableDeclaration !== undefined &&
-        bindingNames(current.variableDeclaration.name).has(name)
-      ) {
-        return true
-      }
-      if (
-        (ts.isForOfStatement(current) ||
-          ts.isForInStatement(current) ||
-          ts.isForStatement(current)) &&
-        current.initializer !== undefined &&
-        ts.isVariableDeclarationList(current.initializer) &&
-        current.initializer.declarations.some((d) => bindingNames(d.name).has(name))
-      ) {
-        return true
-      }
-      if (ts.isBlock(current)) {
-        for (const stmt of current.statements) {
-          if (
-            ts.isVariableStatement(stmt) &&
-            stmt.declarationList.declarations.some((d) => bindingNames(d.name).has(name))
-          ) {
-            return true
-          }
-          if (
-            (ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt)) &&
-            stmt.name?.text === name
-          ) {
-            return true
-          }
-        }
-      }
+      if (scopeIntroduces(current, name)) return true
       // `var` hoists past every intervening block to the nearest function
       // scope — checked once per enclosing function-like, against its WHOLE
-      // body, rather than per `Block` above (which only sees that block's
-      // OWN statements).
+      // body, rather than per `Block`/`CaseBlock` above (which only see
+      // block-scoped `let`/`const`, matching `scopeIntroduces`'s own
+      // contract).
       if (ts.isFunctionLike(current) && 'body' in current && current.body !== undefined) {
         if (containsVarBinding(current.body, name)) return true
       }
@@ -381,32 +417,41 @@ export function extractClassCandidates(fileName, source) {
         strings.push(evaluated)
         return
       }
-      // A module const whose initializer this extractor cannot statically
-      // reduce to a string (`const B = pick()`) is still a REAL, INTENTIONAL
-      // declaration — not a typo — so it is a missed check, never a false
-      // failure. The one case handled here rather than falling through to
-      // "declared, unresolvable, skip" is an INTERPOLATED template
-      // (`` `${buttonVariants(...)} size-…` ``): its STATIC spans are still
-      // real class text, exactly like an inline template literal, and
-      // `pushString`'s own template branch already knows how to read them.
+      // A CONST whose initializer is an INTERPOLATED template (`` `${
+      // buttonVariants(...)} size-…` ``, e.g. `calendar.ts`'s `navButtonRecipe`)
+      // is still real class text in its STATIC spans, exactly like an inline
+      // template literal — `pushString`'s own template branch already knows
+      // how to read them. This is the one const shape excused from the
+      // resolve-or-throw gate below, because it is not a silent skip: the
+      // static spans it DOES contribute are checked in full.
       const constInit = moduleConstInitializers.get(node.text)
-      if (constInit !== undefined) {
-        if (ts.isTemplateExpression(constInit)) pushString(constInit)
+      if (constInit !== undefined && ts.isTemplateExpression(constInit)) {
+        pushString(constInit)
         return
       }
-      if (moduleNames.has(node.text)) return
-      // Anything else reaching a recipe position as a bare identifier
-      // resolves NOWHERE — no local binding, no import, no module-level
-      // declaration at all — and is either a typo or a recipe helper this
-      // file does not know how to follow. Fail loudly rather than silently
-      // reporting zero candidates for it (#264 item F2; this is exactly how
-      // a hoisted recipe used to go unchecked).
+      // Anything else reaching a recipe position as a bare identifier is
+      // UNRESOLVABLE: no local binding, no import, no literal/concatenation
+      // module const — either a `let`, a const with some other non-literal
+      // initializer (`pick()`), or a name that resolves nowhere at all
+      // (#264 review M2). A silent skip here is exactly how a hoisted
+      // recipe with a dead class inside it went unchecked in the first
+      // place, so this fails loudly UNLESS explicitly allowlisted with a
+      // written reason.
+      const allowKey = `${basename(fileName)}: ${node.text}`
+      const allowed = UNRESOLVED_RECIPE_ALLOWED[allowKey]
+      if (allowed !== undefined) {
+        usedAllowlistKeys?.add(allowKey)
+        return
+      }
       throw new Error(
         `registry-classes: recipe position in ${fileName} references identifier ` +
-          `"${node.text}", which resolves to no local binding, import, or ` +
-          'module-level declaration this extractor can find. Assign the recipe ' +
-          "to a plain `const NAME = '…'`/template literal at module scope, or " +
-          'inline the string.',
+          `"${node.text}", which is not a module-level string const (or ` +
+          '`+`-concatenation of one) this extractor can resolve — a `let`, a ' +
+          '`const` with a non-literal initializer, or a name that resolves ' +
+          'nowhere at all. Assign the recipe to a plain module-level ' +
+          `\`const NAME = '…'\`, or add \`${allowKey}\` to ` +
+          'UNRESOLVED_RECIPE_ALLOWED (registry-classes.mjs) with a reason if ' +
+          'this is a genuine exception.',
       )
     }
   }

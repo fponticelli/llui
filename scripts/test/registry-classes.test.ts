@@ -1,18 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { extractClassCandidates } from '../lib/registry-classes.mjs'
+import { extractClassCandidates, UNRESOLVED_RECIPE_ALLOWED } from '../lib/registry-classes.mjs'
 
 /**
- * #264 review LOW 3: `extractClassCandidates`'s identifier resolution
- * (#264 item F2) used to throw on several shapes of legitimate code — a
- * `for…of` loop variable, a constructor parameter, a nested-block `var`
- * (which hoists past the block it is declared in), a bare `undefined`
- * argument, and a module const whose initializer is not a plain literal
- * (a `+`-concatenation or a function call) — and treated `let` the same as
- * `const`, which risks reporting a STALE value for a binding that can be
- * reassigned elsewhere in the file. These are unit tests for the resolver
- * directly, not only exercised incidentally via `tailwind-classes.test.ts`
- * over the real registry corpus (which may never happen to contain one of
- * these shapes).
+ * #264 review LOW 3 (then M2): `extractClassCandidates`'s identifier
+ * resolution (#264 item F2) used to throw on several shapes of legitimate,
+ * genuinely DYNAMIC code — a `for…of` loop variable, a constructor
+ * parameter, a nested-block `var` (which hoists past the block it is
+ * declared in), a bare `undefined` argument. LOW 3 fixed those, but ALSO
+ * started silently SKIPPING a `let` and a `const` with a non-literal
+ * initializer (`pick()`) — which #264 review M2 correctly called out as
+ * failing OPEN: a silent skip is exactly how a hoisted recipe with a dead
+ * class inside it went unchecked in the first place. Both now FAIL LOUDLY
+ * again, escapable only via a per-file, reasoned `UNRESOLVED_RECIPE_ALLOWED`
+ * entry. These are unit tests for the resolver directly, not only exercised
+ * incidentally via `tailwind-classes.test.ts` over the real registry corpus
+ * (which may never happen to contain one of these shapes).
  */
 describe('extractClassCandidates — identifier resolution at a recipe position', () => {
   it('resolves a plain module-level const referenced by identifier', () => {
@@ -100,23 +102,86 @@ describe('extractClassCandidates — identifier resolution at a recipe position'
     expect(extractClassCandidates('x.ts', src)).toEqual([])
   })
 
-  it('a `let` is skipped, NOT resolved as if it were a stable const (#264 review LOW 3)', () => {
-    // A `let` can be reassigned elsewhere in the file; trusting its first
+  it('FAILS LOUDLY on a `let` — never resolved as if it were a stable const (#264 review M2)', () => {
+    // A `let` can be reassigned elsewhere in the file; resolving its first
     // initializer risks reporting a STALE value for what the recipe
-    // actually resolves to at runtime.
+    // actually resolves to at runtime, and a SILENT skip is exactly how a
+    // hoisted recipe with a dead class went unchecked in the first place —
+    // so this is a loud failure, not a quiet miss.
     const src = `
       import { cn } from '@/lib/utils'
       let B = 'p-2'
       export const A = () => cn(B)
     `
-    expect(extractClassCandidates('x.ts', src)).toEqual([])
+    expect(() => extractClassCandidates('x.ts', src)).toThrowError(/"B"/)
   })
 
-  it('skips (never throws on) a module const whose initializer is a function call', () => {
+  it('FAILS LOUDLY on a module const whose initializer is a function call (#264 review M2)', () => {
     const src = `
       import { cn } from '@/lib/utils'
       const B = pick()
       export const A = () => cn(B)
+    `
+    expect(() => extractClassCandidates('x.ts', src)).toThrowError(/"B"/)
+  })
+
+  it('an allowlisted identifier is skipped instead of thrown, and reported as used', () => {
+    // `UNRESOLVED_RECIPE_ALLOWED` is empty in the shipped module (closed at
+    // both ends by a real corpus sweep — see tailwind-classes.test.ts), so
+    // this test injects a temporary entry to exercise the mechanism itself
+    // without depending on a real exception existing in the registry today.
+    const key = 'x.ts: B'
+    UNRESOLVED_RECIPE_ALLOWED[key] = { reason: 'test-only' }
+    try {
+      const src = `
+        import { cn } from '@/lib/utils'
+        const B = pick()
+        export const A = () => cn(B)
+      `
+      const used = new Set<string>()
+      expect(extractClassCandidates('x.ts', src, used)).toEqual([])
+      expect(used).toEqual(new Set([key]))
+    } finally {
+      delete UNRESOLVED_RECIPE_ALLOWED[key]
+    }
+  })
+
+  it('the shipped UNRESOLVED_RECIPE_ALLOWED starts empty', () => {
+    expect(Object.keys(UNRESOLVED_RECIPE_ALLOWED)).toEqual([])
+  })
+
+  it('FAILS LOUDLY on a switch-case const shadowed at use (case block scoping, ported from scopeIntroduces)', () => {
+    // A hand-rolled scope walker that only recognized `Block` (not
+    // `CaseBlock`) would treat this `c` as an unresolved MODULE reference —
+    // it is really a per-case local, so it must be treated as locally
+    // bound (skip), never resolved against a same-named module const.
+    const src = `
+      import { cn } from '@/lib/utils'
+      const c = 'module-level-should-not-be-read'
+      export function f(x: number) {
+        switch (x) {
+          case 1: {
+            const c = 'p-2'
+            cn(c)
+            break
+          }
+        }
+      }
+    `
+    expect(extractClassCandidates('x.ts', src)).toEqual([])
+  })
+
+  it('recognizes a function EXPRESSION self-name as locally bound (ported from scopeIntroduces)', () => {
+    // `send` inside the function expression's own body refers to the
+    // function itself (how a self-recursive callback calls itself), not any
+    // module-level `send` — must be treated as locally bound, never
+    // resolved as an unrelated module reference.
+    const src = `
+      import { cn } from '@/lib/utils'
+      export const A = function send(depth: number) {
+        if (depth > 0) return send(depth - 1)
+        return cn(send)
+      }
     `
     expect(extractClassCandidates('x.ts', src)).toEqual([])
   })
