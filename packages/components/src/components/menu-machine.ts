@@ -3,6 +3,7 @@ import { tagSend } from '@llui/dom'
 import {
   eventDirection,
   flipArrow,
+  floatingDir,
   setDirection,
   syncDomDirection,
   type DirectionState,
@@ -1136,20 +1137,22 @@ function submenuPlacement(dir: TextDirection, align: 'start' | 'end'): Placement
  * `'dom'` it falls through to `resolveDir(trigger)`, so a submenu nested under
  * an RTL ancestor still opens the correct way even if the root menu itself is
  * LTR; once a consumer EXPLICITLY configures/`setDir`s a direction, that
- * explicit value wins here too. Both the initial placement AND the ongoing
- * `dir` are THUNKS (`OverlayFloatingConfig.placement`/`dir`), resolved fresh at
- * attach time rather than captured at declaration time — matching the root
- * `overlay()`s' `dir: () => floatingDir(state.peek())`.
+ * explicit value wins here too. The placement is a THUNK
+ * (`OverlayFloatingConfig.placement`), resolved fresh at attach time. `dir`
+ * passes only an EXPLICIT direction (`floatingDir`), exactly like the root
+ * `overlay()`s: while direction is automatic the engine resolves it from this
+ * level's anchor (the subTrigger, inside the parent level's portaled subtree)
+ * and writes it on the level's floating element (#265 finding 6).
  *
- * A runtime direction change WHILE a level stays open (an explicit `setDir`,
- * or a `dirSource: 'dom'` ancestor `dir` mutation) cannot be picked up by
+ * A runtime direction change WHILE a level stays open cannot be picked up by
  * `attachFloating`'s own `autoUpdate` — a physical `placement` string
  * (`'right-start'`) is resolved once at attach and a repeated
  * `computePosition` pass with the SAME closed-over string can never flip
- * sides. `floating.reattachKey` closes that: a hidden, reactively-bound
- * marker element (rendered as this overlay's first content child) carries
- * `data-llui-reattach-key` bound to `${dir}:${dirSource}`, and the engine
- * re-runs the whole attach (fresh `placement`/`dir` thunk calls) whenever that
+ * sides. A DOM change (an ancestor `dir`) re-attaches through the engine's own
+ * anchor-direction watch. A STATE change the DOM does not show (an explicit
+ * `setDir`) re-attaches through `floating.reattachKey`: the positioner this
+ * function builds carries `data-llui-reattach-key` bound to
+ * `${dir}:${dirSource}`, and the engine re-runs the whole attach whenever that
  * attribute's value changes while mounted.
  *
  * No `dismiss` config: Escape and outside-click stay owned by the ROOT
@@ -1202,7 +1205,7 @@ export function subOverlay<Scope extends string, S>(opts: SubOverlayOptions<Scop
       offset: opts.offset ?? 2,
       flip: opts.flip !== false,
       shift: opts.shift !== false,
-      dir: () => resolvedDir(),
+      dir: () => floatingDir(opts.direction(state.peek())),
       reattachKey: () => directionKey(state.peek()),
     },
   })

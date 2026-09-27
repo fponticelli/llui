@@ -34,7 +34,14 @@ describe('registry demo Menu/ContextMenu/Menubar direction consistency in Chromi
     if (!address || typeof address === 'string') throw new Error('Vite did not bind a TCP port')
     url = `http://127.0.0.1:${address.port}/`
     browser = await chromium.launch({ headless: true })
-  }, 60_000)
+    // Warm the cold dev server (dependency pre-bundling) here, under this
+    // hook's budget: a first load under load could outrun `beforeEach`'s
+    // default 30 s `waitFor` and fail an unrelated test (#265 LOW).
+    const warm = await browser.newPage()
+    await warm.goto(url)
+    await warm.locator('#demo-menubar').waitFor({ state: 'attached', timeout: 90_000 })
+    await warm.close()
+  }, 150_000)
 
   afterAll(async () => {
     await page?.close()

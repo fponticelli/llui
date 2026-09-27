@@ -30,19 +30,16 @@ export function syncDomDirection<T extends DirectionState>(state: T, dir: 'ltr' 
 }
 
 /**
- * The `dir` a floating-placement call (`attachFloating`'s `dir` option) should
- * be given for this state. While direction is still automatic (`dirSource ===
- * 'dom'`, i.e. no explicit config/`setDir` yet), this returns `undefined` so
- * `attachFloating` falls back to reading the FLOATING ELEMENT's own computed
- * `direction` (`domPlatform`'s default) — the actual page/ancestor direction
- * a portaled overlay landed under — rather than the state's `dir`, which
- * defaults to `'ltr'` until something explicitly resolves it. Passing the
- * state's `dir` unconditionally (#265 A1) meant an RTL page with no opt-in
- * direction-sync part mirrored every floating menu/popover/etc. as if it were
- * LTR: the state said `'ltr'` (its untouched default) while the DOM said
- * `'rtl'`. Once a consumer calls `setDir`/passes `dir` explicitly,
- * `dirSource` flips to `'explicit'` and that value is authoritative here too,
- * overriding whatever the DOM happens to compute to.
+ * The EXPLICIT direction to hand an overlay's `floating.dir`, or `undefined`
+ * while direction is still automatic (`dirSource === 'dom'`). `undefined` is
+ * not "unknown": the overlay engine then resolves the direction from the
+ * overlay's placement ANCHOR — the trigger, in the app's own container — and
+ * writes it on the portaled floating element, so geometry, CSS and key
+ * handlers inside the portal all agree with the trigger (#265 finding 6).
+ * Passing the state's `dir` unconditionally (#265 A1) mirrored every floating
+ * surface on an RTL page as LTR: the untouched state default said `'ltr'`
+ * while the DOM said `'rtl'`. Once a consumer calls `setDir`/passes `dir`,
+ * `dirSource` is `'explicit'` and that value wins over the DOM.
  */
 export function floatingDir(state: DirectionState): 'ltr' | 'rtl' | undefined {
   return state.dirSource === 'explicit' ? state.dir : undefined
@@ -91,6 +88,52 @@ function mutationRemovedRoot(record: MutationRecord, root: Element): boolean {
 }
 
 /**
+ * Watch every `dir` that can decide `target()`'s resolved direction: `dir`
+ * attributes on the element and its live ancestor chain (across shadow
+ * roots), and child-list changes that relocate it between differently
+ * directed ancestors. Calls `onChange` after any such mutation — the caller
+ * re-resolves — then re-observes the chain `target()` names NOW, so a
+ * relocated or replaced element keeps being watched. Returns a disconnect.
+ * A no-op where `MutationObserver` does not exist (SSR).
+ */
+export function watchDirection(target: () => Element | null, onChange: () => void): () => void {
+  if (typeof MutationObserver === 'undefined') return () => {}
+  let observed: Element | null = null
+  let observing = false
+  const observer = new MutationObserver((records) => {
+    const watched = observed
+    if (
+      !records.some(
+        (record) =>
+          record.type === 'attributes' ||
+          (watched !== null && mutationRemovedRoot(record, watched)),
+      )
+    )
+      return
+    onChange()
+    observe()
+  })
+  const observe = (): void => {
+    if (observing) observer.disconnect()
+    observing = false
+    observed = target()
+    if (observed === null) return
+    const observation = directionObservation(observed)
+    const options = new Map<Node, MutationObserverInit>()
+    for (const element of observation.attributes) {
+      options.set(element, { attributes: true, attributeFilter: ['dir'] })
+    }
+    for (const node of observation.childLists) {
+      options.set(node, { ...options.get(node), childList: true })
+    }
+    for (const [node, option] of options) observer.observe(node, option)
+    observing = options.size > 0
+  }
+  observe()
+  return () => observer.disconnect()
+}
+
+/**
  * Observe the exact component root and its live ancestor chain after mount.
  * Child-list observation covers relocation between differently directed
  * ancestors; the Mountable cleanup disconnects all observation.
@@ -99,23 +142,6 @@ export function directionSyncMount(rootId: string, sync: (dir: 'ltr' | 'rtl') =>
   return onMount((container) => {
     let currentRoot: Element | null = getElementByIdInScope(container, rootId)
     let lastDirection: 'ltr' | 'rtl' | undefined
-    let observer: MutationObserver | null = null
-    let observing = false
-    const observeCurrentChain = (): void => {
-      if (observing) observer?.disconnect()
-      observing = false
-      if (observer === null || currentRoot === null) return
-      const observation = directionObservation(currentRoot)
-      const options = new Map<Node, MutationObserverInit>()
-      for (const element of observation.attributes) {
-        options.set(element, { attributes: true, attributeFilter: ['dir'] })
-      }
-      for (const node of observation.childLists) {
-        options.set(node, { ...options.get(node), childList: true })
-      }
-      for (const [node, option] of options) observer.observe(node, option)
-      observing = options.size > 0
-    }
     const synchronize = (): void => {
       const scopedRoot = getElementByIdInScope(container, rootId)
       if (scopedRoot !== null) currentRoot = scopedRoot
@@ -125,20 +151,7 @@ export function directionSyncMount(rootId: string, sync: (dir: 'ltr' | 'rtl') =>
       lastDirection = direction
       sync(direction)
     }
-
     synchronize()
-    if (typeof MutationObserver === 'undefined') return
-    observer = new MutationObserver((records) => {
-      if (
-        !records.some(
-          (record) => record.type === 'attributes' || mutationRemovedRoot(record, currentRoot!),
-        )
-      )
-        return
-      synchronize()
-      observeCurrentChain()
-    })
-    observeCurrentChain()
-    return () => observer.disconnect()
+    return watchDirection(() => currentRoot, synchronize)
   })
 }

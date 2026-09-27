@@ -14,7 +14,7 @@ import {
 import { getElementByIdInScope } from './root-scope.js'
 import { engineFocus } from './engine-focus.js'
 import { focusLingeredInside } from './focus-restore.js'
-import type { TextDirection } from './direction.js'
+import { resolveDir, watchDirection, type TextDirection } from './direction.js'
 
 /**
  * Shared overlay engine — the single state machine every component `overlay()`
@@ -80,7 +80,16 @@ export interface OverlayFloatingConfig {
   arrowSelector?: string
   /** Match the floating element's min-width to the anchor's width. */
   sameWidth?: boolean
-  /** Reading direction — a function so it can be peeked at mount time (menu). */
+  /**
+   * An EXPLICIT reading direction — a function so it can be peeked at attach
+   * time (menu). Return `undefined` (or omit it) while direction is automatic:
+   * the engine then resolves it from the placement ANCHOR, never from where
+   * the portal landed (#265 finding 6). Whichever wins is handed to
+   * `attachFloating` and written as `dir` on the floating element, so the
+   * whole portaled subtree — CSS logical properties, key handlers resolving
+   * from `e.currentTarget`, and nested overlays anchored inside it — reads
+   * the same direction as the trigger it belongs to.
+   */
   dir?: TextDirection | (() => TextDirection | undefined)
   /** Attach positioning in the MOUNT phase (survives the exit animation) rather
    * than the interaction phase. Required when `visibleWhen` unwinds interactions
@@ -95,18 +104,21 @@ export interface OverlayFloatingConfig {
    * string (`'right-start'`) encodes a reading-direction decision that a
    * later `computePosition` pass with the same closed-over string cannot
    * correct (#265 A4: a submenu whose menu tree flips direction while the
-   * level stays open must re-place, not just re-run the same geometry).
+   * level stays open must re-place, not just re-run the same geometry). A DOM
+   * direction change needs no key — the engine watches the anchor's
+   * direction itself; this is for STATE the DOM does not show (an explicit
+   * `setDir`).
    *
    * There is no public imperative signal-subscribe seam for framework-internal
    * code running inside a mount callback (`@llui/dom`'s reactivity is
    * binding-driven, not subscription-driven) — a caller declares this key by
-   * rendering it as a reactive attribute inside its own `content()` (a hidden
-   * marker element carrying `data-llui-reattach-key`), and the engine watches
-   * that ATTRIBUTE with a `MutationObserver`, the same declarative-binding-
-   * to-DOM-observation idiom `direction.ts:directionSyncMount` already uses in
-   * the other direction (DOM to state, here state to DOM to imperative code).
-   * The marker is looked up via `[data-llui-reattach-key]` inside the resolved
-   * `content` element; a caller that supplies `reattachKey` MUST render one.
+   * binding it reactively as a `data-llui-reattach-key` attribute on the
+   * content element or an ancestor it controls (`subOverlay` puts it on the
+   * positioner it builds), and the engine watches that ATTRIBUTE with a
+   * `MutationObserver`, the same declarative-binding-to-DOM-observation idiom
+   * `direction.ts:watchDirection` uses in the other direction. The marker is
+   * found with `content.closest('[data-llui-reattach-key]')`; supplying
+   * `reattachKey` without one is an authoring error (`LluiFrameworkError`).
    */
   reattachKey?: () => string | number
 }
@@ -329,6 +341,21 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
     return { content, placementAnchor, dismissIgnore, focusReturnTarget, floating }
   }
 
+  /**
+   * The direction a floating attachment runs under, in precedence order: a
+   * `dir` the floating element was AUTHORED with (never overwritten), the
+   * component's explicit direction, then the placement anchor's resolved
+   * direction. `undefined` only without an anchor, where the floating
+   * element's own computed direction is the best there is.
+   */
+  const effectiveDir = (els: OverlayElements, authored: TextDirection | undefined) => {
+    if (authored !== undefined) return authored
+    const f = opts.floating!
+    const explicit = typeof f.dir === 'function' ? f.dir() : f.dir
+    if (explicit !== undefined) return explicit
+    return els.placementAnchor ? resolveDir(els.placementAnchor) : undefined
+  }
+
   const attachFloatingFor = (els: OverlayElements): (() => void) => {
     const f = opts.floating!
     let restoreSameWidth: (() => void) | undefined
@@ -343,7 +370,16 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
     const arrow = f.arrowSelector
       ? (els.content.querySelector(f.arrowSelector) as HTMLElement | null)
       : null
-    const dir = typeof f.dir === 'function' ? f.dir() : f.dir
+    // Snapshot BEFORE writing: a reattach first restores, so this always
+    // reads what the element carried before the engine touched it.
+    const priorDir = els.floating.getAttribute('dir')
+    const authored = priorDir === 'rtl' || priorDir === 'ltr' ? priorDir : undefined
+    const dir = effectiveDir(els, authored)
+    if (authored === undefined && dir !== undefined) els.floating.setAttribute('dir', dir)
+    const restoreDir = (): void => {
+      if (priorDir === null) els.floating.removeAttribute('dir')
+      else els.floating.setAttribute('dir', priorDir)
+    }
     const placement = typeof f.placement === 'function' ? f.placement() : f.placement
     let stopFloating: () => void
     try {
@@ -359,6 +395,7 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
         arrow: arrow ?? undefined,
       })
     } catch (error) {
+      restoreDir()
       restoreSameWidth?.()
       throw error
     }
@@ -370,42 +407,74 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
       try {
         stopFloating()
       } finally {
+        restoreDir()
         restoreSameWidth?.()
       }
     }
   }
 
   /**
-   * `attachFloatingFor` plus, when `reattachKey` is configured, a
-   * `MutationObserver` on the caller-rendered `[data-llui-reattach-key]`
-   * marker that detaches and reattaches (fresh `placement`/`dir` thunk calls)
-   * whenever the key's value changes. See `OverlayFloatingConfig.reattachKey`.
+   * `attachFloatingFor`, re-run (detach, then reattach with fresh
+   * `placement`/`dir` thunk calls) whenever what it was resolved from changes
+   * while mounted:
+   *  - the caller's `reattachKey`, via a `MutationObserver` on the rendered
+   *    `[data-llui-reattach-key]` marker (see `OverlayFloatingConfig.reattachKey`);
+   *  - the anchor's own direction (`watchDirection` on its ancestor chain), so
+   *    an automatic direction follows the app container live. Nested overlays
+   *    cascade: rewriting this floating element's `dir` is itself a change on
+   *    the ancestor chain of any anchor inside it.
    */
   const attachFloatingWithReattach = (els: OverlayElements): (() => void) => {
+    const priorDir = els.floating.getAttribute('dir')
+    const authored = priorDir === 'rtl' || priorDir === 'ltr' ? priorDir : undefined
     let stop = attachFloatingFor(els)
+    let lastDir = effectiveDir(els, authored)
+    const reattach = (): void => {
+      stop()
+      stop = attachFloatingFor(els)
+      lastDir = effectiveDir(els, authored)
+    }
+    const stopWatchingDirection = els.placementAnchor
+      ? watchDirection(
+          () => els.placementAnchor,
+          () => {
+            if (effectiveDir(els, authored) !== lastDir) reattach()
+          },
+        )
+      : () => {}
     const reattachKey = opts.floating!.reattachKey
-    if (!reattachKey) return () => stop()
-    let lastKey = reattachKey()
-    // `closest` (ancestor-or-self), not `querySelector` (descendant): the
-    // marker attribute is expected on `content` itself or on an ANCESTOR a
-    // caller controls directly (e.g. its own `positioner` override) — a
-    // submenu's `contentId` div is built by the CALLER, so `subOverlay`
-    // cannot inject a child into it and instead carries the marker on the
-    // positioner it does control.
-    const marker = els.content.closest<HTMLElement>('[data-llui-reattach-key]')
     let mo: MutationObserver | undefined
-    if (marker && typeof MutationObserver !== 'undefined') {
-      mo = new MutationObserver(() => {
-        const nextKey = reattachKey()
-        if (nextKey === lastKey) return
-        lastKey = nextKey
+    if (reattachKey) {
+      let lastKey = reattachKey()
+      // `closest` (ancestor-or-self), not `querySelector` (descendant): the
+      // marker attribute is expected on `content` itself or on an ANCESTOR a
+      // caller controls directly (e.g. its own `positioner` override) — a
+      // submenu's `contentId` div is built by the CALLER, so `subOverlay`
+      // cannot inject a child into it and instead carries the marker on the
+      // positioner it does control.
+      const marker = els.content.closest<HTMLElement>('[data-llui-reattach-key]')
+      if (marker === null) {
+        stopWatchingDirection()
         stop()
-        stop = attachFloatingFor(els)
-      })
-      mo.observe(marker, { attributes: true, attributeFilter: ['data-llui-reattach-key'] })
+        throw new LluiFrameworkError(
+          `[llui/components] Overlay "${opts.contentId}" declares floating.reattachKey but renders no ` +
+            '[data-llui-reattach-key] marker on its content or an ancestor, so the key could never ' +
+            'trigger a reattach. Bind the key as a data-llui-reattach-key attribute there.',
+        )
+      }
+      if (typeof MutationObserver !== 'undefined') {
+        mo = new MutationObserver(() => {
+          const nextKey = reattachKey()
+          if (nextKey === lastKey) return
+          lastKey = nextKey
+          reattach()
+        })
+        mo.observe(marker, { attributes: true, attributeFilter: ['data-llui-reattach-key'] })
+      }
     }
     return () => {
       mo?.disconnect()
+      stopWatchingDirection()
       stop()
     }
   }
@@ -533,12 +602,15 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
     // Persistent floating lives with the mounted node so the content stays
     // anchored while the exit animation plays. The invariant at the top of
     // `createOverlay` makes this mandatory for every two-phase floating overlay.
+    // Same reattach triggers (reattachKey, anchor direction) as the
+    // interaction-phase path: persistence changes WHEN it attaches, not what
+    // keeps it current.
     if (opts.floating?.persistent) {
       children.push(
         onMount((root) => {
           const els = resolveEls(root)
           if (!els) return
-          return attachFloatingFor(els)
+          return attachFloatingWithReattach(els)
         }),
       )
     }

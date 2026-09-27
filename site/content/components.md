@@ -898,6 +898,11 @@ const { text: liveText, ...liveAttrs } = parts.liveRegion
 ComboboxLiveRegion({ ...liveAttrs }, [text(liveText)])
 ```
 
+**A portaled overlay follows its trigger's direction.** Menus, selects, popovers and
+tooltips portal to `<body>`, but read `ltr`/`rtl` from their trigger. Put `dir="rtl"` on any
+container and the overlays opened from inside it mirror too: placement, text, arrow keys and
+submenus. Pass `dir` to `init()` only to force a direction regardless of the page.
+
 **An async list keeps its old rows while it refetches.** `combobox` and `searchableSelect`
 are stale-while-revalidate: `loadStart` never clears `items`, so the previous results stay
 on screen, filterable and selectable, until the matching `loadSuccess`/`loadError` lands.
