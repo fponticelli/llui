@@ -1658,7 +1658,8 @@
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 20%, transparent);
 }
 
-[data-scope='time-picker'][data-part='hours-input'],
+:is(
+  [data-scope='time-picker'][data-part='hours-input'],
   [data-scope='time-picker'][data-part='minutes-input']
 ) {
   width: 1.75rem;

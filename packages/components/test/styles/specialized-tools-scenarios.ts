@@ -148,37 +148,37 @@ export const FILE_FIXTURES = [
 // ─── Case inputs (mirroring each machine's real init fields) ─────────────────
 
 export type AsyncListStatus = 'idle' | 'loading' | 'loaded' | 'error'
-export interface AsyncListCaseInput {
+export type AsyncListCaseInput = {
   readonly status: AsyncListStatus
   readonly items: readonly string[]
   readonly hasMore: boolean
   readonly error: string | null
 }
 
-export interface CascadeLevelFixture {
+export type CascadeLevelFixture = {
   readonly id: string
   readonly label: string
   readonly options: readonly { readonly value: string; readonly label: string }[]
 }
-export interface CascadeSelectCaseInput {
+export type CascadeSelectCaseInput = {
   readonly levels: readonly CascadeLevelFixture[]
   readonly values: readonly (string | null)[]
   readonly disabled: boolean
 }
 
-export interface ClipboardCaseInput {
+export type ClipboardCaseInput = {
   readonly value: string
   readonly outcome: 'idle' | 'copied' | 'failed'
 }
 
-export interface ColorPickerCaseInput {
+export type ColorPickerCaseInput = {
   readonly model: 'hsv' | 'oklch'
   readonly color: string
   readonly disabled: boolean
   readonly swatches: readonly string[]
 }
 
-export interface DateInputCaseInput {
+export type DateInputCaseInput = {
   readonly input: string
   readonly min: string | null
   readonly max: string | null
@@ -187,7 +187,7 @@ export interface DateInputCaseInput {
   readonly required: boolean
 }
 
-export interface DatePickerCaseInput {
+export type DatePickerCaseInput = {
   readonly mode: 'single' | 'range'
   readonly value: string | null
   readonly start: string | null
@@ -208,19 +208,19 @@ export interface DatePickerCaseInput {
   readonly density: 'comfortable' | 'compact'
 }
 
-export interface EditableCaseInput {
+export type EditableCaseInput = {
   readonly value: string
   readonly editing: boolean
   readonly disabled: boolean
   readonly placeholder: string
 }
 
-export interface FileUploadCaseInput {
+export type FileUploadCaseInput = {
   readonly fileIds: readonly string[]
   readonly dragging: boolean
   readonly disabled: boolean
   readonly invalid: boolean
-  readonly rejected: readonly { readonly name: string; readonly error: string }[]
+  readonly rejected: readonly { readonly name: string; readonly code: 'INVALID_TYPE' }[]
   readonly uploads: readonly {
     readonly id: string
     readonly status: 'uploading' | 'done' | 'error'
@@ -229,7 +229,7 @@ export interface FileUploadCaseInput {
   }[]
 }
 
-export interface FloatingPanelCaseInput {
+export type FloatingPanelCaseInput = {
   readonly title: string
   readonly body: string
   readonly width: number
@@ -239,12 +239,12 @@ export interface FloatingPanelCaseInput {
   readonly atMinimum: boolean
 }
 
-export interface GradientPickerCaseInput {
+export type GradientPickerCaseInput = {
   readonly css: string
   readonly disabled: boolean
 }
 
-export interface ImageCropperCaseInput {
+export type ImageCropperCaseInput = {
   readonly image: { readonly width: number; readonly height: number }
   readonly aspectRatio: number | null
   readonly crop: {
@@ -258,40 +258,40 @@ export interface ImageCropperCaseInput {
   readonly dragging: boolean
 }
 
-export interface InViewCaseInput {
+export type InViewCaseInput = {
   readonly visible: boolean
 }
 
-export interface PresenceCaseInput {
+export type PresenceCaseInput = {
   readonly status: 'opening' | 'open' | 'closing' | 'closed'
 }
 
-export interface QrCodeCaseInput {
+export type QrCodeCaseInput = {
   readonly value: string
   readonly rows: readonly string[]
 }
 
-export interface ScrollAreaCaseInput {
+export type ScrollAreaCaseInput = {
   readonly rows: number
   readonly wide: boolean
   readonly visibility: 'auto' | 'always' | 'hover' | 'scroll'
 }
 
-export interface SignaturePadCaseInput {
+export type SignaturePadCaseInput = {
   readonly strokes: readonly (readonly { readonly x: number; readonly y: number }[])[]
   readonly clearedThenRestorable: boolean
   readonly disabled: boolean
   readonly readonly: boolean
 }
 
-export interface SortableCaseInput {
+export type SortableCaseInput = {
   readonly items: readonly string[]
   /** Drag the item at `from` over the item at `to` (pointer), or grab it (keyboard). */
   readonly drag: { readonly from: number; readonly to: number } | null
   readonly keyboardGrab: number | null
 }
 
-export interface SplitterCaseInput {
+export type SplitterCaseInput = {
   readonly orientation: 'horizontal' | 'vertical'
   readonly position: number
   readonly min: number
@@ -299,44 +299,44 @@ export interface SplitterCaseInput {
   readonly disabled: boolean
 }
 
-export interface TimePickerCaseInput {
+export type TimePickerCaseInput = {
   readonly hours: number
   readonly minutes: number
   readonly format: '12' | '24'
   readonly disabled: boolean
 }
 
-export interface TimerCaseInput {
+export type TimerCaseInput = {
   readonly direction: 'up' | 'down'
   readonly targetMs: number
   readonly elapsedMs: number
   readonly running: boolean
 }
 
-export interface TourStepFixture {
+export type TourStepFixture = {
   readonly id: string
   readonly title: string
   readonly description: string
 }
-export interface TourCaseInput {
+export type TourCaseInput = {
   readonly steps: readonly TourStepFixture[]
   readonly index: number
   readonly spotlight: boolean
 }
 
-export interface WizardCaseInput {
+export type WizardCaseInput = {
   readonly steps: readonly string[]
   readonly current: number
   readonly completed: readonly number[]
   readonly validating: boolean
 }
 
-export interface AspectRatioCaseInput {
+export type AspectRatioCaseInput = {
   readonly ratio: number
   readonly label: string
 }
 
-export interface IconsCaseInput {
+export type IconsCaseInput = {
   readonly glyphs: readonly string[]
   readonly sizeClass: 'default' | 'large'
 }
@@ -845,7 +845,7 @@ export const SPECIALIZED_TOOLS_DEFINITIONS = {
         input: {
           ...FILE_UPLOAD_BASE,
           invalid: true,
-          rejected: [{ name: 'archive.zip', error: 'FILE_INVALID_TYPE' }],
+          rejected: [{ name: 'archive.zip', code: 'INVALID_TYPE' }],
         } satisfies FileUploadCaseInput,
         environmentAxes: AX.surface,
       },

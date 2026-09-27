@@ -25,6 +25,13 @@ import { buttonVariants } from './button'
  * Range selection is expressed entirely in `data-*` — `data-range-start`,
  * `-middle`, `-end`, `data-selected-single` — so a range never needs a view to
  * compute a class.
+ *
+ * Two LLui additions, both for states upstream's day-picker handles itself:
+ * an individually UNAVAILABLE day (`data-unavailable` on the cell — a booked
+ * date, distinct from one outside `min`/`max`) is struck through on the day
+ * button, so the two disabled kinds read differently and not by colour alone;
+ * and the previous/next chevrons mirror under `dir="rtl"` (`rtl:[&_svg]`), so
+ * "previous" still points backwards in reading order (#266).
  */
 export const Calendar = classPart(
   div,
@@ -36,7 +43,7 @@ export const CalendarNav = classPart(
   div,
   'absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1',
 )
-const navButtonRecipe = `${buttonVariants({ variant: 'ghost' })} size-(--cell-size) p-0 select-none aria-disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50`
+const navButtonRecipe = `${buttonVariants({ variant: 'ghost' })} size-(--cell-size) p-0 select-none aria-disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 rtl:[&_svg]:-scale-x-100`
 export const CalendarPrevious = classPart(button, navButtonRecipe)
 export const CalendarNext = classPart(button, navButtonRecipe)
 export const CalendarCaption = classPart(
@@ -79,7 +86,7 @@ export const CalendarDay = classPart(
 
 export const CalendarDayButton = classPart(
   button,
-  `${buttonVariants({ variant: 'ghost' })} flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50 data-[range-end=true]:rounded-md data-[range-end=true]:rounded-r-md data-[range-end=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-accent data-[range-middle=true]:text-accent-foreground data-[range-start=true]:rounded-md data-[range-start=true]:rounded-l-md data-[range-start=true]:bg-primary data-[range-start=true]:text-primary-foreground data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground data-[state=selected]:bg-primary data-[state=selected]:text-primary-foreground group-data-focused/day:relative group-data-focused/day:z-10 group-data-focused/day:border-ring group-data-focused/day:ring-[3px] group-data-focused/day:ring-ring/50 group-data-selected/day:bg-primary group-data-selected/day:text-primary-foreground group-data-range-start/day:rounded-md group-data-range-start/day:rounded-l-md group-data-range-start/day:bg-primary group-data-range-start/day:text-primary-foreground group-data-range-end/day:rounded-md group-data-range-end/day:rounded-r-md group-data-range-end/day:bg-primary group-data-range-end/day:text-primary-foreground group-data-in-range/day:rounded-none! group-data-in-range/day:bg-accent! group-data-in-range/day:text-accent-foreground! dark:hover:text-accent-foreground [&>span]:text-xs [&>span]:opacity-70`,
+  `${buttonVariants({ variant: 'ghost' })} flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50 data-[range-end=true]:rounded-md data-[range-end=true]:rounded-r-md data-[range-end=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-accent data-[range-middle=true]:text-accent-foreground data-[range-start=true]:rounded-md data-[range-start=true]:rounded-l-md data-[range-start=true]:bg-primary data-[range-start=true]:text-primary-foreground data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground data-[state=selected]:bg-primary data-[state=selected]:text-primary-foreground group-data-focused/day:relative group-data-focused/day:z-10 group-data-focused/day:border-ring group-data-focused/day:ring-[3px] group-data-focused/day:ring-ring/50 group-data-selected/day:bg-primary group-data-selected/day:text-primary-foreground group-data-range-start/day:rounded-md group-data-range-start/day:rounded-l-md group-data-range-start/day:bg-primary group-data-range-start/day:text-primary-foreground group-data-range-end/day:rounded-md group-data-range-end/day:rounded-r-md group-data-range-end/day:bg-primary group-data-range-end/day:text-primary-foreground group-data-in-range/day:rounded-none! group-data-in-range/day:bg-accent! group-data-in-range/day:text-accent-foreground! group-data-unavailable/day:text-muted-foreground group-data-unavailable/day:line-through dark:hover:text-accent-foreground [&>span]:text-xs [&>span]:opacity-70`,
 )
 
 /**

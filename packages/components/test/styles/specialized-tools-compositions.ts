@@ -28,7 +28,7 @@ import {
   span,
   svg,
   text,
-  type ComponentDef,
+  type SignalComponentDef,
   type Send,
 } from '@llui/dom'
 import * as clipboard from '../../src/components/clipboard'
@@ -48,7 +48,7 @@ export type LazyQrMsg = { type: 'inView'; msg: inView.InViewMsg }
 /** In-view gates a styled QR code's mount until the placeholder scrolls in. */
 export function lazyQrCodeInView(
   qr: qrCode.QrCodeState,
-): ComponentDef<LazyQrState, LazyQrMsg, never> {
+): SignalComponentDef<LazyQrState, LazyQrMsg, never> {
   return component<LazyQrState, LazyQrMsg, never>({
     name: 'LazyQrCodeInView',
     init: () => [{ inView: inView.init(), qr }, []],
@@ -94,7 +94,7 @@ export type ClipboardConfirmationMsg =
  */
 export function presenceClipboardConfirmation(
   value: string,
-): ComponentDef<ClipboardConfirmationState, ClipboardConfirmationMsg, never> {
+): SignalComponentDef<ClipboardConfirmationState, ClipboardConfirmationMsg, never> {
   return component<ClipboardConfirmationState, ClipboardConfirmationMsg, never>({
     name: 'PresenceClipboardConfirmation',
     init: () => [
