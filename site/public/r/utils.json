@@ -3,7 +3,7 @@
   "type": "registry:lib",
   "title": "cn / mergeClass / classPart",
   "description": "Class-merge helpers and the shared part factories every component here is built from.",
-  "dependencies": ["@llui/dom", "clsx", "tailwind-merge", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "clsx", "tailwind-merge", "@llui/components@^0.20.1"],
   "registryDependencies": [],
   "files": [
     {

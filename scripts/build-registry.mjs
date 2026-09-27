@@ -6,9 +6,15 @@
 // file's content INLINED. `@llui/cli` reads either shape: inlined content for a
 // remote registry, on-disk `path` for a local checkout — which is how the CLI's
 // own tests run with no build step and no network.
+//
+// Both outputs pin every `@llui/*` dependency: the source's
+// `@llui/<pkg>@workspace:^` becomes `@llui/<pkg>@^<version>`, the workspace
+// package's version, which `llui add` enforces as a minimum (see
+// `scripts/lib/registry-dependencies.mjs`).
 import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { pinItemDependencies, workspaceVersions } from './lib/registry-dependencies.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SOURCE = path.join(ROOT, 'registry', 'registry.json')
@@ -23,7 +29,7 @@ const OUT = path.join(ROOT, 'site', 'public', 'r')
 
 /**
  * One registry item (a component and the files `llui add` copies for it).
- * @typedef {{ name: string, files: RegistryFile[] } & Record<string, unknown>} RegistryItem
+ * @typedef {{ name: string, files: RegistryFile[], dependencies?: string[], devDependencies?: string[] } & Record<string, unknown>} RegistryItem
  */
 
 /**
@@ -42,7 +48,12 @@ await mkdir(OUT, { recursive: true })
 const indexItems = []
 const index = { ...registry, items: indexItems }
 
-for (const item of registry.items) {
+// Every `@llui/*` dependency is written `workspace:^` in the source and pinned
+// here to `^<workspace version>` — the minimum `llui add` enforces (#273).
+const versions = await workspaceVersions(ROOT)
+
+for (const sourceItem of registry.items) {
+  const item = pinItemDependencies(sourceItem, versions)
   /** @type {RegistryFile[]} */
   const files = []
   for (const file of item.files) {

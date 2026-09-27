@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Chip",
   "description": "Categorical chip whose colour is hashed from its value — no colour map, status hues reserved.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["utils"],
   "files": [
     {

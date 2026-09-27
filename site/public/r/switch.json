@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Switch",
   "description": "Skin for @llui/components/switch — recipe only, state stays in the package.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["utils"],
   "files": [
     {

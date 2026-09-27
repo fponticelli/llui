@@ -2,6 +2,8 @@ import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
 import { ProductContractSchema } from './product-contract.js'
+import { compareVersions, parseVersion } from './semver.js'
+import { findInstalled } from './versions.js'
 
 /**
  * Registry schema — a deliberate subset of shadcn/ui's `registry-item.json`, with
@@ -74,14 +76,20 @@ export function assertSafeTarget(target: string, itemName: string): void {
  * that publishes its index under another name still works.
  */
 export async function loadRegistry(source: string): Promise<Registry> {
-  const raw = isRemote(source)
+  const remote = isRemote(source)
+  const raw: unknown = remote
     ? await fetchJson(resolveRemote(source))
     : JSON.parse(await readFile(resolveLocal(source), 'utf8'))
   const registry = RegistrySchema.parse(raw)
   for (const item of registry.items) {
     for (const file of item.files) assertSafeTarget(file.target, item.name)
+    assertDependencySpecs(item, remote ? 'built' : 'workspace')
   }
-  return registry
+  if (remote) return registry
+  return {
+    ...registry,
+    items: await pinWorkspaceSpecs(registry.items, path.dirname(resolveLocal(source))),
+  }
 }
 
 function resolveLocal(source: string): string {
@@ -115,6 +123,7 @@ export async function loadRemoteItem(source: string, name: string): Promise<Regi
   const base = source.replace(/\/+$/, '')
   const item = RegistryItemSchema.parse(await fetchJson(`${base}/${name}.json`))
   for (const file of item.files) assertSafeTarget(file.target, item.name)
+  assertDependencySpecs(item, 'built')
   return item
 }
 
@@ -155,16 +164,182 @@ export function resolveItems(registry: Registry, names: readonly string[]): Regi
   return out
 }
 
-/** Collect the npm packages the given items need, deduped and sorted. */
-export function collectDependencies(items: readonly RegistryItem[]): {
-  dependencies: string[]
-  devDependencies: string[]
-} {
-  const deps = new Set<string>()
-  const dev = new Set<string>()
-  for (const item of items) {
-    for (const d of item.dependencies) deps.add(d)
-    for (const d of item.devDependencies) dev.add(d)
+/** The npm scope whose packages registry items must declare with a minimum. */
+export const LLUI_SCOPE = '@llui/'
+
+/** The source-registry spec `scripts/build-registry.mjs` replaces with `^<workspace version>`. */
+export const WORKSPACE_SPEC = 'workspace:^'
+
+/**
+ * Split an npm dependency spec (`clsx`, `clsx@^2`, `@llui/dom@^0.14.0`) into its
+ * package name and the range after the `@`, if any. A scoped name's leading `@`
+ * is part of the NAME, so the separator is the first `@` after position 0.
+ */
+export function parseDependencySpec(spec: string): { name: string; range: string | null } {
+  const at = spec.indexOf('@', 1)
+  return at === -1
+    ? { name: spec, range: null }
+    : { name: spec.slice(0, at), range: spec.slice(at + 1) }
+}
+
+/** The floor of a BUILT `@llui/*` spec (`^0.20.1` -> `0.20.1`), or `null` if it has none. */
+function caretFloor(range: string | null): string | null {
+  if (range === null || !range.startsWith('^')) return null
+  const floor = range.slice(1)
+  // `parseVersion` tolerates a leading `v`/`=` for installed versions; a
+  // registry spec must be the bare version the build writes.
+  return /^\d/.test(floor) && parseVersion(floor) !== null ? floor : null
+}
+
+/**
+ * Every `@llui/*` dependency must say which version its item was written
+ * against, as `@llui/<pkg>@^<version>`. A skin that uses something new in
+ * `@llui/components` (a token, a part attribute, a floating CSS variable)
+ * otherwise copies cleanly into a project on an older release and breaks
+ * silently at runtime — which is why `llui add` checks that floor before it
+ * writes anything, and why an item that does not declare one is REJECTED here
+ * rather than waved through unchecked.
+ *
+ * The form is shadcn's own: a `dependencies` entry is an npm spec, and
+ * shadcn's CLI passes `name@range` straight to the package manager. Only the
+ * caret-on-a-full-version form is accepted, because it is the only one the
+ * registry build emits and the only one whose floor is unambiguous. `llui add`
+ * reads the caret as a MINIMUM: a newer install passes even past the caret's
+ * upper bound. Non-`@llui` entries are relayed untouched.
+ *
+ * `kind` says where the item came from. A `'workspace'` registry — an unbuilt
+ * `registry/registry.json` read from a local path — may instead say
+ * `@llui/<pkg>@workspace:^`, pnpm's protocol for "this workspace's version",
+ * which the loader then resolves exactly as the build does. A `'built'`
+ * registry (anything fetched) must never carry that source form.
+ */
+export function assertDependencySpecs(item: RegistryItem, kind: 'built' | 'workspace'): void {
+  for (const spec of [...item.dependencies, ...item.devDependencies]) {
+    const { name, range } = parseDependencySpec(spec)
+    if (!name.startsWith(LLUI_SCOPE)) continue
+    if (range === WORKSPACE_SPEC) {
+      if (kind === 'workspace') continue
+      throw new Error(
+        `Registry item "${item.name}" declares ${JSON.stringify(spec)}, an unbuilt source spec. ` +
+          'A served registry must be built first (node scripts/build-registry.mjs), which ' +
+          `replaces it with ${name}@^<version>.`,
+      )
+    }
+    if (range === null) {
+      throw new Error(
+        `Registry item "${item.name}" declares ${JSON.stringify(name)} without a minimum version. ` +
+          `Every @llui/* dependency must be written ${name}@^<version> — the version the item ` +
+          'was built against. This registry predates that rule; rebuild it with ' +
+          'node scripts/build-registry.mjs.',
+      )
+    }
+    if (caretFloor(range) === null) {
+      throw new Error(
+        `Registry item "${item.name}" declares ${JSON.stringify(spec)}, which is not a minimum ` +
+          `version. Every @llui/* dependency must be written ${name}@^<version> with a full ` +
+          'semver version (e.g. ^0.20.1).',
+      )
+    }
   }
-  return { dependencies: [...deps].sort(), devDependencies: [...dev].sort() }
+}
+
+/**
+ * Resolve `@llui/<pkg>@workspace:^` in a local source registry to the version
+ * of the package the registry's own workspace links — found by the same
+ * node_modules walk `llui add` uses for the consumer, starting from the
+ * registry directory. That is the version `scripts/build-registry.mjs` writes,
+ * so a checkout and llui.dev enforce the same floor.
+ */
+async function pinWorkspaceSpecs(
+  items: readonly RegistryItem[],
+  registryDir: string,
+): Promise<RegistryItem[]> {
+  const cache = new Map<string, string>()
+  const pin = async (spec: string, itemName: string): Promise<string> => {
+    const { name, range } = parseDependencySpec(spec)
+    if (range !== WORKSPACE_SPEC) return spec
+    let version = cache.get(name)
+    if (version === undefined) {
+      const found = await findInstalled(registryDir, name)
+      if (found === null || caretFloor(`^${found.version}`) === null) {
+        throw new Error(
+          `Registry item "${itemName}" declares ${JSON.stringify(spec)}, but ${name} does not ` +
+            `resolve to a valid version from ${registryDir}. Install the registry's workspace ` +
+            '(pnpm install), or point --registry at a built registry.',
+        )
+      }
+      version = found.version
+      cache.set(name, version)
+    }
+    return `${name}@^${version}`
+  }
+  const out: RegistryItem[] = []
+  for (const item of items) {
+    const pinAll = (specs: readonly string[]): Promise<string[]> =>
+      Promise.all(specs.map((s) => pin(s, item.name)))
+    out.push({
+      ...item,
+      dependencies: await pinAll(item.dependencies),
+      devDependencies: await pinAll(item.devDependencies),
+    })
+  }
+  return out
+}
+
+/** One npm package the resolved items need. */
+export interface DependencyRequirement {
+  name: string
+  /** What to install when the project lacks it (`@llui/dom@^0.14.0`, `clsx`). */
+  spec: string
+  /** The lowest acceptable version — set for every `@llui/*` package, `null` otherwise. */
+  minimum: string | null
+  /** The items that declare it, in resolution order. */
+  requiredBy: string[]
+}
+
+/**
+ * Collect the npm packages the given items need — the union over every
+ * resolved item, so a package reached only through `registryDependencies` is
+ * here too — deduped and sorted by name.
+ *
+ * An `@llui/*` package is keyed by NAME and carries the highest minimum any
+ * item declares (the one floor that satisfies all of them). Anything else is
+ * keyed by its whole spec, as before: the CLI relays third-party ranges, it
+ * does not interpret them.
+ */
+export function collectDependencies(items: readonly RegistryItem[]): {
+  dependencies: DependencyRequirement[]
+  devDependencies: DependencyRequirement[]
+} {
+  const collect = (pick: (item: RegistryItem) => readonly string[]): DependencyRequirement[] => {
+    const byKey = new Map<string, DependencyRequirement>()
+    for (const item of items) {
+      for (const spec of pick(item)) {
+        const { name, range } = parseDependencySpec(spec)
+        const minimum = name.startsWith(LLUI_SCOPE) ? caretFloor(range) : null
+        const key = minimum === null ? spec : name
+        const seen = byKey.get(key)
+        if (seen === undefined) {
+          byKey.set(key, { name, spec, minimum, requiredBy: [item.name] })
+          continue
+        }
+        if (!seen.requiredBy.includes(item.name)) seen.requiredBy.push(item.name)
+        if (
+          minimum !== null &&
+          seen.minimum !== null &&
+          compareVersions(minimum, seen.minimum) > 0
+        ) {
+          seen.minimum = minimum
+          seen.spec = spec
+        }
+      }
+    }
+    return [...byKey.values()].sort((a, b) =>
+      a.name !== b.name ? (a.name < b.name ? -1 : 1) : a.spec < b.spec ? -1 : 1,
+    )
+  }
+  return {
+    dependencies: collect((i) => i.dependencies),
+    devDependencies: collect((i) => i.devDependencies),
+  }
 }

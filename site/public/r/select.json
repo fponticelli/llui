@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Select",
   "description": "Skin for @llui/components/select, including the hidden native form control.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["floating-motion", "icons", "utils"],
   "files": [
     {

@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Floating Panel",
   "description": "Skin for @llui/components/floating-panel — draggable, resizable, minimizable surface.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["utils"],
   "files": [
     {

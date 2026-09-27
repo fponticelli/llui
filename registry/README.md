@@ -201,6 +201,20 @@ keyboard roving-focus wiring unable to find the element it moves focus to.
    about avoiding a stuck instance. See `@llui/components`'s README (`accordion /
 collapsible exit motion`) for the full contract.
 
+## `@llui/*` dependencies carry a derived minimum
+
+Write every `@llui/*` entry in an item's `dependencies` as `@llui/<pkg>@workspace:^`
+— never a bare name, never a version. `pnpm build:registry` replaces it with
+`@llui/<pkg>@^<version>`, that package's version in `packages/`, exactly as
+`pnpm publish` rewrites a manifest; a bare name or a written-out version fails the
+build. `llui add` treats the pinned version as a MINIMUM and refuses (without
+`--force`) to copy an item into a project with an older package installed — a skin
+that uses a new token or part attribute otherwise copies cleanly and breaks at
+runtime (#273). `llui add --registry ./registry` resolves `workspace:^` the same way,
+from this directory's own `node_modules`. Non-`@llui` dependencies stay plain npm
+specs. `scripts/test/registry-dependency-minimums.test.ts` checks the whole built
+registry.
+
 ## Checks
 
 ```bash

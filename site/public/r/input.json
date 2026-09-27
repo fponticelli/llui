@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Input",
   "description": "Text input. The caller owns the value binding — see the controlled-input rule.",
-  "dependencies": ["@llui/dom"],
+  "dependencies": ["@llui/dom@^0.14.0"],
   "registryDependencies": ["utils"],
   "files": [
     {

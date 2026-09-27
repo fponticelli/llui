@@ -7,6 +7,19 @@ describe('@llui/cli public API', () => {
     expect(publicApi).not.toHaveProperty('assertProductInventory')
   })
 
+  it('publishes the @llui/* minimum-version check (#273)', () => {
+    for (const name of [
+      'VersionMismatchError',
+      'assertDependencySpecs',
+      'checkVersions',
+      'compareVersions',
+      'minimumOfRange',
+      'parseDependencySpec',
+    ]) {
+      expect(publicApi).toHaveProperty(name)
+    }
+  })
+
   it('keeps the browser-only presentation protocol off the Node-backed root entry', () => {
     expect(publicApi).not.toHaveProperty('compileScenarioFamily')
     expect(publicApi).not.toHaveProperty('resolveScenarioSelection')

@@ -8,9 +8,21 @@ import {
   loadRegistry,
   loadRemoteItem,
   resolveItems,
+  type DependencyRequirement,
   type RegistryFile,
   type RegistryItem,
 } from './registry.js'
+import {
+  VersionMismatchError,
+  checkVersions,
+  installCommand,
+  mismatchesOf,
+  upgradeCommandFor,
+  type VersionCheck,
+  type VersionMismatch,
+} from './versions.js'
+
+export { VersionMismatchError, type VersionCheck, type VersionMismatch } from './versions.js'
 
 export interface AddOptions {
   cwd: string
@@ -18,6 +30,12 @@ export interface AddOptions {
   names: readonly string[]
   /** Replace files that already exist. Default false — see `AddResult.skipped`. */
   overwrite?: boolean
+  /**
+   * Copy even when an installed `@llui/*` package is older than an item needs.
+   * Default false — `add` then throws `VersionMismatchError` before writing.
+   * With it, the mismatches are returned in `AddResult.mismatches` instead.
+   */
+  force?: boolean
   /** Resolve and report without touching the filesystem. */
   dryRun?: boolean
 }
@@ -27,8 +45,18 @@ export interface AddResult {
   /** Files that already existed and were LEFT ALONE. */
   skipped: string[]
   items: RegistryItem[]
-  dependencies: string[]
-  devDependencies: string[]
+  /** Every npm package the items need, including via `registryDependencies`. */
+  dependencies: DependencyRequirement[]
+  devDependencies: DependencyRequirement[]
+  /** One check per `@llui/*` requirement, against the project's version. */
+  versions: VersionCheck[]
+  /** Installed packages older than required. Non-empty only under `force`. */
+  mismatches: VersionMismatch[]
+  /** Install-command arguments: a bare name when the project already satisfies
+   * it, `name@^<min>` when it is missing or too old. */
+  install: { dependencies: string[]; devDependencies: string[] }
+  /** The command that upgrades every mismatch, or `null` when there are none. */
+  upgradeCommand: string | null
 }
 
 /**
@@ -39,11 +67,23 @@ export interface AddResult {
  * source, which they are expected to edit. A second `llui add button` after
  * those edits must not silently discard them, so an existing file is reported
  * as skipped and `--overwrite` is the explicit opt-in.
+ *
+ * The version pre-flight runs before the first write for the same reason: a
+ * skin built against a newer `@llui/components` copies cleanly and then fails
+ * at runtime, and a half-installed set of files is worse than none. `--force`
+ * is its opt-in, mirroring `--overwrite`.
  */
 export async function add(options: AddOptions): Promise<AddResult> {
-  const { cwd, config, names, overwrite = false, dryRun = false } = options
+  const { cwd, config, names, overwrite = false, force = false, dryRun = false } = options
   const registry = await loadRegistry(config.registry)
   const items = resolveItems(registry, names)
+  const { dependencies, devDependencies } = collectDependencies(items)
+
+  const versions = await checkVersions(cwd, [...dependencies, ...devDependencies])
+  const mismatches = mismatchesOf(versions)
+  const upgradeCommand =
+    mismatches.length === 0 ? null : upgradeCommandFor(await installCommand(cwd), mismatches)
+  if (upgradeCommand !== null && !force) throw new VersionMismatchError(mismatches, upgradeCommand)
 
   const written: string[] = []
   const skipped: string[] = []
@@ -88,7 +128,26 @@ export async function add(options: AddOptions): Promise<AddResult> {
     }
   }
 
-  return { written, skipped, items, ...collectDependencies(items) }
+  const satisfied = new Set(versions.filter((v) => v.status === 'ok').map((v) => v.name))
+  const installArgs = (reqs: readonly DependencyRequirement[]): string[] =>
+    // A satisfied `@llui/*` stays bare: `^<min>` would steer a newer 0.x
+    // install back DOWN inside the caret. Third-party specs are relayed as-is.
+    reqs.map((r) => (r.minimum !== null && satisfied.has(r.name) ? r.name : r.spec))
+
+  return {
+    written,
+    skipped,
+    items,
+    dependencies,
+    devDependencies,
+    versions,
+    mismatches,
+    install: {
+      dependencies: installArgs(dependencies),
+      devDependencies: installArgs(devDependencies),
+    },
+    upgradeCommand,
+  }
 }
 
 /**

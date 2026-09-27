@@ -37,9 +37,24 @@ describe('add', () => {
 
   it('reports the npm dependencies the items need', async () => {
     const result = await add({ cwd, config: config(), names: ['button'] })
-    expect(result.dependencies).toContain('@llui/dom')
-    expect(result.dependencies).toContain('clsx')
-    expect(result.dependencies).toContain('tailwind-merge')
+    const names = result.dependencies.map((d) => d.name)
+    expect(names).toContain('@llui/dom')
+    expect(names).toContain('clsx')
+    expect(names).toContain('tailwind-merge')
+  })
+
+  it('resolves a workspace:^ source spec to the workspace version, as the build does', async () => {
+    const dom = JSON.parse(
+      await readFile(path.resolve(__dirname, '../../dom/package.json'), 'utf8'),
+    ) as { version: string }
+    const result = await add({ cwd, config: config(), names: ['button'], dryRun: true })
+    expect(result.dependencies.find((d) => d.name === '@llui/dom')).toEqual({
+      name: '@llui/dom',
+      spec: `@llui/dom@^${dom.version}`,
+      minimum: dom.version,
+      // `utils` is button's registryDependency and resolves first.
+      requiredBy: ['utils', 'button'],
+    })
   })
 
   it('does NOT overwrite an edited file by default', async () => {

@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Date Picker",
   "description": "Button + Popover + Calendar, the composition shadcn documents.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["button", "calendar", "icons", "popover", "utils"],
   "files": [
     {
