@@ -221,6 +221,10 @@ describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', 
       viewTrigger.click()
       await new Promise((r) => setTimeout(r, 0))
       const viewContent = document.getElementById('menubar-demo:view:content')!
+      // `subtrigger` is still rendered INLINE inside `viewContent` (a real
+      // subTrigger + `menubar.subOverlay`'s wrapper divs, #265 A4); the
+      // engine-owned overlay itself portals its `subcontent` to `body`
+      // exactly like the root content does, so it is looked up globally.
       const subTrigger = viewContent.querySelector('[data-part="subtrigger"]') as HTMLElement
       subTrigger.focus()
       subTrigger.dispatchEvent(
@@ -229,7 +233,7 @@ describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', 
       await new Promise((r) => setTimeout(r, 0))
       const subOpen = {
         subExpanded: subTrigger.getAttribute('aria-expanded'),
-        subContentPresent: viewContent.querySelector('[data-part="subcontent"]') !== null,
+        subContentPresent: document.querySelector('[data-part="subcontent"]') !== null,
       }
       // Escape #1: unwinds the submenu ONLY — the View menu stays open.
       document.activeElement!.dispatchEvent(
@@ -238,7 +242,7 @@ describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', 
       await new Promise((r) => setTimeout(r, 0))
       const afterFirstEscape = {
         viewExpanded: viewTrigger.getAttribute('aria-expanded'),
-        subContentPresent: viewContent.querySelector('[data-part="subcontent"]') !== null,
+        subContentPresent: document.querySelector('[data-part="subcontent"]') !== null,
         focusOnSubTrigger: document.activeElement === subTrigger,
       }
       // Escape #2: closes the View menu itself and returns REAL DOM focus to
@@ -285,7 +289,7 @@ describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', 
         new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
       )
       await new Promise((r) => setTimeout(r, 80))
-      const subContent = viewContent.querySelector('[data-part="subcontent"]') as HTMLElement
+      const subContent = document.querySelector('[data-part="subcontent"]') as HTMLElement
       const rect = subContent.getBoundingClientRect()
       return {
         side: subContent.getAttribute('data-side'),

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { button, component, div, mountApp, text } from '@llui/dom'
+import { isInNestedLayer } from '@llui/interactions'
 import { init, update, connect, overlay, subOverlay } from '../../src/components/menu'
 import type { MenuState, MenuMsg } from '../../src/components/menu'
 
@@ -68,7 +69,10 @@ afterEach(() => {
 /** Renders a real item tree: a leaf item, and a submenu with two leaf items,
  * gated the way a synchronous boolean submenu should be — mounted only while
  * its level is a member of `openPath`, via `menu.subOverlay`. */
-function makeApp(initDir?: 'ltr' | 'rtl'): { send: (m: MenuMsg) => void } {
+function makeApp(
+  initDir?: 'ltr' | 'rtl',
+  subOverlayOpts: { flip?: boolean; shift?: boolean } = {},
+): { send: (m: MenuMsg) => void } {
   let sendRef!: (m: MenuMsg) => void
   const def = component<Ctx, MenuMsg, never>({
     name: 'SubPositioning',
@@ -115,6 +119,8 @@ function makeApp(initDir?: 'ltr' | 'rtl'): { send: (m: MenuMsg) => void } {
                 value: 'sub',
                 state: m,
                 parts,
+                flip: subOverlayOpts.flip,
+                shift: subOverlayOpts.shift,
                 content: () => [
                   div({ ...parts.subContent('sub') }, [
                     div({ ...parts.item('s1').item }, [text('s1')]),
@@ -171,6 +177,49 @@ describe('menu submenu positioning (engine-owned subOverlay)', () => {
     await flush()
 
     expect(subContent.getAttribute('data-side')).toBe('left')
+  })
+
+  it('keeps a level in view via SHIFT when flip cannot rescue it (flip: false isolates the two)', async () => {
+    // `flip: false` removes flip's OWN cross-axis alignment-switch rescue
+    // (see menu-submenu-edge-flip.browser.test.ts's note on why that alone
+    // already keeps its 5-item fixture in view) — with flip off, the side
+    // AND the 'start' cross-axis alignment are both fixed, so `shift` is the
+    // ONLY mechanism left that can move the submenu back into the viewport.
+    const shiftTranslateY = async (shift: boolean | undefined): Promise<number> => {
+      currentApp?.dispose()
+      document.body.innerHTML = ''
+      const { send } = makeApp(undefined, { flip: false, shift })
+      await flush()
+      const trigger = document.getElementById('mn:sub:sub:trigger') as HTMLElement
+      // Near the BOTTOM of the 300px-tall mocked viewport (see `beforeEach`):
+      // 'start'-aligned at this top would put the submenu's bottom at 250 +
+      // 100 (mocked height below) = 350, forty pixels past the 300px bound.
+      trigger.getBoundingClientRect = () => rect(100, 250, 60, 20)
+
+      send({ type: 'openSub', value: 'sub' })
+      await flush()
+      const subContent = document.getElementById('mn:sub:sub:content') as HTMLElement
+      Object.defineProperty(subContent, 'offsetWidth', { configurable: true, value: 120 })
+      Object.defineProperty(subContent, 'offsetHeight', { configurable: true, value: 100 })
+      window.dispatchEvent(new Event('resize'))
+      await flush()
+
+      const match = /translate\(-?[\d.]+px, (-?[\d.]+)px\)/.exec(subContent.style.transform)
+      if (!match) throw new Error(`no transform on ${subContent.outerHTML}`)
+      return Number(match[1])
+    }
+
+    // Default (shift: true): clamped so the submenu's bottom stays within
+    // the 300px viewport height (translateY + 100px content height <= 300
+    // minus the shift middleware's own padding, i.e. translateY well below
+    // the anchor's unclamped top of 250).
+    const shifted = await shiftTranslateY(undefined)
+    expect(shifted).toBeLessThanOrEqual(200)
+
+    // shift: false: unclamped — the 'start'-aligned y stays at the anchor's
+    // own top (250, matching the mocked rect), overflowing the viewport.
+    const unshifted = await shiftTranslateY(false)
+    expect(unshifted).toBeGreaterThan(200)
   })
 
   it('opens to the left under rtl (resolved from the subTrigger, via the shared resolveDir)', async () => {
@@ -279,5 +328,29 @@ describe('menu submenu positioning (engine-owned subOverlay)', () => {
     await flush()
 
     expect(subContent.getAttribute('data-side')).toBe('left')
+  })
+
+  it('registers the open level as a nested layer owned by its OWN subTrigger (#171, per level)', async () => {
+    const { send } = makeApp()
+    await flush()
+    const trigger = document.getElementById('mn:sub:sub:trigger') as HTMLElement
+    trigger.getBoundingClientRect = () => rect(100, 40, 60, 20)
+
+    send({ type: 'openSub', value: 'sub' })
+    await flush()
+
+    const subContent = document.getElementById('mn:sub:sub:content') as HTMLElement
+    const rootContent = document.getElementById('mn:content') as HTMLElement
+    // Nested INSIDE the root menu's own content boundary (its owner, the
+    // subTrigger, is rendered inside the root content) — this is what keeps
+    // a modal opened over the menu from leaving the submenu un-inert (#171):
+    // `setAriaHiddenOutside`'s sweep and `pushFocusTrap`'s extra-container
+    // list both consult this same registry via the 'hide'/'focus' aspects.
+    expect(isInNestedLayer(subContent, 'hide', rootContent)).toBe(true)
+    expect(isInNestedLayer(subContent, 'focus', rootContent)).toBe(true)
+    // And 'outside': a click inside the submenu must not read as "outside"
+    // the root content (subOverlay declares no `dismiss` of its own, so it
+    // registers for 'outside' too — see subOverlay's doc comment).
+    expect(isInNestedLayer(subContent, 'outside', rootContent)).toBe(true)
   })
 })

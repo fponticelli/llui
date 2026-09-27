@@ -8,9 +8,14 @@
 // actually holds once a real browser lays the page out — `attachFloating`'s
 // flip/shift math consumes real viewport and element metrics, and a mocked
 // rect cannot by itself prove those wire up to a genuine layout. Covers the
-// four #265 A4 real-Chromium proofs for submenu geometry: LTR flip at the
-// right edge, the RTL mirror at the left edge, alignment to the subTrigger's
-// own top, and SHIFT alone keeping a level in view at the bottom edge.
+// real-Chromium proofs for submenu geometry: LTR flip at the right edge, the
+// RTL mirror at the left edge, alignment to the subTrigger's own top, and
+// cross-axis correction keeping a level in view at the bottom edge (`shift`'s
+// OWN isolated contribution — as opposed to `flip`'s cross-axis alignment
+// switch, which alone already rescues this fixture's geometry, measured — is
+// pinned deterministically in the jsdom integration test instead, with
+// `flip: false` forcing shift to be the only possible corrector; see that
+// test for why).
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
@@ -128,7 +133,7 @@ describe('#265 finding 7 — submenu edge-flip in real Chromium layout', () => {
     expect(geometry.subWithinViewport).toBe(true)
   })
 
-  it('keeps a bottom-edge submenu in view by SHIFT alone (no room to flip vertically)', async () => {
+  it('keeps a bottom-edge submenu within the viewport (cross-axis correction)', async () => {
     await page.locator('[id="bottom:sub:sub:trigger"]').click()
     const geometry = await page.evaluate(() => {
       const sub = document.querySelector('[id="bottom:sub:sub:content"]')!.getBoundingClientRect()
@@ -138,7 +143,13 @@ describe('#265 finding 7 — submenu edge-flip in real Chromium layout', () => {
       }
     })
     // The preferred side is still 'right' (plenty of horizontal room) — only
-    // the CROSS axis (vertical) needed a shift to stay on screen.
+    // the CROSS axis (vertical) needed correcting. `shift`'s own isolated
+    // effect (as opposed to `flip`'s cross-axis alignment-switch, which alone
+    // can already rescue a 5-item submenu here — measured) is pinned
+    // separately and deterministically in
+    // `menu-submenu-positioning.integration.test.ts`'s
+    // "keeps a level in view via SHIFT when flip's cross-axis rescue cannot"
+    // (jsdom, `flip: false` forces shift to be the only possible corrector).
     expect(geometry.side).toBe('right')
     expect(geometry.subWithinViewport).toBe(true)
   })
