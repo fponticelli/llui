@@ -97,17 +97,6 @@ const ALLOWED: Record<string, Allowance> = {
   '*: aria-hidden': { reason: 'set by the consumer on decorative content' },
   '*: aria-busy': { reason: 'set by the consumer during a load' },
   '*: aria-readonly': { reason: 'set by the consumer on any control' },
-  '*: data-icon': {
-    reason:
-      "the consumer's own always-mounted per-ToastType glyph marker (#265 task item 2) — never published by toast.ts's part bag; visibility is CSS-gated on the machine's real data-type via a descendant selector",
-  },
-  '*: data-variant': {
-    reason:
-      'MenuNode intentionally has no visual variant state (menus-overlays.css) — the consumer ' +
-      'opts an applicable item into the destructive hierarchy with this attribute, the same ' +
-      'idiom dropdown-menu.ts already uses for the identical concept (#265 LOW: this used to ' +
-      'be a `.menu-item-destructive` class, which this convention rejects)',
-  },
 
   'navigation-menu.ts: data-viewport': {
     reason: 'the consumer sets it to pick inline vs shared-viewport presentation',
@@ -679,6 +668,36 @@ const THEME_MACHINE_OF: Record<string, readonly string[]> = {
  */
 const THEME_VALUE_ALLOWED: Record<string, Allowance> = {}
 
+/**
+ * Baseline `scope: data-attr` NAMES the scope's machine never publishes, with the
+ * reason — the theme sheet's analogue of the per-file `ALLOWED` entries.
+ *
+ * Keyed by SCOPE for the same reason `THEME_VALUE_ALLOWED` is (#265 G5): these
+ * used to be bare `*: data-variant` / `*: data-icon` keys in `ALLOWED`, which
+ * also switched the check off for every REGISTRY skin, where no file sets
+ * either attribute. Every entry must be used (asserted below), so a stale one
+ * cannot quietly outlive the rule that earned it.
+ */
+const MENU_VARIANT: Allowance = {
+  reason:
+    'MenuNode / option items intentionally have no visual variant state — the consumer opts ' +
+    'an applicable item into the destructive hierarchy with `data-variant="destructive"`, the ' +
+    'idiom the registry `dropdown-menu` skin uses for the same concept',
+}
+const THEME_ALLOWED: Record<string, Allowance> = {
+  'menu: data-variant': MENU_VARIANT,
+  'context-menu: data-variant': MENU_VARIANT,
+  'select: data-variant': MENU_VARIANT,
+  'combobox: data-variant': MENU_VARIANT,
+  'searchable-select: data-variant': MENU_VARIANT,
+  'toast: data-icon': {
+    reason:
+      "the consumer's own always-mounted per-ToastType glyph marker — never published by " +
+      "toast.ts's part bag; visibility is CSS-gated on the machine's real data-type via a " +
+      'descendant selector',
+  },
+}
+
 describe('the baseline stylesheet only styles attributes its machine publishes', () => {
   it('maps every styled scope to a machine', async () => {
     const byScope = themeAttrsByScope(await baselineCss())
@@ -698,15 +717,24 @@ describe('the baseline stylesheet only styles attributes its machine publishes',
   it('reports no dead rule', async () => {
     const byScope = themeAttrsByScope(await baselineCss())
     const problems: string[] = []
+    const used = new Set<string>()
     for (const [scope, attrs] of byScope) {
       const published = await machineAttrs(THEME_MACHINE_OF[scope] ?? [scope])
       if (published.size === 0) continue
       for (const attr of [...attrs].sort()) {
         if (published.has(attr) || ALLOWED[`*: ${attr}`] !== undefined) continue
+        const key = `${scope}: ${attr}`
+        if (THEME_ALLOWED[key] !== undefined) {
+          used.add(key)
+          continue
+        }
         problems.push(`  [data-scope='${scope}'] … [${attr}] — the machine never publishes it`)
       }
     }
     expect(problems, 'These baseline rules can never match:\n' + problems.join('\n')).toEqual([])
+    // Every scoped exemption must still be earned — the same exact-set
+    // assertion `VALUE_ALLOWED` and `UNRESOLVED_ALLOWED` carry.
+    expect([...used].sort()).toEqual(Object.keys(THEME_ALLOWED).sort())
   })
 
   it('reports no dead rule VALUE', async () => {
