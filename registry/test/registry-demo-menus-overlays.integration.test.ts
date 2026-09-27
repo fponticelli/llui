@@ -238,6 +238,45 @@ describe('registry demo menus/overlays contracts', () => {
     }
   })
 
+  // #265 finding 6: NavigationMenu is migrated onto the shared
+  // `@llui/interactions` direction-sync seam, and the registry demo places
+  // `navm.directionSync` (a discarded Mountable is inert, so this test also
+  // guards against that placement quietly regressing). jsdom's
+  // `MutationObserver` fires for `dir` attribute mutations the same as a
+  // real browser, so this proves the REGISTRY demo composition — not just
+  // the reducer — reacts to a runtime `<html dir>` flip with no reload.
+  it('NavigationMenu: a runtime `<html dir>` flip (no reload) swaps which arrow key opens a branch', async () => {
+    mountMenusDemo()
+    const trigger = document.getElementById('demo-nav:trigger:docs')!
+    const content = document.getElementById('demo-nav:content:docs')! as HTMLElement
+
+    trigger.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    )
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(content.hidden).toBe(false)
+    trigger.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
+    )
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+    document.documentElement.dir = 'rtl'
+    await tick()
+    // Under rtl, logical "open" is physical ArrowLeft.
+    trigger.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
+    )
+    expect(trigger.getAttribute('aria-expanded')).toBe('true')
+    expect(content.hidden).toBe(false)
+    // The old (ltr) opening key is now the CLOSE direction.
+    trigger.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    )
+    expect(trigger.getAttribute('aria-expanded')).toBe('false')
+
+    document.documentElement.removeAttribute('dir')
+  })
+
   it('documents context-menu ownership as event-scoped rather than unowned', () => {
     for (const file of [
       resolve(import.meta.dirname, '../llui/ui/context-menu.ts'),

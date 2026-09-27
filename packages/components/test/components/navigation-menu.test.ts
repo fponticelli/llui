@@ -241,14 +241,38 @@ describe('navigation-menu close timer resolves its OWN instance (#123)', () => {
 })
 
 describe('navigation-menu RTL', () => {
-  it('init defaults dir to ltr; respects opts.dir', () => {
-    expect(init().dir).toBe('ltr')
-    expect(init({ dir: 'rtl' }).dir).toBe('rtl')
+  it('init defaults dir to ltr, sourced from the DOM; explicit opts.dir is authoritative', () => {
+    expect(init()).toMatchObject({ dir: 'ltr', dirSource: 'dom' })
+    expect(init({ dir: 'rtl' })).toMatchObject({ dir: 'rtl', dirSource: 'explicit' })
   })
 
-  it('setDir updates the reading direction (even when disabled)', () => {
+  it('setDir updates the reading direction (even when disabled) and marks it explicit', () => {
     const [s] = update(init({ disabled: true }), { type: 'setDir', dir: 'rtl' })
-    expect(s.dir).toBe('rtl')
+    expect(s).toMatchObject({ dir: 'rtl', dirSource: 'explicit' })
+  })
+
+  // #265 finding 6: navigation-menu now routes direction through the shared
+  // `@llui/interactions` seam (`../utils/direction.js`) instead of a bare
+  // `dir` field — `syncDomDir` is the humanOnly message `directionSyncMount`
+  // dispatches when it observes the mounted root's live ancestor `dir`
+  // attribute change. It must never override an EXPLICIT source (public
+  // config or a `setDir` call), the same contract `tabs`/`carousel`/
+  // `pagination` already pin for their own `dirSource`.
+  it('syncDomDir applies only while direction is still DOM-sourced', () => {
+    const explicit = init({ dir: 'ltr' })
+    expect(update(explicit, { type: 'syncDomDir', dir: 'rtl' })[0]).toBe(explicit)
+
+    const [observed] = update(init(), { type: 'syncDomDir', dir: 'rtl' })
+    expect(observed).toMatchObject({ dir: 'rtl', dirSource: 'dom' })
+
+    const [configured] = update(observed, { type: 'setDir', dir: 'ltr' })
+    expect(update(configured, { type: 'syncDomDir', dir: 'rtl' })[0]).toBe(configured)
+  })
+
+  it('connect() publishes root.id (directionSyncMount looks the live root up by it) and a directionSync Mountable', () => {
+    const p = connect(signalOf(init()), vi.fn(), { id: 'nav-under-test' })
+    expect(p.root.id).toBe('nav-under-test')
+    expect(p.directionSync).toBeDefined()
   })
 
   it('ltr: ArrowRight opens a branch, ArrowLeft closes it', () => {

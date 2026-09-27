@@ -498,6 +498,11 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
               const el = root.querySelector('#demo-nav')
               return el instanceof HTMLElement ? navMenuC.watchNavMenuIndicator(el) : undefined
             }),
+            // Keeps `dir` synchronized with the mounted root's live ancestor
+            // `dir` attribute through the shared `@llui/interactions`
+            // direction-sync seam (#265 finding 6) — a discarded Mountable is
+            // inert, so this must be placed too, not just called for effect.
+            navm.directionSync,
             NavigationMenuList({ class: 'justify-start' }, [
               ...NAV_ITEMS.map((n) => {
                 const item = navm.item(n.id, { isBranch: true })

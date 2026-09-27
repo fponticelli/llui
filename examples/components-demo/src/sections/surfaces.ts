@@ -500,6 +500,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
                 ? navigationMenu.watchNavMenuIndicator(el)
                 : undefined
             }),
+            // Keeps `dir` synchronized with the mounted root's live ancestor
+            // `dir` attribute through the shared `@llui/interactions`
+            // direction-sync seam (#265 finding 6) — a discarded Mountable is
+            // inert, so this must be placed too, not just called for effect.
+            nv.directionSync,
             ul({ class: 'flex list-none gap-1' }, [
               li({ class: 'relative' }, [
                 button(

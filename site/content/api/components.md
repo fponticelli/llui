@@ -1094,21 +1094,22 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **State** (`NavMenuState`):
 
-| Field      | Type             |
-| ---------- | ---------------- |
-| `open`     | `string[]`       |
-| `focused`  | `string \| null` |
-| `items`    | `string[]`       |
-| `disabled` | `boolean`        |
-| `dir`      | `'ltr' \| 'rtl'` |
+| Field       | Type              |
+| ----------- | ----------------- |
+| `open`      | `string[]`        |
+| `focused`   | `string \| null`  |
+| `items`     | `string[]`        |
+| `disabled`  | `boolean`         |
+| `dir`       | `'ltr' \| 'rtl'`  |
+| `dirSource` | `DirectionSource` |
 
-**Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`, `setDir`, `setItems`
+**Messages:** `openBranch`, `closeBranch`, `toggleBranch`, `closeAll`, `focus`, `setDir`, `syncDomDir`, `setItems`
 
 **Init options:** `open?: string[], focused?: string | null, items?: string[], disabled?: boolean, dir?: 'ltr' | 'rtl'`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `indicator`, `item`
+**Parts:** `root`, `indicator`, `directionSync`, `item`
 
 **Utilities:** `isOpen()`, `watchNavMenuIndicator()`
 
@@ -5076,6 +5077,8 @@ export type NavMenuMsg =
   | { type: 'focus'; id: string | null }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: 'ltr' | 'rtl' }
   /** @intent("Replace the list of ids eligible for the roving tab stop, in document order") */
   | { type: 'setItems'; items: string[] }
 ```
@@ -11060,6 +11063,13 @@ export interface NavMenuInit {
 ```typescript
 export interface NavMenuParts {
   root: {
+    // `id` is REQUIRED — it is the scope `directionSyncMount` (below) looks
+    // the live root up by, the same contract `tabs`/`carousel`/`pagination`'s
+    // own `root.id` already honours. A consumer that overrides it with a
+    // DIFFERENT id breaks the direction sync silently (#265 finding 6): the
+    // watcher would observe nothing, since `getElementByIdInScope` would
+    // never find this element under the id it was given.
+    id: string
     // Site navigation is NOT an application menu: it uses a `nav` landmark with
     // disclosure buttons, not menubar/menu/menuitem roles. Render the root as a
     // `<nav>` element; `aria-label` names the landmark.
@@ -11095,6 +11105,11 @@ export interface NavMenuParts {
     'data-part': 'indicator'
     'data-state': Signal<'visible' | 'hidden'>
   }
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * same as `tabs`/`carousel`/`pagination`'s own `directionSync` part. A
+   * discarded `Mountable` is inert, so this must be placed in the view. */
+  directionSync: Mountable
   /**
    * Parts for one trigger (+ its panel when it is a branch).
    *
@@ -11162,8 +11177,13 @@ export interface NavMenuState {
    */
   items: string[]
   disabled: boolean
-  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning.
+   * Routed through the shared `@llui/interactions` direction-sync seam
+   * (`../utils/direction.js`) rather than a second resolver — `dirSource`
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). */
   dir: 'ltr' | 'rtl'
+  dirSource: DirectionSource
 }
 ```
 
@@ -35754,6 +35774,8 @@ export type NavMenuMsg =
   | { type: 'focus'; id: string | null }
   /** @intent("Set the reading direction (ltr/rtl)") */
   | { type: 'setDir'; dir: 'ltr' | 'rtl' }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: 'ltr' | 'rtl' }
   /** @intent("Replace the list of ids eligible for the roving tab stop, in document order") */
   | { type: 'setItems'; items: string[] }
 ```
@@ -35827,6 +35849,13 @@ export interface NavMenuInit {
 ```typescript
 export interface NavMenuParts {
   root: {
+    // `id` is REQUIRED — it is the scope `directionSyncMount` (below) looks
+    // the live root up by, the same contract `tabs`/`carousel`/`pagination`'s
+    // own `root.id` already honours. A consumer that overrides it with a
+    // DIFFERENT id breaks the direction sync silently (#265 finding 6): the
+    // watcher would observe nothing, since `getElementByIdInScope` would
+    // never find this element under the id it was given.
+    id: string
     // Site navigation is NOT an application menu: it uses a `nav` landmark with
     // disclosure buttons, not menubar/menu/menuitem roles. Render the root as a
     // `<nav>` element; `aria-label` names the landmark.
@@ -35862,6 +35891,11 @@ export interface NavMenuParts {
     'data-part': 'indicator'
     'data-state': Signal<'visible' | 'hidden'>
   }
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * same as `tabs`/`carousel`/`pagination`'s own `directionSync` part. A
+   * discarded `Mountable` is inert, so this must be placed in the view. */
+  directionSync: Mountable
   /**
    * Parts for one trigger (+ its panel when it is a branch).
    *
@@ -35929,8 +35963,13 @@ export interface NavMenuState {
    */
   items: string[]
   disabled: boolean
-  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning. */
+  /** Reading direction. Under 'rtl', ArrowLeft/ArrowRight swap meaning.
+   * Routed through the shared `@llui/interactions` direction-sync seam
+   * (`../utils/direction.js`) rather than a second resolver — `dirSource`
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). */
   dir: 'ltr' | 'rtl'
+  dirSource: DirectionSource
 }
 ```
 
