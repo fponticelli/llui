@@ -181,9 +181,18 @@ async-list, avatar, breadcrumbs, carousel, cascade-select, listbox, meter, pagin
 
 color-picker, gradient-picker, date-input, date-picker, time-picker, angle-slider
 
+- **date-picker — deterministic "today", time zones and unavailable dates (#266).** `init({ today })` pins the reference date (a scenario, a test, a server render); without it the machine reads the clock once. `todayInTimeZone(timeZone, now?)` computes the ISO date in an IANA zone, so a calendar for Tokyo says "today" on the right day: dispatch `setToday` with it. `unavailable: string[]` (init or `setUnavailable`) marks individual ISO dates un-selectable — they publish `data-unavailable` and `aria-disabled`, and a RANGE that would cross one is refused. `PageUp`/`PageDown` (`moveFocusMonths`) move the FOCUSED date by a month, so the new grid always keeps its roving tab stop. `dayCell(cell)` re-derives every flag from live state; the cell you pass supplies identity only.
+
 ### Media / canvas
 
 file-upload, floating-panel, image-cropper, marquee, presence, signature-pad, timer
+
+- **file-upload — the upload lifecycle.** `uploads` is keyed by file id: `uploadProgress { id, progress }` (0..1), `uploadSucceeded { id }`, `uploadFailed { id, error }`, and `retryUpload { id }` (only from `error`; your effect re-issues it). Per item: `itemProgress` (a `progressbar`, hidden unless uploading), `itemProgressRange` (its width is written inline), `itemErrorText` (`role="alert"`) and `itemRetryTrigger`; items publish `data-upload-status` and the root `data-uploading`. Removing or replacing a file prunes its entry.
+- **image-cropper and floating-panel — keyboard parity.** The crop box is a focus stop: arrows nudge 1% (Shift: 10%), `+`/`-` zoom about the centre (`nudge` / `zoom` messages); the geometry stays physical under RTL. A floating panel's drag handle and resize handles move/resize by 10px (Shift: 50px) with the arrows (`moveBy` / `resizeBy`; a resize is clamped to the size limits like a drag, and both are refused while maximized).
+- **signature-pad — clear is undoable.** `clear` keeps the strokes it removed; `undo` on an empty pad restores them (`canUndo(state)` drives the button), and a new stroke forgets them.
+- **clipboard — a refused write is a state.** Dispatch `copyFailed` from the rejected branch of `copyToClipboard`; `data-failed` lands on the root, trigger and the polite `indicator`, and `copy`/`reset` clear it. Never claim a copy that did not happen.
+- **qr-code, timer, async-list** publish their empty/complete/exhausted states (`data-empty`, `data-complete`, `data-exhausted`, `aria-busy`), and qr-code's download trigger serializes ITS OWN code (it used to take the page's first).
+- **in-view and presence are deliberately styleless** — behaviour-only primitives with no parts to paint. Compose them: gate a heavy child on `inView` (e.g. build a QR code only once scrolled into view), or keep a "Copied" confirmation mounted through its exit with `presence`.
 
 ### Patterns
 

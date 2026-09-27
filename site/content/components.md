@@ -871,6 +871,101 @@ const { visible, message, ...errorAttrs } = gp.cssError
 show(visible, () => [div({ ...errorAttrs }, [text(message)])])
 ```
 
+## 10. Pickers, editing and tools
+
+The specialized-tools family (date and time pickers, file upload, image cropper, signature
+pad, QR code, scroll area, splitter, sortable, floating panel, tour, timer, clipboard,
+async list and the rest) is styled on both paths, with three honest exceptions the product
+contract states and a test holds to:
+
+- **Partial:** `signature-pad` styles the pad frame, guide, placeholder, states and
+  triggers, but you draw the ink (canvas or SVG) from the stroke points the machine records.
+  `tour` styles the card, backdrop, spotlight and navigation, but you position the card and
+  spotlight against each step's target (typically with `attachFloating`), because the
+  machine only knows a selector. The baseline `wizard` styles its steps indicator and its
+  triggers take the foundation `.btn` classes; step content and layout are yours. The
+  registry icon helper owns the glyph and its loading; the caller owns size and colour.
+- **Styleless:** `in-view` and `presence` are behaviour-only. They publish state for another
+  component to act on and have no surface of their own, so there is nothing to paint. Use
+  them by composition (see below).
+
+Every state the family can be in is drawn on both paths, including the ones that are easy to
+forget: a date that is unavailable, a range, an upload in progress or failed with a retry, a
+refused clipboard write, a timer that has finished, an exhausted or empty async list, an
+empty QR code. Those states are also reachable from the keyboard, not only the pointer.
+
+### Deterministic dates
+
+A date picker reads the clock once in `init()` to find "today". Pin it wherever
+determinism matters (a test, a server render, a screenshot), and compute it in the user's
+zone when that is not the browser's:
+
+```ts
+import { datePicker, todayInTimeZone } from '@llui/components/date-picker'
+
+const state = datePicker.init({
+  today: '2026-03-14', // or omit, and dispatch setToday below
+  unavailable: ['2026-03-17', '2026-03-18'],
+})
+send({ type: 'setToday', today: todayInTimeZone('Asia/Tokyo') })
+```
+
+An unavailable date publishes `data-unavailable` and cannot be selected, and a range that
+would cross one is refused. `PageUp`/`PageDown` move the focused date by a month, so the new
+month always has a keyboard stop.
+
+### Uploads, crops and panels
+
+`file-upload` tracks each file's upload by id: dispatch `uploadProgress` (0 to 1),
+`uploadSucceeded` and `uploadFailed` from your upload effect, and `retryUpload` comes back
+from the item's retry trigger for you to re-issue. Place `itemProgress` (with
+`itemProgressRange` inside it), `itemErrorText` and `itemRetryTrigger` in each item; each
+hides itself when it does not apply.
+
+The image cropper's crop box and a floating panel's handles are focus stops. Arrows move them
+(Shift for bigger steps), `+`/`-` zoom a crop, and the same messages (`nudge`, `zoom`,
+`moveBy`, `resizeBy`) are available to your own code. Canvas geometry stays physical under
+RTL: right means right.
+
+### Clipboard failure is a state
+
+The write can be refused (no permission, an insecure context). Report it:
+
+```ts
+copyToClipboard(value).then(
+  () => send({ type: 'copied' }),
+  () => send({ type: 'copyFailed' }),
+)
+```
+
+`copyFailed` puts `data-failed` on the root, the trigger and the polite `indicator`, whose
+text you set, for example "Copy blocked: select the text and copy it". Never claim a copy
+that did not happen.
+
+### Composing the styleless two
+
+`in-view` gates a heavy child until it scrolls in. Here a QR code is built only when it
+becomes visible:
+
+```ts
+const watch = inView.connect(state.at('inView'), toInView, { id: 'share-qr' })
+div({ ...watch.root, style: 'min-height: 9rem' }, [
+  onMount((root) => {
+    const el = root.querySelector('[data-scope="in-view"][data-part="root"]')
+    return el === null ? undefined : inView.createObserver(el, toInView, { once: true })
+  }),
+  show(state.at('inView.visible'), () => [
+    div({ ...code.root }, [
+      svg({ ...code.svg }, [rect({ ...code.background }), path({ ...code.foreground })]),
+    ]),
+  ]),
+])
+```
+
+`presence` keeps an element mounted through its exit animation. Drive it from the clipboard's
+result so a "Copied" confirmation fades out instead of vanishing: open it on `copied`, close
+it on `reset`, and render it while `presence.isMounted(state)`.
+
 ## Gotchas
 
 These are the ones that have actually cost people time. Each is silent: the component works,

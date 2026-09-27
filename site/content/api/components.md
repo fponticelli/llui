@@ -494,8 +494,9 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | -------- | --------- |
 | `value`  | `string`  |
 | `copied` | `boolean` |
+| `failed` | `boolean` |
 
-**Messages:** `setValue`, `copy`, `copied`, `reset`
+**Messages:** `setValue`, `copy`, `copied`, `copyFailed`, `reset`
 
 **Init options:** `value?: string`
 
@@ -658,16 +659,18 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `max`          | `string \| null` |
 | `weekStartsOn` | `0 \| 1`         |
 | `disabled`     | `boolean`        |
+| `today`        | `string \| null` |
+| `unavailable`  | `string[]`       |
 
-**Messages:** `setValue`, `setRange`, `setFocused`, `setHover`, `clearHover`, `prevMonth`, `nextMonth`, `prevYear`, `nextYear`, `selectFocused`, `moveFocus`, `focusStartOfWeek`, `focusEndOfWeek`, `focusToday`, `clear`
+**Messages:** `setValue`, `setRange`, `setFocused`, `setHover`, `clearHover`, `prevMonth`, `nextMonth`, `prevYear`, `nextYear`, `selectFocused`, `moveFocus`, `focusStartOfWeek`, `focusEndOfWeek`, `focusToday`, `moveFocusMonths`, `clear`, `setToday`, `setUnavailable`
 
-**Init options:** `mode?: DatePickerMode, value?: string | null, start?: string | null, end?: string | null, visibleMonth?: number, visibleYear?: number, months?: number, min?: string | null, max?: string | null, weekStartsOn?: 0 | 1, disabled?: boolean`
+**Init options:** `mode?: DatePickerMode, value?: string | null, start?: string | null, end?: string | null, visibleMonth?: number, visibleYear?: number, months?: number, min?: string | null, max?: string | null, weekStartsOn?: 0 | 1, disabled?: boolean, today?: string | null, unavailable?: string[]`
 
 **Connect options:** `ConnectOptions`
 
 **Parts:** `root`, `grid`, `row`, `prevMonthTrigger`, `nextMonthTrigger`, `dayCell`, `preset`
 
-**Utilities:** `monthGrid()`, `weekRows()`, `monthLabel()`, `weekdayLabels()`
+**Utilities:** `monthGrid()`, `weekRows()`, `monthLabel()`, `weekdayLabels()`, `todayInTimeZone()`
 
 ---
 
@@ -783,23 +786,24 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **State** (`FileUploadState`):
 
-| Field           | Type             |
-| --------------- | ---------------- |
-| `files`         | `FileMeta[]`     |
-| `rejectedFiles` | `RejectedFile[]` |
-| `disabled`      | `boolean`        |
-| `multiple`      | `boolean`        |
-| `accept`        | `AcceptValue`    |
-| `maxFiles`      | `number`         |
-| `maxSize`       | `number`         |
-| `minFileSize`   | `number`         |
-| `required`      | `boolean`        |
-| `readonly`      | `boolean`        |
-| `invalid`       | `boolean`        |
-| `dragging`      | `boolean`        |
-| `dragDepth`     | `number`         |
+| Field           | Type                                 |
+| --------------- | ------------------------------------ |
+| `files`         | `FileMeta[]`                         |
+| `rejectedFiles` | `RejectedFile[]`                     |
+| `disabled`      | `boolean`                            |
+| `multiple`      | `boolean`                            |
+| `accept`        | `AcceptValue`                        |
+| `maxFiles`      | `number`                             |
+| `maxSize`       | `number`                             |
+| `minFileSize`   | `number`                             |
+| `required`      | `boolean`                            |
+| `readonly`      | `boolean`                            |
+| `invalid`       | `boolean`                            |
+| `dragging`      | `boolean`                            |
+| `dragDepth`     | `number`                             |
+| `uploads`       | `Record<string, FileUploadProgress>` |
 
-**Messages:** `setFiles`, `addFiles`, `removeFile`, `removeRejected`, `clear`, `clearRejected`, `dragEnter`, `dragLeave`, `drop`, `setInvalid`
+**Messages:** `setFiles`, `addFiles`, `removeFile`, `removeRejected`, `clear`, `clearRejected`, `dragEnter`, `dragLeave`, `drop`, `setInvalid`, `uploadProgress`, `uploadSucceeded`, `uploadFailed`, `retryUpload`
 
 **Init options:** `files?: FileMeta[], disabled?: boolean, multiple?: boolean, accept?: AcceptValue, maxFiles?: number, maxSize?: number, minFileSize?: number, required?: boolean, readonly?: boolean, invalid?: boolean`
 
@@ -807,7 +811,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `root`, `dropzone`, `trigger`, `hiddenInput`, `label`, `clearTrigger`, `itemGroup`, `item`
 
-**Utilities:** `totalSize()`, `acceptToString()`, `fileMatchesAccept()`, `validateFiles()`, `preventDocumentDrop()`, `trackFile()`, `trackFiles()`, `getFile()`, `releaseFile()`, `releaseFiles()`, `releaseAllFiles()`, `trackedFileCount()`, `releaseDropped()`, `releaseUnlanded()`, `effectiveMaxFiles()`
+**Utilities:** `totalSize()`, `acceptToString()`, `fileMatchesAccept()`, `validateFiles()`, `preventDocumentDrop()`, `uploadOf()`, `trackFile()`, `trackFiles()`, `getFile()`, `releaseFile()`, `releaseFiles()`, `releaseAllFiles()`, `trackedFileCount()`, `releaseDropped()`, `releaseUnlanded()`, `effectiveMaxFiles()`
 
 ---
 
@@ -829,7 +833,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `restoreBounds` | `{ x: number; y: number; width: number; height: number } \| null` |
 | `disabled`      | `boolean`                                                         |
 
-**Messages:** `open`, `close`, `minimize`, `restoreFromMinimized`, `maximize`, `restoreFromMaximized`, `toggleMinimize`, `toggleMaximize`, `dragStart`, `dragMove`, `dragEnd`, `resizeStart`, `resizeMove`, `resizeEnd`, `setPosition`, `setSize`
+**Messages:** `open`, `close`, `minimize`, `restoreFromMinimized`, `maximize`, `restoreFromMaximized`, `toggleMinimize`, `toggleMaximize`, `dragStart`, `dragMove`, `dragEnd`, `resizeStart`, `resizeMove`, `resizeEnd`, `setPosition`, `setSize`, `moveBy`, `resizeBy`
 
 **Init options:** `position?: { x: number; y: number }, size?: { width: number; height: number }, minSize?: { width?: number; height?: number }, maxSize?: { width?: number; height?: number } | null, open?: boolean, disabled?: boolean`
 
@@ -934,7 +938,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `resizing`    | `ResizeHandle \| null`              |
 | `disabled`    | `boolean`                           |
 
-**Messages:** `setImage`, `setCrop`, `setAspectRatio`, `dragStart`, `dragMove`, `dragEnd`, `resizeStart`, `resizeMove`, `resizeEnd`, `reset`, `centerFill`
+**Messages:** `setImage`, `setCrop`, `setAspectRatio`, `dragStart`, `dragMove`, `dragEnd`, `resizeStart`, `resizeMove`, `resizeEnd`, `reset`, `centerFill`, `nudge`, `zoom`
 
 **Init options:** `image?: { width: number; height: number }, crop?: CropRect, aspectRatio?: number | null, minSize?: number, disabled?: boolean`
 
@@ -1422,13 +1426,14 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **State** (`SignaturePadState`):
 
-| Field      | Type             |
-| ---------- | ---------------- |
-| `strokes`  | `Stroke[]`       |
-| `current`  | `Stroke \| null` |
-| `drawing`  | `boolean`        |
-| `disabled` | `boolean`        |
-| `readonly` | `boolean`        |
+| Field      | Type               |
+| ---------- | ------------------ |
+| `strokes`  | `Stroke[]`         |
+| `current`  | `Stroke \| null`   |
+| `drawing`  | `boolean`          |
+| `disabled` | `boolean`          |
+| `readonly` | `boolean`          |
+| `cleared`  | `Stroke[] \| null` |
 
 **Messages:** `strokeStart`, `strokePoint`, `strokeEnd`, `strokeCancel`, `undo`, `redo`, `clear`, `setStrokes`
 
@@ -1438,7 +1443,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `root`, `control`, `clearTrigger`, `undoTrigger`, `guide`, `hiddenInput`
 
-**Utilities:** `isEmpty()`, `pointCount()`, `getBounds()`
+**Utilities:** `isEmpty()`, `pointCount()`, `getBounds()`, `canUndo()`
 
 ---
 
@@ -4011,7 +4016,9 @@ export type ClipboardMsg =
   | { type: 'copy' }
   /** @humanOnly */
   | { type: 'copied' }
-  /** @intent("Clear the transient \"copied\" feedback state") */
+  /** @humanOnly */
+  | { type: 'copyFailed' }
+  /** @intent("Clear the transient \"copied\" / \"failed\" feedback state") */
   | { type: 'reset' }
 ```
 
@@ -4394,8 +4401,14 @@ export type DatePickerMsg =
   | { type: 'focusEndOfWeek' }
   /** @humanOnly */
   | { type: 'focusToday' }
+  /** @humanOnly */
+  | { type: 'moveFocusMonths'; months: number }
   /** @intent("Clear the current selection") */
   | { type: 'clear' }
+  /** @humanOnly */
+  | { type: 'setToday'; today: string | null }
+  /** @intent("Replace the set of individually unavailable dates (YYYY-MM-DD)") */
+  | { type: 'setUnavailable'; dates: string[] }
 ```
 
 ##### `DateValue` from `@llui/components`
@@ -4600,6 +4613,20 @@ export type FileUploadMsg =
   | { type: 'drop' }
   /** @humanOnly */
   | { type: 'setInvalid'; invalid: boolean }
+  /** @humanOnly */
+  | { type: 'uploadProgress'; id: string; progress: number }
+  /** @humanOnly */
+  | { type: 'uploadSucceeded'; id: string }
+  /** @humanOnly */
+  | { type: 'uploadFailed'; id: string; error: string }
+  /** @intent("Retry the failed upload of the file with the given id") */
+  | { type: 'retryUpload'; id: string }
+```
+
+##### `FileUploadStatus` from `@llui/components`
+
+```typescript
+export type FileUploadStatus = 'uploading' | 'done' | 'error'
 ```
 
 ##### `FloatingPanelHandle` from `@llui/components`
@@ -4653,6 +4680,10 @@ export type FloatingPanelMsg =
   | { type: 'setPosition'; x: number; y: number }
   /** @intent("Set the panel's size in pixels (clamped to min/max)") */
   | { type: 'setSize'; width: number; height: number }
+  /** @intent("Move the panel by a pixel offset (x right, y down)") */
+  | { type: 'moveBy'; dx: number; dy: number }
+  /** @intent("Resize the panel from one edge or corner by a pixel offset (clamped to min/max)") */
+  | { type: 'resizeBy'; handle: ResizeHandle; dx: number; dy: number }
 ```
 
 ##### `FormMsg` from `@llui/components`
@@ -4845,6 +4876,10 @@ export type ImageCropperMsg =
   | { type: 'reset' }
   /** @intent("Set the crop to a maximum-area centered selection") */
   | { type: 'centerFill' }
+  /** @intent("Move the crop area by a percentage of the image size (x right, y down)") */
+  | { type: 'nudge'; x: number; y: number }
+  /** @intent("Zoom the crop area about its centre: factor > 1 zooms in, < 1 zooms out") */
+  | { type: 'zoom'; factor: number }
 ```
 
 ##### `ImageStatus` from `@llui/components`
@@ -6692,6 +6727,12 @@ export interface AsyncListParts {
     'data-scope': 'async-list'
     'data-part': 'root'
     'data-status': Signal<AsyncStatus>
+    /** `'true'` while a page request is in flight — the list's content is changing. */
+    'aria-busy': Signal<'true' | 'false'>
+    /** Present once a load has SETTLED with zero items: the empty-state hook. */
+    'data-empty': Signal<'' | undefined>
+    /** Present when the source reports no further pages. */
+    'data-exhausted': Signal<'' | undefined>
   }
   sentinel: {
     'data-scope': 'async-list'
@@ -7588,6 +7629,7 @@ export interface ClipboardParts {
     'data-scope': 'clipboard'
     'data-part': 'root'
     'data-copied': Signal<'' | undefined>
+    'data-failed': Signal<'' | undefined>
   }
   trigger: {
     type: 'button'
@@ -7595,6 +7637,7 @@ export interface ClipboardParts {
     'data-scope': 'clipboard'
     'data-part': 'trigger'
     'data-copied': Signal<'' | undefined>
+    'data-failed': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
   }
   input: {
@@ -7609,6 +7652,7 @@ export interface ClipboardParts {
     'data-scope': 'clipboard'
     'data-part': 'indicator'
     'data-copied': Signal<'' | undefined>
+    'data-failed': Signal<'' | undefined>
     'aria-live': 'polite'
   }
 }
@@ -7625,21 +7669,34 @@ state flag.
 (permission denied, insecure context, browser policy) and `indicator`
 carries `aria-live="polite"`, so a flag set before the promise resolves
 ANNOUNCES a success that never happened (#232). Dispatch `copied` from
-the resolved write, and `reset` to clear the feedback:
+the resolved write, `copyFailed` from the rejected one, and `reset` to clear
+the feedback:
 
 ```ts
 onEffect(effect, send) {
   copyToClipboard(effect.value).then(
     () => send({ type: 'copied' }),
-    () => {}, // write failed — say nothing
+    () => send({ type: 'copyFailed' }), // refused — say so, never "copied"
   )
 }
 ```
 
+`copyFailed` publishes `data-failed` (root, trigger, indicator); the skin
+tells the user the write was refused and that the value is still selectable
+in the read-only `input` (#266).
+
 ```typescript
 export interface ClipboardState {
   value: string
+  /** The last write RESOLVED. Exclusive with `failed`. */
   copied: boolean
+  /**
+   * The last write was REFUSED (permission denied, insecure context, browser
+   * policy). Exclusive with `copied`. The read-only `input` is the fallback: the
+   * user can still select the value and copy it by hand, which is what a skin
+   * should say when this is set (#266).
+   */
+  failed: boolean
 }
 ```
 
@@ -8456,6 +8513,10 @@ export interface DatePickerInit {
   max?: string | null
   weekStartsOn?: 0 | 1
   disabled?: boolean
+  /** Pin "today" (YYYY-MM-DD); omit or `null` to read the runtime clock. */
+  today?: string | null
+  /** Individually unavailable dates (YYYY-MM-DD). */
+  unavailable?: string[]
 }
 ```
 
@@ -8536,6 +8597,18 @@ export interface DatePickerState {
   /** 0=Sunday, 1=Monday. */
   weekStartsOn: 0 | 1
   disabled: boolean
+  /**
+   * A pinned "today" (YYYY-MM-DD), or `null` to read the runtime clock. Pin it
+   * for deterministic rendering (SSR + hydration, galleries, tests) or to show
+   * today in a specific time zone — see `todayInTimeZone` (#266).
+   */
+  today: string | null
+  /**
+   * Individually unavailable dates (YYYY-MM-DD) — bookings, holidays. Disabled
+   * like an out-of-bounds date, published separately as `data-unavailable`, and
+   * a range may not be completed across one (#266).
+   */
+  unavailable: string[]
 }
 ```
 
@@ -8556,6 +8629,8 @@ export interface DayCell {
   isRangeEnd: boolean
   /** True for dates strictly between the range endpoints. */
   isInRange: boolean
+  /** True for a date listed in `unavailable` (also `isDisabled`). */
+  isUnavailable: boolean
 }
 ```
 
@@ -8583,6 +8658,8 @@ export interface DayCellParts {
     'data-range-start': Signal<'' | undefined>
     'data-range-end': Signal<'' | undefined>
     'data-in-range': Signal<'' | undefined>
+    /** An individually unavailable date (also disabled) — distinct from out-of-bounds. */
+    'data-unavailable': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -9339,6 +9416,44 @@ export interface FileUploadItemParts {
     'data-scope': 'file-upload'
     'data-part': 'item'
     'data-index': string
+    /** The file's upload status; absent until an upload is reported (#266). */
+    'data-upload-status': Signal<FileUploadStatus | undefined>
+  }
+  /** A labelled progressbar, shown only while the file is uploading (#266). */
+  itemProgress: {
+    role: 'progressbar'
+    'aria-label': string
+    'aria-valuemin': 0
+    'aria-valuemax': 100
+    'aria-valuenow': Signal<number | undefined>
+    hidden: Signal<boolean>
+    'data-scope': 'file-upload'
+    'data-part': 'item-progress'
+  }
+  /** The progress fill; its width is written inline as a percentage. */
+  itemProgressRange: {
+    'data-scope': 'file-upload'
+    'data-part': 'item-progress-range'
+    style: Signal<string>
+  }
+  /**
+   * Live region for the file's failure message, shown only on error. Its text
+   * is `uploadOf(state, id)?.error` — the view renders it as a child.
+   */
+  itemErrorText: {
+    role: 'alert'
+    hidden: Signal<boolean>
+    'data-scope': 'file-upload'
+    'data-part': 'item-error-text'
+  }
+  /** Shown only for a failed upload; dispatches `retryUpload` for this file. */
+  itemRetryTrigger: {
+    type: 'button'
+    'aria-label': string
+    hidden: Signal<boolean>
+    'data-scope': 'file-upload'
+    'data-part': 'item-retry-trigger'
+    onClick: (e: MouseEvent) => void
   }
   itemName: {
     'data-scope': 'file-upload'
@@ -9381,6 +9496,8 @@ export interface FileUploadParts {
     'data-dragging': Signal<'' | undefined>
     'data-invalid': Signal<'' | undefined>
     'data-readonly': Signal<'' | undefined>
+    /** Present while any accepted file is uploading (#266). */
+    'data-uploading': Signal<'' | undefined>
   }
   dropzone: {
     'data-scope': 'file-upload'
@@ -9436,6 +9553,18 @@ export interface FileUploadParts {
 }
 ```
 
+##### `FileUploadProgress` from `@llui/components`
+
+```typescript
+export interface FileUploadProgress {
+  status: FileUploadStatus
+  /** 0..1 */
+  progress: number
+  /** The failure message while `status === 'error'`, else `null`. */
+  error: string | null
+}
+```
+
 ##### `FileUploadState` from `@llui/components`
 
 ```typescript
@@ -9459,6 +9588,14 @@ export interface FileUploadState {
    * off while the pointer is still inside the dropzone (#119).
    */
   dragDepth: number
+  /**
+   * Upload lifecycle per accepted file, keyed by `FileMeta.id` — never by
+   * index, which shifts when an earlier file is removed. A file with no entry
+   * has not started uploading. The machine does not upload: the consumer's
+   * effect does, and reports back with `uploadProgress` / `uploadSucceeded` /
+   * `uploadFailed`; `retryUpload` is the request to try again (#266).
+   */
+  uploads: Record<string, FileUploadProgress>
 }
 ```
 
@@ -9540,10 +9677,19 @@ export interface FloatingPanelParts {
     hidden: Signal<boolean>
     style: Signal<string>
   }
+  /**
+   * Pointer drag starts here, and it is also a keyboard stop (#266): arrows
+   * move the panel 10px (50px with Shift). Physical under RTL — the panel is
+   * positioned with physical `left`/`top`.
+   */
   dragHandle: {
+    tabindex: 0
+    'aria-label': string
+    'aria-keyshortcuts': string
     'data-scope': 'floating-panel'
     'data-part': 'drag-handle'
     onPointerDown: (e: PointerEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
   content: {
     'data-scope': 'floating-panel'
@@ -9553,6 +9699,8 @@ export interface FloatingPanelParts {
   minimizeTrigger: {
     type: 'button'
     'aria-label': string
+    /** A toggle: `'true'` while minimized. */
+    'aria-pressed': Signal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'minimize-trigger'
     onClick: (e: MouseEvent) => void
@@ -9560,6 +9708,8 @@ export interface FloatingPanelParts {
   maximizeTrigger: {
     type: 'button'
     'aria-label': string
+    /** A toggle: `'true'` while maximized. */
+    'aria-pressed': Signal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'maximize-trigger'
     onClick: (e: MouseEvent) => void
@@ -9571,11 +9721,16 @@ export interface FloatingPanelParts {
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
   }
+  /** A resize grip; also a keyboard stop whose arrows resize from this grip (#266). */
   resizeHandle: (handle: ResizeHandle) => {
+    tabindex: 0
+    'aria-label': string
+    'aria-keyshortcuts': string
     'data-scope': 'floating-panel'
     'data-part': 'resize-handle'
     'data-handle': ResizeHandle
     onPointerDown: (e: PointerEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
 }
 ```
@@ -10396,11 +10551,23 @@ export interface ImageCropperParts {
     onLoad: (e: Event) => void
     draggable: false
   }
+  /**
+   * The crop area: a focusable, named `group` (#266). Arrow keys move it 1% of
+   * the image (10% with Shift), `+`/`-` zoom it. Keys stay PHYSICAL under
+   * `dir="rtl"`: the image is never mirrored, so neither is the box on it.
+   * Geometry is written as an inline `style` in PERCENT of the image — a skin
+   * must not set position or size.
+   */
   cropBox: {
+    role: 'group'
+    tabindex: 0
+    'aria-label': Signal<string>
+    'aria-keyshortcuts': string
     'data-scope': 'image-cropper'
     'data-part': 'crop-box'
     style: Signal<string>
     onPointerDown: (e: PointerEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
   resizeHandle: (handle: ResizeHandle) => {
     'data-scope': 'image-cropper'
@@ -10621,8 +10788,15 @@ export interface Locale {
   }
   dialog: { close: string }
   drawer: { close: string }
-  fileUpload: { remove: string; clear: string }
-  floatingPanel: { label: string; minimize: string; maximize: string; close: string }
+  fileUpload: { remove: string; clear: string; retry: string; progress: string }
+  floatingPanel: {
+    label: string
+    minimize: string
+    maximize: string
+    close: string
+    move: string
+    resize: string
+  }
   gradientPicker: {
     track: string
     stop: (index: number, count: number, color: string, position: number) => string
@@ -10647,7 +10821,7 @@ export interface Locale {
     css: string
     cssError: (reason: string) => string
   }
-  imageCropper: { reset: string }
+  imageCropper: { reset: string; cropArea: string }
   navigationMenu: { label: string }
   numberInput: { increment: string; decrement: string }
   pagination: { label: string; prev: string; next: string; page: (n: number) => string }
@@ -12096,22 +12270,39 @@ export interface QrCodeInit {
 
 ```typescript
 export interface QrCodeParts {
+  /**
+   * A labelled `group` around the code and its download action. `aria-label` on
+   * a bare `<div>` (role `generic`) is prohibited ARIA and ignored by most
+   * assistive technology, which is why the role is stated.
+   */
   root: {
+    role: 'group'
     'data-scope': 'qr-code'
     'data-part': 'root'
     'aria-label': string
+    /** Present while no matrix has been supplied — the empty state hook. */
+    'data-empty': Signal<'' | undefined>
   }
+  /**
+   * The `role="img"` graphic carries its OWN accessible name. A screen-reader
+   * user cannot scan the modules, so the name includes the encoded value.
+   */
   svg: {
     'data-scope': 'qr-code'
     'data-part': 'svg'
     role: 'img'
+    'aria-label': Signal<string>
     viewBox: Signal<string>
     'shape-rendering': 'crispEdges'
   }
+  /** Spread onto a `<rect>`: sized to the module grid so it covers the quiet background. */
   background: {
     'data-scope': 'qr-code'
     'data-part': 'background'
+    width: Signal<string>
+    height: Signal<string>
   }
+  /** Spread onto a `<path>`: one sub-path per dark module. */
   foreground: {
     'data-scope': 'qr-code'
     'data-part': 'foreground'
@@ -12122,6 +12313,8 @@ export interface QrCodeParts {
     'aria-label': string
     'data-scope': 'qr-code'
     'data-part': 'download-trigger'
+    /** Nothing to download until a matrix exists. */
+    disabled: Signal<boolean>
     onClick: (e: MouseEvent) => void
   }
 }
@@ -12735,6 +12928,8 @@ export interface SignaturePadParts {
     'data-disabled': Signal<'' | undefined>
     'data-readonly': Signal<'' | undefined>
     'data-drawing': Signal<'' | undefined>
+    /** Present while nothing has been drawn — the placeholder hook. */
+    'data-empty': Signal<'' | undefined>
   }
   control: {
     'data-scope': 'signature-pad'
@@ -12809,6 +13004,12 @@ export interface SignaturePadState {
   drawing: boolean
   disabled: boolean
   readonly: boolean
+  /**
+   * The strokes the last `clear` removed, until the next edit — what makes a
+   * destructive clear undoable (`undo` right after `clear` restores them).
+   * `null` when there is nothing to restore (#266).
+   */
+  cleared: Stroke[] | null
 }
 ```
 
@@ -14176,6 +14377,7 @@ export interface TimePickerParts {
     'data-scope': 'time-picker'
     'data-part': 'root'
     'data-format': Signal<TimeFormat>
+    'data-disabled': Signal<'' | undefined>
   }
   hoursInput: {
     type: 'number'
@@ -14250,6 +14452,8 @@ export interface TimerParts {
     'data-part': 'root'
     'data-running': Signal<'' | undefined>
     'data-direction': Signal<Direction>
+    /** Present once a countdown has reached its target (see `isComplete`). */
+    'data-complete': Signal<'' | undefined>
   }
   display: {
     role: 'timer'
@@ -29582,9 +29786,9 @@ function connect(
 
 Attempt to copy the value to the clipboard. Returns a Promise that RESOLVES
 on success and REJECTS when the write is refused. Dispatch `copied` from the
-resolved branch only — the rejected branch must dispatch nothing, since
-`copied` is false until a write succeeds and `reset` after a failure would
-announce and then retract a success that never happened.
+resolved branch only, and `copyFailed` from the rejected one — never `copied`
+followed by `reset`, which would announce and then retract a success that
+never happened.
 
 ```typescript
 function copyToClipboard(value: string): Promise<void>
@@ -29614,7 +29818,9 @@ export type ClipboardMsg =
   | { type: 'copy' }
   /** @humanOnly */
   | { type: 'copied' }
-  /** @intent("Clear the transient \"copied\" feedback state") */
+  /** @humanOnly */
+  | { type: 'copyFailed' }
+  /** @intent("Clear the transient \"copied\" / \"failed\" feedback state") */
   | { type: 'reset' }
 ```
 
@@ -29636,6 +29842,7 @@ export interface ClipboardParts {
     'data-scope': 'clipboard'
     'data-part': 'root'
     'data-copied': Signal<'' | undefined>
+    'data-failed': Signal<'' | undefined>
   }
   trigger: {
     type: 'button'
@@ -29643,6 +29850,7 @@ export interface ClipboardParts {
     'data-scope': 'clipboard'
     'data-part': 'trigger'
     'data-copied': Signal<'' | undefined>
+    'data-failed': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
   }
   input: {
@@ -29657,6 +29865,7 @@ export interface ClipboardParts {
     'data-scope': 'clipboard'
     'data-part': 'indicator'
     'data-copied': Signal<'' | undefined>
+    'data-failed': Signal<'' | undefined>
     'aria-live': 'polite'
   }
 }
@@ -29673,21 +29882,34 @@ state flag.
 (permission denied, insecure context, browser policy) and `indicator`
 carries `aria-live="polite"`, so a flag set before the promise resolves
 ANNOUNCES a success that never happened (#232). Dispatch `copied` from
-the resolved write, and `reset` to clear the feedback:
+the resolved write, `copyFailed` from the rejected one, and `reset` to clear
+the feedback:
 
 ```ts
 onEffect(effect, send) {
   copyToClipboard(effect.value).then(
     () => send({ type: 'copied' }),
-    () => {}, // write failed — say nothing
+    () => send({ type: 'copyFailed' }), // refused — say so, never "copied"
   )
 }
 ```
 
+`copyFailed` publishes `data-failed` (root, trigger, indicator); the skin
+tells the user the write was refused and that the value is still selectable
+in the read-only `input` (#266).
+
 ```typescript
 export interface ClipboardState {
   value: string
+  /** The last write RESOLVED. Exclusive with `failed`. */
   copied: boolean
+  /**
+   * The last write was REFUSED (permission denied, insecure context, browser
+   * policy). Exclusive with `copied`. The read-only `input` is the fallback: the
+   * user can still select the value and copy it by hand, which is what a skin
+   * should say when this is set (#266).
+   */
+  failed: boolean
 }
 ```
 
@@ -30324,6 +30546,14 @@ function trackFiles(files: readonly File[]): FileMeta[]
 function update(state: FileUploadState, msg: FileUploadMsg): [FileUploadState, never[]]
 ```
 
+##### `uploadOf()` from `@llui/components/file-upload`
+
+The upload entry for a file id, or `undefined` when it has not started.
+
+```typescript
+function uploadOf(state: FileUploadState, id: string): FileUploadProgress | undefined
+```
+
 ##### `validateFiles()` from `@llui/components/file-upload`
 
 Partition incoming files into accepted and rejected based on state's
@@ -30408,6 +30638,20 @@ export type FileUploadMsg =
   | { type: 'drop' }
   /** @humanOnly */
   | { type: 'setInvalid'; invalid: boolean }
+  /** @humanOnly */
+  | { type: 'uploadProgress'; id: string; progress: number }
+  /** @humanOnly */
+  | { type: 'uploadSucceeded'; id: string }
+  /** @humanOnly */
+  | { type: 'uploadFailed'; id: string; error: string }
+  /** @intent("Retry the failed upload of the file with the given id") */
+  | { type: 'retryUpload'; id: string }
+```
+
+##### `FileUploadStatus` from `@llui/components/file-upload`
+
+```typescript
+export type FileUploadStatus = 'uploading' | 'done' | 'error'
 ```
 
 #### Interfaces
@@ -30418,6 +30662,8 @@ export type FileUploadMsg =
 export interface ConnectOptions {
   id: string
   removeLabel?: string
+  retryLabel?: string
+  progressLabel?: string
   clearLabel?: string
   /**
    * Hints the browser to use the device camera/microphone for capture. Only
@@ -30494,6 +30740,44 @@ export interface FileUploadItemParts {
     'data-scope': 'file-upload'
     'data-part': 'item'
     'data-index': string
+    /** The file's upload status; absent until an upload is reported (#266). */
+    'data-upload-status': Signal<FileUploadStatus | undefined>
+  }
+  /** A labelled progressbar, shown only while the file is uploading (#266). */
+  itemProgress: {
+    role: 'progressbar'
+    'aria-label': string
+    'aria-valuemin': 0
+    'aria-valuemax': 100
+    'aria-valuenow': Signal<number | undefined>
+    hidden: Signal<boolean>
+    'data-scope': 'file-upload'
+    'data-part': 'item-progress'
+  }
+  /** The progress fill; its width is written inline as a percentage. */
+  itemProgressRange: {
+    'data-scope': 'file-upload'
+    'data-part': 'item-progress-range'
+    style: Signal<string>
+  }
+  /**
+   * Live region for the file's failure message, shown only on error. Its text
+   * is `uploadOf(state, id)?.error` — the view renders it as a child.
+   */
+  itemErrorText: {
+    role: 'alert'
+    hidden: Signal<boolean>
+    'data-scope': 'file-upload'
+    'data-part': 'item-error-text'
+  }
+  /** Shown only for a failed upload; dispatches `retryUpload` for this file. */
+  itemRetryTrigger: {
+    type: 'button'
+    'aria-label': string
+    hidden: Signal<boolean>
+    'data-scope': 'file-upload'
+    'data-part': 'item-retry-trigger'
+    onClick: (e: MouseEvent) => void
   }
   itemName: {
     'data-scope': 'file-upload'
@@ -30536,6 +30820,8 @@ export interface FileUploadParts {
     'data-dragging': Signal<'' | undefined>
     'data-invalid': Signal<'' | undefined>
     'data-readonly': Signal<'' | undefined>
+    /** Present while any accepted file is uploading (#266). */
+    'data-uploading': Signal<'' | undefined>
   }
   dropzone: {
     'data-scope': 'file-upload'
@@ -30591,6 +30877,18 @@ export interface FileUploadParts {
 }
 ```
 
+##### `FileUploadProgress` from `@llui/components/file-upload`
+
+```typescript
+export interface FileUploadProgress {
+  status: FileUploadStatus
+  /** 0..1 */
+  progress: number
+  /** The failure message while `status === 'error'`, else `null`. */
+  error: string | null
+}
+```
+
 ##### `FileUploadState` from `@llui/components/file-upload`
 
 ```typescript
@@ -30614,6 +30912,14 @@ export interface FileUploadState {
    * off while the pointer is still inside the dropzone (#119).
    */
   dragDepth: number
+  /**
+   * Upload lifecycle per accepted file, keyed by `FileMeta.id` — never by
+   * index, which shifts when an earlier file is removed. A file with no entry
+   * has not started uploading. The machine does not upload: the consumer's
+   * effect does, and reports back with `uploadProgress` / `uploadSucceeded` /
+   * `uploadFailed`; `retryUpload` is the request to try again (#266).
+   */
+  uploads: Record<string, FileUploadProgress>
 }
 ```
 
@@ -31726,6 +32032,7 @@ export interface TimePickerParts {
     'data-scope': 'time-picker'
     'data-part': 'root'
     'data-format': Signal<TimeFormat>
+    'data-disabled': Signal<'' | undefined>
   }
   hoursInput: {
     type: 'number'
@@ -31839,6 +32146,17 @@ Localized "Month YYYY" label for a calendar header, backed by
 function monthLabel(year: number, month: number, locale?: string): string
 ```
 
+##### `todayInTimeZone()` from `@llui/components/date-picker`
+
+The calendar date (YYYY-MM-DD) of an instant in an IANA time zone. "Today"
+is a property of a PLACE, not of an instant: at 23:30 UTC it is still the
+14th in Los Angeles and already the 15th in Auckland. Pin the result as
+`today` to show the calendar in a zone other than the runtime's (#266).
+
+```typescript
+function todayInTimeZone(timeZone: string, now: number = Date.now()): string
+```
+
 ##### `update()` from `@llui/components/date-picker`
 
 ```typescript
@@ -31907,8 +32225,14 @@ export type DatePickerMsg =
   | { type: 'focusEndOfWeek' }
   /** @humanOnly */
   | { type: 'focusToday' }
+  /** @humanOnly */
+  | { type: 'moveFocusMonths'; months: number }
   /** @intent("Clear the current selection") */
   | { type: 'clear' }
+  /** @humanOnly */
+  | { type: 'setToday'; today: string | null }
+  /** @intent("Replace the set of individually unavailable dates (YYYY-MM-DD)") */
+  | { type: 'setUnavailable'; dates: string[] }
 ```
 
 #### Interfaces
@@ -31942,6 +32266,10 @@ export interface DatePickerInit {
   max?: string | null
   weekStartsOn?: 0 | 1
   disabled?: boolean
+  /** Pin "today" (YYYY-MM-DD); omit or `null` to read the runtime clock. */
+  today?: string | null
+  /** Individually unavailable dates (YYYY-MM-DD). */
+  unavailable?: string[]
 }
 ```
 
@@ -32022,6 +32350,18 @@ export interface DatePickerState {
   /** 0=Sunday, 1=Monday. */
   weekStartsOn: 0 | 1
   disabled: boolean
+  /**
+   * A pinned "today" (YYYY-MM-DD), or `null` to read the runtime clock. Pin it
+   * for deterministic rendering (SSR + hydration, galleries, tests) or to show
+   * today in a specific time zone — see `todayInTimeZone` (#266).
+   */
+  today: string | null
+  /**
+   * Individually unavailable dates (YYYY-MM-DD) — bookings, holidays. Disabled
+   * like an out-of-bounds date, published separately as `data-unavailable`, and
+   * a range may not be completed across one (#266).
+   */
+  unavailable: string[]
 }
 ```
 
@@ -32042,6 +32382,8 @@ export interface DayCell {
   isRangeEnd: boolean
   /** True for dates strictly between the range endpoints. */
   isInRange: boolean
+  /** True for a date listed in `unavailable` (also `isDisabled`). */
+  isUnavailable: boolean
 }
 ```
 
@@ -32069,6 +32411,8 @@ export interface DayCellParts {
     'data-range-start': Signal<'' | undefined>
     'data-range-end': Signal<'' | undefined>
     'data-in-range': Signal<'' | undefined>
+    /** An individually unavailable date (also disabled) — distinct from out-of-bounds. */
+    'data-unavailable': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -33689,6 +34033,8 @@ export interface TimerParts {
     'data-part': 'root'
     'data-running': Signal<'' | undefined>
     'data-direction': Signal<Direction>
+    /** Present once a countdown has reached its target (see `isComplete`). */
+    'data-complete': Signal<'' | undefined>
   }
   display: {
     role: 'timer'
@@ -34269,6 +34615,14 @@ const presence
 
 #### Functions
 
+##### `canUndo()` from `@llui/components/signature-pad`
+
+True when `undo` would change something: a stroke to remove or a clear to restore.
+
+```typescript
+function canUndo(state: SignaturePadState): boolean
+```
+
 ##### `connect()` from `@llui/components/signature-pad`
 
 ```typescript
@@ -34409,6 +34763,8 @@ export interface SignaturePadParts {
     'data-disabled': Signal<'' | undefined>
     'data-readonly': Signal<'' | undefined>
     'data-drawing': Signal<'' | undefined>
+    /** Present while nothing has been drawn — the placeholder hook. */
+    'data-empty': Signal<'' | undefined>
   }
   control: {
     'data-scope': 'signature-pad'
@@ -34455,6 +34811,12 @@ export interface SignaturePadState {
   drawing: boolean
   disabled: boolean
   readonly: boolean
+  /**
+   * The strokes the last `clear` removed, until the next edit — what makes a
+   * destructive clear undoable (`undo` right after `clear` restores them).
+   * `null` when there is nothing to restore (#266).
+   */
+  cleared: Stroke[] | null
 }
 ```
 
@@ -35187,6 +35549,12 @@ export interface AsyncListParts {
     'data-scope': 'async-list'
     'data-part': 'root'
     'data-status': Signal<AsyncStatus>
+    /** `'true'` while a page request is in flight — the list's content is changing. */
+    'aria-busy': Signal<'true' | 'false'>
+    /** Present once a load has SETTLED with zero items: the empty-state hook. */
+    'data-empty': Signal<'' | undefined>
+    /** Present when the source reports no further pages. */
+    'data-exhausted': Signal<'' | undefined>
   }
   sentinel: {
     'data-scope': 'async-list'
@@ -35656,6 +36024,10 @@ export type FloatingPanelMsg =
   | { type: 'setPosition'; x: number; y: number }
   /** @intent("Set the panel's size in pixels (clamped to min/max)") */
   | { type: 'setSize'; width: number; height: number }
+  /** @intent("Move the panel by a pixel offset (x right, y down)") */
+  | { type: 'moveBy'; dx: number; dy: number }
+  /** @intent("Resize the panel from one edge or corner by a pixel offset (clamped to min/max)") */
+  | { type: 'resizeBy'; handle: ResizeHandle; dx: number; dy: number }
 ```
 
 ##### `ResizeHandle` from `@llui/components/floating-panel`
@@ -35683,6 +36055,8 @@ export interface ConnectOptions {
   minimizeLabel?: string
   maximizeLabel?: string
   closeLabel?: string
+  moveLabel?: string
+  resizeLabel?: string
 }
 ```
 
@@ -35715,10 +36089,19 @@ export interface FloatingPanelParts {
     hidden: Signal<boolean>
     style: Signal<string>
   }
+  /**
+   * Pointer drag starts here, and it is also a keyboard stop (#266): arrows
+   * move the panel 10px (50px with Shift). Physical under RTL — the panel is
+   * positioned with physical `left`/`top`.
+   */
   dragHandle: {
+    tabindex: 0
+    'aria-label': string
+    'aria-keyshortcuts': string
     'data-scope': 'floating-panel'
     'data-part': 'drag-handle'
     onPointerDown: (e: PointerEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
   content: {
     'data-scope': 'floating-panel'
@@ -35728,6 +36111,8 @@ export interface FloatingPanelParts {
   minimizeTrigger: {
     type: 'button'
     'aria-label': string
+    /** A toggle: `'true'` while minimized. */
+    'aria-pressed': Signal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'minimize-trigger'
     onClick: (e: MouseEvent) => void
@@ -35735,6 +36120,8 @@ export interface FloatingPanelParts {
   maximizeTrigger: {
     type: 'button'
     'aria-label': string
+    /** A toggle: `'true'` while maximized. */
+    'aria-pressed': Signal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'maximize-trigger'
     onClick: (e: MouseEvent) => void
@@ -35746,11 +36133,16 @@ export interface FloatingPanelParts {
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
   }
+  /** A resize grip; also a keyboard stop whose arrows resize from this grip (#266). */
   resizeHandle: (handle: ResizeHandle) => {
+    tabindex: 0
+    'aria-label': string
+    'aria-keyshortcuts': string
     'data-scope': 'floating-panel'
     'data-part': 'resize-handle'
     'data-handle': ResizeHandle
     onPointerDown: (e: PointerEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
 }
 ```
@@ -35853,6 +36245,10 @@ export type ImageCropperMsg =
   | { type: 'reset' }
   /** @intent("Set the crop to a maximum-area centered selection") */
   | { type: 'centerFill' }
+  /** @intent("Move the crop area by a percentage of the image size (x right, y down)") */
+  | { type: 'nudge'; x: number; y: number }
+  /** @intent("Zoom the crop area about its centre: factor > 1 zooms in, < 1 zooms out") */
+  | { type: 'zoom'; factor: number }
 ```
 
 ##### `ResizeHandle` from `@llui/components/image-cropper`
@@ -35877,6 +36273,8 @@ export type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
 ```typescript
 export interface ConnectOptions {
   resetLabel?: string
+  /** Name of the crop area; its live geometry is appended. */
+  cropAreaLabel?: string
 }
 ```
 
@@ -35920,11 +36318,23 @@ export interface ImageCropperParts {
     onLoad: (e: Event) => void
     draggable: false
   }
+  /**
+   * The crop area: a focusable, named `group` (#266). Arrow keys move it 1% of
+   * the image (10% with Shift), `+`/`-` zoom it. Keys stay PHYSICAL under
+   * `dir="rtl"`: the image is never mirrored, so neither is the box on it.
+   * Geometry is written as an inline `style` in PERCENT of the image — a skin
+   * must not set position or size.
+   */
   cropBox: {
+    role: 'group'
+    tabindex: 0
+    'aria-label': Signal<string>
+    'aria-keyshortcuts': string
     'data-scope': 'image-cropper'
     'data-part': 'crop-box'
     style: Signal<string>
     onPointerDown: (e: PointerEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
   resizeHandle: (handle: ResizeHandle) => {
     'data-scope': 'image-cropper'
@@ -36402,22 +36812,39 @@ export interface QrCodeInit {
 
 ```typescript
 export interface QrCodeParts {
+  /**
+   * A labelled `group` around the code and its download action. `aria-label` on
+   * a bare `<div>` (role `generic`) is prohibited ARIA and ignored by most
+   * assistive technology, which is why the role is stated.
+   */
   root: {
+    role: 'group'
     'data-scope': 'qr-code'
     'data-part': 'root'
     'aria-label': string
+    /** Present while no matrix has been supplied — the empty state hook. */
+    'data-empty': Signal<'' | undefined>
   }
+  /**
+   * The `role="img"` graphic carries its OWN accessible name. A screen-reader
+   * user cannot scan the modules, so the name includes the encoded value.
+   */
   svg: {
     'data-scope': 'qr-code'
     'data-part': 'svg'
     role: 'img'
+    'aria-label': Signal<string>
     viewBox: Signal<string>
     'shape-rendering': 'crispEdges'
   }
+  /** Spread onto a `<rect>`: sized to the module grid so it covers the quiet background. */
   background: {
     'data-scope': 'qr-code'
     'data-part': 'background'
+    width: Signal<string>
+    height: Signal<string>
   }
+  /** Spread onto a `<path>`: one sub-path per dark module. */
   foreground: {
     'data-scope': 'qr-code'
     'data-part': 'foreground'
@@ -36428,6 +36855,8 @@ export interface QrCodeParts {
     'aria-label': string
     'data-scope': 'qr-code'
     'data-part': 'download-trigger'
+    /** Nothing to download until a matrix exists. */
+    disabled: Signal<boolean>
     onClick: (e: MouseEvent) => void
   }
 }
