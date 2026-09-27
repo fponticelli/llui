@@ -38,6 +38,16 @@ import ts from 'typescript'
 const CLASS_CALLS = new Set(['cn', 'mergeClass', 'classPart', 'classPartWithDefaults'])
 
 /**
+ * `classPart`/`classPartWithDefaults`'s FIRST argument is the element tag
+ * function (`div`, `button`, …), never a recipe — reading it as one used to
+ * be harmless because `pushString` silently ignored any non-literal node,
+ * but general identifier resolution (#264 item F2) means an unresolved
+ * identifier now FAILS LOUDLY, so the tag argument must be skipped rather
+ * than treated as an unresolvable recipe reference.
+ */
+const TAG_FIRST_CALLS = new Set(['classPart', 'classPartWithDefaults'])
+
+/**
  * @param {string} fileName
  * @param {string} source
  * @returns {string[]} whitespace-split class candidates, deduped.
@@ -59,19 +69,53 @@ export function extractClassCandidates(fileName, source) {
   // both are, and every one of their variant classes was going unchecked while
   // the file still reported plenty of candidates from its base recipe — a silent
   // hole, not an obvious one.
+  //
+  // The identical hazard exists one level down: a recipe STRING assigned to a
+  // module-level const and passed BY IDENTIFIER to `cn`/`mergeClass`/`classPart`/
+  // `classPartWithDefaults` (`const TABLE_CONTAINER_CLASSES = '…'; …
+  // mergeClass(TABLE_CONTAINER_CLASSES, viewportClassName)`) used to reach
+  // `pushString` as a bare `Identifier`, which no branch handled — silently
+  // skipped, no candidates contributed, no error. `stringConsts` (below) is the
+  // string-typed sibling of `objectConsts`, resolved through the exact same
+  // `asObject`-shaped lookup inside `pushString` itself, so every recipe
+  // position gains it for free rather than needing its own copy of the lookup.
   /** @type {Map<string, ts.ObjectLiteralExpression>} */
   const objectConsts = new Map()
+  /** @type {Map<string, ts.Expression>} */
+  const stringConsts = new Map()
   for (const stmt of sf.statements) {
     if (!ts.isVariableStatement(stmt)) continue
     for (const decl of stmt.declarationList.declarations) {
-      if (
-        ts.isIdentifier(decl.name) &&
-        decl.initializer !== undefined &&
-        ts.isObjectLiteralExpression(decl.initializer)
-      ) {
+      if (!ts.isIdentifier(decl.name) || decl.initializer === undefined) continue
+      if (ts.isObjectLiteralExpression(decl.initializer)) {
         objectConsts.set(decl.name.text, decl.initializer)
+      } else if (
+        ts.isStringLiteral(decl.initializer) ||
+        ts.isNoSubstitutionTemplateLiteral(decl.initializer) ||
+        ts.isTemplateExpression(decl.initializer)
+      ) {
+        stringConsts.set(decl.name.text, decl.initializer)
       }
     }
+  }
+
+  // Names bound by an IMPORT (`import { inputRecipe } from '@/ui/input'`):
+  // this extractor works one file at a time and cannot follow the import to
+  // resolve the recipe text here, but the imported const's OWN file gets
+  // scanned separately and reports its text there — so an imported name
+  // reaching a recipe position is a MISSED check in this one file at worst
+  // (never a false failure), and must be skipped rather than treated as an
+  // unresolvable reference.
+  /** @type {Set<string>} */
+  const importedNames = new Set()
+  for (const stmt of sf.statements) {
+    if (!ts.isImportDeclaration(stmt) || stmt.importClause === undefined) continue
+    const clause = stmt.importClause
+    if (clause.name !== undefined) importedNames.add(clause.name.text)
+    const bindings = clause.namedBindings
+    if (bindings === undefined) continue
+    if (ts.isNamespaceImport(bindings)) importedNames.add(bindings.name.text)
+    else for (const el of bindings.elements) importedNames.add(el.name.text)
   }
 
   /** Resolve to an object literal, following a module-level const by name.
@@ -84,6 +128,88 @@ export function extractClassCandidates(fileName, source) {
     if (ts.isObjectLiteralExpression(node)) return node
     if (ts.isIdentifier(node)) return objectConsts.get(node.text)
     return undefined
+  }
+
+  /**
+   * The set of names bound in every DIRECT binding pattern (a destructured
+   * parameter or variable), so a genuinely dynamic value — a function
+   * parameter, a destructured prop — is never mistaken for an unresolved
+   * module-level recipe reference.
+   *
+   * @param {ts.BindingName} name
+   * @returns {Set<string>}
+   */
+  const bindingNames = (name) => {
+    /** @type {Set<string>} */
+    const out = new Set()
+    /** @param {ts.BindingName} n */
+    const collect = (n) => {
+      if (ts.isIdentifier(n)) {
+        out.add(n.text)
+        return
+      }
+      for (const el of n.elements) {
+        if (ts.isBindingElement(el)) collect(el.name)
+      }
+    }
+    collect(name)
+    return out
+  }
+
+  /**
+   * True when `node`'s name is bound by an ENCLOSING function parameter,
+   * local variable/destructure, or catch clause — i.e. a genuinely dynamic,
+   * caller-provided value (`mergeClass(recipe, className)` inside this very
+   * file's own `classPart`/`classPartWithDefaults` definitions) that a
+   * recipe position may legitimately carry and which is never expected to
+   * resolve against a module-level const. Anything NOT locally bound is
+   * expected to be a module-level recipe reference (or a typo/an import),
+   * and `pushString` fails loudly rather than silently when it cannot
+   * resolve one — a silently-skipped identifier is exactly how a hoisted
+   * recipe (and any dead class inside it) went unchecked.
+   *
+   * @param {ts.Identifier} node
+   * @returns {boolean}
+   */
+  const isLocallyBound = (node) => {
+    const name = node.text
+    /** @type {ts.Node | undefined} */
+    let current = node.parent
+    while (current !== undefined && !ts.isSourceFile(current)) {
+      if (
+        (ts.isFunctionDeclaration(current) ||
+          ts.isFunctionExpression(current) ||
+          ts.isArrowFunction(current) ||
+          ts.isMethodDeclaration(current)) &&
+        current.parameters.some((p) => bindingNames(p.name).has(name))
+      ) {
+        return true
+      }
+      if (
+        ts.isCatchClause(current) &&
+        current.variableDeclaration !== undefined &&
+        bindingNames(current.variableDeclaration.name).has(name)
+      ) {
+        return true
+      }
+      if (ts.isBlock(current)) {
+        for (const stmt of current.statements) {
+          if (ts.isVariableStatement(stmt)) {
+            for (const decl of stmt.declarationList.declarations) {
+              if (bindingNames(decl.name).has(name)) return true
+            }
+          }
+          if (
+            (ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt)) &&
+            stmt.name?.text === name
+          ) {
+            return true
+          }
+        }
+      }
+      current = current.parent
+    }
+    return false
   }
 
   // Template literals contribute their STATIC text only. An interpolated span is
@@ -103,6 +229,29 @@ export function extractClassCandidates(fileName, source) {
     else if (ts.isTemplateExpression(node)) {
       strings.push(node.head.text)
       for (const span of node.templateSpans) strings.push(span.literal.text)
+    } else if (ts.isIdentifier(node)) {
+      // A genuinely dynamic value (a parameter, a destructured prop) is not
+      // expected to name a recipe — skip it silently, same as before.
+      if (isLocallyBound(node)) return
+      // An imported recipe const is resolved and checked in ITS OWN file —
+      // a missed check here at worst, never a false failure.
+      if (importedNames.has(node.text)) return
+      const resolved = stringConsts.get(node.text)
+      if (resolved !== undefined) {
+        pushString(resolved)
+        return
+      }
+      // Anything else reaching a recipe position as a bare identifier is
+      // either a typo or a recipe helper this file does not know how to
+      // follow — fail loudly rather than silently reporting zero
+      // candidates for it (#264 item F2; this is exactly how a hoisted
+      // recipe used to go unchecked).
+      throw new Error(
+        `registry-classes: recipe position in ${fileName} references identifier ` +
+          `"${node.text}", which is not a module-level string const this extractor ` +
+          "can resolve. Assign the recipe to a plain `const NAME = '…'`/template " +
+          'literal at module scope, or inline the string.',
+      )
     }
   }
 
@@ -159,8 +308,10 @@ export function extractClassCandidates(fileName, source) {
   const walk = (node) => {
     if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
       const callee = node.expression.text
-      if (CLASS_CALLS.has(callee)) node.arguments.forEach(pushString)
-      else if (callee === 'createVariants' && node.arguments[0] !== undefined) {
+      if (CLASS_CALLS.has(callee)) {
+        const args = TAG_FIRST_CALLS.has(callee) ? node.arguments.slice(1) : node.arguments
+        args.forEach(pushString)
+      } else if (callee === 'createVariants' && node.arguments[0] !== undefined) {
         readCreateVariants(node.arguments[0])
       } else if (callee === 'createVariantsPart' && node.arguments[1] !== undefined) {
         // Same config object, one argument further along — the tag comes first.
@@ -195,12 +346,25 @@ export function extractClassCandidates(fileName, source) {
           if (ts.isPropertyAssignment(prop)) pushString(prop.initializer)
       }
     }
-    // A recipe assigned to a `const` and passed by name (`inputRecipe`) never
-    // reaches a call argument, so read exported string consts named *Recipe too.
+    // A recipe assigned to a `const` and forwarded through a BESPOKE local
+    // helper (never one of `CLASS_CALLS`) can reach no call argument this
+    // walk recognizes at all — `pagination.ts`'s `paginationPreviousRecipe`/
+    // `paginationNextRecipe` are passed to its own `paginationLink(…)`, whose
+    // parameter then flows into `cn(…)` as a locally-bound identifier
+    // (`extra`), invisible to a caller-position analysis. `stringConsts`
+    // resolution above already covers every recipe reachable through a
+    // RECOGNIZED position by name, so this is now purely the fallback for
+    // that unreachable-by-construction shape, gated by naming convention.
+    // The check used to be `.endsWith('Recipe')` — case-sensitive, so a
+    // const named in SCREAMING_SNAKE_CASE (`TABLE_CONTAINER_CLASSES`) never
+    // matched it (#264 item F2's own M1 mutation exploited exactly this).
+    // General `stringConsts` resolution now covers that shape by NAME
+    // reference rather than by suffix, so this stays scoped to `Recipe`
+    // case-INSENSITIVELY rather than growing a second naming convention.
     if (
       ts.isVariableDeclaration(node) &&
       ts.isIdentifier(node.name) &&
-      node.name.text.endsWith('Recipe')
+      /recipe$/i.test(node.name.text)
     ) {
       pushString(node.initializer)
     }
