@@ -49,6 +49,17 @@ import { resolveDir, watchDirection, type TextDirection } from './direction.js'
  * Each component's `overlay()` is a thin declaration of its defaults over this.
  */
 
+/** Floating elements whose `dir` the engine itself wrote, so a later read
+ * can tell its own write from a consumer's. */
+const engineWrittenDir = new WeakSet<Element>()
+
+/** The `ltr`/`rtl` the CONSUMER wrote on an overlay's content, if any. */
+function consumerContentDir(content: Element): TextDirection | undefined {
+  if (engineWrittenDir.has(content)) return undefined
+  const dir = content.getAttribute('dir')
+  return dir === 'ltr' || dir === 'rtl' ? dir : undefined
+}
+
 /** The live elements resolved for the interaction phase. */
 export interface OverlayElements {
   /** The overlay content element (resolved by `contentId`). */
@@ -342,13 +353,17 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
   }
 
   /**
-   * The direction a floating attachment runs under: the component's EXPLICIT
-   * direction, else the placement anchor's resolved one. `undefined` only
-   * without an anchor, where the floating element's own computed direction is
-   * the best there is. The engine owns `dir` on the floating element while
-   * attached (its prior value is restored on detach).
+   * The direction a floating attachment runs under, most specific first: a
+   * `dir` the consumer wrote on the CONTENT, the component's EXPLICIT
+   * direction, then the placement anchor's resolved one. `undefined` only
+   * without any of them, where the floating element's own computed direction
+   * is the best there is. The engine owns `dir` on a positioner WRAPPER while
+   * attached (its prior value is restored on detach); it never writes over the
+   * content's own `dir`.
    */
   const effectiveDir = (els: OverlayElements): TextDirection | undefined => {
+    const consumer = consumerContentDir(els.content)
+    if (consumer !== undefined) return consumer
     const f = opts.floating!
     const explicit = typeof f.dir === 'function' ? f.dir() : f.dir
     if (explicit !== undefined) return explicit
@@ -376,8 +391,17 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
     // Snapshot BEFORE writing: a reattach first restores, so this always
     // reads what the element carried before the engine touched it.
     const priorDir = els.floating.getAttribute('dir')
-    if (dir !== undefined) els.floating.setAttribute('dir', dir)
+    // The content's own `dir` is the consumer's: never overwritten, even when
+    // the content IS the floating element (no positioner wrapper).
+    const writes =
+      dir !== undefined && !(els.floating === els.content && consumerContentDir(els.content))
+    if (writes) {
+      els.floating.setAttribute('dir', dir)
+      engineWrittenDir.add(els.floating)
+    }
     const restoreDir = (): void => {
+      if (!writes) return
+      engineWrittenDir.delete(els.floating)
       if (priorDir === null) els.floating.removeAttribute('dir')
       else els.floating.setAttribute('dir', priorDir)
     }
