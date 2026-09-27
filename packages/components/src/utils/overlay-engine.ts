@@ -1,5 +1,5 @@
 import type { Signal, Mountable, Renderable, ElProps, TransitionOptions } from '@llui/dom'
-import { show, portal, onMount, div } from '@llui/dom'
+import { show, portal, onMount, div, LluiFrameworkError } from '@llui/dom'
 import { pushDismissable } from './dismissable.js'
 import { pushFocusTrap } from './focus-trap.js'
 import { setAriaHiddenOutside } from './aria-hidden.js'
@@ -204,7 +204,14 @@ export interface OverlayEngineOptions<S> {
 
 export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
   if (opts.floating && opts.visibleWhen && opts.floating.persistent !== true) {
-    throw new Error(
+    // An authoring invariant, not a data surprise — a two-phase overlay
+    // wired without `persistent: true` cannot be reconciled correctly (the
+    // floating attachment would tear down and reattach mid-exit-animation),
+    // so this is `LluiFrameworkError` rather than a plain `Error`: it must
+    // stay FATAL rather than being contained by any mount error boundary
+    // (#265 A5, matching `@llui/dom`'s framework-error taxonomy — see
+    // `packages/dom/src/signals/framework-error.ts`).
+    throw new LluiFrameworkError(
       '[llui/components] A two-phase overlay requires persistent floating. ' +
         'Mount-scoped positioning preserves resolved geometry while the node is retained for exit; ' +
         'visibility-scoped interaction wiring still unwinds at the close request.',
