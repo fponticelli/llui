@@ -592,7 +592,12 @@ function documentFrame(row: FrameRow, title: string, send: Send<Msg>): Mountable
         const content = doc.getElementById('gallery-document') ?? doc.body
         observer = new ResizeObserver(() => {
           const height = Math.ceil(content.getBoundingClientRect().bottom) + 24
-          frame.style.height = `${Math.min(Math.max(height, 320), 1600)}px`
+          const next = `${Math.min(Math.max(height, 320), 1600)}px`
+          // Resizing the frame re-lays-out the observed document; applying it
+          // inside the callback would re-trigger the observer in the same
+          // frame ("ResizeObserver loop completed with undelivered
+          // notifications"). Defer it, and skip a no-op.
+          if (frame.style.height !== next) setTimeout(() => (frame.style.height = next), 0)
         })
         observer.observe(content)
       }

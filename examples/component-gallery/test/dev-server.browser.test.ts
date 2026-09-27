@@ -51,7 +51,9 @@ describe('the composed dev server (#267)', () => {
       const frame = await (
         await page.waitForSelector(`.frame-panel[data-path="${path}"] iframe`)
       ).contentFrame()
-      await frame!.waitForSelector('html[data-gallery-status="ready"]', { timeout: 60_000 })
+      // A document's FIRST dev request compiles its whole family renderer on
+      // demand; under a full `turbo test` that has been measured past 60 s.
+      await frame!.waitForSelector('html[data-gallery-status="ready"]', { timeout: 150_000 })
       cascades.push(await frame!.evaluate(collectCascade))
     }
     const [baseline, registry] = cascades as [CascadeInventory, CascadeInventory]
@@ -64,5 +66,5 @@ describe('the composed dev server (#267)', () => {
     expect(tailwind(registry.rules).length).toBeGreaterThan(20)
     expect(parts(registry.rules)).toEqual([])
     await page.close()
-  }, 90_000)
+  }, 330_000)
 })
