@@ -1,0 +1,1868 @@
+/**
+ * The ONE menus/overlays family module (#265 finding #1/#2, part 1 of 2; #270
+ * protocol; mirrors the accepted #264 navigation-data pattern).
+ *
+ * `MENUS_OVERLAYS_DEFINITIONS` owns every semantic case for the 17
+ * menus-overlays ProductContract products, keyed by `scenarioId`. Each case's
+ * `input` is typed, product-specific JSON mirroring the product's REAL
+ * `init()`/state fields — never a generic `{label, detail}` bag. This is the
+ * correction the #265 review history names directly: three prior candidates
+ * were rejected because "the purported shared scenarios are metadata only"
+ * and adapters were fabricated string templates rather than real
+ * machine -> connect -> overlay compositions driven by this data.
+ *
+ * `compileScenarioFamily` performs the exact join against ProductContract at
+ * compile time: a missing or stale scenarioId is a thrown
+ * `PresentationScenarioError`, not a silent gap.
+ *
+ * Reachable presence lifecycles are per the review's own split, not a
+ * uniform four-phase assumption:
+ *  - Four-phase (`opening`/`open`/`closing`/`closed`, `closed` unmounted —
+ *    same rationale as #264's disclosure products): alert-dialog, context-menu,
+ *    dialog, drawer, hover-card, menu, popover, tooltip, command-menu,
+ *    confirm-dialog.
+ *  - Mounted-open plus optional structural retention (open/closed only, no
+ *    animated exit): select, combobox, menubar, searchable-select — these
+ *    machines publish `open: boolean` synchronously with no `status` field.
+ *  - Indicator-only presence: navigation-menu — content itself is
+ *    synchronously shown/hidden; only its retained indicator has a transition.
+ *  - No presence at all: toolbar — persistently mounted, no disclosure surface.
+ *
+ * This module owns only PROTOCOL data (case `input`/`environmentAxes`).
+ * Renderer adapters (real reducers/connect/overlay compositions) live
+ * separately in `menus-overlays-baseline-renderer.ts`, kept OUT of this file
+ * per the shared protocol's own "renderer adapters live in each app as
+ * separate maps" rule — and per this issue's part-1 scope, this module is
+ * designed so a future registry-side renderer (part 2) can consume the exact
+ * same compiled catalog without a second classification.
+ *
+ * A thin, UNCHANGED-SHAPE compatibility surface
+ * (`menusOverlaysScenarios`/`MENUS_OVERLAYS_SCENARIO_DEFINITIONS`/
+ * `MenusOverlaysCaseInput`/etc.) is kept at the bottom of this file so the
+ * existing registry-side consumers (`registry/test/menus-overlays*.ts`, the
+ * part-2 registry renderer this issue explicitly defers) need only update
+ * their import path in this part-1 pass, with no behavior change — replacing
+ * their generic-label renderer is part 2's job, not this one's.
+ */
+import {
+  compileScenarioFamily,
+  resolveScenarioSelection,
+  type CompiledPresentationScenarioFamily,
+  type PresentationScenarioEnvironmentAxis,
+  type PresentationScenarioEnvironment,
+  type ResolvedPresentationScenarioSelection,
+} from '@llui/cli/presentation-scenarios'
+import type { ProductContract, ProductEntry } from '@llui/cli'
+import type { ToastType, ToastPlacement } from '../../src/components/toast.js'
+import type { SelectionMode } from '../../src/components/select.js'
+import type { AsyncStatus } from '../../src/components/combobox.js'
+
+// Individual named consts, never a `Record`-typed lookup object — see
+// navigation-data-scenarios.ts's identical comment for why: indexing a type
+// with an index signature widens every property read to `T | undefined`
+// under `noUncheckedIndexedAccess`, silently poisoning `environmentAxes`.
+const AX = {
+  theme: ['theme'] as readonly PresentationScenarioEnvironmentAxis[],
+  dir: ['direction'] as readonly PresentationScenarioEnvironmentAxis[],
+  motion: ['motion'] as readonly PresentationScenarioEnvironmentAxis[],
+  narrow: ['viewport'] as readonly PresentationScenarioEnvironmentAxis[],
+  forced: ['forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
+  surface: ['theme', 'forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
+  dirSurface: [
+    'theme',
+    'direction',
+    'forcedColors',
+  ] as readonly PresentationScenarioEnvironmentAxis[],
+  floating: ['theme', 'motion', 'forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
+  dirFloating: [
+    'theme',
+    'direction',
+    'motion',
+    'forcedColors',
+  ] as readonly PresentationScenarioEnvironmentAxis[],
+  modal: [
+    'theme',
+    'direction',
+    'motion',
+    'forcedColors',
+  ] as readonly PresentationScenarioEnvironmentAxis[],
+  none: [] as readonly PresentationScenarioEnvironmentAxis[],
+}
+
+export type MenusOverlaysPresence = 'opening' | 'open' | 'closing' | 'closed'
+
+// ---------------------------------------------------------------------------
+// Real per-product typed case inputs. Every field mirrors a real
+// `init()`/state field of the machine named in `machineImport` for that
+// scenarioId (verified against `packages/components/src/components/*.ts` /
+// `src/patterns/*.ts`).
+
+/** component:alert-dialog, component:dialog — real `DialogState`/`DialogInit`. */
+export interface DialogLikeCaseInput {
+  readonly presence: MenusOverlaysPresence
+  readonly skipAnimations: boolean
+  readonly modal?: boolean
+  readonly title: string
+  readonly description: string
+}
+
+/** component:drawer — real `DrawerState`/`DrawerInit` plus its `side` prop. */
+export interface DrawerCaseInput {
+  readonly presence: MenusOverlaysPresence
+  readonly skipAnimations: boolean
+  readonly side: 'top' | 'right' | 'bottom' | 'left'
+  readonly title: string
+  readonly description: string
+}
+
+/** component:hover-card, component:popover — real `PopoverState`-shaped machines. */
+export interface FloatingPresenceCaseInput {
+  readonly presence: MenusOverlaysPresence
+  readonly skipAnimations: boolean
+  readonly placement: FloatingPlacement
+  readonly label: string
+}
+
+/** component:tooltip — real `TooltipState`/`TooltipInit` (`animated`, not `skipAnimations`). */
+export interface TooltipCaseInput {
+  readonly presence: MenusOverlaysPresence
+  readonly animated: boolean
+  readonly placement: FloatingPlacement
+  readonly label: string
+}
+
+export type FloatingPlacement =
+  | 'top'
+  | 'top-start'
+  | 'top-end'
+  | 'bottom'
+  | 'bottom-start'
+  | 'bottom-end'
+  | 'left'
+  | 'left-start'
+  | 'left-end'
+  | 'right'
+  | 'right-start'
+  | 'right-end'
+
+export type MenuItemCaseInput = {
+  readonly value: string
+  readonly label: string
+  readonly disabled?: boolean
+  readonly destructive?: boolean
+  readonly checked?: boolean
+}
+
+/** component:menu — real `MenuState`/`MenuInit`. */
+export interface MenuCaseInput {
+  readonly presence: MenusOverlaysPresence
+  readonly skipAnimations: boolean
+  readonly placement: FloatingPlacement
+  readonly items: readonly MenuItemCaseInput[]
+  readonly highlighted: string | null
+  readonly checked: readonly string[]
+  readonly nestedOpen: boolean
+}
+
+/** component:context-menu — real `ContextMenuState` (`x`/`y` virtual anchor). */
+export interface ContextMenuCaseInput {
+  readonly presence: MenusOverlaysPresence
+  readonly skipAnimations: boolean
+  readonly x: number
+  readonly y: number
+  readonly items: readonly MenuItemCaseInput[]
+  readonly highlighted: string | null
+  readonly nestedOpen: boolean
+}
+
+export type MenubarMenuCaseInput = {
+  readonly id: string
+  readonly label: string
+  readonly disabled?: boolean
+  readonly items: readonly MenuItemCaseInput[]
+}
+
+/** component:menubar — real `MenubarState`/`MenubarInit` (no `status`; synchronous open/closed). */
+export interface MenubarCaseInput {
+  readonly menus: readonly MenubarMenuCaseInput[]
+  readonly open: string | null
+  readonly focused: string | null
+}
+
+/** component:navigation-menu — real `NavMenuState`/`NavMenuInit`. */
+export type NavigationMenuBranchCaseInput = {
+  readonly id: string
+  readonly label: string
+}
+
+export interface NavigationMenuCaseInput {
+  readonly open: readonly string[]
+  readonly focused: string | null
+  readonly branches: readonly NavigationMenuBranchCaseInput[]
+  readonly disabled: boolean
+}
+
+/** component:select — real `SelectState`/`SelectInit`. */
+export interface SelectCaseInput {
+  readonly open: boolean
+  readonly value: readonly string[]
+  readonly items: readonly string[]
+  readonly disabledItems: readonly string[]
+  readonly highlightedValue: string | null
+  readonly selectionMode: SelectionMode
+}
+
+/** component:combobox, pattern:searchable-select — real `ComboboxState`/`ComboboxInit`. */
+export interface ComboboxCaseInput {
+  readonly open: boolean
+  readonly value: readonly string[]
+  readonly inputValue: string
+  readonly items: readonly string[]
+  readonly disabledItems: readonly string[]
+  readonly highlightedValue: string | null
+  readonly status: AsyncStatus
+}
+
+/** component:toast — real `Toast`/`ToasterState` published fields. */
+export interface ToastCaseInput {
+  readonly toastType: ToastType
+  readonly title: string
+  readonly description: string
+  readonly placement: ToastPlacement
+  readonly closing: boolean
+  readonly animated: boolean
+  readonly dismissable: boolean
+}
+
+/** component:toolbar — real `ToolbarState`/`ToolbarInit`. No presence: persistently mounted. */
+export interface ToolbarCaseInput {
+  readonly items: readonly string[]
+  readonly disabledItems: readonly string[]
+  readonly orientation: 'horizontal' | 'vertical'
+}
+
+/** pattern:command-menu — real `CommandMenuState`/`CommandMenuInit`. */
+export interface CommandMenuCaseInput {
+  readonly open: boolean
+  readonly commands: readonly { readonly id: string; readonly label: string }[]
+  readonly query: string
+}
+
+/** pattern:confirm-dialog — real `ConfirmDialogState`/`ConfirmDialogInit`. */
+export interface ConfirmDialogCaseInput {
+  readonly open: boolean
+  readonly title: string
+  readonly description: string
+  readonly destructive: boolean
+}
+
+// Every element below is deliberately given the SAME set of keys (never an
+// optional key present on one element and absent on another): a
+// heterogeneous-shape array literal infers a per-element UNION type that
+// `compileScenarioFamily`'s JSON-index-signature check rejects even when
+// every element is genuinely JSON-plain — measured directly against this
+// file's own shapes before this comment was written.
+const overflowMenuItems = (count: number): readonly MenuItemCaseInput[] =>
+  Array.from({ length: count }, (_, index) => ({
+    value: `item-${index}`,
+    label: `Item ${index}`,
+    disabled: false,
+    destructive: false,
+    checked: false,
+  }))
+
+const baseMenuItems: readonly MenuItemCaseInput[] = [
+  { value: 'copy', label: 'Copy', disabled: false, destructive: false, checked: false },
+  { value: 'paste', label: 'Paste', disabled: true, destructive: false, checked: false },
+  { value: 'delete', label: 'Delete', disabled: false, destructive: true, checked: false },
+  { value: 'bold', label: 'Bold', disabled: false, destructive: false, checked: true },
+]
+
+/**
+ * Family-owned definitions keyed by ProductContract `scenarioId`, joined
+ * against `compileScenarioFamily`'s exactness check below.
+ */
+export const MENUS_OVERLAYS_DEFINITIONS = {
+  'component:alert-dialog': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open modal',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          title: 'Delete file?',
+          description: 'This action cannot be undone.',
+        } satisfies DialogLikeCaseInput,
+        environmentAxes: AX.modal,
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: {
+          presence: 'opening',
+          skipAnimations: false,
+          title: 'Delete file?',
+          description: 'This action cannot be undone.',
+        } satisfies DialogLikeCaseInput,
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: {
+          presence: 'closing',
+          skipAnimations: false,
+          title: 'Delete file?',
+          description: 'This action cannot be undone.',
+        } satisfies DialogLikeCaseInput,
+        environmentAxes: AX.motion,
+      },
+    ],
+  },
+  'component:dialog': {
+    defaultCaseId: 'modal',
+    cases: [
+      {
+        id: 'modal',
+        label: 'Open modal',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          modal: true,
+          title: 'Edit profile',
+          description: 'Update your account details.',
+        } satisfies DialogLikeCaseInput,
+        environmentAxes: AX.modal,
+      },
+      {
+        id: 'non-modal',
+        label: 'Open non-modal',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          modal: false,
+          title: 'Edit profile',
+          description: 'Update your account details.',
+        } satisfies DialogLikeCaseInput,
+        environmentAxes: AX.dirSurface,
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: {
+          presence: 'opening',
+          skipAnimations: false,
+          modal: true,
+          title: 'Edit profile',
+          description: 'Update your account details.',
+        } satisfies DialogLikeCaseInput,
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: {
+          presence: 'closing',
+          skipAnimations: false,
+          modal: true,
+          title: 'Edit profile',
+          description: 'Update your account details.',
+        } satisfies DialogLikeCaseInput,
+        environmentAxes: AX.motion,
+      },
+    ],
+  },
+  'component:drawer': {
+    defaultCaseId: 'right',
+    cases: [
+      {
+        id: 'right',
+        label: 'Right drawer',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          side: 'right',
+          title: 'Cart',
+          description: 'Review your items.',
+        } satisfies DrawerCaseInput,
+        environmentAxes: AX.modal,
+      },
+      {
+        id: 'left',
+        label: 'Left drawer',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          side: 'left',
+          title: 'Navigation',
+          description: 'Browse sections.',
+        } satisfies DrawerCaseInput,
+        environmentAxes: AX.dir,
+      },
+      {
+        id: 'top',
+        label: 'Top drawer',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          side: 'top',
+          title: 'Notice',
+          description: 'A short banner drawer.',
+        } satisfies DrawerCaseInput,
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'bottom',
+        label: 'Bottom drawer',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          side: 'bottom',
+          title: 'Sheet',
+          description: 'A bottom sheet drawer.',
+        } satisfies DrawerCaseInput,
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: {
+          presence: 'opening',
+          skipAnimations: false,
+          side: 'right',
+          title: 'Cart',
+          description: 'Review your items.',
+        } satisfies DrawerCaseInput,
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: {
+          presence: 'closing',
+          skipAnimations: false,
+          side: 'right',
+          title: 'Cart',
+          description: 'Review your items.',
+        } satisfies DrawerCaseInput,
+        environmentAxes: AX.motion,
+      },
+    ],
+  },
+  'component:hover-card': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open card',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          placement: 'bottom',
+          label: '@franco',
+        } satisfies FloatingPresenceCaseInput,
+        environmentAxes: AX.floating,
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: {
+          presence: 'opening',
+          skipAnimations: false,
+          placement: 'bottom',
+          label: '@franco',
+        } satisfies FloatingPresenceCaseInput,
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: {
+          presence: 'closing',
+          skipAnimations: false,
+          placement: 'bottom',
+          label: '@franco',
+        } satisfies FloatingPresenceCaseInput,
+        environmentAxes: AX.motion,
+      },
+    ],
+  },
+  'component:popover': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open popover',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          placement: 'bottom',
+          label: 'Dimensions',
+        } satisfies FloatingPresenceCaseInput,
+        environmentAxes: AX.floating,
+      },
+      {
+        id: 'top-start',
+        label: 'Top-start placement',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          placement: 'top-start',
+          label: 'Dimensions',
+        } satisfies FloatingPresenceCaseInput,
+        environmentAxes: AX.dir,
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: {
+          presence: 'opening',
+          skipAnimations: false,
+          placement: 'bottom',
+          label: 'Dimensions',
+        } satisfies FloatingPresenceCaseInput,
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: {
+          presence: 'closing',
+          skipAnimations: false,
+          placement: 'bottom',
+          label: 'Dimensions',
+        } satisfies FloatingPresenceCaseInput,
+        environmentAxes: AX.motion,
+      },
+    ],
+  },
+  'component:tooltip': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open tooltip',
+        input: {
+          presence: 'open',
+          animated: false,
+          placement: 'top',
+          label: 'Save',
+        } satisfies TooltipCaseInput,
+        environmentAxes: AX.floating,
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: {
+          presence: 'opening',
+          animated: true,
+          placement: 'top',
+          label: 'Save',
+        } satisfies TooltipCaseInput,
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: {
+          presence: 'closing',
+          animated: true,
+          placement: 'top',
+          label: 'Save',
+        } satisfies TooltipCaseInput,
+        environmentAxes: AX.motion,
+      },
+    ],
+  },
+  'component:menu': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open menu states',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          placement: 'bottom-start',
+          items: baseMenuItems,
+          highlighted: 'copy',
+          checked: ['bold'],
+          nestedOpen: false,
+        } satisfies MenuCaseInput,
+        environmentAxes: AX.dirFloating,
+      },
+      {
+        id: 'submenu-open',
+        label: 'Open with submenu',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          placement: 'bottom-start',
+          items: baseMenuItems,
+          highlighted: 'copy',
+          checked: ['bold'],
+          nestedOpen: true,
+        } satisfies MenuCaseInput,
+        environmentAxes: AX.dir,
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: {
+          presence: 'opening',
+          skipAnimations: false,
+          placement: 'bottom-start',
+          items: baseMenuItems,
+          highlighted: null,
+          checked: [],
+          nestedOpen: false,
+        } satisfies MenuCaseInput,
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: {
+          presence: 'closing',
+          skipAnimations: false,
+          placement: 'bottom-start',
+          items: baseMenuItems,
+          highlighted: null,
+          checked: [],
+          nestedOpen: false,
+        } satisfies MenuCaseInput,
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'overflow',
+        label: 'Overflow containment',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          placement: 'bottom-start',
+          items: overflowMenuItems(24),
+          highlighted: null,
+          checked: [],
+          nestedOpen: false,
+        } satisfies MenuCaseInput,
+        environmentAxes: AX.narrow,
+      },
+    ],
+  },
+  'component:context-menu': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open virtual menu',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          x: 240,
+          y: 160,
+          items: baseMenuItems,
+          highlighted: 'copy',
+          nestedOpen: false,
+        } satisfies ContextMenuCaseInput,
+        environmentAxes: AX.dirFloating,
+      },
+      {
+        id: 'edge-anchor',
+        label: 'Viewport-edge anchor',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          x: 4,
+          y: 4,
+          items: baseMenuItems,
+          highlighted: null,
+          nestedOpen: false,
+        } satisfies ContextMenuCaseInput,
+        environmentAxes: AX.narrow,
+      },
+      {
+        id: 'submenu-open',
+        label: 'Open with submenu',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          x: 240,
+          y: 160,
+          items: baseMenuItems,
+          highlighted: 'copy',
+          nestedOpen: true,
+        } satisfies ContextMenuCaseInput,
+        environmentAxes: AX.dir,
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: {
+          presence: 'opening',
+          skipAnimations: false,
+          x: 240,
+          y: 160,
+          items: baseMenuItems,
+          highlighted: null,
+          nestedOpen: false,
+        } satisfies ContextMenuCaseInput,
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: {
+          presence: 'closing',
+          skipAnimations: false,
+          x: 240,
+          y: 160,
+          items: baseMenuItems,
+          highlighted: null,
+          nestedOpen: false,
+        } satisfies ContextMenuCaseInput,
+        environmentAxes: AX.motion,
+      },
+    ],
+  },
+  'component:menubar': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open menubar menu',
+        input: {
+          menus: [
+            { id: 'file', label: 'File', items: baseMenuItems, disabled: false },
+            { id: 'edit', label: 'Edit', items: baseMenuItems, disabled: true },
+          ],
+          open: 'file',
+          focused: 'file',
+        } satisfies MenubarCaseInput,
+        environmentAxes: AX.dirSurface,
+      },
+      {
+        id: 'closed',
+        label: 'Closed menubar',
+        input: {
+          menus: [
+            { id: 'file', label: 'File', items: baseMenuItems, disabled: false },
+            { id: 'edit', label: 'Edit', items: baseMenuItems, disabled: true },
+          ],
+          open: null,
+          focused: null,
+        } satisfies MenubarCaseInput,
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:navigation-menu': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open branch',
+        input: {
+          open: ['products'],
+          focused: 'products',
+          branches: [
+            { id: 'products', label: 'Products' },
+            { id: 'docs', label: 'Docs' },
+          ],
+          disabled: false,
+        } satisfies NavigationMenuCaseInput,
+        environmentAxes: AX.dirSurface,
+      },
+      {
+        id: 'closed',
+        label: 'Closed branch',
+        input: {
+          open: [],
+          focused: null,
+          branches: [
+            { id: 'products', label: 'Products' },
+            { id: 'docs', label: 'Docs' },
+          ],
+          disabled: false,
+        } satisfies NavigationMenuCaseInput,
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:select': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open single-select',
+        input: {
+          open: true,
+          value: ['apple'],
+          items: ['apple', 'banana', 'cherry'],
+          disabledItems: ['cherry'],
+          highlightedValue: 'banana',
+          selectionMode: 'single',
+        } satisfies SelectCaseInput,
+        environmentAxes: AX.dirSurface,
+      },
+      {
+        id: 'multiple',
+        label: 'Open multi-select',
+        input: {
+          open: true,
+          value: ['apple', 'banana'],
+          items: ['apple', 'banana', 'cherry'],
+          disabledItems: [],
+          highlightedValue: 'cherry',
+          selectionMode: 'multiple',
+        } satisfies SelectCaseInput,
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'closed',
+        label: 'Closed trigger',
+        input: {
+          open: false,
+          value: ['apple'],
+          items: ['apple', 'banana', 'cherry'],
+          disabledItems: [],
+          highlightedValue: null,
+          selectionMode: 'single',
+        } satisfies SelectCaseInput,
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:combobox': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open options',
+        input: {
+          open: true,
+          value: ['apple'],
+          inputValue: 'ap',
+          items: ['apple', 'apricot', 'banana'],
+          disabledItems: [],
+          highlightedValue: 'apple',
+          status: 'loaded',
+        } satisfies ComboboxCaseInput,
+        environmentAxes: AX.dirSurface,
+      },
+      {
+        id: 'loading',
+        label: 'Loading options',
+        input: {
+          open: true,
+          value: [],
+          inputValue: 'ap',
+          items: [],
+          disabledItems: [],
+          highlightedValue: null,
+          status: 'loading',
+        } satisfies ComboboxCaseInput,
+        environmentAxes: AX.surface,
+      },
+      {
+        id: 'stale-results',
+        label: 'Stale results while revalidating',
+        input: {
+          open: true,
+          value: [],
+          inputValue: 'apr',
+          items: ['apple', 'apricot'],
+          disabledItems: [],
+          highlightedValue: 'apple',
+          status: 'loading',
+        } satisfies ComboboxCaseInput,
+        environmentAxes: AX.none,
+      },
+      {
+        id: 'error',
+        label: 'Load error',
+        input: {
+          open: true,
+          value: [],
+          inputValue: 'ap',
+          items: [],
+          disabledItems: [],
+          highlightedValue: null,
+          status: 'error',
+        } satisfies ComboboxCaseInput,
+        environmentAxes: AX.surface,
+      },
+      {
+        id: 'closed',
+        label: 'Closed trigger',
+        input: {
+          open: false,
+          value: ['apple'],
+          inputValue: '',
+          items: ['apple', 'apricot', 'banana'],
+          disabledItems: [],
+          highlightedValue: null,
+          status: 'idle',
+        } satisfies ComboboxCaseInput,
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:toast': {
+    defaultCaseId: 'success',
+    cases: [
+      ...(['info', 'success', 'warning', 'error', 'loading', 'custom'] as const).map(
+        (toastType) => ({
+          id: toastType,
+          label: `${toastType[0]!.toUpperCase()}${toastType.slice(1)} toast`,
+          input: {
+            toastType,
+            title: `${toastType[0]!.toUpperCase()}${toastType.slice(1)}`,
+            description: `A ${toastType} toast notification.`,
+            placement: 'bottom-end' as const,
+            closing: false,
+            animated: false,
+            dismissable: true,
+          } satisfies ToastCaseInput,
+          environmentAxes: toastType === 'success' ? AX.dirSurface : AX.none,
+        }),
+      ),
+      ...(['top', 'top-start', 'top-end', 'bottom', 'bottom-start', 'bottom-end'] as const).map(
+        (placement) => ({
+          id: `placement-${placement}`,
+          label: `${placement} placement`,
+          input: {
+            toastType: 'info' as const,
+            title: 'Notice',
+            description: 'Positioned toast.',
+            placement,
+            closing: false,
+            animated: false,
+            dismissable: true,
+          } satisfies ToastCaseInput,
+          environmentAxes: placement.includes('-') ? AX.dir : AX.none,
+        }),
+      ),
+      {
+        id: 'closing',
+        label: 'Closing toast',
+        input: {
+          toastType: 'info',
+          title: 'Notice',
+          description: 'Dismissing…',
+          placement: 'bottom-end',
+          closing: true,
+          animated: true,
+          dismissable: true,
+        } satisfies ToastCaseInput,
+        environmentAxes: AX.motion,
+      },
+      {
+        id: 'undismissable',
+        label: 'Non-dismissable toast',
+        input: {
+          toastType: 'loading',
+          title: 'Uploading…',
+          description: 'Please wait.',
+          placement: 'bottom-end',
+          closing: false,
+          animated: false,
+          dismissable: false,
+        } satisfies ToastCaseInput,
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'component:toolbar': {
+    defaultCaseId: 'horizontal',
+    cases: [
+      {
+        id: 'horizontal',
+        label: 'Horizontal toolbar',
+        input: {
+          items: ['bold', 'italic', 'underline'],
+          disabledItems: ['underline'],
+          orientation: 'horizontal',
+        } satisfies ToolbarCaseInput,
+        environmentAxes: AX.surface,
+      },
+      {
+        id: 'vertical',
+        label: 'Vertical toolbar',
+        input: {
+          items: ['bold', 'italic', 'underline'],
+          disabledItems: ['underline'],
+          orientation: 'vertical',
+        } satisfies ToolbarCaseInput,
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'pattern:command-menu': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open commands',
+        input: {
+          open: true,
+          commands: [
+            { id: 'new-file', label: 'New File' },
+            { id: 'open-file', label: 'Open File' },
+          ],
+          query: '',
+        } satisfies CommandMenuCaseInput,
+        environmentAxes: AX.dirSurface,
+      },
+      {
+        id: 'empty',
+        label: 'No matching commands',
+        input: {
+          open: true,
+          commands: [
+            { id: 'new-file', label: 'New File' },
+            { id: 'open-file', label: 'Open File' },
+          ],
+          query: 'zzz-no-match',
+        } satisfies CommandMenuCaseInput,
+        environmentAxes: AX.surface,
+      },
+      {
+        id: 'closed',
+        label: 'Closed palette',
+        input: {
+          open: false,
+          commands: [
+            { id: 'new-file', label: 'New File' },
+            { id: 'open-file', label: 'Open File' },
+          ],
+          query: '',
+        } satisfies CommandMenuCaseInput,
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'pattern:confirm-dialog': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Destructive confirmation',
+        input: {
+          open: true,
+          title: 'Delete project?',
+          description: 'This will permanently delete the project.',
+          destructive: true,
+        } satisfies ConfirmDialogCaseInput,
+        environmentAxes: AX.dirSurface,
+      },
+      {
+        id: 'closed',
+        label: 'Closed confirmation',
+        input: {
+          open: false,
+          title: 'Delete project?',
+          description: 'This will permanently delete the project.',
+          destructive: true,
+        } satisfies ConfirmDialogCaseInput,
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+  'pattern:searchable-select': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open searchable options',
+        input: {
+          open: true,
+          value: ['apple'],
+          inputValue: 'ap',
+          items: ['apple', 'apricot', 'banana'],
+          disabledItems: [],
+          highlightedValue: 'apple',
+          status: 'loaded',
+        } satisfies ComboboxCaseInput,
+        environmentAxes: AX.dirSurface,
+      },
+      {
+        id: 'loading',
+        label: 'Loading options',
+        input: {
+          open: true,
+          value: [],
+          inputValue: 'ap',
+          items: [],
+          disabledItems: [],
+          highlightedValue: null,
+          status: 'loading',
+        } satisfies ComboboxCaseInput,
+        environmentAxes: AX.surface,
+      },
+      {
+        id: 'error',
+        label: 'Load error',
+        input: {
+          open: true,
+          value: [],
+          inputValue: 'ap',
+          items: [],
+          disabledItems: [],
+          highlightedValue: null,
+          status: 'error',
+        } satisfies ComboboxCaseInput,
+        environmentAxes: AX.surface,
+      },
+      {
+        id: 'closed',
+        label: 'Closed trigger',
+        input: {
+          open: false,
+          value: ['apple'],
+          inputValue: '',
+          items: ['apple', 'apricot', 'banana'],
+          disabledItems: [],
+          highlightedValue: null,
+          status: 'idle',
+        } satisfies ComboboxCaseInput,
+        environmentAxes: AX.none,
+      },
+    ],
+  },
+} as const
+
+export type MenusOverlaysDefinitions = typeof MENUS_OVERLAYS_DEFINITIONS
+export type MenusOverlaysCatalog = CompiledPresentationScenarioFamily<MenusOverlaysDefinitions>
+export type MenusOverlaysCompiledScenario = MenusOverlaysCatalog['scenarios'][number]
+export type MenusOverlaysCompiledCase = MenusOverlaysCompiledScenario['cases'][number]
+export type MenusOverlaysResolved = ResolvedPresentationScenarioSelection<MenusOverlaysDefinitions>
+export type MenusOverlaysDefinitionScenarioId = keyof MenusOverlaysDefinitions & string
+
+/** Compile the family catalog against a real ProductContract. Throws a
+ * `PresentationScenarioError` if the contract's menus-overlays products and
+ * this module's keys are not in exact agreement (missing or stale). */
+export function compileMenusOverlaysCatalog(contract: ProductContract): MenusOverlaysCatalog {
+  return compileScenarioFamily(contract, 'menus-overlays', MENUS_OVERLAYS_DEFINITIONS)
+}
+
+export { resolveScenarioSelection }
+export type { PresentationScenarioEnvironment }
+
+/** One menus-overlays scenario joined with its ProductContract entry — the
+ * ergonomic shape a renderer file consumes alongside the compiled cases. */
+export interface MenusOverlaysJoinedScenario {
+  readonly productId: string
+  readonly displayName: string
+  readonly scenarioId: MenusOverlaysDefinitionScenarioId
+  readonly defaultCaseId: string
+  readonly cases: readonly MenusOverlaysCompiledCase[]
+  readonly presentation: ProductEntry['presentation']
+  readonly copiedArtifacts: ProductEntry['copiedArtifacts']
+  readonly machine: ProductEntry['machine']
+}
+
+export function joinMenusOverlaysScenarios(
+  catalog: MenusOverlaysCatalog,
+  contract: ProductContract,
+): MenusOverlaysJoinedScenario[] {
+  const entryByName = new Map(contract.entries.map((entry) => [entry.name, entry]))
+  return catalog.scenarios.map((scenario) => {
+    const entry = entryByName.get(scenario.productId)
+    if (entry === undefined) {
+      throw new Error(`No ProductContract entry named ${scenario.productId}`)
+    }
+    return {
+      productId: scenario.productId,
+      displayName: entry.displayName,
+      scenarioId: scenario.scenarioId as MenusOverlaysDefinitionScenarioId,
+      defaultCaseId: scenario.defaultCaseId,
+      cases: scenario.cases,
+      presentation: entry.presentation,
+      copiedArtifacts: entry.copiedArtifacts,
+      machine: entry.machine,
+    }
+  })
+}
+
+function isVisuallyApplicable(mode: string): boolean {
+  return mode === 'styled' || mode === 'partial' || mode === 'composed'
+}
+
+export type MenusOverlaysPath = 'baseline' | 'registryTailwind'
+
+export function applicableMenusOverlaysScenarios(
+  joined: readonly MenusOverlaysJoinedScenario[],
+  path: MenusOverlaysPath,
+): MenusOverlaysJoinedScenario[] {
+  return joined.filter(({ presentation }) => isVisuallyApplicable(presentation[path].mode))
+}
+
+// ---------------------------------------------------------------------------
+// Legacy-shaped compatibility surface for existing registry-side consumers
+// (`registry/test/menus-overlays*.ts`), whose real per-product renderer is
+// this issue's explicitly deferred part 2. Kept byte-for-byte equivalent to
+// the module it replaces (`scripts/lib/menus-overlays-scenarios.ts`) so those
+// files need only update their import path in this pass — see this file's
+// header doc.
+
+export const MENUS_OVERLAYS_ENVIRONMENT_AXES = {
+  theme: ['light', 'dark'],
+  direction: ['ltr', 'rtl'],
+  motion: ['full', 'reduced'],
+  viewport: ['wide', 'narrow'],
+  forcedColors: [false, true],
+} as const
+
+export type MenusOverlaysEnvironmentAxis = keyof typeof MENUS_OVERLAYS_ENVIRONMENT_AXES
+export type MenusOverlaysPhysicalSide = 'top' | 'right' | 'bottom' | 'left'
+
+export interface MenusOverlaysScenarioContent {
+  readonly label: string
+  readonly detail: string
+}
+
+export interface MenusOverlaysLegacyCaseInput {
+  readonly presence?: MenusOverlaysPresence
+  readonly modal?: boolean
+  readonly side?: MenusOverlaysPhysicalSide
+  readonly edge?: MenusOverlaysPhysicalSide
+  readonly items?: {
+    readonly highlighted?: boolean
+    readonly selected?: boolean
+    readonly checked?: boolean
+    readonly disabled?: boolean
+    readonly destructive?: boolean
+    readonly nested?: boolean
+  }
+  readonly asyncStatus?: 'loading' | 'empty' | 'error'
+  readonly toastType?: ToastType
+  readonly toastPlacement?: ToastPlacement
+  readonly orientation?: 'horizontal' | 'vertical'
+  readonly overflow?: { readonly itemCount: number }
+  readonly content: MenusOverlaysScenarioContent
+}
+
+/** @deprecated Legacy alias kept only for existing registry-side imports. */
+export type MenusOverlaysCaseInput = MenusOverlaysLegacyCaseInput
+
+type MenusOverlaysCaseSeed = Omit<MenusOverlaysLegacyCaseInput, 'content'>
+
+export interface MenusOverlaysScenarioCase {
+  readonly id: string
+  readonly label: string
+  readonly input: MenusOverlaysLegacyCaseInput
+  readonly environmentAxes: readonly MenusOverlaysEnvironmentAxis[]
+}
+
+export interface MenusOverlaysUnsupportedCase {
+  readonly id: string
+  readonly rationale: string
+}
+
+interface MenusOverlaysScenarioCaseDefinition {
+  readonly id: string
+  readonly label: string
+  readonly input: MenusOverlaysCaseSeed
+  readonly environmentAxes: readonly MenusOverlaysEnvironmentAxis[]
+}
+
+interface MenusOverlaysScenarioDefinition {
+  readonly defaultCaseId: string
+  readonly cases: readonly MenusOverlaysScenarioCaseDefinition[]
+  readonly unsupportedCases: readonly MenusOverlaysUnsupportedCase[]
+}
+
+const SURFACE_AXES = ['theme', 'forcedColors'] as const
+const DIRECTIONAL_SURFACE_AXES = ['theme', 'direction', 'forcedColors'] as const
+const FLOATING_AXES = ['theme', 'motion', 'forcedColors'] as const
+const DIRECTIONAL_FLOATING_AXES = ['theme', 'direction', 'motion', 'forcedColors'] as const
+const MODAL_AXES = ['theme', 'direction', 'motion', 'forcedColors'] as const
+const MOTION_AXES = ['motion'] as const
+
+const overflowCase = (
+  input: MenusOverlaysCaseSeed,
+): readonly [MenusOverlaysScenarioCaseDefinition] => [
+  {
+    id: 'overflow',
+    label: 'Overflow containment',
+    input: { ...input, overflow: { itemCount: 24 } },
+    environmentAxes: ['viewport'],
+  },
+]
+
+const fourPhaseUnsupported = [
+  {
+    id: 'closed',
+    rationale:
+      'The closed phase is intentionally unmounted after the exit end event, so it has no retained gallery surface.',
+  },
+] as const
+
+const synchronousSelectionUnsupported = [
+  {
+    id: 'opening',
+    rationale:
+      'The machine publishes open/closed synchronously; an optional consumer transition can defer mounting but is not machine state.',
+  },
+  {
+    id: 'closing',
+    rationale:
+      'The machine publishes open/closed synchronously; an optional consumer transition can defer unmounting but is not machine state.',
+  },
+] as const
+
+const openMenuInput = {
+  presence: 'open',
+  side: 'bottom',
+  items: {
+    highlighted: true,
+    checked: true,
+    disabled: true,
+    destructive: true,
+    nested: true,
+  },
+} as const satisfies MenusOverlaysCaseSeed
+
+const openSelectionInput = {
+  presence: 'open',
+  side: 'bottom',
+  items: { highlighted: true, selected: true, disabled: true },
+} as const satisfies MenusOverlaysCaseSeed
+
+const floatingPresenceCases = (
+  openLabel: string,
+  axes: readonly MenusOverlaysEnvironmentAxis[] = FLOATING_AXES,
+): readonly MenusOverlaysScenarioCaseDefinition[] => [
+  {
+    id: 'open',
+    label: openLabel,
+    input: { presence: 'open', side: 'bottom' },
+    environmentAxes: axes,
+  },
+  {
+    id: 'opening',
+    label: 'Opening',
+    input: { presence: 'opening', side: 'bottom' },
+    environmentAxes: MOTION_AXES,
+  },
+  {
+    id: 'closing',
+    label: 'Closing',
+    input: { presence: 'closing', side: 'bottom' },
+    environmentAxes: MOTION_AXES,
+  },
+  ...overflowCase({ presence: 'open', side: 'bottom' }),
+]
+
+/**
+ * Explicit legacy behavior keyed by ProductContract scenario identity, kept
+ * for the registry consumers described in this file's header doc. Not a
+ * second inventory of its own: projection below rejects missing and extra
+ * keys against the canonical contract before either renderer can consume it.
+ */
+export const MENUS_OVERLAYS_SCENARIO_DEFINITIONS = {
+  'component:alert-dialog': {
+    defaultCaseId: 'open',
+    cases: [
+      { id: 'open', label: 'Open modal', input: { presence: 'open' }, environmentAxes: MODAL_AXES },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: { presence: 'opening' },
+        environmentAxes: MOTION_AXES,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: { presence: 'closing' },
+        environmentAxes: MOTION_AXES,
+      },
+      ...overflowCase({ presence: 'open' }),
+    ],
+    unsupportedCases: fourPhaseUnsupported,
+  },
+  'component:combobox': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open options',
+        input: openSelectionInput,
+        environmentAxes: DIRECTIONAL_SURFACE_AXES,
+      },
+      {
+        id: 'loading',
+        label: 'Loading options',
+        input: { presence: 'open', side: 'bottom', asyncStatus: 'loading' },
+        environmentAxes: SURFACE_AXES,
+      },
+      {
+        id: 'empty',
+        label: 'No options',
+        input: { presence: 'open', side: 'bottom', asyncStatus: 'empty' },
+        environmentAxes: SURFACE_AXES,
+      },
+      {
+        id: 'error',
+        label: 'Load error',
+        input: { presence: 'open', side: 'bottom', asyncStatus: 'error' },
+        environmentAxes: SURFACE_AXES,
+      },
+      { id: 'closed', label: 'Closed trigger', input: { presence: 'closed' }, environmentAxes: [] },
+      ...overflowCase({ presence: 'open', side: 'bottom' }),
+    ],
+    unsupportedCases: synchronousSelectionUnsupported,
+  },
+  'component:context-menu': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open virtual menu',
+        input: openMenuInput,
+        environmentAxes: DIRECTIONAL_FLOATING_AXES,
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: { presence: 'opening', side: 'bottom' },
+        environmentAxes: MOTION_AXES,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: { presence: 'closing', side: 'bottom' },
+        environmentAxes: MOTION_AXES,
+      },
+      ...overflowCase({ presence: 'open', side: 'bottom' }),
+    ],
+    unsupportedCases: fourPhaseUnsupported,
+  },
+  'component:dialog': {
+    defaultCaseId: 'modal',
+    cases: [
+      {
+        id: 'modal',
+        label: 'Open modal',
+        input: { presence: 'open', modal: true },
+        environmentAxes: MODAL_AXES,
+      },
+      {
+        id: 'non-modal',
+        label: 'Open non-modal',
+        input: { presence: 'open', modal: false },
+        environmentAxes: DIRECTIONAL_SURFACE_AXES,
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: { presence: 'opening', modal: true },
+        environmentAxes: MOTION_AXES,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: { presence: 'closing', modal: true },
+        environmentAxes: MOTION_AXES,
+      },
+      ...overflowCase({ presence: 'open', modal: true }),
+    ],
+    unsupportedCases: fourPhaseUnsupported,
+  },
+  'component:drawer': {
+    defaultCaseId: 'right',
+    cases: [
+      {
+        id: 'right',
+        label: 'Right drawer',
+        input: { presence: 'open', edge: 'right' },
+        environmentAxes: MODAL_AXES,
+      },
+      {
+        id: 'left',
+        label: 'Left drawer',
+        input: { presence: 'open', edge: 'left' },
+        environmentAxes: ['direction'],
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: { presence: 'opening', edge: 'right' },
+        environmentAxes: MOTION_AXES,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: { presence: 'closing', edge: 'right' },
+        environmentAxes: MOTION_AXES,
+      },
+      ...overflowCase({ presence: 'open', edge: 'right' }),
+    ],
+    unsupportedCases: fourPhaseUnsupported,
+  },
+  'component:hover-card': {
+    defaultCaseId: 'open',
+    cases: floatingPresenceCases('Open card'),
+    unsupportedCases: fourPhaseUnsupported,
+  },
+  'component:menu': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open menu states',
+        input: openMenuInput,
+        environmentAxes: DIRECTIONAL_FLOATING_AXES,
+      },
+      {
+        id: 'opening',
+        label: 'Opening',
+        input: { presence: 'opening', side: 'bottom' },
+        environmentAxes: MOTION_AXES,
+      },
+      {
+        id: 'closing',
+        label: 'Closing',
+        input: { presence: 'closing', side: 'bottom' },
+        environmentAxes: MOTION_AXES,
+      },
+      ...overflowCase({ presence: 'open', side: 'bottom', items: { nested: true } }),
+    ],
+    unsupportedCases: fourPhaseUnsupported,
+  },
+  'component:menubar': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open menubar menu',
+        input: openMenuInput,
+        environmentAxes: DIRECTIONAL_SURFACE_AXES,
+      },
+      {
+        id: 'closed',
+        label: 'Closed menubar',
+        input: { presence: 'closed' },
+        environmentAxes: [],
+      },
+      ...overflowCase({ presence: 'open', side: 'bottom' }),
+    ],
+    unsupportedCases: synchronousSelectionUnsupported,
+  },
+  'component:navigation-menu': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open branch',
+        input: { presence: 'open', items: { selected: true, nested: true } },
+        environmentAxes: DIRECTIONAL_SURFACE_AXES,
+      },
+      {
+        id: 'closed',
+        label: 'Closed branch',
+        input: { presence: 'closed' },
+        environmentAxes: [],
+      },
+      ...overflowCase({ presence: 'open' }),
+    ],
+    unsupportedCases: [
+      {
+        id: 'vertical',
+        rationale:
+          'The navigation-menu API implements the horizontal disclosure pattern and exposes no orientation option.',
+      },
+      {
+        id: 'opening-or-closing-content',
+        rationale:
+          'Navigation content is synchronously hidden/open; only its retained indicator has a transition lifecycle.',
+      },
+    ],
+  },
+  'component:popover': {
+    defaultCaseId: 'open',
+    cases: floatingPresenceCases('Open popover'),
+    unsupportedCases: fourPhaseUnsupported,
+  },
+  'component:select': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open options',
+        input: openSelectionInput,
+        environmentAxes: DIRECTIONAL_SURFACE_AXES,
+      },
+      { id: 'closed', label: 'Closed trigger', input: { presence: 'closed' }, environmentAxes: [] },
+      ...overflowCase({ presence: 'open', side: 'bottom' }),
+    ],
+    unsupportedCases: synchronousSelectionUnsupported,
+  },
+  'component:toast': {
+    defaultCaseId: 'success',
+    cases: [
+      ...(['info', 'success', 'warning', 'error', 'loading', 'custom'] as const).map(
+        (toastType) => ({
+          id: toastType,
+          label: `${toastType[0]!.toUpperCase()}${toastType.slice(1)} toast`,
+          input: { presence: 'open' as const, toastType, toastPlacement: 'bottom-end' as const },
+          environmentAxes: toastType === 'success' ? DIRECTIONAL_SURFACE_AXES : [],
+        }),
+      ),
+      ...(['top', 'top-start', 'top-end', 'bottom', 'bottom-start'] as const).map(
+        (toastPlacement) => ({
+          id: `placement-${toastPlacement}`,
+          label: `${toastPlacement} placement`,
+          input: { presence: 'open' as const, toastType: 'info' as const, toastPlacement },
+          environmentAxes: toastPlacement.includes('-') ? (['direction'] as const) : [],
+        }),
+      ),
+      {
+        id: 'closing',
+        label: 'Closing toast',
+        input: { presence: 'closing', toastType: 'info', toastPlacement: 'bottom-end' },
+        environmentAxes: MOTION_AXES,
+      },
+      ...overflowCase({ presence: 'open', toastType: 'info', toastPlacement: 'bottom-end' }),
+    ],
+    unsupportedCases: [
+      {
+        id: 'opening',
+        rationale: 'Toasts are born open; the machine only retains the animated closing phase.',
+      },
+      {
+        id: 'closed',
+        rationale: 'A toast is removed from the queue when its closing end event settles.',
+      },
+    ],
+  },
+  'component:toolbar': {
+    defaultCaseId: 'horizontal',
+    cases: [
+      {
+        id: 'horizontal',
+        label: 'Horizontal toolbar',
+        input: { items: { disabled: true }, orientation: 'horizontal' },
+        environmentAxes: SURFACE_AXES,
+      },
+      {
+        id: 'vertical',
+        label: 'Vertical toolbar',
+        input: { items: { disabled: true }, orientation: 'vertical' },
+        environmentAxes: [],
+      },
+      ...overflowCase({ orientation: 'horizontal' }),
+    ],
+    unsupportedCases: [
+      {
+        id: 'presence-lifecycle',
+        rationale:
+          'A toolbar is persistently mounted and has no disclosure surface or presence state.',
+      },
+    ],
+  },
+  'component:tooltip': {
+    defaultCaseId: 'open',
+    cases: floatingPresenceCases('Open tooltip'),
+    unsupportedCases: fourPhaseUnsupported,
+  },
+  'pattern:command-menu': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open commands',
+        input: { presence: 'open', modal: true, items: { disabled: true } },
+        environmentAxes: DIRECTIONAL_SURFACE_AXES,
+      },
+      {
+        id: 'empty',
+        label: 'No matching commands',
+        input: { presence: 'open', modal: true, asyncStatus: 'empty' },
+        environmentAxes: SURFACE_AXES,
+      },
+      {
+        id: 'closed',
+        label: 'Closed palette',
+        input: { presence: 'closed', modal: true },
+        environmentAxes: [],
+      },
+      ...overflowCase({ presence: 'open', modal: true }),
+    ],
+    unsupportedCases: [
+      {
+        id: 'loading-or-error',
+        rationale:
+          'The command-menu pattern filters an in-memory command list and exposes no async loading/error state.',
+      },
+      {
+        id: 'highlighted-command',
+        rationale:
+          'The composed command-menu state does not retain a roving highlighted command; Enter executes its first enabled filtered command.',
+      },
+      {
+        id: 'opening-or-closing',
+        rationale:
+          'The composed dialog currently receives a boolean open state and uses the synchronous default lifecycle.',
+      },
+    ],
+  },
+  'pattern:confirm-dialog': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Destructive confirmation',
+        input: { presence: 'open', modal: true, items: { destructive: true } },
+        environmentAxes: DIRECTIONAL_SURFACE_AXES,
+      },
+      {
+        id: 'closed',
+        label: 'Closed confirmation',
+        input: { presence: 'closed', modal: true },
+        environmentAxes: [],
+      },
+      ...overflowCase({ presence: 'open', modal: true }),
+    ],
+    unsupportedCases: [
+      {
+        id: 'opening-or-closing',
+        rationale:
+          'The convenience pattern composes the dialog with a boolean open state and the synchronous default lifecycle.',
+      },
+    ],
+  },
+  'pattern:searchable-select': {
+    defaultCaseId: 'open',
+    cases: [
+      {
+        id: 'open',
+        label: 'Open searchable options',
+        input: openSelectionInput,
+        environmentAxes: DIRECTIONAL_SURFACE_AXES,
+      },
+      {
+        id: 'loading',
+        label: 'Loading options',
+        input: { presence: 'open', side: 'bottom', asyncStatus: 'loading' },
+        environmentAxes: SURFACE_AXES,
+      },
+      {
+        id: 'empty',
+        label: 'No results',
+        input: { presence: 'open', side: 'bottom', asyncStatus: 'empty' },
+        environmentAxes: SURFACE_AXES,
+      },
+      {
+        id: 'error',
+        label: 'Load error',
+        input: { presence: 'open', side: 'bottom', asyncStatus: 'error' },
+        environmentAxes: SURFACE_AXES,
+      },
+      { id: 'closed', label: 'Closed trigger', input: { presence: 'closed' }, environmentAxes: [] },
+      ...overflowCase({ presence: 'open', side: 'bottom' }),
+    ],
+    unsupportedCases: synchronousSelectionUnsupported,
+  },
+} as const satisfies Record<string, MenusOverlaysScenarioDefinition>
+
+export type MenusOverlaysScenarioId = keyof typeof MENUS_OVERLAYS_SCENARIO_DEFINITIONS
+
+export interface MenusOverlaysScenario {
+  readonly productId: string
+  readonly scenarioId: MenusOverlaysScenarioId
+  readonly displayName: string
+  readonly artifactKind: ProductEntry['artifactKind']
+  readonly machineImport: string | null
+  readonly presentation: ProductEntry['presentation']
+  readonly defaultCaseId: string
+  readonly cases: readonly MenusOverlaysScenarioCase[]
+  readonly unsupportedCases: readonly MenusOverlaysUnsupportedCase[]
+  readonly copiedArtifacts: readonly { readonly name: string; readonly scenarioId: string }[]
+}
+
+function contentFor(
+  entry: ProductEntry,
+  scenarioCase: MenusOverlaysScenarioCaseDefinition,
+): MenusOverlaysScenarioContent {
+  return {
+    label: `${entry.displayName}: ${scenarioCase.label}`,
+    detail: `Semantic ${scenarioCase.id} presentation for ${entry.scenarioId}.`,
+  }
+}
+
+export interface MenusOverlaysScenarioSet {
+  readonly family: 'menus-overlays'
+  readonly environmentAxes: typeof MENUS_OVERLAYS_ENVIRONMENT_AXES
+  readonly scenarios: readonly MenusOverlaysScenario[]
+  readonly byScenarioId: Readonly<Record<MenusOverlaysScenarioId, MenusOverlaysScenario>>
+}
+
+/** @deprecated Legacy projection kept only for existing registry-side
+ * imports (this issue's deferred part 2). See this file's header doc. */
+export function menusOverlaysScenarios(contract: ProductContract): MenusOverlaysScenarioSet {
+  const entries = contract.entries.filter((entry) => entry.presentation.family === 'menus-overlays')
+  const canonicalIds = entries.map(({ scenarioId }) => scenarioId)
+  const definitionIds = Object.keys(MENUS_OVERLAYS_SCENARIO_DEFINITIONS)
+  const missing = canonicalIds.filter((scenarioId) => !definitionIds.includes(scenarioId))
+  const extras = definitionIds.filter((scenarioId) => !canonicalIds.includes(scenarioId))
+  if (missing.length > 0 || extras.length > 0) {
+    throw new Error(
+      `Menus/overlays case coverage must exactly match ProductContract scenario IDs (missing: ${missing.join(', ') || 'none'}; extras: ${extras.join(', ') || 'none'}).`,
+    )
+  }
+
+  const scenarios = entries.map((entry): MenusOverlaysScenario => {
+    const scenarioId = entry.scenarioId as MenusOverlaysScenarioId
+    const definition = MENUS_OVERLAYS_SCENARIO_DEFINITIONS[scenarioId]
+    const caseIds = definition.cases.map(({ id }) => id)
+    if (new Set(caseIds).size !== caseIds.length) {
+      throw new Error(`${scenarioId}: case IDs must be unique.`)
+    }
+    if (!caseIds.includes(definition.defaultCaseId)) {
+      throw new Error(`${scenarioId}: default case "${definition.defaultCaseId}" is unavailable.`)
+    }
+    const unsupportedIds = definition.unsupportedCases.map(({ id }) => id)
+    if (new Set(unsupportedIds).size !== unsupportedIds.length) {
+      throw new Error(`${scenarioId}: unsupported case IDs must be unique.`)
+    }
+    const overlap = unsupportedIds.filter((id) => caseIds.includes(id))
+    if (overlap.length > 0) {
+      throw new Error(
+        `${scenarioId}: supported and unsupported cases overlap: ${overlap.join(', ')}.`,
+      )
+    }
+    if (definition.unsupportedCases.some(({ rationale }) => rationale.trim().length === 0)) {
+      throw new Error(`${scenarioId}: unsupported cases require a nonempty rationale.`)
+    }
+    return {
+      productId: entry.name,
+      scenarioId,
+      displayName: entry.displayName,
+      artifactKind: entry.artifactKind,
+      machineImport: entry.machine.kind === 'public' ? entry.machine.importPath : null,
+      presentation: entry.presentation,
+      defaultCaseId: definition.defaultCaseId,
+      cases: definition.cases.map((scenarioCase) => ({
+        ...scenarioCase,
+        input: { ...scenarioCase.input, content: contentFor(entry, scenarioCase) },
+      })),
+      unsupportedCases: definition.unsupportedCases,
+      copiedArtifacts: entry.copiedArtifacts.map((artifact) => ({
+        name: artifact.name,
+        scenarioId: artifact.scenarioId ?? entry.scenarioId,
+      })),
+    }
+  })
+
+  return {
+    family: 'menus-overlays',
+    environmentAxes: MENUS_OVERLAYS_ENVIRONMENT_AXES,
+    scenarios,
+    byScenarioId: Object.fromEntries(
+      scenarios.map((scenario) => [scenario.scenarioId, scenario]),
+    ) as Record<MenusOverlaysScenarioId, MenusOverlaysScenario>,
+  }
+}

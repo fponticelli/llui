@@ -11,7 +11,7 @@ import {
   menusOverlaysScenarios,
   type MenusOverlaysScenario,
   type MenusOverlaysScenarioId,
-} from '../../scripts/lib/menus-overlays-scenarios'
+} from '../../packages/components/test/styles/menus-overlays-scenarios'
 
 const ROOT = resolve(import.meta.dirname, '../..')
 const contract = ProductContractSchema.parse(

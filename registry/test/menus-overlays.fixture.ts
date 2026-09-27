@@ -73,7 +73,7 @@ import type {
   MenusOverlaysScenario,
   MenusOverlaysScenarioCase,
   MenusOverlaysScenarioId,
-} from '../../scripts/lib/menus-overlays-scenarios'
+} from '../../packages/components/test/styles/menus-overlays-scenarios'
 
 /**
  * Renderer bindings only. ProductContract supplies the authoritative inventory

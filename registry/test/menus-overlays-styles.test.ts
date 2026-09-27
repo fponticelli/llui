@@ -13,7 +13,7 @@ import {
   menusOverlaysScenarios,
   type MenusOverlaysCaseInput,
   type MenusOverlaysScenario,
-} from '../../scripts/lib/menus-overlays-scenarios'
+} from '../../packages/components/test/styles/menus-overlays-scenarios'
 import {
   baselineMenusOverlaysRenderers,
   renderBaselineMenusOverlays,
