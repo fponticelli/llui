@@ -778,9 +778,11 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
     pg.directionSync,
     dt.pagination.directionSync,
     cr.directionSync,
-    // A PROGRAMMATIC close/toggle (bypassing a trigger's own click handler)
-    // on a no-exit-motion skin never settles without these placed (#264
-    // review item 1) — discarded onMount()-backed Mountables are inert.
+    // A RETAINED close/toggle (one carrying `retain: true`, e.g. via
+    // `parts.close(...)`) on a no-exit-motion skin never settles without
+    // these placed (#264 review item 1) — discarded onMount()-backed
+    // Mountables are inert. A raw programmatic close with no `retain`
+    // closes instantly regardless and needs nothing here.
     ac.exitCompletion,
     cl.exitCompletion,
     // Placed so the sortable pointer-wiring onMount registers (discarded

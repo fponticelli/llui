@@ -165,8 +165,10 @@ keyboard roving-focus wiring unable to find the element it moves focus to.
    spread `data-*` key stop type-checking.
 6. **A disclosure root (`Accordion`/`Collapsible`) is built with `withExitCompletion`,
    and its `exitCompletion: Mountable` prop is REQUIRED, never optional.** `parts.exitCompletion`
-   is the machine's own `connect()` part that settles a PROGRAMMATIC `close`/`toggle`/
-   `setValue`/`setOpen` on a skin with no exit motion; `withExitCompletion` (in
+   is the machine's own `connect()` part that settles a RETAINED `close`/`toggle`/
+   `setValue`/`setOpen` (one carrying `retain: true`, e.g. via `parts.close(...)`)
+   on a skin with no exit motion — a raw programmatic close with no `retain` closes
+   instantly and never enters `closing`; `withExitCompletion` (in
    `llui/lib/utils.ts`) wraps a `classPart`-built root so it appends that part after
    the caller's children itself, and the required field means
    `Accordion({ ...parts.root }, [...])` (missing it) is a type error, not a runtime

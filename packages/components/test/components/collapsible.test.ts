@@ -251,7 +251,7 @@ describe('collapsible connect() dev warning (registry-based, #264 review-264j)',
         send,
         { id },
       )
-      attachExitWatcher(id)
+      attachExitWatcher('collapsible:' + id)
       const el = document.createElement('button')
       document.body.append(el)
       const event = new MouseEvent('click')
@@ -260,7 +260,7 @@ describe('collapsible connect() dev warning (registry-based, #264 review-264j)',
       expect(warnSpy).not.toHaveBeenCalled()
       el.remove()
     } finally {
-      detachExitWatcher(id)
+      detachExitWatcher('collapsible:' + id)
       warnSpy.mockRestore()
     }
   })

@@ -233,6 +233,41 @@ describe('#264 item F1 — exitCompletion fail-safe (registry mechanism, #264 re
     expect(el.dataset.state).toBe('closed')
   })
 
+  it.each(['Enter', ' '] as const)(
+    'keyboard %s on the trigger stamps retain from the registry too, not just click (#264 review-264k)',
+    (key) => {
+      const host = mountAccordion(
+        'f1-keyboard-retain-' + (key === 'Enter' ? 'enter' : 'space'),
+        true,
+      )
+      const el = content(host)
+      expect(el.dataset.state).toBe('open')
+      trigger(host).dispatchEvent(
+        new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+      )
+      // A real watcher is attached (exitCompletion placed), so a keyboard
+      // Enter/Space close must retain exactly like a mouse click does — the
+      // keydown handler stamps `retain: isExitWatcherAttached(id)`
+      // independently of the click handler, and both must agree.
+      expect(el.dataset.state).toBe('closing')
+    },
+  )
+
+  it.each(['Enter', ' '] as const)(
+    'keyboard %s with NO watcher attached closes instantly — the keydown handler must read the registry, never hardcode retain',
+    (key) => {
+      const host = mountAccordion(
+        'f1-keyboard-no-watcher-' + (key === 'Enter' ? 'enter' : 'space'),
+        false,
+      )
+      const el = content(host)
+      trigger(host).dispatchEvent(
+        new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+      )
+      expect(el.dataset.state).toBe('closed')
+    },
+  )
+
   it('detaching exitCompletion mid-closing settles it (registry count -> 0, cleanup settles), HOST staying mounted throughout', () => {
     const host = mountAccordion('f1-detach-settles', true)
     click(trigger(host))
@@ -625,6 +660,81 @@ describe('#264 item F1 — exitCompletion fail-safe (registry mechanism, #264 re
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('an accordion and a collapsible sharing the literal SAME id string never collide in the registry (#264 review-264k — scope-namespaced key)', () => {
+    const sharedId = 'shared-literal-id'
+    interface BothState {
+      accordion: accordion.AccordionState
+      collapsible: collapsible.CollapsibleState
+    }
+    type BothMsg =
+      | { type: 'accordion'; msg: accordion.AccordionMsg }
+      | { type: 'collapsible'; msg: collapsible.CollapsibleMsg }
+    const host = document.createElement('div')
+    document.body.append(host)
+    let colClose: (() => void) | null = null
+    app = mountApp(host, {
+      name: 'SharedIdFixture',
+      init: () => [
+        {
+          accordion: accordion.init({ items: ['details'], value: ['details'], animated: true }),
+          collapsible: collapsible.init({ open: true, animated: true }),
+        },
+        [],
+      ],
+      update: (state: BothState, msg: BothMsg) => {
+        if (msg.type === 'accordion') {
+          return [{ ...state, accordion: accordion.update(state.accordion, msg.msg)[0] }, []]
+        }
+        return [{ ...state, collapsible: collapsible.update(state.collapsible, msg.msg)[0] }, []]
+      },
+      view: ({ state, send }): readonly Mountable[] => {
+        const acc = accordion.connect(
+          state.at('accordion'),
+          (msg) => send({ type: 'accordion', msg }),
+          {
+            id: sharedId,
+          },
+        )
+        const col = collapsible.connect(
+          state.at('collapsible'),
+          (msg) => send({ type: 'collapsible', msg }),
+          { id: sharedId },
+        )
+        colClose = col.close
+        const item = acc.item('details')
+        return [
+          div({ ...acc.root }, [
+            div({ ...item.item }, [
+              div({ ...item.trigger }, [text('details')]),
+              div({ ...item.content }, [text('content')]),
+            ]),
+          ]),
+          acc.exitCompletion,
+          div({ ...col.root }, [
+            div({ ...col.trigger }, [text('trigger')]),
+            div({ ...col.content }, [text('content')]),
+          ]),
+          // Deliberately NOT placed: the collapsible's own watcher for this
+          // shared id is never attached — if the registry keyed on the bare
+          // id (not scope-prefixed), the accordion's own attach above would
+          // make the collapsible read as watched too.
+        ]
+      },
+    })
+    click(trigger(host))
+    expect(content(host).dataset.state).toBe('closing') // accordion retains (its own watcher attached)
+
+    const colContent = host.querySelector(
+      '[data-scope="collapsible"][data-part="content"]',
+    ) as HTMLElement
+    // `parts.close()` stamps `retain` from the REGISTRY, so this is the
+    // right way to prove scope separation — a manually-stamped
+    // `retain: true` would retain regardless of the registry and prove
+    // nothing.
+    colClose!()
+    expect(colContent.dataset.state).toBe('closed')
   })
 
   it('is SSR/hydration-safe: server never touches the registry, init is deterministic, and a real hydrate + interaction both work', () => {

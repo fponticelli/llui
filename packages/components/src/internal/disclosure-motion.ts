@@ -189,10 +189,12 @@ export interface DisclosureExitTracker {
  * outside a live tracker instance — it consults only the element's current
  * running effects and the given state, no tracker-private bookkeeping. Used
  * by the `exitCompletion` connect()-owned Mountable to settle a value that
- * entered `closing` from a message the click/keydown handlers never saw (a
- * PROGRAMMATIC close/toggle/setValue sent directly by the host app, #264
- * review item 4b) — the in-handler safety net above only ever runs for a
- * user-initiated close. */
+ * entered `closing` from a message the click/keydown handlers never saw — a
+ * RETAINED programmatic close/toggle/setValue, sent via `parts.close(...)`
+ * (which stamps `retain: true`) rather than the trigger (#264 review item
+ * 4b) — the in-handler safety net above only ever runs for a user-initiated
+ * close. A raw `send` with no `retain` never enters `closing` at all, so
+ * there is nothing here for it to settle. */
 export function completeIfUnanimated(
   element: Element | null,
   current: DisclosureExitState,
@@ -279,6 +281,27 @@ export function warnMissingExitWatcherOnce(id: string, message: string): void {
 }
 
 /**
+ * ONE shared helper for the pattern every closing-capable dispatch in
+ * `accordion.ts`/`collapsible.ts` repeats (#264 review-264k — was two
+ * near-identical copies): read the registry, warn once per id if the caller
+ * is about to retain-lessly close while `animated` is set, and return the
+ * `retain` value to stamp on the outgoing message.
+ *
+ * Reading the registry (`isExitWatcherAttached`) is a plain `Map` lookup and
+ * always safe to call. `animated` is the ONE piece the caller must supply
+ * pre-peeked, because peeking a signal with no live value throws by design
+ * (`rootSignal()`-backed structural tests invoking a handler directly, with
+ * no `currentTarget` to guard on) — passing `false` there is exactly right:
+ * it cannot warn without a genuine `animated: true` read, and the retain
+ * value returned is unaffected either way.
+ */
+export function stampExitWatcherRetain(id: string, animated: boolean, message: string): boolean {
+  const attached = isExitWatcherAttached(id)
+  if (animated && !attached) warnMissingExitWatcherOnce(id, message)
+  return attached
+}
+
+/**
  * Root-scoped completion watcher, one per `connect()` call (#264 review item
  * 1). Resolves each closing entry's content element by ID
  * (`getElementByIdInScope`, never a scope-wide `[data-scope][data-part]`
@@ -298,37 +321,14 @@ export function warnMissingExitWatcherOnce(id: string, message: string): void {
  * the trigger's own handler regardless of whether this is placed.
  *
  * **No timer, no deadline, no dev-mode stall watchdog (#264 item F1,
- * superseding review item 4).** The previous design retained `closing`
- * unconditionally whenever `animated: true`, so a forgotten `exitCompletion`
- * placement could leave an item stuck `closing` + `inert` forever. **#264
- * review-264j, FINAL — read this before touching the mechanism again**:
- * TWO earlier fixes for this each replaced the wrong thing. First, a
- * `setTimeout`-armed "has this been closing too long" watchdog — rejected
- * because it could never distinguish "genuinely stuck" from "no Web
- * Animations support" (jsdom has no `getAnimations`), and needed a
- * disposal/dedupe apparatus to avoid leaking timers. Then, an idempotent
- * "is anything watching" fact pushed into STATE (`exitWatched`/
- * `exitWatchers`, driven by `exitWatcherAttach`/`exitWatcherDetach`
- * MESSAGES) — rejected on THREE independent grounds, each fatal alone: (1)
- * a closure-owned mount COUNT keyed by dispatcher identity broke the moment
- * two `connect()` calls used two textually-identical but referentially
- * DIFFERENT inline dispatcher wrappers, since no `WeakMap` can unify two
- * distinct function objects; (2) the fix for THAT — a per-JS-realm session
- * token baked into state — made `init()` NON-DETERMINISTIC (a fresh random
- * token every call), which breaks `replayTrace`/`propertyTest` outright (a
- * recorded trace's `expectedState` embeds one realm's token and can never
- * match a replay's own) and is a direct violation of the JSON-serializable,
- * pure-`update()` state contract this file's own CLAUDE.md states; and (3) a
- * SAME-REALM restored snapshot (the overwhelmingly common real case — a
- * host persisting to `localStorage` and reloading in the SAME tab session,
- * or simply re-mounting from a saved snapshot without a real page reload)
- * is not "foreign" under that design at all, so a stale positive count
- * baked into a restored slice reads as watched with nothing real attached —
- * the exact hang this mechanism exists to prevent, reintroduced one field
- * over. The lesson generalizes: "is a watcher mounted" is a fact about the
- * RUNNING VIEW TREE, which state can only ever approximate with a snapshot
- * that goes stale the instant something remounts without a state change —
- * it can never correctly live in state at all, however it is encoded.
+ * superseding review item 4).** Two earlier designs for this fail-safe were
+ * tried and rejected — a `setTimeout`-armed stall watchdog, then an
+ * idempotent "is anything watching" boolean pushed into STATE — each for
+ * reasons that generalize (non-deterministic `init()`, breaking
+ * `replayTrace`, a same-realm restored snapshot reintroducing the exact
+ * hang one field over). See `docs/adr/0004-disclosure-exit-watcher-
+ * liveness-is-runtime-not-state.md` for the full history before touching
+ * this mechanism again.
  *
  * The fix that actually holds: nothing about "is this watched" lives in
  * state or travels as a message. `EXIT_WATCHER_COUNTS` (above) is a
@@ -398,6 +398,16 @@ export function createDisclosureExitCompletionMount(
       // complete a still-closing entry, so settle every one of them now,
       // through the ordinary `exitComplete` message (never a dedicated
       // "detach" message — see this function's own header).
+      //
+      // This cleanup also runs when the WHOLE APP is being disposed (every
+      // mount's cleanup runs on teardown), in which case `onSettle`'s
+      // `send` is a no-op that logs a dev-only "send() after dispose()"
+      // notice — harmless, but noise. `Send<M>`/`Signal<T>` expose no
+      // public "is this app disposed" query (#264 review-264k considered
+      // this and found none), and `@llui/components` must not reach into
+      // `@llui/dom`'s internal mount-host state to invent one, so this is
+      // left as-is rather than adding a private-API dependency to silence
+      // a dev-only log line.
       if (!detachExitWatcher(id)) {
         for (const entry of getEntries()) {
           if (entry.closing) onSettle(entry.key, entry.generation)

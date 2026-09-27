@@ -415,7 +415,7 @@ describe('accordion connect() dev warning (registry-based, #264 review-264j)', (
         send,
         { id },
       )
-      attachExitWatcher(id) // simulates a real exitCompletion mount for this id
+      attachExitWatcher('accordion:' + id) // simulates a real exitCompletion mount for this id, scoped like connect() does
       const el = document.createElement('button')
       document.body.append(el)
       const event = new MouseEvent('click')
@@ -424,7 +424,7 @@ describe('accordion connect() dev warning (registry-based, #264 review-264j)', (
       expect(warnSpy).not.toHaveBeenCalled()
       el.remove()
     } finally {
-      detachExitWatcher(id)
+      detachExitWatcher('accordion:' + id)
       warnSpy.mockRestore()
     }
   })

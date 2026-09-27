@@ -161,8 +161,10 @@ export type { ClassValue }
  * placed anywhere in the same build, and README.md used to claim "registry
  * skins place it automatically" while `accordion.ts`/`collapsible.ts` were
  * ordinary `classPart(div, ...)` wrappers that never touched it (#264 review
- * item 2). `exitCompletion` settles a PROGRAMMATIC close/toggle/setValue on a
- * skin with no exit motion.
+ * item 2). `exitCompletion` settles a RETAINED close/toggle/setValue (one
+ * stamped `retain: true`, e.g. via `parts.close(...)`) on a skin with no
+ * exit motion; a raw programmatic `send` with no `retain` closes instantly
+ * and never enters `closing`, so there is nothing for it to settle.
  *
  * **Forgetting it is no longer a hang (#264 item F1).** Whether
  * `exitCompletion` is CURRENTLY mounted lives in a runtime registry keyed by
@@ -190,7 +192,7 @@ export type { ClassValue }
 // intersection TYPE, never an extended interface.
 export type DisclosureRootProps = ElProps & {
   /** `parts.exitCompletion` from the machine's `connect()` — see
-   * `@llui/components`'s README ("A PROGRAMMATIC close/toggle/…"). */
+   * `@llui/components`'s README ("accordion / collapsible exit motion"). */
   exitCompletion: Mountable
 }
 

@@ -10,8 +10,7 @@ import {
 import {
   createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
-  isExitWatcherAttached,
-  warnMissingExitWatcherOnce,
+  stampExitWatcherRetain,
   type DisclosureExitWatchEntry,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
@@ -45,15 +44,29 @@ export interface AccordionState {
   animated: boolean
 }
 
+/**
+ * Stamped by `connect()`'s trigger click/keydown handlers from the runtime
+ * watcher registry (`isExitWatcherAttached(id)`) at dispatch time — DO NOT
+ * SEND THIS MANUALLY. It is the ONE fact the reducer needs to decide
+ * `closing` vs an instant close (`animated && retain === true`); anything
+ * else about "is a watcher mounted" lives outside state entirely (#264
+ * review-264j — see `disclosure-motion.ts`'s header). A raw
+ * `send({ type: 'close', value })` from app/agent code with no `retain`
+ * always closes INSTANTLY, even with `animated: true` and `exitCompletion`
+ * placed — for an animated PROGRAMMATIC close, `parts.close(value)` is the
+ * ONLY supported helper: it stamps `retain` from the same registry.
+ */
+type Retain = { retain?: boolean }
+
 export type AccordionMsg =
   /** @intent("Toggle the named accordion item open/closed") */
-  | { type: 'toggle'; value: string; retain?: boolean }
+  | ({ type: 'toggle'; value: string } & Retain)
   /** @intent("Open the named accordion item") */
-  | { type: 'open'; value: string; retain?: boolean }
+  | ({ type: 'open'; value: string } & Retain)
   /** @intent("Close the named accordion item") */
-  | { type: 'close'; value: string; retain?: boolean }
+  | ({ type: 'close'; value: string } & Retain)
   /** @intent("Replace the set of currently-open items with the provided values") */
-  | { type: 'setValue'; value: string[]; retain?: boolean }
+  | ({ type: 'setValue'; value: string[] } & Retain)
   /** @humanOnly */
   | { type: 'setItems'; items: string[] }
   /** @humanOnly */
@@ -247,17 +260,21 @@ export interface AccordionParts {
   }
   item: (value: string) => AccordionItemParts
   /**
-   * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
-   * host app, bypassing the trigger's click handler) once its content's own
-   * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. Its mount ALSO reports whether it is placed at all
-   * (#264 item F1): `animated: true` only ever retains `closing` content
-   * while this is mounted — forgetting to place it degrades gracefully to
-   * an instant close (with a one-time dev warning) rather than hanging
-   * `closing` + `inert` forever, so placing it is no longer required for
-   * SAFETY, only for the requested exit animation to actually run on a
-   * programmatic close. A click-driven close is still safety-netted
-   * synchronously inside the trigger regardless of whether this is placed.
+   * Settles a retained `closing` item once its content's own exit
+   * animation/transition ends — or immediately, if the skin runs no exit
+   * motion at all. This only ever has anything to settle for a
+   * PROGRAMMATIC close/toggle/setValue when that message carried
+   * `retain: true`, which `parts.close(value)` stamps for you; a raw
+   * `send({ type: 'close', value })` with no `retain` closes instantly and
+   * never enters `closing` at all, so there is nothing here to settle for
+   * it. Its mount ALSO reports whether it is placed at all (#264 item F1):
+   * `animated: true` only ever retains `closing` content while this is
+   * mounted — forgetting to place it degrades gracefully to an instant
+   * close (with a one-time dev warning) rather than hanging `closing` +
+   * `inert` forever, so placing it is no longer required for SAFETY, only
+   * for the requested exit animation to actually run on a retained close.
+   * A click-driven close is still safety-netted synchronously inside the
+   * trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
   /**
@@ -286,25 +303,29 @@ export function connect(
   const base = opts.id
   const triggerId = (v: string): string => `${base}:trigger:${v}`
   const contentId = (v: string): string => `${base}:content:${v}`
+  // Namespaced by SCOPE, not just `id` (#264 review-264k): the runtime
+  // watcher registry is a single module-wide `Map`, so an accordion and a
+  // collapsible that happen to share the same caller-chosen `id` string
+  // would otherwise collide in it — `opts.id` only has to be unique WITHIN
+  // one component kind, matching the DOM id convention above.
+  const registryId = `accordion:${base}`
   const exitTracker = createDisclosureExitTracker()
-  // Peeking is unreachable in a unit test that invokes the click/keydown
-  // handlers directly with no `currentTarget` (`rootSignal()`-backed
-  // structural tests, which have no live value to peek) — those call sites
-  // guard on the same `origin` `completeIfUnanimatedAfterToggle` does.
+  const MISSING_WATCHER_MESSAGE =
+    '[llui/components] Accordion was configured `animated: true` but `parts.exitCompletion` ' +
+    'was never placed in the rendered view (or has not mounted yet), so a closing item cannot ' +
+    'be retained for its exit animation and closes instantly instead. Place `parts.' +
+    "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
+    'intended.'
+  // `animated` must be pre-peeked by the CALLER: peeking is unreachable in a
+  // unit test that invokes the click/keydown handlers directly with no
+  // `currentTarget` (`rootSignal()`-backed structural tests, which have no
+  // live value to peek) — those call sites guard with the same `origin`
+  // `completeIfUnanimatedAfterToggle` does, passing `false` when unsafe.
   // `close()` is a genuine programmatic API assumed to run against a real
   // live signal, exactly like `exitWatchEntries`/`armExit` elsewhere in this
   // file, so it peeks unconditionally.
-  const warnIfMissingWatcher = (): void => {
-    if (!state.peek().animated || isExitWatcherAttached(base)) return
-    warnMissingExitWatcherOnce(
-      base,
-      '[llui/components] Accordion was configured `animated: true` but `parts.exitCompletion` ' +
-        'was never placed in the rendered view (or has not mounted yet), so a closing item cannot ' +
-        'be retained for its exit animation and closes instantly instead. Place `parts.' +
-        "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
-        'intended.',
-    )
-  }
+  const stampRetain = (animated: boolean): boolean =>
+    stampExitWatcherRetain(registryId, animated, MISSING_WATCHER_MESSAGE)
   const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] =>
     state.peek().closing.map((value) => ({
       key: value,
@@ -363,7 +384,7 @@ export function connect(
     },
     exitCompletion: onMount(
       createDisclosureExitCompletionMount(
-        base,
+        registryId,
         getElementByIdInScope,
         exitWatchEntries,
         (value, generation) => send({ type: 'exitComplete', value, generation }),
@@ -375,8 +396,7 @@ export function connect(
       // element to resolve the enclosing scope from) does not apply here —
       // `exitCompletion`'s own mounted `check()`/`MutationObserver` already
       // covers the unanimated-skin case for any placed watcher.
-      warnIfMissingWatcher()
-      send({ type: 'close', value, retain: isExitWatcherAttached(base) })
+      send({ type: 'close', value, retain: stampRetain(state.peek().animated) })
     },
     item: (value: string): AccordionItemParts => ({
       trigger: {
@@ -397,8 +417,8 @@ export function connect(
           // the same `origin` keeps `rootSignal()`-backed structural tests
           // (no live state to peek) working unchanged.
           const origin = e.currentTarget instanceof Element ? e.currentTarget : null
-          if (origin !== null) warnIfMissingWatcher()
-          send({ type: 'toggle', value, retain: isExitWatcherAttached(base) })
+          const animated = origin === null ? false : state.peek().animated
+          send({ type: 'toggle', value, retain: stampRetain(animated) })
           completeIfUnanimatedAfterToggle(origin)
         }),
         onKeyDown: tagSend(
@@ -440,8 +460,8 @@ export function connect(
               case ' ':
               case 'Enter': {
                 e.preventDefault()
-                if (origin !== null) warnIfMissingWatcher()
-                send({ type: 'toggle', value, retain: isExitWatcherAttached(base) })
+                const animated = origin === null ? false : state.peek().animated
+                send({ type: 'toggle', value, retain: stampRetain(animated) })
                 completeIfUnanimatedAfterToggle(origin)
                 return
               }
