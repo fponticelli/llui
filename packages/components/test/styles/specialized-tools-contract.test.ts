@@ -29,8 +29,14 @@ const contract = loadProductContract()
 const family = contract.entries.filter(
   ({ presentation }) => presentation.family === 'specialized-tools',
 )
-const catalog = compileSpecializedToolsCatalog(contract)
-const joined = joinSpecializedToolsScenarios(catalog, contract)
+// Compiled LAZILY, inside the tests that need it. The protocol compiler throws
+// on a missing or stale definition, and at module scope that throw fails the
+// file with zero tests run — hiding the residue and classification assertions
+// below, which name the product and the family and are the diagnosis a
+// contributor needs when an entry moves between families.
+let compiled: ReturnType<typeof compileSpecializedToolsCatalog> | undefined
+const compiledCatalog = () => (compiled ??= compileSpecializedToolsCatalog(contract))
+const joinedScenarios = () => joinSpecializedToolsScenarios(compiledCatalog(), contract)
 const entryOf = (name: string) => {
   const entry = contract.entries.find((candidate) => candidate.name === name)
   if (entry === undefined) throw new Error(`No ProductContract entry named ${name}`)
@@ -187,9 +193,11 @@ describe('specialized-tools presentation contract (#266)', () => {
     expect(Object.keys(SPECIALIZED_TOOLS_DEFINITIONS).sort()).toEqual(
       family.map(({ scenarioId }) => scenarioId).sort(),
     )
-    expect(catalog.scenarios.map(({ productId }) => productId).sort()).toEqual(
-      family.map(({ name }) => name).sort(),
-    )
+    expect(
+      compiledCatalog()
+        .scenarios.map(({ productId }) => productId)
+        .sort(),
+    ).toEqual(family.map(({ name }) => name).sort())
     const { 'component:qr-code': _omitted, ...missing } = SPECIALIZED_TOOLS_DEFINITIONS
     expect(() => decodeScenarioFamily(contract, 'specialized-tools', missing)).toThrow(
       /missing definition for product/i,
@@ -205,7 +213,7 @@ describe('specialized-tools presentation contract (#266)', () => {
         .map(({ name }) => name)
         .sort()
       expect(
-        applicableSpecializedToolsScenarios(joined, path)
+        applicableSpecializedToolsScenarios(joinedScenarios(), path)
           .map(({ productId }) => productId)
           .sort(),
         path,
@@ -215,7 +223,7 @@ describe('specialized-tools presentation contract (#266)', () => {
 
   it('declares the complex state matrix of every product as named cases', () => {
     for (const [productId, required] of Object.entries(REQUIRED_STATE_CASES)) {
-      const scenario = joined.find((candidate) => candidate.productId === productId)
+      const scenario = joinedScenarios().find((candidate) => candidate.productId === productId)
       expect(scenario, productId).toBeDefined()
       const caseIds = scenario!.cases.map(({ id }) => id)
       for (const id of required) expect(caseIds, `${productId} case ${id}`).toContain(id)
@@ -223,7 +231,7 @@ describe('specialized-tools presentation contract (#266)', () => {
   })
 
   it('keeps every case stable, unique and labelled, with a real default', () => {
-    for (const scenario of catalog.scenarios) {
+    for (const scenario of compiledCatalog().scenarios) {
       const ids = scenario.cases.map(({ id }) => id)
       expect(new Set(ids).size, scenario.productId).toBe(ids.length)
       expect(ids, scenario.productId).toContain(scenario.defaultCaseId)
@@ -272,22 +280,24 @@ describe('specialized-tools presentation contract (#266)', () => {
   })
 
   it('declares an RTL-capable case for every directional product', () => {
-    const withDirection = new Set(scenarioEnvironmentProductIds(joined, 'direction'))
+    const withDirection = new Set(scenarioEnvironmentProductIds(joinedScenarios(), 'direction'))
     for (const productId of DIRECTIONAL_PRODUCT_IDS) {
       expect(withDirection.has(productId), productId).toBe(true)
     }
   })
 
   it('declares a reduced-motion-capable case for every product with motion', () => {
-    const withMotion = new Set(scenarioEnvironmentProductIds(joined, 'motion'))
+    const withMotion = new Set(scenarioEnvironmentProductIds(joinedScenarios(), 'motion'))
     for (const productId of MOTION_PRODUCT_IDS) {
       expect(withMotion.has(productId), productId).toBe(true)
     }
   })
 
   it('pairs every forced-colors-capable product with a concrete non-colour cue', () => {
-    const forced = scenarioEnvironmentProductIds(joined, 'forcedColors')
-    expect(forced.length).toBeGreaterThan(15)
+    const forced = scenarioEnvironmentProductIds(joinedScenarios(), 'forcedColors')
+    // Exact, both directions: no forced-colors case without a named cue, and
+    // no cue for a product that never renders under forced colors.
+    expect([...new Set(forced)].sort()).toEqual(Object.keys(FORCED_COLOR_CUES).sort())
     for (const productId of forced) {
       const cue = FORCED_COLOR_CUES[productId as keyof typeof FORCED_COLOR_CUES]
       expect(cue, productId).toBeTruthy()
