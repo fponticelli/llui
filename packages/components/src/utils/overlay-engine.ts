@@ -5,7 +5,12 @@ import { pushFocusTrap } from './focus-trap.js'
 import { setAriaHiddenOutside } from './aria-hidden.js'
 import { registerNestedLayer, type NestedLayerAspect } from './nested-layer.js'
 import { lockBodyScroll } from './remove-scroll.js'
-import { attachFloating, type Placement } from './floating.js'
+import {
+  attachFloating,
+  snapshotInlineStyle,
+  restoreInlineStyles,
+  type Placement,
+} from './floating.js'
 import { getElementByIdInScope } from './root-scope.js'
 import { engineFocus } from './engine-focus.js'
 import { focusLingeredInside } from './focus-restore.js'
@@ -328,16 +333,11 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
     const f = opts.floating!
     let restoreSameWidth: (() => void) | undefined
     if (f.sameWidth && els.placementAnchor) {
-      const style = els.floating.style
-      const priorMinWidth = style.getPropertyValue('min-width')
-      const priorPriority = style.getPropertyPriority('min-width')
-      const hadMinWidth = priorMinWidth !== ''
+      const minWidthSnapshot = snapshotInlineStyle(els.floating, 'min-width')
       const hadStyleAttribute = els.floating.hasAttribute('style')
       els.floating.style.minWidth = `${els.placementAnchor.offsetWidth}px`
       restoreSameWidth = () => {
-        if (hadMinWidth) style.setProperty('min-width', priorMinWidth, priorPriority)
-        else style.removeProperty('min-width')
-        if (!hadStyleAttribute && style.length === 0) els.floating.removeAttribute('style')
+        restoreInlineStyles(els.floating, [minWidthSnapshot], hadStyleAttribute)
       }
     }
     const arrow = f.arrowSelector

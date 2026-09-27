@@ -48,14 +48,22 @@ const ARROW_STATIC_SIDE_BY_PLACEMENT_SIDE = {
   left: 'right',
 } as const satisfies Record<PhysicalSide, PhysicalSide>
 
-type InlineStyleSnapshot = {
+/**
+ * One inline style property's exact prior state (present or absent, value and
+ * priority), so `restoreInlineStyles` can put it back byte-for-byte rather
+ * than merely clearing whatever this attachment wrote. Exported so a caller
+ * that imperatively sets a SINGLE inline style outside `attachFloating`
+ * itself (`overlay-engine.ts`'s `sameWidth` handling) shares this snapshot
+ * discipline instead of re-implementing it (#265 LOW).
+ */
+export type InlineStyleSnapshot = {
   property: string
   present: boolean
   value: string
   priority: string
 }
 
-function snapshotInlineStyle(element: HTMLElement, property: string): InlineStyleSnapshot {
+export function snapshotInlineStyle(element: HTMLElement, property: string): InlineStyleSnapshot {
   let present = false
   for (let index = 0; index < element.style.length; index++) {
     if (element.style.item(index) === property) {
@@ -71,7 +79,7 @@ function snapshotInlineStyle(element: HTMLElement, property: string): InlineStyl
   }
 }
 
-function restoreInlineStyles(
+export function restoreInlineStyles(
   element: HTMLElement,
   snapshots: readonly InlineStyleSnapshot[],
   hadStyleAttribute: boolean,
