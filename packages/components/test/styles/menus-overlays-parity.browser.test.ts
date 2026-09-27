@@ -30,7 +30,7 @@ const floatingSurface = (scope: string): string => `
       ${element(scope, 'item', `${scope}-selected`, 'data-state="selected"')}
       ${element(scope, 'item', `${scope}-checked`, 'role="menuitemcheckbox" aria-checked="true"')}
       ${element(scope, 'item', `${scope}-disabled`, 'data-disabled')}
-      <div id="${scope}-destructive" class="menu-item-destructive" data-scope="${scope}" data-part="item">${scope}-destructive</div>
+      <div id="${scope}-destructive" data-variant="destructive" data-scope="${scope}" data-part="item">${scope}-destructive</div>
       ${element(scope, 'separator', `${scope}-separator`)}
       ${element(scope, 'empty', `${scope}-empty`)}
       ${scope === 'menu' || scope === 'context-menu' ? element(scope, 'subtrigger', `${scope}-subtrigger`, 'data-highlighted') : ''}

@@ -41,6 +41,12 @@ import * as hoverCard from '../../src/components/hover-card.js'
 import * as popover from '../../src/components/popover.js'
 import * as tooltip from '../../src/components/tooltip.js'
 import * as menu from '../../src/components/menu.js'
+import type {
+  MenuItemPartsOf,
+  MenuCheckItemPartsOf,
+  MenuSubTriggerPartsOf,
+  MenuSubContentPartsOf,
+} from '../../src/components/menu-machine.js'
 import * as contextMenu from '../../src/components/context-menu.js'
 import * as menubar from '../../src/components/menubar.js'
 import * as navigationMenu from '../../src/components/navigation-menu.js'
@@ -124,12 +130,28 @@ function mountMachine<S, M extends { type: string }, E extends { type: string } 
   )
 }
 
+/** The structural subset of a menu-tree part bag every scope (`menu`,
+ * `context-menu`, `menubar`'s delegated `menu()`) shares, generic over the
+ * scope's own `data-scope` literal — never a same-shape-different-literal
+ * cast (`as unknown as menu.MenuParts`, #265 LOW). `ContextMenuParts` and
+ * `menu.MenuParts` both come from the same `menu-machine.ts` factories, so
+ * this is the real common type rather than a widened one. */
+interface MenuLikeParts<Scope extends string> {
+  item: (value: string) => MenuItemPartsOf<Scope>
+  checkboxItem: (value: string) => MenuCheckItemPartsOf<Scope>
+  subTrigger: (value: string) => MenuSubTriggerPartsOf<Scope>
+  subContent: (value: string) => MenuSubContentPartsOf<Scope>
+}
+
 /** Renders one item in a real menu-tree part bag (`menu`/`context-menu`/
  * `menubar`'s delegated `menu()`), by real `kind` — never a fabricated
  * "destructive" flag; a skin choosing to style one item destructively does
  * so by VALUE, which is a presentational, non-machine-state choice this
  * renderer leaves to `registry` skins (part 2). */
-function renderMenuItems(parts: menu.MenuParts, items: readonly MenuItemCaseInput[]): Mountable[] {
+function renderMenuItems<Scope extends string>(
+  parts: MenuLikeParts<Scope>,
+  items: readonly MenuItemCaseInput[],
+): Mountable[] {
   return items.map((item) => {
     if (item.kind === 'checkbox') {
       const checkParts = parts.checkboxItem(item.value)
@@ -496,7 +518,6 @@ const contextMenuAdapter: Adapter<ContextMenuCaseInput> = (host, input, ctx) =>
     contextMenu.update,
     (state, send) => {
       const parts = contextMenu.connect(state, send, { id: 'cm' })
-      const menuParts = parts as unknown as menu.MenuParts
       return [
         div({ ...parts.trigger }, [text('Right-click target')]),
         contextMenu.overlay({
@@ -506,20 +527,18 @@ const contextMenuAdapter: Adapter<ContextMenuCaseInput> = (host, input, ctx) =>
           parts,
           content: () => [
             div({ ...parts.content }, [
-              ...renderMenuItems(menuParts, input.items),
+              ...renderMenuItems(parts, input.items),
               ...(input.nestedOpen
                 ? [
-                    div({ ...menuParts.subTrigger(SUBMENU_VALUE) }, [text('More')]),
+                    div({ ...parts.subTrigger(SUBMENU_VALUE) }, [text('More')]),
                     contextMenu.subOverlay({
                       value: SUBMENU_VALUE,
                       state,
                       parts,
                       target: host,
                       content: () => [
-                        div({ ...menuParts.subContent(SUBMENU_VALUE) }, [
-                          div({ ...menuParts.item(SUBMENU_CHILD_VALUE).item }, [
-                            text('Submenu item'),
-                          ]),
+                        div({ ...parts.subContent(SUBMENU_VALUE) }, [
+                          div({ ...parts.item(SUBMENU_CHILD_VALUE).item }, [text('Submenu item')]),
                         ]),
                       ],
                     }),

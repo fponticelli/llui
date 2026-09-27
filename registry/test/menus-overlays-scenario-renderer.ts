@@ -37,6 +37,12 @@ import * as hoverCard from '../../packages/components/src/components/hover-card.
 import * as popover from '../../packages/components/src/components/popover.js'
 import * as tooltip from '../../packages/components/src/components/tooltip.js'
 import * as menu from '../../packages/components/src/components/menu.js'
+import type {
+  MenuItemPartsOf,
+  MenuCheckItemPartsOf,
+  MenuSubTriggerPartsOf,
+  MenuSubContentPartsOf,
+} from '../../packages/components/src/components/menu-machine.js'
 import * as contextMenu from '../../packages/components/src/components/context-menu.js'
 import * as menubar from '../../packages/components/src/components/menubar.js'
 import * as navigationMenu from '../../packages/components/src/components/navigation-menu.js'
@@ -232,8 +238,21 @@ const MENUBAR_ITEM_RECIPES: ItemRecipes = {
  * comment). A checkbox item's indicator is gated on the item's OWN
  * `aria-checked` signal, never rendered unconditionally, so a mutation that
  * flips `checked` is visible in the published markup. */
-function renderMenuItems(
-  parts: menu.MenuParts,
+/** The structural subset of a menu-tree part bag every scope (`menu`,
+ * `context-menu`, `menubar`'s delegated `menu()`) shares, generic over the
+ * scope's own `data-scope` literal — never a same-shape-different-literal
+ * cast (`as unknown as menu.MenuParts`, #265 LOW). `ContextMenuParts` and
+ * `menu.MenuParts` both come from the same `menu-machine.ts` factories, so
+ * this is the real common type rather than a widened one. */
+interface MenuLikeParts<Scope extends string> {
+  item: (value: string) => MenuItemPartsOf<Scope>
+  checkboxItem: (value: string) => MenuCheckItemPartsOf<Scope>
+  subTrigger: (value: string) => MenuSubTriggerPartsOf<Scope>
+  subContent: (value: string) => MenuSubContentPartsOf<Scope>
+}
+
+function renderMenuItems<Scope extends string>(
+  parts: MenuLikeParts<Scope>,
   items: readonly MenuItemCaseInput[],
   recipes: ItemRecipes,
 ): Mountable[] {
@@ -642,7 +661,6 @@ const contextMenuAdapter: Adapter<ContextMenuCaseInput> = (host, input, ctx) =>
     contextMenu.update,
     (state, send) => {
       const parts = contextMenu.connect(state, send, { id: 'rcm' })
-      const menuParts = parts as unknown as menu.MenuParts
       return [
         div(
           {
@@ -660,20 +678,18 @@ const contextMenuAdapter: Adapter<ContextMenuCaseInput> = (host, input, ctx) =>
           positionerClass: 'z-popover',
           content: () => [
             ContextMenuContent({ ...parts.content }, [
-              ...renderMenuItems(menuParts, input.items, CONTEXT_ITEM_RECIPES),
+              ...renderMenuItems(parts, input.items, CONTEXT_ITEM_RECIPES),
               ...(input.nestedOpen
                 ? [
-                    ContextMenuSubTrigger({ ...menuParts.subTrigger(SUBMENU_VALUE) }, [
-                      text('More'),
-                    ]),
+                    ContextMenuSubTrigger({ ...parts.subTrigger(SUBMENU_VALUE) }, [text('More')]),
                     contextMenu.subOverlay({
                       value: SUBMENU_VALUE,
                       state,
                       parts,
                       target: host,
                       content: () => [
-                        ContextMenuSubContent({ ...menuParts.subContent(SUBMENU_VALUE) }, [
-                          ContextMenuItem({ ...menuParts.item(SUBMENU_CHILD_VALUE).item }, [
+                        ContextMenuSubContent({ ...parts.subContent(SUBMENU_VALUE) }, [
+                          ContextMenuItem({ ...parts.item(SUBMENU_CHILD_VALUE).item }, [
                             text('Submenu item'),
                           ]),
                         ]),

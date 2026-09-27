@@ -265,14 +265,19 @@
 }
 
 /* MenuNode intentionally has no visual variant state. Consumers opt into the
-   quiet destructive hierarchy on an applicable item with this class. */
+   quiet destructive hierarchy on an applicable item with this attribute — the
+   same `data-variant="destructive"` idiom the registry skin's dropdown-menu.ts
+   recipe already uses for the identical concept (#265 LOW: this used to be a
+   `.menu-item-destructive` CLASS, the one styling idiom this file's own
+   convention rejects — "the state-driven styling idiom is data-*, not a
+   computed class"). */
 :is(
     [data-scope='menu'],
     [data-scope='context-menu'],
     [data-scope='select'],
     [data-scope='combobox'],
     [data-scope='searchable-select']
-  )[data-part='item'].menu-item-destructive {
+  )[data-part='item'][data-variant='destructive'] {
   color: var(--destructive);
 }
 
@@ -282,7 +287,7 @@
     [data-scope='select'],
     [data-scope='combobox'],
     [data-scope='searchable-select']
-  )[data-part='item'].menu-item-destructive:where([data-highlighted], :hover) {
+  )[data-part='item'][data-variant='destructive']:where([data-highlighted], :hover) {
   background: color-mix(in oklab, var(--destructive) 10%, transparent);
   color: var(--destructive);
 }
@@ -701,7 +706,7 @@
       [data-scope='select'],
       [data-scope='combobox'],
       [data-scope='searchable-select']
-    )[data-part='item'].menu-item-destructive {
+    )[data-part='item'][data-variant='destructive'] {
     color: LinkText;
     text-decoration: underline;
     text-decoration-thickness: 2px;
@@ -714,7 +719,7 @@
       [data-scope='select'],
       [data-scope='combobox'],
       [data-scope='searchable-select']
-    )[data-part='item'].menu-item-destructive[data-highlighted] {
+    )[data-part='item'][data-variant='destructive'][data-highlighted] {
     background: Highlight;
     color: HighlightText;
   }

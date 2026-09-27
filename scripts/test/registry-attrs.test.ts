@@ -101,6 +101,13 @@ const ALLOWED: Record<string, Allowance> = {
     reason:
       "the consumer's own always-mounted per-ToastType glyph marker (#265 task item 2) — never published by toast.ts's part bag; visibility is CSS-gated on the machine's real data-type via a descendant selector",
   },
+  '*: data-variant': {
+    reason:
+      'MenuNode intentionally has no visual variant state (menus-overlays.css) — the consumer ' +
+      'opts an applicable item into the destructive hierarchy with this attribute, the same ' +
+      'idiom dropdown-menu.ts already uses for the identical concept (#265 LOW: this used to ' +
+      'be a `.menu-item-destructive` class, which this convention rejects)',
+  },
 
   'navigation-menu.ts: data-viewport': {
     reason: 'the consumer sets it to pick inline vs shared-viewport presentation',
