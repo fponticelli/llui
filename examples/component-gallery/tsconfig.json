@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "types": ["node", "vite/client"],
+    // The Registry skins document compiles the scenario renderers in
+    // `registry/test/`, whose registry-source imports use the `@/` alias a
+    // consumer project has. These paths exist for the TYPE CHECK only; at
+    // build time `renderCopiedRegistrySource` re-points every such module at
+    // the copy in `examples/registry-demo`.
+    "paths": {
+      "@/lib/*": ["../../registry/llui/lib/*"],
+      "@/ui/*": ["../../registry/llui/ui/*"]
+    }
+  },
+  "include": [
+    "src",
+    "test",
+    "vite.config.ts",
+    "vite.baseline.config.ts",
+    "vite.registry.config.ts",
+    "gallery.config.ts",
+    "vitest.config.ts"
+  ]
+}

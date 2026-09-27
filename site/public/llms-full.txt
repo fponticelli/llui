@@ -55368,6 +55368,232 @@ Renderer paths joined by the protocol while remaining implementation-isolated.
 const PRESENTATION_SCENARIO_PATHS
 ```
 
+### `@llui/cli/gallery`
+
+#### Functions
+
+##### `formatGalleryQuery()` from `@llui/cli/gallery`
+
+Serialize a location as `?key=value&…` in canonical key order, omitting absent fields, the
+default view and default environment values — so one gallery state has exactly one URL.
+Returns `''` for an empty location. Values are NOT validated here; use `galleryHref` to build
+a link from untrusted input.
+
+```typescript
+function formatGalleryQuery(location: GalleryLocation): string
+```
+
+##### `galleryDocumentHref()` from `@llui/cli/gallery`
+
+URL of ONE path document rendering one entry/case/environment, with no shell around it —
+for framing by the shell and for headless drivers. Only document keys are written.
+
+```typescript
+function galleryDocumentHref(selection: GalleryDocumentSelection, options: { readonly base?: string } = {}): string
+```
+
+##### `galleryHref()` from `@llui/cli/gallery`
+
+The stable gallery URL for a product, alias or copied-artifact name. An alias or copied
+artifact other than the product itself is canonicalized to its product and pinned to the
+registry path with that artifact selected, because that is the only path it exists on.
+
+Throws `GalleryLinkError` for an unknown name, a path the contract marks `not-applicable`,
+or a malformed value — and, when `catalogs` are supplied, for an undeclared case or axis.
+
+```typescript
+function galleryHref(contract: ProductContract, name: string, options: GalleryHrefOptions = {}): string
+```
+
+##### `galleryPathFromSegment()` from `@llui/cli/gallery`
+
+Map a URL segment back to its protocol path, or `undefined` for anything else.
+
+```typescript
+function galleryPathFromSegment(segment: string): PresentationScenarioPath | undefined
+```
+
+##### `parseGalleryQuery()` from `@llui/cli/gallery`
+
+Read a location from a query string (with or without its leading `?`). Never throws: an
+invalid value is dropped and reported in `issues` (sorted), a repeated key keeps its first
+value, and unknown keys are ignored so foreign parameters survive a round trip.
+
+```typescript
+function parseGalleryQuery(search: string): {
+  location: GalleryLocation
+  issues: string[]
+}
+```
+
+##### `resolveGalleryEntry()` from `@llui/cli/gallery`
+
+Resolve any name a user might type — a canonical product, an alias, or a copied-artifact
+(`llui add`) name — to its canonical gallery entry.
+
+```typescript
+function resolveGalleryEntry(contract: ProductContract, name: string): ResolvedGalleryEntry | undefined
+```
+
+#### Types
+
+##### `GalleryLinkErrorCode` from `@llui/cli/gallery`
+
+```typescript
+export type GalleryLinkErrorCode =
+  | 'unknown-entry'
+  | 'path-not-applicable'
+  | 'invalid-value'
+  | 'unknown-case'
+  | 'unsupported-axis'
+```
+
+##### `GalleryPathSegment` from `@llui/cli/gallery`
+
+```typescript
+export type GalleryPathSegment = (typeof GALLERY_PATH_SEGMENTS)[PresentationScenarioPath]
+```
+
+##### `GalleryView` from `@llui/cli/gallery`
+
+```typescript
+export type GalleryView = 'single' | 'compare'
+```
+
+#### Interfaces
+
+##### `GalleryDocumentSelection` from `@llui/cli/gallery`
+
+The subset of a location a path document reads.
+
+```typescript
+export interface GalleryDocumentSelection {
+  readonly path: PresentationScenarioPath
+  readonly entry: string
+  readonly caseId?: string
+  readonly copiedArtifact?: string
+  readonly environment?: Partial<PresentationScenarioEnvironment>
+}
+```
+
+##### `GalleryHrefOptions` from `@llui/cli/gallery`
+
+```typescript
+export interface GalleryHrefOptions {
+  /** Prefix the query is appended to. Defaults to `PUBLIC_GALLERY_BASE`. */
+  readonly base?: string
+  readonly path?: PresentationScenarioPath
+  readonly view?: GalleryView
+  readonly caseId?: string
+  readonly environment?: Partial<PresentationScenarioEnvironment>
+  /**
+   * Compiled family catalogs. When supplied, `caseId` must name a declared case and every
+   * non-default environment axis must be declared by the case the link resolves to.
+   */
+  readonly catalogs?: readonly CompiledPresentationScenarioFamily[]
+}
+```
+
+##### `GalleryLocation` from `@llui/cli/gallery`
+
+Everything the gallery encodes in its URL. Every field is optional.
+
+```typescript
+export interface GalleryLocation {
+  /** Canonical product name. Absent means the gallery index. */
+  readonly entry?: string
+  readonly path?: PresentationScenarioPath
+  /** `single` is the default and is never written. */
+  readonly view?: GalleryView
+  readonly caseId?: string
+  readonly copiedArtifact?: string
+  readonly environment?: Partial<PresentationScenarioEnvironment>
+  /** Index search text. */
+  readonly query?: string
+  /** Index category filter. */
+  readonly category?: ProductCategory
+}
+```
+
+##### `ResolvedGalleryEntry` from `@llui/cli/gallery`
+
+```typescript
+export interface ResolvedGalleryEntry {
+  readonly canonical: ProductEntry
+  /** Present when the requested name is a contract alias. */
+  readonly alias?: ProductAlias
+  /** The copied (registry) artifact the requested name denotes, when it denotes one other than
+   *  the canonical product itself. */
+  readonly copiedArtifact?: string
+}
+```
+
+#### Classes
+
+##### `GalleryLinkError` from `@llui/cli/gallery`
+
+Thrown when a gallery link is BUILT from invalid input.
+
+```typescript
+class GalleryLinkError extends Error {
+  name
+  code: GalleryLinkErrorCode
+  constructor(code: GalleryLinkErrorCode, message: string)
+}
+```
+
+#### Constants
+
+##### `GALLERY_DOCUMENT_MESSAGE_TYPE` from `@llui/cli/gallery`
+
+`postMessage` type a path document sends to its parent frame on every status change.
+
+```typescript
+const GALLERY_DOCUMENT_MESSAGE_TYPE
+```
+
+##### `GALLERY_DOCUMENT_READY_ATTRIBUTE` from `@llui/cli/gallery`
+
+Attribute a path document sets on its `<html>` element once a scenario has settled:
+`loading` while mounting, then `ready` or `error`. A headless driver waits on
+`[data-gallery-status="ready"]` rather than on any renderer-specific selector.
+
+```typescript
+const GALLERY_DOCUMENT_READY_ATTRIBUTE
+```
+
+##### `GALLERY_PATH_LABELS` from `@llui/cli/gallery`
+
+User-facing names of the two renderer paths. Use these words in copy, never "demo".
+
+```typescript
+const GALLERY_PATH_LABELS
+```
+
+##### `GALLERY_PATH_SEGMENTS` from `@llui/cli/gallery`
+
+URL segment (and `path=` value) for each renderer path.
+
+```typescript
+const GALLERY_PATH_SEGMENTS
+```
+
+##### `GALLERY_QUERY_KEYS` from `@llui/cli/gallery`
+
+The query-string key for each location field. A public URL contract: never rename one.
+
+```typescript
+const GALLERY_QUERY_KEYS
+```
+
+##### `PUBLIC_GALLERY_BASE` from `@llui/cli/gallery`
+
+Where llui.dev serves the gallery, relative to the site root.
+
+```typescript
+const PUBLIC_GALLERY_BASE
+```
+
 ---
 
 # @llui/interactions

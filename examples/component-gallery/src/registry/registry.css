@@ -1,0 +1,76 @@
+/*
+ * Registry skins path document.
+ *
+ * Tailwind v4 + `tw-animate-css` + the copied-registry token entry
+ * (`tokens.css` / `tokens-dark.css`) — exactly what `llui init` has a consumer
+ * import. NEVER `theme.css`: its unlayered `[data-scope][data-part]` rules
+ * beat `@layer utilities`, so every recipe below would lose to it silently.
+ */
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@llui/components/styles/tokens.css';
+@import '@llui/components/styles/tokens-dark.css';
+
+/* The copied skins and the layout classes the scenario renderers place
+ * around them live outside this document's Vite root. */
+@source '../../../registry-demo/src/components/ui';
+@source '../../../../registry/test/forms-controls-scenario-renderer.ts';
+@source '../../../../registry/test/navigation-data-scenario-renderer.ts';
+@source '../../../../registry/test/menus-overlays-scenario-renderer.ts';
+@source '../../../../registry/test/specialized-tools-scenario-renderer.ts';
+
+/*
+ * The document frame. In `@layer base`, so any utility a skin or renderer
+ * writes outranks it — this layer may lay the page out, never style a part.
+ */
+@layer base {
+  html,
+  body {
+    min-height: 100%;
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  #gallery-document {
+    padding: 1.5rem;
+  }
+
+  html[data-viewport='narrow'] #gallery-document {
+    max-width: 24rem;
+  }
+
+  #gallery-document > [data-gallery-error] {
+    border: 1px solid var(--destructive);
+    border-radius: var(--radius);
+    padding: 1rem 1.25rem;
+  }
+
+  #gallery-document > [data-gallery-error] h1,
+  #gallery-document > h1 {
+    margin: 0 0 0.75rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+
+  #gallery-document a {
+    color: var(--primary);
+    text-decoration: underline;
+  }
+
+  [data-gallery-index] {
+    display: grid;
+    gap: 0.375rem;
+    padding-inline-start: 1.25rem;
+    list-style: disc;
+  }
+}
+
+/* The reduced-motion AXIS (see the baseline document's identical rule). */
+html[data-motion='reduced'] *,
+html[data-motion='reduced'] *::before,
+html[data-motion='reduced'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

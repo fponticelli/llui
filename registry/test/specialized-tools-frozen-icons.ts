@@ -39,6 +39,34 @@ export const FROZEN_LUCIDE_BODIES: Readonly<Record<string, string>> = {
   ),
   upload: stroke('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4m14-7l-5-5l-5 5m5-5v12"/>'),
   'maximize-2': stroke('<path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>'),
+  // The rest of `registry/llui/ui/icons.ts`'s vocabulary (#267): the
+  // Component Gallery's Registry skins document installs this source for
+  // EVERY family, so a glyph missing here would be a live network request
+  // and a non-deterministic render. `frozen-icons.test.ts` pins the set
+  // against icons.ts exactly.
+  circle: stroke('<circle cx="12" cy="12" r="10"/>'),
+  'circle-alert': stroke('<circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/>'),
+  'circle-check': stroke('<circle cx="12" cy="12" r="10"/><path d="m9 12l2 2l4-4"/>'),
+  folder: stroke(
+    '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  ),
+  info: stroke('<circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/>'),
+  'layout-dashboard': stroke(
+    '<rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>',
+  ),
+  'loader-circle': stroke('<path d="M21 12a9 9 0 1 1-6.219-8.56"/>'),
+  'settings-2': stroke(
+    '<path d="M20 7h-9m3 10H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
+  ),
+  sparkles: stroke(
+    '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4m2-2h-4M4 17v2m1-1H3"/>',
+  ),
+  star: stroke(
+    '<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/>',
+  ),
+  'triangle-alert': stroke(
+    '<path d="m21.73 18l-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3M12 9v4m0 4h.01"/>',
+  ),
 }
 
 /** Install the frozen source; returns a restore function. */

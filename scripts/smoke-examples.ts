@@ -40,6 +40,20 @@ interface Example {
   name: string
   /** Directory to serve in the browser-boot check. */
   bootDistDir: string
+  /**
+   * Pages to boot: `/`, plus every first-level `dist/<dir>/index.html` — a
+   * multi-document build (the Component Gallery's two path documents) is
+   * booted document by document.
+   */
+  pages: string[]
+}
+
+function pagesOf(distDir: string): string[] {
+  const nested = readdirSync(distDir)
+    .filter((name) => existsSync(resolve(distDir, name, 'index.html')))
+    .sort()
+    .map((name) => `/${name}/`)
+  return ['/', ...nested]
 }
 
 function findExamples(): Example[] {
@@ -52,21 +66,29 @@ function findExamples(): Example[] {
     if (existsSync(resolve(dir, 'pages'))) {
       const vikeClientIndex = resolve(dir, 'dist', 'client', 'index.html')
       if (existsSync(vikeClientIndex)) {
-        out.push({ name: entry, bootDistDir: resolve(dir, 'dist', 'client') })
+        const client = resolve(dir, 'dist', 'client')
+        out.push({ name: entry, bootDistDir: client, pages: ['/'] })
       } else {
         console.warn(`[skip] ${entry}: no dist/client/index.html — was \`vite build\` run?`)
       }
       continue
     }
 
-    // SPA: project-root index.html + dist/index.html after build.
-    if (!existsSync(resolve(dir, 'index.html'))) continue
+    // SPA: project-root index.html + dist/index.html after build. A
+    // multi-build example keeps its HTML entries under `src/` (each build has
+    // its own Vite root), so it is recognised by its built output instead.
+    if (
+      !existsSync(resolve(dir, 'index.html')) &&
+      !existsSync(resolve(dir, 'dist', 'index.html'))
+    ) {
+      continue
+    }
     const spaDist = resolve(dir, 'dist')
     if (!existsSync(resolve(spaDist, 'index.html'))) {
       console.warn(`[skip] ${entry}: no dist/index.html — was \`vite build\` run?`)
       continue
     }
-    out.push({ name: entry, bootDistDir: spaDist })
+    out.push({ name: entry, bootDistDir: spaDist, pages: pagesOf(spaDist) })
   }
   return out
 }
@@ -75,7 +97,7 @@ function serve(dir: string): Promise<{ port: number; close: () => Promise<void> 
   return new Promise((ok) => {
     const server = createServer((req, res) => {
       let path = req.url?.split('?')[0] ?? '/'
-      if (path === '/') path = '/index.html'
+      if (path.endsWith('/')) path = `${path}index.html`
       const file = resolve(dir, '.' + path)
       if (!file.startsWith(dir) || !existsSync(file) || statSync(file).isDirectory()) {
         res.writeHead(404)
@@ -129,9 +151,14 @@ async function smokeOne(ex: Example): Promise<{ name: string; errors: string[] }
       }
       errors.push(`requestfailed: ${req.url()} (${failure})`)
     })
-    await page.goto(`http://127.0.0.1:${port}/`, { waitUntil: 'networkidle', timeout: 15_000 })
-    // Give the app a tick to bootstrap.
-    await page.waitForTimeout(250)
+    for (const pagePath of ex.pages) {
+      await page.goto(`http://127.0.0.1:${port}${pagePath}`, {
+        waitUntil: 'networkidle',
+        timeout: 15_000,
+      })
+      // Give the app a tick to bootstrap.
+      await page.waitForTimeout(250)
+    }
   } finally {
     await browser.close()
     await close()

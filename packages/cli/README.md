@@ -201,6 +201,42 @@ invoking `Object.prototype`'s `__proto__` accessor and reassigning the object's 
 The package-boundary suite imports and repackages emitted files. Run `pnpm run build` before a
 direct `pnpm run test`; the workspace Turbo task encodes that own-package build edge automatically.
 
+## Component Gallery links
+
+`@llui/cli/gallery` is the Component Gallery's public URL contract, browser-safe like the
+protocol above (its one runtime import is `presentation-scenarios`). The gallery is a shell at
+`PUBLIC_GALLERY_BASE` (`/apps/component-gallery/` on llui.dev) plus two isolated path
+documents, `baseline/` (**Baseline theme**) and `registry/` (**Registry skins**), which all read
+one query vocabulary (`GALLERY_QUERY_KEYS`). Build a link from untrusted input with
+`galleryHref`, which refuses an unknown name, a path the contract marks not applicable, or a
+malformed value — and, given the compiled family catalogs, an undeclared case or environment
+axis. Read one back with `parseGalleryQuery`, which never throws: invalid values are dropped and
+reported, so a stale bookmark still opens the gallery.
+
+```ts
+import type { ProductContract } from '@llui/cli'
+import { galleryDocumentHref, galleryHref, parseGalleryQuery } from '@llui/cli/gallery'
+
+declare const contract: ProductContract
+
+// An alias resolves to its canonical entry, pinned to the registry artifact it names.
+galleryHref(contract, 'dropdown-menu')
+// '/apps/component-gallery/?entry=menu&path=registry&artifact=dropdown-menu'
+
+galleryHref(contract, 'accordion', {
+  base: 'https://llui.dev/apps/component-gallery/',
+  caseId: 'open',
+})
+
+// ONE scenario on one path, no shell — what a headless driver loads. The document sets
+// `data-gallery-status` (GALLERY_DOCUMENT_READY_ATTRIBUTE) on <html> once it settles.
+galleryDocumentHref({ path: 'baseline', entry: 'tabs', environment: { direction: 'rtl' } })
+
+const { location, issues } = parseGalleryQuery('?entry=tabs&theme=sepia')
+// location: { entry: 'tabs' }, issues: ['theme: invalid value "sepia"']
+void [location, issues]
+```
+
 ## `components.json`
 
 ```json

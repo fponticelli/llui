@@ -212,6 +212,12 @@ const ALLOWED_BELOW_AA: Record<string, Exemption> = Object.fromEntries(
     // `@source` lines, so it IS registry-demo's palette, measured separately
     // because it is its own entry. Same pair, same cells, same 4.349:1.
     'examples/registry-demo/src/test-fixtures/specialized-tools-live-render.css',
+    // The Component Gallery's two path documents (#267) render the SHIPPED
+    // tokens with no override at all — `theme.css` on one, `tokens.css` on the
+    // other — so they carry the upstream pair unchanged, measured at the same
+    // 4.349:1 in the same three light cells.
+    'examples/component-gallery/src/baseline/baseline.css',
+    'examples/component-gallery/src/registry/registry.css',
   ].flatMap((file) =>
     ['os=light x pref=light', 'os=light x pref=system', 'os=dark x pref=light'].map((cell) => [
       `${file}: muted: ${cell}`,

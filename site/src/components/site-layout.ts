@@ -89,6 +89,17 @@ export function siteLayout({
             navLink('/getting-started', 'getting-started', 'Getting Started', slug),
             navLink('/cookbook', 'cookbook', 'Cookbook', slug),
             navLink('/components', 'components', 'Using the Components', slug),
+            // The gallery is a static app, not a Vike page, so client routing
+            // must not intercept it (`rel="external"` is Vike's opt-out).
+            navLink(
+              '/apps/component-gallery/',
+              'apps/component-gallery',
+              'Component Gallery',
+              slug,
+              {
+                external: true,
+              },
+            ),
             navLink('/styling', 'styling', 'Styling & Registry', slug),
             navLink('/composition-patterns', 'composition-patterns', 'Composition Patterns', slug),
             navLink(
@@ -237,10 +248,12 @@ function navLink(
   slug: string,
   label: string,
   currentSlug: Signal<string>,
+  options: { readonly external?: boolean } = {},
 ): Mountable {
   return a(
     {
       href,
+      ...(options.external === true ? { rel: 'external' } : {}),
       class: currentSlug.map((current) => (current === slug ? 'nav-link active' : 'nav-link')),
       'aria-current': currentSlug.map((current) => (current === slug ? 'page' : undefined)),
     },

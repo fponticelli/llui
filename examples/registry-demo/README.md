@@ -1,9 +1,13 @@
-# Registry Demo
+# Registry skins showcase
 
-All 58 components in the [LLui registry](../../registry), rendered from source that
-`llui add` copied into this app. Nothing on the page is imported from a styling
-package — `src/components/ui/` is ordinary project source, and editing it changes what
-you see.
+A curated app on the **Registry skins** path: every item in the
+[LLui registry](../../registry), rendered from source that `llui add` copied into this app.
+Nothing on the page is imported from a styling package — `src/components/ui/` is ordinary
+project source, and editing it changes what you see.
+
+For each component's deterministic scenarios side by side with the Baseline theme, use the
+[Component Gallery](../component-gallery) (`pnpm gallery`) — its Registry skins document
+renders these same copied files.
 
 Coverage is shadcn/ui parity minus Chart and Sidebar, plus the components LLui has and
 shadcn does not (rating group, tags input, tree view, steps, meter, number input,

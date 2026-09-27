@@ -37,6 +37,7 @@ pnpm turbo test           # Run tests (vitest) across all packages
 pnpm test:scripts         # Root scripts/test suite
 pnpm format               # Prettier format everything
 pnpm format:check         # Check formatting without writing
+pnpm gallery              # Component Gallery dev server (shell + both path documents)
 pnpm test:durations       # Record the per-file test-duration baseline
 pnpm check:test-durations # Diff against that baseline (report-only, load-normalized)
 
@@ -217,6 +218,7 @@ Hard constraints. Several are not enforced by types or CI. **Before touching a s
 - Icons come from Iconify as rebuilt `<svg>` elements (allowlisted, never `innerHTML`). Failures are not cached.
 - CSS probes: verify by RENDERING. Hidden tabs freeze transitions; CSS Color 4 values need paint-and-read; assert the instrument on a mid-tone known pair first.
 - The components demo serves `dist/styles/` — rebuild `@llui/components` after a style source edit.
+- **The Component Gallery (`examples/component-gallery`) renders Baseline theme and Registry skins as SEPARATE builds/documents.** Never load both systems in one document; renderers stay per path; its inventory is derived from the contract and family catalogs, never listed.
 
 ### Packaging — `docs/agents/packaging.md`
 

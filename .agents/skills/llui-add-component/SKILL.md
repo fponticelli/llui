@@ -137,6 +137,12 @@ For the registry half specifically, two guards will fail the build if you skip e
 - **`scripts/test/registry-demo-sync.test.ts`** requires every published registry item to be
   copied into the demo, byte-identical to what `llui add` produces today.
 
+The **Component Gallery** (`examples/component-gallery`, `pnpm gallery`) then shows the
+component on both paths with no gallery edit: its entry comes from the ProductContract and
+its scenarios from the family catalog. `examples/component-gallery/test/coverage.test.ts`
+fails until the family's baseline and registry adapter maps render every declared case of
+every path the contract marks styled, partial or composed.
+
 Two things about the ATTRIBUTE NAMES your `connect` publishes, both learned from shipped bugs:
 
 - **Match the package's existing spelling.** A highlight is a bare `data-highlighted`, not

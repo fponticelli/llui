@@ -131,7 +131,15 @@ async function buildExample(ex: ExampleMeta): Promise<void> {
   rmSync(staging, { recursive: true, force: true })
 
   try {
-    if (ex.vike) {
+    if (ex.selfBuildOutEnv !== undefined) {
+      // A multi-build example (the Component Gallery): its own `build` script
+      // runs every build with a RELATIVE base and writes wherever the env var
+      // points, so the output is correct under `/apps/<slug>/` as-is.
+      await execFileAsync('pnpm', ['--filter', ex.pkg, 'run', 'build'], {
+        cwd: projectRoot,
+        env: { ...process.env, [ex.selfBuildOutEnv]: staging },
+      })
+    } else if (ex.vike) {
       // Vike's CLI wrapper rejects Vite's `--base`/`--outDir` flags, so both are
       // passed via env vars its vite.config.ts reads. Vike writes the browser
       // bundle to `<LLUI_OUT>/client`.
