@@ -322,6 +322,122 @@ describe('searchableSelect connect parts', () => {
     expect(s.combobox.items).toEqual(['Apple', 'Banana'])
   })
 
+  /**
+   * #265 G4 — the live region and the empty state derive from the load
+   * projection, never from `filteredItems.length` alone: a list that is empty
+   * because a fetch is still in flight (or failed) is not "No results".
+   * Stale-while-revalidate keeps previous rows on screen during a refetch and
+   * stays silent until the fetch settles, so a filter that matches none of the
+   * STALE rows does not announce a verdict the fresh rows may overturn.
+   */
+  describe('liveRegion / empty derive from loadState (#265 G4)', () => {
+    const opened = (s: SearchableSelectState): SearchableSelectState => apply(s, { type: 'open' })
+    const filtered = (s: SearchableSelectState, value: string): SearchableSelectState =>
+      apply(s, { type: 'setFilter', value })
+    const loaded = (items: string[]): SearchableSelectState =>
+      apply(apply(opened(init({ items: [] })), { type: 'loadStart', requestId: 1 }), {
+        type: 'loadSuccess',
+        requestId: 1,
+        items,
+      })
+    const revalidating = (s: SearchableSelectState): SearchableSelectState =>
+      apply(s, { type: 'loadStart', requestId: 2 })
+
+    const cases: ReadonlyArray<{
+      name: string
+      state: () => SearchableSelectState
+      load: string
+      live: string
+      emptyHidden: boolean
+    }> = [
+      {
+        name: 'initial-empty: nothing given, nothing fetched',
+        state: () => opened(init({ items: [] })),
+        load: 'initial-empty',
+        live: 'No results',
+        emptyHidden: false,
+      },
+      {
+        name: 'loading: first fetch in flight, nothing to show yet',
+        state: () => apply(opened(init({ items: [] })), { type: 'loadStart', requestId: 1 }),
+        load: 'loading',
+        live: '',
+        emptyHidden: true,
+      },
+      {
+        name: 'success with matches',
+        state: () => loaded(['Apple', 'Banana']),
+        load: 'success',
+        live: '2 results',
+        emptyHidden: true,
+      },
+      {
+        name: 'success, filter matches nothing',
+        state: () => filtered(loaded(['Apple', 'Banana']), 'zz'),
+        load: 'success',
+        live: 'No results',
+        emptyHidden: false,
+      },
+      {
+        name: 'stale-results, filter matches a stale row',
+        state: () => filtered(revalidating(loaded(['Apple', 'Banana'])), 'app'),
+        load: 'stale-results',
+        live: '',
+        emptyHidden: true,
+      },
+      {
+        name: 'stale-results, filter matches no stale row',
+        state: () => filtered(revalidating(loaded(['Apple', 'Banana'])), 'zz'),
+        load: 'stale-results',
+        live: '',
+        emptyHidden: true,
+      },
+      {
+        name: 'error on a first fetch (no items at all)',
+        state: () =>
+          apply(apply(opened(init({ items: [] })), { type: 'loadStart', requestId: 1 }), {
+            type: 'loadError',
+            requestId: 1,
+            error: 'Offline',
+          }),
+        load: 'error',
+        live: 'Offline',
+        emptyHidden: true,
+      },
+      {
+        name: 'error on a revalidation, filter matches no stale row',
+        state: () =>
+          filtered(
+            apply(revalidating(loaded(['Apple', 'Banana'])), {
+              type: 'loadError',
+              requestId: 2,
+              error: 'Offline',
+            }),
+            'zz',
+          ),
+        load: 'error',
+        live: 'Offline',
+        emptyHidden: true,
+      },
+      {
+        name: 'closed and settled: silent',
+        state: () => apply(loaded(['Apple']), { type: 'close' }),
+        load: 'success',
+        live: '',
+        emptyHidden: true,
+      },
+    ]
+
+    for (const c of cases) {
+      it(c.name, () => {
+        const s = c.state()
+        expect(read(parts.loadState, s)).toBe(c.load)
+        expect(read(parts.liveRegion.text, s)).toBe(c.live)
+        expect(read(parts.empty.hidden, s)).toBe(c.emptyHidden)
+      })
+    }
+  })
+
   it('item parts carry aria-selected wiring', () => {
     const item = parts.item('Apple', 0)
     expect(item.item.role).toBe('option')

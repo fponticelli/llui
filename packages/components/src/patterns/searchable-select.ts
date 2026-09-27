@@ -381,7 +381,10 @@ export interface SearchableSelectParts {
     'data-part': 'clear'
     onClick: (e: MouseEvent) => void
   }
-  /** Polite live region announcing the no-results / result count. */
+  /** Polite live region announcing the no-results / result count once the
+   * list is settled (`loadState` is `'success'` or `'initial-empty'`), the
+   * error text on `'error'`, and nothing while a fetch is in flight
+   * (`'loading'` / `'stale-results'`). */
   liveRegion: {
     role: 'status'
     'aria-live': 'polite'
@@ -390,7 +393,9 @@ export interface SearchableSelectParts {
     'data-part': 'live-region'
     text: Signal<string>
   }
-  /** Empty-state container (render when the filtered list is empty). */
+  /** Empty-state container. `hidden` is false only when the SETTLED filtered
+   * list is empty — never while loading, revalidating, or after a failed
+   * fetch (the live region / an error slot own those). */
   empty: {
     'data-scope': 'searchable-select'
     'data-part': 'empty'
@@ -407,6 +412,13 @@ export interface ConnectOptions {
 }
 
 const SCOPE = 'searchable-select' as const
+
+/** Whether the list on hand is the FINAL answer for the current query: nothing
+ * is in flight and the last fetch (if any) did not fail. Only then may an empty
+ * filtered list be reported as "No results". */
+function isSettled(load: LoadProjection): boolean {
+  return load === 'success' || load === 'initial-empty'
+}
 
 function triggerLabelOf(s: SearchableSelectState): string {
   const value = s.combobox.value
@@ -635,10 +647,16 @@ export function connect(
       'aria-atomic': 'true',
       'data-scope': SCOPE,
       'data-part': 'live-region',
+      // Derived from the load projection, never from `filteredItems` alone
+      // (#265 G4): an empty list while a fetch is in flight — or after one
+      // failed — is not "No results". Stale-while-revalidate stays silent
+      // until the fetch settles, so a filter matching none of the STALE rows
+      // never announces a verdict the fresh rows may overturn.
       text: state.map((s) => {
         const cbs = s.combobox
-        if (cbs.status === 'error') return cbs.error ?? ''
-        if (!s.open) return ''
+        const load = loadProjection(cbs)
+        if (load === 'error') return cbs.error ?? ''
+        if (!s.open || !isSettled(load)) return ''
         const n = cbs.filteredItems.length
         if (n === 0) return emptyText
         return n === 1 ? '1 result' : `${n} results`
@@ -647,7 +665,9 @@ export function connect(
     empty: {
       'data-scope': SCOPE,
       'data-part': 'empty',
-      hidden: state.map((s) => s.combobox.filteredItems.length > 0),
+      hidden: state.map(
+        (s) => !isSettled(loadProjection(s.combobox)) || s.combobox.filteredItems.length > 0,
+      ),
     },
   }
 }
