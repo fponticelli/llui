@@ -29,6 +29,14 @@ import {
 } from './menus-overlays-scenario-renderer'
 import { DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT } from '@llui/cli/presentation-scenarios'
 import type { PresentationScenarioEnvironment } from '@llui/cli/presentation-scenarios'
+import {
+  fieldAssertionFor,
+  GEOMETRY_ALLOWLIST,
+  NESTED_ITEM_FIELD_ASSERTIONS,
+  NESTED_MENUBAR_MENU_FIELD_ASSERTIONS,
+  type FieldAssertion,
+  type FieldAssertionContext,
+} from '../../packages/components/test/styles/menus-overlays-field-assertions'
 
 const ROOT = resolve(import.meta.dirname, '../..')
 const registry = JSON.parse(readFileSync(resolve(ROOT, 'registry/registry.json'), 'utf8')) as {
@@ -274,67 +282,399 @@ describe('registry menus-overlays scenario renderer', () => {
     return UNCHANGED
   }
 
-  it('every case field this renderer supports materially changes real output, or is documented as insensitive', () => {
+  /** Stable per-node identifier used to NAMESPACE its facts: `data-value` (menu
+   * items, menubar/nav-menu triggers, select/combobox options all carry one),
+   * else `id`, else `data-part` (unique for a single-instance part), else the
+   * tag name. Without this, a fact string is shared across every SIBLING
+   * carrying the same value (e.g. two menu items both `aria-disabled=true`,
+   * or a submenu child that stays `data-highlighted=''` regardless of the
+   * ROOT-level highlight under test) and a flat Set of `attr=value` collapses
+   * them into ONE token — so toggling ONE sibling to match another already
+   * produces no new token at all, a false "insensitive" (#265 review: this is
+   * the general form of the A5/A3/B7 survivors — the mutation is real but
+   * indistinguishable from a sibling's existing state without node identity).
+   */
+  function nodeKey(node: HTMLElement): string {
+    return (
+      node.getAttribute('data-value') ?? node.id ?? node.getAttribute('data-part') ?? node.tagName
+    )
+  }
+
+  /**
+   * `nodeKey|attr=value` (or `nodeKey|text=…`/`nodeKey|#value=…`) tokens for
+   * every published fact across the host's `[data-part]` subtree — the
+   * structural counterpart to `projectPublishedState`'s per-node string,
+   * built specifically so a field's mutation can be checked against a
+   * SPECIFIC named attribute on a SPECIFIC node rather than "the whole
+   * projection differs" (#265 review: `expect(mutated).not.toBe(baseline)`
+   * is inadmissible on its own, and structurally cannot reach an
+   * array-of-objects field like a menu item's own `disabled` — the exact
+   * shape of survivors A3/A5/B7).
+   */
+  function factSet(host: HTMLElement): Set<string> {
+    const partNodes = [...host.querySelectorAll<HTMLElement>('[data-part]')]
+    const nodes = partNodes.length > 0 ? partNodes : [...host.querySelectorAll<HTMLElement>('*')]
+    const facts = new Set<string>()
+    for (const node of nodes) {
+      const key = nodeKey(node)
+      for (const attr of Array.from(node.attributes)) {
+        if (
+          attr.name.startsWith('data-') ||
+          attr.name.startsWith('aria-') ||
+          attr.name === 'role' ||
+          PLAIN_STATE_ATTRS.has(attr.name)
+        ) {
+          facts.add(`${key}|${attr.name}=${attr.value}`)
+        }
+      }
+      const text = [...node.childNodes]
+        .filter((child) => child.nodeType === Node.TEXT_NODE)
+        .map((child) => child.textContent ?? '')
+        .join('')
+        .trim()
+      if (text.length > 0) facts.add(`${key}|text=${text}`)
+      if (node instanceof HTMLInputElement) facts.add(`${key}|#value=${node.value}`)
+    }
+    return facts
+  }
+
+  function attrNameOf(fact: string): string {
+    const bar = fact.lastIndexOf('|')
+    const eq = fact.indexOf('=', bar + 1)
+    return fact.slice(bar + 1, eq)
+  }
+
+  function changedAttrNames(a: ReadonlySet<string>, b: ReadonlySet<string>): Set<string> {
+    const names = new Set<string>()
+    for (const fact of a) if (!b.has(fact)) names.add(attrNameOf(fact))
+    for (const fact of b) if (!a.has(fact)) names.add(attrNameOf(fact))
+    return names
+  }
+
+  /** An `expectedFacts` formula names a bare `attr=value` with no node
+   * identity (it does not know which node the field addresses), so it is
+   * checked as a SUFFIX against the node-keyed set — an exact `attr=value`
+   * match on WHATEVER node carries it. */
+  function hasFactSuffix(facts: ReadonlySet<string>, suffix: string): boolean {
+    for (const fact of facts) if (fact === suffix || fact.endsWith(`|${suffix}`)) return true
+    return false
+  }
+
+  function setsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+    if (a.size !== b.size) return false
+    for (const v of a) if (!b.has(v)) return false
+    return true
+  }
+
+  type TypedAdapter = (h: HTMLElement, input: unknown, ctx: RenderContext) => Disposable
+
+  function mountFacts(adapter: TypedAdapter, input: unknown, ctx: RenderContext): Set<string> {
+    const host = document.createElement('div')
+    const handle = adapter(host, input, ctx)
+    const facts = factSet(host)
+    handle.dispose()
+    return facts
+  }
+
+  /** Facts for ONE node only, identified by its own `data-value` — needed
+   * for a nested array-of-objects element (a menu item, a menubar trigger),
+   * because the flat host-wide `factSet` folds every node's facts into one
+   * Set: when a SIBLING item already carries the same fact (e.g. `paste` is
+   * already `aria-disabled=true` in `baseMenuItems`), toggling `copy` to
+   * match produces no NEW token in the flat set even though `copy` itself
+   * plainly changed. Scoping to the specific node this field addresses is
+   * what makes the exact-fact check correct regardless of sibling state. */
+  function nodeFacts(node: HTMLElement): Set<string> {
+    const facts = new Set<string>()
+    for (const attr of Array.from(node.attributes)) {
+      if (
+        attr.name.startsWith('data-') ||
+        attr.name.startsWith('aria-') ||
+        attr.name === 'role' ||
+        PLAIN_STATE_ATTRS.has(attr.name)
+      ) {
+        facts.add(`${attr.name}=${attr.value}`)
+      }
+    }
+    const text = [...node.childNodes]
+      .filter((child) => child.nodeType === Node.TEXT_NODE)
+      .map((child) => child.textContent ?? '')
+      .join('')
+      .trim()
+    if (text.length > 0) facts.add(`text=${text}`)
+    return facts
+  }
+
+  function mountFactsForDataValue(
+    adapter: TypedAdapter,
+    input: unknown,
+    ctx: RenderContext,
+    dataValue: string,
+  ): Set<string> {
+    const host = document.createElement('div')
+    const handle = adapter(host, input, ctx)
+    const node = host.querySelector<HTMLElement>(`[data-value="${dataValue}"]`)
+    const facts = node === null ? new Set<string>() : nodeFacts(node)
+    handle.dispose()
+    return facts
+  }
+
+  function assertExact(
+    key: string,
+    assertion: FieldAssertion,
+    originalValue: unknown,
+    mutatedValue: unknown,
+    baseFacts: ReadonlySet<string>,
+    mutatedFacts: ReadonlySet<string>,
+    ctxFor: (input: Record<string, unknown>) => FieldAssertionContext,
+    baseInput: Record<string, unknown>,
+    mutatedInput: Record<string, unknown>,
+  ): void {
+    const changedNames = changedAttrNames(baseFacts, mutatedFacts)
+    expect(
+      assertion.attrNames.some((n) => changedNames.has(n)),
+      `${key}: expected one of [${assertion.attrNames.join(', ')}] to change; changed attrs were [${[...changedNames].join(', ')}]`,
+    ).toBe(true)
+    if (assertion.expectedFacts === undefined) return
+    for (const fact of assertion.expectedFacts(originalValue, ctxFor(baseInput))) {
+      expect(hasFactSuffix(baseFacts, fact), `${key} baseline missing exact fact "${fact}"`).toBe(
+        true,
+      )
+    }
+    for (const fact of assertion.expectedFacts(mutatedValue, ctxFor(mutatedInput))) {
+      expect(hasFactSuffix(mutatedFacts, fact), `${key} mutated missing exact fact "${fact}"`).toBe(
+        true,
+      )
+    }
+  }
+
+  /** Checks the FIRST element of an array-of-objects field (`items`,
+   * `menus[0].items`) against `NESTED_ITEM_FIELD_ASSERTIONS` — the fields
+   * the top-level loop below structurally cannot reach, since
+   * `mutateFieldValue` declines every array of objects as "structural, not
+   * scalar" (deliberately: a whole-array mutation is ambiguous about WHICH
+   * element changed). */
+  function checkNestedItemFields(
+    scenarioId: string,
+    caseId: string,
+    arrayLabel: string,
+    items: readonly Record<string, unknown>[] | undefined,
+    buildMutatedInput: (mutatedFirst: Record<string, unknown>) => Record<string, unknown>,
+    baseInput: Record<string, unknown>,
+    dataValueKey: string,
+    adapter: TypedAdapter,
+    ctx: RenderContext,
+  ): void {
+    if (!Array.isArray(items) || items.length === 0) return
+    const first = items[0]!
+    // `select`/`combobox`/`toolbar`'s `items` is `readonly string[]` — a
+    // plain scalar array, not array-of-objects. Nothing here applies to it.
+    if (typeof first !== 'object' || first === null) return
+    const dataValue = String(first[dataValueKey])
+    for (const [field, assertion] of Object.entries(NESTED_ITEM_FIELD_ASSERTIONS)) {
+      if (!(field in first)) continue
+      const originalValue = first[field]
+      const mutatedValue = mutateFieldValue(field, originalValue)
+      if (mutatedValue === UNCHANGED) continue
+      const mutatedInput = buildMutatedInput({ ...first, [field]: mutatedValue })
+      const baseNodeFacts = mountFactsForDataValue(adapter, baseInput, ctx, dataValue)
+      const mutatedNodeFacts = mountFactsForDataValue(adapter, mutatedInput, ctx, dataValue)
+      const key = `${scenarioId}/${caseId}.${arrayLabel}[0].${field}`
+      assertExact(
+        key,
+        assertion,
+        originalValue,
+        mutatedValue,
+        baseNodeFacts,
+        mutatedNodeFacts,
+        (input) => ({ scenarioId, caseId, input }),
+        baseInput,
+        mutatedInput,
+      )
+    }
+  }
+
+  it('every declared case field materially changes the specific machine-published fact FIELD_ASSERTIONS names for it, or is documented as insensitive/geometry-only', () => {
     const hitAllowances = new Set<string>()
+    const usedGeometryAllowances = new Set<string>()
     for (const [scenarioId, definition] of Object.entries(MENUS_OVERLAYS_DEFINITIONS)) {
       const adapter = REGISTRY_ADAPTERS[scenarioId as keyof typeof REGISTRY_ADAPTERS]
-      const typedAdapter = adapter as (
-        h: HTMLElement,
-        input: unknown,
-        ctx: RenderContext,
-      ) => Disposable
+      const typedAdapter = adapter as TypedAdapter
       for (const scenarioCase of definition.cases) {
         const ctx: RenderContext = {
           scenarioId: scenarioId as MenusOverlaysDefinitionScenarioId,
           caseId: scenarioCase.id,
           environment: DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
         }
-        const baseline = mountFor(typedAdapter, scenarioCase.input, ctx).projection
+        const input = scenarioCase.input as Record<string, unknown>
+        const baseFacts = mountFacts(typedAdapter, input, ctx)
 
-        for (const field of Object.keys(scenarioCase.input as Record<string, unknown>)) {
-          if (SKIPPED_FIELDS.has(field)) continue
-          if (
-            SKIPPED_FIELDS_PER_SCENARIO[scenarioId as MenusOverlaysDefinitionScenarioId]?.has(field)
-          )
+        for (const field of Object.keys(input)) {
+          const key = `${scenarioId}/${scenarioCase.id}.${field}`
+          const skippedGlobally = SKIPPED_FIELDS.has(field)
+          const skippedPerScenario =
+            SKIPPED_FIELDS_PER_SCENARIO[scenarioId as MenusOverlaysDefinitionScenarioId]?.has(
+              field,
+            ) ?? false
+          if (skippedGlobally || skippedPerScenario) {
+            if (skippedGlobally) {
+              const reason = GEOMETRY_ALLOWLIST[field]
+              expect(
+                reason,
+                `${field} is globally skipped with no geometry allowance`,
+              ).toBeDefined()
+              usedGeometryAllowances.add(field)
+            }
             continue
-          const originalValue = (scenarioCase.input as Record<string, unknown>)[field]
+          }
+          const originalValue = input[field]
           const mutatedValue = mutateFieldValue(field, originalValue)
           if (mutatedValue === UNCHANGED) continue
-          const mutatedInput = { ...scenarioCase.input, [field]: mutatedValue }
-          const mutated = mountFor(typedAdapter, mutatedInput, ctx).projection
-          const key = `${scenarioId}/${scenarioCase.id}.${field}`
-          if (mutated === baseline) {
+          const mutatedInput = { ...input, [field]: mutatedValue }
+          const mutatedFacts = mountFacts(typedAdapter, mutatedInput, ctx)
+
+          if (setsEqual(baseFacts, mutatedFacts)) {
             const reason = INSENSITIVE_DIMENSIONS[key]
             expect(reason, key).toBeDefined()
             hitAllowances.add(key)
             continue
           }
-          expect(mutated, key).not.toBe(baseline)
+
+          const assertion = fieldAssertionFor(scenarioId, scenarioCase.id, field)
+          expect(assertion, `no FIELD_ASSERTION registered for ${key}`).toBeDefined()
+          assertExact(
+            key,
+            assertion!,
+            originalValue,
+            mutatedValue,
+            baseFacts,
+            mutatedFacts,
+            (i) => ({ scenarioId, caseId: scenarioCase.id, input: i }),
+            input,
+            mutatedInput,
+          )
+        }
+
+        checkNestedItemFields(
+          scenarioId,
+          scenarioCase.id,
+          'items',
+          input.items as readonly Record<string, unknown>[] | undefined,
+          (mutatedFirst) => ({
+            ...input,
+            items: [mutatedFirst, ...(input.items as readonly Record<string, unknown>[]).slice(1)],
+          }),
+          input,
+          'value',
+          typedAdapter,
+          ctx,
+        )
+
+        const menus = input.menus as readonly Record<string, unknown>[] | undefined
+        if (Array.isArray(menus) && menus.length > 0) {
+          const firstMenu = menus[0]!
+          const menuDataValue = String(firstMenu.id)
+          for (const [field, assertion] of Object.entries(NESTED_MENUBAR_MENU_FIELD_ASSERTIONS)) {
+            if (!(field in firstMenu)) continue
+            const originalValue = firstMenu[field]
+            const mutatedValue = mutateFieldValue(field, originalValue)
+            if (mutatedValue === UNCHANGED) continue
+            const mutatedInput = {
+              ...input,
+              menus: [{ ...firstMenu, [field]: mutatedValue }, ...menus.slice(1)],
+            }
+            const baseNodeFacts = mountFactsForDataValue(typedAdapter, input, ctx, menuDataValue)
+            const mutatedNodeFacts = mountFactsForDataValue(
+              typedAdapter,
+              mutatedInput,
+              ctx,
+              menuDataValue,
+            )
+            const key = `${scenarioId}/${scenarioCase.id}.menus[0].${field}`
+            assertExact(
+              key,
+              assertion,
+              originalValue,
+              mutatedValue,
+              baseNodeFacts,
+              mutatedNodeFacts,
+              (i) => ({ scenarioId, caseId: scenarioCase.id, input: i }),
+              input,
+              mutatedInput,
+            )
+          }
+
+          // A menu's own item nodes are only MOUNTED while that specific
+          // menu is the currently open one (`menubar.ts`'s `data-state`-gated
+          // content) — the 'closed' case's `open: null` unmounts every
+          // menu's content entirely, so an item field mutation here has no
+          // node to observe at all. Skip rather than fail: this is a
+          // structural precondition, not the field being insensitive.
+          if (input.open === firstMenu.id) {
+            checkNestedItemFields(
+              scenarioId,
+              scenarioCase.id,
+              'menus[0].items',
+              firstMenu.items as readonly Record<string, unknown>[] | undefined,
+              (mutatedFirstItem) => ({
+                ...input,
+                menus: [
+                  {
+                    ...firstMenu,
+                    items: [
+                      mutatedFirstItem,
+                      ...(firstMenu.items as readonly Record<string, unknown>[]).slice(1),
+                    ],
+                  },
+                  ...menus.slice(1),
+                ],
+              }),
+              input,
+              'value',
+              typedAdapter,
+              ctx,
+            )
+          }
         }
       }
     }
     for (const key of Object.keys(INSENSITIVE_DIMENSIONS)) {
       expect(hitAllowances.has(key), `unused allowance: ${key}`).toBe(true)
     }
+    for (const field of SKIPPED_FIELDS) {
+      expect(usedGeometryAllowances.has(field), `unused geometry allowance: ${field}`).toBe(true)
+    }
   })
 
-  it('a case declaring an environment axis materially changes the mount host attribute for that axis', () => {
+  /** Every axis reflected as a host attribute (`direction`/`theme`/
+   * `viewport`/`forcedColors`) is asserted exactly; `motion` is NOT reflected
+   * as a host attribute at all (`applyEnvironmentAttrs` never sets one for
+   * it — real reduced-motion behavior is a CSS media query, proven in a real
+   * browser), so it is closed-at-both-ends via `ENV_AXIS_ALLOWLIST` rather
+   * than silently skipped. */
+  const ENV_AXIS_ALLOWLIST: Record<string, string> = {
+    motion:
+      'not reflected as a host attribute (applyEnvironmentAttrs sets dir/data-theme/data-viewport/data-forced-colors only); real reduced-motion behavior is proven in menus-overlays-live-render.browser.test.ts ("reduces a real opening transition…"/"reduces a real toast exit animation…under prefers-reduced-motion")',
+  }
+
+  it('a case declaring an environment axis materially changes the exact mount host attribute for that axis, or is documented as unobservable in jsdom', () => {
+    const usedAxisAllowances = new Set<string>()
     for (const [scenarioId, definition] of Object.entries(MENUS_OVERLAYS_DEFINITIONS)) {
       const adapter = REGISTRY_ADAPTERS[scenarioId as keyof typeof REGISTRY_ADAPTERS]
-      const typedAdapter = adapter as (
-        h: HTMLElement,
-        input: unknown,
-        ctx: RenderContext,
-      ) => Disposable
+      const typedAdapter = adapter as TypedAdapter
       for (const scenarioCase of definition.cases) {
         for (const axis of scenarioCase.environmentAxes) {
+          if (axis === 'motion') {
+            expect(ENV_AXIS_ALLOWLIST[axis], axis).toBeDefined()
+            usedAxisAllowances.add(axis)
+            continue
+          }
           const mutatedEnvironment: PresentationScenarioEnvironment = {
             ...DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
             ...(axis === 'direction' ? { direction: 'rtl' } : {}),
             ...(axis === 'theme' ? { theme: 'dark' } : {}),
             ...(axis === 'viewport' ? { viewport: 'narrow' } : {}),
             ...(axis === 'forcedColors' ? { forcedColors: 'active' } : {}),
-            ...(axis === 'motion' ? { motion: 'reduced' } : {}),
           }
           const ctx: RenderContext = {
             scenarioId: scenarioId as MenusOverlaysDefinitionScenarioId,
@@ -350,6 +690,9 @@ describe('registry menus-overlays scenario renderer', () => {
           handle.dispose()
         }
       }
+    }
+    for (const axis of Object.keys(ENV_AXIS_ALLOWLIST)) {
+      expect(usedAxisAllowances.has(axis), `unused env axis allowance: ${axis}`).toBe(true)
     }
   })
 })
