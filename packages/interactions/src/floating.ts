@@ -216,23 +216,29 @@ export function attachFloating(opts: FloatingOptions): () => void {
   const platform = dir === undefined ? undefined : directedPlatform(dir)
 
   const padding = typeof shift === 'object' ? (shift.padding ?? 8) : 8
-  // Filled by `size` DURING a computation and written with the rest of that
-  // result in the `.then` below, so every write shares the one disposal check.
-  let available: { width: number; height: number } | undefined
-  const middleware: Middleware[] = []
-  if (offset > 0) middleware.push(offsetMw(offset))
-  if (flip) middleware.push(flipMw())
-  if (shift !== false) middleware.push(shiftMw({ padding }))
-  // After flip/shift, so it measures the side the content actually lands on.
-  middleware.push(
-    sizeMw({
-      padding,
-      apply: ({ availableWidth, availableHeight }) => {
-        available = { width: availableWidth, height: availableHeight }
-      },
-    }),
-  )
-  if (arrow) middleware.push(arrowMw({ element: arrow }))
+  /**
+   * The middleware for ONE computation. `size` reports the available space
+   * through a callback, so each computation gets its own `sink`: two
+   * overlapping `autoUpdate` passes can never cross their sizes, and the
+   * `.then` that writes a result writes that result's own measurement.
+   */
+  const middlewareFor = (sink: { width: number; height: number }[]): Middleware[] => {
+    const list: Middleware[] = []
+    if (offset > 0) list.push(offsetMw(offset))
+    if (flip) list.push(flipMw())
+    if (shift !== false) list.push(shiftMw({ padding }))
+    // After flip/shift, so it measures the side the content actually lands on.
+    list.push(
+      sizeMw({
+        padding,
+        apply: ({ availableWidth, availableHeight }) => {
+          sink[0] = { width: availableWidth, height: availableHeight }
+        },
+      }),
+    )
+    if (arrow) list.push(arrowMw({ element: arrow }))
+    return list
+  }
 
   floating.style.position = 'absolute'
   floating.style.top = '0'
@@ -241,13 +247,15 @@ export function attachFloating(opts: FloatingOptions): () => void {
 
   const update = (): void => {
     if (disposed) return
+    const measured: { width: number; height: number }[] = []
     void computePosition(anchor, floating, {
       placement,
-      middleware,
+      middleware: middlewareFor(measured),
       ...(platform ? { platform } : {}),
     }).then(({ x, y, placement: actual, middlewareData }) => {
       if (disposed) return
       floating.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`
+      const available = measured[0]
       if (available !== undefined) {
         const px = (value: number): string => `${Math.max(0, Math.floor(value))}px`
         floating.style.setProperty(FLOATING_AVAILABLE_HEIGHT, px(available.height))

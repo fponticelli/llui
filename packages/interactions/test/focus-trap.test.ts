@@ -6,7 +6,7 @@ describe('pushFocusTrap', () => {
     document.body.innerHTML = ''
   })
 
-  it('keeps focus in place and prevents Tab when the trap has no tab-reachable descendants', () => {
+  it('holds focus on the container and prevents Tab when the trap has no tab-reachable descendants', () => {
     const outside = document.createElement('button')
     const container = document.createElement('div')
     container.innerHTML = '<button tabindex="-1">Programmatic item</button>'
@@ -22,7 +22,9 @@ describe('pushFocusTrap', () => {
     document.dispatchEvent(event)
 
     expect(event.defaultPrevented).toBe(true)
-    expect(document.activeElement).toBe(outside)
+    // Focus moved INTO the trap (onto the container itself, since nothing in
+    // it is tab-reachable) and Tab holds it there (#265 H2).
+    expect(document.activeElement).toBe(container)
     release()
   })
 
@@ -50,6 +52,18 @@ describe('pushFocusTrap', () => {
     const release = pushFocusTrap({ container })
     expect(document.activeElement).toBe(button)
     release()
+    container.remove()
+  })
+
+  it('makes a container with no tabindex focusable for the trap, and restores it on release', () => {
+    const container = document.createElement('div')
+    container.append(document.createElement('p'))
+    document.body.append(container)
+    const release = pushFocusTrap({ container })
+    expect(container.getAttribute('tabindex')).toBe('-1')
+    expect(document.activeElement).toBe(container)
+    release()
+    expect(container.hasAttribute('tabindex')).toBe(false)
     container.remove()
   })
 })

@@ -6,8 +6,9 @@ import { engineFocus, runEngineFocus } from './engine-focus.js'
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to the first focusable
-   * descendant, else the container itself (give it `tabindex="-1"`). */
+  /** Element to focus when the trap activates. Defaults to the first
+   * tab-reachable descendant, else the container itself (given a temporary
+   * `tabindex="-1"` when it has none). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -89,6 +90,8 @@ export function pushFocusTrap(opts: FocusTrapOptions): () => void {
   const containers = resolveElements(opts.container)
   const initial =
     typeof opts.initialFocus === 'function' ? opts.initialFocus() : (opts.initialFocus ?? null)
+  // A tabindex this trap added to its own container, removed on release.
+  let addedTabindexTo: HTMLElement | null = null
   // Engine-initiated: activating a trap moves focus as bookkeeping, so no OTHER
   // open layer may read it as an outside interaction (#155).
   runEngineFocus(() => {
@@ -96,11 +99,20 @@ export function pushFocusTrap(opts: FocusTrapOptions): () => void {
       initial.focus()
     } else if (containers.length > 0) {
       const container = containers[0]!
-      // Nothing focusable inside: focus the container itself (the WAI-ARIA
-      // dialog pattern — overlay content parts carry `tabindex="-1"` for
-      // this), never leave focus behind the trap on <body> (#265 H2).
-      const target = getFocusables(container)[0] ?? container
-      if (target instanceof HTMLElement) target.focus()
+      const first = getFocusables(container)[0]
+      if (first !== undefined) {
+        first.focus()
+      } else if (container instanceof HTMLElement) {
+        // Nothing tab-reachable inside: focus the container itself (the
+        // WAI-ARIA dialog pattern), never leave focus behind the trap on
+        // <body> (#265 H2). Overlay content parts carry `tabindex="-1"`; any
+        // other container gets one for as long as the trap holds.
+        if (!container.hasAttribute('tabindex')) {
+          container.setAttribute('tabindex', '-1')
+          addedTabindexTo = container
+        }
+        container.focus()
+      }
     }
   })
 
@@ -108,6 +120,7 @@ export function pushFocusTrap(opts: FocusTrapOptions): () => void {
     const idx = stack.indexOf(trap)
     if (idx !== -1) stack.splice(idx, 1)
     maybeRemoveListener()
+    addedTabindexTo?.removeAttribute('tabindex')
     if (restoreFocus && previouslyFocused && typeof previouslyFocused.focus === 'function') {
       // Releasing a trap hands focus back — engine bookkeeping, invisible to
       // other layers' outside-interaction watchers (#155).

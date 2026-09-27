@@ -232,4 +232,45 @@ describe('attachFloating transactional state', () => {
     expect(arrow.getAttribute('style')).toBeNull()
     expect(onUpdate).not.toHaveBeenCalled()
   })
+
+  // #265 review: the available size came through a callback into ONE shared
+  // variable, so two overlapping autoUpdate passes could write one pass's
+  // position with the other's size. Each computation now has its own sink.
+  it('writes each computation with its OWN available size, even resolved out of order', async () => {
+    const anchor = document.createElement('button')
+    const floating = document.createElement('div')
+    const first = deferred<PositionResult>()
+    const second = deferred<PositionResult>()
+    let call = 0
+    floatingUi.computePosition.mockImplementation(
+      (
+        _a: Element,
+        _f: HTMLElement,
+        options: { middleware: { name: string; options?: unknown }[] },
+      ) => {
+        const size = options.middleware.find((mw) => mw.name === 'size')!
+        const apply = (
+          size.options as {
+            apply: (s: { availableWidth: number; availableHeight: number }) => void
+          }
+        ).apply
+        call++
+        // The size callback runs DURING each computation, in call order.
+        apply({ availableWidth: 100 * call, availableHeight: 10 * call })
+        return call === 1 ? first.promise : second.promise
+      },
+    )
+    const cleanup = attachFloating({ anchor, floating })
+    floatingUi.update?.()
+    // The SECOND computation resolves first, then the first one lands last.
+    second.resolve(positioned('bottom', { x: 2, y: 2 }))
+    await flush()
+    expect(floating.style.getPropertyValue('--llui-floating-available-height')).toBe('20px')
+    first.resolve(positioned('bottom', { x: 1, y: 1 }))
+    await flush()
+    expect(floating.style.transform).toBe('translate(1px, 1px)')
+    expect(floating.style.getPropertyValue('--llui-floating-available-height')).toBe('10px')
+    expect(floating.style.getPropertyValue('--llui-floating-available-width')).toBe('100px')
+    cleanup()
+  })
 })
