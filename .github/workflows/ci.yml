@@ -172,11 +172,19 @@ jobs:
       - name: Scripts lint
         run: pnpm lint:scripts
 
-      # The registry ships SOURCE that only a consumer's build compiles, so
-      # `turbo check` never sees it. This is the same blind spot that let
-      # `src/styles/classes/*` accumulate 116 dead Tailwind utilities behind a
-      # green suite; the companion check is the compile-the-real-Tailwind test
-      # in `Test root scripts` below, which fails on a class that emits no CSS.
+      # The registry ships SOURCE that only a consumer's build compiles. This is
+      # the same blind spot that let `src/styles/classes/*` accumulate 116 dead
+      # Tailwind utilities behind a green suite; the companion check is the
+      # compile-the-real-Tailwind test in `Test root scripts` below, which fails
+      # on a class that emits no CSS.
+      #
+      # It delegates to the registry package's own `check`, which compiles both
+      # `llui/` (`tsconfig.json`) and `test/` + `vitest.config.ts`
+      # (`tsconfig.test.json`, #272 — vitest's esbuild transpile never
+      # type-checks, so before it nothing compiled the tests). `turbo check`
+      # runs that script too, but CACHED on registry-local inputs, while the
+      # tests import from `packages/*/test`, `examples/` and `scripts/lib/`;
+      # this step runs it uncached.
       - name: Registry type check
         run: pnpm check:registry
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { component, mountApp, type MountHandle } from '@llui/dom'
+import { component, mountApp, type SignalComponentHandle } from '@llui/dom'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import * as overlaysDemo from '../../examples/registry-demo/src/sections/overlays'
@@ -7,7 +7,9 @@ import * as mediaDemo from '../../examples/registry-demo/src/sections/media'
 import * as menusDemo from '../../examples/registry-demo/src/sections/menus'
 import type { ToastType } from '../../packages/components/src/components/toast'
 
-const mounted: MountHandle<unknown>[] = []
+// Only `dispose` is needed at teardown, so the list holds exactly that slice of
+// the handle — every demo's handle is assignable to it without a cast.
+const mounted: Pick<SignalComponentHandle<unknown, never>, 'dispose'>[] = []
 
 function mountOverlaysDemo(): void {
   const host = document.createElement('div')
@@ -21,7 +23,7 @@ function mountOverlaysDemo(): void {
         update: overlaysDemo.update,
         view: ({ state, send }) => overlaysDemo.view(state, send),
       }),
-    ) as MountHandle<unknown>,
+    ),
   )
 }
 
@@ -37,7 +39,7 @@ function mountMediaDemo(): void {
         update: mediaDemo.update,
         view: ({ state, send }) => mediaDemo.view(state, send),
       }),
-    ) as MountHandle<unknown>,
+    ),
   )
 }
 
@@ -53,7 +55,7 @@ function mountMenusDemo(): void {
         update: menusDemo.update,
         view: ({ state, send }) => menusDemo.view(state, send),
       }),
-    ) as MountHandle<unknown>,
+    ),
   )
 }
 
