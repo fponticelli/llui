@@ -718,6 +718,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         }),
       ]),
       card('Menu', [
+        me.directionSync,
         button({ ...me.trigger, class: 'btn btn-secondary flex items-center gap-1.5' }, [
           text('Actions'),
           svg(
@@ -742,13 +743,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           parts: me,
           content: () => [
             div({ ...me.content }, [
-              onMount((root) => watchSubmenuPositioning(root as HTMLElement)),
+              onMount((root) => watchSubmenuPositioning(root as HTMLElement, state.at('menu'))),
               ...menuItems(),
             ]),
           ],
         }),
       ]),
       card('Context Menu', [
+        cm.directionSync,
         div(
           {
             ...cm.trigger,
@@ -763,7 +765,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           parts: cm,
           content: () => [
             div({ ...cm.content }, [
-              onMount((root) => watchSubmenuPositioning(root as HTMLElement)),
+              onMount((root) =>
+                watchSubmenuPositioning(root as HTMLElement, state.at('contextMenu')),
+              ),
               ...ctxMenuItems(),
             ]),
           ],

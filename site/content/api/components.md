@@ -600,13 +600,13 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `x`   | `number` |
 | `y`   | `number` |
 
-**Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
+**Messages:** `openAt`, `close`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `syncDomDir`, `animationEnd`
 
-**Init options:** `items?: ContextMenuItem[], checked?: string[], closeOnSelect?: boolean, dir?: TextDirection | null, skipAnimations?: boolean`
+**Init options:** `items?: ContextMenuItem[], checked?: string[], closeOnSelect?: boolean, dir?: TextDirection, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
+**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`, `directionSync`
 
 **Utilities:** `overlay()`, `isPresent()`, `isMounted()`, `watchSubmenuPositioning()`
 
@@ -1028,17 +1028,16 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `closeOnSelect`      | `boolean`                        |
 | `typeahead`          | `string`                         |
 | `typeaheadExpiresAt` | `number`                         |
-| `dir`                | `TextDirection \| null`          |
 
-**Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `animationEnd`
+**Messages:** `open`, `close`, `toggle`, `highlight`, `highlightNext`, `highlightPrev`, `highlightFirst`, `highlightLast`, `selectHighlighted`, `select`, `openSub`, `closeSub`, `setItems`, `typeahead`, `setDir`, `syncDomDir`, `animationEnd`
 
-**Init options:** `open?: boolean, items?: MenuItem[], highlighted?: string | null, checked?: string[], closeOnSelect?: boolean, dir?: TextDirection | null, skipAnimations?: boolean`
+**Init options:** `open?: boolean, items?: MenuItem[], highlighted?: string | null, checked?: string[], closeOnSelect?: boolean, dir?: TextDirection, skipAnimations?: boolean`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
+**Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`, `directionSync`
 
-**Utilities:** `overlay()`, `isPresent()`, `isMounted()`, `floatingDir()`, `watchSubmenuPositioning()`
+**Utilities:** `overlay()`, `isPresent()`, `isMounted()`, `watchSubmenuPositioning()`
 
 ---
 
@@ -1054,14 +1053,15 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `disabledMenus` | `string[]`                  |
 | `menuStates`    | `Record<string, MenuState>` |
 | `dir`           | `TextDirection`             |
+| `dirSource`     | `DirectionSource`           |
 
-**Messages:** `openMenu`, `closeMenu`, `focusMenu`, `syncTriggerFocus`, `focusNext`, `focusPrev`, `menuMsg`, `setDir`
+**Messages:** `openMenu`, `closeMenu`, `focusMenu`, `syncTriggerFocus`, `focusNext`, `focusPrev`, `menuMsg`, `setDir`, `syncDomDir`
 
 **Init options:** `menus: MenubarMenu[], focused?: string | null, dir?: TextDirection`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `menuTrigger`, `menu`
+**Parts:** `root`, `menuTrigger`, `menu`, `directionSync`
 
 **Utilities:** `overlay()`, `watchSubmenuPositioning()`
 
@@ -4235,8 +4235,10 @@ export type ContextMenuMsg =
   | { type: 'setItems'; items: ContextMenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
-  | { type: 'setDir'; dir: TextDirection | null }
+  /** @intent("Set the reading direction — 'ltr' or 'rtl'") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   /** @humanOnly */
   | { type: 'animationEnd' }
 ```
@@ -4950,6 +4952,8 @@ export type MenubarMsg =
   | { type: 'menuMsg'; id: string; msg: MenuMsg }
   /** @intent("Set the reading direction") */
   | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
 ```
 
 ##### `MenuCheckItemParts` from `@llui/components`
@@ -5019,8 +5023,10 @@ export type MenuMsg =
   | { type: 'setItems'; items: MenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
-  | { type: 'setDir'; dir: TextDirection | null }
+  /** @intent("Set the reading direction — 'ltr' or 'rtl'") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   /** @humanOnly */
   | { type: 'animationEnd' }
 ```
@@ -8173,8 +8179,9 @@ export interface ContextMenuInit {
   items?: ContextMenuItem[]
   checked?: string[]
   closeOnSelect?: boolean
-  /** Omit to follow the page's own direction (see `MenuState.dir`). */
-  dir?: TextDirection | null
+  /** Omit to follow the page's own direction (see {@link ContextMenuState}'s
+   * `dir`/`dirSource`, resolved from the mounted trigger by `directionSync`). */
+  dir?: TextDirection
   /** When false, opening and closing play enter/exit animations and the content
    * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
    * Default true: instant. */
@@ -8214,8 +8221,11 @@ export interface OverlayOptions {
 
 ```typescript
 export interface ContextMenuParts {
-  /** The element users right-click to open the menu. */
+  /** The element users right-click to open the menu. `id` is REQUIRED — it is
+   * the scope `directionSync` (below) observes for live ancestor `dir`
+   * changes, since it (unlike `content`) is always mounted (#265 finding 6). */
   trigger: {
+    id: string
     'data-scope': 'context-menu'
     'data-part': 'trigger'
     onContextMenu: (e: MouseEvent) => void
@@ -8248,6 +8258,12 @@ export interface ContextMenuParts {
   subTrigger: (value: string) => ContextMenuSubTriggerParts
   subPositioner: (value: string) => ContextMenuSubPositionerParts
   subContent: (value: string) => ContextMenuSubContentParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * observing the TRIGGER (always mounted, unlike the content) as this
+   * instance's root. A discarded `Mountable` is inert, so this must be placed
+   * in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -10637,7 +10653,9 @@ export interface MenubarInit {
   menus: MenubarMenu[]
   /** Initially-focused menu id (defaults to the first enabled menu). */
   focused?: string | null
-  /** Reading direction for horizontal keys and delegated menus (default: ltr). */
+  /** Reading direction for horizontal keys and delegated menus. Omit to
+   * follow the page's own direction (see {@link MenubarState}'s `dir`/
+   * `dirSource`, resolved from the mounted root by `directionSync`). */
   dir?: TextDirection
 }
 ```
@@ -10698,6 +10716,11 @@ export interface MenubarOverlayOptions {
 ```typescript
 export interface MenubarParts {
   root: {
+    // `id` is REQUIRED — it is the scope `directionSync` (below) looks the
+    // live root up by, the same contract `navigation-menu`'s own `root.id`
+    // already honours (#265 finding 6). A consumer that overrides it with a
+    // DIFFERENT id breaks the direction sync silently.
+    id: string
     role: 'menubar'
     'aria-label': string
     'data-scope': 'menubar'
@@ -10706,6 +10729,10 @@ export interface MenubarParts {
   menuTrigger: (id: string) => MenubarTriggerParts
   /** Delegated per-menu part bag (content/item/checkboxItem/submenu/…). */
   menu: (id: string) => MenuParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6). A
+   * discarded `Mountable` is inert, so this must be placed in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -10723,8 +10750,16 @@ export interface MenubarState {
   disabledMenus: string[]
   /** Embedded per-menu machine states, keyed by menu id. */
   menuStates: Record<string, MenuState>
-  /** Reading direction for both the bar and its delegated menu trees. */
+  /** Reading direction for both the bar and its delegated menu trees. Routed
+   * through the shared `@llui/interactions` direction-sync seam
+   * (`../utils/direction.js`) rather than a second resolver — `dirSource`
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). Every
+   * embedded `MenuState`'s own `dir` is kept explicitly in sync with this one
+   * (see `syncEmbeddedDir` below), so a delegated menu never disagrees with
+   * the bar that owns it. */
   dir: TextDirection
+  dirSource: DirectionSource
 }
 ```
 
@@ -10759,8 +10794,9 @@ export interface MenuInit {
   highlighted?: string | null
   checked?: string[]
   closeOnSelect?: boolean
-  /** Omit to follow the page's own direction (see {@link MenuState.dir}). */
-  dir?: TextDirection | null
+  /** Omit to follow the page's own direction (see {@link MenuState}'s `dir`/
+   * `dirSource`, resolved from the mounted root by `directionSync`). */
+  dir?: TextDirection
   /** When false, opening and closing play enter/exit animations and the content
    * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
    * Default true: instant. */
@@ -10846,6 +10882,12 @@ export interface MenuParts {
   subTrigger: (value: string) => MenuSubTriggerParts
   subPositioner: (value: string) => MenuSubPositionerParts
   subContent: (value: string) => MenuSubContentParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * observing the TRIGGER (always mounted, unlike the content) as this
+   * instance's root. A discarded `Mountable` is inert, so this must be placed
+   * in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -10877,17 +10919,14 @@ export interface MenuState extends MenuTreeState {
   /** Accumulator for typeahead search (scoped to the deepest matching level). */
   typeahead: string
   typeaheadExpiresAt: number
-  /**
-   * Reading direction, or `null` for "the host never said — let the page
-   * decide". Under 'rtl', ArrowLeft/ArrowRight swap meaning, and the overlay's
-   * `*-start`/`*-end` alignment tracks the inline-start/inline-end edge.
-   *
-   * `null` rather than an `'ltr'` default because the value is AUTHORITATIVE
-   * once it reaches `attachFloating`: a concrete default overrode the page, so
-   * a menu on `<html dir="rtl">` was laid out LTR (#138 review, blocking 4).
-   * See {@link floatingDir}.
-   */
-  dir: TextDirection | null
+  // `dir` + `dirSource` come from `MenuTreeState` (extends `DirectionState`) —
+  // the shared `@llui/interactions` direction-sync seam (#265 finding 6).
+  // Under 'rtl', ArrowLeft/ArrowRight swap meaning, and the overlay's
+  // `*-start`/`*-end` alignment tracks the inline-start/inline-end edge. An
+  // EXPLICIT direction is AUTHORITATIVE once it reaches `attachFloating`: a
+  // silently-overridden page direction laid a menu on `<html dir="rtl">` out
+  // LTR (#138 review, blocking 4) — `dirSource: 'explicit'` is what keeps
+  // that override from being overwritten by the next DOM observation.
 }
 ```
 
@@ -25560,17 +25599,6 @@ const tooltip
 function connect(state: Signal<MenuState>, send: Send<MenuMsg>, opts: ConnectOptions): MenuParts
 ```
 
-##### `floatingDir()` from `@llui/components/menu`
-
-The direction to hand `attachFloating`. `undefined` means "do not declare
-one" — floating-ui then reads the floating element's own computed direction,
-which is what an RTL page wants. Anything else overrides the page, so it is
-only produced when the host actually asked for it (#138 review, blocking 4).
-
-```typescript
-function floatingDir(state: MenuState): TextDirection | undefined
-```
-
 ##### `init()` from `@llui/components/menu`
 
 ```typescript
@@ -25604,9 +25632,15 @@ Attach REAL floating geometry to every currently-mounted submenu level
 inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
 named by its own `aria-labelledby` (never a hand-tracked map — the DOM
 relationship the machine already publishes is the source of truth), with
-flip/shift and a side chosen from the subTrigger's OWN resolved reading
-direction (`resolveDir`), so a submenu nested under an RTL ancestor still
-opens the correct way even if the root menu itself is LTR.
+flip/shift and a side chosen by `eventDirection(direction.peek(), trigger)`
+— the SAME shared seam every keyboard handler in this file resolves through
+(#265 finding 6), not an isolated `resolveDir` call. That keeps the two
+consistent in BOTH modes: while `dirSource` is `'dom'` it falls through to
+`resolveDir(trigger)`, so a submenu nested under an RTL ancestor still opens
+the correct way even if the root menu itself is LTR; once a consumer
+EXPLICITLY configures/`setDir`s a direction, that explicit value wins here
+too, instead of the floating geometry silently disagreeing with the
+keyboard/state direction because it kept reading the raw DOM regardless.
 
 A submenu level is a SYNCHRONOUS boolean machine, the same as
 select/combobox/searchable-select: `openPath` membership is its only mounted
@@ -25626,9 +25660,16 @@ hands the BUILD's root container, not the element the call sits inside, so
 forwarding whatever `onMount` gave you (rather than the menu's own root) is
 how two menus on one page end up positioning each other's submenus.
 
+`direction` is the same `Signal<MenuState | ContextMenuState | MenubarState>`
+passed into this instance's `connect()` — the exact one in scope at every
+demo call site (`state.at('dropdown')`, `state.at('menubar')`, …) — so the
+geometry reads the SAME direction the reducer/keyboard handlers do, never a
+second, independently-resolved one.
+
 ```typescript
 function watchSubmenuPositioning(
   root: HTMLElement,
+  direction: SubmenuDirectionSource,
   opts: SubmenuPositioningOptions = {},
 ): () => void
 ```
@@ -25702,8 +25743,10 @@ export type MenuMsg =
   | { type: 'setItems'; items: MenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
-  | { type: 'setDir'; dir: TextDirection | null }
+  /** @intent("Set the reading direction — 'ltr' or 'rtl'") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   /** @humanOnly */
   | { type: 'animationEnd' }
 ```
@@ -25757,8 +25800,9 @@ export interface MenuInit {
   highlighted?: string | null
   checked?: string[]
   closeOnSelect?: boolean
-  /** Omit to follow the page's own direction (see {@link MenuState.dir}). */
-  dir?: TextDirection | null
+  /** Omit to follow the page's own direction (see {@link MenuState}'s `dir`/
+   * `dirSource`, resolved from the mounted root by `directionSync`). */
+  dir?: TextDirection
   /** When false, opening and closing play enter/exit animations and the content
    * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
    * Default true: instant. */
@@ -25812,6 +25856,12 @@ export interface MenuParts {
   subTrigger: (value: string) => MenuSubTriggerParts
   subPositioner: (value: string) => MenuSubPositionerParts
   subContent: (value: string) => MenuSubContentParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * observing the TRIGGER (always mounted, unlike the content) as this
+   * instance's root. A discarded `Mountable` is inert, so this must be placed
+   * in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -25843,17 +25893,14 @@ export interface MenuState extends MenuTreeState {
   /** Accumulator for typeahead search (scoped to the deepest matching level). */
   typeahead: string
   typeaheadExpiresAt: number
-  /**
-   * Reading direction, or `null` for "the host never said — let the page
-   * decide". Under 'rtl', ArrowLeft/ArrowRight swap meaning, and the overlay's
-   * `*-start`/`*-end` alignment tracks the inline-start/inline-end edge.
-   *
-   * `null` rather than an `'ltr'` default because the value is AUTHORITATIVE
-   * once it reaches `attachFloating`: a concrete default overrode the page, so
-   * a menu on `<html dir="rtl">` was laid out LTR (#138 review, blocking 4).
-   * See {@link floatingDir}.
-   */
-  dir: TextDirection | null
+  // `dir` + `dirSource` come from `MenuTreeState` (extends `DirectionState`) —
+  // the shared `@llui/interactions` direction-sync seam (#265 finding 6).
+  // Under 'rtl', ArrowLeft/ArrowRight swap meaning, and the overlay's
+  // `*-start`/`*-end` alignment tracks the inline-start/inline-end edge. An
+  // EXPLICIT direction is AUTHORITATIVE once it reaches `attachFloating`: a
+  // silently-overridden page direction laid a menu on `<html dir="rtl">` out
+  // LTR (#138 review, blocking 4) — `dirSource: 'explicit'` is what keeps
+  // that override from being overwritten by the next DOM observation.
 }
 ```
 
@@ -25886,6 +25933,18 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+}
+```
+
+##### `SubmenuDirectionSource` from `@llui/components/menu`
+
+The minimal shape `watchSubmenuPositioning` needs to resolve direction —
+satisfied by the `Signal<S>` for any `S extends MenuTreeState` a menu/
+context-menu/menubar `connect()` is called with.
+
+```typescript
+export interface SubmenuDirectionSource {
+  peek(): Pick<MenuTreeState, 'dir' | 'dirSource'>
 }
 ```
 
@@ -30751,9 +30810,15 @@ Attach REAL floating geometry to every currently-mounted submenu level
 inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
 named by its own `aria-labelledby` (never a hand-tracked map — the DOM
 relationship the machine already publishes is the source of truth), with
-flip/shift and a side chosen from the subTrigger's OWN resolved reading
-direction (`resolveDir`), so a submenu nested under an RTL ancestor still
-opens the correct way even if the root menu itself is LTR.
+flip/shift and a side chosen by `eventDirection(direction.peek(), trigger)`
+— the SAME shared seam every keyboard handler in this file resolves through
+(#265 finding 6), not an isolated `resolveDir` call. That keeps the two
+consistent in BOTH modes: while `dirSource` is `'dom'` it falls through to
+`resolveDir(trigger)`, so a submenu nested under an RTL ancestor still opens
+the correct way even if the root menu itself is LTR; once a consumer
+EXPLICITLY configures/`setDir`s a direction, that explicit value wins here
+too, instead of the floating geometry silently disagreeing with the
+keyboard/state direction because it kept reading the raw DOM regardless.
 
 A submenu level is a SYNCHRONOUS boolean machine, the same as
 select/combobox/searchable-select: `openPath` membership is its only mounted
@@ -30773,9 +30838,16 @@ hands the BUILD's root container, not the element the call sits inside, so
 forwarding whatever `onMount` gave you (rather than the menu's own root) is
 how two menus on one page end up positioning each other's submenus.
 
+`direction` is the same `Signal<MenuState | ContextMenuState | MenubarState>`
+passed into this instance's `connect()` — the exact one in scope at every
+demo call site (`state.at('dropdown')`, `state.at('menubar')`, …) — so the
+geometry reads the SAME direction the reducer/keyboard handlers do, never a
+second, independently-resolved one.
+
 ```typescript
 function watchSubmenuPositioning(
   root: HTMLElement,
+  direction: SubmenuDirectionSource,
   opts: SubmenuPositioningOptions = {},
 ): () => void
 ```
@@ -30847,8 +30919,10 @@ export type ContextMenuMsg =
   | { type: 'setItems'; items: ContextMenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
-  | { type: 'setDir'; dir: TextDirection | null }
+  /** @intent("Set the reading direction — 'ltr' or 'rtl'") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   /** @humanOnly */
   | { type: 'animationEnd' }
 ```
@@ -30899,8 +30973,9 @@ export interface ContextMenuInit {
   items?: ContextMenuItem[]
   checked?: string[]
   closeOnSelect?: boolean
-  /** Omit to follow the page's own direction (see `MenuState.dir`). */
-  dir?: TextDirection | null
+  /** Omit to follow the page's own direction (see {@link ContextMenuState}'s
+   * `dir`/`dirSource`, resolved from the mounted trigger by `directionSync`). */
+  dir?: TextDirection
   /** When false, opening and closing play enter/exit animations and the content
    * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
    * Default true: instant. */
@@ -30912,8 +30987,11 @@ export interface ContextMenuInit {
 
 ```typescript
 export interface ContextMenuParts {
-  /** The element users right-click to open the menu. */
+  /** The element users right-click to open the menu. `id` is REQUIRED — it is
+   * the scope `directionSync` (below) observes for live ancestor `dir`
+   * changes, since it (unlike `content`) is always mounted (#265 finding 6). */
   trigger: {
+    id: string
     'data-scope': 'context-menu'
     'data-part': 'trigger'
     onContextMenu: (e: MouseEvent) => void
@@ -30946,6 +31024,12 @@ export interface ContextMenuParts {
   subTrigger: (value: string) => ContextMenuSubTriggerParts
   subPositioner: (value: string) => ContextMenuSubPositionerParts
   subContent: (value: string) => ContextMenuSubContentParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * observing the TRIGGER (always mounted, unlike the content) as this
+   * instance's root. A discarded `Mountable` is inert, so this must be placed
+   * in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -37917,9 +38001,15 @@ Attach REAL floating geometry to every currently-mounted submenu level
 inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
 named by its own `aria-labelledby` (never a hand-tracked map — the DOM
 relationship the machine already publishes is the source of truth), with
-flip/shift and a side chosen from the subTrigger's OWN resolved reading
-direction (`resolveDir`), so a submenu nested under an RTL ancestor still
-opens the correct way even if the root menu itself is LTR.
+flip/shift and a side chosen by `eventDirection(direction.peek(), trigger)`
+— the SAME shared seam every keyboard handler in this file resolves through
+(#265 finding 6), not an isolated `resolveDir` call. That keeps the two
+consistent in BOTH modes: while `dirSource` is `'dom'` it falls through to
+`resolveDir(trigger)`, so a submenu nested under an RTL ancestor still opens
+the correct way even if the root menu itself is LTR; once a consumer
+EXPLICITLY configures/`setDir`s a direction, that explicit value wins here
+too, instead of the floating geometry silently disagreeing with the
+keyboard/state direction because it kept reading the raw DOM regardless.
 
 A submenu level is a SYNCHRONOUS boolean machine, the same as
 select/combobox/searchable-select: `openPath` membership is its only mounted
@@ -37939,9 +38029,16 @@ hands the BUILD's root container, not the element the call sits inside, so
 forwarding whatever `onMount` gave you (rather than the menu's own root) is
 how two menus on one page end up positioning each other's submenus.
 
+`direction` is the same `Signal<MenuState | ContextMenuState | MenubarState>`
+passed into this instance's `connect()` — the exact one in scope at every
+demo call site (`state.at('dropdown')`, `state.at('menubar')`, …) — so the
+geometry reads the SAME direction the reducer/keyboard handlers do, never a
+second, independently-resolved one.
+
 ```typescript
 function watchSubmenuPositioning(
   root: HTMLElement,
+  direction: SubmenuDirectionSource,
   opts: SubmenuPositioningOptions = {},
 ): () => void
 ```
@@ -37968,6 +38065,8 @@ export type MenubarMsg =
   | { type: 'menuMsg'; id: string; msg: MenuMsg }
   /** @intent("Set the reading direction") */
   | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
 ```
 
 #### Interfaces
@@ -37990,7 +38089,9 @@ export interface MenubarInit {
   menus: MenubarMenu[]
   /** Initially-focused menu id (defaults to the first enabled menu). */
   focused?: string | null
-  /** Reading direction for horizontal keys and delegated menus (default: ltr). */
+  /** Reading direction for horizontal keys and delegated menus. Omit to
+   * follow the page's own direction (see {@link MenubarState}'s `dir`/
+   * `dirSource`, resolved from the mounted root by `directionSync`). */
   dir?: TextDirection
 }
 ```
@@ -38051,6 +38152,11 @@ export interface MenubarOverlayOptions {
 ```typescript
 export interface MenubarParts {
   root: {
+    // `id` is REQUIRED — it is the scope `directionSync` (below) looks the
+    // live root up by, the same contract `navigation-menu`'s own `root.id`
+    // already honours (#265 finding 6). A consumer that overrides it with a
+    // DIFFERENT id breaks the direction sync silently.
+    id: string
     role: 'menubar'
     'aria-label': string
     'data-scope': 'menubar'
@@ -38059,6 +38165,10 @@ export interface MenubarParts {
   menuTrigger: (id: string) => MenubarTriggerParts
   /** Delegated per-menu part bag (content/item/checkboxItem/submenu/…). */
   menu: (id: string) => MenuParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6). A
+   * discarded `Mountable` is inert, so this must be placed in the view. */
+  directionSync: Mountable
 }
 ```
 
@@ -38076,8 +38186,16 @@ export interface MenubarState {
   disabledMenus: string[]
   /** Embedded per-menu machine states, keyed by menu id. */
   menuStates: Record<string, MenuState>
-  /** Reading direction for both the bar and its delegated menu trees. */
+  /** Reading direction for both the bar and its delegated menu trees. Routed
+   * through the shared `@llui/interactions` direction-sync seam
+   * (`../utils/direction.js`) rather than a second resolver — `dirSource`
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). Every
+   * embedded `MenuState`'s own `dir` is kept explicitly in sync with this one
+   * (see `syncEmbeddedDir` below), so a delegated menu never disagrees with
+   * the bar that owns it. */
   dir: TextDirection
+  dirSource: DirectionSource
 }
 ```
 

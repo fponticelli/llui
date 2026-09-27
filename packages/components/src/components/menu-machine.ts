@@ -1,6 +1,13 @@
 import type { Send, Signal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
-import { flipArrow, resolveDir, type TextDirection } from '../utils/direction.js'
+import {
+  eventDirection,
+  flipArrow,
+  setDirection,
+  syncDomDirection,
+  type DirectionState,
+  type TextDirection,
+} from '../utils/direction.js'
 import { attachFloating, type Placement } from '../utils/floating.js'
 import { onScopeTeardown } from '../utils/lifecycle.js'
 import { presence, type PresenceStatus } from './presence.js'
@@ -50,7 +57,7 @@ export interface MenuNode {
 
 /** The state fields every menu-tree component shares. Concrete component states
  * (MenuState / ContextMenuState) extend this with their own extras (e.g. x/y). */
-export interface MenuTreeState {
+export interface MenuTreeState extends DirectionState {
   open: boolean
   status: PresenceStatus
   skipAnimations: boolean
@@ -66,13 +73,16 @@ export interface MenuTreeState {
   typeahead: string
   typeaheadExpiresAt: number
   /**
-   * Reading direction, or `null` for "the host never said — let the page
-   * decide". `null` is not a stylistic default: a menu portals into `<body>`,
-   * and the direction it is given is AUTHORITATIVE over the direction the
-   * floating element computes to, so a concrete default here SUPPRESSES
-   * `<html dir="rtl">` (#138 review, blocking 4).
+   * Reading direction, routed through the shared `@llui/interactions`
+   * direction-sync seam (`../utils/direction.js`) rather than a second,
+   * independently-maintained resolver — `dirSource` (from `DirectionState`)
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). A menu
+   * portals into `<body>`, and an EXPLICIT direction is AUTHORITATIVE over
+   * the direction the floating element would otherwise compute to (#138
+   * review, blocking 4) — `dirSource: 'explicit'` is what makes that
+   * override stick instead of being overwritten by the next DOM observation.
    */
-  dir: TextDirection | null
 }
 
 /** The messages shared by every menu-tree component. Component-specific opens
@@ -90,7 +100,9 @@ export type MenuTreeMsg =
   | { type: 'closeSub' }
   | { type: 'setItems'; items: MenuNode[] }
   | { type: 'typeahead'; level: string; char: string; now: number }
-  | { type: 'setDir'; dir: TextDirection | null }
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   | { type: 'animationEnd' }
 
 // ---- presence lifecycle (composes presence.update; never reinvents it) ----
@@ -513,7 +525,9 @@ export function reduceMenuTree<S extends MenuTreeState>(state: S, msg: MenuTreeM
       ]
     }
     case 'setDir':
-      return [{ ...state, dir: msg.dir }, []]
+      return [setDirection(state, msg.dir), []]
+    case 'syncDomDir':
+      return [syncDomDirection(state, msg.dir), []]
     case 'animationEnd': {
       const [next] = presence.update(
         { status: state.status, unmountOnExit: true },
@@ -842,7 +856,14 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
         const item = findItem(s.items, value)
         return item != null && !item.disabled && !!item.children && item.children.length > 0
       }
-      const key = flipArrow(e.key, s?.dir ?? null)
+      // Resolved at event time (`eventDirection`) so a same-tick ancestor `dir`
+      // change is read correctly even before any `syncDomDir` message lands —
+      // the same reason `navigation-menu.ts` resolves it here instead of off a
+      // bare `s.dir` (#265 finding 6).
+      const key = flipArrow(
+        e.key,
+        s === undefined ? null : eventDirection(s, e.currentTarget as Element | null),
+      )
       switch (key) {
         case 'ArrowDown':
           e.preventDefault()
@@ -945,7 +966,10 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
       onPointerEnter: () => scheduleOpenSub(value),
       onPointerLeave: () => scheduleCloseSub(value),
       onKeyDown: tagSend(send, ['openSub', 'highlightNext', 'highlightPrev', 'close'], (e) => {
-        const key = flipArrow(e.key, state.peek().dir)
+        const key = flipArrow(
+          e.key,
+          eventDirection(state.peek(), e.currentTarget as Element | null),
+        )
         switch (key) {
           case 'ArrowRight':
           case 'Enter':
@@ -999,7 +1023,10 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
           'typeahead',
         ],
         (e: KeyboardEvent): void => {
-          const key = flipArrow(e.key, state.peek().dir)
+          const key = flipArrow(
+            e.key,
+            eventDirection(state.peek(), e.currentTarget as Element | null),
+          )
           switch (key) {
             case 'ArrowDown':
               e.preventDefault()
@@ -1058,12 +1085,19 @@ export interface SubmenuPositioningOptions {
  * The physical placement for a submenu opening off its subTrigger: away from
  * the reading-direction inline-start edge, i.e. to the right under 'ltr' and
  * to the left under 'rtl' — the one call site that turns reading direction
- * into a physical side for this primitive (RTL itself is resolved by the
- * shared `resolveDir`, never re-derived here).
+ * into a physical side for this primitive (direction ITSELF is resolved by
+ * the shared `eventDirection`/`resolveDir` seam, never re-derived here).
  */
 function submenuPlacement(dir: TextDirection, align: 'start' | 'end'): Placement {
   const side = dir === 'rtl' ? 'left' : 'right'
   return `${side}-${align}` as Placement
+}
+
+/** The minimal shape `watchSubmenuPositioning` needs to resolve direction —
+ * satisfied by the `Signal<S>` for any `S extends MenuTreeState` a menu/
+ * context-menu/menubar `connect()` is called with. */
+export interface SubmenuDirectionSource {
+  peek(): Pick<MenuTreeState, 'dir' | 'dirSource'>
 }
 
 /**
@@ -1071,9 +1105,15 @@ function submenuPlacement(dir: TextDirection, align: 'start' | 'end'): Placement
  * inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
  * named by its own `aria-labelledby` (never a hand-tracked map — the DOM
  * relationship the machine already publishes is the source of truth), with
- * flip/shift and a side chosen from the subTrigger's OWN resolved reading
- * direction (`resolveDir`), so a submenu nested under an RTL ancestor still
- * opens the correct way even if the root menu itself is LTR.
+ * flip/shift and a side chosen by `eventDirection(direction.peek(), trigger)`
+ * — the SAME shared seam every keyboard handler in this file resolves through
+ * (#265 finding 6), not an isolated `resolveDir` call. That keeps the two
+ * consistent in BOTH modes: while `dirSource` is `'dom'` it falls through to
+ * `resolveDir(trigger)`, so a submenu nested under an RTL ancestor still opens
+ * the correct way even if the root menu itself is LTR; once a consumer
+ * EXPLICITLY configures/`setDir`s a direction, that explicit value wins here
+ * too, instead of the floating geometry silently disagreeing with the
+ * keyboard/state direction because it kept reading the raw DOM regardless.
  *
  * A submenu level is a SYNCHRONOUS boolean machine, the same as
  * select/combobox/searchable-select: `openPath` membership is its only mounted
@@ -1092,9 +1132,16 @@ function submenuPlacement(dir: TextDirection, align: 'start' | 'end'): Placement
  * hands the BUILD's root container, not the element the call sits inside, so
  * forwarding whatever `onMount` gave you (rather than the menu's own root) is
  * how two menus on one page end up positioning each other's submenus.
+ *
+ * `direction` is the same `Signal<MenuState | ContextMenuState | MenubarState>`
+ * passed into this instance's `connect()` — the exact one in scope at every
+ * demo call site (`state.at('dropdown')`, `state.at('menubar')`, …) — so the
+ * geometry reads the SAME direction the reducer/keyboard handlers do, never a
+ * second, independently-resolved one.
  */
 export function watchSubmenuPositioning(
   root: HTMLElement,
+  direction: SubmenuDirectionSource,
   opts: SubmenuPositioningOptions = {},
 ): () => void {
   const align = opts.align ?? 'start'
@@ -1111,7 +1158,7 @@ export function watchSubmenuPositioning(
     if (!trigger) return
     const positioner = subContent.closest('[data-part="subpositioner"]') as HTMLElement | null
     const floatingEl = positioner ?? subContent
-    const dir = resolveDir(trigger)
+    const dir = eventDirection(direction.peek(), trigger)
     const stop = attachFloating({
       anchor: trigger,
       floating: floatingEl,

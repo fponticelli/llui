@@ -356,16 +356,59 @@ describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', 
     expect(after.afterRight).toEqual({ expanded: 'false' })
   })
 
-  // Menubar is NOT yet migrated onto the shared direction-sync seam —
-  // `menubar.ts`'s `dir` field (and the shared `menu-machine.ts` state its
-  // per-menu machines delegate to) still predates #264 and would need its
-  // own migration across menu.ts/context-menu.ts/menubar.ts together, since
-  // all three currently share one hand-rolled `dir`/`setDir` shape. That is
-  // real, scoped, remaining work — tracked, not silently dropped — rather
-  // than something to fake here. The underlying RTL key-flip CONTRACT is
-  // still not untested: `menubar.integration.test.ts`'s `{ dir: 'rtl',
-  // nextKey: 'ArrowLeft', … }` table pins it at the component level.
-  it.skip('Menubar: runtime dir change — depends on migrating menu-machine.ts/menu.ts/context-menu.ts/menubar.ts onto the shared direction-sync seam (not yet done)', () => {
-    expect(true).toBe(true)
+  // #265 finding 6 remainder, un-skipped: `menu-machine.ts` (shared by
+  // `menu.ts`/`context-menu.ts`, delegated to by `menubar.ts`) is migrated
+  // onto the shared `@llui/interactions` direction-sync seam. `menubar.ts`'s
+  // own `connect()` now places a `directionSync` Mountable
+  // (`directionSyncMount(opts.id, dir => send({type:'syncDomDir', dir}))`)
+  // observing the bar ROOT (`#menubar-demo`), and every `setDir`/`syncDomDir`
+  // is propagated down into each embedded per-menu `MenuState` so a delegated
+  // menu's keyboard handling and floating geometry never disagree with the
+  // bar that owns it. This proves the BASELINE DEMO's real mounted Menubar
+  // composition (not the reducer in isolation) responds to a RUNTIME
+  // direction change with no reload: flipping `<html dir>` after mount swaps
+  // which arrow key moves the roving-tabindex focus BETWEEN sibling
+  // top-level triggers (root-level ownership), exactly as NavigationMenu's
+  // own runtime-flip test above proves for its branch-open key.
+  it('Menubar: a runtime `<html dir>` flip (no reload) swaps which arrow key moves focus between sibling triggers', async () => {
+    const before = await page.evaluate(() => {
+      const fileTrigger = document.getElementById('menubar-demo:file:trigger') as HTMLElement
+      const editTrigger = document.getElementById('menubar-demo:edit:trigger') as HTMLElement
+      fileTrigger.focus()
+      fileTrigger.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+      )
+      return { focusedEdit: document.activeElement === editTrigger }
+    })
+    expect(before).toEqual({ focusedEdit: true })
+
+    const after = await page.evaluate(async () => {
+      document.documentElement.dir = 'rtl'
+      // `directionSyncMount`'s MutationObserver fires on the SAME microtask
+      // queue as the attribute mutation, but is not guaranteed synchronous
+      // with the assignment above — yield one tick before asserting.
+      await new Promise((r) => setTimeout(r, 0))
+      const fileTrigger = document.getElementById('menubar-demo:file:trigger') as HTMLElement
+      const editTrigger = document.getElementById('menubar-demo:edit:trigger') as HTMLElement
+      editTrigger.focus()
+      // Under rtl, logical "next sibling" (File -> Edit going forward) is the
+      // PHYSICAL ArrowLeft key.
+      editTrigger.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true, cancelable: true }),
+      )
+      const movedWithLeft = { onView: document.activeElement?.id === 'menubar-demo:view:trigger' }
+      // The OLD (ltr) forward key must now move BACKWARD instead.
+      document.getElementById('menubar-demo:view:trigger')!.focus()
+      document
+        .getElementById('menubar-demo:view:trigger')!
+        .dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+        )
+      const movedBackWithRight = { onEdit: document.activeElement === editTrigger }
+      document.documentElement.removeAttribute('dir')
+      return { movedWithLeft, movedBackWithRight }
+    })
+    expect(after.movedWithLeft).toEqual({ onView: true })
+    expect(after.movedBackWithRight).toEqual({ onEdit: true })
   })
 })

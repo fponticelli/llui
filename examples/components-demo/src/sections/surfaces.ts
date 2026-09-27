@@ -312,7 +312,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             class: 'min-w-44 bg-card border border-border rounded-md shadow-lg p-1 outline-none',
           },
           [
-            onMount((root) => watchSubmenuPositioning(root as HTMLElement)),
+            onMount((root) => watchSubmenuPositioning(root as HTMLElement, state.at('menubar'))),
             ...renderMenuItems(items, id, menuParts),
           ],
         ),
@@ -705,6 +705,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         ]),
       ]),
       card('Menubar', [
+        mb.directionSync,
         div(
           { ...mb.root, class: 'flex gap-1' },
           menuDefs.map((m) => renderMenuTrigger(m.id)),

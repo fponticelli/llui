@@ -2,7 +2,7 @@ import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@ll
 import { tagSend } from '@llui/dom'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
-import { type TextDirection } from '../utils/direction.js'
+import { directionSyncMount, initDirection, type TextDirection } from '../utils/direction.js'
 import { presence, type PresenceStatus } from './presence.js'
 import { presenceEndProps } from '../utils/presence-end.js'
 import {
@@ -82,8 +82,10 @@ export type ContextMenuMsg =
   | { type: 'setItems'; items: ContextMenuItem[] }
   /** @humanOnly */
   | { type: 'typeahead'; level: string; char: string; now: number }
-  /** @intent("Set the reading direction — 'ltr'/'rtl', or null to follow the page") */
-  | { type: 'setDir'; dir: TextDirection | null }
+  /** @intent("Set the reading direction — 'ltr' or 'rtl'") */
+  | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
   /** @humanOnly */
   | { type: 'animationEnd' }
 
@@ -91,8 +93,9 @@ export interface ContextMenuInit {
   items?: ContextMenuItem[]
   checked?: string[]
   closeOnSelect?: boolean
-  /** Omit to follow the page's own direction (see `MenuState.dir`). */
-  dir?: TextDirection | null
+  /** Omit to follow the page's own direction (see {@link ContextMenuState}'s
+   * `dir`/`dirSource`, resolved from the mounted trigger by `directionSync`). */
+  dir?: TextDirection
   /** When false, opening and closing play enter/exit animations and the content
    * stays mounted (status 'opening' or 'closing') until an `animationEnd`.
    * Default true: instant. */
@@ -113,7 +116,7 @@ export function init(opts: ContextMenuInit = {}): ContextMenuState {
     closeOnSelect: opts.closeOnSelect ?? false,
     typeahead: '',
     typeaheadExpiresAt: 0,
-    dir: opts.dir ?? null,
+    ...initDirection(opts.dir),
   }
 }
 
@@ -179,8 +182,11 @@ export type ContextMenuSubPositionerParts = MenuSubPositionerPartsOf<'context-me
 export type ContextMenuSubContentParts = MenuSubContentPartsOf<'context-menu'>
 
 export interface ContextMenuParts {
-  /** The element users right-click to open the menu. */
+  /** The element users right-click to open the menu. `id` is REQUIRED — it is
+   * the scope `directionSync` (below) observes for live ancestor `dir`
+   * changes, since it (unlike `content`) is always mounted (#265 finding 6). */
   trigger: {
+    id: string
     'data-scope': 'context-menu'
     'data-part': 'trigger'
     onContextMenu: (e: MouseEvent) => void
@@ -213,6 +219,12 @@ export interface ContextMenuParts {
   subTrigger: (value: string) => ContextMenuSubTriggerParts
   subPositioner: (value: string) => ContextMenuSubPositionerParts
   subContent: (value: string) => ContextMenuSubContentParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
+   * observing the TRIGGER (always mounted, unlike the content) as this
+   * instance's root. A discarded `Mountable` is inert, so this must be placed
+   * in the view. */
+  directionSync: Mountable
 }
 
 interface ContextMenuRuntime {
@@ -240,6 +252,7 @@ export function connect(
   opts: ConnectOptions,
 ): ContextMenuParts {
   const base = opts.id
+  const triggerId = `${base}:trigger`
   const contentId = `${base}:content`
   const itemId = (v: string): string => `${base}:item:${v}`
   const subContentId = (v: string): string => `${base}:sub:${v}:content`
@@ -262,6 +275,7 @@ export function connect(
   const runtime: ContextMenuRuntime = { owner: null }
   const connected: ContextMenuParts = {
     trigger: {
+      id: triggerId,
       'data-scope': 'context-menu',
       'data-part': 'trigger',
       onContextMenu: tagSend(send, ['openAt'], (e) => {
@@ -297,6 +311,7 @@ export function connect(
     subTrigger: parts.subTrigger,
     subPositioner: parts.subPositioner,
     subContent: parts.subContent,
+    directionSync: directionSyncMount(triggerId, (dir) => send({ type: 'syncDomDir', dir })),
   }
   runtimeByParts.set(connected, runtime)
   return connected

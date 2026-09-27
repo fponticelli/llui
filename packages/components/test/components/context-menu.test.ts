@@ -305,16 +305,23 @@ describe('context-menu.connect', () => {
 })
 
 describe('context-menu RTL', () => {
-  // `null` = "follow the page", matching menu (#138 review, blocking 4).
-  it('init leaves dir unset (follow the page); respects opts.dir', () => {
-    expect(init({ items: flat }).dir).toBeNull()
+  // Routed through the shared `@llui/interactions` direction-sync seam (#265
+  // finding 6), matching `menu` — `dirSource: 'dom'` = "follow the page"
+  // (#138 review, blocking 4).
+  it('init leaves dir dom-sourced (follow the page); respects opts.dir', () => {
+    expect(init({ items: flat }).dir).toBe('ltr')
+    expect(init({ items: flat }).dirSource).toBe('dom')
     expect(init({ items: flat, dir: 'rtl' }).dir).toBe('rtl')
+    expect(init({ items: flat, dir: 'rtl' }).dirSource).toBe('explicit')
     expect(init({ items: flat, dir: 'ltr' }).dir).toBe('ltr')
   })
 
-  it('setDir updates the reading direction', () => {
+  it('setDir updates the reading direction and is explicit/sticky', () => {
     const [s] = update(init({ items: flat }), { type: 'setDir', dir: 'rtl' })
     expect(s.dir).toBe('rtl')
+    expect(s.dirSource).toBe('explicit')
+    const [s2] = update(s, { type: 'syncDomDir', dir: 'ltr' })
+    expect(s2.dir).toBe('rtl')
   })
 
   it('ltr: subTrigger ArrowRight opens, ArrowLeft is inert', () => {

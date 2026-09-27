@@ -8,7 +8,16 @@ import { focusRovingItem } from '../utils/roving.js'
 import { firstEnabled, rovingTabStop } from '../utils/list-navigation.js'
 import { deriveOnceN } from '../utils/derive.js'
 import { wrapChildSend } from '../utils/child-send.js'
-import { flipArrow, type TextDirection } from '../utils/direction.js'
+import {
+  directionSyncMount,
+  eventDirection,
+  flipArrow,
+  initDirection,
+  setDirection,
+  syncDomDirection,
+  type DirectionSource,
+  type TextDirection,
+} from '../utils/direction.js'
 import {
   init as menuInit,
   update as menuUpdate,
@@ -76,8 +85,16 @@ export interface MenubarState {
   disabledMenus: string[]
   /** Embedded per-menu machine states, keyed by menu id. */
   menuStates: Record<string, MenuState>
-  /** Reading direction for both the bar and its delegated menu trees. */
+  /** Reading direction for both the bar and its delegated menu trees. Routed
+   * through the shared `@llui/interactions` direction-sync seam
+   * (`../utils/direction.js`) rather than a second resolver — `dirSource`
+   * tracks whether `dir` came from explicit config/`setDir` or from the
+   * mounted root's live ancestor `dir` attribute (#265 finding 6). Every
+   * embedded `MenuState`'s own `dir` is kept explicitly in sync with this one
+   * (see `syncEmbeddedDir` below), so a delegated menu never disagrees with
+   * the bar that owns it. */
   dir: TextDirection
+  dirSource: DirectionSource
 }
 
 export type MenubarMsg =
@@ -97,17 +114,21 @@ export type MenubarMsg =
   | { type: 'menuMsg'; id: string; msg: MenuMsg }
   /** @intent("Set the reading direction") */
   | { type: 'setDir'; dir: TextDirection }
+  /** @humanOnly — synchronized from the mounted root's live ancestor direction. */
+  | { type: 'syncDomDir'; dir: TextDirection }
 
 export interface MenubarInit {
   menus: MenubarMenu[]
   /** Initially-focused menu id (defaults to the first enabled menu). */
   focused?: string | null
-  /** Reading direction for horizontal keys and delegated menus (default: ltr). */
+  /** Reading direction for horizontal keys and delegated menus. Omit to
+   * follow the page's own direction (see {@link MenubarState}'s `dir`/
+   * `dirSource`, resolved from the mounted root by `directionSync`). */
   dir?: TextDirection
 }
 
 export function init(opts: MenubarInit): MenubarState {
-  const dir = opts.dir ?? 'ltr'
+  const direction = initDirection(opts.dir)
   const menus = opts.menus.map((m) => m.id)
   const disabledMenus = opts.menus.filter((m) => m.disabled).map((m) => m.id)
   const menuStates: Record<string, MenuState> = {}
@@ -115,11 +136,28 @@ export function init(opts: MenubarInit): MenubarState {
     menuStates[m.id] = menuInit({
       items: m.items,
       closeOnSelect: m.closeOnSelect,
-      dir,
+      dir: direction.dir,
     })
   }
   const focused = opts.focused !== undefined ? opts.focused : firstEnabled(menus, disabledMenus)
-  return { menus, open: null, focused, disabledMenus, menuStates, dir }
+  return { menus, open: null, focused, disabledMenus, menuStates, ...direction }
+}
+
+/** Push the bar's OWN resolved direction down into every embedded menu as an
+ * explicit `setDir`, so a delegated menu's floating geometry / keyboard
+ * handling never disagrees with the bar that owns it (#265 finding 6). The
+ * embedded menus never observe the DOM themselves — the bar is the single
+ * point of DOM observation for the whole composite. */
+function syncEmbeddedDir(
+  menuStates: Record<string, MenuState>,
+  dir: TextDirection,
+): Record<string, MenuState> {
+  return Object.fromEntries(
+    Object.entries(menuStates).map(([id, menuState]) => [
+      id,
+      menuUpdate(menuState, { type: 'setDir', dir })[0],
+    ]),
+  )
 }
 
 // ---- pure helpers ----
@@ -220,14 +258,14 @@ export function update(state: MenubarState, msg: MenubarMsg): [MenubarState, nev
       return [{ ...state, open, menuStates }, []]
     }
     case 'setDir': {
-      if (state.dir === msg.dir) return [state, []]
-      const menuStates = Object.fromEntries(
-        Object.entries(state.menuStates).map(([id, menuState]) => [
-          id,
-          menuUpdate(menuState, { type: 'setDir', dir: msg.dir })[0],
-        ]),
-      )
-      return [{ ...state, dir: msg.dir, menuStates }, []]
+      const next = setDirection(state, msg.dir)
+      if (next === state) return [state, []]
+      return [{ ...next, menuStates: syncEmbeddedDir(state.menuStates, next.dir) }, []]
+    }
+    case 'syncDomDir': {
+      const next = syncDomDirection(state, msg.dir)
+      if (next === state) return [state, []]
+      return [{ ...next, menuStates: syncEmbeddedDir(state.menuStates, next.dir) }, []]
     }
   }
 }
@@ -254,6 +292,11 @@ export interface MenubarTriggerParts {
 
 export interface MenubarParts {
   root: {
+    // `id` is REQUIRED — it is the scope `directionSync` (below) looks the
+    // live root up by, the same contract `navigation-menu`'s own `root.id`
+    // already honours (#265 finding 6). A consumer that overrides it with a
+    // DIFFERENT id breaks the direction sync silently.
+    id: string
     role: 'menubar'
     'aria-label': string
     'data-scope': 'menubar'
@@ -262,6 +305,10 @@ export interface MenubarParts {
   menuTrigger: (id: string) => MenubarTriggerParts
   /** Delegated per-menu part bag (content/item/checkboxItem/submenu/…). */
   menu: (id: string) => MenuParts
+  /** Place once anywhere in the same build to keep automatic direction live —
+   * the shared `@llui/interactions` direction-sync seam (#265 finding 6). A
+   * discarded `Mountable` is inert, so this must be placed in the view. */
+  directionSync: Mountable
 }
 
 export interface ConnectOptions {
@@ -367,13 +414,14 @@ export function connect(
       delegated.content.onKeyDown(e)
       if (e.defaultPrevented) return
       if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
-      const key = flipArrow(e.key, state.peek().dir)
+      const key = flipArrow(e.key, eventDirection(state.peek(), e.currentTarget as Element | null))
       e.preventDefault()
       send(key === 'ArrowRight' ? { type: 'focusNext' } : { type: 'focusPrev' })
     }
 
   return {
     root: {
+      id: base,
       role: 'menubar',
       'aria-label': opts.label ?? 'Menu',
       'data-scope': 'menubar',
@@ -418,7 +466,7 @@ export function connect(
         }
         const key =
           e.key === 'ArrowRight' || e.key === 'ArrowLeft'
-            ? flipArrow(e.key, state.peek().dir)
+            ? flipArrow(e.key, eventDirection(state.peek(), origin))
             : e.key
         switch (key) {
           case 'ArrowRight':
@@ -441,6 +489,7 @@ export function connect(
       }),
     }),
     menu: menuBag,
+    directionSync: directionSyncMount(base, (dir) => send({ type: 'syncDomDir', dir })),
   }
 }
 

@@ -380,6 +380,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
         // the trigger IS the button, not a second wrapping element — so this
         // spreads `dd.trigger` straight onto `Button` rather than importing
         // the (unstyled, `classPart(button, '')`) `DropdownMenuTrigger`.
+        dd.directionSync,
         Button({ ...dd.trigger, variant: 'outline' }, [text('Account')]),
       ],
     ),
@@ -390,7 +391,9 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       positionerClass: 'z-popover',
       content: () => [
         DropdownMenuContent({ ...dd.content }, [
-          onMount((root) => menuC.watchSubmenuPositioning(root as HTMLElement)),
+          onMount((root) =>
+            menuC.watchSubmenuPositioning(root as HTMLElement, state.at('dropdown')),
+          ),
           ...DROPDOWN_ITEMS.flatMap((i, index) => [
             ...renderMenuTree([i], dd, ddOpenPath, DROPDOWN_RECIPES),
             ...(index === 1 ? [DropdownMenuSeparator({ ...dd.separator() })] : []),
@@ -403,6 +406,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'Context Menu',
       'Right-click the surface. The menu is pointer-positioned, so it has no anchor — its nested-layer owner is the region that delivered the `contextmenu` event. `Share` is a real anchored submenu.',
       [
+        ctx.directionSync,
         div(
           {
             ...ctx.trigger,
@@ -420,7 +424,9 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       positionerClass: 'z-popover',
       content: () => [
         ContextMenuContent({ ...ctx.content }, [
-          onMount((root) => contextMenuC.watchSubmenuPositioning(root as HTMLElement)),
+          onMount((root) =>
+            contextMenuC.watchSubmenuPositioning(root as HTMLElement, state.at('context')),
+          ),
           ...CONTEXT_ITEMS.flatMap((i, index) => [
             ...renderMenuTree([i], ctx, ctxOpenPath, CONTEXT_RECIPES),
             ...(index === 1 ? [ContextMenuSeparator({ ...ctx.separator() })] : []),
@@ -433,6 +439,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       'Menubar',
       'One machine owns the bar AND every dropped menu — `menu(id)` delegates a full menu bag per entry, so arrow keys walk between menus with one open. `File › Export` is a real anchored submenu.',
       [
+        bar.directionSync,
         Menubar({ ...bar.root }, [
           ...MENUBAR_MENUS.map((m) =>
             MenubarTrigger({ ...bar.menuTrigger(m.id) }, [text(m.label)]),
@@ -455,7 +462,9 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
         positionerClass: 'z-popover',
         content: () => [
           MenubarContent({ ...menu.content }, [
-            onMount((root) => menubarC.watchSubmenuPositioning(root as HTMLElement)),
+            onMount((root) =>
+              menubarC.watchSubmenuPositioning(root as HTMLElement, state.at('menubar')),
+            ),
             ...m.items
               .flatMap((i, index) => [
                 ...renderMenuTree([i], menu, menuOpenPath, MENUBAR_RECIPES),

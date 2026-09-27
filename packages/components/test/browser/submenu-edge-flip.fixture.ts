@@ -54,7 +54,7 @@ function mountOneMenu(containerId: string, idPrefix: string): void {
           parts,
           content: () => [
             div({ ...parts.content }, [
-              onMount((root) => watchSubmenuPositioning(root as HTMLElement)),
+              onMount((root) => watchSubmenuPositioning(root as HTMLElement, m)),
               div({ ...parts.item('a').item }, [text('a')]),
               div({ ...parts.subTrigger('sub') }, [text('sub')]),
               show(isSubOpen, () => [

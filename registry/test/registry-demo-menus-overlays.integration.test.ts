@@ -277,6 +277,51 @@ describe('registry demo menus/overlays contracts', () => {
     document.documentElement.removeAttribute('dir')
   })
 
+  // #265 finding 6 remainder: `menu-machine.ts` (shared by `menu.ts`/
+  // `context-menu.ts`, delegated to by `menubar.ts`) is migrated onto the
+  // same seam. `menus.ts` places `dd.directionSync`/`bar.directionSync` —
+  // discarded Mountables are inert, so this also guards that placement.
+  it('Dropdown Menu + Menubar: a runtime `<html dir>` flip (no reload) swaps arrow-key ownership', async () => {
+    mountMenusDemo()
+
+    // Dropdown Menu's own subTrigger keyboard ownership.
+    const ddTrigger = document.getElementById('demo-dropdown:trigger')!
+    ddTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await tick()
+    const teamTrigger = document.getElementById('demo-dropdown:sub:team:trigger')!
+    teamTrigger.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    )
+    expect(teamTrigger.getAttribute('aria-expanded')).toBe('true')
+
+    document.documentElement.dir = 'rtl'
+    await tick()
+    // Under rtl, logical "close" (back toward root) is physical ArrowRight.
+    teamTrigger.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    )
+    expect(teamTrigger.getAttribute('aria-expanded')).toBe('false')
+    document.documentElement.removeAttribute('dir')
+
+    // Menubar's root-level sibling-trigger ownership.
+    const fileTrigger = document.getElementById('demo-menubar:file:trigger')!
+    const editTrigger = document.getElementById('demo-menubar:edit:trigger')!
+    fileTrigger.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    )
+    expect(editTrigger.getAttribute('tabindex')).toBe('0')
+
+    document.documentElement.dir = 'rtl'
+    await tick()
+    // Under rtl, logical "forward" (Edit -> File, since focus is on Edit) is
+    // physical ArrowRight.
+    editTrigger.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+    )
+    expect(fileTrigger.getAttribute('tabindex')).toBe('0')
+    document.documentElement.removeAttribute('dir')
+  })
+
   it('documents context-menu ownership as event-scoped rather than unowned', () => {
     for (const file of [
       resolve(import.meta.dirname, '../llui/ui/context-menu.ts'),
