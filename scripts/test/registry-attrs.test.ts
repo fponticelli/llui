@@ -87,10 +87,6 @@ const ALLOWED: Record<string, Allowance> = {
   '*: data-slot': {
     reason: 'upstream leftover, guarded separately — see the data-slot rule in CLAUDE.md',
   },
-  '*: data-side': {
-    reason:
-      'floating overlay content: written on the explicit state target by the floating engine, not a part bag',
-  },
   '*: aria-invalid': { reason: 'set by the consumer on any control' },
   '*: aria-selected': { reason: 'set by the consumer on any option' },
   '*: aria-checked': { reason: 'set by the consumer on any toggle' },
@@ -115,6 +111,12 @@ const ALLOWED: Record<string, Allowance> = {
       'upstream\'s own spelling for "no date chosen yet", set by the CONSUMER — ' +
       '`@llui/components/date-picker` has no trigger part at all, because the trigger ' +
       'belongs to whatever surface is hosting the calendar.',
+  },
+  'sidebar.ts: data-side': {
+    reason:
+      'a presentational edge ("left"/"right") the consumer sets on the sidebar root — the ' +
+      'sidebar skin has no machine of its own (mapped to `collapsible`), so this is not a ' +
+      'floating-content `data-side` and does not belong on the universal `*` key',
   },
   'sidebar.ts: data-variant': { reason: 'a presentational variant the consumer sets' },
   'sidebar.ts: data-size': { reason: 'a menu-button size the consumer sets' },
