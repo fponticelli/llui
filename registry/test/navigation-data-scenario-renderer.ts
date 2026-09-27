@@ -269,8 +269,13 @@ function initDisclosureAccordion(
     animated,
   })
   if (input.state === 'open') return opened
-  if (input.state === 'closing')
-    return accordion.update(opened, { type: 'close', value: itemValue })[0]
+  if (input.state === 'closing') {
+    // `closing` only retains while `exitCompletion`'s mount is attached
+    // (#264 item F1) — attach it explicitly, exactly like a real mount
+    // would, before closing.
+    const attached = accordion.update(opened, { type: 'exitWatcherAttach' })[0]
+    return accordion.update(attached, { type: 'close', value: itemValue })[0]
+  }
   return accordion.init({ items: [itemValue], value: [], disabled: input.disabled, animated })
 }
 
@@ -281,7 +286,11 @@ function initDisclosureCollapsible(
   const animated = environment.motion !== 'reduced'
   const opened = collapsible.init({ open: true, disabled: input.disabled, animated })
   if (input.state === 'open') return opened
-  if (input.state === 'closing') return collapsible.update(opened, { type: 'close' })[0]
+  if (input.state === 'closing') {
+    // See the identical note in `initDisclosureAccordion` (#264 item F1).
+    const attached = collapsible.update(opened, { type: 'exitWatcherAttach' })[0]
+    return collapsible.update(attached, { type: 'close' })[0]
+  }
   return collapsible.init({ open: false, disabled: input.disabled, animated })
 }
 

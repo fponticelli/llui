@@ -163,6 +163,20 @@ keyboard roving-focus wiring unable to find the element it moves focus to.
 5. **Use an intersection for prop types**, not `interface X extends ElProps` — an
    interface extending `ElProps` drops its index signature, so `props.class` and every
    spread `data-*` key stop type-checking.
+6. **A disclosure root (`Accordion`/`Collapsible`) is built with `withExitCompletion`,
+   and its `exitCompletion: Mountable` prop is REQUIRED, never optional.** `parts.exitCompletion`
+   is the machine's own `connect()` part that settles a PROGRAMMATIC `close`/`toggle`/
+   `setValue`/`setOpen` on a skin with no exit motion; `withExitCompletion` (in
+   `llui/lib/utils.ts`) wraps a `classPart`-built root so it appends that part after
+   the caller's children itself, and the required field means
+   `Accordion({ ...parts.root }, [...])` (missing it) is a type error, not a runtime
+   surprise. Forgetting to place `parts.exitCompletion` at ALL is no longer a hang —
+   `@llui/components`' reducer only retains a `closing` phase while the part is
+   mounted, closing instantly otherwise, with a synchronous, once-per-instance
+   dev-mode warning — so the required field here is about not silently losing the
+   requested exit ANIMATION in a registry skin, not about avoiding a stuck instance.
+   See `@llui/components`'s README (`accordion / collapsible exit motion`) for the full
+   contract.
 
 ## Checks
 

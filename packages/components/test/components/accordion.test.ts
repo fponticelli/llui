@@ -8,6 +8,17 @@ function animationEvent(type: string, animationName: string): Event {
   return event
 }
 
+/**
+ * Real usage always attaches the `exitCompletion` watcher (via mount) before
+ * any interaction can happen, so unit tests exercising retained-exit
+ * behavior via bare `update()` calls attach it explicitly first (#264 item
+ * F1) — `closing` retention now only ever engages when `animated &&
+ * exitWatcher` both hold.
+ */
+function attached(state: ReturnType<typeof init>): ReturnType<typeof init> {
+  return update(state, { type: 'exitWatcherAttach' })[0]
+}
+
 describe('accordion reducer', () => {
   it('initializes with defaults (single, collapsible)', () => {
     const s = init()
@@ -21,6 +32,8 @@ describe('accordion reducer', () => {
       exitGenerations: [],
       exitSequence: 0,
       animated: false,
+      exitWatcher: false,
+      exitWarned: false,
     })
   })
 
@@ -83,7 +96,7 @@ describe('accordion reducer', () => {
     const instant = update(init({ value: ['a'] }), { type: 'close', value: 'a' })[0]
     expect(instant).toMatchObject({ value: [], closing: [] })
 
-    const animated = update(init({ value: ['a'], animated: true }), {
+    const animated = update(attached(init({ value: ['a'], animated: true })), {
       type: 'close',
       value: 'a',
     })[0]
@@ -91,7 +104,7 @@ describe('accordion reducer', () => {
   })
 
   it('completes and interrupts a retained close without changing controlled value', () => {
-    const closing = update(init({ value: ['a'], animated: true }), {
+    const closing = update(attached(init({ value: ['a'], animated: true })), {
       type: 'setValue',
       value: ['b'],
     })[0]
@@ -111,7 +124,7 @@ describe('accordion reducer', () => {
   })
 
   it('rejects a stale completion from an earlier exit generation', () => {
-    const first = update(init({ value: ['a'], animated: true }), {
+    const first = update(attached(init({ value: ['a'], animated: true })), {
       type: 'close',
       value: 'a',
     })[0]
@@ -130,11 +143,13 @@ describe('accordion reducer', () => {
 
   it('tracks adversarial string values without prototype collisions', () => {
     const closing = update(
-      init({
-        value: ['__proto__', 'constructor', 'toString'],
-        multiple: true,
-        animated: true,
-      }),
+      attached(
+        init({
+          value: ['__proto__', 'constructor', 'toString'],
+          multiple: true,
+          animated: true,
+        }),
+      ),
       { type: 'setValue', value: [] },
     )[0]
 
@@ -149,7 +164,7 @@ describe('accordion reducer', () => {
   })
 
   it('prunes completed ids while keeping generations monotonic across churn', () => {
-    let state = init({ value: ['item-0'], animated: true })
+    let state = attached(init({ value: ['item-0'], animated: true }))
     for (let index = 0; index < 50; index += 1) {
       const value = `item-${index}`
       state = update(state, { type: 'setValue', value: [] })[0]
@@ -213,7 +228,7 @@ describe('accordion.connect', () => {
 
   it('keeps closing content mounted, labelled, and noninteractive until its own animation ends', () => {
     const send = vi.fn()
-    const closing = update(init({ value: ['a'], animated: true }), {
+    const closing = update(attached(init({ value: ['a'], animated: true })), {
       type: 'close',
       value: 'a',
     })[0]
@@ -258,5 +273,74 @@ describe('accordion.connect', () => {
     p.item('a').trigger.onKeyDown(new KeyboardEvent('keydown', { key: 'End', cancelable: true }))
     expect(send).toHaveBeenNthCalledWith(1, { type: 'focusFirst' })
     expect(send).toHaveBeenNthCalledWith(2, { type: 'focusLast' })
+  })
+})
+
+describe('accordion exitCompletion fail-safe (#264 item F1)', () => {
+  it('a forgotten exitCompletion (watcher never attached) closes instantly, never retains', () => {
+    const [s] = update(init({ value: ['a'], animated: true }), { type: 'close', value: 'a' })
+    expect(s).toMatchObject({ value: [], closing: [], exitWatcher: false })
+  })
+
+  it('exitWatcherAttach flips the flag; a subsequent close then retains', () => {
+    const attachedState = update(init({ value: ['a'], animated: true }), {
+      type: 'exitWatcherAttach',
+    })[0]
+    expect(attachedState.exitWatcher).toBe(true)
+    const closing = update(attachedState, { type: 'close', value: 'a' })[0]
+    expect(closing).toMatchObject({ value: [], closing: ['a'] })
+  })
+
+  it('exitWatcherDetach mid-closing settles it immediately rather than leaving it stuck', () => {
+    const closing = update(attached(init({ value: ['a'], animated: true })), {
+      type: 'close',
+      value: 'a',
+    })[0]
+    expect(closing.closing).toEqual(['a'])
+    const detached = update(closing, { type: 'exitWatcherDetach' })[0]
+    expect(detached).toMatchObject({ closing: [], exitGenerations: [], exitWatcher: false })
+  })
+
+  it('DEV warning fires exactly once per instance when a close is missed for lack of a watcher', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      let state = init({ value: ['a'], animated: true })
+      state = update(state, { type: 'close', value: 'a' })[0]
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(String(warnSpy.mock.calls[0]?.[0])).toContain('exitCompletion')
+      state = update(state, { type: 'open', value: 'a' })[0]
+      state = update(state, { type: 'close', value: 'a' })[0]
+      // Throttled: still exactly once for this instance.
+      expect(warnSpy).toHaveBeenCalledTimes(1)
+      expect(state).toMatchObject({ value: [], exitWarned: true })
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('no warning fires when the watcher is attached (placed correctly)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const s = attached(init({ value: ['a'], animated: true }))
+      update(s, { type: 'close', value: 'a' })
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('no warning fires when animated is false (instant close is intentional)', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      update(init({ value: ['a'] }), { type: 'close', value: 'a' })
+      expect(warnSpy).not.toHaveBeenCalled()
+    } finally {
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('single-mode switching without a watcher closes the departing item instantly too', () => {
+    const [s] = update(init({ value: ['a'], animated: true }), { type: 'toggle', value: 'b' })
+    expect(s).toMatchObject({ value: ['b'], closing: [] })
   })
 })

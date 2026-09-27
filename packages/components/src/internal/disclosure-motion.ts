@@ -219,149 +219,74 @@ export interface DisclosureExitWatchEntry {
 
 /**
  * Root-scoped completion watcher, one per `connect()` call (#264 review item
- * 1), that ALSO carries the dev-mode stalled-exit warning (#264 review item
- * 4, folded in — previously a second, independently-scheduled watcher: see
- * "Why one watcher, not two" below). Resolves each closing entry's content
- * element by ID (`getElementByIdInScope`, never a scope-wide
- * `[data-scope][data-part]` query) so it cannot settle a SIBLING instance
- * sharing the same onMount build container — the container `onMount` hands a
- * callback is the whole enclosing BUILD, which is shared by every component
- * placed inside one parent view, not a box scoped to this one instance (see
- * CLAUDE.md's `onMount` invariant). Two accordions with an item sharing the
- * same VALUE, or an accordion and a collapsible both rendered inside one
- * parent's view, used to be settled by whichever container-wide query ran
- * first, cutting a running exit animation on the wrong instance.
+ * 1). Resolves each closing entry's content element by ID
+ * (`getElementByIdInScope`, never a scope-wide `[data-scope][data-part]`
+ * query) so it cannot settle a SIBLING instance sharing the same onMount
+ * build container — the container `onMount` hands a callback is the whole
+ * enclosing BUILD, which is shared by every component placed inside one
+ * parent view, not a box scoped to this one instance (see CLAUDE.md's
+ * `onMount` invariant). Two accordions with an item sharing the same VALUE,
+ * or an accordion and a collapsible both rendered inside one parent's view,
+ * used to be settled by whichever container-wide query ran first, cutting a
+ * running exit animation on the wrong instance.
  *
  * Returned as a `Mountable` meant for `connect()`'s own `exitCompletion`
  * part — it must be PLACED in the rendered view (as `parts.exitCompletion`)
- * for programmatic closes on a no-exit-motion skin to ever settle; a
- * click-driven close is still safety-netted synchronously inside the
- * trigger's own handler regardless of whether this is placed.
+ * for a `closing` retention to ever be entered at all (see #264 item F1
+ * below); a click-driven close is still safety-netted synchronously inside
+ * the trigger's own handler regardless of whether this is placed.
  *
- * **Why one watcher, not two (#264 review item 4).** The dev warning used to
- * be a SEPARATE function, `watchForStalledDisclosureExit`, called eagerly
- * from `connect()` itself (not from a mount callback) and scheduled with a
- * recurring `setInterval` whose disposer every call site discarded. That
- * cost four real defects, all fixed by folding it into THIS mount instead:
- *   1. **Leak.** A `setInterval` started on every `connect()` call with no
- *      lifetime tied to anything ran forever — `connect()` can be called
- *      (and re-called) far more often than a component is actually mounted.
- *   2. **`vi.runAllTimers()` hangs.** `setInterval` reschedules itself
- *      forever, so a fake-timer test that runs the timer queue to
- *      exhaustion never terminates. A one-shot `setTimeout` PER closing
- *      TRANSITION (armed here, in `check()`, the moment an entry is seen
- *      closing) does not reschedule itself and lets the queue drain.
- *   3. **False warning after dispose / runs forever under SSR.** Tying the
- *      timer to the SAME mount callback `exitCompletion` already owns means
- *      the SAME cleanup (`() => { observer.disconnect(); ... }`) clears
- *      every pending timeout, and SSR never runs a mount callback at all
- *      (`runMounts` only fires client-side) — no separate guard needed.
- *   4. **Bare `catch {}` shaped around a test double.** The old watcher
- *      called `getEntries()` (which peeks the live `state` signal
- *      `connect()` was given) from ITS OWN eagerly-started timer, so a
- *      structural test calling `connect(rootSignal(), ...)` (this package's
- *      OWN `rootSignal()` test double, which throws on `peek()` by design —
- *      see `test/_signal.ts`) without ever mounting anything still threw,
- *      forever, unless silently caught. Since this watcher only calls
- *      `getEntries()` from INSIDE the mount callback, a test that never
- *      mounts (every `rootSignal()` structural test in this package) never
- *      calls it at all — nothing to catch.
- * Folding also DEDUPES the "is anything still running" check: the old
- * watcher reimplemented `completeIfUnanimated`'s `getAnimations` filter
- * inline; this now reuses the one function directly.
+ * **No timer, no deadline, no dev-mode stall watchdog (#264 item F1,
+ * superseding review item 4).** The previous design retained `closing`
+ * unconditionally whenever `animated: true`, so a forgotten `exitCompletion`
+ * placement could leave an item stuck `closing` + `inert` forever — the
+ * fallback was a `setTimeout`-armed "has this been closing too long"
+ * watchdog, which (a) could never fully distinguish "genuinely stuck" from
+ * "no Web Animations support" (jsdom has no `getAnimations`, so
+ * `completeIfUnanimated` always reports "unknown" there, which read as
+ * "still running" and warned falsely after the deadline even when nothing
+ * was actually stuck) and (b) needed a whole disposal/dedupe apparatus to
+ * avoid leaking timers or re-warning. The fail-safe is now structural
+ * instead of diagnostic: `connect()` tracks whether ITS OWN
+ * `exitCompletion` mount is currently attached (`state.exitWatcher`, flipped
+ * by an `exitWatcherAttach`/`exitWatcherDetach` message this mount sends on
+ * mount/cleanup) and the reducer only ever enters `closing` when
+ * `animated && exitWatcher` both hold — otherwise it closes INSTANTLY, the
+ * same as `animated: false`. A forgotten placement can therefore never hang:
+ * there is no `closing` state to get stuck in. `connect()` also warns once,
+ * synchronously, the first time a close would have retained but the watcher
+ * was never attached (see `accordion.ts`/`collapsible.ts`), which needs no
+ * timer either. What THIS function still owns is the residual case where the
+ * watcher IS attached but the skin's own animated exit runs no actual
+ * CSS motion (a dropped rule, a media query that doesn't match): `check()`
+ * below settles those reactively off a `MutationObserver` on `data-state`,
+ * with no deadline and nothing to leak.
  */
 export function createDisclosureExitCompletionMount(
   getElementByIdInScope: (root: Node, id: string) => HTMLElement | null,
   getEntries: () => readonly DisclosureExitWatchEntry[],
   onSettle: (key: string, generation: number) => void,
-  /** Dev-mode stall warning. Omit to disable the warning entirely (still
-   * settles programmatic closes); `describe` names an entry for the message. */
-  warn?: { describe: (key: string) => string; deadlineMs?: number },
 ): (container: Element) => (() => void) | void {
   return (container: Element) => {
-    const deadlineMs = warn?.deadlineMs ?? 1500
-    const devWarningsEnabled =
-      warn !== undefined && import.meta.env?.DEV === true && typeof setTimeout !== 'undefined'
-    const stallTimers = new Map<string, ReturnType<typeof setTimeout>>()
-    const warned = new Set<string>()
-
-    const clearStallTimer = (trackKey: string): void => {
-      const timer = stallTimers.get(trackKey)
-      if (timer !== undefined) {
-        clearTimeout(timer)
-        stallTimers.delete(trackKey)
-      }
-    }
-
-    const armStallTimer = (entry: DisclosureExitWatchEntry, trackKey: string): void => {
-      if (!devWarningsEnabled || stallTimers.has(trackKey) || warned.has(trackKey)) return
-      const timer = setTimeout(() => {
-        stallTimers.delete(trackKey)
-        // Re-read live entries rather than trusting the closure: the value
-        // may have reopened, or moved to a new generation, since the timer
-        // was armed.
-        const current = getEntries().find(
-          (candidate) => candidate.key === entry.key && candidate.generation === entry.generation,
-        )
-        if (current === undefined || !current.closing || warned.has(trackKey)) return
-        const el = getElementByIdInScope(container, current.contentId)
-        if (completeIfUnanimated(el, { closing: true, generation: current.generation })) {
-          onSettle(current.key, current.generation)
-          return
-        }
-        warned.add(trackKey)
-        // `warn` is defined whenever `devWarningsEnabled` is true.
-        console.warn(
-          `[llui/components] ${warn!.describe(entry.key)} has stayed "closing" for over ` +
-            `${deadlineMs}ms with no running exit animation/transition. This usually means the ` +
-            '`exitCompletion` connect() part was never placed in the rendered view, so a ' +
-            'programmatic close on a skin with no exit motion never settles. Place `parts.' +
-            "exitCompletion` in the component's view, or pass `animated: false` if no exit " +
-            'motion is intended.',
-        )
-      }, deadlineMs)
-      stallTimers.set(trackKey, timer)
-    }
-
     const check = (): void => {
-      const seen = new Set<string>()
       for (const entry of getEntries()) {
-        const trackKey = `${entry.key}\u0000${entry.generation}`
-        if (!entry.closing) {
-          clearStallTimer(trackKey)
-          continue
-        }
-        seen.add(trackKey)
+        if (!entry.closing) continue
         const content = getElementByIdInScope(container, entry.contentId)
         if (completeIfUnanimated(content, { closing: true, generation: entry.generation })) {
-          clearStallTimer(trackKey)
           onSettle(entry.key, entry.generation)
-          continue
         }
-        armStallTimer(entry, trackKey)
-      }
-      // A stale generation's timer (superseded before it ever fired) has no
-      // entry left to match in `getEntries()` at all — drop it too.
-      for (const trackKey of [...stallTimers.keys()]) {
-        if (!seen.has(trackKey)) clearStallTimer(trackKey)
       }
     }
     check()
 
-    const disposeStallTimers = (): void => {
-      for (const trackKey of [...stallTimers.keys()]) clearStallTimer(trackKey)
-    }
-    if (typeof MutationObserver === 'undefined') return disposeStallTimers
+    if (typeof MutationObserver === 'undefined') return undefined
     const observer = new MutationObserver(check)
     observer.observe(container, {
       attributes: true,
       attributeFilter: ['data-state'],
       subtree: true,
     })
-    return () => {
-      observer.disconnect()
-      disposeStallTimers()
-    }
+    return () => observer.disconnect()
   }
 }
 

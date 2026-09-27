@@ -170,8 +170,15 @@ function initDisclosureAccordion(
     animated,
   })
   if (input.state === 'open') return opened
-  if (input.state === 'closing')
-    return accordion.update(opened, { type: 'close', value: itemValue })[0]
+  if (input.state === 'closing') {
+    // A real reducer transition into `closing` only retains while
+    // `exitCompletion`'s mount is attached (#264 item F1) — a real mounted
+    // instance always attaches before any interaction is possible, so this
+    // fixture attaches it explicitly before closing, exactly like a real
+    // mount would.
+    const attached = accordion.update(opened, { type: 'exitWatcherAttach' })[0]
+    return accordion.update(attached, { type: 'close', value: itemValue })[0]
+  }
   return accordion.init({ items: [itemValue], value: [], disabled: input.disabled, animated })
 }
 
@@ -182,7 +189,11 @@ function initDisclosureCollapsible(
   const animated = environment.motion !== 'reduced'
   const opened = collapsible.init({ open: true, disabled: input.disabled, animated })
   if (input.state === 'open') return opened
-  if (input.state === 'closing') return collapsible.update(opened, { type: 'close' })[0]
+  if (input.state === 'closing') {
+    // See the identical note in `initDisclosureAccordion` (#264 item F1).
+    const attached = collapsible.update(opened, { type: 'exitWatcherAttach' })[0]
+    return collapsible.update(attached, { type: 'close' })[0]
+  }
   return collapsible.init({ open: false, disabled: input.disabled, animated })
 }
 

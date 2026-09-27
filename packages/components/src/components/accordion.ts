@@ -41,6 +41,21 @@ export interface AccordionState {
   exitSequence: number
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
+  /**
+   * Whether `parts.exitCompletion` is CURRENTLY placed/mounted (#264 item
+   * F1). `closing` retention only ever engages when `animated && exitWatcher`
+   * both hold — never `animated` alone — so a forgotten `exitCompletion`
+   * placement closes instantly instead of hanging `closing` + `inert`
+   * forever. Flipped by the `exitWatcherAttach`/`exitWatcherDetach` messages
+   * that mount sends on mount/cleanup; never a caller-facing init option.
+   */
+  exitWatcher: boolean
+  /**
+   * Set once a close was reduced with `animated: true` but `exitWatcher:
+   * false` — throttles the dev-mode "you forgot to place exitCompletion"
+   * warning to fire at most once per instance. Never reset back to `false`.
+   */
+  exitWarned: boolean
 }
 
 export type AccordionMsg =
@@ -64,6 +79,10 @@ export type AccordionMsg =
   | { type: 'focusLast' }
   /** @humanOnly — sent by the retained content's own animation end/cancel event. */
   | { type: 'exitComplete'; value: string; generation: number }
+  /** @humanOnly — sent by `parts.exitCompletion`'s own mount, once placed. */
+  | { type: 'exitWatcherAttach' }
+  /** @humanOnly — sent by `parts.exitCompletion`'s own cleanup, on unmount. */
+  | { type: 'exitWatcherDetach' }
 
 export interface AccordionInit {
   value?: string[]
@@ -89,17 +108,45 @@ export function init(opts: AccordionInit = {}): AccordionState {
     exitGenerations: [],
     exitSequence: 0,
     animated: opts.animated ?? false,
+    exitWatcher: false,
+    exitWarned: false,
   }
 }
 
+/**
+ * The dev-mode message for a close reduced with `animated: true` but no
+ * `exitCompletion` mount attached (#264 item F1). Fires at most once per
+ * instance (`state.exitWarned` throttles it) and is a pure side effect of an
+ * otherwise-pure reducer helper — the same pragmatic exception the codebase
+ * already makes at the `connect()`/mount boundary (see `overlay-engine.ts`),
+ * moved here because "was this close reduced under the missing-watcher
+ * condition" is a fact only the reducer has, and only a `console.warn` from
+ * INSIDE the reduce step can report it "synchronously when a close is
+ * reduced" with no separate observation mechanism (a timer, a subscription)
+ * needed.
+ */
+function warnMissingExitWatcher(describe: string): void {
+  if (import.meta.env?.DEV !== true) return
+  console.warn(
+    `[llui/components] ${describe} was configured \`animated: true\` but \`parts.exitCompletion\` ` +
+      'was never placed in the rendered view (or has not mounted yet), so a closing item cannot ' +
+      'be retained for its exit animation and closes instantly instead. Place `parts.' +
+      "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
+      'intended.',
+  )
+}
+
 function withValue(state: AccordionState, value: string[]): AccordionState {
+  const departing = state.value.some((v) => !value.includes(v))
+  const watcherMissing = state.animated && departing && !state.exitWatcher
+  if (watcherMissing && !state.exitWarned) warnMissingExitWatcher('Accordion')
   const retained = retainedExits(
     state.value,
     value,
     state.closing,
     state.exitGenerations,
     state.exitSequence,
-    state.animated,
+    state.animated && state.exitWatcher,
   )
   return {
     ...state,
@@ -107,6 +154,7 @@ function withValue(state: AccordionState, value: string[]): AccordionState {
     closing: retained.exiting,
     exitGenerations: retained.generations,
     exitSequence: retained.sequence,
+    exitWarned: state.exitWarned || watcherMissing,
   }
 }
 
@@ -123,6 +171,16 @@ function toggleValue(state: AccordionState, value: string): string[] {
 }
 
 export function update(state: AccordionState, msg: AccordionMsg): [AccordionState, never[]] {
+  if (msg.type === 'exitWatcherAttach') {
+    return state.exitWatcher ? [state, []] : [{ ...state, exitWatcher: true }, []]
+  }
+  if (msg.type === 'exitWatcherDetach') {
+    // Settle every currently-retained exit immediately: with the watcher
+    // gone, nothing will ever send the `exitComplete` that would otherwise
+    // clear it (#264 item F1 — "detach mid-closing settles").
+    if (!state.exitWatcher && state.closing.length === 0) return [state, []]
+    return [{ ...state, exitWatcher: false, closing: [], exitGenerations: [] }, []]
+  }
   if (msg.type === 'exitComplete') {
     if (
       !state.closing.includes(msg.value) ||
@@ -225,11 +283,14 @@ export interface AccordionParts {
    * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
    * host app, bypassing the trigger's click handler) once its content's own
    * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. MUST be placed in the rendered view (`#264` review
-   * item 1); a click-driven close is still safety-netted synchronously
-   * inside the trigger regardless of whether this is placed, but nothing
-   * else settles a programmatic close on a no-motion skin, which otherwise
-   * hangs `closing` + `inert` forever.
+   * exit motion at all. Its mount ALSO reports whether it is placed at all:
+   * `animated: true` only ever retains `closing` content while this is
+   * mounted (#264 item F1) — forgetting to place it degrades gracefully to
+   * an instant close (with a one-time dev warning) rather than hanging
+   * `closing` + `inert` forever, so placing it is no longer required for
+   * SAFETY, only for the requested exit animation to actually run on a
+   * programmatic close. A click-driven close is still safety-netted
+   * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
 }
@@ -304,14 +365,18 @@ export function connect(
       'data-part': 'root',
       'data-orientation': 'vertical',
     },
-    exitCompletion: onMount(
-      createDisclosureExitCompletionMount(
+    exitCompletion: onMount((container: Element) => {
+      send({ type: 'exitWatcherAttach' })
+      const dispose = createDisclosureExitCompletionMount(
         getElementByIdInScope,
         exitWatchEntries,
         (value, generation) => send({ type: 'exitComplete', value, generation }),
-        { describe: (value) => `Accordion item "${value}"` },
-      ),
-    ),
+      )(container)
+      return () => {
+        dispose?.()
+        send({ type: 'exitWatcherDetach' })
+      }
+    }),
     item: (value: string): AccordionItemParts => ({
       trigger: {
         type: 'button',

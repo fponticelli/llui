@@ -55,7 +55,12 @@ const accordionOpened = accordionMachine.init({
   value: ['item'],
   animated: true,
 })
-const accordionClosingState = accordionMachine.update(accordionOpened, {
+// `closing` only retains while `exitCompletion`'s mount is attached (#264
+// item F1) — attach it explicitly, exactly like a real mount would.
+const accordionAttached = accordionMachine.update(accordionOpened, {
+  type: 'exitWatcherAttach',
+})[0]
+const accordionClosingState = accordionMachine.update(accordionAttached, {
   type: 'close',
   value: 'item',
 })[0]
@@ -70,7 +75,13 @@ const collapsibleClosingParts = collapsibleMachine.connect(rootSignal(), () => {
   id: 'browser-collapsible',
 })
 const collapsibleOpened = collapsibleMachine.init({ open: true, animated: true })
-const collapsibleClosingState = collapsibleMachine.update(collapsibleOpened, { type: 'close' })[0]
+// See the identical note above (#264 item F1).
+const collapsibleAttached = collapsibleMachine.update(collapsibleOpened, {
+  type: 'exitWatcherAttach',
+})[0]
+const collapsibleClosingState = collapsibleMachine.update(collapsibleAttached, {
+  type: 'close',
+})[0]
 const collapsibleClosingContent = collapsibleClosingParts.content
 const collapsibleClosingAttrs = {
   dataState: read(collapsibleClosingContent['data-state'], collapsibleClosingState),

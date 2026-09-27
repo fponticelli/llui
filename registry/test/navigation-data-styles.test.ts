@@ -1,8 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { component, div, mountApp, path, svg, text } from '@llui/dom'
 import { chromium, type Browser } from 'playwright'
+import * as accordionMachine from '../../packages/components/src/components/accordion'
 import * as carouselMachine from '../../packages/components/src/components/carousel'
-import { read, rootSignal } from '../../packages/components/test/_signal'
+import * as collapsibleMachine from '../../packages/components/src/components/collapsible'
+import { read, rootSignal, signalOf } from '../../packages/components/test/_signal'
 import {
   probeDarkStateHierarchy,
   probeEffectiveMotion,
@@ -138,6 +140,21 @@ const carouselActiveIndicatorAttrs = {
   dataActive: read(carouselActiveIndicator['data-active'], carouselTwoSlideState),
 }
 
+// Real `exitCompletion` parts from real machine instances (#264 item F1) —
+// never a `text('')` stand-in, which satisfies the type but is a Mountable
+// that does nothing and proves nothing about the real wiring this static
+// styling fixture is meant to render.
+const accordionExitCompletion = accordionMachine.connect(
+  signalOf(accordionMachine.init({ items: ['item'], value: ['item'] })),
+  () => {},
+  { id: 'style-accordion' },
+).exitCompletion
+const collapsibleExitCompletion = collapsibleMachine.connect(
+  signalOf(collapsibleMachine.init({ open: true })),
+  () => {},
+  { id: 'style-collapsible' },
+).exitCompletion
+
 let app: ReturnType<typeof mountApp> | undefined
 
 function fixture(): string {
@@ -164,7 +181,7 @@ function fixture(): string {
             ]),
             TabsContent([text('Content')]),
           ]),
-          Accordion({ 'data-product': 'accordion', exitCompletion: text('') }, [
+          Accordion({ 'data-product': 'accordion', exitCompletion: accordionExitCompletion }, [
             AccordionItem([
               AccordionTrigger({ id: 'accordion-trigger', 'data-state': 'open' }, [text('Open')]),
               AccordionContent(
@@ -223,24 +240,27 @@ function fixture(): string {
             CardContent([text('Ready')]),
           ]),
           Chip({ 'data-product': 'chip', value: 'lab' }),
-          Collapsible({ 'data-product': 'collapsible', exitCompletion: text('') }, [
-            CollapsibleTrigger({ id: 'collapsible-trigger', 'data-state': 'open' }, [
-              text('Details'),
-            ]),
-            CollapsibleContent(
-              { id: 'collapsible-content', 'data-state': 'open', 'data-motion-state': '' },
-              [text('Expanded content')],
-            ),
-            CollapsibleContent(
-              {
-                id: 'collapsible-content-closing',
-                'data-state': 'closing',
-                'aria-hidden': 'true',
-                inert: true,
-              },
-              [text('Closing content')],
-            ),
-          ]),
+          Collapsible(
+            { 'data-product': 'collapsible', exitCompletion: collapsibleExitCompletion },
+            [
+              CollapsibleTrigger({ id: 'collapsible-trigger', 'data-state': 'open' }, [
+                text('Details'),
+              ]),
+              CollapsibleContent(
+                { id: 'collapsible-content', 'data-state': 'open', 'data-motion-state': '' },
+                [text('Expanded content')],
+              ),
+              CollapsibleContent(
+                {
+                  id: 'collapsible-content-closing',
+                  'data-state': 'closing',
+                  'aria-hidden': 'true',
+                  inert: true,
+                },
+                [text('Closing content')],
+              ),
+            ],
+          ),
           div(
             {
               'data-product': 'data-table',
