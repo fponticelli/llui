@@ -173,24 +173,34 @@ export type { ClassValue }
  * closing-capable message itself carries `retain: true`, which `connect()`'s
  * trigger handlers stamp from that registry — otherwise it closes instantly,
  * with a synchronous, once-per-id dev-mode `console.warn` (never a build
- * error). So `exitCompletion` is no longer required for SAFETY. It is kept REQUIRED here anyway, and a root
- * wrapper still cannot forget to append what it is compile-time REQUIRED to
- * accept: `exitCompletion` is a non-optional field on the props bag below,
- * so `Accordion({ ...parts.root }, [...])` (missing the field) is a type
- * error, and `Accordion({ ...parts.root, exitCompletion: parts.exitCompletion
- * }, [...])` both compiles and cannot omit the append. The reason to keep it
- * required, despite the reducer no longer needing it for correctness: the
- * registry's whole point is to ship the SAME behavior shadcn's demos show,
- * and a registry skin that silently drops a requested exit animation (with
- * only a console warning, easy to miss in a terminal nobody is watching) is
- * still a real behavior regression worth catching at compile time — a
- * hand-rolled skin outside the registry does not get that guarantee, and
- * degrades gracefully instead, which is the documented trade-off.
+ * error). So `exitCompletion` is no longer required for SAFETY. It is kept
+ * REQUIRED here anyway, and a root wrapper still cannot forget to append
+ * what it is compile-time REQUIRED to accept.
+ *
+ * **`exitCompletion` is a SEPARATE third argument, never a field on the
+ * attribute props bag (#264 post-merge fix).** It used to be a non-optional
+ * field on `DisclosureRootProps = ElProps & { exitCompletion: Mountable }` —
+ * reasoning (correctly, for how the TYPE is declared) that an intersection
+ * of two separately-declared types does not force `exitCompletion` to
+ * conform to `ElProps`'s own string index signature the way an `interface X
+ * extends ElProps` would. That reasoning does not cover how a call site's
+ * own fresh object LITERAL is checked: assigning `{ ...parts.root,
+ * exitCompletion: parts.exitCompletion }` to `DisclosureRootProps` still
+ * fails, because TypeScript flattens an intersection when checking a fresh
+ * literal's properties against whichever index signature is reachable
+ * through ANY constituent — so `exitCompletion`, a `Mountable`, is checked
+ * against `ElProps`'s `AttrValue | ((e: Event) => void) | undefined` index
+ * signature and rejected. This was invisible in this package's own suite
+ * (which never assembled the literal that exact way in a real `tsc` run of
+ * a DEMO package) and surfaced only once one finally did. The fix: keep
+ * `exitCompletion` required, but pass it as its own argument — never
+ * intersected into the attribute bag at all, so there is no shared index
+ * signature for a fresh literal to be checked against in the first place.
+ * `Accordion({ ...parts.root }, [...])` (missing the third argument) is
+ * still a type error; `Accordion({ ...parts.root }, [...], {
+ * exitCompletion: parts.exitCompletion })` is the whole call.
  */
-// An `interface X extends ElProps` silently DROPS `ElProps`'s index
-// signature (a known registry trap — see CLAUDE.md), so this is an
-// intersection TYPE, never an extended interface.
-export type DisclosureRootProps = ElProps & {
+export interface ExitCompletionOptions {
   /** `parts.exitCompletion` from the machine's `connect()` — see
    * `@llui/components`'s README ("accordion / collapsible exit motion"). */
   exitCompletion: Mountable
@@ -206,10 +216,13 @@ export type DisclosureRootProps = ElProps & {
  */
 export function withExitCompletion(
   part: PartHelper,
-): (props: DisclosureRootProps, children?: readonly ChildNode[]) => Mountable {
-  return (props: DisclosureRootProps, children: readonly ChildNode[] = []): Mountable => {
-    const { exitCompletion, ...rest } = props
-    return part(rest as ElProps, [...children, exitCompletion])
+): (props: ElProps, children: readonly ChildNode[], options: ExitCompletionOptions) => Mountable {
+  return (
+    props: ElProps,
+    children: readonly ChildNode[],
+    options: ExitCompletionOptions,
+  ): Mountable => {
+    return part(props, [...children, options.exitCompletion])
   }
 }
 

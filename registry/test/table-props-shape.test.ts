@@ -10,20 +10,30 @@ import ts from 'typescript'
  * registry consumer responsible for remembering to nest `TableContainer`
  * around `Table` correctly, which the machine's own docs and both
  * first-party demos never actually needed once the typing concern that
- * motivated the split is resolved properly (a plain intersection type, not
- * `interface X extends ElProps` or a widened `Record<string,
- * unknown>`/`any` index signature).
+ * motivated the split is resolved properly.
+ *
+ * That "properly" changed once more post-merge: `TableProps = ElProps &
+ * { viewport?: ElProps }` type-checks as a DECLARATION, but a call site's
+ * own fresh object literal (`{ ...parts.root, viewport: {...} }`) still
+ * fails against it — TypeScript flattens an intersection when checking a
+ * literal, so `viewport`'s object value is checked against `ElProps`'s own
+ * index signature regardless of which constituent declared it. This was
+ * invisible in this package's own suite (nothing here assembled the
+ * literal that way) and surfaced only once a DEMO package's `tsc` finally
+ * ran. The fix: `viewport` is a SEPARATE third argument
+ * (`Table(props, children, { viewport })`), never intersected into the
+ * attribute bag at all — `TableProps` is now a plain alias of `ElProps`.
  *
  * This pins the restored shape via a real TypeScript AST walk (not a text
  * search, so a comment mentioning "TableContainer" in prose cannot fool it
  * in either direction):
  *   - exactly ONE exported table-root helper (`Table`), no `TableContainer`
  *   - `Table` is a real function (not a `classPart(...)` result — it needs
- *     its own `viewport` option), taking a precisely-typed `TableProps`
- *   - `TableProps` is `ElProps & { viewport?: ... }`, never an `extends`
- *     interface (which silently drops `ElProps`'s index signature) and
- *     never a bare object-literal type with its OWN index signature
- *     (which is what forces the `any`/`unknown` widening back in)
+ *     its own `viewport` option), taking `TableProps` (`= ElProps`, no
+ *     `viewport` field) plus a separate `TableOptions` third argument
+ *     carrying `viewport`
+ *   - `TableProps` carries no index signature of its own (which is what
+ *     forces the `any`/`unknown` widening back in) and no `viewport` field
  *   - no `any` anywhere in the file, structurally (an `AnyKeyword` node),
  *     never a substring search a comment about `any` could false-positive
  */
@@ -81,34 +91,39 @@ describe('registry table.ts is a single Table export (#264 review item 3)', () =
     expect(findTableFunctionDeclaration()).toBeDefined()
   })
 
-  it('declares TableProps as an intersection type, never an extended interface', () => {
+  it('declares TableProps as a plain alias of ElProps, never an extended interface, and never carrying viewport', () => {
     expect(findInterface('TableProps')).toBeUndefined()
     const alias = findTypeAlias('TableProps')
     expect(alias).toBeDefined()
-    expect(alias !== undefined && ts.isIntersectionTypeNode(alias.type)).toBe(true)
+    // `TableProps = ElProps` — a bare type reference, not an intersection or
+    // an inline object literal (either of which risks re-introducing a
+    // `viewport` field or a widened index signature).
+    expect(alias !== undefined && ts.isTypeReferenceNode(alias.type)).toBe(true)
   })
 
-  it('TableProps has a viewport field and no bare object-literal index signature of its own', () => {
-    const alias = findTypeAlias('TableProps')
-    expect(alias).toBeDefined()
-    if (alias === undefined || !ts.isIntersectionTypeNode(alias.type)) return
+  it('TableOptions (the third argument) carries viewport, and neither it nor TableProps has an index signature of its own', () => {
+    const options = findInterface('TableOptions')
+    expect(options).toBeDefined()
     let hasViewportField = false
     let hasOwnIndexSignature = false
-    for (const member of alias.type.types) {
-      if (!ts.isTypeLiteralNode(member)) continue
-      for (const m of member.members) {
-        if (ts.isIndexSignatureDeclaration(m)) hasOwnIndexSignature = true
-        if (ts.isPropertySignature(m) && ts.isIdentifier(m.name) && m.name.text === 'viewport') {
-          hasViewportField = true
-        }
+    for (const m of options?.members ?? []) {
+      if (ts.isIndexSignatureDeclaration(m)) hasOwnIndexSignature = true
+      if (ts.isPropertySignature(m) && ts.isIdentifier(m.name) && m.name.text === 'viewport') {
+        hasViewportField = true
       }
     }
     expect(hasViewportField).toBe(true)
-    // The intersection's OWN literal must not carry an index signature — that
-    // is exactly the widening (`Record<string, unknown>` / `any`) this test
-    // exists to keep out. `ElProps`'s index signature lives in ITS OWN
-    // declaration (a separate type this file only references), never here.
+    // Neither `TableOptions` nor `TableProps` may carry an OWN index
+    // signature — that is exactly the widening (`Record<string, unknown>` /
+    // `any`) this test exists to keep out. `ElProps`'s index signature lives
+    // in ITS OWN declaration (a separate type this file only references).
     expect(hasOwnIndexSignature).toBe(false)
+  })
+
+  it('Table takes exactly three parameters: props, children, options', () => {
+    const fn = findTableFunctionDeclaration()
+    expect(fn).toBeDefined()
+    expect(fn?.parameters.length).toBe(3)
   })
 
   it('never re-introduces an `any` type anywhere in the file', () => {

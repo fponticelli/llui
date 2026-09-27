@@ -164,15 +164,23 @@ keyboard roving-focus wiring unable to find the element it moves focus to.
    interface extending `ElProps` drops its index signature, so `props.class` and every
    spread `data-*` key stop type-checking.
 6. **A disclosure root (`Accordion`/`Collapsible`) is built with `withExitCompletion`,
-   and its `exitCompletion: Mountable` prop is REQUIRED, never optional.** `parts.exitCompletion`
-   is the machine's own `connect()` part that settles a RETAINED `close`/`toggle`/
-   `setValue`/`setOpen` (one carrying `retain: true`, e.g. via `parts.close(...)`)
-   on a skin with no exit motion — a raw programmatic close with no `retain` closes
-   instantly and never enters `closing`; `withExitCompletion` (in
-   `llui/lib/utils.ts`) wraps a `classPart`-built root so it appends that part after
-   the caller's children itself, and the required field means
-   `Accordion({ ...parts.root }, [...])` (missing it) is a type error, not a runtime
-   surprise. Forgetting to place `parts.exitCompletion` at ALL is no longer a hang —
+   and `exitCompletion: Mountable` is a REQUIRED THIRD ARGUMENT, never a field on
+   the attribute props bag.** It used to be a field on the props object, but a
+   call site's own fresh literal (`{ ...parts.root, exitCompletion:
+   parts.exitCompletion }`) fails against `ElProps`'s index signature — TypeScript
+   checks every property of an intersected type against ANY reachable index
+   signature when the literal is fresh, regardless of which constituent declared
+   the property. `parts.exitCompletion` is the machine's own `connect()` part that
+   settles a RETAINED `close`/`toggle`/`setValue`/`setOpen` (one carrying
+   `retain: true`, e.g. via `parts.close(...)`) on a skin with no exit motion — a
+   raw programmatic close with no `retain` closes instantly and never enters
+   `closing`; `withExitCompletion` (in `llui/lib/utils.ts`) wraps a
+   `classPart`-built root so it appends that part after the caller's children
+   itself, and the required third argument means
+   `Accordion({ ...parts.root }, [...])` (missing it) is a type error, not a
+   runtime surprise — the whole call is
+   `Accordion({ ...parts.root }, [...], { exitCompletion: parts.exitCompletion })`.
+   Forgetting to place `parts.exitCompletion` at ALL is no longer a hang —
    whether it is mounted lives in a runtime registry keyed by the machine's own
    `opts.id`, never in state, and `@llui/components`' reducer only retains a
    `closing` phase when the closing message itself carries `retain: true` (stamped

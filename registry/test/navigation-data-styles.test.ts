@@ -181,24 +181,28 @@ function fixture(): string {
             ]),
             TabsContent([text('Content')]),
           ]),
-          Accordion({ 'data-product': 'accordion', exitCompletion: accordionExitCompletion }, [
-            AccordionItem([
-              AccordionTrigger({ id: 'accordion-trigger', 'data-state': 'open' }, [text('Open')]),
-              AccordionContent(
-                { id: 'accordion-content', 'data-state': 'open', 'data-motion-state': '' },
-                [text('Details')],
-              ),
-              AccordionContent(
-                {
-                  id: 'accordion-content-closing',
-                  'data-state': 'closing',
-                  'aria-hidden': 'true',
-                  inert: true,
-                },
-                [text('Closing details')],
-              ),
-            ]),
-          ]),
+          Accordion(
+            { 'data-product': 'accordion' },
+            [
+              AccordionItem([
+                AccordionTrigger({ id: 'accordion-trigger', 'data-state': 'open' }, [text('Open')]),
+                AccordionContent(
+                  { id: 'accordion-content', 'data-state': 'open', 'data-motion-state': '' },
+                  [text('Details')],
+                ),
+                AccordionContent(
+                  {
+                    id: 'accordion-content-closing',
+                    'data-state': 'closing',
+                    'aria-hidden': 'true',
+                    inert: true,
+                  },
+                  [text('Closing details')],
+                ),
+              ]),
+            ],
+            { exitCompletion: accordionExitCompletion },
+          ),
           Alert({ 'data-product': 'alert', variant: 'destructive' }, [
             AlertTitle([text('Sync failed')]),
             AlertDescription([text('Try again')]),
@@ -241,7 +245,7 @@ function fixture(): string {
           ]),
           Chip({ 'data-product': 'chip', value: 'lab' }),
           Collapsible(
-            { 'data-product': 'collapsible', exitCompletion: collapsibleExitCompletion },
+            { 'data-product': 'collapsible' },
             [
               CollapsibleTrigger({ id: 'collapsible-trigger', 'data-state': 'open' }, [
                 text('Details'),
@@ -260,6 +264,7 @@ function fixture(): string {
                 [text('Closing content')],
               ),
             ],
+            { exitCompletion: collapsibleExitCompletion },
           ),
           div(
             {
@@ -664,7 +669,6 @@ function fixture(): string {
           div({ 'data-product': 'table', class: 'min-w-0' }, [
             Table(
               {
-                viewport: { 'data-scope': 'table', 'data-part': 'viewport' },
                 'data-density': 'comfortable',
               },
               [
@@ -692,25 +696,26 @@ function fixture(): string {
                   ),
                 ]),
               ],
+              { viewport: { 'data-scope': 'table', 'data-part': 'viewport' } },
             ),
             Table(
               {
-                viewport: { 'data-scope': 'table', 'data-part': 'viewport' },
                 'data-density': 'compact',
               },
               [
                 TableHeader([TableRow([TableHead({ id: 'table-compact-head' }, [text('Name')])])]),
                 TableBody([TableRow([TableCell([text('Alpha')])])]),
               ],
+              { viewport: { 'data-scope': 'table', 'data-part': 'viewport' } },
             ),
           ]),
           Table(
             {
-              viewport: { 'data-scope': 'table', 'data-part': 'viewport' },
               id: 'table-disabled',
               'data-disabled': '',
             },
             [TableBody([TableRow([TableCell([text('Disabled')])])])],
+            { viewport: { 'data-scope': 'table', 'data-part': 'viewport' } },
           ),
           TreeView({ 'data-product': 'tree-view', role: 'tree' }, [
             TreeViewItem({ id: 'tree-regular', role: 'treeitem', 'data-forced-state': 'regular' }, [

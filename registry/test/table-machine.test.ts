@@ -23,27 +23,31 @@ function mount(): HTMLElement {
     view: ({ state, send }): readonly Mountable[] => {
       const parts = table.connect(state.at('table'), send, { id: 'registry-table' })
       return [
-        Table({ ...parts.root, viewport: parts.viewport }, [
-          TableHeader([
-            TableRow(
-              COLUMNS.map((column) =>
-                TableHead({ ...parts.columnHeader(column.id) }, [text(column.id)]),
-              ),
-            ),
-          ]),
-          TableBody(
-            ROWS.map((row, rowIndex) =>
+        Table(
+          { ...parts.root },
+          [
+            TableHeader([
               TableRow(
-                { ...parts.row(row, rowIndex) },
-                COLUMNS.map((_column, colIndex) =>
-                  TableCell({ ...parts.cell(rowIndex, colIndex) }, [
-                    text(`${rowIndex}:${colIndex}`),
-                  ]),
+                COLUMNS.map((column) =>
+                  TableHead({ ...parts.columnHeader(column.id) }, [text(column.id)]),
+                ),
+              ),
+            ]),
+            TableBody(
+              ROWS.map((row, rowIndex) =>
+                TableRow(
+                  { ...parts.row(row, rowIndex) },
+                  COLUMNS.map((_column, colIndex) =>
+                    TableCell({ ...parts.cell(rowIndex, colIndex) }, [
+                      text(`${rowIndex}:${colIndex}`),
+                    ]),
+                  ),
                 ),
               ),
             ),
-          ),
-        ]),
+          ],
+          { viewport: parts.viewport },
+        ),
       ]
     },
   })

@@ -12,31 +12,40 @@ import { classPart, customTag, mergeClass } from '../../lib/utils'
  * `Table` pair to remember to nest correctly (#264 review item 3 — this file
  * had drifted to the two-export split TWICE, each time chasing a typing
  * concern that a plain intersection type resolves without weakening
- * anything). `viewport` is an OPTIONAL, separately-typed field on `Table`'s
- * own props: pass the headless machine's `parts.viewport` bag
+ * anything). `viewport` is the headless machine's `parts.viewport` bag
  * (`table.connect(...).viewport`, or `dataTable.connect(...).table.viewport`)
  * and the container div IS that part, spread verbatim — never a second
  * scrollport nested inside it. A bare `Table(...)` with no `viewport` still
  * renders shadcn's container and still scrolls horizontally with no machine
  * wired up at all.
  *
- * `TableProps = ElProps & { viewport?: ElProps }` — a plain intersection of
- * two independently-defined types, not `interface TableProps extends
- * ElProps`. An `extends` on an interface silently DROPS the index signature
- * it inherits (a documented registry trap — see CLAUDE.md), and the
- * interim fix for THAT mistake went the other way and widened the index
- * signature itself to `unknown`/`any` so `viewport`'s object value could
- * coexist with it — which is what made `Table`'s `on*`-handler rejection
- * strictly weaker than every sibling part's plain `ElProps`. Neither
- * workaround is needed: TypeScript only requires every property of an
- * object type to conform to a SIBLING index signature when both are written
- * in the SAME literal (or inherited via `extends`) — an intersection of two
- * separately-declared types is not that, so `viewport?: ElProps` coexists
- * with `ElProps`'s own index signature with no widening and no cast
- * anywhere in this file. `registry/test/table-props-shape.test.ts` pins the
- * exact shape via a real TypeScript AST walk.
+ * **`viewport` is a SEPARATE third argument, never a field on the attribute
+ * props bag (#264 post-merge fix).** An earlier revision spelled it
+ * `TableProps = ElProps & { viewport?: ElProps }`, reasoning that an
+ * intersection of two separately-declared types does not force `viewport`'s
+ * object value to conform to `ElProps`'s own string index signature the way
+ * an `interface X extends ElProps` would. That reasoning covers how the TYPE
+ * is *declared*, but not how a call site's own object LITERAL is checked
+ * against it: assigning a fresh literal like `{ ...parts.root, viewport:
+ * {...} }` to `TableProps` still fails, because TypeScript flattens an
+ * intersection when checking a fresh literal's properties against
+ * whichever index signature is reachable through ANY constituent — so every
+ * property, including `viewport`, is checked against `ElProps`'s `AttrValue
+ * | ((e: Event) => void) | undefined` index signature, and an object value
+ * is neither. This was invisible in the registry's OWN suite (which never
+ * assembles the object literal with an inline `viewport:` key the exact way
+ * a demo does) and surfaced only once a DEMO package's own `tsc` finally ran
+ * (no lane had run it before). The fix: `viewport` is a same-shaped
+ * `ElProps`, but it travels as its OWN parameter — never intersected into
+ * the attribute bag at all, so there is no shared index signature for a
+ * fresh literal to be checked against in the first place.
  */
-export type TableProps = ElProps & {
+export type TableProps = ElProps
+
+/** `Table`'s optional third argument. Kept as a named type (rather than an
+ * inline object type at the call site) so a registry consumer's own call
+ * sites read the same way this file's do. */
+export interface TableOptions {
   /** The machine's `viewport` part bag, spread onto the SAME scrolling
    * container this always renders — never a second, nested scrollport. */
   viewport?: ElProps
@@ -51,8 +60,13 @@ export type TableProps = ElProps & {
 // suspicion: isolated and confirmed against `tsc --strict` directly). No
 // call site in this repo passes `Table` a bare children array, so the
 // precise fix is to not offer the ambiguous shape at all, `props` first.
-export function Table(props: TableProps = {}, children: readonly ChildNode[] = []): Mountable {
-  const { viewport, class: className, ...rest } = props
+export function Table(
+  props: TableProps = {},
+  children: readonly ChildNode[] = [],
+  options: TableOptions = {},
+): Mountable {
+  const { viewport } = options
+  const { class: className, ...rest } = props
   const { class: viewportClassName, ...viewportRest } = viewport ?? {}
   return div(
     {

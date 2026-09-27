@@ -44,9 +44,9 @@ describe('Table always renders shadcn`s single scrolling container', () => {
 
   it('with a viewport option: the container IS that part, not a second wrapper around it', () => {
     const host = mount(
-      Table({ viewport: { 'data-scope': 'table', 'data-part': 'viewport' } }, [
-        TableBody([TableRow([TableCell([text('Alpha')])])]),
-      ]),
+      Table({}, [TableBody([TableRow([TableCell([text('Alpha')])])])], {
+        viewport: { 'data-scope': 'table', 'data-part': 'viewport' },
+      }),
     )
     const container = host.firstElementChild
     expect(container?.getAttribute('data-scope')).toBe('table')

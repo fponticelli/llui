@@ -304,12 +304,16 @@ const accordionAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) => {
     (state, send) => {
       const parts = accordion.connect(state, send, { id: `registry-accordion-${ctx.caseId}` })
       const item = parts.item(itemValue)
-      return Accordion({ ...parts.root, exitCompletion: parts.exitCompletion }, [
-        AccordionItem({ ...item.item }, [
-          AccordionTrigger({ ...item.trigger }, [text(input.label)]),
-          AccordionContent({ ...item.content }, [text(input.content)]),
-        ]),
-      ])
+      return Accordion(
+        { ...parts.root },
+        [
+          AccordionItem({ ...item.item }, [
+            AccordionTrigger({ ...item.trigger }, [text(input.label)]),
+            AccordionContent({ ...item.content }, [text(input.content)]),
+          ]),
+        ],
+        { exitCompletion: parts.exitCompletion },
+      )
     },
   )
 }
@@ -323,10 +327,14 @@ const collapsibleAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) =>
     collapsible.update,
     (state, send) => {
       const parts = collapsible.connect(state, send, { id: `registry-collapsible-${ctx.caseId}` })
-      return Collapsible({ ...parts.root, exitCompletion: parts.exitCompletion }, [
-        CollapsibleTrigger({ ...parts.trigger }, [text(input.label)]),
-        CollapsibleContent({ ...parts.content }, [text(input.content)]),
-      ])
+      return Collapsible(
+        { ...parts.root },
+        [
+          CollapsibleTrigger({ ...parts.trigger }, [text(input.label)]),
+          CollapsibleContent({ ...parts.content }, [text(input.content)]),
+        ],
+        { exitCompletion: parts.exitCompletion },
+      )
     },
   )
 
@@ -763,38 +771,42 @@ function tableUpdateWithResort(
 // `aria-rowindex`/`data-row-index` and the row's own checkbox dispatch stuck
 // at their ORIGINAL position forever (#264).
 function registryMachineTable(state: Signal<table.TableState>, parts: table.TableParts): Mountable {
-  return Table({ ...parts.root, viewport: parts.viewport }, [
-    TableHeader([
-      TableRow([
-        TableHead({ ...parts.columnHeader('name') }, [
-          (() => {
-            const selectAll = parts.selectAllCheckbox('name')
-            return span({ ...selectAll }, [tableCheckboxGlyph(selectAll['data-state'])])
-          })(),
-          text('Name'),
+  return Table(
+    { ...parts.root },
+    [
+      TableHeader([
+        TableRow([
+          TableHead({ ...parts.columnHeader('name') }, [
+            (() => {
+              const selectAll = parts.selectAllCheckbox('name')
+              return span({ ...selectAll }, [tableCheckboxGlyph(selectAll['data-state'])])
+            })(),
+            text('Name'),
+          ]),
+          TableHead({ ...parts.columnHeader('status') }, [text('Status')]),
         ]),
-        TableHead({ ...parts.columnHeader('status') }, [text('Status')]),
       ]),
-    ]),
-    TableBody([
-      each(state.at('rows'), {
-        key: (id) => id,
-        render: (idSignal, index) => {
-          const id = idSignal.peek()
-          const rowCheckbox = parts.rowCheckbox(id, index)
-          return [
-            TableRow({ ...parts.row(id, index) }, [
-              TableCell({ ...parts.cell(index, 0) }, [
-                span({ ...rowCheckbox }, [tableCheckboxGlyph(rowCheckbox['data-state'])]),
-                text(id),
+      TableBody([
+        each(state.at('rows'), {
+          key: (id) => id,
+          render: (idSignal, index) => {
+            const id = idSignal.peek()
+            const rowCheckbox = parts.rowCheckbox(id, index)
+            return [
+              TableRow({ ...parts.row(id, index) }, [
+                TableCell({ ...parts.cell(index, 0) }, [
+                  span({ ...rowCheckbox }, [tableCheckboxGlyph(rowCheckbox['data-state'])]),
+                  text(id),
+                ]),
+                TableCell({ ...parts.cell(index, 1) }, [text('Ready')]),
               ]),
-              TableCell({ ...parts.cell(index, 1) }, [text('Ready')]),
-            ]),
-          ]
-        },
-      }),
-    ]),
-  ])
+            ]
+          },
+        }),
+      ]),
+    ],
+    { viewport: parts.viewport },
+  )
 }
 
 const tableAdapter: Adapter<TableCaseInput> = (host, input, ctx) =>

@@ -102,7 +102,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
       ]),
 
       Accordion(
-        { ...faq.root, exitCompletion: faq.exitCompletion },
+        { ...faq.root },
         FAQ.map((f) => {
           // `item(value)` returns a BAG OF BAGS — `{ trigger, content, item }`.
           // Spreading the wrapper emits `trigger="[object Object]"` and drops
@@ -113,23 +113,29 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
             AccordionContent({ ...parts.content }, [text(f.a)]),
           ])
         }),
+        { exitCompletion: faq.exitCompletion },
       ),
 
-      Collapsible({ ...details.root, exitCompletion: details.exitCompletion }, [
-        // `CollapsibleTrigger` IS a <button>. Wrapping a `Button` in it nests one
-        // button inside another — invalid HTML, and the inner one swallows the
-        // click target. Borrow the button's LOOK via `buttonVariants` instead.
-        CollapsibleTrigger(
-          {
-            ...details.trigger,
-            class: `${buttonVariants({ variant: 'outline', size: 'sm' })} w-fit`,
-          },
-          [text('Toggle details')],
-        ),
-        CollapsibleContent({ ...details.content, class: 'text-muted-foreground' }, [
-          text('The content stays mounted and inert through its closing animation.'),
-        ]),
-      ]),
+      Collapsible(
+        { ...details.root },
+        [
+          // `CollapsibleTrigger` IS a <button>. Wrapping a `Button` in it nests
+          // one button inside another — invalid HTML, and the inner one
+          // swallows the click target. Borrow the button's LOOK via
+          // `buttonVariants` instead.
+          CollapsibleTrigger(
+            {
+              ...details.trigger,
+              class: `${buttonVariants({ variant: 'outline', size: 'sm' })} w-fit`,
+            },
+            [text('Toggle details')],
+          ),
+          CollapsibleContent({ ...details.content, class: 'text-muted-foreground' }, [
+            text('The content stays mounted and inert through its closing animation.'),
+          ]),
+        ],
+        { exitCompletion: details.exitCompletion },
+      ),
     ]),
 
     section('Toolbar', 'Roving focus across groups — arrow keys move, Tab leaves.', [

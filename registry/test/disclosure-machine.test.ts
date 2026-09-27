@@ -56,16 +56,24 @@ function mount(): HTMLElement {
         )
         const item = acc.item('details')
         return [
-          Accordion({ ...acc.root, exitCompletion: acc.exitCompletion }, [
-            AccordionItem({ ...item.item }, [
-              AccordionTrigger({ ...item.trigger }, [text('Accordion details')]),
-              AccordionContent({ ...item.content }, [text('Accordion content')]),
-            ]),
-          ]),
-          Collapsible({ ...col.root, exitCompletion: col.exitCompletion }, [
-            CollapsibleTrigger({ ...col.trigger }, [text('Collapsible details')]),
-            CollapsibleContent({ ...col.content }, [text('Collapsible content')]),
-          ]),
+          Accordion(
+            { ...acc.root },
+            [
+              AccordionItem({ ...item.item }, [
+                AccordionTrigger({ ...item.trigger }, [text('Accordion details')]),
+                AccordionContent({ ...item.content }, [text('Accordion content')]),
+              ]),
+            ],
+            { exitCompletion: acc.exitCompletion },
+          ),
+          Collapsible(
+            { ...col.root },
+            [
+              CollapsibleTrigger({ ...col.trigger }, [text('Collapsible details')]),
+              CollapsibleContent({ ...col.content }, [text('Collapsible content')]),
+            ],
+            { exitCompletion: col.exitCompletion },
+          ),
         ]
       },
     }),
@@ -118,8 +126,9 @@ describe('registry disclosure skins consume retained machine presence', () => {
   // NOT a re-test of the underlying machine (that lives in
   // `@llui/components`' own `disclosure-presence.integration.test.ts`) — it
   // is a test that the REGISTRY skin, used exactly as README.md documents
-  // (`Accordion({ ...parts.root, exitCompletion: parts.exitCompletion }, [...])`,
-  // nothing placed by hand alongside it), still settles a PROGRAMMATIC close
+  // (`Accordion({ ...parts.root }, [...], { exitCompletion:
+  // parts.exitCompletion })`, nothing placed by hand alongside it), still
+  // settles a RETAINED close
   // sent directly (bypassing the trigger's click handler) when the content
   // runs no exit motion at all — the shape a `display: none` ancestor
   // produces in a real browser, simulated here the same way the components
