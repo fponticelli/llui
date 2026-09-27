@@ -146,8 +146,31 @@ describe('extractClassCandidates — identifier resolution at a recipe position'
     }
   })
 
-  it('the shipped UNRESOLVED_RECIPE_ALLOWED starts empty', () => {
-    expect(Object.keys(UNRESOLVED_RECIPE_ALLOWED)).toEqual([])
+  it('every shipped UNRESOLVED_RECIPE_ALLOWED entry is well-formed (#264 review follow-up)', () => {
+    // "Starts empty" broke the day a legitimate entry was ever added — the
+    // allowlist exists precisely so a genuine exception CAN be recorded, so
+    // asserting emptiness is a test that cannot survive its own mechanism
+    // working as designed. What has to hold regardless of how many entries
+    // ship is: every key names a REPO-RELATIVE path (never a bare basename
+    // — that collision, between registry/llui/ui/avatar.ts and
+    // examples/registry-demo/src/components/ui/avatar.ts, is what review-264h
+    // fixed) and every entry carries a non-empty reason. "Closed at the
+    // OTHER end" — every entry is actually consulted by a real sweep, and no
+    // unlisted identifier is silently swallowed — is asserted separately in
+    // tailwind-classes.test.ts, which is the only place a real corpus exists
+    // to consult against; a unit file has no corpus to be closed over.
+    for (const [key, allowed] of Object.entries(UNRESOLVED_RECIPE_ALLOWED)) {
+      const [fileName] = key.split(': ')
+      expect(fileName, `allowlist key "${key}" must be "path: identifier"`).toBeTruthy()
+      expect(
+        fileName?.includes('/'),
+        `allowlist key "${key}" must name a repo-relative path, not a bare basename`,
+      ).toBe(true)
+      expect(
+        typeof allowed.reason === 'string' && allowed.reason.trim().length > 0,
+        `allowlist entry "${key}" must carry a non-empty reason`,
+      ).toBe(true)
+    }
   })
 
   it('FAILS LOUDLY on a switch-case const shadowed at use (case block scoping, ported from scopeIntroduces)', () => {
