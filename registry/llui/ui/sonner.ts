@@ -57,7 +57,7 @@ export const ToastRegion = classPart(
  */
 const ToastRoot = classPart(
   div,
-  `group/toast pointer-events-auto flex w-full min-w-0 items-start gap-3 wrap-break-word rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] data-[state=closing]:animate-out data-[state=closing]:fade-out-0 ltr:data-[state=closing]:slide-out-to-right rtl:data-[state=closing]:slide-out-to-left data-[state=open]:animate-in data-[state=open]:fade-in-0 ltr:data-[state=open]:slide-in-from-right rtl:data-[state=open]:slide-in-from-left ${overlayReducedMotionRecipe} data-[type=info]:border-sky-500/50 forced-colors:data-[type=info]:border-s-4 forced-colors:data-[type=info]:border-solid data-[type=success]:border-emerald-500/50 forced-colors:data-[type=success]:border-s-4 forced-colors:data-[type=success]:border-double data-[type=warning]:border-amber-500/50 forced-colors:data-[type=warning]:border-s-4 forced-colors:data-[type=warning]:border-dashed data-[type=error]:border-destructive/50 data-[type=error]:text-destructive forced-colors:data-[type=error]:border-s-4 forced-colors:data-[type=error]:border-solid forced-colors:data-[type=error]:text-[LinkText] forced-colors:data-[type=error]:underline forced-colors:data-[type=error]:decoration-2 data-[type=loading]:cursor-progress data-[type=loading]:text-muted-foreground forced-colors:data-[type=loading]:border-s-4 forced-colors:data-[type=loading]:border-dotted data-[type=custom]:border-violet-500/50 forced-colors:data-[type=custom]:border-s-8 forced-colors:data-[type=custom]:border-solid`,
+  `group/toast pointer-events-auto flex w-full min-w-0 items-start gap-3 wrap-break-word rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:text-[CanvasText] data-[state=closing]:animate-out data-[state=closing]:fade-out-0 ltr:data-[state=closing]:slide-out-to-right rtl:data-[state=closing]:slide-out-to-left data-[state=open]:animate-in data-[state=open]:fade-in-0 ltr:data-[state=open]:slide-in-from-right rtl:data-[state=open]:slide-in-from-left ${overlayReducedMotionRecipe} data-[type=info]:border-info/50 forced-colors:data-[type=info]:border-s-4 forced-colors:data-[type=info]:border-solid data-[type=success]:border-success/50 forced-colors:data-[type=success]:border-s-4 forced-colors:data-[type=success]:border-double data-[type=warning]:border-warning/50 forced-colors:data-[type=warning]:border-s-4 forced-colors:data-[type=warning]:border-dashed data-[type=error]:border-destructive/50 data-[type=error]:text-destructive forced-colors:data-[type=error]:border-s-4 forced-colors:data-[type=error]:border-solid forced-colors:data-[type=error]:text-[LinkText] forced-colors:data-[type=error]:underline forced-colors:data-[type=error]:decoration-2 data-[type=loading]:cursor-progress data-[type=loading]:text-muted-foreground forced-colors:data-[type=loading]:border-s-4 forced-colors:data-[type=loading]:border-dotted data-[type=custom]:border-violet-500/50 forced-colors:data-[type=custom]:border-s-8 forced-colors:data-[type=custom]:border-solid`,
 )
 
 /** One icon per `ToastType`, always mounted, shown only under its own
@@ -77,13 +77,13 @@ const TOAST_ICON_BASE = 'mt-0.5 hidden size-4 shrink-0 forced-colors:text-[Canva
 function toastIcons(): Mountable[] {
   return [
     InfoIcon({
-      class: `${TOAST_ICON_BASE} text-sky-600 dark:text-sky-400 group-data-[type=info]/toast:block`,
+      class: `${TOAST_ICON_BASE} text-info group-data-[type=info]/toast:block`,
     }),
     CircleCheckIcon({
-      class: `${TOAST_ICON_BASE} text-emerald-600 dark:text-emerald-400 group-data-[type=success]/toast:block`,
+      class: `${TOAST_ICON_BASE} text-success group-data-[type=success]/toast:block`,
     }),
     TriangleAlertIcon({
-      class: `${TOAST_ICON_BASE} text-amber-600 dark:text-amber-400 group-data-[type=warning]/toast:block`,
+      class: `${TOAST_ICON_BASE} text-warning group-data-[type=warning]/toast:block`,
     }),
     CircleAlertIcon({
       class: `${TOAST_ICON_BASE} text-destructive group-data-[type=error]/toast:block`,

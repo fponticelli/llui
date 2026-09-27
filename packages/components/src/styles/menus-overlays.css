@@ -578,18 +578,18 @@
  * styles; a distinct glyph per type, `loading` included).
  */
 [data-scope='toast'][data-part='root'][data-type='info'] {
-  background: color-mix(in srgb, rgb(14 165 233) 14%, var(--popover));
-  border-color: color-mix(in srgb, rgb(14 165 233) 40%, var(--popover));
+  background: color-mix(in srgb, var(--info) 14%, var(--popover));
+  border-color: color-mix(in srgb, var(--info) 40%, var(--popover));
 }
 
 [data-scope='toast'][data-part='root'][data-type='success'] {
-  background: color-mix(in srgb, rgb(34 197 94) 14%, var(--popover));
-  border-color: color-mix(in srgb, rgb(34 197 94) 40%, var(--popover));
+  background: color-mix(in srgb, var(--success) 14%, var(--popover));
+  border-color: color-mix(in srgb, var(--success) 40%, var(--popover));
 }
 
 [data-scope='toast'][data-part='root'][data-type='warning'] {
-  background: color-mix(in srgb, rgb(245 158 11) 14%, var(--popover));
-  border-color: color-mix(in srgb, rgb(245 158 11) 40%, var(--popover));
+  background: color-mix(in srgb, var(--warning) 14%, var(--popover));
+  border-color: color-mix(in srgb, var(--warning) 40%, var(--popover));
 }
 
 [data-scope='toast'][data-part='root'][data-type='error'] {
@@ -601,6 +601,8 @@
   cursor: progress;
 }
 
+/* `custom` has no status meaning (it is the consumer's own type), so no status
+   token speaks for it: its default cue is a decorative violet accent. */
 [data-scope='toast'][data-part='root'][data-type='custom'] {
   background: color-mix(in srgb, rgb(139 92 246) 14%, var(--popover));
   border-color: color-mix(in srgb, rgb(139 92 246) 40%, var(--popover));
