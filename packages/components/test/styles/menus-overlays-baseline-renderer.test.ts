@@ -201,6 +201,12 @@ describe('baseline menus-overlays scenario renderer', () => {
       'presence rests at "open"; only a transition reads this flag',
     'component:popover/top-start.skipAnimations':
       'presence rests at "open"; only a transition reads this flag',
+    'component:popover/top-end.skipAnimations':
+      'presence rests at "open"; only a transition reads this flag',
+    'component:popover/flip-required.skipAnimations':
+      'presence rests at "open"; only a transition reads this flag',
+    'component:popover/shift-required.skipAnimations':
+      'presence rests at "open"; only a transition reads this flag',
     'component:menu/open.skipAnimations':
       'presence rests at "open"; only a transition reads this flag',
     'component:menu/submenu-open.skipAnimations':

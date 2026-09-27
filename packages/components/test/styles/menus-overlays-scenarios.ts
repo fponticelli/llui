@@ -518,6 +518,26 @@ export const MENUS_OVERLAYS_DEFINITIONS = {
         environmentAxes: AX.dir,
       },
       {
+        // Unlike `top-start` (flush with the trigger's start edge, offset
+        // 0 either way since the content is wider than the trigger button
+        // and the start edges coincide), `top-end` gives a genuinely
+        // NON-ZERO LTR offset: the content's END edge is flush with the
+        // trigger's end edge, and the content is wider than the trigger, so
+        // its start (left, in LTR) edge sits well left of the trigger's own.
+        // Exercised by the live-render RTL mirror test, which needs a
+        // non-zero LTR offset to prove an exact mirrored geometry rather
+        // than a vacuous "some offset changed sign or vanished" check.
+        id: 'top-end',
+        label: 'Top-end placement',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          placement: 'top-end',
+          label: 'Dimensions',
+        } satisfies FloatingPresenceCaseInput,
+        environmentAxes: AX.dir,
+      },
+      {
         id: 'opening',
         label: 'Opening',
         input: {
@@ -538,6 +558,49 @@ export const MENUS_OVERLAYS_DEFINITIONS = {
           label: 'Dimensions',
         } satisfies FloatingPresenceCaseInput,
         environmentAxes: AX.motion,
+      },
+      {
+        // Trigger mounts flush against the top of the page (the live-render
+        // host is the first element appended to `document.body`), so a
+        // `'top'` preference has no room above it at all — real floating-ui
+        // collision detection must FLIP the resolved side to `'bottom'`.
+        // Kills a `flip`-removed mutation of `attachFloating`
+        // (packages/interactions/src/floating.ts): without flip middleware
+        // the content renders off the top of the viewport at a negative y
+        // instead.
+        id: 'flip-required',
+        label: 'Collision: flip required',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          placement: 'top',
+          label: 'Dimensions',
+        } satisfies FloatingPresenceCaseInput,
+        environmentAxes: AX.floating,
+      },
+      {
+        // CENTERED (no start/end suffix): the content is centered on the
+        // trigger's own center, which sits near the viewport's left edge
+        // (the live-render host mounts flush against `document.body`), so
+        // with a viewport this narrow the content overflows the LEFT edge.
+        // There IS room below the trigger, so flip must NOT fire (the side
+        // stays `'bottom'`) — and, unlike a `-start`/`-end` case, floating-ui
+        // has no ALIGNMENT to swap to as a fallback for a centered
+        // placement, so only the shift middleware can keep the content
+        // on-screen. Kills a `shift`-removed mutation of `attachFloating`
+        // (packages/interactions/src/floating.ts ~:199): without shift the
+        // content overflows the viewport's left edge with the side
+        // unchanged.
+        id: 'shift-required',
+        label: 'Collision: shift required',
+        input: {
+          presence: 'open',
+          skipAnimations: true,
+          placement: 'bottom',
+          label:
+            'An extremely long popover content label that will not fit inside a narrow viewport',
+        } satisfies FloatingPresenceCaseInput,
+        environmentAxes: AX.narrow,
       },
     ],
   },

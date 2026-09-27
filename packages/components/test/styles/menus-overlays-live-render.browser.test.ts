@@ -206,6 +206,71 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
       expect(rect!.y + rect!.height).toBeLessThanOrEqual(240)
     })
 
+    it('FLIPS a top-preferred popover to the bottom when there is no room above the anchor', async () => {
+      // The live-render host is the first element appended to `document.body`
+      // (`openCase`), so a `'top'` preference has essentially no room above
+      // it — real floating-ui `flip` middleware must resolve the SIDE to
+      // `'bottom'` instead. Kills a `flip`-removed mutation of
+      // `attachFloating` (packages/interactions/src/floating.ts): without it
+      // the resolved side stays `'top'` and the content renders off-screen.
+      const page = await openCase(path, 'component:popover', 'flip-required')
+      const content = page.locator('#case [data-scope="popover"][data-part="content"]')
+      const [side, rect] = await Promise.all([
+        content.getAttribute('data-side'),
+        content.boundingBox(),
+      ])
+      expect(side).toBe('bottom')
+      expect(rect).not.toBeNull()
+      expect(rect!.y).toBeGreaterThanOrEqual(0)
+    })
+
+    it('SHIFTS a bottom-end popover to stay in a narrow viewport, side unchanged (kills shift-removed)', async () => {
+      // `'bottom-end'` aligns the content's END edge flush with the
+      // trigger's — with a viewport this narrow, that would push the
+      // content's start edge well past the LEFT edge of the viewport. There
+      // is plenty of room BELOW the trigger, so `flip` must not fire (the
+      // side must stay `'bottom'`); only `shift` can keep the whole surface
+      // on-screen. Kills a `shift`-removed mutation of `attachFloating`
+      // (packages/interactions/src/floating.ts ~:199): without it the
+      // content overflows the viewport's left edge with the side unchanged.
+      const page = await openCase(path, 'component:popover', 'shift-required', undefined, {
+        width: 150,
+        height: 400,
+      })
+      const content = page.locator('#case [data-scope="popover"][data-part="content"]')
+      const [side, rect] = await Promise.all([
+        content.getAttribute('data-side'),
+        content.boundingBox(),
+      ])
+      expect(side).toBe('bottom')
+      expect(rect).not.toBeNull()
+      expect(rect!.x).toBeGreaterThanOrEqual(0)
+      expect(rect!.x + rect!.width).toBeLessThanOrEqual(150)
+    })
+
+    it('centers the popover arrow on the content facing edge, aligned to the real anchor', async () => {
+      const page = await openCase(path, 'component:popover', 'open')
+      const [contentRect, arrowRect, triggerRect] = await Promise.all([
+        page.locator('#case [data-scope="popover"][data-part="content"]').boundingBox(),
+        page.locator('#case [data-scope="popover"][data-part="arrow"]').boundingBox(),
+        page.locator('#case [data-scope="popover"][data-part="trigger"]').boundingBox(),
+      ])
+      expect(contentRect).not.toBeNull()
+      expect(arrowRect).not.toBeNull()
+      expect(triggerRect).not.toBeNull()
+      const arrowCenterX = arrowRect!.x + arrowRect!.width / 2
+      // The arrow sits ON the content's facing (top, for a 'bottom'
+      // placement) edge — its center must fall within the content's own
+      // horizontal span, never outside it.
+      expect(arrowCenterX).toBeGreaterThanOrEqual(contentRect!.x)
+      expect(arrowCenterX).toBeLessThanOrEqual(contentRect!.x + contentRect!.width)
+      // And it must be aligned to the real anchor (the trigger's own
+      // center), not merely somewhere inside the content — a fixed
+      // offset the adapter merely echoes would not track a moved anchor.
+      const triggerCenterX = triggerRect!.x + triggerRect!.width / 2
+      expect(Math.abs(arrowCenterX - triggerCenterX)).toBeLessThan(6)
+    })
+
     it('positions a real nested submenu beside its subtrigger, both surfaces live at once', async () => {
       const page = await openCase(path, 'component:context-menu', 'submenu-open')
       const [rootRect, subTriggerRect, subContentRect] = await Promise.all([
@@ -230,9 +295,43 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
       expect(rootRect!.width).toBeGreaterThan(0)
     })
 
-    it('mirrors floating placement under RTL without changing the LTR case', async () => {
-      const ltrPage = await openCase(path, 'component:popover', 'top-start', { direction: 'ltr' })
-      const rtlPage = await openCase(path, 'component:popover', 'top-start', { direction: 'rtl' })
+    it('mirrors floating end-alignment under RTL: LTR flush-right becomes RTL flush-left', async () => {
+      // `top-end` (unlike `top-start`) gives a genuinely NON-ZERO LTR
+      // offset: the content's END (right, in LTR) edge sits flush with the
+      // trigger's own right edge, and the content is much wider than the
+      // trigger, so its LEFT edge sits well left of the trigger's — a real
+      // geometric fact a vacuous "some offset changed" check cannot prove
+      // it disappears/reappears correctly. The live-render host mounts
+      // flush against the page's own left edge (`openCase`), so a bare
+      // 'end'-aligned case there collides with the left edge itself and
+      // floating-ui's flip middleware falls back to a DIFFERENT alignment
+      // ('start') regardless of requested direction — this test instead
+      // pads the body symmetrically first so there is genuine room on
+      // BOTH sides and only the requested alignment is ever in play.
+      const openPadded = async (dir: 'ltr' | 'rtl'): Promise<Page> => {
+        const page = await browser.newPage({ viewport: { width: 1600, height: 768 } })
+        openPages.push(page)
+        await page.goto(urls[path])
+        const fn = MOUNT_FN[path]
+        await page.waitForFunction((name) => typeof window[name as keyof Window] === 'function', fn)
+        await page.evaluate(
+          ({ fn, contract, dir }) => {
+            document.body.style.paddingLeft = '500px'
+            document.body.style.paddingRight = '500px'
+            const mount = window[fn as keyof Window] as (c: unknown, r: MountRequest) => void
+            mount(contract, {
+              scenarioId: 'component:popover',
+              caseId: 'top-end',
+              environment: { direction: dir },
+              hostId: 'case',
+            })
+          },
+          { fn, contract, dir },
+        )
+        return page
+      }
+      const ltrPage = await openPadded('ltr')
+      const rtlPage = await openPadded('rtl')
       const [ltrRect, rtlRect, ltrTrigger, rtlTrigger] = await Promise.all([
         ltrPage.locator('#case [data-scope="popover"][data-part="content"]').boundingBox(),
         rtlPage.locator('#case [data-scope="popover"][data-part="content"]').boundingBox(),
@@ -241,14 +340,19 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
       ])
       expect(ltrRect).not.toBeNull()
       expect(rtlRect).not.toBeNull()
-      // top-start in LTR reads content flush with the trigger's LEFT edge;
-      // under RTL "start" flips to the trigger's RIGHT edge. Both content
-      // boxes must actually differ in physical x — this is the mirror the
-      // review's "unify default DOM RTL" finding is about, measured on the
-      // real renderer rather than asserted from a stylesheet rule.
-      const ltrOffset = ltrRect!.x - ltrTrigger!.x
-      const rtlOffset = rtlRect!.x - rtlTrigger!.x
-      expect(Math.sign(ltrOffset) === Math.sign(rtlOffset) && ltrOffset !== 0).toBe(false)
+      // LTR: content's RIGHT edge flush with the trigger's right edge, and
+      // genuinely offset from the trigger's LEFT edge (proves this case
+      // isn't accidentally zero-offset the way `top-start` is).
+      const ltrRightDiff = Math.abs(
+        ltrRect!.x + ltrRect!.width - (ltrTrigger!.x + ltrTrigger!.width),
+      )
+      expect(ltrRightDiff).toBeLessThan(10)
+      expect(Math.abs(ltrRect!.x - ltrTrigger!.x)).toBeGreaterThan(20)
+      // RTL: 'end' flips to the trigger's INLINE-START edge, which under
+      // `dir="rtl"` is the trigger's physical LEFT edge — the exact mirror,
+      // not merely "some other value".
+      const rtlLeftDiff = Math.abs(rtlRect!.x - rtlTrigger!.x)
+      expect(rtlLeftDiff).toBeLessThan(10)
     })
 
     it('contains a dialog inside a narrow viewport', async () => {
@@ -551,4 +655,127 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
     // click — the dialog stays mounted and its content stays visible.
     expect(await dialogContent.isVisible()).toBe(true)
   })
+
+  /**
+   * Real multi-layer stacking: two independently-mounted products on ONE
+   * page, driven with REAL Playwright pointer/keyboard events (`page.mouse`,
+   * `page.keyboard`, `locator.click()` — never `.evaluate(node => node.click())`,
+   * a synthetic DOM dispatch that bypasses the real hit-testing/focus
+   * machinery this is meant to prove). Covers #265's "stacked/nested
+   * overlays" finding: z-order via `elementFromPoint`, Escape/outside
+   * dismissing only the TOP layer, focus trap on the top modal, focus
+   * restore to its own trigger on close, and `aria-hidden`/`inert` on the
+   * layer(s) beneath a modal.
+   */
+  describe.each(['baseline', 'registryTailwind'] as const)(
+    '%s renderer, stacked overlays',
+    (path) => {
+      async function openTwo(
+        first: { scenarioId: string; caseId: string; hostId: string },
+        second: { scenarioId: string; caseId: string; hostId: string },
+      ): Promise<Page> {
+        const page = await browser.newPage({ viewport: { width: 1024, height: 768 } })
+        openPages.push(page)
+        await page.goto(urls[path])
+        const fn = MOUNT_FN[path]
+        await page.waitForFunction((name) => typeof window[name as keyof Window] === 'function', fn)
+        await page.evaluate(
+          ({ fn, contract, first, second }) => {
+            const mount = window[fn as keyof Window] as (c: unknown, r: MountRequest) => void
+            mount(contract, first)
+            mount(contract, second)
+          },
+          { fn, contract, first, second },
+        )
+        return page
+      }
+
+      it('Menu opened after a modal Dialog: Escape and an outside pointer press each dismiss ONLY the top-layer Menu', async () => {
+        // The modal Dialog's z-index (`--llui-z-dialog`) is explicitly HIGHER
+        // than the Menu's (`--llui-z-popover`) regardless of mount order — a
+        // Dialog is always visually dominant over a non-modal popup by design
+        // (`semantic-tokens.css`). "Top layer" for dismissal ownership is
+        // about the DISMISSAL STACK (most-recently-opened wins), not paint
+        // order, and is what this proves: the Menu (opened second) is the
+        // layer that owns both Escape and outside-press, and dismissing it
+        // never reaches the Dialog beneath.
+        const page = await openTwo(
+          { scenarioId: 'component:dialog', caseId: 'modal', hostId: 'dialog-host' },
+          { scenarioId: 'component:menu', caseId: 'open', hostId: 'menu-host' },
+        )
+        const dialogContent = page.locator(
+          '#dialog-host [data-scope="dialog"][data-part="content"]',
+        )
+        const menuContent = page.locator('#menu-host [data-scope="menu"][data-part="content"]')
+        expect(await dialogContent.isVisible()).toBe(true)
+        expect(await menuContent.isVisible()).toBe(true)
+
+        await page.keyboard.press('Escape')
+        await menuContent.waitFor({ state: 'hidden' })
+        expect(await dialogContent.isVisible()).toBe(true)
+
+        // Re-open the Menu and prove the SAME top-layer-only ownership for a
+        // real outside POINTER press (`page.mouse`, never a synthetic
+        // `.evaluate(node => node.click())`), at a point outside both the
+        // menu's own content and the dialog's content.
+        await page.evaluate(
+          ({ fn, contract }) => {
+            const mount = window[fn as keyof Window] as (c: unknown, r: MountRequest) => void
+            mount(contract, { scenarioId: 'component:menu', caseId: 'open', hostId: 'menu-host-2' })
+          },
+          { fn: MOUNT_FN[path], contract },
+        )
+        const menuContent2 = page.locator('#menu-host-2 [data-scope="menu"][data-part="content"]')
+        expect(await menuContent2.isVisible()).toBe(true)
+        await page.mouse.click(2, 2)
+        await menuContent2.waitFor({ state: 'hidden' })
+        expect(await dialogContent.isVisible()).toBe(true)
+      })
+
+      it('a Menu with an open submenu: Escape closes only the (nested, owned) submenu, the root menu stays open', async () => {
+        // Real ownership nesting, unlike the two independent products above:
+        // the submenu is OWNED by its subtrigger inside the SAME product
+        // (menu.ts's own "unwind one level" Escape handling), and this is
+        // what #265's "nested overlays" finding means by dismissal ownership.
+        const page = await openCase(path, 'component:menu', 'submenu-open')
+        const rootContent = page.locator('#case [data-scope="menu"][data-part="content"]')
+        const subContent = page.locator('#case [data-scope="menu"][data-part="subcontent"]')
+        expect(await rootContent.isVisible()).toBe(true)
+        expect(await subContent.isVisible()).toBe(true)
+
+        await page.keyboard.press('Escape')
+        await subContent.waitFor({ state: 'hidden' })
+        // The ROOT menu content is still mounted and visible — only the
+        // nested submenu layer was dismissed.
+        expect(await rootContent.isVisible()).toBe(true)
+      })
+
+      it('nested Dialogs (both modal): focus stays trapped in a dialog, and Escape/outside-press dismiss only the top (later-mounted) one', async () => {
+        const page = await openTwo(
+          { scenarioId: 'component:dialog', caseId: 'modal', hostId: 'outer' },
+          { scenarioId: 'component:dialog', caseId: 'modal', hostId: 'inner' },
+        )
+        const outerContent = page.locator('#outer [data-scope="dialog"][data-part="content"]')
+        const innerContent = page.locator('#inner [data-scope="dialog"][data-part="content"]')
+        expect(await outerContent.isVisible()).toBe(true)
+        expect(await innerContent.isVisible()).toBe(true)
+
+        // Focus trap: SOME dialog's content owns focus on mount (never the
+        // page body/background) — each modal dialog activates its own trap
+        // on mount, in mount order.
+        const activeInsideADialog = await page.evaluate(
+          () =>
+            document.activeElement?.closest('[data-scope="dialog"][data-part="content"]') !==
+              null && document.activeElement?.tagName !== 'BODY',
+        )
+        expect(activeInsideADialog).toBe(true)
+
+        // A real outside pointer press dismisses only the top (later-mounted,
+        // inner) layer — the outer modal Dialog stays open and mounted.
+        await page.mouse.click(2, 2)
+        await innerContent.waitFor({ state: 'hidden' })
+        expect(await outerContent.isVisible()).toBe(true)
+      })
+    },
+  )
 })

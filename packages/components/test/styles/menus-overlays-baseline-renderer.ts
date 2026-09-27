@@ -204,7 +204,13 @@ function dialogLikeAdapter(
             state,
             send,
             parts,
+            // `backdrop` BEFORE `content` — the equal-z-index-plus-DOM-order
+            // stacking contract `menus-overlays.css` documents (#265 finding
+            // 4). Without it, real hit-testing/z-index proof in
+            // `modal-stacking.browser.test.ts` has no backdrop element to
+            // test against at all.
             content: () => [
+              div({ ...parts.backdrop }),
               div({ ...parts.content }, [
                 h2({ ...parts.title }, [text(input.title)]),
                 p({ ...parts.description }, [text(input.description)]),
@@ -252,7 +258,9 @@ const drawerAdapter: Adapter<DrawerCaseInput> = (host, input, ctx) =>
           state,
           send,
           parts,
+          // `backdrop` BEFORE `content` — same stacking contract as dialog.
           content: () => [
+            div({ ...parts.backdrop }),
             div({ ...parts.content }, [
               h2({ ...parts.title }, [text(input.title)]),
               p({ ...parts.description }, [text(input.description)]),
@@ -339,7 +347,8 @@ const popoverAdapter: Adapter<FloatingPresenceCaseInput> = (host, input, ctx) =>
           send,
           parts,
           placement: input.placement,
-          content: () => [div({ ...parts.content }, [text(input.label)])],
+          arrowSelector: "[data-part='arrow']",
+          content: () => [div({ ...parts.content }, [text(input.label), div({ ...parts.arrow })])],
         }),
       ]
     },
