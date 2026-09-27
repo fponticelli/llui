@@ -342,15 +342,19 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
 
     it('places every real ToastType and every real toast placement, LTR and RTL', async () => {
       const types = ['info', 'success', 'warning', 'error', 'loading', 'custom'] as const
-      // Types carrying their own real color cue (loading is deliberately
-      // cursor-only, per menus-overlays.css) — real painted BORDER colors,
-      // never a CSS-string comparison. Border, not background, is the cue
-      // both skins actually use: the baseline recipe mixes a per-type hue
-      // into `border-color` (menus-overlays.css), and the registry recipe
-      // differentiates by `data-[type=…]:border-*` (border/icon color) while
-      // leaving `background` uniformly `bg-popover` — so a background-only
-      // check is a false positive against the registry skin, not a real
-      // per-type visual regression.
+      // Types carrying their own real color cue — real painted BORDER
+      // colors, never a CSS-string comparison. Border, not background, is
+      // the cue both skins actually use: the baseline recipe mixes a
+      // per-type hue into `border-color` (menus-overlays.css), and the
+      // registry recipe differentiates by `data-[type=…]:border-*`
+      // (border/icon color) while leaving `background` uniformly
+      // `bg-popover` — so a background-only check is a false positive
+      // against the registry skin, not a real per-type visual regression.
+      // `loading` has NO color cue in either skin by design (a neutral,
+      // in-progress toast should not read as an alert color) — it instead
+      // gets its own NON-COLOR glyph, asserted below for every type
+      // (loading included), which is what closes #265's finding that it
+      // used to be distinguished only by `cursor: progress`.
       const coloredTypes = ['info', 'success', 'warning', 'error', 'custom'] as const
       const paintedBorders: string[] = []
       for (const toastType of types) {
@@ -362,6 +366,24 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
           const [painted] = await paintedColors(page, [border])
           paintedBorders.push(bucketedKey(painted!))
         }
+        // Every type — including `loading` — shows exactly one visible
+        // glyph: the baseline's `[data-part='type-icon'][data-icon=…]` or
+        // the registry's per-type Lucide `<svg>`, both gated purely by
+        // `data-type` (never resolved once in JS), so an `update` patching
+        // a mounted toast's `type` swaps the visible glyph with no rebuild.
+        const visibleIcons = await root.evaluate((node) => {
+          // Baseline: `[data-part='type-icon']`. Registry: the per-type
+          // Lucide `<svg>` set, each carrying its own `group-data-[type=…]/
+          // toast:` gate class — deliberately excludes the always-visible
+          // `ToastClose` `<svg>`, which carries no such class.
+          const candidates = node.querySelectorAll('[data-part="type-icon"], svg[class*="/toast:"]')
+          let count = 0
+          for (const el of candidates) {
+            if (getComputedStyle(el).display !== 'none') count++
+          }
+          return count
+        })
+        expect(visibleIcons, `${path}/${toastType} visible icon count`).toBe(1)
       }
       // Every real ToastType with its own colour cue must paint a genuinely
       // distinct border — never collapse to one shared visual.
