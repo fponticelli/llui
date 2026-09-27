@@ -256,6 +256,12 @@ describe('actual Toast demos in Chromium (#265 task item 1)', () => {
         // real `animationend` still fires and removal is still real — just
         // fast. No sleep: the same clock advance that expires the
         // countdown is enough for the (near-instant) exit to complete too.
+        // (The DISCRIMINATING proof that the duration itself actually
+        // collapsed — not just "removed within some timeout", which a
+        // normal-speed ~150ms exit would also pass — lives in
+        // `menus-overlays-live-render.browser.test.ts`'s deterministic
+        // `closing` scenario case, which mounts already-closing rather than
+        // racing a live removal.)
         await root.waitFor({ state: 'detached', timeout: 5000 })
       })
 

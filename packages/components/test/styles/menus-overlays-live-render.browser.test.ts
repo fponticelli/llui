@@ -341,6 +341,29 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
       expect(['0s', '']).toContain(duration.split(',')[0]!.trim())
     })
 
+    it('reduces a real toast exit animation to (near) zero duration under prefers-reduced-motion', async () => {
+      // Mounts ALREADY `closing` (the scenario's own `closing: true` input)
+      // rather than racing a live dismiss — deterministic, and the real
+      // discriminating proof that the DURATION itself collapsed, which a
+      // "removed within some timeout" race (see
+      // `registry/test/toast-live-demos.browser.test.ts`'s own reduced-
+      // motion test) cannot tell apart from a merely-fast normal exit.
+      const page = await openCase(path, 'component:toast', 'closing', { motion: 'reduced' })
+      // `data-motion` alone only reaches case SELECTION — the actual
+      // reduced-duration repaint requires the browser's real
+      // `prefers-reduced-motion: reduce` media query (mirrors the
+      // forced-colors case a few tests up).
+      await page.emulateMedia({ reducedMotion: 'reduce' })
+      const duration = await page
+        .locator('#case [data-scope="toast"][data-part="root"]')
+        .evaluate((node) => getComputedStyle(node).animationDuration)
+      // Kill the animation rather than waiting on it (verification
+      // discipline: a hidden/backgrounded tab freezes a mid-flight
+      // animation and would misreport a live one as reduced). Chromium
+      // renders 0.01ms as '1e-05s'; accept any near-zero spelling.
+      expect(['0s', '1e-05s', '']).toContain(duration.split(',')[0]!.trim())
+    })
+
     it('every ToastType clears AA text contrast (>=4.5:1) and non-text contrast (>=3:1) in light, dark, and forced colors', async () => {
       const types = ['info', 'success', 'warning', 'error', 'loading', 'custom'] as const
       const modes = ['light', 'dark', 'forced'] as const
