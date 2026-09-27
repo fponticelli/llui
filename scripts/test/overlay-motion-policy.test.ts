@@ -5,11 +5,14 @@ import ts from 'typescript'
 import { ProductContractSchema } from '../../packages/cli/src/product-contract'
 import { extractClassCandidates } from '../lib/registry-classes.mjs'
 import { compileCandidates } from '../lib/tailwind-compile.mjs'
+import { cssRules, readBaselineCss } from '../lib/baseline-css.mjs'
 
 const ROOT = path.resolve(__dirname, '../..')
 const REGISTRY_FILE = path.join(ROOT, 'registry/registry.json')
 const REGISTRY_UI = path.join(ROOT, 'registry/llui/ui')
 const SUPPORT_FILE = path.join(ROOT, 'registry/llui/lib/floating-motion.ts')
+const DEMO_ROOT = path.join(ROOT, 'examples/registry-demo/src')
+const STYLES = path.join(ROOT, 'packages/components/src/styles')
 
 interface RegistryItem {
   name: string
@@ -313,6 +316,93 @@ const animatedArtifacts = [
   ),
 ]
 
+/**
+ * Products whose content UNMOUNTS at `closed` (#265 G1 / finding 5): the
+ * machine mounts its content through the overlay engine's `show(mountWhen)`
+ * (`createOverlay`, or `dialogOverlay`, which wraps it). Every such
+ * `mountWhen` is `status !== 'closed'` or the synchronous `open` boolean, so a
+ * node is never both mounted AND `data-state="closed"` — an exit animation
+ * keyed on `closed` can never run. `navigation-menu` is the structural
+ * counter-example: it keeps content mounted with `hidden`, so it is not here.
+ */
+const unmountAtClosedEntries = familyEntries.flatMap((entry) => {
+  if (entry.machine.kind !== 'public') return []
+  const { importPath } = entry.machine
+  const source = machineSource(importPath)
+  return callsAnyOf(source, ['createOverlay', 'dialogOverlay'])
+    ? [{ importPath, artifacts: entry.copiedArtifacts, source }]
+    : []
+})
+
+/** The `data-scope` values a machine source publishes: a string literal (or a
+ * module `const` bound to one, e.g. searchable-select's `SCOPE`) on a
+ * `'data-scope'` key or on a `scope` option (menu-machine's parameter), plus
+ * `dialog` for a `dialogOverlay` caller, whose content is Dialog's own. */
+const publishedScopes = (source: string): string[] => {
+  const module = parseModule(source)
+  const constants = new Map<string, string>()
+  module.forEachChild((node) => {
+    if (!ts.isVariableStatement(node)) return
+    if ((node.declarationList.flags & ts.NodeFlags.Const) === 0) return
+    for (const declaration of node.declarationList.declarations) {
+      let initializer = declaration.initializer
+      // `'x' as const` / `'x' satisfies T` still bind the literal.
+      while (
+        initializer !== undefined &&
+        (ts.isAsExpression(initializer) || ts.isSatisfiesExpression(initializer))
+      ) {
+        initializer = initializer.expression
+      }
+      if (
+        ts.isIdentifier(declaration.name) &&
+        initializer !== undefined &&
+        ts.isStringLiteral(initializer)
+      ) {
+        constants.set(declaration.name.text, initializer.text)
+      }
+    }
+  })
+  const scopes = new Set<string>()
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isPropertyAssignment(node) &&
+      ((ts.isStringLiteral(node.name) && node.name.text === 'data-scope') ||
+        (ts.isIdentifier(node.name) && node.name.text === 'scope'))
+    ) {
+      const value = ts.isStringLiteral(node.initializer)
+        ? node.initializer.text
+        : ts.isIdentifier(node.initializer)
+          ? constants.get(node.initializer.text)
+          : undefined
+      if (value !== undefined) scopes.add(value)
+    }
+    node.forEachChild(visit)
+  }
+  visit(module)
+  if (callsAnyOf(source, ['dialogOverlay'])) scopes.add('dialog')
+  return [...scopes]
+}
+
+/** A Tailwind candidate that plays an EXIT animation keyed on `closed`: any
+ * variant chain containing `data-[state=closed]` whose utility is one of
+ * tw-animate-css's animation/exit families. */
+const CLOSED_EXIT_CANDIDATE =
+  /(?:^|:)data-\[state=closed\]:(?:[^:\s]+:)*(?:animate-|fade-out|zoom-out|spin-out|slide-out|blur-out)/
+
+/** The same, in plain CSS: a rule selecting `[data-state='closed']` on one of
+ * `scopes` whose body sets an animation other than `none`. */
+const closedExitRules = (css: string, scopes: ReadonlySet<string>): string[] =>
+  cssRules(css).flatMap(({ selectors, body }) => {
+    const animation = body.match(/(?:^|;|\s)animation(?:-name)?\s*:\s*([^;]+)/)?.[1]?.trim()
+    if (animation === undefined || animation === 'none') return []
+    return selectors.filter((selector) => {
+      const scope = selector.match(/\[data-scope=['"]?([a-z-]+)/)?.[1]
+      return (
+        scope !== undefined && scopes.has(scope) && /\[data-state=['"]?closed['"]?\]/.test(selector)
+      )
+    })
+  })
+
 describe('menus-overlays registry motion policy', () => {
   it('documents menu animation opt-in as an enter-and-exit lifecycle', () => {
     for (const product of ['menu', 'context-menu'] as const) {
@@ -508,12 +598,8 @@ describe('menus-overlays registry motion policy', () => {
       'data-[state=open]:animate-in',
       'data-[state=closing]:animate-out',
       // No `data-[state=closed]:animate-out` entry: `closed` is never an
-      // animating phase for a real presence machine (#265 finding 5) —
-      // `floatingOverlayMotionRecipe` no longer carries it. Artifacts that
-      // hand-inline the four-phase classes rather than import the shared
-      // recipe (dialog/alert-dialog/drawer/sheet/context-menu) still carry
-      // the dead selector; harmless (it can never match) but out of this
-      // policy's REQUIRED set, which only pins what must be present.
+      // animating phase for a real presence machine (#265 finding 5), and
+      // the test below FORBIDS it on every product that unmounts at closed.
     ]
     const violations: string[] = []
     for (const name of presenceArtifacts) {
@@ -528,5 +614,113 @@ describe('menus-overlays registry motion policy', () => {
       }
     }
     expect(violations).toEqual([])
+  })
+  it('names every product whose content unmounts at closed (exact sets)', () => {
+    expect(unmountAtClosedEntries.map(({ importPath }) => importPath).sort()).toEqual(
+      [
+        '@llui/components/alert-dialog',
+        '@llui/components/combobox',
+        '@llui/components/context-menu',
+        '@llui/components/dialog',
+        '@llui/components/drawer',
+        '@llui/components/hover-card',
+        '@llui/components/menu',
+        '@llui/components/menubar',
+        '@llui/components/patterns/command-menu',
+        '@llui/components/patterns/confirm-dialog',
+        '@llui/components/patterns/searchable-select',
+        '@llui/components/popover',
+        '@llui/components/select',
+        '@llui/components/tooltip',
+      ].sort(),
+    )
+    const scopes = new Set(unmountAtClosedEntries.flatMap(({ source }) => publishedScopes(source)))
+    expect([...scopes].sort()).toEqual(
+      [
+        'combobox',
+        'command-menu',
+        'context-menu',
+        'dialog',
+        'drawer',
+        'hover-card',
+        'menu',
+        'menubar',
+        'popover',
+        'searchable-select',
+        'select',
+        'tooltip',
+      ].sort(),
+    )
+  })
+
+  it('never keys an exit animation on closed for a product that unmounts at closed', () => {
+    // Registry side: every copied artifact of such a product, its demo copy,
+    // and the shared recipe module (both copies) every one of them imports.
+    const files = [
+      SUPPORT_FILE,
+      path.join(DEMO_ROOT, 'lib/floating-motion.ts'),
+      ...unmountAtClosedEntries.flatMap(({ artifacts }) =>
+        artifacts.flatMap((artifact) => [
+          path.join(REGISTRY_UI, `${artifact.name}.ts`),
+          path.join(DEMO_ROOT, 'components/ui', `${artifact.name}.ts`),
+        ]),
+      ),
+    ].filter((file) => existsSync(file))
+    // Exact corpus: the lib twice plus every artifact in both trees, so a
+    // demo copy going missing cannot silently shrink what is checked.
+    expect(files.map((file) => path.relative(ROOT, file)).sort()).toEqual(
+      [
+        'examples/registry-demo/src/lib/floating-motion.ts',
+        'registry/llui/lib/floating-motion.ts',
+        ...[
+          'alert-dialog',
+          'combobox',
+          'command',
+          'context-menu',
+          'dialog',
+          'drawer',
+          'dropdown-menu',
+          'hover-card',
+          'menubar',
+          'popover',
+          'select',
+          'sheet',
+          'tooltip',
+        ].flatMap((name) => [
+          `examples/registry-demo/src/components/ui/${name}.ts`,
+          `registry/llui/ui/${name}.ts`,
+        ]),
+      ].sort(),
+    )
+    const violations = files.flatMap((file) =>
+      extractClassCandidates(file, readFileSync(file, 'utf8'))
+        .filter((candidate) => CLOSED_EXIT_CANDIDATE.test(candidate))
+        .map((candidate) => `${path.relative(ROOT, file)}: ${candidate}`),
+    )
+    expect(violations).toEqual([])
+
+    // Baseline side: the plain-CSS sheet, per published scope.
+    const scopes = new Set(unmountAtClosedEntries.flatMap(({ source }) => publishedScopes(source)))
+    expect(closedExitRules(readBaselineCss(STYLES), scopes)).toEqual([])
+  })
+
+  it('detects a closed-state exit animation (both arms)', () => {
+    expect(CLOSED_EXIT_CANDIDATE.test('data-[state=closed]:animate-out')).toBe(true)
+    expect(CLOSED_EXIT_CANDIDATE.test('data-[state=closed]:fade-out-0')).toBe(true)
+    expect(CLOSED_EXIT_CANDIDATE.test('motion-safe:data-[state=closed]:zoom-out-95')).toBe(true)
+    expect(CLOSED_EXIT_CANDIDATE.test('data-[state=closed]:hidden')).toBe(false)
+    expect(CLOSED_EXIT_CANDIDATE.test('data-[state=closing]:animate-out')).toBe(false)
+    const css = `
+      [data-scope='menu'][data-part='content'][data-state='closing'],
+      [data-scope='menu'][data-part='content'][data-state='closed'] { animation: scale-out 1s; }
+      [data-scope='menu'][data-part='content'][data-state='closed'] { animation: none; }
+      [data-scope='collapsible'][data-part='content'][data-state='closed'] { animation: x 1s; }
+      @media (prefers-reduced-motion: reduce) {
+        [data-scope='popover'][data-state="closed"] { animation-name: fade-out; }
+      }`
+    expect(closedExitRules(css, new Set(['menu', 'popover']))).toEqual([
+      "[data-scope='menu'][data-part='content'][data-state='closed']",
+      `[data-scope='popover'][data-state="closed"]`,
+    ])
   })
 })

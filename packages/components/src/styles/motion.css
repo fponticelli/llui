@@ -174,7 +174,11 @@
 }
 
 /* Dialog / drawer presence. `opening`/`closing` are the animated machine
-   phases; `open`/`closed` keep the default synchronous and legacy paths styled. */
+   phases; `open` keeps the default synchronous path styled. There is no
+   `closed` exit rule anywhere below: every overlay here unmounts its content in
+   the same pass that reaches `closed` (`isMounted` is `status !== 'closed'`),
+   so such a rule could never match (#265 finding 5;
+   `scripts/test/overlay-motion-policy.test.ts` forbids it). */
 [data-scope='dialog'][data-part='backdrop'][data-state='opening'],
 [data-scope='dialog'][data-part='backdrop'][data-state='open'],
 [data-scope='drawer'][data-part='backdrop'][data-state='opening'],
@@ -183,9 +187,7 @@
 }
 
 [data-scope='dialog'][data-part='backdrop'][data-state='closing'],
-[data-scope='dialog'][data-part='backdrop'][data-state='closed'],
-[data-scope='drawer'][data-part='backdrop'][data-state='closing'],
-[data-scope='drawer'][data-part='backdrop'][data-state='closed'] {
+[data-scope='drawer'][data-part='backdrop'][data-state='closing'] {
   animation: fade-out var(--llui-duration-normal) ease-in;
 }
 
@@ -194,8 +196,7 @@
   animation: scale-in var(--llui-duration-normal) ease-out;
 }
 
-[data-scope='dialog'][data-part='content'][data-state='closing'],
-[data-scope='dialog'][data-part='content'][data-state='closed'] {
+[data-scope='dialog'][data-part='content'][data-state='closing'] {
   animation: scale-out var(--llui-duration-normal) ease-in;
 }
 
@@ -224,23 +225,19 @@
   animation: drawer-slide-in-from-bottom var(--llui-duration-normal) ease-out;
 }
 
-[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='right'],
-[data-scope='drawer'][data-part='content'][data-state='closed'][data-side='right'] {
+[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='right'] {
   animation: slide-out-to-right var(--llui-duration-normal) ease-in;
 }
 
-[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='left'],
-[data-scope='drawer'][data-part='content'][data-state='closed'][data-side='left'] {
+[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='left'] {
   animation: slide-out-to-left var(--llui-duration-normal) ease-in;
 }
 
-[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='top'],
-[data-scope='drawer'][data-part='content'][data-state='closed'][data-side='top'] {
+[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='top'] {
   animation: drawer-slide-out-to-top var(--llui-duration-normal) ease-in;
 }
 
-[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='bottom'],
-[data-scope='drawer'][data-part='content'][data-state='closed'][data-side='bottom'] {
+[data-scope='drawer'][data-part='content'][data-state='closing'][data-side='bottom'] {
   animation: drawer-slide-out-to-bottom var(--llui-duration-normal) ease-in;
 }
 
@@ -268,15 +265,10 @@
 }
 
 [data-scope='popover'][data-part='content'][data-state='closing'],
-[data-scope='popover'][data-part='content'][data-state='closed'],
 [data-scope='tooltip'][data-part='content'][data-state='closing'],
-[data-scope='tooltip'][data-part='content'][data-state='closed'],
 [data-scope='hover-card'][data-part='content'][data-state='closing'],
-[data-scope='hover-card'][data-part='content'][data-state='closed'],
 [data-scope='menu'][data-part='content'][data-state='closing'],
-[data-scope='menu'][data-part='content'][data-state='closed'],
-[data-scope='context-menu'][data-part='content'][data-state='closing'],
-[data-scope='context-menu'][data-part='content'][data-state='closed'] {
+[data-scope='context-menu'][data-part='content'][data-state='closing'] {
   animation: scale-out var(--llui-duration-fast) ease-in;
 }
 

@@ -46,10 +46,13 @@ export const floatingOverlayMotionRecipe = `data-[state=opening]:animate-in data
  * that attribute value, so nothing ever animates wrong), but dead vocabulary
  * that documents a four-phase lifecycle the consumer does not have and that a
  * future stricter dead-selector guard would have to special-case around
- * forever. Keep the two real, reachable phases (`open`/`closed`) plus the
+ * forever. Keep the one reachable ANIMATED phase (`open`) plus the
  * physical-side slide-in and the reduced-motion rule; drop `opening`/`closing`
  * entirely rather than aliasing them to `open`/`closed` (#265's predecessor
  * design), which cannot be told apart from a real four-phase consumer by
- * reading the class list alone.
+ * reading the class list alone. There is no exit animation at all: each of
+ * these machines mounts its content only while `open` (`mountWhen`), so the
+ * node is gone in the same pass that publishes `closed` and a
+ * `data-[state=closed]:animate-out` selector could never run (#265 G1).
  */
-export const floatingSyncMotionRecipe = `data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ${overlayReducedMotionRecipe}`
+export const floatingSyncMotionRecipe = `data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 ${overlayReducedMotionRecipe}`
