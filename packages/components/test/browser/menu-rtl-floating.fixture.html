@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Menu RTL floating</title>
+    <style>
+      body {
+        margin: 0;
+        width: 480px;
+        height: 320px;
+        position: relative;
+      }
+      [id='menu:trigger'] {
+        position: absolute;
+        left: 100px;
+        top: 8px;
+        display: block;
+        width: 100px;
+        height: 24px;
+      }
+      [data-part='positioner'] {
+        width: 40px;
+      }
+      [data-part='content'] {
+        width: 40px;
+        background: white;
+        border: 1px solid black;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="app"></main>
+    <script type="module" src="./menu-rtl-floating.fixture.ts"></script>
+  </body>
+</html>

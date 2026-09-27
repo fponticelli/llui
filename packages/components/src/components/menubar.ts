@@ -12,6 +12,7 @@ import {
   directionSyncMount,
   eventDirection,
   flipArrow,
+  floatingDir,
   initDirection,
   setDirection,
   syncDomDirection,
@@ -561,7 +562,7 @@ export function overlay(opts: MenubarOverlayOptions): Mountable {
       offset: opts.offset ?? 4,
       flip: opts.flip !== false,
       shift: opts.shift !== false,
-      dir: () => opts.state.peek().dir,
+      dir: () => floatingDir(opts.state.peek()),
     },
     dismiss: {
       // Escape unwinds ONE submenu level of the currently-open menu before

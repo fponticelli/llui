@@ -1,7 +1,12 @@
 import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
-import { directionSyncMount, initDirection, type TextDirection } from '../utils/direction.js'
+import {
+  directionSyncMount,
+  floatingDir,
+  initDirection,
+  type TextDirection,
+} from '../utils/direction.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
 import { presenceEndProps } from '../utils/presence-end.js'
@@ -423,7 +428,7 @@ export function overlay(opts: OverlayOptions): Mountable {
       offset: opts.offset ?? 4,
       flip: opts.flip !== false,
       shift: opts.shift !== false,
-      dir: () => opts.state.peek().dir,
+      dir: () => floatingDir(opts.state.peek()),
       persistent: true,
     },
     dismiss: {

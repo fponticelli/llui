@@ -29,6 +29,25 @@ export function syncDomDirection<T extends DirectionState>(state: T, dir: 'ltr' 
   return { ...state, dir }
 }
 
+/**
+ * The `dir` a floating-placement call (`attachFloating`'s `dir` option) should
+ * be given for this state. While direction is still automatic (`dirSource ===
+ * 'dom'`, i.e. no explicit config/`setDir` yet), this returns `undefined` so
+ * `attachFloating` falls back to reading the FLOATING ELEMENT's own computed
+ * `direction` (`domPlatform`'s default) — the actual page/ancestor direction
+ * a portaled overlay landed under — rather than the state's `dir`, which
+ * defaults to `'ltr'` until something explicitly resolves it. Passing the
+ * state's `dir` unconditionally (#265 A1) meant an RTL page with no opt-in
+ * direction-sync part mirrored every floating menu/popover/etc. as if it were
+ * LTR: the state said `'ltr'` (its untouched default) while the DOM said
+ * `'rtl'`. Once a consumer calls `setDir`/passes `dir` explicitly,
+ * `dirSource` flips to `'explicit'` and that value is authoritative here too,
+ * overriding whatever the DOM happens to compute to.
+ */
+export function floatingDir(state: DirectionState): 'ltr' | 'rtl' | undefined {
+  return state.dirSource === 'explicit' ? state.dir : undefined
+}
+
 /** Resolve direction at event time so same-tick ancestor changes are correct.
  * Routes through `@llui/interactions`' `resolveDir` — the package's documented
  * single source of truth for DOM-derived direction — rather than a second,

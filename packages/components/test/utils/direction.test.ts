@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { resolveDir, flipArrow, resolveTextDirection } from '../../src/utils/direction'
+import { resolveDir, flipArrow, resolveTextDirection, floatingDir } from '../../src/utils/direction'
 
 describe('resolveDir', () => {
   afterEach(() => {
@@ -141,5 +141,21 @@ describe('resolveTextDirection', () => {
     document.body.appendChild(container)
     expect(resolveTextDirection(el)).toBe('rtl')
     container.remove()
+  })
+})
+
+describe('floatingDir', () => {
+  it('returns undefined while direction is still automatic (dirSource: dom), regardless of the default dir value', () => {
+    // #265 A1: the DOM-automatic state defaults `dir` to 'ltr' until
+    // something resolves it — that default must NOT be handed to
+    // attachFloating as an authoritative direction, or an RTL page with no
+    // opt-in direction-sync part mirrors every floating menu as LTR.
+    expect(floatingDir({ dir: 'ltr', dirSource: 'dom' })).toBeUndefined()
+    expect(floatingDir({ dir: 'rtl', dirSource: 'dom' })).toBeUndefined()
+  })
+
+  it('returns the state dir once direction is explicit (setDir / explicit config)', () => {
+    expect(floatingDir({ dir: 'rtl', dirSource: 'explicit' })).toBe('rtl')
+    expect(floatingDir({ dir: 'ltr', dirSource: 'explicit' })).toBe('ltr')
   })
 })
