@@ -4,6 +4,8 @@ import { retainedExit } from '../internal/retained-exit.js'
 import {
   createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
+  createExitWatcherCounter,
+  createMissingExitWatcherWarning,
   type DisclosureExitWatchEntry,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
@@ -24,17 +26,17 @@ export interface CollapsibleState {
   /** Whether close waits for the content's own animation end/cancel event. */
   animated: boolean
   /**
-   * COUNT of currently-mounted `parts.exitCompletion` instances (#264 item
-   * F1; a count rather than a boolean per #264 review BLOCK 2 — see
-   * `accordion.ts`'s identical field for why). `closing` retention only ever
-   * engages when `animated && exitWatcher > 0` — never `animated` alone —
-   * so a forgotten `exitCompletion` placement closes instantly instead of
-   * hanging `closing` + `inert` forever. Incremented/decremented (never
-   * below 0) by the `exitWatcherAttach`/`exitWatcherDetach` messages that
-   * mount sends on mount/cleanup; never a caller-facing init option, and
-   * `init()` always starts it at `0`.
+   * IDEMPOTENT BOOLEAN: is at least one `parts.exitCompletion` CURRENTLY
+   * mounted (#264 item F1)? See `accordion.ts`'s identical field for the
+   * full rationale (#264 review M1): the actual mount COUNT lives in
+   * `connect()`'s own closure, never here, so a persisted/restored state
+   * slice that bypasses `init()` can never carry a stale count that hangs
+   * `closing` forever. `exitWatcherAttach` sets this `true` (sent only on
+   * the closure count's 0->1 transition); `exitWatcherDetach` sets it
+   * `false` UNCONDITIONALLY (sent only on the 1->0 transition) and settles
+   * any currently-closing panel.
    */
-  exitWatcher: number
+  exitWatched: boolean
 }
 
 export type CollapsibleMsg =
@@ -67,7 +69,7 @@ export function init(opts: CollapsibleInit = {}): CollapsibleState {
     closing: false,
     exitGeneration: 0,
     animated: opts.animated ?? false,
-    exitWatcher: 0,
+    exitWatched: false,
   }
 }
 
@@ -82,7 +84,7 @@ function withOpen(state: CollapsibleState, open: boolean): CollapsibleState {
     open,
     state.closing,
     state.exitGeneration,
-    state.animated && state.exitWatcher > 0,
+    state.animated && state.exitWatched,
   )
   return {
     ...state,
@@ -94,17 +96,13 @@ function withOpen(state: CollapsibleState, open: boolean): CollapsibleState {
 
 export function update(state: CollapsibleState, msg: CollapsibleMsg): [CollapsibleState, never[]] {
   if (msg.type === 'exitWatcherAttach') {
-    return [{ ...state, exitWatcher: state.exitWatcher + 1 }, []]
+    return state.exitWatched ? [state, []] : [{ ...state, exitWatched: true }, []]
   }
   if (msg.type === 'exitWatcherDetach') {
-    const next = Math.max(0, state.exitWatcher - 1)
-    if (next > 0) return [{ ...state, exitWatcher: next }, []]
-    // Dropped to zero: settle a currently-retained exit immediately — with
-    // NO watcher left attached, nothing will ever send the `exitComplete`
-    // that would otherwise clear it (#264 item F1 — "detach mid-closing
-    // settles").
-    if (!state.closing) return [{ ...state, exitWatcher: next }, []]
-    return [{ ...state, exitWatcher: next, closing: false }, []]
+    // Sets `exitWatched` to `false` UNCONDITIONALLY (#264 review M1) — see
+    // accordion.ts's identical note.
+    if (!state.exitWatched && !state.closing) return [state, []]
+    return [{ ...state, exitWatched: false, closing: false }, []]
   }
   if (msg.type === 'exitComplete') {
     return state.closing && state.exitGeneration === msg.generation
@@ -192,20 +190,23 @@ export function connect(
   // 2) — see `accordion.ts`'s identical closure for the full rationale
   // (closure-owned, not state; throttled once per instance; scoped to the
   // same click-wrapped handler `completeIfUnanimatedAfterToggle` already is).
-  let warnedMissingWatcher = false
+  const warnMissingWatcher = createMissingExitWatcherWarning(
+    '[llui/components] Collapsible was configured `animated: true` but `parts.exitCompletion` ' +
+      'was never placed in the rendered view (or has not mounted yet), so a closing panel cannot ' +
+      'be retained for its exit animation and closes instantly instead. Place `parts.' +
+      "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
+      'intended.',
+  )
   const warnIfClosedWithoutWatcher = (before: CollapsibleState, after: CollapsibleState): void => {
-    if (warnedMissingWatcher || import.meta.env?.DEV !== true) return
-    if (!before.animated || before.exitWatcher > 0) return
-    if (!before.open || after.open || after.closing) return
-    warnedMissingWatcher = true
-    console.warn(
-      '[llui/components] Collapsible was configured `animated: true` but `parts.exitCompletion` ' +
-        'was never placed in the rendered view (or has not mounted yet), so a closing panel cannot ' +
-        'be retained for its exit animation and closes instantly instead. Place `parts.' +
-        "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
-        'intended.',
-    )
+    if (!before.animated || before.exitWatched) return
+    warnMissingWatcher(before.open && !after.open && !after.closing)
   }
+  // Counts how many `exitCompletion` mounts are CURRENTLY live, entirely in
+  // THIS closure (#264 review M1) — see `createExitWatcherCounter`'s header.
+  const exitWatcher = createExitWatcherCounter(
+    () => send({ type: 'exitWatcherAttach' }),
+    () => send({ type: 'exitWatcherDetach' }),
+  )
   const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] => {
     const current = state.peek()
     return current.closing
@@ -299,7 +300,7 @@ export function connect(
       onTransitionCancel: tagSend(send, ['exitComplete'], completeExit),
     },
     exitCompletion: onMount((container: Element) => {
-      send({ type: 'exitWatcherAttach' })
+      const detachWatcher = exitWatcher.attach()
       const dispose = createDisclosureExitCompletionMount(
         getElementByIdInScope,
         exitWatchEntries,
@@ -307,7 +308,7 @@ export function connect(
       )(container)
       return () => {
         dispose?.()
-        send({ type: 'exitWatcherDetach' })
+        detachWatcher()
       }
     }),
   }

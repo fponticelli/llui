@@ -24,12 +24,18 @@ function animationEvent(type: string, animationName: string): Event {
  * placement used to leave a closing item hanging `closing` + `inert` forever,
  * detected only by a `setTimeout`-armed dev-mode stall watchdog (removed —
  * see `disclosure-motion.ts`'s header comment on
- * `createDisclosureExitCompletionMount`). The fix is now structural: the
- * reducer tracks a COUNT of currently-mounted `exitCompletion` instances
- * (`state.exitWatcher`, #264 review BLOCK 2) and only ever retains `closing`
- * while the count is > 0 — otherwise it closes instantly. These tests
- * exercise that through a real `mountApp`, not a bare `update()` call, so the
- * attach/detach messages the mount itself sends are genuinely exercised.
+ * `createDisclosureExitCompletionMount`). The fix is structural: `state.
+ * exitWatched` is an idempotent boolean, driven by `exitWatcherAttach`/
+ * `exitWatcherDetach` messages `connect()` sends only on the 0->1/1->0
+ * transitions of a MOUNT-COUNT it keeps entirely in its OWN closure (#264
+ * review M1 — never in state, since a persisted/restored state slice that
+ * bypasses `init()` could otherwise carry a stale count and hang `closing`
+ * forever the moment the one real watcher this session ever had detaches;
+ * see `createExitWatcherCounter` in `disclosure-motion.ts`). `closing`
+ * retention only ever engages while `exitWatched` is `true` — otherwise it
+ * closes instantly. These tests exercise that through a real `mountApp`, not
+ * a bare `update()` call, so the attach/detach messages the mount itself
+ * sends are genuinely exercised.
  *
  * The dev-mode "you forgot to place exitCompletion" warning lives at the
  * `connect()` boundary now (a closure flag owned by that call), never inside
@@ -121,7 +127,7 @@ describe('#264 item F1 — exitCompletion fail-safe', () => {
     const host = mountAccordion(false)
     // No CSS in this fixture, so this is a no-motion skin either way; the
     // point under test is that the exitCompletion Mountable was never
-    // placed, so `exitWatcher` never leaves 0.
+    // placed, so `exitWatched` never becomes true.
     app?.send({ type: 'accordion', msg: { type: 'close', value: 'details' } })
     const el = content(host)
     expect(el.dataset.state).toBe('closed')
@@ -201,6 +207,109 @@ describe('#264 item F1 — exitCompletion fail-safe', () => {
     expect(el.dataset.state).toBe('open')
   })
 
+  it('a persisted/restored state slice never reintroduces the hang (#264 review M1)', () => {
+    // 1. A live session: mount, then snapshot the slice the way a
+    // persistence layer would (JSON round trip). At this point the mount
+    // has already attached, so the snapshot carries `exitWatched: true`.
+    const host1 = document.createElement('div')
+    document.body.append(host1)
+    const app1 = mountApp(host1, accordionDef(true))
+    const snap: accordion.AccordionState = JSON.parse(JSON.stringify(app1.getState().accordion))
+    app1.dispose()
+    host1.remove()
+
+    // 2. "Reload": construct the NEXT session's initial state directly from
+    // the persisted slice, bypassing `accordion.init()` entirely — exactly
+    // what a host's own hydration/persistence layer does. The OLD design (a
+    // reducer-owned count, incremented/decremented relative to whatever the
+    // state already held) would start this session's arithmetic from the
+    // STALE count the snapshot carried, so a single real detach could leave
+    // it reading "still watched" when nothing actually is. The closure-owned
+    // counter (#264 review M1) starts this session's count at a genuine 0
+    // regardless of what the snapshot says, so this cannot happen.
+    const def = accordionDef(true)
+    const persisted: SignalComponentDef<AccState, AccMsg> = {
+      ...def,
+      init: () => [{ accordion: snap, placeExitCompletion: true }, []],
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    app = mountApp(host, persisted)
+
+    click(trigger(host))
+    expect(content(host).dataset.state).toBe('closing')
+    app?.send({ type: 'setPlaceExitCompletion', value: false })
+    expect(content(host).dataset.state).toBe('closed')
+  })
+
+  it('placing exitCompletion TWICE tracks correctly: one detaching does not drop retention while the other stays mounted', () => {
+    const host = document.createElement('div')
+    document.body.append(host)
+    app = mountApp(host, {
+      name: 'DoublePlacementFixture',
+      init: () => [
+        {
+          accordion: accordion.init({ items: ['details'], value: ['details'], animated: true }),
+          placeFirst: true,
+          placeSecond: true,
+        },
+        [],
+      ],
+      update: (
+        state: { accordion: accordion.AccordionState; placeFirst: boolean; placeSecond: boolean },
+        msg:
+          | AccMsg
+          | { type: 'setPlaceFirst'; value: boolean }
+          | { type: 'setPlaceSecond'; value: boolean },
+      ) => {
+        if (msg.type === 'setPlaceFirst') return [{ ...state, placeFirst: msg.value }, []]
+        if (msg.type === 'setPlaceSecond') return [{ ...state, placeSecond: msg.value }, []]
+        if (msg.type === 'accordion') {
+          return [{ ...state, accordion: accordion.update(state.accordion, msg.msg)[0] }, []]
+        }
+        return [state, []]
+      },
+      view: ({ state, send }): readonly Mountable[] => {
+        const acc = accordion.connect(
+          state.at('accordion'),
+          (msg) => send({ type: 'accordion', msg }),
+          { id: 'double-placement-accordion' },
+        )
+        const item = acc.item('details')
+        return [
+          div({ ...acc.root }, [
+            div({ ...item.item }, [
+              div({ ...item.trigger }, [text('details')]),
+              div({ ...item.content }, [text('content')]),
+            ]),
+          ]),
+          show(
+            state.at('placeFirst'),
+            () => [acc.exitCompletion],
+            () => [],
+          ),
+          show(
+            state.at('placeSecond'),
+            () => [acc.exitCompletion],
+            () => [],
+          ),
+        ]
+      },
+    })
+    click(trigger(host))
+    expect(content(host).dataset.state).toBe('closing')
+
+    // Detach the FIRST placement — the SECOND is still mounted, so retention
+    // must not drop.
+    app?.send({ type: 'setPlaceFirst', value: false })
+    expect(content(host).dataset.state).toBe('closing')
+
+    // Detach the SECOND (last) placement — now nothing is watching, so it
+    // settles immediately.
+    app?.send({ type: 'setPlaceSecond', value: false })
+    expect(content(host).dataset.state).toBe('closed')
+  })
+
   it('no DEV warning fires when exitCompletion is placed correctly', () => {
     warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const host = mountAccordion(true)
@@ -229,7 +338,7 @@ describe('#264 item F1 — exitCompletion fail-safe', () => {
     // SSR-time: no exitWatcher was ever attached (mounts never run on the
     // server), so this is deterministic — no server-side "closing" state
     // ever exists to hang.
-    expect(serverState.accordion).toMatchObject({ closing: [], exitWatcher: 0 })
+    expect(serverState.accordion).toMatchObject({ closing: [], exitWatched: false })
 
     const def = accordionDef(true)
     const container = document.createElement('div')

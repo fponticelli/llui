@@ -10,6 +10,8 @@ import {
 import {
   createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
+  createExitWatcherCounter,
+  createMissingExitWatcherWarning,
   type DisclosureExitWatchEntry,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
@@ -42,21 +44,28 @@ export interface AccordionState {
   /** Whether closed content is retained until its own animation end/cancel event. */
   animated: boolean
   /**
-   * COUNT of currently-mounted `parts.exitCompletion` instances (#264 item
-   * F1; a count rather than a boolean per #264 review BLOCK 2, so placing it
+   * IDEMPOTENT BOOLEAN: is at least one `parts.exitCompletion` CURRENTLY
+   * mounted (#264 item F1)? `closing` retention only ever engages when
+   * `animated && exitWatched` — never `animated` alone — so a forgotten
+   * `exitCompletion` placement closes instantly instead of hanging `closing`
+   * + `inert` forever.
+   *
+   * The actual COUNT of mounted instances (needed so placing `exitCompletion`
    * TWICE — an unusual but real shape, e.g. two arms of a conditional both
-   * rendering it — tracks correctly: one detach must not drop retention
-   * while the other placement is still mounted). `closing` retention only
-   * ever engages when `animated && exitWatcher > 0` — never `animated`
-   * alone — so a forgotten `exitCompletion` placement closes instantly
-   * instead of hanging `closing` + `inert` forever. Incremented/decremented
-   * (never below 0) by the `exitWatcherAttach`/`exitWatcherDetach` messages
-   * that mount sends on mount/cleanup; never a caller-facing init option,
-   * and `init()` always starts it at `0` — a persisted/hydrated state slice
-   * can never inherit a stale nonzero count, since a watcher can only ever
-   * be truthfully counted by ITS OWN mount running again after hydration.
+   * rendering it — tracks correctly) lives in `connect()`'s OWN closure, NOT
+   * here (#264 review M1) — a persisted/restored state slice that bypasses
+   * `init()` (a host's own hydration layer handing a JSON snapshot straight
+   * to this reducer) can carry a stale count from a past session, and
+   * incrementing/decrementing relative to that WRONG baseline can leave a
+   * real "nothing is watching any more" situation still reading as watched,
+   * hanging `closing` forever the moment the one real watcher this session
+   * ever had detaches. `exitWatcherAttach` sets this `true` (sent only on
+   * the closure count's 0->1 transition); `exitWatcherDetach` sets it `false`
+   * UNCONDITIONALLY (sent only on the 1->0 transition) and settles any
+   * currently-closing item — never a caller-facing init option, and
+   * `init()` always starts it at `false`.
    */
-  exitWatcher: number
+  exitWatched: boolean
 }
 
 export type AccordionMsg =
@@ -109,7 +118,7 @@ export function init(opts: AccordionInit = {}): AccordionState {
     exitGenerations: [],
     exitSequence: 0,
     animated: opts.animated ?? false,
-    exitWatcher: 0,
+    exitWatched: false,
   }
 }
 
@@ -130,7 +139,7 @@ function withValue(state: AccordionState, value: string[]): AccordionState {
     state.closing,
     state.exitGenerations,
     state.exitSequence,
-    state.animated && state.exitWatcher > 0,
+    state.animated && state.exitWatched,
   )
   return {
     ...state,
@@ -155,20 +164,17 @@ function toggleValue(state: AccordionState, value: string): string[] {
 
 export function update(state: AccordionState, msg: AccordionMsg): [AccordionState, never[]] {
   if (msg.type === 'exitWatcherAttach') {
-    return [{ ...state, exitWatcher: state.exitWatcher + 1 }, []]
+    return state.exitWatched ? [state, []] : [{ ...state, exitWatched: true }, []]
   }
   if (msg.type === 'exitWatcherDetach') {
-    // Never negative — a stray/duplicate detach (should not happen, but
-    // costs nothing to guard) cannot leave the count reading as "watched"
-    // when nothing is.
-    const next = Math.max(0, state.exitWatcher - 1)
-    if (next > 0) return [{ ...state, exitWatcher: next }, []]
-    // Dropped to zero: settle every currently-retained exit immediately —
-    // with NO watcher left attached, nothing will ever send the
-    // `exitComplete` that would otherwise clear it (#264 item F1 —
-    // "detach mid-closing settles").
-    if (state.closing.length === 0) return [{ ...state, exitWatcher: next }, []]
-    return [{ ...state, exitWatcher: next, closing: [], exitGenerations: [] }, []]
+    // Sets `exitWatched` to `false` UNCONDITIONALLY (#264 review M1) — this
+    // message is sent only on the closure counter's 1->0 transition, so it
+    // is already known that NOTHING is watching any more; settle every
+    // currently-retained exit immediately, since nothing will ever send the
+    // `exitComplete` that would otherwise clear it (#264 item F1 — "detach
+    // mid-closing settles").
+    if (!state.exitWatched && state.closing.length === 0) return [state, []]
+    return [{ ...state, exitWatched: false, closing: [], exitGenerations: [] }, []]
   }
   if (msg.type === 'exitComplete') {
     if (
@@ -310,23 +316,27 @@ export function connect(
   // contract), so observing EVERY possible caller of `send` — including a
   // host bypassing these handlers entirely — is not reachable from here,
   // exactly the same documented gap that safety net already has.
-  let warnedMissingWatcher = false
+  const warnMissingWatcher = createMissingExitWatcherWarning(
+    '[llui/components] Accordion was configured `animated: true` but `parts.exitCompletion` ' +
+      'was never placed in the rendered view (or has not mounted yet), so a closing item cannot ' +
+      'be retained for its exit animation and closes instantly instead. Place `parts.' +
+      "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
+      'intended.',
+  )
   const warnIfClosedWithoutWatcher = (before: AccordionState, after: AccordionState): void => {
-    if (warnedMissingWatcher || import.meta.env?.DEV !== true) return
-    if (!before.animated || before.exitWatcher > 0) return
+    if (!before.animated || before.exitWatched) return
     const closedWithoutRetention = before.value.some(
       (v) => !after.value.includes(v) && !after.closing.includes(v),
     )
-    if (!closedWithoutRetention) return
-    warnedMissingWatcher = true
-    console.warn(
-      '[llui/components] Accordion was configured `animated: true` but `parts.exitCompletion` ' +
-        'was never placed in the rendered view (or has not mounted yet), so a closing item cannot ' +
-        'be retained for its exit animation and closes instantly instead. Place `parts.' +
-        "exitCompletion` in the component's view, or pass `animated: false` if no exit motion is " +
-        'intended.',
-    )
+    warnMissingWatcher(closedWithoutRetention)
   }
+  // Counts how many `exitCompletion` mounts are CURRENTLY live, entirely in
+  // THIS closure (#264 review M1) — see `createExitWatcherCounter`'s header
+  // for why state itself must never carry the count.
+  const exitWatcher = createExitWatcherCounter(
+    () => send({ type: 'exitWatcherAttach' }),
+    () => send({ type: 'exitWatcherDetach' }),
+  )
   const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] =>
     state.peek().closing.map((value) => ({
       key: value,
@@ -384,7 +394,7 @@ export function connect(
       'data-orientation': 'vertical',
     },
     exitCompletion: onMount((container: Element) => {
-      send({ type: 'exitWatcherAttach' })
+      const detachWatcher = exitWatcher.attach()
       const dispose = createDisclosureExitCompletionMount(
         getElementByIdInScope,
         exitWatchEntries,
@@ -392,7 +402,7 @@ export function connect(
       )(container)
       return () => {
         dispose?.()
-        send({ type: 'exitWatcherDetach' })
+        detachWatcher()
       }
     }),
     item: (value: string): AccordionItemParts => ({

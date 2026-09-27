@@ -14,7 +14,7 @@ function animationEvent(type: string, animationName: string): Event {
  * any interaction can happen, so unit tests exercising retained-exit
  * behavior via bare `update()` calls attach it explicitly first (#264 item
  * F1) — `closing` retention now only ever engages when `animated &&
- * exitWatcher > 0`.
+ * exitWatched`.
  */
 function attached(state: ReturnType<typeof init>): ReturnType<typeof init> {
   return update(state, { type: 'exitWatcherAttach' })[0]
@@ -33,19 +33,21 @@ describe('accordion reducer', () => {
       exitGenerations: [],
       exitSequence: 0,
       animated: false,
-      exitWatcher: 0,
+      exitWatched: false,
     })
   })
 
-  it('init always starts exitWatcher at 0, never trusting a persisted/hydrated value (#264 review BLOCK 2)', () => {
+  it('init always starts exitWatched at false, never trusting a persisted/hydrated value (#264 review M1)', () => {
     // Simulates a host handing `init()` a persisted/rehydrated options blob
-    // that happens to carry a stray `exitWatcher` field (e.g. spread from an
+    // that happens to carry a stray `exitWatched` field (e.g. spread from an
     // old serialized STATE rather than a real `AccordionInit`) — `init()`
     // must never inherit it: a watcher can only be truthfully counted by its
     // OWN mount running again after hydration, since mounts never survive a
-    // serialize/deserialize round trip.
-    const tampered = { value: ['a'], exitWatcher: 99 } as unknown as Parameters<typeof init>[0]
-    expect(init(tampered).exitWatcher).toBe(0)
+    // serialize/deserialize round trip. `AccordionInit`'s fields are all
+    // optional, so a plain (non-cast) object with one extra property is
+    // still structurally assignable — no `as unknown as` needed.
+    const tampered = { value: ['a'], exitWatched: true }
+    expect(init(tampered).exitWatched).toBe(false)
   })
 
   it('toggle opens a closed item (single)', () => {
@@ -290,14 +292,14 @@ describe('accordion.connect', () => {
 describe('accordion exitCompletion fail-safe (#264 item F1)', () => {
   it('a forgotten exitCompletion (watcher never attached) closes instantly, never retains', () => {
     const [s] = update(init({ value: ['a'], animated: true }), { type: 'close', value: 'a' })
-    expect(s).toMatchObject({ value: [], closing: [], exitWatcher: 0 })
+    expect(s).toMatchObject({ value: [], closing: [], exitWatched: false })
   })
 
-  it('exitWatcherAttach increments the count; a subsequent close then retains', () => {
+  it('exitWatcherAttach sets exitWatched; a subsequent close then retains', () => {
     const attachedState = update(init({ value: ['a'], animated: true }), {
       type: 'exitWatcherAttach',
     })[0]
-    expect(attachedState.exitWatcher).toBe(1)
+    expect(attachedState.exitWatched).toBe(true)
     const closing = update(attachedState, { type: 'close', value: 'a' })[0]
     expect(closing).toMatchObject({ value: [], closing: ['a'] })
   })
@@ -309,31 +311,21 @@ describe('accordion exitCompletion fail-safe (#264 item F1)', () => {
     })[0]
     expect(closing.closing).toEqual(['a'])
     const detached = update(closing, { type: 'exitWatcherDetach' })[0]
-    expect(detached).toMatchObject({ closing: [], exitGenerations: [], exitWatcher: 0 })
+    expect(detached).toMatchObject({ closing: [], exitGenerations: [], exitWatched: false })
   })
 
-  it('exitWatcher is a COUNT: double placement tracks correctly, and a detach never goes negative (#264 review BLOCK 2)', () => {
+  it('exitWatcherDetach sets exitWatched false UNCONDITIONALLY, even if already false (#264 review M1)', () => {
+    // The reducer no longer counts anything — the real mount COUNT lives in
+    // connect()'s own closure (see disclosure-exit-failsafe.test.ts for the
+    // double-placement / persisted-slice scenarios that motivate this, which
+    // require a real mount and cannot be exercised via bare `update()`
+    // calls). A stray/duplicate `exitWatcherDetach` at the reducer level is
+    // simply idempotent.
     let state = init({ value: ['a'], animated: true })
-    state = update(state, { type: 'exitWatcherAttach' })[0]
-    state = update(state, { type: 'exitWatcherAttach' })[0]
-    expect(state.exitWatcher).toBe(2)
-
-    // One placement detaching (e.g. one conditional arm unmounting) must NOT
-    // drop retention while the OTHER placement is still mounted.
-    state = update(state, { type: 'close', value: 'a' })[0]
-    expect(state).toMatchObject({ value: [], closing: ['a'] })
     state = update(state, { type: 'exitWatcherDetach' })[0]
-    expect(state.exitWatcher).toBe(1)
-    expect(state.closing).toEqual(['a']) // still retained — one watcher remains
-
-    // The SECOND detach drops to 0 and settles immediately.
+    expect(state.exitWatched).toBe(false)
     state = update(state, { type: 'exitWatcherDetach' })[0]
-    expect(state).toMatchObject({ exitWatcher: 0, closing: [] })
-
-    // A stray extra detach (should not happen, but costs nothing to guard)
-    // never goes negative.
-    state = update(state, { type: 'exitWatcherDetach' })[0]
-    expect(state.exitWatcher).toBe(0)
+    expect(state.exitWatched).toBe(false)
   })
 
   it('no warning fires when the watcher is attached (placed correctly)', () => {

@@ -337,3 +337,61 @@ export function createDisclosureExitTracker(): DisclosureExitTracker {
     completeIfUnanimated,
   }
 }
+
+/**
+ * Tracks how many `exitCompletion` Mountables are CURRENTLY mounted for one
+ * `connect()` instance, entirely inside THIS closure — never in serialized
+ * state (#264 review M1). A persisted/restored state slice that bypasses
+ * `init()` (a host's own hydration layer handing a JSON snapshot straight to
+ * a component, rather than calling `init()`) can carry a stale count from a
+ * PAST session; incrementing/decrementing relative to that wrong baseline
+ * can leave a real "nothing is watching any more" situation still reading as
+ * "watched", hanging `closing` forever the moment the one real watcher this
+ * session ever had detaches. Counting in the closure instead means state
+ * only ever needs an IDEMPOTENT BOOLEAN (`exitWatcherAttach` on the 0->1
+ * transition, `exitWatcherDetach` on the 1->0 transition) — `attach()`/its
+ * returned detacher are the only two calls a `connect()` needs, and multiple
+ * concurrent placements (an unusual but real shape — two arms of a
+ * conditional both rendering `exitCompletion`) are still correct: one
+ * detaching does not send `exitWatcherDetach` while another placement is
+ * still mounted.
+ */
+export function createExitWatcherCounter(
+  onFirstAttach: () => void,
+  onLastDetach: () => void,
+): { attach: () => () => void } {
+  let count = 0
+  return {
+    attach(): () => void {
+      count += 1
+      if (count === 1) onFirstAttach()
+      let detached = false
+      return () => {
+        if (detached) return
+        detached = true
+        count = Math.max(0, count - 1)
+        if (count === 0) onLastDetach()
+      }
+    },
+  }
+}
+
+/**
+ * The dev-mode "you forgot to place exitCompletion" warning, shared between
+ * `accordion.ts` and `collapsible.ts` (#264 review LOW — one helper, not two
+ * copies that could drift). Owned by the CALLER's `connect()` closure (dev
+ * only, throttled to once per instance, no timer) — the caller computes
+ * `missingWatcherClose` itself (the shape of "did this close without
+ * retention because no watcher was attached" differs slightly between the
+ * two components) and this only owns the throttling + the message.
+ */
+export function createMissingExitWatcherWarning(
+  message: string,
+): (missingWatcherClose: boolean) => void {
+  let warned = false
+  return (missingWatcherClose: boolean): void => {
+    if (warned || !missingWatcherClose || import.meta.env?.DEV !== true) return
+    warned = true
+    console.warn(message)
+  }
+}

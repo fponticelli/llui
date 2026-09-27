@@ -13,8 +13,7 @@ function animationEvent(type: string, animationName: string): Event {
  * Real usage always attaches the `exitCompletion` watcher (via mount) before
  * any interaction can happen, so unit tests exercising retained-exit
  * behavior via bare `update()` calls attach it explicitly first (#264 item
- * F1) — `closing` retention now only ever engages when `animated &&
- * exitWatcher > 0`.
+ * F1) — `closing` retention only ever engages when `animated && exitWatched`.
  */
 function attached(state: ReturnType<typeof init>): ReturnType<typeof init> {
   return update(state, { type: 'exitWatcherAttach' })[0]
@@ -28,13 +27,15 @@ describe('collapsible reducer', () => {
       closing: false,
       exitGeneration: 0,
       animated: false,
-      exitWatcher: 0,
+      exitWatched: false,
     })
   })
 
-  it('init always starts exitWatcher at 0, never trusting a persisted/hydrated value (#264 review BLOCK 2)', () => {
-    const tampered = { open: true, exitWatcher: 99 } as unknown as Parameters<typeof init>[0]
-    expect(init(tampered).exitWatcher).toBe(0)
+  it('init always starts exitWatched at false, never trusting a persisted/hydrated value (#264 review M1)', () => {
+    // `CollapsibleInit`'s fields are all optional, so a plain (non-cast)
+    // object with one extra property is still structurally assignable.
+    const tampered = { open: true, exitWatched: true }
+    expect(init(tampered).exitWatched).toBe(false)
   })
 
   it('toggle alternates', () => {
@@ -135,14 +136,14 @@ describe('collapsible.connect', () => {
 describe('collapsible exitCompletion fail-safe (#264 item F1)', () => {
   it('a forgotten exitCompletion (watcher never attached) closes instantly, never retains', () => {
     const [s] = update(init({ open: true, animated: true }), { type: 'close' })
-    expect(s).toMatchObject({ open: false, closing: false, exitWatcher: 0 })
+    expect(s).toMatchObject({ open: false, closing: false, exitWatched: false })
   })
 
-  it('exitWatcherAttach increments the count; a subsequent close then retains', () => {
+  it('exitWatcherAttach sets exitWatched; a subsequent close then retains', () => {
     const attachedState = update(init({ open: true, animated: true }), {
       type: 'exitWatcherAttach',
     })[0]
-    expect(attachedState.exitWatcher).toBe(1)
+    expect(attachedState.exitWatched).toBe(true)
     const closing = update(attachedState, { type: 'close' })[0]
     expect(closing).toMatchObject({ open: false, closing: true })
   })
@@ -151,26 +152,18 @@ describe('collapsible exitCompletion fail-safe (#264 item F1)', () => {
     const closing = update(attached(init({ open: true, animated: true })), { type: 'close' })[0]
     expect(closing.closing).toBe(true)
     const detached = update(closing, { type: 'exitWatcherDetach' })[0]
-    expect(detached).toMatchObject({ closing: false, exitWatcher: 0 })
+    expect(detached).toMatchObject({ closing: false, exitWatched: false })
   })
 
-  it('exitWatcher is a COUNT: double placement tracks correctly, and a detach never goes negative (#264 review BLOCK 2)', () => {
+  it('exitWatcherDetach sets exitWatched false UNCONDITIONALLY, even if already false (#264 review M1)', () => {
+    // The reducer no longer counts anything — the real mount COUNT lives in
+    // connect()'s own closure (see disclosure-exit-failsafe.test.ts for the
+    // double-placement / persisted-slice scenarios that motivate this).
     let state = init({ open: true, animated: true })
-    state = update(state, { type: 'exitWatcherAttach' })[0]
-    state = update(state, { type: 'exitWatcherAttach' })[0]
-    expect(state.exitWatcher).toBe(2)
-
-    state = update(state, { type: 'close' })[0]
-    expect(state).toMatchObject({ open: false, closing: true })
     state = update(state, { type: 'exitWatcherDetach' })[0]
-    expect(state.exitWatcher).toBe(1)
-    expect(state.closing).toBe(true) // still retained — one watcher remains
-
+    expect(state.exitWatched).toBe(false)
     state = update(state, { type: 'exitWatcherDetach' })[0]
-    expect(state).toMatchObject({ exitWatcher: 0, closing: false })
-
-    state = update(state, { type: 'exitWatcherDetach' })[0]
-    expect(state.exitWatcher).toBe(0)
+    expect(state.exitWatched).toBe(false)
   })
 
   it('no warning fires when the watcher is attached (placed correctly)', () => {
