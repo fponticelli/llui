@@ -268,7 +268,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `exitSequence`    | `number`                           |
 | `animated`        | `boolean`                          |
 
-**Messages:** `toggle`, `open`, `close`, `setValue`, `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `exitComplete`
+**Messages:** `setItems`, `focusNext`, `focusPrev`, `focusFirst`, `focusLast`, `exitComplete`
 
 **Init options:** `value?: string[], multiple?: boolean, collapsible?: boolean, disabled?: boolean, items?: string[], animated?: boolean`
 
@@ -519,7 +519,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 | `exitGeneration` | `number`  |
 | `animated`       | `boolean` |
 
-**Messages:** `toggle`, `open`, `close`, `setOpen`, `exitComplete`
+**Messages:** `exitComplete`
 
 **Init options:** `open?: boolean, disabled?: boolean, animated?: boolean`
 
@@ -3697,13 +3697,13 @@ export type AcceptValue = string | Record<string, string[]>
 ```typescript
 export type AccordionMsg =
   /** @intent("Toggle the named accordion item open/closed") */
-  | { type: 'toggle'; value: string; retain?: boolean }
+  | ({ type: 'toggle'; value: string } & Retain)
   /** @intent("Open the named accordion item") */
-  | { type: 'open'; value: string; retain?: boolean }
+  | ({ type: 'open'; value: string } & Retain)
   /** @intent("Close the named accordion item") */
-  | { type: 'close'; value: string; retain?: boolean }
+  | ({ type: 'close'; value: string } & Retain)
   /** @intent("Replace the set of currently-open items with the provided values") */
-  | { type: 'setValue'; value: string[]; retain?: boolean }
+  | ({ type: 'setValue'; value: string[] } & Retain)
   /** @humanOnly */
   | { type: 'setItems'; items: string[] }
   /** @humanOnly */
@@ -4012,13 +4012,13 @@ export type ClipboardMsg =
 ```typescript
 export type CollapsibleMsg =
   /** @intent("Toggle the collapsible panel open/closed") */
-  | { type: 'toggle'; retain?: boolean }
+  | ({ type: 'toggle' } & Retain)
   /** @intent("Expand the collapsible panel") */
-  | { type: 'open'; retain?: boolean }
+  | ({ type: 'open' } & Retain)
   /** @intent("Collapse the panel") */
-  | { type: 'close'; retain?: boolean }
+  | ({ type: 'close' } & Retain)
   /** @intent("Set the panel's open state to a specific value") */
-  | { type: 'setOpen'; open: boolean; retain?: boolean }
+  | ({ type: 'setOpen'; open: boolean } & Retain)
   /** @humanOnly — sent by the retained content's own animation end/cancel event,
    * or by `exitCompletion`'s own cleanup settling a still-closing panel once
    * the last watcher for this `id` detaches. */
@@ -6298,17 +6298,21 @@ export interface AccordionParts {
   }
   item: (value: string) => AccordionItemParts
   /**
-   * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
-   * host app, bypassing the trigger's click handler) once its content's own
-   * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. Its mount ALSO reports whether it is placed at all
-   * (#264 item F1): `animated: true` only ever retains `closing` content
-   * while this is mounted — forgetting to place it degrades gracefully to
-   * an instant close (with a one-time dev warning) rather than hanging
-   * `closing` + `inert` forever, so placing it is no longer required for
-   * SAFETY, only for the requested exit animation to actually run on a
-   * programmatic close. A click-driven close is still safety-netted
-   * synchronously inside the trigger regardless of whether this is placed.
+   * Settles a retained `closing` item once its content's own exit
+   * animation/transition ends — or immediately, if the skin runs no exit
+   * motion at all. This only ever has anything to settle for a
+   * PROGRAMMATIC close/toggle/setValue when that message carried
+   * `retain: true`, which `parts.close(value)` stamps for you; a raw
+   * `send({ type: 'close', value })` with no `retain` closes instantly and
+   * never enters `closing` at all, so there is nothing here to settle for
+   * it. Its mount ALSO reports whether it is placed at all (#264 item F1):
+   * `animated: true` only ever retains `closing` content while this is
+   * mounted — forgetting to place it degrades gracefully to an instant
+   * close (with a one-time dev warning) rather than hanging `closing` +
+   * `inert` forever, so placing it is no longer required for SAFETY, only
+   * for the requested exit animation to actually run on a retained close.
+   * A click-driven close is still safety-netted synchronously inside the
+   * trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
   /**
@@ -7580,16 +7584,19 @@ export interface CollapsibleParts {
     onTransitionCancel: (e: TransitionEvent) => void
   }
   /**
-   * Settles a PROGRAMMATIC `close`/`toggle`/`setOpen` (sent directly by the
-   * host app, bypassing the trigger's click handler) once the content's own
-   * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. Its mount ALSO reports whether it is placed at all:
-   * `animated: true` only ever retains `closing` while this is mounted
+   * Settles a retained `closing` panel once the content's own exit
+   * animation/transition ends — or immediately, if the skin runs no exit
+   * motion at all. This only ever has anything to settle for a
+   * PROGRAMMATIC close/toggle/setOpen when that message carried
+   * `retain: true`, which `parts.close()` stamps for you; a raw
+   * `send({ type: 'close' })` with no `retain` closes instantly and never
+   * enters `closing` at all. Its mount ALSO reports whether it is placed at
+   * all: `animated: true` only ever retains `closing` while this is mounted
    * (#264 item F1) — forgetting to place it degrades gracefully to an
    * instant close (with a one-time dev warning) rather than hanging
    * `closing` + `inert` forever, so placing it is no longer required for
    * SAFETY, only for the requested exit animation to actually run on a
-   * programmatic close. A click-driven close is still safety-netted
+   * retained close. A click-driven close is still safety-netted
    * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
@@ -24153,13 +24160,13 @@ function update(state: AccordionState, msg: AccordionMsg): [AccordionState, neve
 ```typescript
 export type AccordionMsg =
   /** @intent("Toggle the named accordion item open/closed") */
-  | { type: 'toggle'; value: string; retain?: boolean }
+  | ({ type: 'toggle'; value: string } & Retain)
   /** @intent("Open the named accordion item") */
-  | { type: 'open'; value: string; retain?: boolean }
+  | ({ type: 'open'; value: string } & Retain)
   /** @intent("Close the named accordion item") */
-  | { type: 'close'; value: string; retain?: boolean }
+  | ({ type: 'close'; value: string } & Retain)
   /** @intent("Replace the set of currently-open items with the provided values") */
-  | { type: 'setValue'; value: string[]; retain?: boolean }
+  | ({ type: 'setValue'; value: string[] } & Retain)
   /** @humanOnly */
   | { type: 'setItems'; items: string[] }
   /** @humanOnly */
@@ -24256,17 +24263,21 @@ export interface AccordionParts {
   }
   item: (value: string) => AccordionItemParts
   /**
-   * Settles a PROGRAMMATIC `close`/`toggle`/`setValue` (sent directly by the
-   * host app, bypassing the trigger's click handler) once its content's own
-   * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. Its mount ALSO reports whether it is placed at all
-   * (#264 item F1): `animated: true` only ever retains `closing` content
-   * while this is mounted — forgetting to place it degrades gracefully to
-   * an instant close (with a one-time dev warning) rather than hanging
-   * `closing` + `inert` forever, so placing it is no longer required for
-   * SAFETY, only for the requested exit animation to actually run on a
-   * programmatic close. A click-driven close is still safety-netted
-   * synchronously inside the trigger regardless of whether this is placed.
+   * Settles a retained `closing` item once its content's own exit
+   * animation/transition ends — or immediately, if the skin runs no exit
+   * motion at all. This only ever has anything to settle for a
+   * PROGRAMMATIC close/toggle/setValue when that message carried
+   * `retain: true`, which `parts.close(value)` stamps for you; a raw
+   * `send({ type: 'close', value })` with no `retain` closes instantly and
+   * never enters `closing` at all, so there is nothing here to settle for
+   * it. Its mount ALSO reports whether it is placed at all (#264 item F1):
+   * `animated: true` only ever retains `closing` content while this is
+   * mounted — forgetting to place it degrades gracefully to an instant
+   * close (with a one-time dev warning) rather than hanging `closing` +
+   * `inert` forever, so placing it is no longer required for SAFETY, only
+   * for the requested exit animation to actually run on a retained close.
+   * A click-driven close is still safety-netted synchronously inside the
+   * trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
   /**
@@ -26036,13 +26047,13 @@ function update(state: CollapsibleState, msg: CollapsibleMsg): [CollapsibleState
 ```typescript
 export type CollapsibleMsg =
   /** @intent("Toggle the collapsible panel open/closed") */
-  | { type: 'toggle'; retain?: boolean }
+  | ({ type: 'toggle' } & Retain)
   /** @intent("Expand the collapsible panel") */
-  | { type: 'open'; retain?: boolean }
+  | ({ type: 'open' } & Retain)
   /** @intent("Collapse the panel") */
-  | { type: 'close'; retain?: boolean }
+  | ({ type: 'close' } & Retain)
   /** @intent("Set the panel's open state to a specific value") */
-  | { type: 'setOpen'; open: boolean; retain?: boolean }
+  | ({ type: 'setOpen'; open: boolean } & Retain)
   /** @humanOnly — sent by the retained content's own animation end/cancel event,
    * or by `exitCompletion`'s own cleanup settling a still-closing panel once
    * the last watcher for this `id` detaches. */
@@ -26102,16 +26113,19 @@ export interface CollapsibleParts {
     onTransitionCancel: (e: TransitionEvent) => void
   }
   /**
-   * Settles a PROGRAMMATIC `close`/`toggle`/`setOpen` (sent directly by the
-   * host app, bypassing the trigger's click handler) once the content's own
-   * exit animation/transition ends — or immediately, if the skin runs no
-   * exit motion at all. Its mount ALSO reports whether it is placed at all:
-   * `animated: true` only ever retains `closing` while this is mounted
+   * Settles a retained `closing` panel once the content's own exit
+   * animation/transition ends — or immediately, if the skin runs no exit
+   * motion at all. This only ever has anything to settle for a
+   * PROGRAMMATIC close/toggle/setOpen when that message carried
+   * `retain: true`, which `parts.close()` stamps for you; a raw
+   * `send({ type: 'close' })` with no `retain` closes instantly and never
+   * enters `closing` at all. Its mount ALSO reports whether it is placed at
+   * all: `animated: true` only ever retains `closing` while this is mounted
    * (#264 item F1) — forgetting to place it degrades gracefully to an
    * instant close (with a one-time dev warning) rather than hanging
    * `closing` + `inert` forever, so placing it is no longer required for
    * SAFETY, only for the requested exit animation to actually run on a
-   * programmatic close. A click-driven close is still safety-netted
+   * retained close. A click-driven close is still safety-netted
    * synchronously inside the trigger regardless of whether this is placed.
    */
   exitCompletion: Mountable
