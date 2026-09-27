@@ -145,12 +145,15 @@ export type FloatingPlacement =
   | 'right-start'
   | 'right-end'
 
+/** Real `MenuNode` shape (`kind`/`disabled`) — no invented "destructive"
+ * field: upstream skins style a destructive row by VALUE (a view/skin
+ * choice), never by machine state, so this case-input carries only fields
+ * `menu-machine.ts`'s `MenuNode` actually has. */
 export type MenuItemCaseInput = {
   readonly value: string
   readonly label: string
-  readonly disabled?: boolean
-  readonly destructive?: boolean
-  readonly checked?: boolean
+  readonly kind: 'action' | 'checkbox'
+  readonly disabled: boolean
 }
 
 /** component:menu — real `MenuState`/`MenuInit`. */
@@ -266,16 +269,14 @@ const overflowMenuItems = (count: number): readonly MenuItemCaseInput[] =>
   Array.from({ length: count }, (_, index) => ({
     value: `item-${index}`,
     label: `Item ${index}`,
+    kind: 'action' as const,
     disabled: false,
-    destructive: false,
-    checked: false,
   }))
 
 const baseMenuItems: readonly MenuItemCaseInput[] = [
-  { value: 'copy', label: 'Copy', disabled: false, destructive: false, checked: false },
-  { value: 'paste', label: 'Paste', disabled: true, destructive: false, checked: false },
-  { value: 'delete', label: 'Delete', disabled: false, destructive: true, checked: false },
-  { value: 'bold', label: 'Bold', disabled: false, destructive: false, checked: true },
+  { value: 'copy', label: 'Copy', kind: 'action', disabled: false },
+  { value: 'paste', label: 'Paste', kind: 'action', disabled: true },
+  { value: 'bold', label: 'Bold', kind: 'checkbox', disabled: false },
 ]
 
 /**
