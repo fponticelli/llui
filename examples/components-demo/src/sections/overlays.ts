@@ -967,6 +967,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
         div({ class: 'flex flex-wrap gap-2' }, [
           button(
             {
+              id: 'toast-trigger-info',
               class: 'btn btn-secondary btn-sm',
               onClick: () =>
                 showToast('info', 'For your information', 'This is an informational message.'),
@@ -975,6 +976,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ),
           button(
             {
+              id: 'toast-trigger-success',
               class: 'btn btn-primary btn-sm',
               onClick: () => showToast('success', 'Saved!', 'Your changes have been saved.'),
             },
@@ -982,6 +984,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ),
           button(
             {
+              id: 'toast-trigger-warning',
               class: 'btn btn-secondary btn-sm',
               onClick: () => showToast('warning', 'Quota nearly full', 'Storage is above 90%.'),
             },
@@ -989,6 +992,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ),
           button(
             {
+              id: 'toast-trigger-error',
               class: 'btn btn-danger btn-sm',
               onClick: () => showToast('error', 'Something went wrong', 'Please try again later.'),
             },
@@ -996,6 +1000,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ),
           button(
             {
+              id: 'toast-trigger-custom',
               class: 'btn btn-secondary btn-sm',
               onClick: () =>
                 showToast('custom', 'Review requested', 'A teammate requested your review.'),
@@ -1004,6 +1009,15 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           ),
           button(
             {
+              id: 'toast-trigger-loading',
+              class: 'btn btn-secondary btn-sm',
+              onClick: () => showToast('loading', 'Working on it', 'This may take a moment.'),
+            },
+            [text('Loading')],
+          ),
+          button(
+            {
+              id: 'toast-trigger-async',
               class: 'btn btn-secondary btn-sm',
               // #265 findings 3 & 8: create a real 'loading' toast, then PATCH
               // the SAME mounted row's type/title/description to 'success' —
