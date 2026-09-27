@@ -75,8 +75,10 @@
 }
 
 [data-scope='avatar'][data-part='root'][data-density='compact'] {
-  width: 1.5rem;
-  height: 1.5rem;
+  /* #262: the shared semantic spacing scale, not a hard-coded rem value —
+     --llui-space-6 is 1.5rem, matching the registry's data-[size=sm] rung. */
+  width: var(--llui-space-6);
+  height: var(--llui-space-6);
 }
 
 [data-scope='avatar'][data-part='image'] {
@@ -99,7 +101,8 @@
 
 [data-scope='avatar'][data-part='root'][data-density='compact']
   [data-scope='avatar'][data-part='fallback'] {
-  font-size: 0.75rem;
+  /* #262: --llui-space-3 is 0.75rem — the shared semantic scale, not a bare value. */
+  font-size: var(--llui-space-3);
 }
 
 /* ─── Progress ─── */
@@ -606,13 +609,17 @@
 
 [data-scope='table'][data-part='root'][data-density='compact']
   [data-scope='table'][data-part='column-header'] {
-  height: 2rem;
+  /* #262: --llui-space-8 is 2rem — the shared semantic scale. 0.375rem has no
+     exact token on this scale (between space-1's 0.25rem and space-2's
+     0.5rem) and stays a bare value, matching the same half-step elsewhere in
+     this file (e.g. foundation.css, form-controls.css, menus-overlays.css). */
+  height: var(--llui-space-8);
   padding-inline: 0.375rem;
 }
 
 [data-scope='table'][data-part='root'][data-density='compact']
   [data-scope='table'][data-part='cell'] {
-  padding: 0.25rem 0.375rem;
+  padding: var(--llui-space-1) 0.375rem;
 }
 
 [data-scope='table'][data-part='row-checkbox'],
