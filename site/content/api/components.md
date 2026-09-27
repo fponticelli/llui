@@ -1762,7 +1762,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `region`, `toast`, `progress`, `isPresent`
 
-**Utilities:** `nextToastId()`, `politeness()`, `progress()`, `isPresent()`
+**Utilities:** `nextToastId()`, `politeness()`, `progress()`, `isPresent()`, `isPaused()`
 
 ---
 
@@ -2121,7 +2121,8 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+Owns `position`, `top`, `left`, `transform` and the two available-size
+custom properties ({@link FLOATING_AVAILABLE_HEIGHT}) on `floating`; `position` and
 all four physical inset properties on an optional arrow; and placement
 attributes on `stateTarget`. The arrow's static-side inset is half its
 untransformed layout size, so a square arrow straddles the resolved edge.
@@ -4143,7 +4144,15 @@ export type ComboboxMsg =
   | { type: 'highlight'; value: string | null }
   /** @intent("Pick the currently-highlighted option in the filtered list") */
   | { type: 'selectHighlighted' }
-  /** @humanOnly */
+  /**
+   * @humanOnly
+   *
+   * Replace `items` (and optionally `disabled`) synchronously — the same
+   * highlight-resolution policy as `loadSuccess` applies: a highlight that no
+   * longer survives the fresh list moves to the first enabled match WHILE
+   * OPEN, or to `null` WHILE CLOSED (#265 G3), since a background refresh
+   * must not manufacture a highlight before the control is ever opened.
+   */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
@@ -4162,10 +4171,16 @@ export type ComboboxMsg =
    * follow-up message. `value` (selection) is dropped when it no longer
    * names a value in the new `items` (after the new `disabled` is applied).
    * `highlightedValue` is kept only when it is BOTH still in the fresh
-   * filtered list AND not newly disabled; otherwise it moves to the first
-   * enabled match (or `null` when none is enabled) — never left dangling
-   * for a render in between, and never left naming an option that is now
-   * disabled.
+   * filtered list AND not newly disabled. Otherwise the fallback depends on
+   * whether the listbox is open: WHILE OPEN it moves to the first enabled
+   * match (or `null` when none is enabled) — never left dangling for a
+   * render in between, and never left naming an option that is now
+   * disabled. WHILE CLOSED it always resolves to `null` instead, even when
+   * the fresh list has enabled options: the listbox content is unmounted
+   * while closed, so there is no option `aria-activedescendant` could
+   * correctly name, and a background load (a prefetch, a poll) must not
+   * manufacture a highlight before the control is ever opened — re-opening
+   * always reseeds the highlight itself (#265 G3).
    */
   | {
       type: 'loadSuccess'
@@ -6001,28 +6016,71 @@ export type ToasterMsg =
   /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
   | { type: 'tick'; id: string; elapsedMs: number }
   /** @intent("Pause auto-dismiss countdown for the toast with the given id") */
-  | { type: 'pause'; id: string }
-  /** @intent("Resume auto-dismiss countdown for the toast with the given id") */
-  | { type: 'resume'; id: string }
+  | { type: 'pause'; id: string; reason?: ToastPauseReason }
+  /** @intent("Resume auto-dismiss countdown for the toast with the given id (releases only the given reason, default manual)") */
+  | { type: 'resume'; id: string; reason?: ToastPauseReason }
   /** @intent("Pause auto-dismiss for every visible toast") */
-  | { type: 'pauseAll' }
-  /** @intent("Resume auto-dismiss for every visible toast") */
-  | { type: 'resumeAll' }
+  | { type: 'pauseAll'; reason?: ToastPauseReason }
+  /** @intent("Resume auto-dismiss for every visible toast (releases only the given reason, default manual)") */
+  | { type: 'resumeAll'; reason?: ToastPauseReason }
   /** @humanOnly Exit animation finished for the toast with the given id — remove it from the queue. */
   | { type: 'animationEnd'; id: string }
 ```
 
 ##### `ToastInput` from `@llui/components`
 
-A new toast as supplied to `create`. `remainingMs`/`paused`/`status` are
-optional — seeded from `duration`/`false`/`'open'` when omitted.
+A new toast as supplied to `create`. `remainingMs`/`pausedBy`/`status` are
+optional — seeded from `duration`/`[]`/`'open'` when omitted.
 
 ```typescript
-export type ToastInput = Omit<Toast, 'remainingMs' | 'paused' | 'status'> & {
+export type ToastInput = Omit<Toast, 'remainingMs' | 'pausedBy' | 'status'> & {
   remainingMs?: number
-  paused?: boolean
+  pausedBy?: readonly ToastPauseReason[]
   status?: PresenceStatus
 }
+```
+
+##### `ToastPatch` from `@llui/components`
+
+Fields an `update` message may patch on a mounted toast. `id` is the ONE
+truly immutable field — a toast is created once and dismissed once, never
+structurally replaced with a different id for the same row — so it is
+excluded here rather than silently ignored by the reducer. `type` and
+`ariaLive` (among others) ARE genuine mutable presentation fields (the
+`toast.promise`-style loading→success/error flow patches `type`, `title`
+and `description` on the same mounted toast) and `connect()`'s `toast()`
+builder binds every one of these reactively (never via a one-shot
+`peek()`), so a patch here is visible wherever it renders.
+
+`status`/`remainingMs`/`pausedBy` are excluded: they are LIFECYCLE fields the
+reducer itself owns (presence transitions, the tick-driven countdown,
+pause/resume) and a patch is the wrong channel for them — `dismiss`/`tick`/
+`pause`/`resume` already exist and a caller patching `remainingMs` directly
+would race the reducer's own countdown math. `duration` stays patchable
+(it IS presentation — the toast.promise flow moves a sticky `loading`
+toast to a finite `success`/`error` duration), so `update` re-seeds
+`remainingMs` from the new `duration` whenever `duration` is part of the
+patch (#265 A2) — otherwise a toast created sticky (duration: null,
+remainingMs frozen at 0) that is later patched to a finite duration would
+inherit that frozen 0 and dismiss on the very next tick instead of lasting
+its new duration.
+
+A key present with the value `undefined` means "not patched" (#265 G6), the
+same as an absent key: `{ duration: undefined }` leaves the countdown alone
+rather than re-seeding it to 0. To make a toast sticky, patch
+`duration: null`.
+
+```typescript
+export type ToastPatch = Partial<Omit<Toast, 'id' | 'status' | 'remainingMs' | 'pausedBy'>>
+```
+
+##### `ToastPauseReason` from `@llui/components`
+
+Why a toast's countdown is paused. The row's own handlers use `'hover'` and
+`'focus'`; a `pause`/`resume` message without a reason uses `'manual'`.
+
+```typescript
+export type ToastPauseReason = 'focus' | 'hover' | 'manual'
 ```
 
 ##### `ToastPlacement` from `@llui/components`
@@ -6055,11 +6113,15 @@ Architecture (timer-free, tick-driven — same division of labor as timer.ts):
 
 - `toast.toaster` state manages a collection of toasts. Each toast carries
   its own countdown in state: `duration` (null = sticky), `remainingMs`,
-  and `paused`.
+  and `pausedBy` (the set of reasons currently holding it paused).
 - The machine owns NO interval. The consumer drives the countdown with a
   `tick(id, elapsedMs)` message (e.g. via @llui/effects `interval`),
-  subtracting the elapsed wall time since the last tick. A `paused` toast
-  freezes its `remainingMs` (ticks are ignored).
+  subtracting the elapsed wall time since the last tick. A paused toast
+  (any reason held) freezes its `remainingMs` (ticks are ignored).
+- Pause REASONS are independent (#265 G6): the row's hover pauses/resumes
+  `'hover'`, focus entering/leaving the row pauses/resumes `'focus'`, and
+  `pause`/`resume` with no reason use `'manual'`. Pointer-leave therefore
+  never resumes a toast whose close button still has keyboard focus.
 - When `remainingMs` hits 0 the REDUCER dismisses that toast itself, so
   there is no consumer/runtime race over who removes it.
 
@@ -9583,7 +9645,8 @@ export interface FocusRestoreQuery {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to first focusable. */
+  /** Element to focus when the trap activates. Defaults to the first focusable
+   * descendant, else the container itself (give it `tabindex="-1"`). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -14254,10 +14317,14 @@ export interface Toast {
   duration: number | null
   /** ms left before auto-dismiss. Counts down via `tick`. */
   remainingMs: number
-  /** Whether the toast can be manually dismissed. */
+  /** Whether the USER can dismiss the toast: `false` hides the close trigger
+   * (`closeTrigger.hidden`) and ignores its click. A `dismiss` message from
+   * code still removes it. Patchable. */
   dismissable: boolean
-  /** Pause flag — frozen countdown while set (consumer sets on hover/focus). */
-  paused: boolean
+  /** The reasons currently holding the countdown paused, as a canonical set
+   * (unique, in {@link ToastPauseReason} order). Empty = running. Owned by the
+   * reducer: change it with `pause`/`resume`, read it with {@link isPaused}. */
+  pausedBy: ToastPauseReason[]
   /** Optional per-toast politeness override; otherwise derived from `type`. */
   ariaLive?: ToastPoliteness
   /**
@@ -14390,6 +14457,10 @@ export interface ToastItemParts {
     'aria-label': string
     'data-scope': 'toast'
     'data-part': 'close-trigger'
+    /** Reactive: true while the toast is not `dismissable` — the button leaves
+     * the accessibility tree and the tab order. */
+    hidden: Signal<boolean>
+    /** Dismisses the toast; ignored while it is not `dismissable`. */
     onClick: (e: MouseEvent) => void
   }
 }
@@ -15778,7 +15849,8 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components/utils`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+Owns `position`, `top`, `left`, `transform` and the two available-size
+custom properties ({@link FLOATING_AVAILABLE_HEIGHT}) on `floating`; `position` and
 all four physical inset properties on an optional arrow; and placement
 attributes on `stateTarget`. The arrow's static-side inset is half its
 untransformed layout size, so a square arrow straddles the resolved edge.
@@ -17516,7 +17588,8 @@ export interface FocusRestoreQuery {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to first focusable. */
+  /** Element to focus when the trap activates. Defaults to the first focusable
+   * descendant, else the container itself (give it `tabindex="-1"`). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -18977,19 +19050,16 @@ export declare function flipArrow(key: string, source: Element | null | TextDire
 
 ##### `floatingDir()` from `@llui/components/utils/direction`
 
-The `dir` a floating-placement call (`attachFloating`'s `dir` option) should
-be given for this state. While direction is still automatic (`dirSource ===
-'dom'`, i.e. no explicit config/`setDir` yet), this returns `undefined` so
-`attachFloating` falls back to reading the FLOATING ELEMENT's own computed
-`direction` (`domPlatform`'s default) — the actual page/ancestor direction
-a portaled overlay landed under — rather than the state's `dir`, which
-defaults to `'ltr'` until something explicitly resolves it. Passing the
-state's `dir` unconditionally (#265 A1) meant an RTL page with no opt-in
-direction-sync part mirrored every floating menu/popover/etc. as if it were
-LTR: the state said `'ltr'` (its untouched default) while the DOM said
-`'rtl'`. Once a consumer calls `setDir`/passes `dir` explicitly,
-`dirSource` flips to `'explicit'` and that value is authoritative here too,
-overriding whatever the DOM happens to compute to.
+The EXPLICIT direction to hand an overlay's `floating.dir`, or `undefined`
+while direction is still automatic (`dirSource === 'dom'`). `undefined` is
+not "unknown": the overlay engine then resolves the direction from the
+overlay's placement ANCHOR — the trigger, in the app's own container — and
+writes it on the portaled floating element, so geometry, CSS and key
+handlers inside the portal all agree with the trigger (#265 finding 6).
+Passing the state's `dir` unconditionally (#265 A1) mirrored every floating
+surface on an RTL page as LTR: the untouched state default said `'ltr'`
+while the DOM said `'rtl'`. Once a consumer calls `setDir`/passes `dir`,
+`dirSource` is `'explicit'` and that value wins over the DOM.
 
 ```typescript
 function floatingDir(state: DirectionState): 'ltr' | 'rtl' | undefined
@@ -19048,6 +19118,20 @@ Apply an internal DOM observation only while direction remains automatic.
 
 ```typescript
 function syncDomDirection<T extends DirectionState>(state: T, dir: 'ltr' | 'rtl'): T
+```
+
+##### `watchDirection()` from `@llui/components/utils/direction`
+
+Watch every `dir` that can decide `target()`'s resolved direction: `dir`
+attributes on the element and its live ancestor chain (across shadow
+roots), and child-list changes that relocate it between differently
+directed ancestors. Calls `onChange` after any such mutation — the caller
+re-resolves — then re-observes the chain `target()` names NOW, so a
+relocated or replaced element keeps being watched. Returns a disconnect.
+A no-op where `MutationObserver` does not exist (SSR).
+
+```typescript
+function watchDirection(target: () => Element | null, onChange: () => void): () => void
 ```
 
 #### Types
@@ -19276,7 +19360,8 @@ export type SyncEngineFocusBodyRequired = {
 ##### `attachFloating()` from `@llui/components/utils/floating`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+Owns `position`, `top`, `left`, `transform` and the two available-size
+custom properties ({@link FLOATING_AVAILABLE_HEIGHT}) on `floating`; `position` and
 all four physical inset properties on an optional arrow; and placement
 attributes on `stateTarget`. The arrow's static-side inset is half its
 untransformed layout size, so a square arrow straddles the resolved edge.
@@ -19462,7 +19547,8 @@ export declare function pushFocusTrap(opts: FocusTrapOptions): () => void
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to first focusable. */
+  /** Element to focus when the trap activates. Defaults to the first focusable
+   * descendant, else the container itself (give it `tabindex="-1"`). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -19569,7 +19655,8 @@ function areaPath(
 ##### `attachFloating()` from `@llui/components/utils/index`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+Owns `position`, `top`, `left`, `transform` and the two available-size
+custom properties ({@link FLOATING_AVAILABLE_HEIGHT}) on `floating`; `position` and
 all four physical inset properties on an optional arrow; and placement
 attributes on `stateTarget`. The arrow's static-side inset is half its
 untransformed layout size, so a square arrow straddles the resolved edge.
@@ -21307,7 +21394,8 @@ export interface FocusRestoreQuery {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to first focusable. */
+  /** Element to focus when the trap activates. Defaults to the first focusable
+   * descendant, else the container itself (give it `tabindex="-1"`). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -22464,7 +22552,16 @@ export interface OverlayFloatingConfig {
   arrowSelector?: string
   /** Match the floating element's min-width to the anchor's width. */
   sameWidth?: boolean
-  /** Reading direction — a function so it can be peeked at mount time (menu). */
+  /**
+   * An EXPLICIT reading direction — a function so it can be peeked at attach
+   * time (menu). Return `undefined` (or omit it) while direction is automatic:
+   * the engine then resolves it from the placement ANCHOR, never from where
+   * the portal landed (#265 finding 6). Whichever wins is handed to
+   * `attachFloating` and written as `dir` on the floating element, so the
+   * whole portaled subtree — CSS logical properties, key handlers resolving
+   * from `e.currentTarget`, and nested overlays anchored inside it — reads
+   * the same direction as the trigger it belongs to.
+   */
   dir?: TextDirection | (() => TextDirection | undefined)
   /** Attach positioning in the MOUNT phase (survives the exit animation) rather
    * than the interaction phase. Required when `visibleWhen` unwinds interactions
@@ -22479,18 +22576,21 @@ export interface OverlayFloatingConfig {
    * string (`'right-start'`) encodes a reading-direction decision that a
    * later `computePosition` pass with the same closed-over string cannot
    * correct (#265 A4: a submenu whose menu tree flips direction while the
-   * level stays open must re-place, not just re-run the same geometry).
+   * level stays open must re-place, not just re-run the same geometry). A DOM
+   * direction change needs no key — the engine watches the anchor's
+   * direction itself; this is for STATE the DOM does not show (an explicit
+   * `setDir`).
    *
    * There is no public imperative signal-subscribe seam for framework-internal
    * code running inside a mount callback (`@llui/dom`'s reactivity is
    * binding-driven, not subscription-driven) — a caller declares this key by
-   * rendering it as a reactive attribute inside its own `content()` (a hidden
-   * marker element carrying `data-llui-reattach-key`), and the engine watches
-   * that ATTRIBUTE with a `MutationObserver`, the same declarative-binding-
-   * to-DOM-observation idiom `direction.ts:directionSyncMount` already uses in
-   * the other direction (DOM to state, here state to DOM to imperative code).
-   * The marker is looked up via `[data-llui-reattach-key]` inside the resolved
-   * `content` element; a caller that supplies `reattachKey` MUST render one.
+   * binding it reactively as a `data-llui-reattach-key` attribute on the
+   * content element or an ancestor it controls (`subOverlay` puts it on the
+   * positioner it builds), and the engine watches that ATTRIBUTE with a
+   * `MutationObserver`, the same declarative-binding-to-DOM-observation idiom
+   * `direction.ts:watchDirection` uses in the other direction. The marker is
+   * found with `content.closest('[data-llui-reattach-key]')`; supplying
+   * `reattachKey` without one is an authoring error (`LluiFrameworkError`).
    */
   reattachKey?: () => string | number
 }
@@ -27841,6 +27941,14 @@ function connect(
 function init(opts: ToasterInit = {}): ToasterState
 ```
 
+##### `isPaused()` from `@llui/components/toast`
+
+Whether any reason currently holds the toast's countdown paused.
+
+```typescript
+function isPaused(t: Pick<Toast, 'pausedBy'>): boolean
+```
+
 ##### `isPresent()` from `@llui/components/toast`
 
 Whether a toast with the given id is in the queue (mounted). Stays true
@@ -27899,26 +28007,26 @@ export type ToasterMsg =
   /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
   | { type: 'tick'; id: string; elapsedMs: number }
   /** @intent("Pause auto-dismiss countdown for the toast with the given id") */
-  | { type: 'pause'; id: string }
-  /** @intent("Resume auto-dismiss countdown for the toast with the given id") */
-  | { type: 'resume'; id: string }
+  | { type: 'pause'; id: string; reason?: ToastPauseReason }
+  /** @intent("Resume auto-dismiss countdown for the toast with the given id (releases only the given reason, default manual)") */
+  | { type: 'resume'; id: string; reason?: ToastPauseReason }
   /** @intent("Pause auto-dismiss for every visible toast") */
-  | { type: 'pauseAll' }
-  /** @intent("Resume auto-dismiss for every visible toast") */
-  | { type: 'resumeAll' }
+  | { type: 'pauseAll'; reason?: ToastPauseReason }
+  /** @intent("Resume auto-dismiss for every visible toast (releases only the given reason, default manual)") */
+  | { type: 'resumeAll'; reason?: ToastPauseReason }
   /** @humanOnly Exit animation finished for the toast with the given id — remove it from the queue. */
   | { type: 'animationEnd'; id: string }
 ```
 
 ##### `ToastInput` from `@llui/components/toast`
 
-A new toast as supplied to `create`. `remainingMs`/`paused`/`status` are
-optional — seeded from `duration`/`false`/`'open'` when omitted.
+A new toast as supplied to `create`. `remainingMs`/`pausedBy`/`status` are
+optional — seeded from `duration`/`[]`/`'open'` when omitted.
 
 ```typescript
-export type ToastInput = Omit<Toast, 'remainingMs' | 'paused' | 'status'> & {
+export type ToastInput = Omit<Toast, 'remainingMs' | 'pausedBy' | 'status'> & {
   remainingMs?: number
-  paused?: boolean
+  pausedBy?: readonly ToastPauseReason[]
   status?: PresenceStatus
 }
 ```
@@ -27935,7 +28043,7 @@ and `description` on the same mounted toast) and `connect()`'s `toast()`
 builder binds every one of these reactively (never via a one-shot
 `peek()`), so a patch here is visible wherever it renders.
 
-`status`/`remainingMs`/`paused` are excluded: they are LIFECYCLE fields the
+`status`/`remainingMs`/`pausedBy` are excluded: they are LIFECYCLE fields the
 reducer itself owns (presence transitions, the tick-driven countdown,
 pause/resume) and a patch is the wrong channel for them — `dismiss`/`tick`/
 `pause`/`resume` already exist and a caller patching `remainingMs` directly
@@ -27948,8 +28056,22 @@ remainingMs frozen at 0) that is later patched to a finite duration would
 inherit that frozen 0 and dismiss on the very next tick instead of lasting
 its new duration.
 
+A key present with the value `undefined` means "not patched" (#265 G6), the
+same as an absent key: `{ duration: undefined }` leaves the countdown alone
+rather than re-seeding it to 0. To make a toast sticky, patch
+`duration: null`.
+
 ```typescript
-export type ToastPatch = Partial<Omit<Toast, 'id' | 'status' | 'remainingMs' | 'paused'>>
+export type ToastPatch = Partial<Omit<Toast, 'id' | 'status' | 'remainingMs' | 'pausedBy'>>
+```
+
+##### `ToastPauseReason` from `@llui/components/toast`
+
+Why a toast's countdown is paused. The row's own handlers use `'hover'` and
+`'focus'`; a `pause`/`resume` message without a reason uses `'manual'`.
+
+```typescript
+export type ToastPauseReason = 'focus' | 'hover' | 'manual'
 ```
 
 ##### `ToastPlacement` from `@llui/components/toast`
@@ -27982,11 +28104,15 @@ Architecture (timer-free, tick-driven — same division of labor as timer.ts):
 
 - `toast.toaster` state manages a collection of toasts. Each toast carries
   its own countdown in state: `duration` (null = sticky), `remainingMs`,
-  and `paused`.
+  and `pausedBy` (the set of reasons currently holding it paused).
 - The machine owns NO interval. The consumer drives the countdown with a
   `tick(id, elapsedMs)` message (e.g. via @llui/effects `interval`),
-  subtracting the elapsed wall time since the last tick. A `paused` toast
-  freezes its `remainingMs` (ticks are ignored).
+  subtracting the elapsed wall time since the last tick. A paused toast
+  (any reason held) freezes its `remainingMs` (ticks are ignored).
+- Pause REASONS are independent (#265 G6): the row's hover pauses/resumes
+  `'hover'`, focus entering/leaving the row pauses/resumes `'focus'`, and
+  `pause`/`resume` with no reason use `'manual'`. Pointer-leave therefore
+  never resumes a toast whose close button still has keyboard focus.
 - When `remainingMs` hits 0 the REDUCER dismisses that toast itself, so
   there is no consumer/runtime race over who removes it.
 
@@ -28028,10 +28154,14 @@ export interface Toast {
   duration: number | null
   /** ms left before auto-dismiss. Counts down via `tick`. */
   remainingMs: number
-  /** Whether the toast can be manually dismissed. */
+  /** Whether the USER can dismiss the toast: `false` hides the close trigger
+   * (`closeTrigger.hidden`) and ignores its click. A `dismiss` message from
+   * code still removes it. Patchable. */
   dismissable: boolean
-  /** Pause flag — frozen countdown while set (consumer sets on hover/focus). */
-  paused: boolean
+  /** The reasons currently holding the countdown paused, as a canonical set
+   * (unique, in {@link ToastPauseReason} order). Empty = running. Owned by the
+   * reducer: change it with `pause`/`resume`, read it with {@link isPaused}. */
+  pausedBy: ToastPauseReason[]
   /** Optional per-toast politeness override; otherwise derived from `type`. */
   ariaLive?: ToastPoliteness
   /**
@@ -28164,6 +28294,10 @@ export interface ToastItemParts {
     'aria-label': string
     'data-scope': 'toast'
     'data-part': 'close-trigger'
+    /** Reactive: true while the toast is not `dismissable` — the button leaves
+     * the accessibility tree and the tab order. */
+    hidden: Signal<boolean>
+    /** Dismisses the toast; ignored while it is not `dismissable`. */
     onClick: (e: MouseEvent) => void
   }
 }
@@ -28741,7 +28875,15 @@ export type ComboboxMsg =
   | { type: 'highlight'; value: string | null }
   /** @intent("Pick the currently-highlighted option in the filtered list") */
   | { type: 'selectHighlighted' }
-  /** @humanOnly */
+  /**
+   * @humanOnly
+   *
+   * Replace `items` (and optionally `disabled`) synchronously — the same
+   * highlight-resolution policy as `loadSuccess` applies: a highlight that no
+   * longer survives the fresh list moves to the first enabled match WHILE
+   * OPEN, or to `null` WHILE CLOSED (#265 G3), since a background refresh
+   * must not manufacture a highlight before the control is ever opened.
+   */
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
@@ -28760,10 +28902,16 @@ export type ComboboxMsg =
    * follow-up message. `value` (selection) is dropped when it no longer
    * names a value in the new `items` (after the new `disabled` is applied).
    * `highlightedValue` is kept only when it is BOTH still in the fresh
-   * filtered list AND not newly disabled; otherwise it moves to the first
-   * enabled match (or `null` when none is enabled) — never left dangling
-   * for a render in between, and never left naming an option that is now
-   * disabled.
+   * filtered list AND not newly disabled. Otherwise the fallback depends on
+   * whether the listbox is open: WHILE OPEN it moves to the first enabled
+   * match (or `null` when none is enabled) — never left dangling for a
+   * render in between, and never left naming an option that is now
+   * disabled. WHILE CLOSED it always resolves to `null` instead, even when
+   * the fresh list has enabled options: the listbox content is unmounted
+   * while closed, so there is no option `aria-activedescendant` could
+   * correctly name, and a background load (a prefetch, a poll) must not
+   * manufacture a highlight before the control is ever opened — re-opening
+   * always reseeds the highlight itself (#265 G3).
    */
   | {
       type: 'loadSuccess'
@@ -40767,7 +40915,10 @@ export interface SearchableSelectParts {
     'data-part': 'clear'
     onClick: (e: MouseEvent) => void
   }
-  /** Polite live region announcing the no-results / result count. */
+  /** Polite live region announcing the no-results / result count once the
+   * list is settled (`loadState` is `'success'` or `'initial-empty'`), the
+   * error text on `'error'`, and nothing while a fetch is in flight
+   * (`'loading'` / `'stale-results'`). */
   liveRegion: {
     role: 'status'
     'aria-live': 'polite'
@@ -40776,7 +40927,9 @@ export interface SearchableSelectParts {
     'data-part': 'live-region'
     text: Signal<string>
   }
-  /** Empty-state container (render when the filtered list is empty). */
+  /** Empty-state container. `hidden` is false only when the SETTLED filtered
+   * list is empty — never while loading, revalidating, or after a failed
+   * fetch (the live region / an error slot own those). */
   empty: {
     'data-scope': 'searchable-select'
     'data-part': 'empty'
@@ -42287,7 +42440,10 @@ export interface SearchableSelectParts {
     'data-part': 'clear'
     onClick: (e: MouseEvent) => void
   }
-  /** Polite live region announcing the no-results / result count. */
+  /** Polite live region announcing the no-results / result count once the
+   * list is settled (`loadState` is `'success'` or `'initial-empty'`), the
+   * error text on `'error'`, and nothing while a fetch is in flight
+   * (`'loading'` / `'stale-results'`). */
   liveRegion: {
     role: 'status'
     'aria-live': 'polite'
@@ -42296,7 +42452,9 @@ export interface SearchableSelectParts {
     'data-part': 'live-region'
     text: Signal<string>
   }
-  /** Empty-state container (render when the filtered list is empty). */
+  /** Empty-state container. `hidden` is false only when the SETTLED filtered
+   * list is empty — never while loading, revalidating, or after a failed
+   * fetch (the live region / an error slot own those). */
   empty: {
     'data-scope': 'searchable-select'
     'data-part': 'empty'

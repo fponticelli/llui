@@ -69,7 +69,8 @@ function _scrollLockCount(): number
 ### `attachFloating()`
 
 Position `floating` relative to `anchor` with live updates on scroll/resize.
-Owns `position`, `top`, `left`, and `transform` on `floating`; `position` and
+Owns `position`, `top`, `left`, `transform` and the two available-size
+custom properties ({@link FLOATING_AVAILABLE_HEIGHT}) on `floating`; `position` and
 all four physical inset properties on an optional arrow; and placement
 attributes on `stateTarget`. The arrow's static-side inset is half its
 untransformed layout size, so a square arrow straddles the resolved edge.
@@ -593,7 +594,8 @@ export interface FloatingOptions {
 export interface FocusTrapOptions {
   /** The container whose focusable descendants form the trap. */
   container: ElementSource
-  /** Element to focus when the trap activates. Defaults to first focusable. */
+  /** Element to focus when the trap activates. Defaults to the first focusable
+   * descendant, else the container itself (give it `tabindex="-1"`). */
   initialFocus?: Element | (() => Element | null)
   /** Restore focus to the previously active element on release (default: true). */
   restoreFocus?: boolean
@@ -684,6 +686,23 @@ Every aspect — the default for a registration that names none.
 
 ```typescript
 const ALL_NESTED_LAYER_ASPECTS: readonly NestedLayerAspect[]
+```
+
+### `FLOATING_AVAILABLE_HEIGHT`
+
+The px space left beside the anchor on the resolved side, published on the
+floating element so a surface can cap itself with
+`max-height: var(--llui-floating-available-height, …)` — the LLui
+counterpart of Radix's `--radix-*-content-available-height`.
+
+```typescript
+const FLOATING_AVAILABLE_HEIGHT
+```
+
+### `FLOATING_AVAILABLE_WIDTH`
+
+```typescript
+const FLOATING_AVAILABLE_WIDTH
 ```
 
 <!-- auto-api:end -->
