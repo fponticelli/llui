@@ -125,23 +125,37 @@ export function extractClassCandidates(fileName, source) {
   // `classPartWithDefaults` (`const TABLE_CONTAINER_CLASSES = '…'; …
   // mergeClass(TABLE_CONTAINER_CLASSES, viewportClassName)`) used to reach
   // `pushString` as a bare `Identifier`, which no branch handled — silently
-  // skipped, no candidates contributed, no error. `stringConsts` is the
-  // string-typed sibling of `objectConsts`, resolved through the identical
-  // "inline literal, or a module-level const by name" shape inside
-  // `pushString` itself, so every recipe position gains it for free rather
-  // than needing its own copy of the lookup.
+  // skipped, no candidates contributed, no error.
+  //
+  // `moduleConstInitializers` indexes EVERY module-level `const`'s raw
+  // initializer (whatever shape it is), which is what makes the SKIP-vs-THROW
+  // decision below sound: a const declared with a non-literal initializer
+  // (`const B = pick()`) is real and just unresolvable — SKIP, never throw —
+  // while a name that resolves NOWHERE at all (no local binding, no import, no
+  // module declaration) really is a typo/dangling reference. `moduleNames` is
+  // the coarser "does ANY module-level declaration (const/let/var/function/
+  // class) bind this name" check used for exactly that skip, deliberately
+  // including `let`/`var` (#264 review LOW 3 — a `let` must NOT be resolved as
+  // if it were a stable `const`: it can be reassigned elsewhere in the file,
+  // so trusting its first initializer risks reporting STALE classes; a `let`
+  // is skipped, same as `pick()`, never resolved and never thrown on).
   /** @type {Map<string, ts.Expression>} */
-  const stringConsts = new Map()
+  const moduleConstInitializers = new Map()
+  /** @type {Set<string>} */
+  const moduleNames = new Set()
   for (const stmt of sf.statements) {
-    if (!ts.isVariableStatement(stmt)) continue
-    for (const decl of stmt.declarationList.declarations) {
-      if (!ts.isIdentifier(decl.name) || decl.initializer === undefined) continue
-      if (
-        ts.isStringLiteral(decl.initializer) ||
-        ts.isNoSubstitutionTemplateLiteral(decl.initializer) ||
-        ts.isTemplateExpression(decl.initializer)
-      ) {
-        stringConsts.set(decl.name.text, decl.initializer)
+    if (ts.isFunctionDeclaration(stmt) && stmt.name !== undefined) {
+      moduleNames.add(stmt.name.text)
+    } else if (ts.isClassDeclaration(stmt) && stmt.name !== undefined) {
+      moduleNames.add(stmt.name.text)
+    } else if (ts.isVariableStatement(stmt)) {
+      const isConst = (stmt.declarationList.flags & ts.NodeFlags.Const) !== 0
+      for (const decl of stmt.declarationList.declarations) {
+        if (!ts.isIdentifier(decl.name)) continue
+        moduleNames.add(decl.name.text)
+        if (isConst && decl.initializer !== undefined) {
+          moduleConstInitializers.set(decl.name.text, decl.initializer)
+        }
       }
     }
   }
@@ -173,6 +187,36 @@ export function extractClassCandidates(fileName, source) {
   const asObject = (node) => asObjectLiteral(node, objectConsts)
 
   /**
+   * A STRING-typed module `const`'s value, resolved recursively: a plain
+   * string/template literal, or a `+`-concatenation of operands that
+   * themselves resolve (including a reference to ANOTHER string const —
+   * cycle-guarded via `seen`). Returns `undefined` for anything else (a call,
+   * a ternary, a non-const identifier, …) — those are real values this
+   * extractor cannot reason about, not failures.
+   *
+   * @param {ts.Node} node
+   * @param {Set<string>} seen
+   * @returns {string | undefined}
+   */
+  const evaluateLiteralString = (node, seen) => {
+    if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text
+    if (ts.isParenthesizedExpression(node)) return evaluateLiteralString(node.expression, seen)
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+      const left = evaluateLiteralString(node.left, seen)
+      if (left === undefined) return undefined
+      const right = evaluateLiteralString(node.right, seen)
+      return right === undefined ? undefined : left + right
+    }
+    if (ts.isIdentifier(node)) {
+      if (seen.has(node.text)) return undefined
+      const init = moduleConstInitializers.get(node.text)
+      if (init === undefined) return undefined
+      return evaluateLiteralString(init, new Set(seen).add(node.text))
+    }
+    return undefined
+  }
+
+  /**
    * The set of names bound in every DIRECT binding pattern (a destructured
    * parameter or variable), so a genuinely dynamic value — a function
    * parameter, a destructured prop — is never mistaken for an unresolved
@@ -199,16 +243,47 @@ export function extractClassCandidates(fileName, source) {
   }
 
   /**
-   * True when `node`'s name is bound by an ENCLOSING function parameter,
-   * local variable/destructure, or catch clause — i.e. a genuinely dynamic,
-   * caller-provided value (`mergeClass(recipe, className)` inside this very
-   * file's own `classPart`/`classPartWithDefaults` definitions) that a
-   * recipe position may legitimately carry and which is never expected to
-   * resolve against a module-level const. Anything NOT locally bound is
-   * expected to be a module-level recipe reference (or a typo/an import),
-   * and `pushString` fails loudly rather than silently when it cannot
-   * resolve one — a silently-skipped identifier is exactly how a hoisted
-   * recipe (and any dead class inside it) went unchecked.
+   * True when `root` (a function/arrow/method/constructor/accessor BODY, or
+   * the whole source file) contains a plain `var` (never `let`/`const`)
+   * declaring `name`, at ANY nesting depth that does not cross into a
+   * NESTED function scope — `var` hoists to the nearest function/module
+   * scope regardless of how many blocks lie between, so `if (1) { var c =
+   * 1 }` binds `c` for the WHOLE enclosing function, not just that `if`
+   * block (#264 review LOW 3: the previous, block-only check missed this).
+   *
+   * @param {ts.Node} root
+   * @param {string} name
+   * @returns {boolean}
+   */
+  const containsVarBinding = (root, name) => {
+    let found = false
+    /** @param {ts.Node} n */
+    const walk = (n) => {
+      if (found || (n !== root && ts.isFunctionLike(n))) return
+      if (
+        ts.isVariableDeclarationList(n) &&
+        (n.flags & ts.NodeFlags.BlockScoped) === 0 &&
+        n.declarations.some((d) => bindingNames(d.name).has(name))
+      ) {
+        found = true
+        return
+      }
+      ts.forEachChild(n, walk)
+    }
+    walk(root)
+    return found
+  }
+
+  /**
+   * True when `node`'s name is bound by an ENCLOSING function/constructor/
+   * accessor parameter (including destructuring), a `for`/`for-of`/`for-in`
+   * loop variable, a `catch` clause, a local `let`/`const`/`var` (at any
+   * nesting depth `var` hoisting reaches), or a local function/class
+   * declaration — i.e. a genuinely dynamic, caller-provided value
+   * (`mergeClass(recipe, className)` inside this very file's own
+   * `classPart`/`classPartWithDefaults` definitions) that a recipe position
+   * may legitimately carry and which is never expected to resolve against a
+   * module-level const.
    *
    * @param {ts.Identifier} node
    * @returns {boolean}
@@ -219,10 +294,8 @@ export function extractClassCandidates(fileName, source) {
     let current = node.parent
     while (current !== undefined && !ts.isSourceFile(current)) {
       if (
-        (ts.isFunctionDeclaration(current) ||
-          ts.isFunctionExpression(current) ||
-          ts.isArrowFunction(current) ||
-          ts.isMethodDeclaration(current)) &&
+        ts.isFunctionLike(current) &&
+        'parameters' in current &&
         current.parameters.some((p) => bindingNames(p.name).has(name))
       ) {
         return true
@@ -234,12 +307,23 @@ export function extractClassCandidates(fileName, source) {
       ) {
         return true
       }
+      if (
+        (ts.isForOfStatement(current) ||
+          ts.isForInStatement(current) ||
+          ts.isForStatement(current)) &&
+        current.initializer !== undefined &&
+        ts.isVariableDeclarationList(current.initializer) &&
+        current.initializer.declarations.some((d) => bindingNames(d.name).has(name))
+      ) {
+        return true
+      }
       if (ts.isBlock(current)) {
         for (const stmt of current.statements) {
-          if (ts.isVariableStatement(stmt)) {
-            for (const decl of stmt.declarationList.declarations) {
-              if (bindingNames(decl.name).has(name)) return true
-            }
+          if (
+            ts.isVariableStatement(stmt) &&
+            stmt.declarationList.declarations.some((d) => bindingNames(d.name).has(name))
+          ) {
+            return true
           }
           if (
             (ts.isFunctionDeclaration(stmt) || ts.isClassDeclaration(stmt)) &&
@@ -249,9 +333,17 @@ export function extractClassCandidates(fileName, source) {
           }
         }
       }
+      // `var` hoists past every intervening block to the nearest function
+      // scope — checked once per enclosing function-like, against its WHOLE
+      // body, rather than per `Block` above (which only sees that block's
+      // OWN statements).
+      if (ts.isFunctionLike(current) && 'body' in current && current.body !== undefined) {
+        if (containsVarBinding(current.body, name)) return true
+      }
       current = current.parent
     }
-    return false
+    // A top-level `var` in the module itself (function-less script code).
+    return containsVarBinding(sf, name)
   }
 
   // Template literals contribute their STATIC text only. An interpolated span is
@@ -272,27 +364,49 @@ export function extractClassCandidates(fileName, source) {
       strings.push(node.head.text)
       for (const span of node.templateSpans) strings.push(span.literal.text)
     } else if (ts.isIdentifier(node)) {
-      // A genuinely dynamic value (a parameter, a destructured prop) is not
-      // expected to name a recipe — skip it silently, same as before.
+      // The global `undefined` (`cn('p-2', undefined)`) is not a recipe
+      // reference at all — a legitimate absent/falsy class fragment.
+      if (node.text === 'undefined') return
+      // A genuinely dynamic value (a parameter, a destructured prop, a `var`
+      // reached through hoisting) is not expected to name a recipe — skip it
+      // silently, same as before (#264 review LOW 3).
       if (isLocallyBound(node)) return
       // An imported recipe const is resolved and checked in ITS OWN file —
       // a missed check here at worst, never a false failure.
       if (importedNames.has(node.text)) return
-      const resolved = stringConsts.get(node.text)
-      if (resolved !== undefined) {
-        pushString(resolved)
+      // A plain literal, or a `+`-concatenation of literals/other string
+      // consts (`const B = 'p-2 ' + 'm-1'`) — resolved to its actual value.
+      const evaluated = evaluateLiteralString(node, new Set())
+      if (evaluated !== undefined) {
+        strings.push(evaluated)
         return
       }
-      // Anything else reaching a recipe position as a bare identifier is
-      // either a typo or a recipe helper this file does not know how to
-      // follow — fail loudly rather than silently reporting zero
-      // candidates for it (#264 item F2; this is exactly how a hoisted
-      // recipe used to go unchecked).
+      // A module const whose initializer this extractor cannot statically
+      // reduce to a string (`const B = pick()`) is still a REAL, INTENTIONAL
+      // declaration — not a typo — so it is a missed check, never a false
+      // failure. The one case handled here rather than falling through to
+      // "declared, unresolvable, skip" is an INTERPOLATED template
+      // (`` `${buttonVariants(...)} size-…` ``): its STATIC spans are still
+      // real class text, exactly like an inline template literal, and
+      // `pushString`'s own template branch already knows how to read them.
+      const constInit = moduleConstInitializers.get(node.text)
+      if (constInit !== undefined) {
+        if (ts.isTemplateExpression(constInit)) pushString(constInit)
+        return
+      }
+      if (moduleNames.has(node.text)) return
+      // Anything else reaching a recipe position as a bare identifier
+      // resolves NOWHERE — no local binding, no import, no module-level
+      // declaration at all — and is either a typo or a recipe helper this
+      // file does not know how to follow. Fail loudly rather than silently
+      // reporting zero candidates for it (#264 item F2; this is exactly how
+      // a hoisted recipe used to go unchecked).
       throw new Error(
         `registry-classes: recipe position in ${fileName} references identifier ` +
-          `"${node.text}", which is not a module-level string const this extractor ` +
-          "can resolve. Assign the recipe to a plain `const NAME = '…'`/template " +
-          'literal at module scope, or inline the string.',
+          `"${node.text}", which resolves to no local binding, import, or ` +
+          'module-level declaration this extractor can find. Assign the recipe ' +
+          "to a plain `const NAME = '…'`/template literal at module scope, or " +
+          'inline the string.',
       )
     }
   }
