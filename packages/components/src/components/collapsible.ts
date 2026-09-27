@@ -4,8 +4,9 @@ import { retainedExit } from '../internal/retained-exit.js'
 import {
   createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
-  createExitWatcherCounter,
   createMissingExitWatcherWarning,
+  scheduleStaleExitWatcherRecovery,
+  sharedExitWatcherCounter,
   type DisclosureExitWatchEntry,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
@@ -203,10 +204,17 @@ export function connect(
   }
   // Counts how many `exitCompletion` mounts are CURRENTLY live, entirely in
   // THIS closure (#264 review M1) — see `createExitWatcherCounter`'s header.
-  const exitWatcher = createExitWatcherCounter(
+  // Shared by dispatcher identity across every `connect()` call over the
+  // same slice — see accordion.ts's identical note.
+  const exitWatcher = sharedExitWatcherCounter(
+    send,
     () => send({ type: 'exitWatcherAttach' }),
     () => send({ type: 'exitWatcherDetach' }),
   )
+  // Self-heals a restored state slice carrying a stale `exitWatched: true`
+  // with nothing mounted this session — see accordion.ts's identical note
+  // and `scheduleStaleExitWatcherRecovery`'s own header.
+  scheduleStaleExitWatcherRecovery(state, exitWatcher, () => send({ type: 'exitWatcherDetach' }))
   const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] => {
     const current = state.peek()
     return current.closing

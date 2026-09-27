@@ -248,10 +248,10 @@ export interface DisclosureExitWatchEntry {
  * was actually stuck) and (b) needed a whole disposal/dedupe apparatus to
  * avoid leaking timers or re-warning. The fail-safe is now structural
  * instead of diagnostic: `connect()` tracks whether ITS OWN
- * `exitCompletion` mount is currently attached (`state.exitWatcher`, flipped
+ * `exitCompletion` mount is currently attached (`state.exitWatched`, flipped
  * by an `exitWatcherAttach`/`exitWatcherDetach` message this mount sends on
  * mount/cleanup) and the reducer only ever enters `closing` when
- * `animated && exitWatcher` both hold — otherwise it closes INSTANTLY, the
+ * `animated && exitWatched` both hold — otherwise it closes INSTANTLY, the
  * same as `animated: false`. A forgotten placement can therefore never hang:
  * there is no `closing` state to get stuck in. `connect()` also warns once,
  * synchronously, the first time a close would have retained but the watcher
@@ -356,12 +356,21 @@ export function createDisclosureExitTracker(): DisclosureExitTracker {
  * detaching does not send `exitWatcherDetach` while another placement is
  * still mounted.
  */
+export interface ExitWatcherCounter {
+  /** Current live count — read-only; the only writes are through `attach()`. */
+  readonly count: number
+  attach: () => () => void
+}
+
 export function createExitWatcherCounter(
   onFirstAttach: () => void,
   onLastDetach: () => void,
-): { attach: () => () => void } {
+): ExitWatcherCounter {
   let count = 0
   return {
+    get count() {
+      return count
+    },
     attach(): () => void {
       count += 1
       if (count === 1) onFirstAttach()
@@ -374,6 +383,95 @@ export function createExitWatcherCounter(
       }
     },
   }
+}
+
+/**
+ * `connect()` may be called MORE THAN ONCE over the same underlying slice —
+ * an unusual but real shape (e.g. two independent views each wiring up the
+ * same accordion instance for their own DOM). Each call used to build its
+ * OWN `createExitWatcherCounter`, so two counters tracked the SAME real
+ * mounts independently: one `connect()`'s counter could read 1 (attached)
+ * while the other's read 0, and the SECOND could then wrongly fire the
+ * "forgot to place exitCompletion" recovery below against a slice a SIBLING
+ * connect() call is genuinely watching (#264 review — "the two-connect-on-
+ * one-slice case"). Keyed by the DISPATCHER identity (`send`) rather than
+ * the state slice itself, because `send` is the one value every `connect()`
+ * call over the same reducer necessarily shares, and — unlike the state
+ * signal — it is a stable object reference across `connect()` calls
+ * (queueable in a `WeakMap`, and never recreated per render the way a
+ * derived signal handle can be). The first `connect()` call for a given
+ * `send` wins: its `onFirstAttach`/`onLastDetach` callbacks are the ones
+ * that end up wired to the shared counter, but since both calls dispatch
+ * through the SAME `send`, the message each would have sent is identical —
+ * only one of them needs to actually fire it.
+ */
+const SHARED_EXIT_WATCHER_COUNTERS = new WeakMap<object, ExitWatcherCounter>()
+
+export function sharedExitWatcherCounter(
+  dispatcher: object,
+  onFirstAttach: () => void,
+  onLastDetach: () => void,
+): ExitWatcherCounter {
+  const existing = SHARED_EXIT_WATCHER_COUNTERS.get(dispatcher)
+  if (existing !== undefined) return existing
+  const counter = createExitWatcherCounter(onFirstAttach, onLastDetach)
+  SHARED_EXIT_WATCHER_COUNTERS.set(dispatcher, counter)
+  return counter
+}
+
+/**
+ * Self-heals a state slice restored (JSON round trip, bypassing `init()`)
+ * with a STALE `exitWatched: true` from a past session (#264 review —
+ * follow-up to M1's mount-count fix, which moved the COUNT into `connect()`'s
+ * closure but left the BOOLEAN itself as ordinary, persistable state; a
+ * restored slice can still carry a stale `true` with NOTHING mounted this
+ * session, which — read uncorrected — makes the very next close retain
+ * against a watcher that will never complete it, hanging `closing` + `inert`
+ * exactly like the bug M1 fixed, and ALSO suppresses the "you forgot to
+ * place exitCompletion" warning, since that warning's own condition is
+ * `!before.exitWatched`).
+ *
+ * Called once per `connect()`, unconditionally — cheap, since the ONLY path
+ * that ever sends anything is the pathological restored-stale-flag case;
+ * ordinary `init()`-constructed state always starts `exitWatched: false`, so
+ * this is a no-op on every normal mount. Deferred to a microtask rather than
+ * checked synchronously at `connect()` time for two reasons: (1) `connect()`
+ * runs DURING `view()`, before this build's OWN `onMount` callbacks have had
+ * a chance to run (they fire only once the structural primitives holding
+ * them are PLACED, after `view()` returns) — checking synchronously would
+ * see the closure count as 0 even for an instance whose `exitCompletion` is
+ * about to attach in the very same mount pass, and (2) peeking a signal with
+ * no live value (`rootSignal()`-backed structural tests) throws by design,
+ * so the peek is wrapped in a `try`/`catch` here rather than left to fail a
+ * test that never mounts anything. A real mount's ENTIRE initial `onMount`
+ * pass runs synchronously inside `mountApp`/`hydrateSignalApp`, which
+ * returns before any microtask can run, so by the time this callback fires,
+ * `counter.count` already reflects whether a real watcher attached during
+ * that SAME mount — and stays IDEMPOTENT from there: it corrects the flag
+ * (and settles anything spuriously `closing`) via the ordinary
+ * `exitWatcherDetach` message exactly once, the same message a real detach
+ * sends, so nothing about it needs to be re-armed or re-checked later.
+ *
+ * SSR-safe / disposed-safe: SSR (`renderToString`) disposes its whole tree
+ * synchronously before returning, and the framework's own `send()` already
+ * no-ops (with a dev log) after disposal — this schedules through the same
+ * `send`, so it inherits that safety net rather than needing a second one.
+ */
+export function scheduleStaleExitWatcherRecovery<S extends { readonly exitWatched: boolean }>(
+  state: { peek(): S },
+  counter: ExitWatcherCounter,
+  sendDetach: () => void,
+): void {
+  if (typeof queueMicrotask !== 'function') return
+  queueMicrotask(() => {
+    let current: S
+    try {
+      current = state.peek()
+    } catch {
+      return
+    }
+    if (counter.count === 0 && current.exitWatched) sendDetach()
+  })
 }
 
 /**

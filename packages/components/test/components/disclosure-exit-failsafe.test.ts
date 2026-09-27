@@ -242,6 +242,159 @@ describe('#264 item F1 — exitCompletion fail-safe', () => {
     expect(content(host).dataset.state).toBe('closed')
   })
 
+  /**
+   * A restored slice's `exitWatched: true` is a DIFFERENT hazard than M1's
+   * (#264 review follow-up): M1 fixed a stale COUNT (moved into the closure,
+   * never persisted); this is the BOOLEAN flag itself coming back stale from
+   * a JSON round trip, with NOTHING mounted this session at all. Read
+   * uncorrected, the next close retains against a watcher that will never
+   * complete it — the identical hang M1 exists to prevent, one field over —
+   * and ALSO suppresses the "you forgot to place exitCompletion" warning
+   * (its own condition is `!before.exitWatched`). `scheduleStaleExitWatcherRecovery`
+   * self-heals it via a microtask scheduled at `connect()` time, so every
+   * test below awaits ONE microtask tick (`Promise.resolve()`, which queues
+   * strictly after our `queueMicrotask` callback since it was already
+   * enqueued) right after mounting/restoring and before interacting — the
+   * same ordering a real browser guarantees for free, since no user input
+   * can land synchronously inside the same tick as a synchronous mount.
+   */
+  function snapMounted(): accordion.AccordionState {
+    const host1 = document.createElement('div')
+    document.body.append(host1)
+    const app1 = mountApp(host1, accordionDef(true))
+    const snap: accordion.AccordionState = JSON.parse(JSON.stringify(app1.getState().accordion))
+    app1.dispose()
+    host1.remove()
+    return snap
+  }
+
+  function mountRestored(snap: accordion.AccordionState, place: boolean): HTMLElement {
+    const def = accordionDef(place)
+    const persisted: SignalComponentDef<AccState, AccMsg> = {
+      ...def,
+      init: () => [{ accordion: snap, placeExitCompletion: place }, []],
+    }
+    const host = document.createElement('div')
+    document.body.append(host)
+    app = mountApp(host, persisted)
+    return host
+  }
+
+  it('P2 (#264 review follow-up): restored exitWatched:true, NOTHING mounted, a programmatic close still closes instantly', async () => {
+    const snap = snapMounted()
+    expect(snap.exitWatched).toBe(true)
+    const host = mountRestored(snap, false)
+    await Promise.resolve() // let the stale-flag recovery microtask run
+    app?.send({ type: 'accordion', msg: { type: 'close', value: 'details' } })
+    const el = content(host)
+    expect(el.dataset.state).toBe('closed')
+    expect(el.hidden).toBe(true)
+    expect(el.hasAttribute('inert')).toBe(true)
+  })
+
+  it('P3 (#264 review follow-up): restored exitWatched:true, NOTHING mounted, a real click still closes instantly', async () => {
+    const snap = snapMounted()
+    const host = mountRestored(snap, false)
+    await Promise.resolve()
+    click(trigger(host))
+    expect(content(host).dataset.state).toBe('closed')
+  })
+
+  it('P4 (#264 review follow-up): restored true, nothing mounted, close, then a LATER real mount/unmount still behaves', async () => {
+    const snap = snapMounted()
+    const host = mountRestored(snap, false)
+    await Promise.resolve()
+    app?.send({ type: 'accordion', msg: { type: 'close', value: 'details' } })
+    const s1 = content(host).dataset.state
+    app?.send({ type: 'setPlaceExitCompletion', value: true })
+    const s2 = content(host).dataset.state
+    app?.send({ type: 'setPlaceExitCompletion', value: false })
+    expect([s1, s2, content(host).dataset.state]).toEqual(['closed', 'closed', 'closed'])
+  })
+
+  it('the recovery is a no-op (never fires) when exitCompletion genuinely IS mounted this session', async () => {
+    const snap = snapMounted()
+    const host = mountRestored(snap, true) // placed from the start this session too
+    await Promise.resolve()
+    click(trigger(host))
+    // A real watcher is attached, so the close RETAINS rather than closing
+    // instantly — proving the recovery did not spuriously clear a genuinely
+    // live `exitWatched`.
+    expect(content(host).dataset.state).toBe('closing')
+  })
+
+  it('two connect() calls sharing one send share ONE mount count (#264 review follow-up)', async () => {
+    // Two independent `connect()` calls over the SAME accordion slice,
+    // dispatching through the SAME `send` — each placing its OWN
+    // exitCompletion. Detaching one must not drop retention while the
+    // other's is still mounted, exactly like the single-connect() double-
+    // placement case, but now proven across the SHARED-counter seam itself.
+    interface TwoConnectState {
+      accordion: accordion.AccordionState
+      placeA: boolean
+      placeB: boolean
+    }
+    type TwoConnectMsg =
+      | AccMsg
+      | { type: 'setPlaceA'; value: boolean }
+      | { type: 'setPlaceB'; value: boolean }
+    const host = document.createElement('div')
+    document.body.append(host)
+    app = mountApp(host, {
+      name: 'TwoConnectFixture',
+      init: () => [
+        {
+          accordion: accordion.init({ items: ['details'], value: ['details'], animated: true }),
+          placeA: true,
+          placeB: true,
+        },
+        [],
+      ],
+      update: (state: TwoConnectState, msg: TwoConnectMsg) => {
+        if (msg.type === 'setPlaceA') return [{ ...state, placeA: msg.value }, []]
+        if (msg.type === 'setPlaceB') return [{ ...state, placeB: msg.value }, []]
+        if (msg.type === 'accordion') {
+          return [{ ...state, accordion: accordion.update(state.accordion, msg.msg)[0] }, []]
+        }
+        return [state, []]
+      },
+      view: ({ state, send }): readonly Mountable[] => {
+        const dispatch = (msg: accordion.AccordionMsg): void => send({ type: 'accordion', msg })
+        // TWO independent connect() calls, same slice, same `send` reference.
+        const accA = accordion.connect(state.at('accordion'), dispatch, { id: 'two-connect-a' })
+        const accB = accordion.connect(state.at('accordion'), dispatch, { id: 'two-connect-b' })
+        const item = accA.item('details')
+        return [
+          div({ ...accA.root }, [
+            div({ ...item.item }, [
+              div({ ...item.trigger }, [text('details')]),
+              div({ ...item.content }, [text('content')]),
+            ]),
+          ]),
+          show(
+            state.at('placeA'),
+            () => [accA.exitCompletion],
+            () => [],
+          ),
+          show(
+            state.at('placeB'),
+            () => [accB.exitCompletion],
+            () => [],
+          ),
+        ]
+      },
+    })
+    await Promise.resolve()
+    click(trigger(host))
+    expect(content(host).dataset.state).toBe('closing')
+
+    app?.send({ type: 'setPlaceA', value: false })
+    expect(content(host).dataset.state).toBe('closing') // B's placement still mounted
+
+    app?.send({ type: 'setPlaceB', value: false })
+    expect(content(host).dataset.state).toBe('closed') // both detached now
+  })
+
   it('placing exitCompletion TWICE tracks correctly: one detaching does not drop retention while the other stays mounted', () => {
     const host = document.createElement('div')
     document.body.append(host)

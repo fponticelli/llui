@@ -101,8 +101,11 @@
 
 [data-scope='avatar'][data-part='root'][data-density='compact']
   [data-scope='avatar'][data-part='fallback'] {
-  /* #262: --llui-space-3 is 0.75rem — the shared semantic scale, not a bare value. */
-  font-size: var(--llui-space-3);
+  /* Deliberately a bare value, not --llui-space-3 (#264 review LOW): that
+     token is 0.75rem too, but it names a SPACING step, not a type-scale
+     step — reusing it here for font-size would be numerically correct and
+     semantically wrong. This package has no type-scale token today. */
+  font-size: 0.75rem;
 }
 
 /* ─── Progress ─── */

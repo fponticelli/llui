@@ -10,8 +10,9 @@ import {
 import {
   createDisclosureExitCompletionMount,
   createDisclosureExitTracker,
-  createExitWatcherCounter,
   createMissingExitWatcherWarning,
+  scheduleStaleExitWatcherRecovery,
+  sharedExitWatcherCounter,
   type DisclosureExitWatchEntry,
   type MotionEvent,
 } from '../internal/disclosure-motion.js'
@@ -332,11 +333,22 @@ export function connect(
   }
   // Counts how many `exitCompletion` mounts are CURRENTLY live, entirely in
   // THIS closure (#264 review M1) — see `createExitWatcherCounter`'s header
-  // for why state itself must never carry the count.
-  const exitWatcher = createExitWatcherCounter(
+  // for why state itself must never carry the count. Shared by DISPATCHER
+  // identity across every `connect()` call over the same slice (#264 review
+  // follow-up — "the two-connect-on-one-slice case"), so two `connect()`
+  // calls sharing a `send` share one real count instead of two independent
+  // (and therefore inconsistent) ones.
+  const exitWatcher = sharedExitWatcherCounter(
+    send,
     () => send({ type: 'exitWatcherAttach' }),
     () => send({ type: 'exitWatcherDetach' }),
   )
+  // Self-heals a RESTORED state slice carrying a stale `exitWatched: true`
+  // with nothing actually mounted this session (#264 review — follow-up to
+  // M1, which moved the COUNT into this closure but left the boolean itself
+  // as ordinary, persistable state). See `scheduleStaleExitWatcherRecovery`'s
+  // own header for the full timing rationale.
+  scheduleStaleExitWatcherRecovery(state, exitWatcher, () => send({ type: 'exitWatcherDetach' }))
   const exitWatchEntries = (): readonly DisclosureExitWatchEntry[] =>
     state.peek().closing.map((value) => ({
       key: value,

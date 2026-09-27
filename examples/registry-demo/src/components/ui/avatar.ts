@@ -31,7 +31,7 @@ import { classPart, classPartWithDefaults } from '../../lib/utils'
  * (#264 review LOW — `size=lg` + `density=compact` measured as an
  * unpredictable tie: root and badge WIDTH happened to resolve to `lg`'s
  * value, but the badge's icon and the fallback's text size did NOT,
- * resolving to `compact`'s instead — a tie broken by Tailind's internal
+ * resolving to `compact`'s instead — a tie broken by Tailwind's internal
  * declaration order, not by anything this file controls or a reader can
  * predict from the source alone).** A bare `data-[density=compact]:` /
  * `group-data-[density=compact]/avatar:` competes on EQUAL specificity with

@@ -208,12 +208,25 @@ const accordionAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) => {
     (state, send) => {
       const parts = accordion.connect(state, send, { id: `baseline-accordion-${ctx.caseId}` })
       const item = parts.item(itemValue)
-      return div({ ...parts.root }, [
-        div({ ...item.item }, [
-          button({ ...item.trigger }, [text(input.label)]),
-          div({ ...item.content }, [text(input.content)]),
+      // `exitCompletion` MUST be placed (#264 review follow-up to M1): the
+      // `closing` phase this scenario constructs via a direct reducer call
+      // (`initDisclosureAccordion`, never a real mount) sets `exitWatched:
+      // true` in the initial state to simulate what a real attach would —
+      // but nothing here ever runs a real attach unless this part is
+      // placed, and `connect()`'s own stale-flag recovery
+      // (`scheduleStaleExitWatcherRecovery`) would otherwise correctly
+      // treat that simulated flag as STALE (no real watcher this session)
+      // and clear it, settling the very `closing` phase this fixture exists
+      // to render.
+      return [
+        div({ ...parts.root }, [
+          div({ ...item.item }, [
+            button({ ...item.trigger }, [text(input.label)]),
+            div({ ...item.content }, [text(input.content)]),
+          ]),
         ]),
-      ])
+        parts.exitCompletion,
+      ]
     },
   )
 }
@@ -227,10 +240,14 @@ const collapsibleAdapter: Adapter<DisclosureCaseInput> = (host, input, ctx) =>
     collapsible.update,
     (state, send) => {
       const parts = collapsible.connect(state, send, { id: `baseline-collapsible-${ctx.caseId}` })
-      return div({ ...parts.root }, [
-        button({ ...parts.trigger }, [text(input.label)]),
-        div({ ...parts.content }, [text(input.content)]),
-      ])
+      // See accordionAdapter's identical note above.
+      return [
+        div({ ...parts.root }, [
+          button({ ...parts.trigger }, [text(input.label)]),
+          div({ ...parts.content }, [text(input.content)]),
+        ]),
+        parts.exitCompletion,
+      ]
     },
   )
 
