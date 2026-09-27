@@ -608,7 +608,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`, `directionSync`
 
-**Utilities:** `overlay()`, `isPresent()`, `isMounted()`, `watchSubmenuPositioning()`
+**Utilities:** `overlay()`, `subOverlay()`, `isPresent()`, `isMounted()`
 
 ---
 
@@ -1037,7 +1037,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`, `directionSync`
 
-**Utilities:** `overlay()`, `isPresent()`, `isMounted()`, `watchSubmenuPositioning()`
+**Utilities:** `overlay()`, `subOverlay()`, `isPresent()`, `isMounted()`
 
 ---
 
@@ -1063,7 +1063,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `root`, `menuTrigger`, `menu`, `directionSync`
 
-**Utilities:** `overlay()`, `watchSubmenuPositioning()`
+**Utilities:** `overlay()`, `subOverlay()`
 
 ---
 
@@ -22406,7 +22406,14 @@ export interface OverlayEngineOptions<S> {
 
 ```typescript
 export interface OverlayFloatingConfig {
-  placement: Placement
+  /**
+   * Preferred placement. A function so it can be resolved AT ATTACH TIME
+   * (#265 A4) — a per-level submenu chooses its physical side (`right-start`
+   * under 'ltr', `left-start` under 'rtl') from the reading direction in
+   * effect when the level opens, the same way `dir` below is already
+   * resolved lazily rather than captured at declaration time.
+   */
+  placement: Placement | (() => Placement)
   offset: number
   flip: boolean
   shift: boolean
@@ -22421,6 +22428,28 @@ export interface OverlayFloatingConfig {
    * before `mountWhen` releases retained exit content; the engine rejects that
    * two-phase lifetime unless placement persists with the mounted node. */
   persistent?: boolean
+  /**
+   * Re-run floating attachment (detach then reattach, re-evaluating the
+   * `placement`/`dir` thunks fresh) whenever this key's value CHANGES while
+   * mounted. Needed because `placement`/`dir` are otherwise resolved ONCE at
+   * attach and `autoUpdate` never re-polls them — a physical `placement`
+   * string (`'right-start'`) encodes a reading-direction decision that a
+   * later `computePosition` pass with the same closed-over string cannot
+   * correct (#265 A4: a submenu whose menu tree flips direction while the
+   * level stays open must re-place, not just re-run the same geometry).
+   *
+   * There is no public imperative signal-subscribe seam for framework-internal
+   * code running inside a mount callback (`@llui/dom`'s reactivity is
+   * binding-driven, not subscription-driven) — a caller declares this key by
+   * rendering it as a reactive attribute inside its own `content()` (a hidden
+   * marker element carrying `data-llui-reattach-key`), and the engine watches
+   * that ATTRIBUTE with a `MutationObserver`, the same declarative-binding-
+   * to-DOM-observation idiom `direction.ts:directionSyncMount` already uses in
+   * the other direction (DOM to state, here state to DOM to imperative code).
+   * The marker is looked up via `[data-llui-reattach-key]` inside the resolved
+   * `content` element; a caller that supplies `reattachKey` MUST render one.
+   */
+  reattachKey?: () => string | number
 }
 ```
 
@@ -25648,58 +25677,25 @@ function isPresent(state: MenuState): boolean
 function overlay(opts: OverlayOptions): Mountable
 ```
 
+##### `subOverlay()` from `@llui/components/menu`
+
+Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
+consumer-wired `watchSubmenuPositioning` (removed). Call once per
+`children`-bearing item, alongside its `subTrigger`, in place of the old
+hand-rolled `show(isOpen, () => [div(subPositioner, [div(subContent, …)])])`:
+`subOverlay` builds both wrapper divs itself and owns mount/floating/
+nested-layer-ownership. See `menu-machine.ts:subOverlay`'s doc comment for
+the full contract (direction resolution, no-`dismiss` design, runtime
+direction-change re-placement).
+
+```typescript
+function subOverlay(opts: SubOverlayOptions): Mountable
+```
+
 ##### `update()` from `@llui/components/menu`
 
 ```typescript
 function update(state: MenuState, msg: MenuMsg): [MenuState, never[]]
-```
-
-##### `watchSubmenuPositioning()` from `@llui/components/menu`
-
-Attach REAL floating geometry to every currently-mounted submenu level
-inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
-named by its own `aria-labelledby` (never a hand-tracked map — the DOM
-relationship the machine already publishes is the source of truth), with
-flip/shift and a side chosen by `eventDirection(direction.peek(), trigger)`
-— the SAME shared seam every keyboard handler in this file resolves through
-(#265 finding 6), not an isolated `resolveDir` call. That keeps the two
-consistent in BOTH modes: while `dirSource` is `'dom'` it falls through to
-`resolveDir(trigger)`, so a submenu nested under an RTL ancestor still opens
-the correct way even if the root menu itself is LTR; once a consumer
-EXPLICITLY configures/`setDir`s a direction, that explicit value wins here
-too, instead of the floating geometry silently disagreeing with the
-keyboard/state direction because it kept reading the raw DOM regardless.
-
-A submenu level is a SYNCHRONOUS boolean machine, the same as
-select/combobox/searchable-select: `openPath` membership is its only mounted
-entry state, so — like those — the CALLER is expected to mount
-`subPositioner`/`subContent` only while the level is open (e.g. behind a
-`show(...)`) rather than keep it in the DOM and toggle `data-state`. This
-watcher therefore keys off DOM PRESENCE, not `data-state`: attaching floating
-to every subcontent node found, detaching (which restores every inline style
-`attachFloating` wrote) for any node it had attached that is no longer
-present. That is the "gating/exit cleanup" contract — a level that closes
-tears its floating attachment down in the same tick its node unmounts, never
-on a later poll.
-
-Call from `onMount` with the menu's build root, exactly like
-`tabs.watchTabIndicator` / `navigationMenu.watchNavMenuIndicator` — `onMount`
-hands the BUILD's root container, not the element the call sits inside, so
-forwarding whatever `onMount` gave you (rather than the menu's own root) is
-how two menus on one page end up positioning each other's submenus.
-
-`direction` is the same `Signal<MenuState | ContextMenuState | MenubarState>`
-passed into this instance's `connect()` — the exact one in scope at every
-demo call site (`state.at('dropdown')`, `state.at('menubar')`, …) — so the
-geometry reads the SAME direction the reducer/keyboard handlers do, never a
-second, independently-resolved one.
-
-```typescript
-function watchSubmenuPositioning(
-  root: HTMLElement,
-  direction: SubmenuDirectionSource,
-  opts: SubmenuPositioningOptions = {},
-): () => void
 ```
 
 #### Types
@@ -25964,31 +25960,20 @@ export interface OverlayOptions {
 }
 ```
 
-##### `SubmenuDirectionSource` from `@llui/components/menu`
-
-The minimal shape `watchSubmenuPositioning` needs to resolve direction —
-satisfied by the `Signal<S>` for any `S extends MenuTreeState` a menu/
-context-menu/menubar `connect()` is called with.
+##### `SubOverlayOptions` from `@llui/components/menu`
 
 ```typescript
-export interface SubmenuDirectionSource {
-  peek(): Pick<MenuTreeState, 'dir' | 'dirSource'>
-}
-```
-
-##### `SubmenuPositioningOptions` from `@llui/components/menu`
-
-```typescript
-export interface SubmenuPositioningOptions {
-  /** Cross-axis alignment against the subTrigger (default: 'start' — the top
-   * edge of the trigger, matching every other overlay's `*-start` default). */
+export interface SubOverlayOptions {
+  /** The subTrigger value this level opens under. */
+  value: string
+  state: Signal<MenuState>
+  parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
   align?: 'start' | 'end'
-  /** Gap between the subTrigger and its submenu, in px (default: 2, closing the
-   * visible seam a hovering pointer would otherwise have to cross). */
   offset?: number
-  /** Flip to the opposite side when there isn't room (default: true). */
   flip?: boolean
-  /** Shift along the cross axis to stay in view (default: true). */
   shift?: boolean
 }
 ```
@@ -30845,58 +30830,20 @@ function isPresent(state: ContextMenuState): boolean
 function overlay(opts: OverlayOptions): Mountable
 ```
 
+##### `subOverlay()` from `@llui/components/context-menu`
+
+Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
+consumer-wired `watchSubmenuPositioning` (removed). See
+`menu-machine.ts:subOverlay`'s doc comment for the full contract.
+
+```typescript
+function subOverlay(opts: SubOverlayOptions): Mountable
+```
+
 ##### `update()` from `@llui/components/context-menu`
 
 ```typescript
 function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMenuState, never[]]
-```
-
-##### `watchSubmenuPositioning()` from `@llui/components/context-menu`
-
-Attach REAL floating geometry to every currently-mounted submenu level
-inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
-named by its own `aria-labelledby` (never a hand-tracked map — the DOM
-relationship the machine already publishes is the source of truth), with
-flip/shift and a side chosen by `eventDirection(direction.peek(), trigger)`
-— the SAME shared seam every keyboard handler in this file resolves through
-(#265 finding 6), not an isolated `resolveDir` call. That keeps the two
-consistent in BOTH modes: while `dirSource` is `'dom'` it falls through to
-`resolveDir(trigger)`, so a submenu nested under an RTL ancestor still opens
-the correct way even if the root menu itself is LTR; once a consumer
-EXPLICITLY configures/`setDir`s a direction, that explicit value wins here
-too, instead of the floating geometry silently disagreeing with the
-keyboard/state direction because it kept reading the raw DOM regardless.
-
-A submenu level is a SYNCHRONOUS boolean machine, the same as
-select/combobox/searchable-select: `openPath` membership is its only mounted
-entry state, so — like those — the CALLER is expected to mount
-`subPositioner`/`subContent` only while the level is open (e.g. behind a
-`show(...)`) rather than keep it in the DOM and toggle `data-state`. This
-watcher therefore keys off DOM PRESENCE, not `data-state`: attaching floating
-to every subcontent node found, detaching (which restores every inline style
-`attachFloating` wrote) for any node it had attached that is no longer
-present. That is the "gating/exit cleanup" contract — a level that closes
-tears its floating attachment down in the same tick its node unmounts, never
-on a later poll.
-
-Call from `onMount` with the menu's build root, exactly like
-`tabs.watchTabIndicator` / `navigationMenu.watchNavMenuIndicator` — `onMount`
-hands the BUILD's root container, not the element the call sits inside, so
-forwarding whatever `onMount` gave you (rather than the menu's own root) is
-how two menus on one page end up positioning each other's submenus.
-
-`direction` is the same `Signal<MenuState | ContextMenuState | MenubarState>`
-passed into this instance's `connect()` — the exact one in scope at every
-demo call site (`state.at('dropdown')`, `state.at('menubar')`, …) — so the
-geometry reads the SAME direction the reducer/keyboard handlers do, never a
-second, independently-resolved one.
-
-```typescript
-function watchSubmenuPositioning(
-  root: HTMLElement,
-  direction: SubmenuDirectionSource,
-  opts: SubmenuPositioningOptions = {},
-): () => void
 ```
 
 #### Types
@@ -31120,19 +31067,20 @@ export interface OverlayOptions {
 }
 ```
 
-##### `SubmenuPositioningOptions` from `@llui/components/context-menu`
+##### `SubOverlayOptions` from `@llui/components/context-menu`
 
 ```typescript
-export interface SubmenuPositioningOptions {
-  /** Cross-axis alignment against the subTrigger (default: 'start' — the top
-   * edge of the trigger, matching every other overlay's `*-start` default). */
+export interface SubOverlayOptions {
+  /** The subTrigger value this level opens under. */
+  value: string
+  state: Signal<ContextMenuState>
+  parts: Pick<ContextMenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
   align?: 'start' | 'end'
-  /** Gap between the subTrigger and its submenu, in px (default: 2, closing the
-   * visible seam a hovering pointer would otherwise have to cross). */
   offset?: number
-  /** Flip to the opposite side when there isn't room (default: true). */
   flip?: boolean
-  /** Shift along the cross axis to stay in view (default: true). */
   shift?: boolean
 }
 ```
@@ -38036,58 +37984,25 @@ dismissable stack the menu machine uses.
 function overlay(opts: MenubarOverlayOptions): Mountable
 ```
 
+##### `subOverlay()` from `@llui/components/menubar`
+
+Engine-owned floating overlay for one submenu level of an embedded menu
+(#265 A4) — replaces the consumer-wired `watchSubmenuPositioning` (removed).
+Unlike `menu`/`context-menu`'s own `subOverlay`, this one reads the ROOT
+`MenubarState` and reaches into the one open menu's embedded `MenuState`
+(`s.menuStates[menuId]`) for both open-membership and direction, because a
+menubar's `overlay()` is likewise keyed on root state (`s.open === menuId`)
+rather than on the embedded menu's own state. See
+`menu-machine.ts:subOverlay`'s doc comment for the shared contract.
+
+```typescript
+function subOverlay(opts: SubOverlayOptions): Mountable
+```
+
 ##### `update()` from `@llui/components/menubar`
 
 ```typescript
 function update(state: MenubarState, msg: MenubarMsg): [MenubarState, never[]]
-```
-
-##### `watchSubmenuPositioning()` from `@llui/components/menubar`
-
-Attach REAL floating geometry to every currently-mounted submenu level
-inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
-named by its own `aria-labelledby` (never a hand-tracked map — the DOM
-relationship the machine already publishes is the source of truth), with
-flip/shift and a side chosen by `eventDirection(direction.peek(), trigger)`
-— the SAME shared seam every keyboard handler in this file resolves through
-(#265 finding 6), not an isolated `resolveDir` call. That keeps the two
-consistent in BOTH modes: while `dirSource` is `'dom'` it falls through to
-`resolveDir(trigger)`, so a submenu nested under an RTL ancestor still opens
-the correct way even if the root menu itself is LTR; once a consumer
-EXPLICITLY configures/`setDir`s a direction, that explicit value wins here
-too, instead of the floating geometry silently disagreeing with the
-keyboard/state direction because it kept reading the raw DOM regardless.
-
-A submenu level is a SYNCHRONOUS boolean machine, the same as
-select/combobox/searchable-select: `openPath` membership is its only mounted
-entry state, so — like those — the CALLER is expected to mount
-`subPositioner`/`subContent` only while the level is open (e.g. behind a
-`show(...)`) rather than keep it in the DOM and toggle `data-state`. This
-watcher therefore keys off DOM PRESENCE, not `data-state`: attaching floating
-to every subcontent node found, detaching (which restores every inline style
-`attachFloating` wrote) for any node it had attached that is no longer
-present. That is the "gating/exit cleanup" contract — a level that closes
-tears its floating attachment down in the same tick its node unmounts, never
-on a later poll.
-
-Call from `onMount` with the menu's build root, exactly like
-`tabs.watchTabIndicator` / `navigationMenu.watchNavMenuIndicator` — `onMount`
-hands the BUILD's root container, not the element the call sits inside, so
-forwarding whatever `onMount` gave you (rather than the menu's own root) is
-how two menus on one page end up positioning each other's submenus.
-
-`direction` is the same `Signal<MenuState | ContextMenuState | MenubarState>`
-passed into this instance's `connect()` — the exact one in scope at every
-demo call site (`state.at('dropdown')`, `state.at('menubar')`, …) — so the
-geometry reads the SAME direction the reducer/keyboard handlers do, never a
-second, independently-resolved one.
-
-```typescript
-function watchSubmenuPositioning(
-  root: HTMLElement,
-  direction: SubmenuDirectionSource,
-  opts: SubmenuPositioningOptions = {},
-): () => void
 ```
 
 #### Types
@@ -38268,19 +38183,23 @@ export interface MenubarTriggerParts {
 }
 ```
 
-##### `SubmenuPositioningOptions` from `@llui/components/menubar`
+##### `SubOverlayOptions` from `@llui/components/menubar`
 
 ```typescript
-export interface SubmenuPositioningOptions {
-  /** Cross-axis alignment against the subTrigger (default: 'start' — the top
-   * edge of the trigger, matching every other overlay's `*-start` default). */
+export interface SubOverlayOptions {
+  /** The open menu's id (`opts.menuId` of the enclosing `overlay()`). */
+  menuId: string
+  /** The subTrigger value this level opens under. */
+  value: string
+  /** The ROOT `Signal<MenubarState>` — the same one passed to `connect()`. */
+  state: Signal<MenubarState>
+  parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
+  content: () => Renderable
+  target?: string | HTMLElement
+  positionerClass?: string
   align?: 'start' | 'end'
-  /** Gap between the subTrigger and its submenu, in px (default: 2, closing the
-   * visible seam a hovering pointer would otherwise have to cross). */
   offset?: number
-  /** Flip to the opposite side when there isn't room (default: true). */
   flip?: boolean
-  /** Shift along the cross axis to stay in view (default: true). */
   shift?: boolean
 }
 ```

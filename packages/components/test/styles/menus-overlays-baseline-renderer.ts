@@ -433,6 +433,7 @@ const menuAdapter: Adapter<MenuCaseInput> = (host, input, ctx) =>
                       value: SUBMENU_VALUE,
                       state,
                       parts,
+                      target: host,
                       content: () => [
                         div({ ...parts.subContent(SUBMENU_VALUE) }, [
                           div({ ...parts.item(SUBMENU_CHILD_VALUE).item }, [text('Submenu item')]),
@@ -513,6 +514,7 @@ const contextMenuAdapter: Adapter<ContextMenuCaseInput> = (host, input, ctx) =>
                       value: SUBMENU_VALUE,
                       state,
                       parts,
+                      target: host,
                       content: () => [
                         div({ ...menuParts.subContent(SUBMENU_VALUE) }, [
                           div({ ...menuParts.item(SUBMENU_CHILD_VALUE).item }, [
