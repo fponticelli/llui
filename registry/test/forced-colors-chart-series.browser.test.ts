@@ -126,6 +126,11 @@ async function paintedColorCount(page: Page, twoTone: boolean): Promise<number> 
     for (let x = 0; x < decoded.width; x++) {
       for (let y = 0; y < decoded.height; y++) {
         const [r, g, b, a] = decodedCtx.getImageData(x, y, 1, 1).data
+        // A 1x1 read always carries four channels; a short one is a broken
+        // probe, so it throws rather than defaulting into a skipped pixel.
+        if (r === undefined || g === undefined || b === undefined || a === undefined) {
+          throw new Error('getImageData(1x1) returned fewer than four channels')
+        }
         if (a === 0) continue
         colors.add(`${bucket(r)},${bucket(g)},${bucket(b)}`)
       }
@@ -179,6 +184,11 @@ async function patternColorCount(page: Page, patternId: string): Promise<number>
     for (let x = 0; x < canvas.width; x++) {
       for (let y = 0; y < canvas.height; y++) {
         const [r, g, b, a] = ctx.getImageData(x, y, 1, 1).data
+        // A 1x1 read always carries four channels; a short one is a broken
+        // probe, so it throws rather than defaulting into a skipped pixel.
+        if (r === undefined || g === undefined || b === undefined || a === undefined) {
+          throw new Error('getImageData(1x1) returned fewer than four channels')
+        }
         if (a === 0) continue
         colors.add(`${bucket(r)},${bucket(g)},${bucket(b)}`)
       }

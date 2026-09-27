@@ -204,10 +204,17 @@ collapsible exit motion`) for the full contract.
 ## Checks
 
 ```bash
-pnpm check:registry    # tsc over the source (nothing else in the repo compiles it)
+pnpm check:registry    # tsc over the source AND test/ (nothing else in the repo compiles either)
 pnpm test:scripts      # compiles every emitted class with real Tailwind; fails on dead ones
 pnpm build:registry    # regenerate site/public/r/*.json
 ```
+
+`check:registry` runs the package's own `check` script, which compiles two
+configs: `tsconfig.json` (the shipped `llui/` source, in the shape a consumer
+compiles it) and `tsconfig.test.json` (`test/` and `vitest.config.ts`, with node
+types). Vitest transpiles the tests with esbuild and never type-checks them, so
+without the second config a type error in a test fails nothing
+(`scripts/test/registry-typecheck-coverage.test.ts` pins both file sets).
 
 The second one is not optional decoration. The layer this replaced had 62 test files
 asserting substrings of class strings that no build ever compiled, and 116 utility

@@ -19,7 +19,7 @@
     "smoke:examples": "tsx scripts/smoke-examples.ts",
     "check:docs": "node scripts/check-readme-examples.mjs",
     "check:generated": "node scripts/check-generated.mjs",
-    "check:registry": "tsc --noEmit -p registry/tsconfig.json",
+    "check:registry": "pnpm --filter @llui/registry check",
     "build:registry": "node scripts/build-registry.mjs",
     "check:test-durations": "node scripts/check-test-durations.mjs",
     "test:durations": "node scripts/check-test-durations.mjs --save",

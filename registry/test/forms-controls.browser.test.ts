@@ -5,7 +5,10 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { component, div, li, mountApp, text, type Mountable } from '@llui/dom'
 import { compileCandidates } from '../../scripts/lib/tailwind-compile.mjs'
 import { ProductContractSchema } from '../../packages/cli/src/product-contract'
-import { FORM_CONTROL_SCENARIOS } from '../../packages/components/test/styles/fixtures/form-control-scenarios'
+import {
+  FORM_CONTROL_SCENARIOS,
+  type FormControlScenario,
+} from '../../packages/components/test/styles/fixtures/form-control-scenarios'
 import { AngleSliderControl, AngleSliderThumb } from '../llui/ui/angle-slider'
 import { Button } from '../llui/ui/button'
 import { ButtonGroup } from '../llui/ui/button-group'
@@ -96,7 +99,10 @@ const concernProductIds = (
   concern: 'dark' | 'high-contrast' | 'rtl',
 ): string[] =>
   Object.values(FORM_CONTROL_SCENARIOS)
-    .filter((scenario) => {
+    // Widened to the row type: the table is `as const`, so without this the
+    // element is a union of literal tuples and `states.includes` only accepts
+    // the states EVERY scenario lists (`'default' | 'disabled'`).
+    .filter((scenario: FormControlScenario) => {
       const coverage = path === 'baseline' ? scenario.baseline : scenario.registryTailwind
       return (coverage === 'styled' || coverage === 'partial') && scenario.states.includes(concern)
     })
@@ -1001,7 +1007,7 @@ describe('forms-controls baseline/registry parity in real Tailwind + Chromium', 
 
   it('derives high-contrast coverage from canonical scenario IDs with explicit path truth', () => {
     const canonical = Object.entries(FORM_CONTROL_SCENARIOS)
-      .filter(([, value]) => value.states.includes('high-contrast'))
+      .filter(([, value]: [string, FormControlScenario]) => value.states.includes('high-contrast'))
       .map(([scenarioId]) => scenarioId)
       .sort()
     expect(Object.keys(HIGH_CONTRAST_COVERAGE).sort()).toEqual(canonical)

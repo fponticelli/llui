@@ -2,7 +2,8 @@
   // The registry ships SOURCE that consumers compile, so nothing in the repo
   // would type-check it by default — exactly how `src/styles/classes/*` rotted
   // into 116 dead utilities without a single failing test. `pnpm check:registry`
-  // (wired into `verify` and CI) compiles it here instead.
+  // (wired into `verify` and CI) compiles it here instead. The registry's own
+  // `test/` is compiled by `tsconfig.test.json` (#272), in the same script.
   //
   // The `@/` paths mirror what `llui add` rewrites to in a consumer project, so
   // the source is checked in the shape it is authored, not a repo-only variant.

@@ -936,7 +936,7 @@ describe('registry navigation/data presentation in Chromium', () => {
             'carousel-next',
             'carousel-dot-active',
             'carousel-dot',
-          ].map((id) => {
+          ].map((id): [number, number] => {
             const rect = document.getElementById(id)!.getBoundingClientRect()
             return [rect.width, rect.height]
           }),

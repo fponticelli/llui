@@ -80,7 +80,8 @@ Full reasoning: `docs/agents/workflow.md`.
 Mirror `.github/workflows/ci.yml` **step for step, filters included**. Full detail: `docs/agents/ci.md`.
 
 - **`--filter=!@llui/site` applies to the BUILD step only.** `turbo check` and `turbo lint` run unfiltered, so the site is type-checked and linted.
-- `@llui/site` is the only package whose tsconfig type-checks a file importing `vitest.shared.ts`; `pnpm check:scripts` is the other gate. Type root config against vitest's own config type, not `as const`.
+- `@llui/site` and `@llui/registry` are the only packages whose tsconfigs type-check a file importing `vitest.shared.ts`; `pnpm check:scripts` is the other gate. Type root config against vitest's own config type, not `as const`.
+- Vitest's esbuild transpile never type-checks. `registry/test/` is compiled by `registry/tsconfig.test.json` (#272): the registry `check` script runs both registry configs and `pnpm check:registry` delegates to it.
 - `scripts/` is covered by `pnpm check:scripts` (`tsconfig.scripts.json`, `checkJs` on — not redundant) and `pnpm lint:scripts` (type-aware, `recommendedTypeChecked`). Keep the lint globs QUOTED (`sh` has no globstar). A new file under `scripts/` must be `.ts` or `.mjs` or the coverage tests fail.
 - In `.mjs`, the JSDoc cast `/** @type {X} */ (JSON.parse(raw))` still trips `no-unsafe-*`. Write `/** @type {unknown} */ const parsed = JSON.parse(raw)` first, then cast.
 - `pnpm check:docs` type-checks README examples. `@doc-skip`, `@doc-setup` and `DOC_ONLY_MODULES` can all hide real staleness — review them like an allowlist.
