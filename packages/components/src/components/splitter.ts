@@ -108,9 +108,13 @@ export function positionFromPoint(
   clientX: number,
   clientY: number,
 ): number {
+  // A horizontal split mirrors under RTL — the primary panel sits on the
+  // RIGHT — so its share is measured from the right edge (#266).
   const pct =
     state.orientation === 'horizontal'
-      ? ((clientX - rect.left) / rect.width) * 100
+      ? ((state.dir === 'rtl' ? rect.left + rect.width - clientX : clientX - rect.left) /
+          rect.width) *
+        100
       : ((clientY - rect.top) / rect.height) * 100
   return clamp(pct, state.min, state.max)
 }
