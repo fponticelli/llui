@@ -146,14 +146,36 @@ describe('actual navigation/data demos in Chromium', () => {
   // A per-FILE allowlist for genuinely VERBATIM-upstream shadcn recipe
   // strings a demo section copies inline (never a bare attribute/class name,
   // which would switch the whole file's check off — the same discipline
-  // `registry-attrs.test.ts` documents). Empty today: every physical utility
-  // this guard has ever found in an owned demo section was a defect to FIX,
-  // not a pattern to allow (#264 item 8). Closed at both ends by the
-  // assertions below — an entry that stops matching its file fails as
-  // obsolete, so this cannot silently rot into a bypass.
+  // `registry-attrs.test.ts` documents). Every physical utility this guard
+  // has ever found in an owned demo section was a defect to FIX, not a
+  // pattern to allow (#264 item 8) — with ONE exception, added in #265: the
+  // NavigationMenu indicator's `left-0` anchor. `watchNavMenuIndicator`
+  // (`packages/components/src/components/navigation-menu.ts`) measures
+  // `active.getBoundingClientRect().left - parent.getBoundingClientRect().left`
+  // — a REAL, remeasured PHYSICAL pixel offset, recomputed on every
+  // `data-state` flip and resize — and writes it into `--indicator-left` for
+  // a `translate-x()` the indicator resolves against. Swapping the anchor to
+  // `start-0` (logical) would double-handle direction: under `rtl`,
+  // `start-0` itself flips to the physical right edge while the measured
+  // offset is still a physical LEFT distance, so the arrow would land at the
+  // wrong edge entirely. `registry/llui/ui/navigation-menu.ts`'s accepted
+  // `NavigationMenuIndicator` recipe uses the identical `left-0` anchor for
+  // the identical reason; this is that same justified exception on the
+  // baseline path, not a case this guard's "always fixable" history covered.
+  // Closed at both ends by the assertions below — an entry that stops
+  // matching its file fails as obsolete, so this cannot silently rot into a
+  // bypass.
   const PHYSICAL_UTILITY_ALLOWLIST: Readonly<
     Record<string, readonly { readonly match: string; readonly reason: string }[]>
-  > = {}
+  > = {
+    'examples/components-demo/src/sections/surfaces.ts': [
+      {
+        match: 'left-0',
+        reason:
+          "NavigationMenu indicator's translate anchor, resolved against a real re-measured physical pixel offset (see comment above) — not a hardcoded direction assumption.",
+      },
+    ],
+  }
 
   it('keeps every demo section that actually renders a navigation-data product logically laid out', () => {
     const contract = loadProductContract()

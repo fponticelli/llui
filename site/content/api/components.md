@@ -583,9 +583,9 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `input`, `trigger`, `positioner`, `content`, `item`, `group`, `liveRegion`, `empty`
+**Parts:** `root`, `input`, `trigger`, `positioner`, `content`, `loadState`, `item`, `group`, `liveRegion`, `empty`
 
-**Utilities:** `overlay()`, `isCreateOption()`
+**Utilities:** `overlay()`, `isCreateOption()`, `loadProjection()`
 
 **Constants:** `CREATE_OPTION_VALUE`
 
@@ -608,7 +608,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
 
-**Utilities:** `overlay()`, `isPresent()`, `isMounted()`
+**Utilities:** `overlay()`, `isPresent()`, `isMounted()`, `watchSubmenuPositioning()`
 
 ---
 
@@ -1038,7 +1038,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `trigger`, `positioner`, `content`, `item`, `checkboxItem`, `radioItem`, `group`, `separator`, `subTrigger`, `subPositioner`, `subContent`
 
-**Utilities:** `overlay()`, `isPresent()`, `isMounted()`, `floatingDir()`
+**Utilities:** `overlay()`, `isPresent()`, `isMounted()`, `floatingDir()`, `watchSubmenuPositioning()`
 
 ---
 
@@ -1063,7 +1063,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `root`, `menuTrigger`, `menu`
 
-**Utilities:** `overlay()`
+**Utilities:** `overlay()`, `watchSubmenuPositioning()`
 
 ---
 
@@ -4146,8 +4146,25 @@ export type ComboboxMsg =
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
-  /** @humanOnly */
-  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /**
+   * @humanOnly
+   *
+   * Atomic replacement: `items` is required, and `groups`/`disabled` are
+   * OPTIONAL companions that replace their own state field when present
+   * (omitted ⇒ unchanged) — but every field the fresh `items` list makes
+   * inconsistent is reconciled in this SAME reducer step, never in a
+   * follow-up message. `value` (selection) and `highlightedValue` are
+   * dropped when they no longer name a value in the new `items` (after the
+   * new `disabled` is applied), so there is no instant where the machine
+   * reports a selected/highlighted option the fresh list does not carry.
+   */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
   /** @humanOnly */
   | { type: 'loadError'; requestId: number; error: string }
 ```
@@ -5960,8 +5977,8 @@ export type ToasterMsg =
   | { type: 'dismiss'; id: string }
   /** @intent("Dismiss every toast currently visible") */
   | { type: 'dismissAll' }
-  /** @intent("Patch fields on the toast with the given id (title, description, type, etc.)") */
-  | { type: 'update'; id: string; patch: Partial<Toast> }
+  /** @intent("Patch mutable presentation fields on the toast with the given id (title, description, type, etc.); `id` cannot be patched") */
+  | { type: 'update'; id: string; patch: ToastPatch }
   /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
   | { type: 'tick'; id: string; elapsedMs: number }
   /** @intent("Pause auto-dismiss countdown for the toast with the given id") */
@@ -8083,9 +8100,17 @@ export interface ComboboxParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11) — see
+     * {@link LoadProjection}. Mirrors the top-level `loadState` signal. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'combobox'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'`. A single
+   * signal instead of independent `isLoading`/`isEmpty`/`hasError` booleans,
+   * so it can never contradict itself. See {@link LoadProjection}. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — it is NOT used for identity (highlight,
    * selection and ids are all value-keyed), so a reused row is never stale. */
@@ -14203,10 +14228,11 @@ export interface ToasterParts {
    * Build the per-row part descriptors for one toast. Takes the row's
    * `Signal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
    * consumers don't `.peek()` in a reactive slot (which the signal compiler
-   * rejects). A toast's `id`/`type`/`ariaLive` are immutable for its lifetime —
-   * created then dismissed, never structurally replaced — so this reads the
-   * value once internally to build the id/role wiring; the keyed `each`
-   * rebuilds the row if `id` changes.
+   * rejects). Only `id` is immutable for a toast's lifetime — created then
+   * dismissed, never structurally replaced — so this reads `id` once
+   * internally to build id-derived wiring (the keyed `each` rebuilds the row
+   * if `id` changes); every other field (`type`, `ariaLive`, `status`, …) is
+   * bound reactively so an `update` patch renders wherever it appears.
    */
   toast: (toast: Signal<Toast>) => ToastItemParts
   /**
@@ -14248,13 +14274,21 @@ export interface ToasterState {
 ```typescript
 export interface ToastItemParts {
   root: {
-    role: 'status' | 'alert'
+    /**
+     * Reactive: derived from the toast's current `type`/`ariaLive` (see
+     * {@link politeness}), never frozen at mount — an `update` patching
+     * either is visible here.
+     */
+    role: Signal<'status' | 'alert'>
     'aria-atomic': 'true'
-    'aria-live': ToastPoliteness
+    /** Reactive — see `role` above. */
+    'aria-live': Signal<ToastPoliteness>
     id: string
     'data-scope': 'toast'
     'data-part': 'root'
-    'data-type': ToastType
+    /** Reactive: an `update` patching `type` (e.g. a promise toast moving
+     * loading → success) is visible here, not frozen at mount. */
+    'data-type': Signal<ToastType>
     'data-id': string
     /** Reactive presence status (closed/opening/open/closing) for CSS-driven
      * enter/exit animations. */
@@ -25544,6 +25578,41 @@ function overlay(opts: OverlayOptions): Mountable
 function update(state: MenuState, msg: MenuMsg): [MenuState, never[]]
 ```
 
+##### `watchSubmenuPositioning()` from `@llui/components/menu`
+
+Attach REAL floating geometry to every currently-mounted submenu level
+inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
+named by its own `aria-labelledby` (never a hand-tracked map — the DOM
+relationship the machine already publishes is the source of truth), with
+flip/shift and a side chosen from the subTrigger's OWN resolved reading
+direction (`resolveDir`), so a submenu nested under an RTL ancestor still
+opens the correct way even if the root menu itself is LTR.
+
+A submenu level is a SYNCHRONOUS boolean machine, the same as
+select/combobox/searchable-select: `openPath` membership is its only mounted
+entry state, so — like those — the CALLER is expected to mount
+`subPositioner`/`subContent` only while the level is open (e.g. behind a
+`show(...)`) rather than keep it in the DOM and toggle `data-state`. This
+watcher therefore keys off DOM PRESENCE, not `data-state`: attaching floating
+to every subcontent node found, detaching (which restores every inline style
+`attachFloating` wrote) for any node it had attached that is no longer
+present. That is the "gating/exit cleanup" contract — a level that closes
+tears its floating attachment down in the same tick its node unmounts, never
+on a later poll.
+
+Call from `onMount` with the menu's build root, exactly like
+`tabs.watchTabIndicator` / `navigationMenu.watchNavMenuIndicator` — `onMount`
+hands the BUILD's root container, not the element the call sits inside, so
+forwarding whatever `onMount` gave you (rather than the menu's own root) is
+how two menus on one page end up positioning each other's submenus.
+
+```typescript
+function watchSubmenuPositioning(
+  root: HTMLElement,
+  opts: SubmenuPositioningOptions = {},
+): () => void
+```
+
 #### Types
 
 ##### `MenuCheckItemParts` from `@llui/components/menu`
@@ -25797,6 +25866,23 @@ export interface OverlayOptions {
   flip?: boolean
   shift?: boolean
   target?: string | HTMLElement
+}
+```
+
+##### `SubmenuPositioningOptions` from `@llui/components/menu`
+
+```typescript
+export interface SubmenuPositioningOptions {
+  /** Cross-axis alignment against the subTrigger (default: 'start' — the top
+   * edge of the trigger, matching every other overlay's `*-start` default). */
+  align?: 'start' | 'end'
+  /** Gap between the subTrigger and its submenu, in px (default: 2, closing the
+   * visible seam a hovering pointer would otherwise have to cross). */
+  offset?: number
+  /** Flip to the opposite side when there isn't room (default: true). */
+  flip?: boolean
+  /** Shift along the cross axis to stay in view (default: true). */
+  shift?: boolean
 }
 ```
 
@@ -27671,8 +27757,8 @@ export type ToasterMsg =
   | { type: 'dismiss'; id: string }
   /** @intent("Dismiss every toast currently visible") */
   | { type: 'dismissAll' }
-  /** @intent("Patch fields on the toast with the given id (title, description, type, etc.)") */
-  | { type: 'update'; id: string; patch: Partial<Toast> }
+  /** @intent("Patch mutable presentation fields on the toast with the given id (title, description, type, etc.); `id` cannot be patched") */
+  | { type: 'update'; id: string; patch: ToastPatch }
   /** @humanOnly Advance the countdown for one toast by `elapsedMs` since the last tick. */
   | { type: 'tick'; id: string; elapsedMs: number }
   /** @intent("Pause auto-dismiss countdown for the toast with the given id") */
@@ -27698,6 +27784,24 @@ export type ToastInput = Omit<Toast, 'remainingMs' | 'paused' | 'status'> & {
   paused?: boolean
   status?: PresenceStatus
 }
+```
+
+##### `ToastPatch` from `@llui/components/toast`
+
+Fields an `update` message may patch on a mounted toast. `id` is the ONE
+truly immutable field — a toast is created once and dismissed once, never
+structurally replaced with a different id for the same row — so it is
+excluded here rather than silently ignored by the reducer. Every other
+field, INCLUDING `type` and `ariaLive`, is a genuine mutable presentation
+field (the `toast.promise`-style loading→success/error flow patches `type`,
+`title` and `description` on the same mounted toast) and `connect()`'s
+`toast()` builder binds every one of these reactively (never via a one-shot
+`peek()`), so a patch here is visible wherever it renders — resolving the
+former contradiction where `patch: Partial<Toast>` type-allowed patching
+fields the connect layer had already frozen at mount (#265).
+
+```typescript
+export type ToastPatch = Partial<Omit<Toast, 'id'>>
 ```
 
 ##### `ToastPlacement` from `@llui/components/toast`
@@ -27819,10 +27923,11 @@ export interface ToasterParts {
    * Build the per-row part descriptors for one toast. Takes the row's
    * `Signal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
    * consumers don't `.peek()` in a reactive slot (which the signal compiler
-   * rejects). A toast's `id`/`type`/`ariaLive` are immutable for its lifetime —
-   * created then dismissed, never structurally replaced — so this reads the
-   * value once internally to build the id/role wiring; the keyed `each`
-   * rebuilds the row if `id` changes.
+   * rejects). Only `id` is immutable for a toast's lifetime — created then
+   * dismissed, never structurally replaced — so this reads `id` once
+   * internally to build id-derived wiring (the keyed `each` rebuilds the row
+   * if `id` changes); every other field (`type`, `ariaLive`, `status`, …) is
+   * bound reactively so an `update` patch renders wherever it appears.
    */
   toast: (toast: Signal<Toast>) => ToastItemParts
   /**
@@ -27864,13 +27969,21 @@ export interface ToasterState {
 ```typescript
 export interface ToastItemParts {
   root: {
-    role: 'status' | 'alert'
+    /**
+     * Reactive: derived from the toast's current `type`/`ariaLive` (see
+     * {@link politeness}), never frozen at mount — an `update` patching
+     * either is visible here.
+     */
+    role: Signal<'status' | 'alert'>
     'aria-atomic': 'true'
-    'aria-live': ToastPoliteness
+    /** Reactive — see `role` above. */
+    'aria-live': Signal<ToastPoliteness>
     id: string
     'data-scope': 'toast'
     'data-part': 'root'
-    'data-type': ToastType
+    /** Reactive: an `update` patching `type` (e.g. a promise toast moving
+     * loading → success) is visible here, not frozen at mount. */
+    'data-type': Signal<ToastType>
     'data-id': string
     /** Reactive presence status (closed/opening/open/closing) for CSS-driven
      * enter/exit animations. */
@@ -28410,6 +28523,12 @@ function init(opts: ComboboxInit = {}): ComboboxState
 function isCreateOption(value: string): boolean
 ```
 
+##### `loadProjection()` from `@llui/components/combobox`
+
+```typescript
+function loadProjection(state: Pick<ComboboxState, 'status' | 'items'>): LoadProjection
+```
+
 ##### `overlay()` from `@llui/components/combobox`
 
 ```typescript
@@ -28474,10 +28593,55 @@ export type ComboboxMsg =
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
-  /** @humanOnly */
-  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /**
+   * @humanOnly
+   *
+   * Atomic replacement: `items` is required, and `groups`/`disabled` are
+   * OPTIONAL companions that replace their own state field when present
+   * (omitted ⇒ unchanged) — but every field the fresh `items` list makes
+   * inconsistent is reconciled in this SAME reducer step, never in a
+   * follow-up message. `value` (selection) and `highlightedValue` are
+   * dropped when they no longer name a value in the new `items` (after the
+   * new `disabled` is applied), so there is no instant where the machine
+   * reports a selected/highlighted option the fresh list does not carry.
+   */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
   /** @humanOnly */
   | { type: 'loadError'; requestId: number; error: string }
+```
+
+##### `LoadProjection` from `@llui/components/combobox`
+
+A single, mutually-exclusive summary of the async load lifecycle, derived
+from `status` and whether any items are currently on hand. This exists so a
+consumer never has to reconcile independent booleans (`isLoading`,
+`isEmpty`, `hasError`) that can read true at the same time — exactly the
+defect #265 finding 11 named test-first. There are five states partitioning
+every reachable `(status, items.length)` pair:
+
+- `'initial-empty'` — nothing has ever loaded and none were given
+  synchronously (`status === 'idle'`, no items).
+- `'loading'` — a fetch is in flight and there is nothing yet to show (a
+  first-ever load).
+- `'stale-results'` — the STALE-WHILE-REVALIDATE state: a fetch is in
+  flight while a previous list is still on screen. `loadStart` never
+  clears `items`, so the previous results keep rendering, filterable and
+  selectable, until the matching `loadSuccess`/`loadError` lands.
+- `'success'` — the current items are the result of a completed load, or
+  were given synchronously and never superseded by a failed fetch.
+- `'error'` — the most recent fetch failed. Per the same policy, items from
+  an earlier successful load are left mounted and selectable; only the
+  live region / a consumer's own error slot communicate the failure, so
+  `'error'` is reported the same whether or not stale items remain.
+
+```typescript
+export type LoadProjection = 'initial-empty' | 'loading' | 'stale-results' | 'success' | 'error'
 ```
 
 ##### `SelectionMode` from `@llui/components/combobox`
@@ -28646,9 +28810,17 @@ export interface ComboboxParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11) — see
+     * {@link LoadProjection}. Mirrors the top-level `loadState` signal. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'combobox'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'`. A single
+   * signal instead of independent `isLoading`/`isEmpty`/`hasError` booleans,
+   * so it can never contradict itself. See {@link LoadProjection}. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — it is NOT used for identity (highlight,
    * selection and ids are all value-keyed), so a reused row is never stale. */
@@ -30553,6 +30725,41 @@ function overlay(opts: OverlayOptions): Mountable
 function update(state: ContextMenuState, msg: ContextMenuMsg): [ContextMenuState, never[]]
 ```
 
+##### `watchSubmenuPositioning()` from `@llui/components/context-menu`
+
+Attach REAL floating geometry to every currently-mounted submenu level
+inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
+named by its own `aria-labelledby` (never a hand-tracked map — the DOM
+relationship the machine already publishes is the source of truth), with
+flip/shift and a side chosen from the subTrigger's OWN resolved reading
+direction (`resolveDir`), so a submenu nested under an RTL ancestor still
+opens the correct way even if the root menu itself is LTR.
+
+A submenu level is a SYNCHRONOUS boolean machine, the same as
+select/combobox/searchable-select: `openPath` membership is its only mounted
+entry state, so — like those — the CALLER is expected to mount
+`subPositioner`/`subContent` only while the level is open (e.g. behind a
+`show(...)`) rather than keep it in the DOM and toggle `data-state`. This
+watcher therefore keys off DOM PRESENCE, not `data-state`: attaching floating
+to every subcontent node found, detaching (which restores every inline style
+`attachFloating` wrote) for any node it had attached that is no longer
+present. That is the "gating/exit cleanup" contract — a level that closes
+tears its floating attachment down in the same tick its node unmounts, never
+on a later poll.
+
+Call from `onMount` with the menu's build root, exactly like
+`tabs.watchTabIndicator` / `navigationMenu.watchNavMenuIndicator` — `onMount`
+hands the BUILD's root container, not the element the call sits inside, so
+forwarding whatever `onMount` gave you (rather than the menu's own root) is
+how two menus on one page end up positioning each other's submenus.
+
+```typescript
+function watchSubmenuPositioning(
+  root: HTMLElement,
+  opts: SubmenuPositioningOptions = {},
+): () => void
+```
+
 #### Types
 
 ##### `ContextMenuCheckItemParts` from `@llui/components/context-menu`
@@ -30759,6 +30966,23 @@ export interface OverlayOptions {
    */
   transition?: TransitionOptions
   target?: string | HTMLElement
+}
+```
+
+##### `SubmenuPositioningOptions` from `@llui/components/context-menu`
+
+```typescript
+export interface SubmenuPositioningOptions {
+  /** Cross-axis alignment against the subTrigger (default: 'start' — the top
+   * edge of the trigger, matching every other overlay's `*-start` default). */
+  align?: 'start' | 'end'
+  /** Gap between the subTrigger and its submenu, in px (default: 2, closing the
+   * visible seam a hovering pointer would otherwise have to cross). */
+  offset?: number
+  /** Flip to the opposite side when there isn't room (default: true). */
+  flip?: boolean
+  /** Shift along the cross axis to stay in view (default: true). */
+  shift?: boolean
 }
 ```
 
@@ -37648,6 +37872,41 @@ function overlay(opts: MenubarOverlayOptions): Mountable
 function update(state: MenubarState, msg: MenubarMsg): [MenubarState, never[]]
 ```
 
+##### `watchSubmenuPositioning()` from `@llui/components/menubar`
+
+Attach REAL floating geometry to every currently-mounted submenu level
+inside `root`: each `[data-part="subcontent"]` is anchored to the subTrigger
+named by its own `aria-labelledby` (never a hand-tracked map — the DOM
+relationship the machine already publishes is the source of truth), with
+flip/shift and a side chosen from the subTrigger's OWN resolved reading
+direction (`resolveDir`), so a submenu nested under an RTL ancestor still
+opens the correct way even if the root menu itself is LTR.
+
+A submenu level is a SYNCHRONOUS boolean machine, the same as
+select/combobox/searchable-select: `openPath` membership is its only mounted
+entry state, so — like those — the CALLER is expected to mount
+`subPositioner`/`subContent` only while the level is open (e.g. behind a
+`show(...)`) rather than keep it in the DOM and toggle `data-state`. This
+watcher therefore keys off DOM PRESENCE, not `data-state`: attaching floating
+to every subcontent node found, detaching (which restores every inline style
+`attachFloating` wrote) for any node it had attached that is no longer
+present. That is the "gating/exit cleanup" contract — a level that closes
+tears its floating attachment down in the same tick its node unmounts, never
+on a later poll.
+
+Call from `onMount` with the menu's build root, exactly like
+`tabs.watchTabIndicator` / `navigationMenu.watchNavMenuIndicator` — `onMount`
+hands the BUILD's root container, not the element the call sits inside, so
+forwarding whatever `onMount` gave you (rather than the menu's own root) is
+how two menus on one page end up positioning each other's submenus.
+
+```typescript
+function watchSubmenuPositioning(
+  root: HTMLElement,
+  opts: SubmenuPositioningOptions = {},
+): () => void
+```
+
 #### Types
 
 ##### `MenubarMsg` from `@llui/components/menubar`
@@ -37802,6 +38061,23 @@ export interface MenubarTriggerParts {
   onPointerEnter: (e: PointerEvent) => void
   onFocus: (e: FocusEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
+}
+```
+
+##### `SubmenuPositioningOptions` from `@llui/components/menubar`
+
+```typescript
+export interface SubmenuPositioningOptions {
+  /** Cross-axis alignment against the subTrigger (default: 'start' — the top
+   * edge of the trigger, matching every other overlay's `*-start` default). */
+  align?: 'start' | 'end'
+  /** Gap between the subTrigger and its submenu, in px (default: 2, closing the
+   * visible seam a hovering pointer would otherwise have to cross). */
+  offset?: number
+  /** Flip to the opposite side when there isn't room (default: true). */
+  flip?: boolean
+  /** Shift along the cross axis to stay in view (default: true). */
+  shift?: boolean
 }
 ```
 
@@ -39524,8 +39800,15 @@ export type SearchableSelectMsg =
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
-  /** @humanOnly */
-  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /** @humanOnly — atomic replacement passthrough to `combobox`; see its own
+   * `loadSuccess` doc for the reconciliation this performs in one step. */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
   /** @humanOnly */
   | { type: 'loadError'; requestId: number; error: string }
 ```
@@ -40284,9 +40567,20 @@ export interface SearchableSelectParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11); mirrors the
+     * top-level `loadState` signal. See `combobox`'s `LoadProjection`. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'searchable-select'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'` — never
+   * independent booleans that can contradict each other. Documents the
+   * stale-while-revalidate policy: `'stale-results'` means a fetch is in
+   * flight while the previous items are still mounted and selectable;
+   * `'error'` is reported the same whether or not stale items remain
+   * mounted underneath it. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */
@@ -41491,6 +41785,34 @@ function update(
 export type AsyncStatus = 'idle' | 'loading' | 'loaded' | 'error'
 ```
 
+##### `LoadProjection` from `@llui/components/patterns/searchable-select`
+
+A single, mutually-exclusive summary of the async load lifecycle, derived
+from `status` and whether any items are currently on hand. This exists so a
+consumer never has to reconcile independent booleans (`isLoading`,
+`isEmpty`, `hasError`) that can read true at the same time — exactly the
+defect #265 finding 11 named test-first. There are five states partitioning
+every reachable `(status, items.length)` pair:
+
+- `'initial-empty'` — nothing has ever loaded and none were given
+  synchronously (`status === 'idle'`, no items).
+- `'loading'` — a fetch is in flight and there is nothing yet to show (a
+  first-ever load).
+- `'stale-results'` — the STALE-WHILE-REVALIDATE state: a fetch is in
+  flight while a previous list is still on screen. `loadStart` never
+  clears `items`, so the previous results keep rendering, filterable and
+  selectable, until the matching `loadSuccess`/`loadError` lands.
+- `'success'` — the current items are the result of a completed load, or
+  were given synchronously and never superseded by a failed fetch.
+- `'error'` — the most recent fetch failed. Per the same policy, items from
+  an earlier successful load are left mounted and selectable; only the
+  live region / a consumer's own error slot communicate the failure, so
+  `'error'` is reported the same whether or not stale items remain.
+
+```typescript
+export type LoadProjection = 'initial-empty' | 'loading' | 'stale-results' | 'success' | 'error'
+```
+
 ##### `SearchableSelectMsg` from `@llui/components/patterns/searchable-select`
 
 ```typescript
@@ -41525,8 +41847,15 @@ export type SearchableSelectMsg =
   | { type: 'setItems'; items: string[]; disabled?: string[] }
   /** @intent("Mark an async option fetch as started; pass the request's id") */
   | { type: 'loadStart'; requestId: number }
-  /** @humanOnly */
-  | { type: 'loadSuccess'; requestId: number; items: string[] }
+  /** @humanOnly — atomic replacement passthrough to `combobox`; see its own
+   * `loadSuccess` doc for the reconciliation this performs in one step. */
+  | {
+      type: 'loadSuccess'
+      requestId: number
+      items: string[]
+      groups?: ComboboxGroup[]
+      disabled?: string[]
+    }
   /** @humanOnly */
   | { type: 'loadError'; requestId: number; error: string }
 ```
@@ -41758,9 +42087,20 @@ export interface SearchableSelectParts {
     tabindex: -1
     'data-state': Signal<'open' | 'closed'>
     'data-status': Signal<AsyncStatus>
+    /** The mutually-exclusive load projection (#265 finding 11); mirrors the
+     * top-level `loadState` signal. See `combobox`'s `LoadProjection`. */
+    'data-load-state': Signal<LoadProjection>
     'data-scope': 'searchable-select'
     'data-part': 'content'
   }
+  /** The mutually-exclusive async load projection: `'initial-empty'` |
+   * `'loading'` | `'stale-results'` | `'success'` | `'error'` — never
+   * independent booleans that can contradict each other. Documents the
+   * stale-while-revalidate policy: `'stale-results'` means a fetch is in
+   * flight while the previous items are still mounted and selectable;
+   * `'error'` is reported the same whether or not stale items remain
+   * mounted underneath it. */
+  loadState: Signal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */

@@ -289,9 +289,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
 
   // Render one top-level menu: its bar trigger (placed inline in `mb.root`)
   // and a REAL floating overlay (placed as a top-level sibling, portalled to
-  // body) — replacing a prior hand-rolled `absolute top-full left-0` div,
-  // which had no floating geometry, no dismiss layer, no focus trap and no
-  // submenu support (#265 finding 9).
+  // body) — replacing a prior hand-rolled fixed-corner div with no floating
+  // geometry, no dismiss layer, no focus trap and no submenu support (#265
+  // finding 9).
   const renderMenuTrigger = (id: string): Mountable =>
     button(
       { ...mb.menuTrigger(id), class: 'px-3 py-1.5 rounded font-medium text-sm hover:bg-accent' },
