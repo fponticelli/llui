@@ -25,6 +25,13 @@ import { buttonVariants } from '@/ui/button'
  * Range selection is expressed entirely in `data-*` — `data-range-start`,
  * `-middle`, `-end`, `data-selected-single` — so a range never needs a view to
  * compute a class.
+ *
+ * Two LLui additions, both for states upstream's day-picker handles itself:
+ * an individually UNAVAILABLE day (`data-unavailable` on the cell — a booked
+ * date, distinct from one outside `min`/`max`) is struck through on the day
+ * button, so the two disabled kinds read differently and not by colour alone;
+ * and the previous/next chevrons mirror under `dir="rtl"` (`rtl:[&_svg]`), so
+ * "previous" still points backwards in reading order (#266).
  */
 export const Calendar = classPart(
   div,
@@ -36,7 +43,7 @@ export const CalendarNav = classPart(
   div,
   'absolute inset-x-0 top-0 flex w-full items-center justify-between gap-1',
 )
-const navButtonRecipe = `${buttonVariants({ variant: 'ghost' })} size-(--cell-size) p-0 select-none aria-disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50`
+const navButtonRecipe = `${buttonVariants({ variant: 'ghost' })} size-(--cell-size) p-0 select-none aria-disabled:opacity-50 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 rtl:[&_svg]:-scale-x-100`
 export const CalendarPrevious = classPart(button, navButtonRecipe)
 export const CalendarNext = classPart(button, navButtonRecipe)
 export const CalendarCaption = classPart(
@@ -74,12 +81,23 @@ export const CalendarRow = classPart(tr, 'mt-2 flex w-full')
  * `first-child` / `last-child` rules are what round the ends of a range. */
 export const CalendarDay = classPart(
   td,
-  'group/day relative aspect-square h-full w-full p-0 text-center select-none [&:first-child[data-selected=true]_button]:rounded-l-md [&:last-child[data-selected=true]_button]:rounded-r-md data-[state=today]:rounded-md data-[state=today]:bg-accent data-[state=today]:text-accent-foreground data-[state=outside]:text-muted-foreground data-[state=outside]:opacity-50 data-[disabled]:text-muted-foreground data-[disabled]:opacity-50 data-[hidden]:invisible data-today:rounded-md data-today:bg-accent data-today:text-accent-foreground not-data-in-month:text-muted-foreground not-data-in-month:opacity-50 [&:first-child[data-selected]_button]:rounded-l-md [&:last-child[data-selected]_button]:rounded-r-md',
+  'group/day relative aspect-square h-full w-full p-0 text-center select-none [&:first-child[data-selected=true]_button]:rounded-l-md [&:last-child[data-selected=true]_button]:rounded-r-md data-[state=today]:rounded-md data-[state=today]:bg-accent data-[state=today]:text-accent-foreground data-[state=outside]:text-muted-foreground data-[state=outside]:opacity-50 data-[disabled]:text-muted-foreground data-[disabled]:opacity-50 data-[hidden]:invisible data-today:rounded-md data-today:bg-accent data-today:text-accent-foreground not-data-in-month:text-muted-foreground not-data-in-month:opacity-50 [&:first-child[data-selected]_button]:rounded-l-md [&:last-child[data-selected]_button]:rounded-r-md forced-colors:data-today:outline-1 forced-colors:data-today:-outline-offset-1 forced-colors:data-today:outline-[CanvasText]',
 )
 
+/** Upstream's day button is `<Button variant="ghost" size="icon">`. The size
+ * matters: the DEFAULT size carries `px-4`, which `size-auto` does not undo, so
+ * each button's min-content grew to ~50px and the `w-fit` calendar stretched
+ * every cell past `--cell-size` (#266, measured in the live render).
+ *
+ * The `forced-colors:` classes on the cell and the button are LLui's
+ * system-colour layer (#266): under forced colors every day button is repainted
+ * `Canvas`, which erased the selection fill, the range band and the today tint.
+ * Selection is restated as `Highlight`, the range middle as a `Highlight`
+ * outline on `Canvas`, and today as a `CanvasText` outline — the same cues the
+ * baseline stylesheet draws. */
 export const CalendarDayButton = classPart(
   button,
-  `${buttonVariants({ variant: 'ghost' })} flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50 data-[range-end=true]:rounded-md data-[range-end=true]:rounded-r-md data-[range-end=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-accent data-[range-middle=true]:text-accent-foreground data-[range-start=true]:rounded-md data-[range-start=true]:rounded-l-md data-[range-start=true]:bg-primary data-[range-start=true]:text-primary-foreground data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground data-[state=selected]:bg-primary data-[state=selected]:text-primary-foreground group-data-focused/day:relative group-data-focused/day:z-10 group-data-focused/day:border-ring group-data-focused/day:ring-[3px] group-data-focused/day:ring-ring/50 group-data-selected/day:bg-primary group-data-selected/day:text-primary-foreground group-data-range-start/day:rounded-md group-data-range-start/day:rounded-l-md group-data-range-start/day:bg-primary group-data-range-start/day:text-primary-foreground group-data-range-end/day:rounded-md group-data-range-end/day:rounded-r-md group-data-range-end/day:bg-primary group-data-range-end/day:text-primary-foreground group-data-in-range/day:rounded-none! group-data-in-range/day:bg-accent! group-data-in-range/day:text-accent-foreground! dark:hover:text-accent-foreground [&>span]:text-xs [&>span]:opacity-70`,
+  `${buttonVariants({ variant: 'ghost', size: 'icon' })} flex aspect-square size-auto w-full min-w-(--cell-size) flex-col gap-1 leading-none font-normal group-data-[focused=true]/day:relative group-data-[focused=true]/day:z-10 group-data-[focused=true]/day:border-ring group-data-[focused=true]/day:ring-[3px] group-data-[focused=true]/day:ring-ring/50 data-[range-end=true]:rounded-md data-[range-end=true]:rounded-r-md data-[range-end=true]:bg-primary data-[range-end=true]:text-primary-foreground data-[range-middle=true]:rounded-none data-[range-middle=true]:bg-accent data-[range-middle=true]:text-accent-foreground data-[range-start=true]:rounded-md data-[range-start=true]:rounded-l-md data-[range-start=true]:bg-primary data-[range-start=true]:text-primary-foreground data-[selected-single=true]:bg-primary data-[selected-single=true]:text-primary-foreground data-[state=selected]:bg-primary data-[state=selected]:text-primary-foreground group-data-focused/day:relative group-data-focused/day:z-10 group-data-focused/day:border-ring group-data-focused/day:ring-[3px] group-data-focused/day:ring-ring/50 group-data-selected/day:bg-primary group-data-selected/day:text-primary-foreground group-data-range-start/day:rounded-md group-data-range-start/day:rounded-l-md group-data-range-start/day:bg-primary group-data-range-start/day:text-primary-foreground group-data-range-end/day:rounded-md group-data-range-end/day:rounded-r-md group-data-range-end/day:bg-primary group-data-range-end/day:text-primary-foreground group-data-in-range/day:rounded-none! group-data-in-range/day:bg-accent! group-data-in-range/day:text-accent-foreground! group-data-unavailable/day:text-muted-foreground group-data-unavailable/day:line-through dark:hover:text-accent-foreground forced-colors:group-data-selected/day:bg-[Highlight] forced-colors:group-data-selected/day:text-[HighlightText] forced-colors:group-data-in-range/day:bg-[Canvas]! forced-colors:group-data-in-range/day:text-[CanvasText]! forced-colors:group-data-in-range/day:outline-1 forced-colors:group-data-in-range/day:outline-solid forced-colors:group-data-in-range/day:-outline-offset-1 forced-colors:group-data-in-range/day:outline-[Highlight] [&>span]:text-xs [&>span]:opacity-70`,
 )
 
 /**

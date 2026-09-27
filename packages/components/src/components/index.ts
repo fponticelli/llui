@@ -414,6 +414,8 @@ export type {
   FileError,
   RejectedFile,
   AcceptValue,
+  FileUploadStatus,
+  FileUploadProgress,
 } from './file-upload.js'
 export type {
   TreeViewState,

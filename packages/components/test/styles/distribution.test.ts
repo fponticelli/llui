@@ -24,7 +24,7 @@ const BASELINE_MODULES = [
   'disclosure-navigation.css',
   'menus-overlays.css',
   'data-display.css',
-  'layout.css',
+  'specialized-tools.css',
   'motion.css',
 ] as const
 

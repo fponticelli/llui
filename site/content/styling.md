@@ -34,7 +34,7 @@ component family, and motion in a deterministic order.
 For a smaller custom composition, import `semantic-tokens.css`,
 `semantic-tokens-dark.css`, and `foundation.css` first, then any of
 `form-controls.css`, `disclosure-navigation.css`, `menus-overlays.css`,
-`data-display.css`, `layout.css`, and `motion.css`. Each is a declared package export.
+`data-display.css`, `specialized-tools.css`, and `motion.css`. Each is a declared package export.
 
 ### Migrating an existing baseline import
 

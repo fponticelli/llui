@@ -84,14 +84,79 @@ describe('qr-code.connect', () => {
     expect(d).toBe(toSvgPath(checker))
   })
 
-  it('root has aria-label', () => {
+  it('root is a labelled group (aria-label on a bare generic is prohibited ARIA)', () => {
     const p = connect(rootSignal(), vi.fn(), { label: 'Payment QR' })
+    expect(p.root.role).toBe('group')
     expect(p.root['aria-label']).toBe('Payment QR')
+  })
+
+  it('names the role=img svg itself, including the encoded value AT users cannot scan (#266)', () => {
+    const p = connect(rootSignal(), vi.fn(), { label: 'Payment QR' })
+    expect(read(p.svg['aria-label'], init({ value: 'https://llui.dev', matrix: checker }))).toBe(
+      'Payment QR: https://llui.dev',
+    )
+    expect(read(p.svg['aria-label'], init())).toBe('Payment QR')
+  })
+
+  it('sizes the background part to the module grid so a bare rect spread covers it (#266)', () => {
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.background.width, init({ matrix: checker }))).toBe('3')
+    expect(read(p.background.height, init({ matrix: checker }))).toBe('3')
+    expect(read(p.background.width, init())).toBe('1')
+  })
+
+  it('marks an empty matrix on the root so the empty state can be styled (#266)', () => {
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.root['data-empty'], init())).toBe('')
+    expect(read(p.root['data-empty'], init({ matrix: checker }))).toBeUndefined()
+    expect(read(p.downloadTrigger.disabled, init())).toBe(true)
+    expect(read(p.downloadTrigger.disabled, init({ matrix: checker }))).toBe(false)
   })
 
   it('svg has role=img + crisp-edges rendering', () => {
     const p = connect(rootSignal(), vi.fn())
     expect(p.svg.role).toBe('img')
     expect(p.svg['shape-rendering']).toBe('crispEdges')
+  })
+})
+
+describe('qr-code download trigger', () => {
+  it('serializes ITS OWN instance, not the first QR code on the page (#266)', () => {
+    const svgNs = 'http://www.w3.org/2000/svg'
+    const make = (marker: string): { root: HTMLElement; trigger: HTMLButtonElement } => {
+      const root = document.createElement('div')
+      root.dataset.scope = 'qr-code'
+      root.dataset.part = 'root'
+      const svg = document.createElementNS(svgNs, 'svg')
+      svg.setAttribute('data-scope', 'qr-code')
+      svg.setAttribute('data-part', 'svg')
+      svg.setAttribute('data-marker', marker)
+      const trigger = document.createElement('button')
+      root.append(svg, trigger)
+      document.body.append(root)
+      return { root, trigger }
+    }
+    const first = make('first')
+    const second = make('second')
+    const originalCreate = URL.createObjectURL
+    const originalRevoke = URL.revokeObjectURL
+    URL.createObjectURL = vi.fn(() => 'blob:qr')
+    URL.revokeObjectURL = vi.fn()
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const xml = vi.spyOn(XMLSerializer.prototype, 'serializeToString')
+    try {
+      const p = connect(rootSignal(), vi.fn())
+      p.downloadTrigger.onClick({ currentTarget: second.trigger } as unknown as MouseEvent)
+      expect(xml).toHaveBeenCalledTimes(1)
+      expect((xml.mock.calls[0]![0] as Element).getAttribute('data-marker')).toBe('second')
+      expect(click).toHaveBeenCalledTimes(1)
+    } finally {
+      URL.createObjectURL = originalCreate
+      URL.revokeObjectURL = originalRevoke
+      click.mockRestore()
+      xml.mockRestore()
+      first.root.remove()
+      second.root.remove()
+    }
   })
 })

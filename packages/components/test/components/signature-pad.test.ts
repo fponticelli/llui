@@ -199,3 +199,60 @@ describe('signature-pad.connect', () => {
     expect(send).toHaveBeenCalledWith({ type: 'undo' })
   })
 })
+
+// #266: Clear was destructive with no way back — one stray click erased a
+// finished signature and Undo stayed disabled. The cleared strokes are now
+// retained until the next edit, and Undo restores them.
+describe('signature-pad destructive clear is undoable (#266)', () => {
+  const a = [
+    { x: 0, y: 0 },
+    { x: 5, y: 5 },
+  ]
+  const b = [
+    { x: 10, y: 0 },
+    { x: 15, y: 5 },
+  ]
+
+  it('undo right after clear restores every cleared stroke', () => {
+    const s0 = init({ strokes: [a, b] })
+    const [cleared] = update(s0, { type: 'clear' })
+    expect(cleared.strokes).toEqual([])
+    expect(cleared.cleared).toEqual([a, b])
+    const [restored] = update(cleared, { type: 'undo' })
+    expect(restored.strokes).toEqual([a, b])
+    expect(restored.cleared).toBeNull()
+  })
+
+  it('a new stroke after clear forgets the cleared strokes', () => {
+    let [s] = update(init({ strokes: [a] }), { type: 'clear' })
+    ;[s] = update(s, { type: 'strokeStart', x: 1, y: 1 })
+    ;[s] = update(s, { type: 'strokePoint', x: 2, y: 2 })
+    ;[s] = update(s, { type: 'strokeEnd' })
+    expect(s.cleared).toBeNull()
+    const [undone] = update(s, { type: 'undo' })
+    expect(undone.strokes).toEqual([])
+  })
+
+  it('clearing an already-empty pad retains nothing', () => {
+    const [s] = update(init(), { type: 'clear' })
+    expect(s.cleared).toBeNull()
+  })
+
+  it('the undo trigger stays enabled while a clear is restorable', () => {
+    const p = connect(rootSignal(), vi.fn())
+    const [cleared] = update(init({ strokes: [a] }), { type: 'clear' })
+    expect(read(p.undoTrigger.disabled, cleared)).toBe(false)
+    expect(read(p.undoTrigger.disabled, init())).toBe(true)
+  })
+
+  it('the root publishes an empty pad for the placeholder state', () => {
+    const p = connect(rootSignal(), vi.fn())
+    expect(read(p.root['data-empty'], init())).toBe('')
+    expect(read(p.root['data-empty'], init({ strokes: [a] }))).toBeUndefined()
+  })
+
+  it('the state stays a JSON round-trip identity while a clear is retained', () => {
+    const [cleared] = update(init({ strokes: [a] }), { type: 'clear' })
+    expect(JSON.parse(JSON.stringify(cleared))).toEqual(cleared)
+  })
+})

@@ -100,27 +100,23 @@ export const update = mergeHandlers<State, Msg, Effect>(
 
 /**
  * Route this section's effects. `copyToClipboard` performs the async clipboard
- * write; only its RESOLVED branch dispatches `copied` and schedules the reset.
- * A refused write dispatches nothing, so the button keeps saying "Copy" and the
- * live region stays silent rather than announcing a copy that never happened.
- * `setTimeout` here is legitimate — an effect handler is the impure boundary;
- * the reducer stays pure.
+ * write; its RESOLVED branch dispatches `copied`, its REJECTED branch (no
+ * permission, insecure context, no clipboard API) dispatches `copyFailed`, and
+ * each schedules the reset. A refused write is said out loud — the indicator
+ * announces it — rather than announcing a copy that never happened, or staying
+ * silent (#266). `setTimeout` here is legitimate — an effect handler is the
+ * impure boundary; the reducer stays pure.
  */
 export function onEffect(effect: Effect, send: Send<Msg>): void {
   if (effect.type !== 'copyToClipboard') return
+  const settle = (msg: { type: 'copied' } | { type: 'copyFailed' }): void => {
+    send({ type: 'clipboard', msg })
+    setTimeout(() => send({ type: 'clipboard', msg: { type: 'reset' } }), 2000)
+  }
   void copyToClipboard(effect.value).then(
-    () => {
-      send({ type: 'clipboard', msg: { type: 'copied' } })
-      setTimeout(() => send({ type: 'clipboard', msg: { type: 'reset' } }), 2000)
-    },
-    () => {},
+    () => settle({ type: 'copied' }),
+    () => settle({ type: 'copyFailed' }),
   )
-}
-
-function todayIsoString(): string {
-  const d = new Date()
-  const pad = (n: number): string => n.toString().padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
 export function view(state: Signal<State>, send: Send<Msg>): Renderable {
@@ -313,30 +309,13 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
           return [
             div(
               { ...dp.row, class: rowClass },
-              week.map((cell) =>
-                button(
-                  {
-                    role: 'gridcell',
-                    class:
-                      'inline-flex items-center justify-center w-9 h-9 rounded-md text-sm cursor-pointer bg-transparent border-none text-foreground hover:bg-accent transition-colors duration-fast data-[selected]:bg-primary data-[selected]:text-primary-foreground data-[today]:font-bold data-[in-month=false]:opacity-40',
-                    'data-date': cell.iso,
-                    'data-in-month': cell.inMonth ? 'true' : 'false',
-                    'data-today': cell.iso === todayIsoString() ? '' : undefined,
-                    'data-selected': state
-                      .at('datePicker')
-                      .map((s) => (s.value === cell.iso ? '' : undefined)),
-                    'data-focused': state
-                      .at('datePicker')
-                      .map((s) => (s.focused === cell.iso ? '' : undefined)),
-                    tabindex: state.at('datePicker').map((s) => (s.focused === cell.iso ? 0 : -1)),
-                    onClick: () => {
-                      send({ type: 'datePicker', msg: { type: 'setFocused', date: cell.iso } })
-                      send({ type: 'datePicker', msg: { type: 'selectFocused' } })
-                    },
-                  },
-                  [text(String(cell.day))],
-                ),
-              ),
+              // The machine's own cell bag: every flag (today, selected,
+              // focused, in-month, unavailable) follows live state, the roving
+              // tab stop moves with the keyboard (arrows, PageUp/PageDown,
+              // Home/End), and `theme.css` styles `[data-part="day-cell"]`.
+              // This demo used to hand-roll the cells, which froze "today" at
+              // build time and had no keyboard path at all (#266).
+              week.map((cell) => button({ ...dp.dayCell(cell).cell }, [text(String(cell.day))])),
             ),
           ]
         },
@@ -683,6 +662,21 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             },
             [text(state.at('clipboard').map((c) => (c.copied ? 'Copied!' : 'Copy')))],
           ),
+          // The polite live region: it announces the outcome, and a refused
+          // write says how to recover instead of claiming success.
+          span({ ...cb.indicator }, [
+            text(
+              state
+                .at('clipboard')
+                .map((c) =>
+                  c.copied
+                    ? 'Copied'
+                    : c.failed
+                      ? 'Copy blocked — select the text and copy it'
+                      : '',
+                ),
+            ),
+          ]),
         ]),
       ]),
       card('File Upload', [

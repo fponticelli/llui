@@ -328,7 +328,7 @@
     "./styles/disclosure-navigation.css": "./dist/styles/disclosure-navigation.css",
     "./styles/menus-overlays.css": "./dist/styles/menus-overlays.css",
     "./styles/data-display.css": "./dist/styles/data-display.css",
-    "./styles/layout.css": "./dist/styles/layout.css",
+    "./styles/specialized-tools.css": "./dist/styles/specialized-tools.css",
     "./styles/motion.css": "./dist/styles/motion.css",
     "./styles/tailwind.css": "./dist/styles/tailwind.css",
     "./styles/tokens.css": "./dist/styles/tokens.css",

@@ -21,12 +21,12 @@ import { buttonVariants } from '@/ui/button'
  */
 export const FileUpload = classPart(
   div,
-  'flex w-full max-w-sm flex-col gap-3 data-disabled:pointer-events-none data-disabled:opacity-50 data-readonly:pointer-events-none',
+  'group/file-upload flex w-full max-w-sm flex-col gap-3 data-disabled:pointer-events-none data-disabled:opacity-50 data-readonly:pointer-events-none',
 )
 export const FileUploadLabel = classPart(label, 'text-sm leading-none font-medium select-none')
 export const FileUploadDropzone = classPart(
   div,
-  "flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-input px-6 py-8 text-center text-sm text-muted-foreground transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-dragging:border-primary data-dragging:bg-accent/50 [&_svg:not([class*='size-'])]:size-6",
+  "flex flex-col items-center justify-center gap-2 rounded-md border border-dashed border-input px-6 py-8 text-center text-sm text-muted-foreground transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-dragging:border-primary data-dragging:bg-accent/50 group-data-invalid/file-upload:border-destructive forced-colors:border-[ButtonText] [&_svg:not([class*='size-'])]:size-6",
 )
 export const FileUploadTrigger = classPart(
   button,
@@ -38,7 +38,10 @@ export const FileUploadClearTrigger = classPart(
   buttonVariants({ variant: 'ghost', size: 'sm' }),
 )
 export const FileUploadItemGroup = classPart(ul, 'flex flex-col gap-2')
-export const FileUploadItem = classPart(li, 'flex items-center gap-3 rounded-md border p-2 text-sm')
+export const FileUploadItem = classPart(
+  li,
+  'flex flex-wrap items-center gap-3 rounded-md border p-2 text-sm data-[upload-status=error]:border-destructive/50',
+)
 export const FileUploadItemPreview = classPart(
   img,
   'size-10 shrink-0 rounded-sm border object-cover',
@@ -51,4 +54,32 @@ export const FileUploadItemSizeText = classPart(
 export const FileUploadItemDeleteTrigger = classPart(
   button,
   "inline-flex size-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors outline-none hover:bg-accent hover:text-accent-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg:not([class*='size-'])]:size-4",
+)
+
+/**
+ * The upload lifecycle (#266). The machine keeps per-file `uploads` keyed by
+ * the file's id and publishes `data-upload-status` on the item; the item wraps
+ * so these parts take their own full-width line beneath the name.
+ *
+ * `FileUploadItemProgress` is shadcn Progress's track (`bg-primary/20 h-2
+ * rounded-full`) and `FileUploadItemProgressRange` its fill: the machine writes
+ * the fill's width inline, so the recipe sets none. Under forced colors the fill
+ * is repainted `Highlight`, or a background-only bar would vanish.
+ *
+ * `FileUploadItemErrorText` is a `role="alert"` region that stays mounted and
+ * toggles `hidden`; `FileUploadItemRetryTrigger` is shown only for a failed
+ * upload and dispatches `retryUpload` — the consumer's effect re-issues it.
+ */
+export const FileUploadItemProgress = classPart(
+  div,
+  'relative h-2 w-full basis-full overflow-hidden rounded-full bg-primary/20',
+)
+export const FileUploadItemProgressRange = classPart(
+  div,
+  'h-full bg-primary transition-[width] motion-reduce:transition-none forced-color-adjust-none forced-colors:bg-[Highlight]',
+)
+export const FileUploadItemErrorText = classPart(p, 'flex-1 text-xs text-destructive')
+export const FileUploadItemRetryTrigger = classPart(
+  button,
+  buttonVariants({ variant: 'outline', size: 'sm' }),
 )

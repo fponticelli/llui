@@ -12,20 +12,26 @@ import { buttonVariants } from './button'
  * `pointer-events-none` so the user can still interact with what is being
  * pointed at — a spotlight that blocks its own target is a dead-end step.
  *
- * The machine positions both the spotlight and the card through inline `style`,
- * so this recipe sets no geometry (see `floating-panel`).
+ * The CONSUMER positions both the spotlight and the card: the machine knows only
+ * each step's target selector, so the view measures the target and places them
+ * (typically `attachFloating` from `@llui/interactions`). This recipe therefore
+ * sets no geometry, and the product is classified `partial` for exactly that
+ * reason (#266). (An earlier comment here claimed the machine wrote an inline
+ * position; it never has.)
  *
- * `data-last` on the root is what turns "Next" into "Done" — style from it
- * rather than counting steps in the view.
+ * `data-last` on the next trigger is what turns "Next" into "Done" — style or
+ * label from it rather than counting steps in the view. The close trigger sits
+ * at the logical END. Under forced colors, where box shadows are dropped, the
+ * card keeps a `CanvasText` border and the spotlight a `Highlight` outline.
  */
 export const Tour = classPart(
   div,
-  'fixed z-50 flex max-w-xs flex-col gap-2 rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg outline-none',
+  'fixed z-50 flex max-w-xs flex-col gap-2 rounded-lg border bg-popover p-4 text-popover-foreground shadow-lg outline-none forced-colors:border-[CanvasText]',
 )
 export const TourBackdrop = classPart(div, 'fixed inset-0 z-40 bg-black/50')
 export const TourSpotlight = classPart(
   div,
-  'pointer-events-none fixed z-40 rounded-md shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]',
+  'pointer-events-none fixed z-40 rounded-md shadow-[0_0_0_9999px_rgba(0,0,0,0.5)] forced-colors:outline-2 forced-colors:outline-[Highlight]',
 )
 export const TourTitle = classPart(div, 'text-sm leading-none font-semibold')
 export const TourDescription = classPart(p, 'text-sm text-muted-foreground')
@@ -34,5 +40,5 @@ export const TourPrevTrigger = classPart(button, buttonVariants({ variant: 'ghos
 export const TourNextTrigger = classPart(button, buttonVariants({ variant: 'default', size: 'sm' }))
 export const TourCloseTrigger = classPart(
   button,
-  "absolute top-2 right-2 inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity outline-none hover:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg:not([class*='size-'])]:size-3.5",
+  "absolute top-2 end-2 inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground opacity-70 transition-opacity outline-none hover:opacity-100 focus-visible:ring-[3px] focus-visible:ring-ring/50 [&_svg:not([class*='size-'])]:size-3.5",
 )

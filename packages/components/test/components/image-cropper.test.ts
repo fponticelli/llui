@@ -196,6 +196,119 @@ describe('image-cropper.connect', () => {
   })
 })
 
+// #266: the crop box was pointer-only — no tab stop, no name, no keys — so a
+// keyboard or switch user could not crop at all. It is now a focusable,
+// labelled group whose arrow keys move it and whose +/- keys zoom it.
+describe('image-cropper keyboard parity (#266)', () => {
+  const image = { width: 400, height: 200 }
+  const crop = { x: 100, y: 50, width: 200, height: 100 }
+
+  it('nudge moves the crop by a PERCENT of the image and clamps inside it', () => {
+    const s0 = init({ image, crop })
+    const [s1] = update(s0, { type: 'nudge', x: 1, y: -1 })
+    expect(s1.crop).toEqual({ x: 104, y: 48, width: 200, height: 100 })
+    const [s2] = update(s0, { type: 'nudge', x: 100, y: 100 })
+    expect(s2.crop).toEqual({ x: 200, y: 100, width: 200, height: 100 })
+  })
+
+  it('nudge does not require a pointer drag to be in progress', () => {
+    const s0 = init({ image, crop })
+    expect(s0.dragging).toBe(false)
+    expect(update(s0, { type: 'nudge', x: -10, y: 0 })[0].crop.x).toBe(60)
+  })
+
+  it('zoom scales the crop about its centre and keeps a locked ratio', () => {
+    const s0 = init({ image, crop, aspectRatio: 2 })
+    const [zoomedIn] = update(s0, { type: 'zoom', factor: 2 })
+    expect(zoomedIn.crop).toEqual({ x: 150, y: 75, width: 100, height: 50 })
+    const [zoomedOut] = update(zoomedIn, { type: 'zoom', factor: 0.5 })
+    expect(zoomedOut.crop).toEqual(crop)
+  })
+
+  it('zoom respects minSize and the image bounds', () => {
+    const s0 = init({ image, crop, minSize: 40 })
+    expect(update(s0, { type: 'zoom', factor: 100 })[0].crop.width).toBe(40)
+    const out = update(s0, { type: 'zoom', factor: 0.01 })[0].crop
+    expect(out.x).toBeGreaterThanOrEqual(0)
+    expect(out.x + out.width).toBeLessThanOrEqual(image.width)
+    expect(out.y + out.height).toBeLessThanOrEqual(image.height)
+  })
+
+  it('a non-finite or non-positive zoom factor is refused atomically', () => {
+    const s0 = init({ image, crop })
+    for (const factor of [0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(update(s0, { type: 'zoom', factor })[0]).toBe(s0)
+    }
+    expect(update(s0, { type: 'nudge', x: Number.NaN, y: 0 })[0]).toBe(s0)
+  })
+
+  it('disabled blocks keyboard moves and zoom like it blocks drags', () => {
+    const s0 = init({ image, crop, disabled: true })
+    expect(update(s0, { type: 'nudge', x: 5, y: 5 })[0]).toBe(s0)
+    expect(update(s0, { type: 'zoom', factor: 2 })[0]).toBe(s0)
+  })
+
+  it('the crop box is a focusable, named group announcing its geometry', () => {
+    const p = connect(rootSignal<ImageCropperState>(), vi.fn())
+    const s = init({ image, crop })
+    expect(p.cropBox.tabindex).toBe(0)
+    expect(p.cropBox.role).toBe('group')
+    expect(read(p.cropBox['aria-label'], s)).toBe('Crop area: 200 × 100 at 100, 50')
+    expect(p.cropBox['aria-keyshortcuts']).toContain('ArrowLeft')
+    expect(read(p.cropBox.tabindex, s)).toBe(0)
+  })
+
+  function key(parts: ReturnType<typeof connect>, init: KeyboardEventInit): KeyboardEvent {
+    const e = new KeyboardEvent('keydown', { cancelable: true, ...init })
+    parts.cropBox.onKeyDown(e)
+    return e
+  }
+
+  it('arrow keys nudge 1% (10% with Shift) and claim the key', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal<ImageCropperState>(), send)
+    const e = key(p, { key: 'ArrowRight' })
+    expect(send).toHaveBeenLastCalledWith({ type: 'nudge', x: 1, y: 0 })
+    expect(e.defaultPrevented).toBe(true)
+    key(p, { key: 'ArrowUp', shiftKey: true })
+    expect(send).toHaveBeenLastCalledWith({ type: 'nudge', x: 0, y: -10 })
+    key(p, { key: 'ArrowLeft' })
+    expect(send).toHaveBeenLastCalledWith({ type: 'nudge', x: -1, y: 0 })
+    key(p, { key: 'ArrowDown' })
+    expect(send).toHaveBeenLastCalledWith({ type: 'nudge', x: 0, y: 1 })
+  })
+
+  it('arrow keys stay PHYSICAL under RTL: the image is never mirrored', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal<ImageCropperState>(), send)
+    const host = document.createElement('div')
+    host.dir = 'rtl'
+    const box = document.createElement('div')
+    host.append(box)
+    document.body.append(host)
+    const e = new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true })
+    Object.defineProperty(e, 'currentTarget', { value: box })
+    p.cropBox.onKeyDown(e)
+    expect(send).toHaveBeenLastCalledWith({ type: 'nudge', x: 1, y: 0 })
+    host.remove()
+  })
+
+  it('+ / - zoom in and out; unrelated keys are left alone', () => {
+    const send = vi.fn()
+    const p = connect(rootSignal<ImageCropperState>(), send)
+    key(p, { key: '+' })
+    expect(send).toHaveBeenLastCalledWith({ type: 'zoom', factor: 1.1 })
+    key(p, { key: '=' })
+    expect(send).toHaveBeenLastCalledWith({ type: 'zoom', factor: 1.1 })
+    key(p, { key: '-' })
+    expect(send).toHaveBeenLastCalledWith({ type: 'zoom', factor: 1 / 1.1 })
+    send.mockClear()
+    const e = key(p, { key: 'Tab' })
+    expect(send).not.toHaveBeenCalled()
+    expect(e.defaultPrevented).toBe(false)
+  })
+})
+
 // The ratio lock used to be broken by the clamp that followed it: the height
 // was derived from the ratio and then each axis was clamped INDEPENDENTLY, so
 // an over-tall crop was squashed back to the image's own ratio (#128).

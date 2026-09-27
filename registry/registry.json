@@ -122,15 +122,14 @@
           "importPath": "@llui/components/async-list"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "specialized-tools",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -268,15 +267,14 @@
           "importPath": "@llui/components/cascade-select"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "specialized-tools",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -557,15 +555,14 @@
           "importPath": "@llui/components/date-input"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "specialized-tools",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -861,15 +858,14 @@
           "importPath": "@llui/components/floating-panel"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "specialized-tools",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -998,15 +994,14 @@
           "importPath": "@llui/components/image-cropper"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "specialized-tools",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -1043,11 +1038,11 @@
           "family": "specialized-tools",
           "baseline": {
             "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "rationale": "In View is behaviour-only: it publishes viewport visibility (data-state visible/hidden) for another product to act on and has no surface of its own to paint. Composition example: in-view lazily mounts a styled QR code, documented on the Components page."
           },
           "registryTailwind": {
             "mode": "styleless",
-            "rationale": "No copied registry artifact belongs to this product; its headless state, ARIA, and part attributes remain independently usable."
+            "rationale": "No copied registry artifact belongs to this behaviour-only product; the same visibility state composes under any skin."
           }
         },
         "scenarioId": "component:in-view",
@@ -1464,11 +1459,11 @@
           "family": "specialized-tools",
           "baseline": {
             "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "rationale": "Presence is behaviour-only: it publishes a mount/exit lifecycle (data-state opening/open/closing/closed) that drives the motion of whatever it wraps and has no surface of its own to paint. Composition example: presence retains a styled clipboard confirmation through its exit, documented on the Components page."
           },
           "registryTailwind": {
             "mode": "styleless",
-            "rationale": "No copied registry artifact belongs to this product; its headless state, ARIA, and part attributes remain independently usable."
+            "rationale": "No copied registry artifact belongs to this behaviour-only product; the same lifecycle composes under any skin."
           }
         },
         "scenarioId": "component:presence",
@@ -1520,15 +1515,14 @@
           "importPath": "@llui/components/qr-code"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "specialized-tools",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -1629,15 +1623,14 @@
           "importPath": "@llui/components/scroll-area"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "specialized-tools",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -1739,18 +1732,19 @@
           "importPath": "@llui/components/signature-pad"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "specialized-tools",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "partial",
+            "rationale": "The baseline theme directly owns the pad frame, baseline guide, empty placeholder, drawing/disabled/read-only states and the undo/clear triggers; the consumer draws the ink (canvas or SVG) from the stroke points the machine records."
           },
           "registryTailwind": {
-            "mode": "styled"
+            "mode": "partial",
+            "rationale": "The copied skin directly owns the pad frame, guide, states and triggers; the consumer draws the ink from the stroke points the machine records."
           }
         },
         "scenarioId": "component:signature-pad",
@@ -1812,15 +1806,14 @@
           "importPath": "@llui/components/sortable"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "specialized-tools",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -2175,15 +2168,14 @@
           "importPath": "@llui/components/timer"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "specialized-tools",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "styled"
           },
           "registryTailwind": {
             "mode": "styled"
@@ -2430,18 +2422,19 @@
           "importPath": "@llui/components/tour"
         },
         "styling": {
-          "baseline": false,
+          "baseline": true,
           "registryTailwind": true,
           "styleless": true
         },
         "presentation": {
           "family": "specialized-tools",
           "baseline": {
-            "mode": "styleless",
-            "rationale": "The baseline path owns no visual treatment for this product; its headless state, ARIA, and part attributes remain independently usable."
+            "mode": "partial",
+            "rationale": "The baseline theme directly owns the step card, backdrop, spotlight ring, progress text and navigation chrome; the consumer positions the card and spotlight against each step target (typically attachFloating), because the machine only knows a target selector."
           },
           "registryTailwind": {
-            "mode": "styled"
+            "mode": "partial",
+            "rationale": "The copied skin directly owns the popover-style card, backdrop, spotlight and navigation buttons; the consumer positions the card and spotlight against each step target."
           }
         },
         "scenarioId": "component:tour",
@@ -2681,7 +2674,7 @@
           "family": "specialized-tools",
           "baseline": {
             "mode": "partial",
-            "rationale": "Wizard directly exposes steps-scoped parts styled by the baseline theme; step content, validation messages, and navigation layout remain view-owned."
+            "rationale": "Wizard directly owns the steps-scoped indicator the baseline theme styles, and its navigation triggers take the foundation .btn classes; step content, validation messages and layout are consumer-owned."
           },
           "registryTailwind": {
             "mode": "composed",
@@ -3009,7 +3002,7 @@
           },
           "registryTailwind": {
             "mode": "partial",
-            "rationale": "The copied icon helper owns safe glyph geometry and loading; each consuming recipe or caller owns semantic size and color."
+            "rationale": "The copied icon helper directly owns safe glyph geometry and loading; each consuming recipe or caller owns semantic size and color."
           }
         },
         "scenarioId": "registry:icons",

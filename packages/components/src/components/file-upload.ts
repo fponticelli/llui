@@ -83,6 +83,24 @@ export interface FileUploadState {
    * off while the pointer is still inside the dropzone (#119).
    */
   dragDepth: number
+  /**
+   * Upload lifecycle per accepted file, keyed by `FileMeta.id` — never by
+   * index, which shifts when an earlier file is removed. A file with no entry
+   * has not started uploading. The machine does not upload: the consumer's
+   * effect does, and reports back with `uploadProgress` / `uploadSucceeded` /
+   * `uploadFailed`; `retryUpload` is the request to try again (#266).
+   */
+  uploads: Record<string, FileUploadProgress>
+}
+
+export type FileUploadStatus = 'uploading' | 'done' | 'error'
+
+export interface FileUploadProgress {
+  status: FileUploadStatus
+  /** 0..1 */
+  progress: number
+  /** The failure message while `status === 'error'`, else `null`. */
+  error: string | null
 }
 
 export type FileUploadMsg =
@@ -106,6 +124,14 @@ export type FileUploadMsg =
   | { type: 'drop' }
   /** @humanOnly */
   | { type: 'setInvalid'; invalid: boolean }
+  /** @humanOnly */
+  | { type: 'uploadProgress'; id: string; progress: number }
+  /** @humanOnly */
+  | { type: 'uploadSucceeded'; id: string }
+  /** @humanOnly */
+  | { type: 'uploadFailed'; id: string; error: string }
+  /** @intent("Retry the failed upload of the file with the given id") */
+  | { type: 'retryUpload'; id: string }
 
 export interface FileUploadInit {
   files?: FileMeta[]
@@ -138,7 +164,38 @@ export function init(opts: FileUploadInit = {}): FileUploadState {
     invalid: opts.invalid ?? false,
     dragging: false,
     dragDepth: 0,
+    uploads: {},
   }
+}
+
+/** The upload entry for a file id, or `undefined` when it has not started. */
+export function uploadOf(state: FileUploadState, id: string): FileUploadProgress | undefined {
+  return Object.prototype.hasOwnProperty.call(state.uploads, id) ? state.uploads[id] : undefined
+}
+
+/** Keep only the upload entries whose file is still accepted. */
+function pruneUploads(
+  uploads: Record<string, FileUploadProgress>,
+  files: readonly FileMeta[],
+): Record<string, FileUploadProgress> {
+  const live = new Set(files.map((f) => f.id))
+  const next: Record<string, FileUploadProgress> = {}
+  let changed = false
+  for (const [id, entry] of Object.entries(uploads)) {
+    if (live.has(id)) next[id] = entry
+    else changed = true
+  }
+  return changed ? next : uploads
+}
+
+/** Replace one file's upload entry, refusing an id that is not an accepted file. */
+function withUpload(
+  state: FileUploadState,
+  id: string,
+  entry: FileUploadProgress,
+): FileUploadState {
+  if (!state.files.some((f) => f.id === id)) return state
+  return { ...state, uploads: { ...state.uploads, [id]: entry } }
 }
 
 /**
@@ -344,7 +401,16 @@ export function validateFiles(
 
 export function update(state: FileUploadState, msg: FileUploadMsg): [FileUploadState, never[]] {
   if (!allFiniteNumbers(msg)) return [state, []]
-  if (state.disabled && msg.type !== 'clear' && msg.type !== 'clearRejected') {
+  // Disabled blocks the user's requests, not the RESULTS of uploads already in
+  // flight: a progress/success/failure report still has to land (#266).
+  if (
+    state.disabled &&
+    msg.type !== 'clear' &&
+    msg.type !== 'clearRejected' &&
+    msg.type !== 'uploadProgress' &&
+    msg.type !== 'uploadSucceeded' &&
+    msg.type !== 'uploadFailed'
+  ) {
     return [state, []]
   }
   if (state.readonly && (msg.type === 'setFiles' || msg.type === 'addFiles')) {
@@ -354,24 +420,42 @@ export function update(state: FileUploadState, msg: FileUploadMsg): [FileUploadS
     case 'setFiles': {
       const { accepted, rejected } = validateFiles(msg.files, state, 0)
       const merged = msg.customRejected ? [...rejected, ...msg.customRejected] : rejected
-      return [{ ...state, files: accepted, rejectedFiles: merged }, []]
+      return [
+        {
+          ...state,
+          files: accepted,
+          rejectedFiles: merged,
+          uploads: pruneUploads(state.uploads, accepted),
+        },
+        [],
+      ]
     }
     case 'addFiles': {
       const base = state.multiple ? state.files : []
       const { accepted, rejected } = validateFiles(msg.files, state, base.length)
       const combined = state.multiple ? [...base, ...accepted] : accepted
       const merged = msg.customRejected ? [...rejected, ...msg.customRejected] : rejected
-      return [{ ...state, files: combined, rejectedFiles: merged }, []]
+      return [
+        {
+          ...state,
+          files: combined,
+          rejectedFiles: merged,
+          uploads: pruneUploads(state.uploads, combined),
+        },
+        [],
+      ]
     }
-    case 'removeFile':
-      return [{ ...state, files: state.files.filter((_, i) => i !== msg.index) }, []]
+    case 'removeFile': {
+      const files = state.files.filter((_, i) => i !== msg.index)
+      return [{ ...state, files, uploads: pruneUploads(state.uploads, files) }, []]
+    }
     case 'removeRejected':
       return [
         { ...state, rejectedFiles: state.rejectedFiles.filter((_, i) => i !== msg.index) },
         [],
       ]
     case 'clear':
-      return [{ ...state, files: [], rejectedFiles: [] }, []]
+      return [{ ...state, files: [], rejectedFiles: [], uploads: {} }, []]
     case 'clearRejected':
       return [{ ...state, rejectedFiles: [] }, []]
     case 'setInvalid':
@@ -387,6 +471,31 @@ export function update(state: FileUploadState, msg: FileUploadMsg): [FileUploadS
     case 'drop':
       // A drop ends the whole drag, however many nested enters preceded it.
       return [{ ...state, dragDepth: 0, dragging: false }, []]
+    case 'uploadProgress':
+      return [
+        withUpload(state, msg.id, {
+          status: 'uploading',
+          progress: Math.min(1, Math.max(0, msg.progress)),
+          error: null,
+        }),
+        [],
+      ]
+    case 'uploadSucceeded':
+      return [withUpload(state, msg.id, { status: 'done', progress: 1, error: null }), []]
+    case 'uploadFailed':
+      return [
+        withUpload(state, msg.id, {
+          status: 'error',
+          progress: uploadOf(state, msg.id)?.progress ?? 0,
+          error: msg.error,
+        }),
+        [],
+      ]
+    case 'retryUpload':
+      // Only a FAILED upload can be retried; the consumer's effect handler
+      // observes this message and re-issues the request.
+      if (uploadOf(state, msg.id)?.status !== 'error') return [state, []]
+      return [withUpload(state, msg.id, { status: 'uploading', progress: 0, error: null }), []]
   }
 }
 
@@ -422,6 +531,44 @@ export interface FileUploadItemParts {
     'data-scope': 'file-upload'
     'data-part': 'item'
     'data-index': string
+    /** The file's upload status; absent until an upload is reported (#266). */
+    'data-upload-status': Signal<FileUploadStatus | undefined>
+  }
+  /** A labelled progressbar, shown only while the file is uploading (#266). */
+  itemProgress: {
+    role: 'progressbar'
+    'aria-label': string
+    'aria-valuemin': 0
+    'aria-valuemax': 100
+    'aria-valuenow': Signal<number | undefined>
+    hidden: Signal<boolean>
+    'data-scope': 'file-upload'
+    'data-part': 'item-progress'
+  }
+  /** The progress fill; its width is written inline as a percentage. */
+  itemProgressRange: {
+    'data-scope': 'file-upload'
+    'data-part': 'item-progress-range'
+    style: Signal<string>
+  }
+  /**
+   * Live region for the file's failure message, shown only on error. Its text
+   * is `uploadOf(state, id)?.error` — the view renders it as a child.
+   */
+  itemErrorText: {
+    role: 'alert'
+    hidden: Signal<boolean>
+    'data-scope': 'file-upload'
+    'data-part': 'item-error-text'
+  }
+  /** Shown only for a failed upload; dispatches `retryUpload` for this file. */
+  itemRetryTrigger: {
+    type: 'button'
+    'aria-label': string
+    hidden: Signal<boolean>
+    'data-scope': 'file-upload'
+    'data-part': 'item-retry-trigger'
+    onClick: (e: MouseEvent) => void
   }
   itemName: {
     'data-scope': 'file-upload'
@@ -460,6 +607,8 @@ export interface FileUploadParts {
     'data-dragging': Signal<'' | undefined>
     'data-invalid': Signal<'' | undefined>
     'data-readonly': Signal<'' | undefined>
+    /** Present while any accepted file is uploading (#266). */
+    'data-uploading': Signal<'' | undefined>
   }
   dropzone: {
     'data-scope': 'file-upload'
@@ -517,6 +666,8 @@ export interface FileUploadParts {
 export interface ConnectOptions {
   id: string
   removeLabel?: string
+  retryLabel?: string
+  progressLabel?: string
   clearLabel?: string
   /**
    * Hints the browser to use the device camera/microphone for capture. Only
@@ -563,6 +714,8 @@ export function connect(
     onTeardown(() => releaseAllFiles(state.peek()))
   }
   const removeLabel = opts.removeLabel ?? locale.remove
+  const retryLabel = opts.retryLabel ?? locale.retry
+  const progressLabel = opts.progressLabel ?? locale.progress
   const clearLabel = opts.clearLabel ?? locale.clear
 
   /**
@@ -634,6 +787,9 @@ export function connect(
       'data-dragging': state.map((st) => (st.dragging ? '' : undefined)),
       'data-invalid': state.map((st) => (st.invalid ? '' : undefined)),
       'data-readonly': state.map((st) => (st.readonly ? '' : undefined)),
+      'data-uploading': state.map((st) =>
+        Object.values(st.uploads).some((u) => u.status === 'uploading') ? '' : undefined,
+      ),
     },
     dropzone: {
       'data-scope': 'file-upload',
@@ -701,39 +857,84 @@ export function connect(
       'data-scope': 'file-upload',
       'data-part': 'item-group',
     },
-    item: (index: number): FileUploadItemParts => ({
-      item: {
-        'data-scope': 'file-upload',
-        'data-part': 'item',
-        'data-index': String(index),
-      },
-      itemName: {
-        'data-scope': 'file-upload',
-        'data-part': 'item-name',
-      },
-      itemSizeText: {
-        'data-scope': 'file-upload',
-        'data-part': 'item-size-text',
-      },
-      itemPreview: {
-        'data-scope': 'file-upload',
-        'data-part': 'item-preview',
-      },
-      removeTrigger: {
-        type: 'button',
-        'aria-label': removeLabel,
-        'data-scope': 'file-upload',
-        'data-part': 'item-remove',
-        onClick: tagSend(send, ['removeFile'], () => sendTracked({ type: 'removeFile', index })),
-      },
-      itemDeleteTrigger: {
-        type: 'button',
-        'aria-label': removeLabel,
-        'data-scope': 'file-upload',
-        'data-part': 'item-delete-trigger',
-        onClick: tagSend(send, ['removeFile'], () => sendTracked({ type: 'removeFile', index })),
-      },
-    }),
+    item: (index: number): FileUploadItemParts => {
+      // The item is addressed by index (the part's identity), but its upload
+      // entry is keyed by the file's id — read live, so a removal that shifts
+      // this index onto another file shows THAT file's status.
+      const upload = (st: FileUploadState): FileUploadProgress | undefined => {
+        const file = st.files[index]
+        return file === undefined ? undefined : uploadOf(st, file.id)
+      }
+      return {
+        item: {
+          'data-scope': 'file-upload',
+          'data-part': 'item',
+          'data-index': String(index),
+          'data-upload-status': state.map((st) => upload(st)?.status),
+        },
+        itemProgress: {
+          role: 'progressbar',
+          'aria-label': progressLabel,
+          'aria-valuemin': 0,
+          'aria-valuemax': 100,
+          'aria-valuenow': state.map((st) => {
+            const u = upload(st)
+            return u === undefined ? undefined : Math.round(u.progress * 100)
+          }),
+          hidden: state.map((st) => upload(st)?.status !== 'uploading'),
+          'data-scope': 'file-upload',
+          'data-part': 'item-progress',
+        },
+        itemProgressRange: {
+          'data-scope': 'file-upload',
+          'data-part': 'item-progress-range',
+          style: state.map((st) => `width:${Math.round((upload(st)?.progress ?? 0) * 100)}%`),
+        },
+        itemErrorText: {
+          role: 'alert',
+          hidden: state.map((st) => upload(st)?.status !== 'error'),
+          'data-scope': 'file-upload',
+          'data-part': 'item-error-text',
+        },
+        itemRetryTrigger: {
+          type: 'button',
+          'aria-label': retryLabel,
+          hidden: state.map((st) => upload(st)?.status !== 'error'),
+          'data-scope': 'file-upload',
+          'data-part': 'item-retry-trigger',
+          onClick: tagSend(send, ['retryUpload'], () => {
+            const file = state.peek().files[index]
+            if (file !== undefined) send({ type: 'retryUpload', id: file.id })
+          }),
+        },
+        itemName: {
+          'data-scope': 'file-upload',
+          'data-part': 'item-name',
+        },
+        itemSizeText: {
+          'data-scope': 'file-upload',
+          'data-part': 'item-size-text',
+        },
+        itemPreview: {
+          'data-scope': 'file-upload',
+          'data-part': 'item-preview',
+        },
+        removeTrigger: {
+          type: 'button',
+          'aria-label': removeLabel,
+          'data-scope': 'file-upload',
+          'data-part': 'item-remove',
+          onClick: tagSend(send, ['removeFile'], () => sendTracked({ type: 'removeFile', index })),
+        },
+        itemDeleteTrigger: {
+          type: 'button',
+          'aria-label': removeLabel,
+          'data-scope': 'file-upload',
+          'data-part': 'item-delete-trigger',
+          onClick: tagSend(send, ['removeFile'], () => sendTracked({ type: 'removeFile', index })),
+        },
+      }
+    },
   }
 }
 
@@ -746,4 +947,5 @@ export const fileUpload = {
   fileMatchesAccept,
   validateFiles,
   preventDocumentDrop,
+  uploadOf,
 }

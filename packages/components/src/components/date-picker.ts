@@ -50,6 +50,18 @@ export interface DatePickerState {
   /** 0=Sunday, 1=Monday. */
   weekStartsOn: 0 | 1
   disabled: boolean
+  /**
+   * A pinned "today" (YYYY-MM-DD), or `null` to read the runtime clock. Pin it
+   * for deterministic rendering (SSR + hydration, galleries, tests) or to show
+   * today in a specific time zone — see `todayInTimeZone` (#266).
+   */
+  today: string | null
+  /**
+   * Individually unavailable dates (YYYY-MM-DD) — bookings, holidays. Disabled
+   * like an out-of-bounds date, published separately as `data-unavailable`, and
+   * a range may not be completed across one (#266).
+   */
+  unavailable: string[]
 }
 
 export type DatePickerMsg =
@@ -81,8 +93,14 @@ export type DatePickerMsg =
   | { type: 'focusEndOfWeek' }
   /** @humanOnly */
   | { type: 'focusToday' }
+  /** @humanOnly */
+  | { type: 'moveFocusMonths'; months: number }
   /** @intent("Clear the current selection") */
   | { type: 'clear' }
+  /** @humanOnly */
+  | { type: 'setToday'; today: string | null }
+  /** @intent("Replace the set of individually unavailable dates (YYYY-MM-DD)") */
+  | { type: 'setUnavailable'; dates: string[] }
 
 export interface DatePickerInit {
   mode?: DatePickerMode
@@ -96,6 +114,10 @@ export interface DatePickerInit {
   max?: string | null
   weekStartsOn?: 0 | 1
   disabled?: boolean
+  /** Pin "today" (YYYY-MM-DD); omit or `null` to read the runtime clock. */
+  today?: string | null
+  /** Individually unavailable dates (YYYY-MM-DD). */
+  unavailable?: string[]
 }
 
 function pad(n: number): string {
@@ -119,6 +141,49 @@ function daysInMonth(year: number, month: number): number {
 function todayIso(): string {
   const now = new Date()
   return toIso(now.getFullYear(), now.getMonth() + 1, now.getDate())
+}
+
+/** The pinned today when there is one, the runtime clock's otherwise. */
+function effectiveToday(state: Pick<DatePickerState, 'today'>): string {
+  return state.today ?? todayIso()
+}
+
+/**
+ * The calendar date (YYYY-MM-DD) of an instant in an IANA time zone. "Today"
+ * is a property of a PLACE, not of an instant: at 23:30 UTC it is still the
+ * 14th in Los Angeles and already the 15th in Auckland. Pin the result as
+ * `today` to show the calendar in a zone other than the runtime's (#266).
+ */
+export function todayInTimeZone(timeZone: string, now: number = Date.now()): string {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now)
+  const read = (type: 'year' | 'month' | 'day'): number =>
+    Number(parts.find((part) => part.type === type)?.value)
+  return toIso(read('year'), read('month'), read('day'))
+}
+
+/** Selectable = inside min/max AND not individually unavailable. */
+function isSelectable(state: DatePickerState, iso: string): boolean {
+  return withinBounds(iso, state.min, state.max) && !state.unavailable.includes(iso)
+}
+
+/** True when an unavailable date lies within [a, b] (inclusive, either order). */
+function rangeCrossesUnavailable(state: DatePickerState, a: string, b: string): boolean {
+  const [lo, hi] = a <= b ? [a, b] : [b, a]
+  return state.unavailable.some((iso) => iso >= lo && iso <= hi)
+}
+
+/** Move an ISO date by whole calendar months, clamping the day to the target month. */
+function addMonths(iso: string, months: number): string | null {
+  const p = parseIso(iso)
+  if (!p) return null
+  const n = normalizeMonth(p.y, p.m + months)
+  const day = Math.min(p.d, daysInMonth(n.year, n.month))
+  return toIso(n.year, n.month, day)
 }
 
 function addDays(iso: string, days: number): string | null {
@@ -186,10 +251,13 @@ export function weekdayLabels(weekStartsOn: 0 | 1, locale?: string): string[] {
 }
 
 export function init(opts: DatePickerInit = {}): DatePickerState {
-  const today = todayIso()
+  const pinnedToday = opts.today ?? null
+  const today = pinnedToday ?? todayIso()
   const mode = opts.mode ?? 'single'
   const anchorIso = opts.value ?? opts.start ?? null
-  const parsed = anchorIso ? parseIso(anchorIso) : null
+  // The visible month defaults to the selection's, else to TODAY's — the
+  // pinned today when there is one, so a pinned calendar never reads the clock.
+  const parsed = parseIso(anchorIso ?? today)
   const visibleMonth = finiteOrDefault(opts.visibleMonth, parsed?.m ?? new Date().getMonth() + 1)
   const visibleYear = finiteOrDefault(opts.visibleYear, parsed?.y ?? new Date().getFullYear())
   const defaultWeekStartsOn = localeWeekStart(defaultLocale())
@@ -210,6 +278,8 @@ export function init(opts: DatePickerInit = {}): DatePickerState {
     max: opts.max ?? null,
     weekStartsOn,
     disabled: opts.disabled ?? false,
+    today: pinnedToday,
+    unavailable: [...(opts.unavailable ?? [])],
   }
 }
 
@@ -280,12 +350,15 @@ export function update(state: DatePickerState, msg: DatePickerMsg): [DatePickerS
     case 'nextYear':
       return [{ ...state, visibleYear: state.visibleYear + 1 }, []]
     case 'selectFocused': {
-      if (!withinBounds(state.focused, state.min, state.max)) return [state, []]
+      if (!isSelectable(state, state.focused)) return [state, []]
       if (state.mode === 'range') {
         // No anchor yet, or a complete range already exists → start fresh.
         if (state.start === null || state.end !== null) {
           return [{ ...state, start: state.focused, end: null, hoverDate: null }, []]
         }
+        // A range is one contiguous booking: it may not swallow an unavailable
+        // date. The anchor stays, so the user can pick a nearer end (#266).
+        if (rangeCrossesUnavailable(state, state.start, state.focused)) return [state, []]
         // Anchor set, no end → complete the range (swap if before the anchor).
         const norm = normalizeRange(state.start, state.focused)
         return [{ ...state, start: norm.start, end: norm.end, hoverDate: null }, []]
@@ -313,11 +386,25 @@ export function update(state: DatePickerState, msg: DatePickerMsg): [DatePickerS
       return [update(state, { type: 'moveFocus', days: delta })[0], []]
     }
     case 'focusToday': {
-      const today = todayIso()
+      const today = effectiveToday(state)
       return [syncVisibleMonth({ ...state, focused: today }, today), []]
+    }
+    // PageUp/PageDown move the ROVING FOCUS by a month, and the visible month
+    // follows it. Paging the visible month alone left the focused date behind in
+    // a grid no longer rendered — no tabindex=0 cell, nowhere for focus (#266).
+    case 'moveFocusMonths': {
+      if (!allFiniteNumbers(msg.months)) return [state, []]
+      const next = addMonths(state.focused, Math.trunc(msg.months))
+      if (next === null) return [state, []]
+      return [syncVisibleMonth({ ...state, focused: next }, next), []]
     }
     case 'clear':
       return [{ ...state, value: null, start: null, end: null, hoverDate: null }, []]
+    case 'setToday':
+      if (msg.today !== null && parseIso(msg.today) === null) return [state, []]
+      return [{ ...state, today: msg.today }, []]
+    case 'setUnavailable':
+      return [{ ...state, unavailable: msg.dates.filter((iso) => parseIso(iso) !== null) }, []]
   }
 }
 
@@ -335,6 +422,8 @@ export interface DayCell {
   isRangeEnd: boolean
   /** True for dates strictly between the range endpoints. */
   isInRange: boolean
+  /** True for a date listed in `unavailable` (also `isDisabled`). */
+  isUnavailable: boolean
 }
 
 /**
@@ -373,10 +462,11 @@ function makeCell(
     isToday: iso === today,
     isSelected,
     isFocused: iso === state.focused,
-    isDisabled: !withinBounds(iso, state.min, state.max),
+    isDisabled: !isSelectable(state, iso),
     isRangeStart,
     isRangeEnd,
     isInRange,
+    isUnavailable: state.unavailable.includes(iso),
   }
 }
 
@@ -394,7 +484,7 @@ export function monthGrid(state: DatePickerState, offset = 0): DayCell[] {
   const firstDay = first.getDay()
   const leadDays = (firstDay - state.weekStartsOn + 7) % 7
   const totalDays = daysInMonth(y, m)
-  const today = todayIso()
+  const today = effectiveToday(state)
   const range = effectiveRange(state)
 
   const cells: DayCell[] = []
@@ -452,6 +542,8 @@ export interface DayCellParts {
     'data-range-start': Signal<'' | undefined>
     'data-range-end': Signal<'' | undefined>
     'data-in-range': Signal<'' | undefined>
+    /** An individually unavailable date (also disabled) — distinct from out-of-bounds. */
+    'data-unavailable': Signal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -621,6 +713,7 @@ export function connect(
         'data-range-start': state.map((s) => (live(s, cell).isRangeStart ? '' : undefined)),
         'data-range-end': state.map((s) => (live(s, cell).isRangeEnd ? '' : undefined)),
         'data-in-range': state.map((s) => (live(s, cell).isInRange ? '' : undefined)),
+        'data-unavailable': state.map((s) => (live(s, cell).isUnavailable ? '' : undefined)),
         onClick: tagSend(send, ['setFocused', 'selectFocused'], () => {
           // Read LIVE too: a handler built at mount must not act on a
           // disabled-ness that was true only when the row was built.
@@ -632,14 +725,7 @@ export function connect(
         onFocus: tagSend(send, ['setFocused'], () => send({ type: 'setFocused', date: cell.iso })),
         onKeyDown: tagSend(
           send,
-          [
-            'moveFocus',
-            'prevMonth',
-            'nextMonth',
-            'focusStartOfWeek',
-            'focusEndOfWeek',
-            'selectFocused',
-          ],
+          ['moveFocus', 'moveFocusMonths', 'focusStartOfWeek', 'focusEndOfWeek', 'selectFocused'],
           (e) => {
             const key = flipArrow(e.key, e.currentTarget as Element)
             switch (key) {
@@ -659,13 +745,15 @@ export function connect(
                 e.preventDefault()
                 send({ type: 'moveFocus', days: 7 })
                 return
+              // Move the FOCUSED date by a month, not just the visible month —
+              // otherwise the new grid has no roving tab stop (#266).
               case 'PageUp':
                 e.preventDefault()
-                send({ type: 'prevMonth' })
+                send({ type: 'moveFocusMonths', months: -1 })
                 return
               case 'PageDown':
                 e.preventDefault()
-                send({ type: 'nextMonth' })
+                send({ type: 'moveFocusMonths', months: 1 })
                 return
               case 'Home':
                 e.preventDefault()
@@ -684,7 +772,8 @@ export function connect(
           },
         ),
         onPointerEnter: tagSend(send, ['setHover'], () => {
-          if (!isRange || cell.isDisabled) return
+          // LIVE, like onClick: the build-time cell's flags are identity only.
+          if (!isRange || live(state.peek(), cell).isDisabled) return
           send({ type: 'setHover', date: cell.iso })
         }),
         onPointerLeave: tagSend(send, ['clearHover'], () => {
@@ -712,4 +801,5 @@ export const datePicker = {
   weekRows,
   monthLabel,
   weekdayLabels,
+  todayInTimeZone,
 }

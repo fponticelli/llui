@@ -117,6 +117,12 @@ export interface AsyncListParts {
     'data-scope': 'async-list'
     'data-part': 'root'
     'data-status': Signal<AsyncStatus>
+    /** `'true'` while a page request is in flight — the list's content is changing. */
+    'aria-busy': Signal<'true' | 'false'>
+    /** Present once a load has SETTLED with zero items: the empty-state hook. */
+    'data-empty': Signal<'' | undefined>
+    /** Present when the source reports no further pages. */
+    'data-exhausted': Signal<'' | undefined>
   }
   sentinel: {
     'data-scope': 'async-list'
@@ -155,6 +161,13 @@ export function connect<T>(
       'data-scope': 'async-list',
       'data-part': 'root',
       'data-status': state.map((st) => st.status),
+      'aria-busy': state.map((st) => (st.status === 'loading' ? 'true' : 'false')),
+      // "Empty" is a RESULT, not a starting point: an idle list has simply not
+      // loaded yet, and a loading one may be about to fill.
+      'data-empty': state.map((st) =>
+        st.status === 'loaded' && st.items.length === 0 ? '' : undefined,
+      ),
+      'data-exhausted': state.map((st) => (st.hasMore ? undefined : '')),
     },
     sentinel: {
       'data-scope': 'async-list',
