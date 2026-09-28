@@ -36,8 +36,9 @@ let port: number
  * the right fix for a live plain-HTTP stream, which is the sibling case in the
  * notes/capture fixtures.) Both tests below assert BETWEEN `open` and their own
  * `ws.close()`, so any failed assertion left the socket open and the hook
- * waited forever. With `retry: 2` that is three consecutive hook timeouts:
- * one broken assertion cost 180 s to report against a 60 s budget.
+ * waited forever. Under the `retry: 2` these tests used to carry, that was three
+ * consecutive hook timeouts: one broken assertion cost 180 s to report against
+ * a 60 s budget.
  */
 const clients: WebSocket[] = []
 const serverSockets: Duplex[] = []
@@ -132,28 +133,56 @@ function wsUrl(path: string): string {
   return `ws://127.0.0.1:${port}${path}`
 }
 
+/** POST a LAP endpoint once, authenticated with `token`. */
+function lapPost(path: string, token: string): Promise<Response> {
+  return fetch(`${baseUrl()}${path}`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+  })
+}
+
 /**
- * POST a LAP endpoint, retrying until it returns `wantStatus` or the deadline
- * passes. The WS `hello` frame is processed asynchronously by the server, so
- * after the socket opens there's a brief window where `describe`/`state` still
- * report 503 (paused). A fixed sleep flakes under CPU contention (parallel test
- * runners); polling is fast when the hello lands quickly and robust when it
- * doesn't. Returns the last response either way so the caller's assertions
- * surface the real status on timeout.
+ * Resolve when the server ACKNOWLEDGES the client's `hello` — the observable
+ * event that the pairing is ready, not a guess at when it might be.
+ *
+ * After the socket opens, the server still has to receive and record the
+ * `hello` frame; until it has, `describe`/`state` answer 503 `paused`. These
+ * tests used to POLL for the 200 against a private 10 s deadline, under
+ * `retry: 2`. The registry records the hello and answers `hello-ack` in the
+ * same synchronous step (`PairingRegistry.dispatch`), so once the ack is on the
+ * client, one request is enough — and a server that never pairs fails with the
+ * test's own budget instead of a hand-picked one.
+ *
+ * Call it BEFORE the socket opens: the listener must be attached before the
+ * ack can arrive.
  */
-async function lapPost(path: string, token: string, wantStatus = 200): Promise<Response> {
-  const deadline = Date.now() + 10_000
-  for (;;) {
-    const res = await fetch(`${baseUrl()}${path}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({}),
-    })
-    if (res.status === wantStatus || Date.now() >= deadline) return res
-    // Drain the body so the socket is freed for the next attempt.
-    await res.arrayBuffer().catch(() => {})
-    await new Promise((r) => setTimeout(r, 20))
-  }
+function helloAck(ws: WebSocket): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const onMessage = (raw: unknown): void => {
+      let frame: unknown
+      try {
+        frame = JSON.parse(String(raw))
+      } catch {
+        return
+      }
+      if (
+        typeof frame === 'object' &&
+        frame !== null &&
+        (frame as { t?: unknown }).t === 'hello-ack'
+      ) {
+        ws.off('message', onMessage)
+        ws.off('close', onClose)
+        resolve()
+      }
+    }
+    const onClose = (): void => {
+      ws.off('message', onMessage)
+      reject(new Error('socket closed before the server acknowledged hello'))
+    }
+    ws.on('message', onMessage)
+    ws.once('close', onClose)
+  })
 }
 
 function makeFakeRpcHost(state: unknown): RpcHosts {
@@ -228,65 +257,54 @@ describe('integration: mint → ws → describe → state', () => {
     expect(body.error.code).toBe('paused')
   })
 
-  // Real HTTP server + WS round-trip: correct but timing-sensitive under
-  // full-repo parallel load, so retry transient starvation.
-  it(
-    'describe returns 200 with hello payload after WS connects and sends hello',
-    { retry: 2 },
-    async () => {
-      // 1. Mint
-      const mintRes = await fetch(`${baseUrl()}/agent/mint`, { method: 'POST' })
-      expect(mintRes.status).toBe(200)
-      const { token } = (await mintRes.json()) as MintResponse
+  it('describe returns 200 with hello payload after WS connects and sends hello', async () => {
+    // 1. Mint
+    const mintRes = await fetch(`${baseUrl()}/agent/mint`, { method: 'POST' })
+    expect(mintRes.status).toBe(200)
+    const { token } = (await mintRes.json()) as MintResponse
 
-      // 2. Open WS + wire attachWsClient so it sends hello on open
-      const ws = connect('/agent/ws', token)
-      // ws package implements the WsLike interface (addEventListener + send + close)
-      const fakeRpc = makeFakeRpcHost({ value: 42 })
-      attachWsClient(
-        ws as unknown as import('../../src/client/ws-client.js').WsLike,
-        fakeRpc,
-        makeHelloBuilder('IntegrationApp'),
-      )
+    // 2. Open WS + wire attachWsClient so it sends hello on open
+    const ws = connect('/agent/ws', token)
+    const acked = helloAck(ws)
+    // ws package implements the WsLike interface (addEventListener + send + close)
+    const fakeRpc = makeFakeRpcHost({ value: 42 })
+    attachWsClient(
+      ws as unknown as import('../../src/client/ws-client.js').WsLike,
+      fakeRpc,
+      makeHelloBuilder('IntegrationApp'),
+    )
 
-      // 3. Wait for WS to fully open (hello has been sent at this point)
-      await new Promise<void>((resolve, reject) => {
-        ws.once('open', resolve)
-        ws.once('error', reject)
-      })
+    // 3. Wait until the server has RECORDED the hello (it acks in the same step).
+    await acked
 
-      // 4. describe → should have the hello payload once the server has processed
-      // the hello frame (polled, so this is robust under load — see `lapPost`).
-      const descRes = await lapPost('/agent/lap/v1/describe', token)
-      expect(descRes.status).toBe(200)
-      const body = (await descRes.json()) as LapDescribeResponse
-      expect(body.name).toBe('IntegrationApp')
-      expect(body.schemaHash).toBe('testhash1')
-      expect(body.docs?.purpose).toBe('Integration test app')
-      expect(typeof body.messages['ping']).toBe('object')
+    // 4. describe → the hello payload, on the first request.
+    const descRes = await lapPost('/agent/lap/v1/describe', token)
+    expect(descRes.status).toBe(200)
+    const body = (await descRes.json()) as LapDescribeResponse
+    expect(body.name).toBe('IntegrationApp')
+    expect(body.schemaHash).toBe('testhash1')
+    expect(body.docs?.purpose).toBe('Integration test app')
+    expect(typeof body.messages['ping']).toBe('object')
 
-      ws.close()
-      await new Promise<void>((resolve) => ws.once('close', resolve))
-    },
-  )
+    ws.close()
+    await new Promise<void>((resolve) => ws.once('close', resolve))
+  })
 
-  it("state returns the rpc host's current state", { retry: 2 }, async () => {
+  it("state returns the rpc host's current state", async () => {
     // Mint + connect WS
     const mintRes = await fetch(`${baseUrl()}/agent/mint`, { method: 'POST' })
     const { token } = (await mintRes.json()) as MintResponse
 
     const appState = { value: 99, label: 'hello' }
     const ws = connect('/agent/ws', token)
+    const acked = helloAck(ws)
     attachWsClient(
       ws as unknown as import('../../src/client/ws-client.js').WsLike,
       makeFakeRpcHost(appState),
       makeHelloBuilder('StateApp'),
     )
 
-    await new Promise<void>((resolve, reject) => {
-      ws.once('open', resolve)
-      ws.once('error', reject)
-    })
+    await acked
 
     const stateRes = await lapPost('/agent/lap/v1/state', token)
     expect(stateRes.status).toBe(200)
