@@ -16,6 +16,10 @@ let server: ViteDevServer
 let browser: Browser
 let base: string
 
+const COMPARE = '?entry=switch&view=compare&case=checked'
+const PATHS = ['baseline', 'registryTailwind'] as const
+const SETTLED = 'html[data-gallery-status="ready"], html[data-gallery-status="error"]'
+
 beforeAll(async () => {
   server = await createServer({
     configFile: resolve(GALLERY, 'vite.config.ts'),
@@ -29,7 +33,26 @@ beforeAll(async () => {
   }
   base = `http://127.0.0.1:${address.port}/`
   browser = await chromium.launch({ headless: true })
-}, 60_000)
+  // WARM both path documents here, in the fixture. A dev server compiles each
+  // document ON DEMAND on its first request — the shell plus two whole
+  // component catalogs through the LLui compiler, one of them through
+  // Tailwind — and that cold compile used to land inside the one test that
+  // loads them: 4.7 s alone, 21.0 s of its 30 s budget with 8 busy loops on
+  // top of a shared 4-CPU machine. It is a fixture cost, so it is paid under
+  // the hook budget (two cold documents, sized like the live-render suites'
+  // two-app fixtures); the test then measures only its own page. Nothing is
+  // asserted here — a document that settles `error` fails the test below,
+  // with its message, rather than this hook.
+  const warm = await browser.newPage()
+  await warm.goto(`${base}${COMPARE}`)
+  for (const path of PATHS) {
+    const frame = await (
+      await warm.waitForSelector(`.frame-panel[data-path="${path}"] iframe`)
+    ).contentFrame()
+    await frame!.waitForSelector(SETTLED, { state: 'attached', timeout: 100_000 })
+  }
+  await warm.close()
+}, 120_000)
 
 afterAll(async () => {
   await browser?.close()
@@ -45,9 +68,9 @@ describe('the composed dev server (#267)', () => {
 
   it('serves both path documents on the shell origin, each with only its own cascade', async () => {
     const page = await browser.newPage()
-    await page.goto(`${base}?entry=switch&view=compare&case=checked`)
+    await page.goto(`${base}${COMPARE}`)
     const cascades: CascadeInventory[] = []
-    for (const path of ['baseline', 'registryTailwind']) {
+    for (const path of PATHS) {
       const frame = await (
         await page.waitForSelector(`.frame-panel[data-path="${path}"] iframe`)
       ).contentFrame()
@@ -59,10 +82,7 @@ describe('the composed dev server (#267)', () => {
       // document's dependency requests came back `504 Outdated Optimize Dep`
       // (`CACHE_DIRS` in gallery.config.ts). Measured after the fix: ~4 s
       // cold, so the test runs on the workspace budget again.
-      await frame!.waitForSelector(
-        'html[data-gallery-status="ready"], html[data-gallery-status="error"]',
-        { state: 'attached' },
-      )
+      await frame!.waitForSelector(SETTLED, { state: 'attached' })
       const status = await frame!.evaluate(() => [
         document.documentElement.getAttribute('data-gallery-status'),
         document.documentElement.getAttribute('data-gallery-error'),

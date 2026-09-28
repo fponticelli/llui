@@ -12,41 +12,38 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type ViteDevServer } from 'vite'
+import { prebuildFixture, type PrebuiltFixture } from '../../scripts/lib/prebuilt-fixture.mjs'
 import { resolve } from 'node:path'
 
 const repoRoot = resolve(import.meta.dirname, '../..')
 
 describe('registry demo Menu/ContextMenu/Menubar direction consistency in Chromium (#265 finding 6)', () => {
   let browser: Browser
-  let server: ViteDevServer
+  let build: PrebuiltFixture
   let url: string
   let page: Page
 
   beforeAll(async () => {
-    server = await createServer({
-      root: resolve(repoRoot, 'examples/registry-demo'),
-      logLevel: 'error',
-      server: { host: '127.0.0.1', port: 0 },
-    })
-    await server.listen()
-    const address = server.httpServer?.address()
-    if (!address || typeof address === 'string') throw new Error('Vite did not bind a TCP port')
-    url = `http://127.0.0.1:${address.port}/`
-    browser = await chromium.launch({ headless: true })
-    // Warm the cold dev server (dependency pre-bundling) here, under this
-    // hook's budget: a first load under load could outrun `beforeEach`'s
-    // default 30 s `waitFor` and fail an unrelated test (#265 LOW).
-    const warm = await browser.newPage()
-    await warm.goto(url)
-    await warm.locator('#demo-menubar').waitFor({ state: 'attached', timeout: 90_000 })
-    await warm.close()
-  }, 150_000)
+    // Built once and served static (`scripts/lib/prebuilt-fixture.mjs`) rather
+    // than by a Vite dev server: a dev server compiled the app on demand inside
+    // the first test to navigate, re-sent its whole unbundled module graph to
+    // every fresh page, and shared the example's dependency-optimizer cache with
+    // every concurrent suite serving the same example (see that module's header).
+    // The build replaces the warm-up page this hook used to load (#265 LOW).
+    ;[build, browser] = await Promise.all([
+      prebuildFixture({
+        root: resolve(repoRoot, 'examples/registry-demo'),
+        inputs: ['index.html'],
+      }),
+      chromium.launch({ headless: true }),
+    ])
+    url = build.url('/')
+  }, 60_000)
 
   afterAll(async () => {
     await page?.close()
     await browser?.close()
-    await server?.close()
+    await build?.close()
   })
 
   beforeEach(async () => {

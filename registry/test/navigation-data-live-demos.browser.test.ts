@@ -2,10 +2,11 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type Alias, type ViteDevServer } from 'vite'
+import type { Alias } from 'vite'
 import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../scripts/lib/vite-source-aliases.mjs'
+import { prebuildFixture, type PrebuiltFixture } from '../../scripts/lib/prebuilt-fixture.mjs'
 import {
   navigationDataDemoTokens,
   navigationDataOwnedSectionFiles,
@@ -58,19 +59,22 @@ interface Demo {
   }[]
 }
 
-async function startExample(directory: string): Promise<{ server: ViteDevServer; url: string }> {
-  const server = await createServer({
+// Each demo is a whole app, BUILT once and served static
+// (`scripts/lib/prebuilt-fixture.mjs`) rather than served by a Vite dev server.
+// #268 moved the dev server's cold on-demand compile out of the charts test
+// into this file's `beforeAll`, and that test still timed out at 30 s under a
+// parallel `turbo test`: every test opens a FRESH page, and on a dev server a
+// fresh page of either demo re-fetched its whole unbundled module graph (218
+// and 259 requests, ~1.6-2.0 s per page at ambient load ~20 on 4 CPUs), while
+// sharing each example's dependency-optimizer cache with every concurrent
+// suite serving the same example — whose re-optimizations rewrite it and can
+// force-reload a page mid-test. A built page is one document and its bundles.
+function buildExample(directory: string): Promise<PrebuiltFixture> {
+  return prebuildFixture({
     root: resolve(repoRoot, directory),
-    logLevel: 'error',
-    resolve: { alias: sourceAliases },
-    server: { host: '127.0.0.1', port: 0 },
+    inputs: ['index.html'],
+    alias: sourceAliases,
   })
-  await server.listen()
-  const address = server.httpServer?.address()
-  if (address === null || address === undefined || typeof address === 'string') {
-    throw new Error(`Vite did not bind ${directory} to a TCP port`)
-  }
-  return { server, url: `http://127.0.0.1:${address.port}/` }
 }
 
 async function openDemo(browser: Browser, demo: Demo): Promise<Page> {
@@ -82,19 +86,21 @@ async function openDemo(browser: Browser, demo: Demo): Promise<Page> {
 
 describe('actual navigation/data demos in Chromium', () => {
   let browser: Browser
-  let servers: ViteDevServer[] = []
+  let fixtures: PrebuiltFixture[] = []
   let demos: Demo[] = []
 
   beforeAll(async () => {
-    const [baseline, registry] = await Promise.all([
-      startExample('examples/components-demo'),
-      startExample('examples/registry-demo'),
+    const [baseline, registry, launched] = await Promise.all([
+      buildExample('examples/components-demo'),
+      buildExample('examples/registry-demo'),
+      chromium.launch({ headless: true }),
     ])
-    servers = [baseline.server, registry.server]
+    fixtures = [baseline, registry]
+    browser = launched
     demos = [
       {
         path: 'baseline',
-        url: baseline.url,
+        url: baseline.url('/'),
         carouselId: 'car-demo',
         tabsId: 'tabs-demo',
         paginationId: 'pagination-demo',
@@ -115,7 +121,7 @@ describe('actual navigation/data demos in Chromium', () => {
       },
       {
         path: 'registryTailwind',
-        url: registry.url,
+        url: registry.url('/'),
         carouselId: 'demo-carousel',
         tabsId: 'demo-tabs',
         paginationId: 'registry-pagination-demo',
@@ -135,23 +141,11 @@ describe('actual navigation/data demos in Chromium', () => {
         ],
       },
     ]
-    browser = await chromium.launch({ headless: true })
-    // WARM both dev servers here, in the fixture (#268). Each demo is a whole
-    // app that Vite compiles ON DEMAND on its first request — hundreds of
-    // modules through the LLui compiler — and that cold compile used to land
-    // inside whichever test navigated first: the charts test, which timed
-    // out at 30 s under a parallel `turbo test` (load ~6 on 4 CPUs) while the
-    // whole file took 18.6 s alone. Paid here, it is bounded by the hook
-    // budget (sized for fixtures) and every test measures only its own work.
-    for (const demo of demos) {
-      const page = await openDemo(browser, demo)
-      await page.close()
-    }
   }, 120_000)
 
   afterAll(async () => {
     await browser?.close()
-    await Promise.all(servers.map((server) => server.close()))
+    await Promise.all(fixtures.map((fixture) => fixture.close()))
   })
 
   // A per-FILE allowlist for genuinely VERBATIM-upstream shadcn recipe
@@ -466,7 +460,14 @@ describe('actual navigation/data demos in Chromium', () => {
       const demo = demos.find((candidate) => candidate.path === path)!
       const disclosure = demo.disclosures.find((candidate) => candidate.product === product)!
       const page = await openDemo(browser, demo)
-      await page.evaluate(async ({ triggerId, contentId }) => {
+      // The exit is RECORDED in-page, from the interrupting click to `closed`,
+      // and timed with the page's own clock. This used to sleep 40 ms in the
+      // test process and then read `data-state` over a round trip, which under
+      // load outlived the whole exit animation and read `closed` where the
+      // property held (seen at 8 busy loops on 4 CPUs): the same race #268
+      // fixed for the dialog's presence test. An exit that snaps shut instead
+      // of running still fails, on `closedAfterMs`.
+      const exit = await page.evaluate(async ({ triggerId, contentId }) => {
         const trigger = document.getElementById(triggerId) as HTMLButtonElement
         const content = document.getElementById(contentId) as HTMLElement
         trigger.click()
@@ -475,16 +476,27 @@ describe('actual navigation/data demos in Chromium', () => {
         if (content.dataset['state'] !== 'closing' || content.hidden) {
           throw new Error('Exit was not retained after interrupting enter')
         }
+        const interruptedAt = performance.now()
+        const states = ['closing']
+        return new Promise<{ states: string[]; closedAfterMs: number }>((resolve, reject) => {
+          const observer = new MutationObserver(() => {
+            const state = content.dataset['state'] ?? '(none)'
+            if (states.at(-1) !== state) states.push(state)
+            if (state !== 'closed') return
+            observer.disconnect()
+            clearTimeout(bound)
+            resolve({ states, closedAfterMs: performance.now() - interruptedAt })
+          })
+          observer.observe(content, { attributes: true, attributeFilter: ['data-state'] })
+          // A bound with a message, not a silent wait for the test budget.
+          const bound = setTimeout(() => {
+            observer.disconnect()
+            reject(new Error(`exit never completed: ${states.join(' -> ')}`))
+          }, 10_000)
+        })
       }, disclosure)
-      await page.waitForTimeout(40)
-      expect(await page.locator(`[id="${disclosure.contentId}"]`).getAttribute('data-state')).toBe(
-        'closing',
-      )
-      await page.waitForFunction(
-        (contentId) => document.getElementById(contentId)?.dataset['state'] === 'closed',
-        disclosure.contentId,
-        { timeout: 1500 },
-      )
+      expect(exit.states).toEqual(['closing', 'closed'])
+      expect(exit.closedAfterMs).toBeGreaterThanOrEqual(40)
       expect(
         await page.locator(`[id="${disclosure.contentId}"]`).getAttribute('hidden'),
       ).not.toBeNull()

@@ -24,34 +24,37 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type ViteDevServer } from 'vite'
+import { prebuildFixture, type PrebuiltFixture } from '../../scripts/lib/prebuilt-fixture.mjs'
 import { resolve } from 'node:path'
 
 const repoRoot = resolve(import.meta.dirname, '../..')
 
 describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', () => {
   let browser: Browser
-  let server: ViteDevServer
+  let build: PrebuiltFixture
   let url: string
   let page: Page
 
   beforeAll(async () => {
-    server = await createServer({
-      root: resolve(repoRoot, 'examples/components-demo'),
-      logLevel: 'error',
-      server: { host: '127.0.0.1', port: 0 },
-    })
-    await server.listen()
-    const address = server.httpServer?.address()
-    if (!address || typeof address === 'string') throw new Error('Vite did not bind a TCP port')
-    url = `http://127.0.0.1:${address.port}/`
-    browser = await chromium.launch({ headless: true })
+    // Built once and served static (`scripts/lib/prebuilt-fixture.mjs`) rather
+    // than by a Vite dev server: a dev server compiled the app on demand inside
+    // the first test to navigate, re-sent its whole unbundled module graph to
+    // every fresh page, and shared the example's dependency-optimizer cache with
+    // every concurrent suite serving the same example (see that module's header).
+    ;[build, browser] = await Promise.all([
+      prebuildFixture({
+        root: resolve(repoRoot, 'examples/components-demo'),
+        inputs: ['index.html'],
+      }),
+      chromium.launch({ headless: true }),
+    ])
+    url = build.url('/')
   }, 60_000)
 
   afterAll(async () => {
     await page?.close()
     await browser?.close()
-    await server?.close()
+    await build?.close()
   })
 
   beforeEach(async () => {
