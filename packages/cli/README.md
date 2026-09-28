@@ -191,9 +191,10 @@ family generically (the Component Gallery) holds each family's `compileScenarioF
 in one `readonly CompiledPresentationScenarioFamily[]` — it does not re-decode the definitions
 to get an erased catalog, because `decodeScenarioFamily` is for serialized input, not for
 erasing types. Erasure is one-way and costs the typed value nothing: the typed catalog keeps its
-literal scenario ids, case ids, axes and copied-artifact names (`readonly ['calendar']`, or
-`undefined` for a case that names none), an erased catalog is not assignable back to a typed
-one, and a catalog with more scenario ids is not assignable to a smaller family's catalog type.
+literal scenario ids, case ids, axes and copied-artifact names (`readonly ['calendar']`, or an
+OPEN optional `readonly string[]` for a case whose type names none — never a closed "absent",
+since width subtyping can hide names the type omits), an erased catalog is not assignable back
+to a typed one, and a catalog with more scenario ids is not assignable to a smaller family's catalog type.
 
 **Compile-time exactness has known limits — the runtime decoder is the actual backstop.**
 `compileScenarioFamily`'s generic parameter closes the most common excess-property holes,
