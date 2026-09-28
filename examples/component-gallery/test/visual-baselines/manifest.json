@@ -1,0 +1,4086 @@
+{
+  "version": 1,
+  "environment": {
+    "browser": "147.0.7727.15",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "cases": {
+    "baseline/accordion/closed/default": {
+      "width": 1248,
+      "height": 66
+    },
+    "baseline/accordion/closed/direction-rtl": {
+      "width": 1248,
+      "height": 66
+    },
+    "baseline/accordion/closing/default": {
+      "width": 1248,
+      "height": 66
+    },
+    "baseline/accordion/disabled/default": {
+      "width": 1248,
+      "height": 66
+    },
+    "baseline/accordion/open/default": {
+      "width": 1248,
+      "height": 103
+    },
+    "baseline/accordion/open/motion-reduced": {
+      "width": 1248,
+      "height": 103
+    },
+    "baseline/alert-dialog/closing/default": {
+      "width": 65,
+      "height": 37
+    },
+    "baseline/alert-dialog/open/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/alert-dialog/open/direction-rtl": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/alert-dialog/open/motion-reduced": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/alert-dialog/open/theme-dark": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/alert-dialog/opening/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/angle-slider/default/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/angle-slider/default/direction-rtl": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/angle-slider/default/theme-dark": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/angle-slider/disabled/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/angle-slider/read-only/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/async-list/empty/default": {
+      "width": 1248,
+      "height": 105
+    },
+    "baseline/async-list/error/default": {
+      "width": 1248,
+      "height": 158
+    },
+    "baseline/async-list/exhausted/default": {
+      "width": 1248,
+      "height": 153
+    },
+    "baseline/async-list/loaded/default": {
+      "width": 1248,
+      "height": 177
+    },
+    "baseline/async-list/loaded/direction-rtl": {
+      "width": 1248,
+      "height": 177
+    },
+    "baseline/async-list/loaded/theme-dark": {
+      "width": 1248,
+      "height": 177
+    },
+    "baseline/async-list/loading/default": {
+      "width": 1248,
+      "height": 177
+    },
+    "baseline/async-list/loading/motion-reduced": {
+      "width": 1248,
+      "height": 177
+    },
+    "baseline/avatar/compact/default": {
+      "width": 40,
+      "height": 40
+    },
+    "baseline/avatar/fallback/default": {
+      "width": 48,
+      "height": 48
+    },
+    "baseline/avatar/loaded/default": {
+      "width": 48,
+      "height": 48
+    },
+    "baseline/avatar/loading/default": {
+      "width": 48,
+      "height": 48
+    },
+    "baseline/breadcrumbs/collapsed/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/breadcrumbs/current/default": {
+      "width": 1248,
+      "height": 37
+    },
+    "baseline/breadcrumbs/current/theme-dark": {
+      "width": 1248,
+      "height": 37
+    },
+    "baseline/breadcrumbs/default/default": {
+      "width": 1248,
+      "height": 37
+    },
+    "baseline/breadcrumbs/default/direction-rtl": {
+      "width": 1248,
+      "height": 37
+    },
+    "baseline/breadcrumbs/overflow/default": {
+      "width": 1248,
+      "height": 37
+    },
+    "baseline/carousel/active/default": {
+      "width": 1248,
+      "height": 180
+    },
+    "baseline/carousel/default/default": {
+      "width": 1248,
+      "height": 180
+    },
+    "baseline/carousel/default/direction-rtl": {
+      "width": 1248,
+      "height": 180
+    },
+    "baseline/carousel/default/viewport-narrow": {
+      "width": 352,
+      "height": 180
+    },
+    "baseline/carousel/disabled/default": {
+      "width": 1248,
+      "height": 180
+    },
+    "baseline/carousel/dragging/default": {
+      "width": 1248,
+      "height": 180
+    },
+    "baseline/carousel/dragging/motion-reduced": {
+      "width": 1248,
+      "height": 180
+    },
+    "baseline/cascade-select/complete/default": {
+      "width": 1248,
+      "height": 72
+    },
+    "baseline/cascade-select/disabled/default": {
+      "width": 1248,
+      "height": 72
+    },
+    "baseline/cascade-select/empty/default": {
+      "width": 1248,
+      "height": 72
+    },
+    "baseline/cascade-select/partial/default": {
+      "width": 1248,
+      "height": 72
+    },
+    "baseline/cascade-select/partial/direction-rtl": {
+      "width": 1248,
+      "height": 72
+    },
+    "baseline/cascade-select/partial/theme-dark": {
+      "width": 1248,
+      "height": 72
+    },
+    "baseline/cascade-select/partial/viewport-narrow": {
+      "width": 352,
+      "height": 136
+    },
+    "baseline/chart/active/default": {
+      "width": 1249,
+      "height": 709
+    },
+    "baseline/chart/default/default": {
+      "width": 1249,
+      "height": 709
+    },
+    "baseline/chart/default/theme-dark": {
+      "width": 1249,
+      "height": 709
+    },
+    "baseline/chart/dimmed/default": {
+      "width": 1249,
+      "height": 709
+    },
+    "baseline/chart/empty/default": {
+      "width": 1249,
+      "height": 709
+    },
+    "baseline/checkbox/checked/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/checkbox/default/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/checkbox/default/theme-dark": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/checkbox/disabled/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/checkbox/indeterminate/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/checkbox/invalid/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/checkbox/required/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/chip/categorical/default": {
+      "width": 70,
+      "height": 40
+    },
+    "baseline/chip/default/default": {
+      "width": 53,
+      "height": 40
+    },
+    "baseline/clipboard/copied/default": {
+      "width": 401,
+      "height": 52
+    },
+    "baseline/clipboard/idle/default": {
+      "width": 401,
+      "height": 52
+    },
+    "baseline/clipboard/idle/direction-rtl": {
+      "width": 401,
+      "height": 52
+    },
+    "baseline/clipboard/idle/theme-dark": {
+      "width": 401,
+      "height": 52
+    },
+    "baseline/clipboard/permission-denied/default": {
+      "width": 400,
+      "height": 76
+    },
+    "baseline/collapsible/closed/default": {
+      "width": 1248,
+      "height": 36
+    },
+    "baseline/collapsible/closing/default": {
+      "width": 1248,
+      "height": 36
+    },
+    "baseline/collapsible/disabled/default": {
+      "width": 1248,
+      "height": 36
+    },
+    "baseline/collapsible/open/default": {
+      "width": 1248,
+      "height": 65
+    },
+    "baseline/collapsible/open/motion-reduced": {
+      "width": 1248,
+      "height": 65
+    },
+    "baseline/color-picker/disabled/default": {
+      "width": 1248,
+      "height": 307
+    },
+    "baseline/color-picker/hsv-alpha/default": {
+      "width": 1248,
+      "height": 307
+    },
+    "baseline/color-picker/oklch/default": {
+      "width": 1248,
+      "height": 307
+    },
+    "baseline/color-picker/oklch/direction-rtl": {
+      "width": 1248,
+      "height": 307
+    },
+    "baseline/color-picker/oklch/theme-dark": {
+      "width": 1248,
+      "height": 307
+    },
+    "baseline/combobox/closed/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/combobox/error/default": {
+      "width": 1248,
+      "height": 125
+    },
+    "baseline/combobox/loading/default": {
+      "width": 1248,
+      "height": 66
+    },
+    "baseline/combobox/open/default": {
+      "width": 1248,
+      "height": 162
+    },
+    "baseline/combobox/open/direction-rtl": {
+      "width": 1248,
+      "height": 162
+    },
+    "baseline/combobox/open/theme-dark": {
+      "width": 1248,
+      "height": 162
+    },
+    "baseline/combobox/stale-results/default": {
+      "width": 1248,
+      "height": 130
+    },
+    "baseline/command-menu/closed/default": {
+      "width": 164,
+      "height": 37
+    },
+    "baseline/command-menu/empty/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/command-menu/open/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/command-menu/open/direction-rtl": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/command-menu/open/theme-dark": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/confirm-dialog/closed/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/confirm-dialog/open/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/confirm-dialog/open/direction-rtl": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/confirm-dialog/open/theme-dark": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/context-menu/closing/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/context-menu/edge-anchor/default": {
+      "width": 1264,
+      "height": 118
+    },
+    "baseline/context-menu/edge-anchor/viewport-narrow": {
+      "width": 368,
+      "height": 118
+    },
+    "baseline/context-menu/open/default": {
+      "width": 1248,
+      "height": 258
+    },
+    "baseline/context-menu/open/direction-rtl": {
+      "width": 1248,
+      "height": 258
+    },
+    "baseline/context-menu/open/motion-reduced": {
+      "width": 1248,
+      "height": 258
+    },
+    "baseline/context-menu/open/theme-dark": {
+      "width": 1248,
+      "height": 258
+    },
+    "baseline/context-menu/opening/default": {
+      "width": 1248,
+      "height": 258
+    },
+    "baseline/context-menu/submenu-open/default": {
+      "width": 1248,
+      "height": 295
+    },
+    "baseline/data-table/compact/default": {
+      "width": 1248,
+      "height": 144
+    },
+    "baseline/data-table/empty/default": {
+      "width": 1248,
+      "height": 212
+    },
+    "baseline/data-table/error/default": {
+      "width": 1248,
+      "height": 211
+    },
+    "baseline/data-table/error/theme-dark": {
+      "width": 1248,
+      "height": 211
+    },
+    "baseline/data-table/loading/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/data-table/populated/default": {
+      "width": 1248,
+      "height": 168
+    },
+    "baseline/data-table/populated/viewport-narrow": {
+      "width": 374,
+      "height": 168
+    },
+    "baseline/date-input/disabled/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/date-input/empty/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/date-input/empty/direction-rtl": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/date-input/empty/theme-dark": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/date-input/empty/viewport-narrow": {
+      "width": 352,
+      "height": 52
+    },
+    "baseline/date-input/invalid/default": {
+      "width": 1248,
+      "height": 79
+    },
+    "baseline/date-input/out-of-range/default": {
+      "width": 1248,
+      "height": 79
+    },
+    "baseline/date-input/read-only/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/date-input/valid/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/date-picker/compact/default": {
+      "width": 238,
+      "height": 307
+    },
+    "baseline/date-picker/locale-ar-rtl/default": {
+      "width": 269,
+      "height": 331
+    },
+    "baseline/date-picker/locale-de/default": {
+      "width": 266,
+      "height": 371
+    },
+    "baseline/date-picker/range/default": {
+      "width": 266,
+      "height": 331
+    },
+    "baseline/date-picker/single/default": {
+      "width": 266,
+      "height": 331
+    },
+    "baseline/date-picker/single/direction-rtl": {
+      "width": 266,
+      "height": 331
+    },
+    "baseline/date-picker/single/motion-reduced": {
+      "width": 266,
+      "height": 331
+    },
+    "baseline/date-picker/single/theme-dark": {
+      "width": 266,
+      "height": 331
+    },
+    "baseline/date-picker/single/viewport-narrow": {
+      "width": 266,
+      "height": 331
+    },
+    "baseline/date-picker/time-zone/default": {
+      "width": 266,
+      "height": 331
+    },
+    "baseline/date-picker/two-months/default": {
+      "width": 506,
+      "height": 331
+    },
+    "baseline/date-picker/unavailable/default": {
+      "width": 266,
+      "height": 331
+    },
+    "baseline/dialog/closing/default": {
+      "width": 65,
+      "height": 37
+    },
+    "baseline/dialog/modal/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/dialog/modal/direction-rtl": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/dialog/modal/motion-reduced": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/dialog/modal/theme-dark": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/dialog/nested/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/dialog/non-modal/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/dialog/opening/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/drawer/bottom/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/drawer/closing/default": {
+      "width": 65,
+      "height": 37
+    },
+    "baseline/drawer/left/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/drawer/opening/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/drawer/right/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/drawer/right/direction-rtl": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/drawer/right/motion-reduced": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/drawer/right/theme-dark": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/drawer/top/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "baseline/editable/disabled/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/editable/editing/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/editable/empty/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/editable/preview/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/editable/preview/direction-rtl": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/editable/preview/theme-dark": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/field/default/default": {
+      "width": 1248,
+      "height": 110
+    },
+    "baseline/field/default/direction-rtl": {
+      "width": 1248,
+      "height": 110
+    },
+    "baseline/field/disabled/default": {
+      "width": 1248,
+      "height": 110
+    },
+    "baseline/field/invalid/default": {
+      "width": 1248,
+      "height": 142
+    },
+    "baseline/field/placeholder/default": {
+      "width": 1248,
+      "height": 110
+    },
+    "baseline/field/read-only/default": {
+      "width": 1248,
+      "height": 110
+    },
+    "baseline/field/required/default": {
+      "width": 1248,
+      "height": 110
+    },
+    "baseline/fieldset/default/default": {
+      "width": 1248,
+      "height": 201
+    },
+    "baseline/fieldset/disabled/default": {
+      "width": 1248,
+      "height": 201
+    },
+    "baseline/fieldset/invalid/default": {
+      "width": 1248,
+      "height": 245
+    },
+    "baseline/fieldset/required/default": {
+      "width": 1248,
+      "height": 201
+    },
+    "baseline/file-upload/disabled/default": {
+      "width": 400,
+      "height": 225
+    },
+    "baseline/file-upload/dragging/default": {
+      "width": 400,
+      "height": 225
+    },
+    "baseline/file-upload/dragging/motion-reduced": {
+      "width": 400,
+      "height": 225
+    },
+    "baseline/file-upload/empty/default": {
+      "width": 400,
+      "height": 225
+    },
+    "baseline/file-upload/empty/direction-rtl": {
+      "width": 400,
+      "height": 225
+    },
+    "baseline/file-upload/empty/theme-dark": {
+      "width": 400,
+      "height": 225
+    },
+    "baseline/file-upload/empty/viewport-narrow": {
+      "width": 352,
+      "height": 225
+    },
+    "baseline/file-upload/error-retry/default": {
+      "width": 400,
+      "height": 337
+    },
+    "baseline/file-upload/rejected/default": {
+      "width": 400,
+      "height": 243
+    },
+    "baseline/file-upload/uploading/default": {
+      "width": 400,
+      "height": 393
+    },
+    "baseline/floating-panel/maximized/default": {
+      "width": 1248,
+      "height": 368
+    },
+    "baseline/floating-panel/min-size/default": {
+      "width": 216,
+      "height": 136
+    },
+    "baseline/floating-panel/minimized/default": {
+      "width": 296,
+      "height": 196
+    },
+    "baseline/floating-panel/open/default": {
+      "width": 296,
+      "height": 196
+    },
+    "baseline/floating-panel/open/direction-rtl": {
+      "width": 296,
+      "height": 196
+    },
+    "baseline/floating-panel/open/theme-dark": {
+      "width": 296,
+      "height": 196
+    },
+    "baseline/form-field/default/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "baseline/form-field/disabled/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "baseline/form-field/invalid/default": {
+      "width": 1248,
+      "height": 130
+    },
+    "baseline/form-field/loading/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "baseline/form-field/placeholder/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "baseline/form-field/read-only/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "baseline/form-field/required/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "baseline/form/default/default": {
+      "width": 1248,
+      "height": 130
+    },
+    "baseline/form/disabled/default": {
+      "width": 1248,
+      "height": 130
+    },
+    "baseline/form/invalid/default": {
+      "width": 1248,
+      "height": 210
+    },
+    "baseline/form/loading/default": {
+      "width": 1248,
+      "height": 130
+    },
+    "baseline/gradient-picker/disabled/default": {
+      "width": 1262,
+      "height": 251
+    },
+    "baseline/gradient-picker/linear/default": {
+      "width": 1262,
+      "height": 251
+    },
+    "baseline/gradient-picker/linear/direction-rtl": {
+      "width": 1262,
+      "height": 251
+    },
+    "baseline/gradient-picker/linear/theme-dark": {
+      "width": 1262,
+      "height": 251
+    },
+    "baseline/gradient-picker/radial/default": {
+      "width": 1262,
+      "height": 251
+    },
+    "baseline/hover-card/closing/default": {
+      "width": 74,
+      "height": 37
+    },
+    "baseline/hover-card/open/default": {
+      "width": 272,
+      "height": 103
+    },
+    "baseline/hover-card/open/motion-reduced": {
+      "width": 272,
+      "height": 103
+    },
+    "baseline/hover-card/open/theme-dark": {
+      "width": 272,
+      "height": 103
+    },
+    "baseline/hover-card/opening/default": {
+      "width": 272,
+      "height": 103
+    },
+    "baseline/hover-card/placement-bottom-end/default": {
+      "width": 272,
+      "height": 103
+    },
+    "baseline/hover-card/placement-bottom-end/direction-rtl": {
+      "width": 272,
+      "height": 103
+    },
+    "baseline/hover-card/placement-left/default": {
+      "width": 338,
+      "height": 74
+    },
+    "baseline/hover-card/placement-right-start/default": {
+      "width": 338,
+      "height": 74
+    },
+    "baseline/hover-card/placement-top/default": {
+      "width": 272,
+      "height": 103
+    },
+    "baseline/image-cropper/disabled/default": {
+      "width": 400,
+      "height": 345
+    },
+    "baseline/image-cropper/dragging/default": {
+      "width": 400,
+      "height": 345
+    },
+    "baseline/image-cropper/free/default": {
+      "width": 400,
+      "height": 345
+    },
+    "baseline/image-cropper/free/direction-rtl": {
+      "width": 400,
+      "height": 345
+    },
+    "baseline/image-cropper/free/motion-reduced": {
+      "width": 400,
+      "height": 345
+    },
+    "baseline/image-cropper/free/theme-dark": {
+      "width": 400,
+      "height": 345
+    },
+    "baseline/image-cropper/free/viewport-narrow": {
+      "width": 352,
+      "height": 309
+    },
+    "baseline/image-cropper/square/default": {
+      "width": 400,
+      "height": 348
+    },
+    "baseline/image-cropper/zoomed/default": {
+      "width": 400,
+      "height": 345
+    },
+    "baseline/listbox/default/default": {
+      "width": 1248,
+      "height": 122
+    },
+    "baseline/listbox/default/theme-dark": {
+      "width": 1248,
+      "height": 122
+    },
+    "baseline/listbox/disabled/default": {
+      "width": 1248,
+      "height": 122
+    },
+    "baseline/listbox/selected/default": {
+      "width": 1248,
+      "height": 122
+    },
+    "baseline/marquee/disabled/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/marquee/paused/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/marquee/running/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/marquee/running/direction-rtl": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/marquee/running/motion-reduced": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/marquee/vertical/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/menu/closing/default": {
+      "width": 102,
+      "height": 37
+    },
+    "baseline/menu/open/default": {
+      "width": 144,
+      "height": 147
+    },
+    "baseline/menu/open/direction-rtl": {
+      "width": 144,
+      "height": 147
+    },
+    "baseline/menu/open/motion-reduced": {
+      "width": 144,
+      "height": 147
+    },
+    "baseline/menu/open/theme-dark": {
+      "width": 144,
+      "height": 147
+    },
+    "baseline/menu/opening/default": {
+      "width": 144,
+      "height": 147
+    },
+    "baseline/menu/overflow/default": {
+      "width": 144,
+      "height": 782
+    },
+    "baseline/menu/overflow/viewport-narrow": {
+      "width": 144,
+      "height": 819
+    },
+    "baseline/menu/placement-bottom-end/default": {
+      "width": 230,
+      "height": 179
+    },
+    "baseline/menu/placement-left/default": {
+      "width": 320,
+      "height": 154
+    },
+    "baseline/menu/placement-right-start/default": {
+      "width": 320,
+      "height": 154
+    },
+    "baseline/menu/placement-top/default": {
+      "width": 230,
+      "height": 179
+    },
+    "baseline/menu/submenu-open/default": {
+      "width": 269,
+      "height": 184
+    },
+    "baseline/meter/critical/default": {
+      "width": 1248,
+      "height": 51
+    },
+    "baseline/meter/critical/theme-dark": {
+      "width": 1248,
+      "height": 51
+    },
+    "baseline/meter/neutral/default": {
+      "width": 1248,
+      "height": 51
+    },
+    "baseline/meter/neutral/direction-rtl": {
+      "width": 1248,
+      "height": 51
+    },
+    "baseline/meter/optimal/default": {
+      "width": 1248,
+      "height": 51
+    },
+    "baseline/meter/suboptimal/default": {
+      "width": 1248,
+      "height": 51
+    },
+    "baseline/number-input/default/default": {
+      "width": 146,
+      "height": 52
+    },
+    "baseline/number-input/default/direction-rtl": {
+      "width": 146,
+      "height": 52
+    },
+    "baseline/number-input/disabled/default": {
+      "width": 146,
+      "height": 52
+    },
+    "baseline/number-input/invalid/default": {
+      "width": 146,
+      "height": 52
+    },
+    "baseline/number-input/read-only/default": {
+      "width": 146,
+      "height": 52
+    },
+    "baseline/number-input/required/default": {
+      "width": 146,
+      "height": 52
+    },
+    "baseline/pagination/current/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/pagination/current/theme-dark": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/pagination/default/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/pagination/default/direction-rtl": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/pagination/default/viewport-narrow": {
+      "width": 352,
+      "height": 52
+    },
+    "baseline/pagination/disabled/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/pagination/ellipsis/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/password-input/default/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/password-input/default/direction-rtl": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/password-input/disabled/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/password-input/invalid/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/password-input/placeholder/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/password-input/read-only/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/password-input/required/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/pin-input/default/default": {
+      "width": 233,
+      "height": 52
+    },
+    "baseline/pin-input/default/direction-rtl": {
+      "width": 233,
+      "height": 52
+    },
+    "baseline/pin-input/disabled/default": {
+      "width": 233,
+      "height": 52
+    },
+    "baseline/pin-input/invalid/default": {
+      "width": 233,
+      "height": 52
+    },
+    "baseline/pin-input/placeholder/default": {
+      "width": 233,
+      "height": 52
+    },
+    "baseline/pin-input/read-only/default": {
+      "width": 233,
+      "height": 52
+    },
+    "baseline/pin-input/required/default": {
+      "width": 233,
+      "height": 52
+    },
+    "baseline/popover/closing/default": {
+      "width": 74,
+      "height": 37
+    },
+    "baseline/popover/flip-required/default": {
+      "width": 304,
+      "height": 100
+    },
+    "baseline/popover/open/default": {
+      "width": 304,
+      "height": 100
+    },
+    "baseline/popover/open/motion-reduced": {
+      "width": 304,
+      "height": 100
+    },
+    "baseline/popover/open/theme-dark": {
+      "width": 304,
+      "height": 100
+    },
+    "baseline/popover/opening/default": {
+      "width": 304,
+      "height": 100
+    },
+    "baseline/popover/placement-bottom-end/default": {
+      "width": 304,
+      "height": 100
+    },
+    "baseline/popover/placement-left/default": {
+      "width": 370,
+      "height": 71
+    },
+    "baseline/popover/placement-right-start/default": {
+      "width": 370,
+      "height": 71
+    },
+    "baseline/popover/placement-top/default": {
+      "width": 304,
+      "height": 100
+    },
+    "baseline/popover/shift-required/default": {
+      "width": 304,
+      "height": 121
+    },
+    "baseline/popover/shift-required/viewport-narrow": {
+      "width": 304,
+      "height": 121
+    },
+    "baseline/popover/top-end/default": {
+      "width": 304,
+      "height": 100
+    },
+    "baseline/popover/top-start/default": {
+      "width": 304,
+      "height": 100
+    },
+    "baseline/popover/top-start/direction-rtl": {
+      "width": 304,
+      "height": 100
+    },
+    "baseline/progress/complete/default": {
+      "width": 1248,
+      "height": 51
+    },
+    "baseline/progress/indeterminate/default": {
+      "width": 1248,
+      "height": 51
+    },
+    "baseline/progress/indeterminate/motion-reduced": {
+      "width": 1248,
+      "height": 51
+    },
+    "baseline/progress/loading/default": {
+      "width": 1248,
+      "height": 51
+    },
+    "baseline/qr-code/code/default": {
+      "width": 144,
+      "height": 184
+    },
+    "baseline/qr-code/code/direction-rtl": {
+      "width": 144,
+      "height": 184
+    },
+    "baseline/qr-code/code/motion-reduced": {
+      "width": 144,
+      "height": 184
+    },
+    "baseline/qr-code/code/theme-dark": {
+      "width": 144,
+      "height": 184
+    },
+    "baseline/qr-code/code/viewport-narrow": {
+      "width": 144,
+      "height": 184
+    },
+    "baseline/qr-code/empty/default": {
+      "width": 144,
+      "height": 184
+    },
+    "baseline/radio-group/checked/default": {
+      "width": 1248,
+      "height": 104
+    },
+    "baseline/radio-group/default/default": {
+      "width": 1248,
+      "height": 104
+    },
+    "baseline/radio-group/disabled/default": {
+      "width": 1248,
+      "height": 104
+    },
+    "baseline/radio-group/invalid/default": {
+      "width": 1248,
+      "height": 104
+    },
+    "baseline/radio-group/required/default": {
+      "width": 1248,
+      "height": 104
+    },
+    "baseline/rating-group/default/default": {
+      "width": 144,
+      "height": 40
+    },
+    "baseline/rating-group/default/direction-rtl": {
+      "width": 144,
+      "height": 40
+    },
+    "baseline/rating-group/disabled/default": {
+      "width": 144,
+      "height": 40
+    },
+    "baseline/rating-group/read-only/default": {
+      "width": 144,
+      "height": 40
+    },
+    "baseline/rating-group/selected/default": {
+      "width": 144,
+      "height": 40
+    },
+    "baseline/scroll-area/both-axes/default": {
+      "width": 553,
+      "height": 784
+    },
+    "baseline/scroll-area/fits/default": {
+      "width": 274,
+      "height": 178
+    },
+    "baseline/scroll-area/vertical/default": {
+      "width": 274,
+      "height": 784
+    },
+    "baseline/scroll-area/vertical/direction-rtl": {
+      "width": 274,
+      "height": 784
+    },
+    "baseline/scroll-area/vertical/motion-reduced": {
+      "width": 274,
+      "height": 784
+    },
+    "baseline/scroll-area/vertical/theme-dark": {
+      "width": 274,
+      "height": 784
+    },
+    "baseline/scroll-area/vertical/viewport-narrow": {
+      "width": 274,
+      "height": 785
+    },
+    "baseline/searchable-select/closed/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/searchable-select/error/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "baseline/searchable-select/loading/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "baseline/searchable-select/open/default": {
+      "width": 1248,
+      "height": 198
+    },
+    "baseline/searchable-select/open/direction-rtl": {
+      "width": 1248,
+      "height": 198
+    },
+    "baseline/searchable-select/open/theme-dark": {
+      "width": 1248,
+      "height": 198
+    },
+    "baseline/select/closed/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/select/multiple/default": {
+      "width": 1248,
+      "height": 162
+    },
+    "baseline/select/open/default": {
+      "width": 1248,
+      "height": 162
+    },
+    "baseline/select/open/direction-rtl": {
+      "width": 1248,
+      "height": 162
+    },
+    "baseline/select/open/theme-dark": {
+      "width": 1248,
+      "height": 162
+    },
+    "baseline/signature-pad/cleared-undoable/default": {
+      "width": 400,
+      "height": 184
+    },
+    "baseline/signature-pad/disabled/default": {
+      "width": 400,
+      "height": 184
+    },
+    "baseline/signature-pad/empty/default": {
+      "width": 400,
+      "height": 184
+    },
+    "baseline/signature-pad/empty/direction-rtl": {
+      "width": 400,
+      "height": 184
+    },
+    "baseline/signature-pad/empty/theme-dark": {
+      "width": 400,
+      "height": 184
+    },
+    "baseline/signature-pad/empty/viewport-narrow": {
+      "width": 352,
+      "height": 184
+    },
+    "baseline/signature-pad/read-only/default": {
+      "width": 400,
+      "height": 184
+    },
+    "baseline/signature-pad/signed/default": {
+      "width": 400,
+      "height": 184
+    },
+    "baseline/slider/default/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/slider/default/direction-rtl": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/slider/disabled/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/slider/invalid/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/slider/read-only/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/slider/required/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/sortable/dragging/default": {
+      "width": 1248,
+      "height": 145
+    },
+    "baseline/sortable/dragging/motion-reduced": {
+      "width": 1248,
+      "height": 145
+    },
+    "baseline/sortable/idle/default": {
+      "width": 1248,
+      "height": 145
+    },
+    "baseline/sortable/idle/direction-rtl": {
+      "width": 1248,
+      "height": 145
+    },
+    "baseline/sortable/idle/theme-dark": {
+      "width": 1248,
+      "height": 145
+    },
+    "baseline/sortable/keyboard-grab/default": {
+      "width": 1248,
+      "height": 145
+    },
+    "baseline/sparkline/default/default": {
+      "width": 137,
+      "height": 69
+    },
+    "baseline/sparkline/default/theme-dark": {
+      "width": 137,
+      "height": 69
+    },
+    "baseline/sparkline/stale/default": {
+      "width": 137,
+      "height": 69
+    },
+    "baseline/splitter/at-minimum/default": {
+      "width": 1248,
+      "height": 144
+    },
+    "baseline/splitter/disabled/default": {
+      "width": 1248,
+      "height": 144
+    },
+    "baseline/splitter/horizontal/default": {
+      "width": 1248,
+      "height": 144
+    },
+    "baseline/splitter/horizontal/direction-rtl": {
+      "width": 1248,
+      "height": 144
+    },
+    "baseline/splitter/horizontal/motion-reduced": {
+      "width": 1248,
+      "height": 144
+    },
+    "baseline/splitter/horizontal/theme-dark": {
+      "width": 1248,
+      "height": 144
+    },
+    "baseline/splitter/horizontal/viewport-narrow": {
+      "width": 352,
+      "height": 144
+    },
+    "baseline/splitter/vertical/default": {
+      "width": 1248,
+      "height": 144
+    },
+    "baseline/steps/completed/default": {
+      "width": 1248,
+      "height": 42
+    },
+    "baseline/steps/current/default": {
+      "width": 1248,
+      "height": 42
+    },
+    "baseline/steps/current/direction-rtl": {
+      "width": 1248,
+      "height": 42
+    },
+    "baseline/steps/current/theme-dark": {
+      "width": 1248,
+      "height": 42
+    },
+    "baseline/steps/disabled/default": {
+      "width": 1248,
+      "height": 42
+    },
+    "baseline/steps/error/default": {
+      "width": 1248,
+      "height": 42
+    },
+    "baseline/steps/pending/default": {
+      "width": 1248,
+      "height": 42
+    },
+    "baseline/switch/checked/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/switch/default/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/switch/default/direction-rtl": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/switch/default/theme-dark": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/switch/disabled/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/switch/required/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "baseline/table/compact/default": {
+      "width": 1248,
+      "height": 108
+    },
+    "baseline/table/default/default": {
+      "width": 1248,
+      "height": 132
+    },
+    "baseline/table/default/direction-rtl": {
+      "width": 1248,
+      "height": 132
+    },
+    "baseline/table/default/viewport-narrow": {
+      "width": 374,
+      "height": 132
+    },
+    "baseline/table/disabled/default": {
+      "width": 1248,
+      "height": 132
+    },
+    "baseline/table/empty/default": {
+      "width": 1248,
+      "height": 56
+    },
+    "baseline/table/selected/default": {
+      "width": 1248,
+      "height": 132
+    },
+    "baseline/table/selected/theme-dark": {
+      "width": 1248,
+      "height": 132
+    },
+    "baseline/table/sorted/default": {
+      "width": 1248,
+      "height": 132
+    },
+    "baseline/tabs/active/default": {
+      "width": 1248,
+      "height": 84
+    },
+    "baseline/tabs/active/direction-rtl": {
+      "width": 1248,
+      "height": 84
+    },
+    "baseline/tabs/active/theme-dark": {
+      "width": 1248,
+      "height": 84
+    },
+    "baseline/tabs/disabled/default": {
+      "width": 1248,
+      "height": 84
+    },
+    "baseline/tabs/inactive/default": {
+      "width": 1248,
+      "height": 84
+    },
+    "baseline/tabs/vertical/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "baseline/tags-input/default/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/tags-input/disabled/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/tags-input/invalid/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/tags-input/placeholder/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/tags-input/read-only/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/tags-input/required/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/tags-input/selected/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/time-picker/disabled/default": {
+      "width": 95,
+      "height": 52
+    },
+    "baseline/time-picker/twelve-hour/default": {
+      "width": 127,
+      "height": 52
+    },
+    "baseline/time-picker/twelve-hour/direction-rtl": {
+      "width": 127,
+      "height": 52
+    },
+    "baseline/time-picker/twelve-hour/theme-dark": {
+      "width": 127,
+      "height": 52
+    },
+    "baseline/time-picker/twenty-four-hour/default": {
+      "width": 95,
+      "height": 52
+    },
+    "baseline/timer/complete/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/timer/paused/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/timer/paused/direction-rtl": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/timer/paused/theme-dark": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/timer/running/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "baseline/toast/closing/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/closing/motion-reduced": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/custom/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/error/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/info/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/loading/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/placement-bottom-end/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/placement-bottom-start/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/placement-bottom/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/placement-top-end/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/placement-top-start/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/placement-top/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/success/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/success/direction-rtl": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/success/theme-dark": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/undismissable/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toast/warning/default": {
+      "width": 336,
+      "height": 149
+    },
+    "baseline/toc/collapsed/default": {
+      "width": 1248,
+      "height": 76
+    },
+    "baseline/toc/current/default": {
+      "width": 1248,
+      "height": 76
+    },
+    "baseline/toc/current/theme-dark": {
+      "width": 1248,
+      "height": 76
+    },
+    "baseline/toc/default/default": {
+      "width": 1248,
+      "height": 76
+    },
+    "baseline/toc/default/direction-rtl": {
+      "width": 1248,
+      "height": 76
+    },
+    "baseline/toc/expanded/default": {
+      "width": 1248,
+      "height": 76
+    },
+    "baseline/toggle-group/checked/default": {
+      "width": 189,
+      "height": 52
+    },
+    "baseline/toggle-group/default/default": {
+      "width": 189,
+      "height": 52
+    },
+    "baseline/toggle-group/default/direction-rtl": {
+      "width": 189,
+      "height": 52
+    },
+    "baseline/toggle-group/disabled/default": {
+      "width": 189,
+      "height": 52
+    },
+    "baseline/toggle-group/selected/default": {
+      "width": 189,
+      "height": 52
+    },
+    "baseline/toggle/checked/default": {
+      "width": 52,
+      "height": 52
+    },
+    "baseline/toggle/default/default": {
+      "width": 52,
+      "height": 52
+    },
+    "baseline/toggle/default/theme-dark": {
+      "width": 52,
+      "height": 52
+    },
+    "baseline/toggle/disabled/default": {
+      "width": 52,
+      "height": 52
+    },
+    "baseline/tooltip/closing/default": {
+      "width": 68,
+      "height": 37
+    },
+    "baseline/tooltip/open/default": {
+      "width": 68,
+      "height": 71
+    },
+    "baseline/tooltip/open/motion-reduced": {
+      "width": 68,
+      "height": 71
+    },
+    "baseline/tooltip/open/theme-dark": {
+      "width": 68,
+      "height": 71
+    },
+    "baseline/tooltip/opening/default": {
+      "width": 68,
+      "height": 71
+    },
+    "baseline/tooltip/placement-bottom-end/default": {
+      "width": 336,
+      "height": 87
+    },
+    "baseline/tooltip/placement-bottom-end/direction-rtl": {
+      "width": 336,
+      "height": 87
+    },
+    "baseline/tooltip/placement-left/default": {
+      "width": 394,
+      "height": 60
+    },
+    "baseline/tooltip/placement-right-start/default": {
+      "width": 394,
+      "height": 60
+    },
+    "baseline/tooltip/placement-top/default": {
+      "width": 336,
+      "height": 87
+    },
+    "baseline/tour/first-step/default": {
+      "width": 205,
+      "height": 219
+    },
+    "baseline/tour/first-step/direction-rtl": {
+      "width": 205,
+      "height": 219
+    },
+    "baseline/tour/first-step/motion-reduced": {
+      "width": 205,
+      "height": 219
+    },
+    "baseline/tour/first-step/theme-dark": {
+      "width": 205,
+      "height": 219
+    },
+    "baseline/tour/first-step/viewport-narrow": {
+      "width": 205,
+      "height": 219
+    },
+    "baseline/tour/last-step/default": {
+      "width": 213,
+      "height": 219
+    },
+    "baseline/tour/no-spotlight/default": {
+      "width": 1248,
+      "height": 272
+    },
+    "baseline/tree-view/collapsed/default": {
+      "width": 1248,
+      "height": 80
+    },
+    "baseline/tree-view/collapsed/direction-rtl": {
+      "width": 1248,
+      "height": 80
+    },
+    "baseline/tree-view/disabled/default": {
+      "width": 1248,
+      "height": 80
+    },
+    "baseline/tree-view/expanded/default": {
+      "width": 1248,
+      "height": 80
+    },
+    "baseline/tree-view/loading/default": {
+      "width": 1248,
+      "height": 80
+    },
+    "baseline/tree-view/selected/default": {
+      "width": 1248,
+      "height": 80
+    },
+    "baseline/tree-view/selected/theme-dark": {
+      "width": 1248,
+      "height": 80
+    },
+    "baseline/wizard/second-step/default": {
+      "width": 1248,
+      "height": 86
+    },
+    "baseline/wizard/second-step/direction-rtl": {
+      "width": 1248,
+      "height": 86
+    },
+    "baseline/wizard/second-step/theme-dark": {
+      "width": 1248,
+      "height": 86
+    },
+    "baseline/wizard/validating/default": {
+      "width": 1248,
+      "height": 86
+    },
+    "baseline/wizard/validating/motion-reduced": {
+      "width": 1248,
+      "height": 86
+    },
+    "registry/accordion/closed/default": {
+      "width": 1248,
+      "height": 68
+    },
+    "registry/accordion/closed/direction-rtl": {
+      "width": 1248,
+      "height": 68
+    },
+    "registry/accordion/closing/default": {
+      "width": 1248,
+      "height": 68
+    },
+    "registry/accordion/disabled/default": {
+      "width": 1248,
+      "height": 68
+    },
+    "registry/accordion/open/default": {
+      "width": 1248,
+      "height": 88
+    },
+    "registry/accordion/open/motion-reduced": {
+      "width": 1248,
+      "height": 88
+    },
+    "registry/alert-dialog/closing/default": {
+      "width": 82,
+      "height": 52
+    },
+    "registry/alert-dialog/open/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/alert-dialog/open/direction-rtl": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/alert-dialog/open/motion-reduced": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/alert-dialog/open/theme-dark": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/alert-dialog/opening/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/alert/default/default": {
+      "width": 1248,
+      "height": 84
+    },
+    "registry/alert/destructive/default": {
+      "width": 1248,
+      "height": 84
+    },
+    "registry/angle-slider/default/default": {
+      "width": 1248,
+      "height": 140
+    },
+    "registry/angle-slider/default/direction-rtl": {
+      "width": 1248,
+      "height": 140
+    },
+    "registry/angle-slider/default/theme-dark": {
+      "width": 1248,
+      "height": 140
+    },
+    "registry/angle-slider/disabled/default": {
+      "width": 1248,
+      "height": 140
+    },
+    "registry/angle-slider/read-only/default": {
+      "width": 1248,
+      "height": 140
+    },
+    "registry/aspect-ratio/square/default": {
+      "width": 272,
+      "height": 272
+    },
+    "registry/aspect-ratio/widescreen/default": {
+      "width": 272,
+      "height": 160
+    },
+    "registry/aspect-ratio/widescreen/direction-rtl": {
+      "width": 272,
+      "height": 160
+    },
+    "registry/aspect-ratio/widescreen/theme-dark": {
+      "width": 272,
+      "height": 160
+    },
+    "registry/aspect-ratio/widescreen/viewport-narrow": {
+      "width": 272,
+      "height": 160
+    },
+    "registry/async-list/empty/default": {
+      "width": 1248,
+      "height": 65
+    },
+    "registry/async-list/error/default": {
+      "width": 1248,
+      "height": 153
+    },
+    "registry/async-list/exhausted/default": {
+      "width": 1248,
+      "height": 105
+    },
+    "registry/async-list/loaded/default": {
+      "width": 1248,
+      "height": 125
+    },
+    "registry/async-list/loaded/direction-rtl": {
+      "width": 1248,
+      "height": 125
+    },
+    "registry/async-list/loaded/theme-dark": {
+      "width": 1248,
+      "height": 125
+    },
+    "registry/async-list/loading/default": {
+      "width": 1248,
+      "height": 125
+    },
+    "registry/async-list/loading/motion-reduced": {
+      "width": 1248,
+      "height": 125
+    },
+    "registry/avatar/compact/default": {
+      "width": 40,
+      "height": 40
+    },
+    "registry/avatar/fallback/default": {
+      "width": 48,
+      "height": 48
+    },
+    "registry/avatar/loaded/default": {
+      "width": 48,
+      "height": 48
+    },
+    "registry/avatar/loading/default": {
+      "width": 48,
+      "height": 48
+    },
+    "registry/badge/default/default": {
+      "width": 68,
+      "height": 38
+    },
+    "registry/badge/destructive/default": {
+      "width": 65,
+      "height": 38
+    },
+    "registry/badge/outline/default": {
+      "width": 60,
+      "height": 38
+    },
+    "registry/badge/secondary/default": {
+      "width": 74,
+      "height": 38
+    },
+    "registry/breadcrumbs/collapsed/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/breadcrumbs/current/default": {
+      "width": 1248,
+      "height": 36
+    },
+    "registry/breadcrumbs/current/theme-dark": {
+      "width": 1248,
+      "height": 36
+    },
+    "registry/breadcrumbs/default/default": {
+      "width": 1248,
+      "height": 36
+    },
+    "registry/breadcrumbs/default/direction-rtl": {
+      "width": 1248,
+      "height": 36
+    },
+    "registry/breadcrumbs/overflow/default": {
+      "width": 1248,
+      "height": 36
+    },
+    "registry/button-group/default/default": {
+      "width": 161,
+      "height": 52
+    },
+    "registry/button-group/default/direction-rtl": {
+      "width": 161,
+      "height": 52
+    },
+    "registry/button-group/disabled/default": {
+      "width": 161,
+      "height": 52
+    },
+    "registry/button-group/selected/default": {
+      "width": 161,
+      "height": 52
+    },
+    "registry/button/default/default": {
+      "width": 103,
+      "height": 52
+    },
+    "registry/button/default/theme-dark": {
+      "width": 103,
+      "height": 52
+    },
+    "registry/button/disabled/default": {
+      "width": 103,
+      "height": 52
+    },
+    "registry/button/loading/default": {
+      "width": 119,
+      "height": 52
+    },
+    "registry/card/default/default": {
+      "width": 1248,
+      "height": 156
+    },
+    "registry/card/divided/default": {
+      "width": 1248,
+      "height": 156
+    },
+    "registry/card/with-action/default": {
+      "width": 1248,
+      "height": 156
+    },
+    "registry/carousel/active/default": {
+      "width": 1280,
+      "height": 76
+    },
+    "registry/carousel/default/default": {
+      "width": 1280,
+      "height": 76
+    },
+    "registry/carousel/default/direction-rtl": {
+      "width": 1280,
+      "height": 76
+    },
+    "registry/carousel/default/viewport-narrow": {
+      "width": 390,
+      "height": 76
+    },
+    "registry/carousel/disabled/default": {
+      "width": 1280,
+      "height": 76
+    },
+    "registry/carousel/dragging/default": {
+      "width": 1280,
+      "height": 76
+    },
+    "registry/carousel/dragging/motion-reduced": {
+      "width": 1280,
+      "height": 76
+    },
+    "registry/cascade-select/complete/default": {
+      "width": 1248,
+      "height": 72
+    },
+    "registry/cascade-select/disabled/default": {
+      "width": 1248,
+      "height": 72
+    },
+    "registry/cascade-select/empty/default": {
+      "width": 1248,
+      "height": 72
+    },
+    "registry/cascade-select/partial/default": {
+      "width": 1248,
+      "height": 72
+    },
+    "registry/cascade-select/partial/direction-rtl": {
+      "width": 1248,
+      "height": 72
+    },
+    "registry/cascade-select/partial/theme-dark": {
+      "width": 1248,
+      "height": 72
+    },
+    "registry/cascade-select/partial/viewport-narrow": {
+      "width": 352,
+      "height": 136
+    },
+    "registry/chart/active/default": {
+      "width": 1249,
+      "height": 709
+    },
+    "registry/chart/default/default": {
+      "width": 1249,
+      "height": 709
+    },
+    "registry/chart/default/theme-dark": {
+      "width": 1249,
+      "height": 709
+    },
+    "registry/chart/dimmed/default": {
+      "width": 1249,
+      "height": 709
+    },
+    "registry/chart/empty/default": {
+      "width": 1249,
+      "height": 709
+    },
+    "registry/checkbox/checked/default": {
+      "width": 1248,
+      "height": 32
+    },
+    "registry/checkbox/default/default": {
+      "width": 1248,
+      "height": 32
+    },
+    "registry/checkbox/default/theme-dark": {
+      "width": 1248,
+      "height": 32
+    },
+    "registry/checkbox/disabled/default": {
+      "width": 1248,
+      "height": 32
+    },
+    "registry/checkbox/indeterminate/default": {
+      "width": 1248,
+      "height": 32
+    },
+    "registry/checkbox/invalid/default": {
+      "width": 1248,
+      "height": 32
+    },
+    "registry/checkbox/required/default": {
+      "width": 1248,
+      "height": 32
+    },
+    "registry/chip/categorical/default": {
+      "width": 70,
+      "height": 38
+    },
+    "registry/chip/default/default": {
+      "width": 53,
+      "height": 38
+    },
+    "registry/clipboard/copied/default": {
+      "width": 401,
+      "height": 52
+    },
+    "registry/clipboard/idle/default": {
+      "width": 401,
+      "height": 52
+    },
+    "registry/clipboard/idle/direction-rtl": {
+      "width": 401,
+      "height": 52
+    },
+    "registry/clipboard/idle/theme-dark": {
+      "width": 401,
+      "height": 52
+    },
+    "registry/clipboard/permission-denied/default": {
+      "width": 400,
+      "height": 74
+    },
+    "registry/collapsible/closed/default": {
+      "width": 1248,
+      "height": 36
+    },
+    "registry/collapsible/closing/default": {
+      "width": 1248,
+      "height": 36
+    },
+    "registry/collapsible/disabled/default": {
+      "width": 1248,
+      "height": 36
+    },
+    "registry/collapsible/open/default": {
+      "width": 1248,
+      "height": 64
+    },
+    "registry/collapsible/open/motion-reduced": {
+      "width": 1248,
+      "height": 64
+    },
+    "registry/color-picker/disabled/default": {
+      "width": 336,
+      "height": 276
+    },
+    "registry/color-picker/hsv-alpha/default": {
+      "width": 336,
+      "height": 276
+    },
+    "registry/color-picker/oklch/default": {
+      "width": 336,
+      "height": 276
+    },
+    "registry/color-picker/oklch/direction-rtl": {
+      "width": 336,
+      "height": 276
+    },
+    "registry/color-picker/oklch/theme-dark": {
+      "width": 336,
+      "height": 276
+    },
+    "registry/combobox/closed/default": {
+      "width": 337,
+      "height": 52
+    },
+    "registry/combobox/error/default": {
+      "width": 337,
+      "height": 114
+    },
+    "registry/combobox/loading/default": {
+      "width": 337,
+      "height": 52
+    },
+    "registry/combobox/open/default": {
+      "width": 337,
+      "height": 142
+    },
+    "registry/combobox/open/direction-rtl": {
+      "width": 337,
+      "height": 142
+    },
+    "registry/combobox/open/theme-dark": {
+      "width": 337,
+      "height": 142
+    },
+    "registry/combobox/stale-results/default": {
+      "width": 337,
+      "height": 110
+    },
+    "registry/command-menu/closed/default": {
+      "width": 185,
+      "height": 52
+    },
+    "registry/command-menu/empty/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/command-menu/open/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/command-menu/open/direction-rtl": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/command-menu/open/theme-dark": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/confirm-dialog/closed/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/confirm-dialog/open/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/confirm-dialog/open/direction-rtl": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/confirm-dialog/open/theme-dark": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/context-menu/closing/default": {
+      "width": 1248,
+      "height": 112
+    },
+    "registry/context-menu/edge-anchor/default": {
+      "width": 1264,
+      "height": 128
+    },
+    "registry/context-menu/edge-anchor/viewport-narrow": {
+      "width": 368,
+      "height": 128
+    },
+    "registry/context-menu/open/default": {
+      "width": 1248,
+      "height": 258
+    },
+    "registry/context-menu/open/direction-rtl": {
+      "width": 1248,
+      "height": 258
+    },
+    "registry/context-menu/open/motion-reduced": {
+      "width": 1248,
+      "height": 258
+    },
+    "registry/context-menu/open/theme-dark": {
+      "width": 1248,
+      "height": 258
+    },
+    "registry/context-menu/opening/default": {
+      "width": 1248,
+      "height": 258
+    },
+    "registry/context-menu/submenu-open/default": {
+      "width": 1248,
+      "height": 295
+    },
+    "registry/data-table/compact/default": {
+      "width": 1248,
+      "height": 142
+    },
+    "registry/data-table/empty/default": {
+      "width": 1248,
+      "height": 233
+    },
+    "registry/data-table/error/default": {
+      "width": 1248,
+      "height": 211
+    },
+    "registry/data-table/error/theme-dark": {
+      "width": 1248,
+      "height": 211
+    },
+    "registry/data-table/loading/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/data-table/populated/default": {
+      "width": 1248,
+      "height": 166
+    },
+    "registry/data-table/populated/viewport-narrow": {
+      "width": 352,
+      "height": 166
+    },
+    "registry/date-input/disabled/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/date-input/empty/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/date-input/empty/direction-rtl": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/date-input/empty/theme-dark": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/date-input/empty/viewport-narrow": {
+      "width": 352,
+      "height": 52
+    },
+    "registry/date-input/invalid/default": {
+      "width": 1248,
+      "height": 78
+    },
+    "registry/date-input/out-of-range/default": {
+      "width": 1248,
+      "height": 78
+    },
+    "registry/date-input/read-only/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/date-input/valid/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/date-picker/compact/default": {
+      "width": 1248,
+      "height": 330
+    },
+    "registry/date-picker/locale-ar-rtl/default": {
+      "width": 1248,
+      "height": 354
+    },
+    "registry/date-picker/locale-de/default": {
+      "width": 1248,
+      "height": 394
+    },
+    "registry/date-picker/range/default": {
+      "width": 1248,
+      "height": 354
+    },
+    "registry/date-picker/single/default": {
+      "width": 1248,
+      "height": 354
+    },
+    "registry/date-picker/single/direction-rtl": {
+      "width": 1248,
+      "height": 354
+    },
+    "registry/date-picker/single/motion-reduced": {
+      "width": 1248,
+      "height": 354
+    },
+    "registry/date-picker/single/theme-dark": {
+      "width": 1248,
+      "height": 354
+    },
+    "registry/date-picker/single/viewport-narrow": {
+      "width": 352,
+      "height": 354
+    },
+    "registry/date-picker/time-zone/default": {
+      "width": 1248,
+      "height": 354
+    },
+    "registry/date-picker/two-months/default": {
+      "width": 1248,
+      "height": 310
+    },
+    "registry/date-picker/unavailable/default": {
+      "width": 1248,
+      "height": 354
+    },
+    "registry/dialog/closing/default": {
+      "width": 82,
+      "height": 52
+    },
+    "registry/dialog/modal/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/dialog/modal/direction-rtl": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/dialog/modal/motion-reduced": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/dialog/modal/theme-dark": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/dialog/nested/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/dialog/non-modal/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/dialog/opening/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/drawer/bottom/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/drawer/closing/default": {
+      "width": 82,
+      "height": 52
+    },
+    "registry/drawer/left/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/drawer/opening/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/drawer/right/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/drawer/right/direction-rtl": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/drawer/right/motion-reduced": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/drawer/right/theme-dark": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/drawer/top/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/editable/disabled/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/editable/editing/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/editable/empty/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/editable/preview/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/editable/preview/direction-rtl": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/editable/preview/theme-dark": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/empty/default/default": {
+      "width": 1248,
+      "height": 195
+    },
+    "registry/empty/with-action/default": {
+      "width": 1248,
+      "height": 215
+    },
+    "registry/field/default/default": {
+      "width": 1248,
+      "height": 113
+    },
+    "registry/field/default/direction-rtl": {
+      "width": 1248,
+      "height": 113
+    },
+    "registry/field/disabled/default": {
+      "width": 1248,
+      "height": 113
+    },
+    "registry/field/invalid/default": {
+      "width": 1248,
+      "height": 145
+    },
+    "registry/field/placeholder/default": {
+      "width": 1248,
+      "height": 113
+    },
+    "registry/field/read-only/default": {
+      "width": 1248,
+      "height": 113
+    },
+    "registry/field/required/default": {
+      "width": 1248,
+      "height": 113
+    },
+    "registry/file-upload/disabled/default": {
+      "width": 400,
+      "height": 224
+    },
+    "registry/file-upload/dragging/default": {
+      "width": 400,
+      "height": 224
+    },
+    "registry/file-upload/dragging/motion-reduced": {
+      "width": 400,
+      "height": 224
+    },
+    "registry/file-upload/empty/default": {
+      "width": 400,
+      "height": 224
+    },
+    "registry/file-upload/empty/direction-rtl": {
+      "width": 400,
+      "height": 224
+    },
+    "registry/file-upload/empty/theme-dark": {
+      "width": 400,
+      "height": 224
+    },
+    "registry/file-upload/empty/viewport-narrow": {
+      "width": 352,
+      "height": 224
+    },
+    "registry/file-upload/error-retry/default": {
+      "width": 400,
+      "height": 328
+    },
+    "registry/file-upload/rejected/default": {
+      "width": 400,
+      "height": 240
+    },
+    "registry/file-upload/uploading/default": {
+      "width": 400,
+      "height": 344
+    },
+    "registry/floating-panel/maximized/default": {
+      "width": 1248,
+      "height": 368
+    },
+    "registry/floating-panel/min-size/default": {
+      "width": 216,
+      "height": 136
+    },
+    "registry/floating-panel/minimized/default": {
+      "width": 296,
+      "height": 196
+    },
+    "registry/floating-panel/open/default": {
+      "width": 296,
+      "height": 196
+    },
+    "registry/floating-panel/open/direction-rtl": {
+      "width": 296,
+      "height": 196
+    },
+    "registry/floating-panel/open/theme-dark": {
+      "width": 296,
+      "height": 196
+    },
+    "registry/form-field/default/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/form-field/disabled/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/form-field/invalid/default": {
+      "width": 1248,
+      "height": 130
+    },
+    "registry/form-field/loading/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/form-field/placeholder/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/form-field/read-only/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/form-field/required/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/form/default/default": {
+      "width": 1248,
+      "height": 134
+    },
+    "registry/form/disabled/default": {
+      "width": 1248,
+      "height": 134
+    },
+    "registry/form/invalid/default": {
+      "width": 1248,
+      "height": 162
+    },
+    "registry/form/loading/default": {
+      "width": 1248,
+      "height": 134
+    },
+    "registry/gradient-picker/disabled/default": {
+      "width": 478,
+      "height": 252
+    },
+    "registry/gradient-picker/linear/default": {
+      "width": 478,
+      "height": 252
+    },
+    "registry/gradient-picker/linear/direction-rtl": {
+      "width": 478,
+      "height": 252
+    },
+    "registry/gradient-picker/linear/theme-dark": {
+      "width": 478,
+      "height": 252
+    },
+    "registry/gradient-picker/radial/default": {
+      "width": 478,
+      "height": 252
+    },
+    "registry/hover-card/closing/default": {
+      "width": 89,
+      "height": 52
+    },
+    "registry/hover-card/open/default": {
+      "width": 272,
+      "height": 118
+    },
+    "registry/hover-card/open/motion-reduced": {
+      "width": 272,
+      "height": 118
+    },
+    "registry/hover-card/open/theme-dark": {
+      "width": 272,
+      "height": 118
+    },
+    "registry/hover-card/opening/default": {
+      "width": 272,
+      "height": 118
+    },
+    "registry/hover-card/placement-bottom-end/default": {
+      "width": 272,
+      "height": 118
+    },
+    "registry/hover-card/placement-bottom-end/direction-rtl": {
+      "width": 272,
+      "height": 118
+    },
+    "registry/hover-card/placement-left/default": {
+      "width": 353,
+      "height": 74
+    },
+    "registry/hover-card/placement-right-start/default": {
+      "width": 353,
+      "height": 74
+    },
+    "registry/hover-card/placement-top/default": {
+      "width": 272,
+      "height": 118
+    },
+    "registry/icons/large/default": {
+      "width": 1248,
+      "height": 48
+    },
+    "registry/icons/set/default": {
+      "width": 1248,
+      "height": 32
+    },
+    "registry/icons/set/theme-dark": {
+      "width": 1248,
+      "height": 32
+    },
+    "registry/image-cropper/disabled/default": {
+      "width": 1248,
+      "height": 345
+    },
+    "registry/image-cropper/dragging/default": {
+      "width": 1248,
+      "height": 345
+    },
+    "registry/image-cropper/free/default": {
+      "width": 1248,
+      "height": 345
+    },
+    "registry/image-cropper/free/direction-rtl": {
+      "width": 1248,
+      "height": 345
+    },
+    "registry/image-cropper/free/motion-reduced": {
+      "width": 1248,
+      "height": 345
+    },
+    "registry/image-cropper/free/theme-dark": {
+      "width": 1248,
+      "height": 345
+    },
+    "registry/image-cropper/free/viewport-narrow": {
+      "width": 352,
+      "height": 309
+    },
+    "registry/image-cropper/square/default": {
+      "width": 1248,
+      "height": 348
+    },
+    "registry/image-cropper/zoomed/default": {
+      "width": 1248,
+      "height": 345
+    },
+    "registry/input-group/default/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input-group/default/direction-rtl": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input-group/disabled/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input-group/invalid/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input-group/placeholder/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input-group/read-only/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input-group/required/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input/default/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input/default/theme-dark": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input/disabled/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input/invalid/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input/placeholder/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input/read-only/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/input/required/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/item/compact/default": {
+      "width": 1248,
+      "height": 87
+    },
+    "registry/item/default/default": {
+      "width": 1248,
+      "height": 95
+    },
+    "registry/item/interactive/default": {
+      "width": 1248,
+      "height": 95
+    },
+    "registry/item/muted/default": {
+      "width": 1248,
+      "height": 95
+    },
+    "registry/kbd/chord/default": {
+      "width": 75,
+      "height": 36
+    },
+    "registry/kbd/single/default": {
+      "width": 36,
+      "height": 36
+    },
+    "registry/label/default/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/label/default/direction-rtl": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/label/disabled/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/label/invalid/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/label/required/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/marquee/disabled/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/marquee/paused/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/marquee/running/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/marquee/running/direction-rtl": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/marquee/running/motion-reduced": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/marquee/vertical/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/menu/closing/default": {
+      "width": 132,
+      "height": 52
+    },
+    "registry/menu/open/default": {
+      "width": 144,
+      "height": 162
+    },
+    "registry/menu/open/direction-rtl": {
+      "width": 144,
+      "height": 162
+    },
+    "registry/menu/open/motion-reduced": {
+      "width": 144,
+      "height": 162
+    },
+    "registry/menu/open/theme-dark": {
+      "width": 144,
+      "height": 162
+    },
+    "registry/menu/opening/default": {
+      "width": 144,
+      "height": 162
+    },
+    "registry/menu/overflow/default": {
+      "width": 144,
+      "height": 784
+    },
+    "registry/menu/overflow/viewport-narrow": {
+      "width": 144,
+      "height": 828
+    },
+    "registry/menu/placement-bottom-end/default": {
+      "width": 230,
+      "height": 194
+    },
+    "registry/menu/placement-left/default": {
+      "width": 349,
+      "height": 154
+    },
+    "registry/menu/placement-right-start/default": {
+      "width": 349,
+      "height": 154
+    },
+    "registry/menu/placement-top/default": {
+      "width": 230,
+      "height": 194
+    },
+    "registry/menu/submenu-open/default": {
+      "width": 269,
+      "height": 199
+    },
+    "registry/menubar/closed/default": {
+      "width": 1248,
+      "height": 54
+    },
+    "registry/menubar/open/default": {
+      "width": 1248,
+      "height": 159
+    },
+    "registry/menubar/open/direction-rtl": {
+      "width": 1248,
+      "height": 159
+    },
+    "registry/menubar/open/theme-dark": {
+      "width": 1248,
+      "height": 159
+    },
+    "registry/meter/critical/default": {
+      "width": 1248,
+      "height": 50
+    },
+    "registry/meter/critical/theme-dark": {
+      "width": 1248,
+      "height": 50
+    },
+    "registry/meter/neutral/default": {
+      "width": 1248,
+      "height": 50
+    },
+    "registry/meter/neutral/direction-rtl": {
+      "width": 1248,
+      "height": 50
+    },
+    "registry/meter/optimal/default": {
+      "width": 1248,
+      "height": 50
+    },
+    "registry/meter/suboptimal/default": {
+      "width": 1248,
+      "height": 50
+    },
+    "registry/navigation-menu/closed/default": {
+      "width": 1250,
+      "height": 64
+    },
+    "registry/navigation-menu/open/default": {
+      "width": 1250,
+      "height": 124
+    },
+    "registry/navigation-menu/open/direction-rtl": {
+      "width": 1250,
+      "height": 124
+    },
+    "registry/navigation-menu/open/theme-dark": {
+      "width": 1250,
+      "height": 124
+    },
+    "registry/number-input/default/default": {
+      "width": 146,
+      "height": 52
+    },
+    "registry/number-input/default/direction-rtl": {
+      "width": 146,
+      "height": 52
+    },
+    "registry/number-input/disabled/default": {
+      "width": 146,
+      "height": 52
+    },
+    "registry/number-input/invalid/default": {
+      "width": 146,
+      "height": 52
+    },
+    "registry/number-input/read-only/default": {
+      "width": 146,
+      "height": 52
+    },
+    "registry/number-input/required/default": {
+      "width": 146,
+      "height": 52
+    },
+    "registry/pagination/current/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/pagination/current/theme-dark": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/pagination/default/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/pagination/default/direction-rtl": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/pagination/default/viewport-narrow": {
+      "width": 352,
+      "height": 52
+    },
+    "registry/pagination/disabled/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/pagination/ellipsis/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/password-input/default/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/password-input/default/direction-rtl": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/password-input/disabled/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/password-input/invalid/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/password-input/placeholder/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/password-input/read-only/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/password-input/required/default": {
+      "width": 1248,
+      "height": 52
+    },
+    "registry/pin-input/default/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/pin-input/default/direction-rtl": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/pin-input/disabled/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/pin-input/invalid/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/pin-input/placeholder/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/pin-input/read-only/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/pin-input/required/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/popover/closing/default": {
+      "width": 91,
+      "height": 52
+    },
+    "registry/popover/flip-required/default": {
+      "width": 304,
+      "height": 118
+    },
+    "registry/popover/open/default": {
+      "width": 304,
+      "height": 118
+    },
+    "registry/popover/open/motion-reduced": {
+      "width": 304,
+      "height": 118
+    },
+    "registry/popover/open/theme-dark": {
+      "width": 304,
+      "height": 118
+    },
+    "registry/popover/opening/default": {
+      "width": 304,
+      "height": 118
+    },
+    "registry/popover/placement-bottom-end/default": {
+      "width": 304,
+      "height": 118
+    },
+    "registry/popover/placement-left/default": {
+      "width": 387,
+      "height": 74
+    },
+    "registry/popover/placement-right-start/default": {
+      "width": 387,
+      "height": 74
+    },
+    "registry/popover/placement-top/default": {
+      "width": 304,
+      "height": 118
+    },
+    "registry/popover/shift-required/default": {
+      "width": 304,
+      "height": 166
+    },
+    "registry/popover/shift-required/viewport-narrow": {
+      "width": 304,
+      "height": 166
+    },
+    "registry/popover/top-end/default": {
+      "width": 304,
+      "height": 118
+    },
+    "registry/popover/top-start/default": {
+      "width": 304,
+      "height": 118
+    },
+    "registry/popover/top-start/direction-rtl": {
+      "width": 304,
+      "height": 118
+    },
+    "registry/progress/complete/default": {
+      "width": 1248,
+      "height": 50
+    },
+    "registry/progress/indeterminate/default": {
+      "width": 1248,
+      "height": 50
+    },
+    "registry/progress/indeterminate/motion-reduced": {
+      "width": 1248,
+      "height": 50
+    },
+    "registry/progress/loading/default": {
+      "width": 1248,
+      "height": 50
+    },
+    "registry/qr-code/code/default": {
+      "width": 144,
+      "height": 184
+    },
+    "registry/qr-code/code/direction-rtl": {
+      "width": 144,
+      "height": 184
+    },
+    "registry/qr-code/code/motion-reduced": {
+      "width": 144,
+      "height": 184
+    },
+    "registry/qr-code/code/theme-dark": {
+      "width": 144,
+      "height": 184
+    },
+    "registry/qr-code/code/viewport-narrow": {
+      "width": 144,
+      "height": 184
+    },
+    "registry/qr-code/empty/default": {
+      "width": 144,
+      "height": 184
+    },
+    "registry/radio-group/checked/default": {
+      "width": 1248,
+      "height": 88
+    },
+    "registry/radio-group/default/default": {
+      "width": 1248,
+      "height": 88
+    },
+    "registry/radio-group/disabled/default": {
+      "width": 1248,
+      "height": 88
+    },
+    "registry/radio-group/invalid/default": {
+      "width": 1248,
+      "height": 88
+    },
+    "registry/radio-group/required/default": {
+      "width": 1248,
+      "height": 88
+    },
+    "registry/rating-group/default/default": {
+      "width": 104,
+      "height": 40
+    },
+    "registry/rating-group/default/direction-rtl": {
+      "width": 104,
+      "height": 40
+    },
+    "registry/rating-group/disabled/default": {
+      "width": 104,
+      "height": 40
+    },
+    "registry/rating-group/read-only/default": {
+      "width": 104,
+      "height": 40
+    },
+    "registry/rating-group/selected/default": {
+      "width": 104,
+      "height": 40
+    },
+    "registry/scroll-area/both-axes/default": {
+      "width": 529,
+      "height": 689
+    },
+    "registry/scroll-area/fits/default": {
+      "width": 272,
+      "height": 176
+    },
+    "registry/scroll-area/vertical/default": {
+      "width": 272,
+      "height": 689
+    },
+    "registry/scroll-area/vertical/direction-rtl": {
+      "width": 272,
+      "height": 689
+    },
+    "registry/scroll-area/vertical/motion-reduced": {
+      "width": 272,
+      "height": 689
+    },
+    "registry/scroll-area/vertical/theme-dark": {
+      "width": 272,
+      "height": 689
+    },
+    "registry/scroll-area/vertical/viewport-narrow": {
+      "width": 272,
+      "height": 689
+    },
+    "registry/search-field/default/default": {
+      "width": 1249,
+      "height": 53
+    },
+    "registry/search-field/default/direction-rtl": {
+      "width": 1249,
+      "height": 53
+    },
+    "registry/search-field/disabled/default": {
+      "width": 1249,
+      "height": 53
+    },
+    "registry/search-field/invalid/default": {
+      "width": 1249,
+      "height": 53
+    },
+    "registry/search-field/loading/default": {
+      "width": 1249,
+      "height": 53
+    },
+    "registry/search-field/placeholder/default": {
+      "width": 1249,
+      "height": 53
+    },
+    "registry/search-field/read-only/default": {
+      "width": 1249,
+      "height": 53
+    },
+    "registry/search-field/required/default": {
+      "width": 1249,
+      "height": 53
+    },
+    "registry/searchable-select/closed/default": {
+      "width": 100,
+      "height": 52
+    },
+    "registry/searchable-select/error/default": {
+      "width": 199,
+      "height": 95
+    },
+    "registry/searchable-select/loading/default": {
+      "width": 199,
+      "height": 95
+    },
+    "registry/searchable-select/open/default": {
+      "width": 199,
+      "height": 190
+    },
+    "registry/searchable-select/open/direction-rtl": {
+      "width": 199,
+      "height": 190
+    },
+    "registry/searchable-select/open/theme-dark": {
+      "width": 199,
+      "height": 190
+    },
+    "registry/select/closed/default": {
+      "width": 100,
+      "height": 52
+    },
+    "registry/select/multiple/default": {
+      "width": 154,
+      "height": 154
+    },
+    "registry/select/open/default": {
+      "width": 144,
+      "height": 154
+    },
+    "registry/select/open/direction-rtl": {
+      "width": 144,
+      "height": 154
+    },
+    "registry/select/open/theme-dark": {
+      "width": 144,
+      "height": 154
+    },
+    "registry/separator/horizontal/default": {
+      "width": 1248,
+      "height": 17
+    },
+    "registry/separator/semantic/default": {
+      "width": 1248,
+      "height": 17
+    },
+    "registry/separator/vertical/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/sidebar/collapsed/default": {
+      "width": 1248,
+      "height": 800
+    },
+    "registry/sidebar/compact/default": {
+      "width": 1248,
+      "height": 800
+    },
+    "registry/sidebar/expanded/default": {
+      "width": 1248,
+      "height": 800
+    },
+    "registry/sidebar/expanded/direction-rtl": {
+      "width": 1248,
+      "height": 800
+    },
+    "registry/sidebar/mobile/default": {
+      "width": 1248,
+      "height": 800
+    },
+    "registry/sidebar/offcanvas/default": {
+      "width": 1248,
+      "height": 800
+    },
+    "registry/sidebar/offcanvas/viewport-narrow": {
+      "width": 352,
+      "height": 828
+    },
+    "registry/sidebar/roomy/default": {
+      "width": 1248,
+      "height": 800
+    },
+    "registry/signature-pad/cleared-undoable/default": {
+      "width": 400,
+      "height": 184
+    },
+    "registry/signature-pad/disabled/default": {
+      "width": 400,
+      "height": 184
+    },
+    "registry/signature-pad/empty/default": {
+      "width": 400,
+      "height": 184
+    },
+    "registry/signature-pad/empty/direction-rtl": {
+      "width": 400,
+      "height": 184
+    },
+    "registry/signature-pad/empty/theme-dark": {
+      "width": 400,
+      "height": 184
+    },
+    "registry/signature-pad/empty/viewport-narrow": {
+      "width": 352,
+      "height": 184
+    },
+    "registry/signature-pad/read-only/default": {
+      "width": 400,
+      "height": 184
+    },
+    "registry/signature-pad/signed/default": {
+      "width": 400,
+      "height": 184
+    },
+    "registry/skeleton/loading/default": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/skeleton/loading/motion-reduced": {
+      "width": 1280,
+      "height": 800
+    },
+    "registry/slider/default/default": {
+      "width": 272,
+      "height": 32
+    },
+    "registry/slider/default/direction-rtl": {
+      "width": 272,
+      "height": 32
+    },
+    "registry/slider/disabled/default": {
+      "width": 272,
+      "height": 32
+    },
+    "registry/slider/invalid/default": {
+      "width": 272,
+      "height": 32
+    },
+    "registry/slider/read-only/default": {
+      "width": 272,
+      "height": 32
+    },
+    "registry/slider/required/default": {
+      "width": 272,
+      "height": 32
+    },
+    "registry/sortable/dragging/default": {
+      "width": 1248,
+      "height": 142
+    },
+    "registry/sortable/dragging/motion-reduced": {
+      "width": 1248,
+      "height": 142
+    },
+    "registry/sortable/idle/default": {
+      "width": 1248,
+      "height": 142
+    },
+    "registry/sortable/idle/direction-rtl": {
+      "width": 1248,
+      "height": 142
+    },
+    "registry/sortable/idle/theme-dark": {
+      "width": 1248,
+      "height": 142
+    },
+    "registry/sortable/keyboard-grab/default": {
+      "width": 1248,
+      "height": 142
+    },
+    "registry/sparkline/default/default": {
+      "width": 137,
+      "height": 63
+    },
+    "registry/sparkline/default/theme-dark": {
+      "width": 137,
+      "height": 63
+    },
+    "registry/sparkline/stale/default": {
+      "width": 137,
+      "height": 63
+    },
+    "registry/spinner/loading/default": {
+      "width": 32,
+      "height": 32
+    },
+    "registry/spinner/loading/motion-reduced": {
+      "width": 32,
+      "height": 32
+    },
+    "registry/splitter/at-minimum/default": {
+      "width": 1248,
+      "height": 144
+    },
+    "registry/splitter/disabled/default": {
+      "width": 1248,
+      "height": 144
+    },
+    "registry/splitter/horizontal/default": {
+      "width": 1248,
+      "height": 144
+    },
+    "registry/splitter/horizontal/direction-rtl": {
+      "width": 1248,
+      "height": 144
+    },
+    "registry/splitter/horizontal/motion-reduced": {
+      "width": 1248,
+      "height": 144
+    },
+    "registry/splitter/horizontal/theme-dark": {
+      "width": 1248,
+      "height": 144
+    },
+    "registry/splitter/horizontal/viewport-narrow": {
+      "width": 352,
+      "height": 144
+    },
+    "registry/splitter/vertical/default": {
+      "width": 1248,
+      "height": 144
+    },
+    "registry/steps/completed/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/steps/current/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/steps/current/direction-rtl": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/steps/current/theme-dark": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/steps/disabled/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/steps/error/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/steps/pending/default": {
+      "width": 1248,
+      "height": 40
+    },
+    "registry/switch/checked/default": {
+      "width": 1248,
+      "height": 35
+    },
+    "registry/switch/default/default": {
+      "width": 1248,
+      "height": 35
+    },
+    "registry/switch/default/direction-rtl": {
+      "width": 1248,
+      "height": 35
+    },
+    "registry/switch/default/theme-dark": {
+      "width": 1248,
+      "height": 35
+    },
+    "registry/switch/disabled/default": {
+      "width": 1248,
+      "height": 35
+    },
+    "registry/switch/required/default": {
+      "width": 1248,
+      "height": 35
+    },
+    "registry/table/compact/default": {
+      "width": 1248,
+      "height": 106
+    },
+    "registry/table/default/default": {
+      "width": 1248,
+      "height": 130
+    },
+    "registry/table/default/direction-rtl": {
+      "width": 1248,
+      "height": 130
+    },
+    "registry/table/default/viewport-narrow": {
+      "width": 352,
+      "height": 130
+    },
+    "registry/table/disabled/default": {
+      "width": 1248,
+      "height": 130
+    },
+    "registry/table/empty/default": {
+      "width": 1248,
+      "height": 57
+    },
+    "registry/table/selected/default": {
+      "width": 1248,
+      "height": 130
+    },
+    "registry/table/selected/theme-dark": {
+      "width": 1248,
+      "height": 130
+    },
+    "registry/table/sorted/default": {
+      "width": 1248,
+      "height": 130
+    },
+    "registry/tabs/active/default": {
+      "width": 1248,
+      "height": 84
+    },
+    "registry/tabs/active/direction-rtl": {
+      "width": 1248,
+      "height": 84
+    },
+    "registry/tabs/active/theme-dark": {
+      "width": 1248,
+      "height": 84
+    },
+    "registry/tabs/disabled/default": {
+      "width": 1248,
+      "height": 84
+    },
+    "registry/tabs/inactive/default": {
+      "width": 1248,
+      "height": 84
+    },
+    "registry/tabs/vertical/default": {
+      "width": 1248,
+      "height": 82
+    },
+    "registry/tags-input/default/default": {
+      "width": 336,
+      "height": 52
+    },
+    "registry/tags-input/disabled/default": {
+      "width": 336,
+      "height": 52
+    },
+    "registry/tags-input/invalid/default": {
+      "width": 336,
+      "height": 52
+    },
+    "registry/tags-input/placeholder/default": {
+      "width": 336,
+      "height": 52
+    },
+    "registry/tags-input/read-only/default": {
+      "width": 336,
+      "height": 52
+    },
+    "registry/tags-input/required/default": {
+      "width": 336,
+      "height": 52
+    },
+    "registry/tags-input/selected/default": {
+      "width": 336,
+      "height": 52
+    },
+    "registry/textarea/default/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/textarea/default/theme-dark": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/textarea/disabled/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/textarea/invalid/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/textarea/placeholder/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/textarea/read-only/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/textarea/required/default": {
+      "width": 1248,
+      "height": 102
+    },
+    "registry/theme-switch/default/default": {
+      "width": 118,
+      "height": 54
+    },
+    "registry/theme-switch/default/theme-dark": {
+      "width": 118,
+      "height": 54
+    },
+    "registry/theme-switch/disabled/default": {
+      "width": 118,
+      "height": 54
+    },
+    "registry/theme-switch/selected/default": {
+      "width": 118,
+      "height": 54
+    },
+    "registry/time-picker/disabled/default": {
+      "width": 99,
+      "height": 52
+    },
+    "registry/time-picker/twelve-hour/default": {
+      "width": 131,
+      "height": 52
+    },
+    "registry/time-picker/twelve-hour/direction-rtl": {
+      "width": 131,
+      "height": 52
+    },
+    "registry/time-picker/twelve-hour/theme-dark": {
+      "width": 131,
+      "height": 52
+    },
+    "registry/time-picker/twenty-four-hour/default": {
+      "width": 99,
+      "height": 52
+    },
+    "registry/timer/complete/default": {
+      "width": 1248,
+      "height": 48
+    },
+    "registry/timer/paused/default": {
+      "width": 1248,
+      "height": 48
+    },
+    "registry/timer/paused/direction-rtl": {
+      "width": 1248,
+      "height": 48
+    },
+    "registry/timer/paused/theme-dark": {
+      "width": 1248,
+      "height": 48
+    },
+    "registry/timer/running/default": {
+      "width": 1248,
+      "height": 48
+    },
+    "registry/toast/closing/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/closing/motion-reduced": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/custom/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/error/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/info/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/loading/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/placement-bottom-end/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/placement-bottom-start/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/placement-bottom/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/placement-top-end/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/placement-top-start/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/placement-top/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/success/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/success/direction-rtl": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/success/theme-dark": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/undismissable/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toast/warning/default": {
+      "width": 336,
+      "height": 84
+    },
+    "registry/toc/collapsed/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/toc/current/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/toc/current/theme-dark": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/toc/default/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/toc/default/direction-rtl": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/toc/expanded/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/toggle-group/checked/default": {
+      "width": 181,
+      "height": 52
+    },
+    "registry/toggle-group/default/default": {
+      "width": 181,
+      "height": 52
+    },
+    "registry/toggle-group/default/direction-rtl": {
+      "width": 181,
+      "height": 52
+    },
+    "registry/toggle-group/disabled/default": {
+      "width": 181,
+      "height": 52
+    },
+    "registry/toggle-group/selected/default": {
+      "width": 181,
+      "height": 52
+    },
+    "registry/toggle/checked/default": {
+      "width": 52,
+      "height": 52
+    },
+    "registry/toggle/default/default": {
+      "width": 52,
+      "height": 52
+    },
+    "registry/toggle/default/theme-dark": {
+      "width": 52,
+      "height": 52
+    },
+    "registry/toggle/disabled/default": {
+      "width": 52,
+      "height": 52
+    },
+    "registry/toolbar/horizontal/default": {
+      "width": 1248,
+      "height": 58
+    },
+    "registry/toolbar/horizontal/theme-dark": {
+      "width": 1248,
+      "height": 58
+    },
+    "registry/toolbar/vertical/default": {
+      "width": 1248,
+      "height": 58
+    },
+    "registry/tooltip/closing/default": {
+      "width": 83,
+      "height": 52
+    },
+    "registry/tooltip/open/default": {
+      "width": 83,
+      "height": 86
+    },
+    "registry/tooltip/open/motion-reduced": {
+      "width": 83,
+      "height": 86
+    },
+    "registry/tooltip/open/theme-dark": {
+      "width": 83,
+      "height": 86
+    },
+    "registry/tooltip/opening/default": {
+      "width": 83,
+      "height": 86
+    },
+    "registry/tooltip/placement-bottom-end/default": {
+      "width": 336,
+      "height": 102
+    },
+    "registry/tooltip/placement-bottom-end/direction-rtl": {
+      "width": 336,
+      "height": 102
+    },
+    "registry/tooltip/placement-left/default": {
+      "width": 409,
+      "height": 60
+    },
+    "registry/tooltip/placement-right-start/default": {
+      "width": 409,
+      "height": 60
+    },
+    "registry/tooltip/placement-top/default": {
+      "width": 336,
+      "height": 102
+    },
+    "registry/tour/first-step/default": {
+      "width": 205,
+      "height": 216
+    },
+    "registry/tour/first-step/direction-rtl": {
+      "width": 205,
+      "height": 216
+    },
+    "registry/tour/first-step/motion-reduced": {
+      "width": 205,
+      "height": 216
+    },
+    "registry/tour/first-step/theme-dark": {
+      "width": 205,
+      "height": 216
+    },
+    "registry/tour/first-step/viewport-narrow": {
+      "width": 205,
+      "height": 216
+    },
+    "registry/tour/last-step/default": {
+      "width": 213,
+      "height": 216
+    },
+    "registry/tour/no-spotlight/default": {
+      "width": 1248,
+      "height": 272
+    },
+    "registry/tree-view/collapsed/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/tree-view/collapsed/direction-rtl": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/tree-view/disabled/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/tree-view/expanded/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/tree-view/loading/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/tree-view/selected/default": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/tree-view/selected/theme-dark": {
+      "width": 1248,
+      "height": 74
+    },
+    "registry/typography/body/default": {
+      "width": 1248,
+      "height": 311
+    },
+    "registry/typography/body/direction-rtl": {
+      "width": 1248,
+      "height": 311
+    },
+    "registry/typography/code/default": {
+      "width": 1248,
+      "height": 311
+    },
+    "registry/typography/code/viewport-narrow": {
+      "width": 374,
+      "height": 311
+    },
+    "registry/typography/headings/default": {
+      "width": 1248,
+      "height": 311
+    },
+    "registry/typography/quote/default": {
+      "width": 1248,
+      "height": 311
+    },
+    "registry/wizard/second-step/default": {
+      "width": 1248,
+      "height": 80
+    },
+    "registry/wizard/second-step/direction-rtl": {
+      "width": 1248,
+      "height": 80
+    },
+    "registry/wizard/second-step/theme-dark": {
+      "width": 1248,
+      "height": 80
+    },
+    "registry/wizard/validating/default": {
+      "width": 1248,
+      "height": 80
+    },
+    "registry/wizard/validating/motion-reduced": {
+      "width": 1248,
+      "height": 80
+    }
+  }
+}
