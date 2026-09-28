@@ -1,41 +1,4 @@
-import { defineConfig, type ViteUserConfig as VitestUserConfig } from 'vitest/config'
-import { relative, resolve, join } from 'node:path'
-
-// ── Per-test duration capture (#193) ─────────────────────────────────────────
-// Off unless `LLUI_TEST_DURATIONS` names a directory, so a normal `pnpm test`
-// behaves exactly as before and no run acquires a side effect it did not ask
-// for. When it IS set, every package's vitest additionally emits vitest's stock
-// `json` report there; `scripts/check-test-durations.mjs` aggregates the lot and
-// diffs it against the committed baseline. Using the BUILT-IN reporter rather
-// than a bespoke one is deliberate — the reporter API is a moving target across
-// vitest majors and a custom reporter that silently stops emitting is worse than
-// no signal, which is the whole complaint #193 records.
-//
-// If you drive this through turbo, note that turbo 2 runs tasks in STRICT env
-// mode: an undeclared variable does not reach the task and nothing says so. Root
-// `turbo.json` therefore lists `LLUI_TEST_DURATIONS` under the `test` task's
-// `env` (in `env`, not `passThroughEnv` — it changes what the task emits, so it
-// belongs in the cache key). Measured the hard way: the first attempt to record
-// a baseline was a green 11-minute run that produced zero reports.
-// Resolved against the REPO ROOT, not each package's cwd: every package's
-// vitest runs from its own directory, and a relative value would scatter the
-// reports instead of collecting them.
-const durationsDir = process.env['LLUI_TEST_DURATIONS']
-  ? resolve(import.meta.dirname, process.env['LLUI_TEST_DURATIONS'])
-  : undefined
-// One file per package, named for its path from the repo root — package
-// BASENAMES are not unique enough to bet a silent overwrite on.
-const durationsSlug = relative(import.meta.dirname, process.cwd()).replace(/[/\\]/g, '__')
-// NOT `as const`: vitest types `reporters` as `ReporterName | Reporter | [name,
-// options]`, and a `readonly` tuple is not assignable to that mutable pair — so
-// the `as const` that looks like ordinary hygiene here is a type error at every
-// call site that type-checks this file. It went unnoticed because nothing DID:
-// the site was the only package whose `check` reaches this file, and it gained
-// that script in the same batch (#176) that added this reporter (#193).
-type Reporters = NonNullable<NonNullable<VitestUserConfig['test']>['reporters']>
-const durationReporters: Reporters | undefined = durationsDir
-  ? ['default', ['json', { outputFile: join(durationsDir, `${durationsSlug || 'root'}.json`) }]]
-  : undefined
+import { defineConfig } from 'vitest/config'
 
 // Shared vitest base for every package. Packages import this and `mergeConfig`
 // it with ONLY their real deltas (environment, coverage, …) so the common bits —
@@ -56,11 +19,6 @@ export default defineConfig({
   },
   test: {
     include: ['test/**/*.test.ts'],
-
-    // See the block at the top of this file. `mergeConfig` concatenates arrays,
-    // and no package sets `reporters` of its own — if one ever does, it appends
-    // rather than replaces, which is the harmless direction.
-    ...(durationReporters ? { reporters: [...durationReporters] } : {}),
 
     // Timeout budgets are workspace-wide ON PURPOSE (issue #147). `turbo test`
     // fans ~40 vitest processes across the workspace at once, and the failures
@@ -123,46 +81,14 @@ export default defineConfig({
     // headroom and matches what `@llui/agent-e2e` had already measured for its
     // own browser fixtures.
     //
-    // THE PRICE these numbers used to carry: the 5 s default doubled as a
-    // PERFORMANCE CANARY. A unit test that silently got 6x slower went red; at
-    // 30 s it passes in silence. That trade was right on its own terms — the
-    // canary only ever fired on a saturated machine, where it could not
-    // distinguish a regression from contention, so it cried wolf far more often
-    // than it caught anything — but it left the workspace with no duration
-    // signal at all.
-    //
-    // THAT IS NOW PAID (#193), and deliberately NOT as a timeout. A timeout is a
-    // single cliff that conflates "too slow" with "hung", and no absolute number
-    // can serve a workspace spanning 33 s browser bursts and sub-millisecond
-    // unit files. The signal is a per-file duration BASELINE instead:
-    //
-    //   pnpm test:durations         record a fresh baseline from a full run
-    //   pnpm check:test-durations   run and diff against the committed one
-    //
-    // Setting `LLUI_TEST_DURATIONS` to a directory makes every package emit
-    // vitest's stock `json` report there (see the top of this file);
-    // `scripts/check-test-durations.mjs` folds those into per-file totals and
-    // compares them AFTER dividing out a same-run load factor, so a uniformly
-    // slower machine reports nothing while one file that got 6x slower still
-    // does. That is the property a wall-clock budget cannot have, and it is why
-    // the two mechanisms are orthogonal rather than redundant.
-    //
-    // It REPORTS, it does not gate (`--gate` opts in, and CI does not pass it).
-    // That is measured, not cautious: two runs of IDENTICAL code back to back on
-    // this machine produced 39 "regressions" at a naive noise floor, and an
-    // earlier revision that gated reddened on unchanged code.
-    //
-    // AND THE PRICE IS STILL NOT FULLY PAID, so do not read the paragraph above
-    // as settled: at the calibrated thresholds only 145 of 618 files are within
-    // resolution (76 against the current quiet baseline), and "a 5 ms unit test becoming 30 ms" — named right here as the
-    // thing #193 wants — is NOT detected. Precisely: +25 ms sits around the p97
-    // edge of this workspace's run-to-run drift (p50 2.1 ms, p90 26.3 ms), so a
-    // much tighter `6x / +25 ms` does catch it on a QUIET machine at 0-2 false
-    // positives — but not at zero cost, not stably across run order, and not at
-    // all under load, where that floor produced 39 false positives. What the tool
-    // does give is a real signal on the ~145 files that cost enough to resolve,
-    // and an explicit count of its own coverage on every run instead of a silent
-    // gap.
+    // THE PRICE these numbers carry: the 5 s default doubled as a PERFORMANCE
+    // CANARY. A unit test that silently got 6x slower went red; at 30 s it
+    // passes in silence. That trade is right on its own terms — the canary only
+    // ever fired on a saturated machine, where it could not distinguish a
+    // regression from contention, so it cried wolf far more often than it
+    // caught anything — and it is accepted knowingly: no gate in this workspace
+    // watches per-file test duration. A duration baseline was tried and removed
+    // because maintaining it cost more than the rare regression it resolved.
     //
     // These are flake guards, not licence to be slow: the browser IS reaped
     // (playwright kills the process group and awaits cleanup), so this covers

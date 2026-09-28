@@ -26,8 +26,6 @@
     "check:generated": "node scripts/check-generated.mjs",
     "check:registry": "pnpm --filter @llui/registry check",
     "build:registry": "node scripts/build-registry.mjs",
-    "check:test-durations": "node scripts/check-test-durations.mjs",
-    "test:durations": "node scripts/check-test-durations.mjs --save",
     "check:dist": "node scripts/check-dist.mjs",
     "verify": "pnpm format && turbo run build check lint test && pnpm check:scripts && pnpm lint:scripts && pnpm test:scripts && pnpm check:docs && pnpm check:registry && pnpm check:generated && pnpm check:dist",
     "bench": "tsx benchmarks/run-jfb.ts",

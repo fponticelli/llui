@@ -151,9 +151,9 @@ describe('tracked sources stay diffable and greppable as text (#94, #260)', () =
   })
 
   // Memoized, and deliberately NOT run at collection time. Reading 19.8 MB in a
-  // `describe` body would leave the cost on the machine but OUT of the per-file
-  // duration metric (#193 sums `assertionResults[].duration` only), so a future
-  // regression in this scan would be invisible to `check:test-durations`.
+  // `describe` body would put the cost where no budget sees it (collection time
+  // is not bounded by `testTimeout`) and bill it to whichever file collects it,
+  // instead of to the test that asks for it.
   let memo: Scan[] | undefined
   const scanAll = (): Scan[] => (memo ??= candidates.map(scan))
 

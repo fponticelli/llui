@@ -614,8 +614,8 @@ describe('resilience of the ordering projection', () => {
     // FOUR cheaper estimators were measured against that, all interleaved in
     // the same trials so they saw the same transients, and NONE of them works:
     //
-    //   - `process.cpuUsage()` instead of wall clock, which is the #193 trick of
-    //     removing the load term at the source. It tightened one run's tail
+    //   - `process.cpuUsage()` instead of wall clock, which tries to remove
+    //     the load term at the source. It tightened one run's tail
     //     (p90 9.50 -> 5.50) and widened another's (max 6.19 -> 8.03), and in
     //     the trial that reproduced the flake it read 19.20 against wall's
     //     29.53. Descheduling is only half the story: SMT and memory-bandwidth

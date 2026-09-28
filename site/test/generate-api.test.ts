@@ -661,14 +661,11 @@ function publicEntryPoints(): Map<string, { name: string; entries: ApiEntry[] }>
  *     would then be one this test never asks about, and both halves would agree
  *     that nothing is missing.
  *
- * A THIRD thing this restructure costs, and it is a real loss (#193): the
- * fixture is no longer visible to the duration baseline. `aggregateDurations`
- * sums `assertionResults[].duration` only, so work done in a hook is not in the
- * per-file total — measured at identical load, this file went 6987 ms -> 1247 ms
- * REPORTED while its wall time stayed ~6.8 s. A future regression in this
- * `createProgram` cost is therefore invisible to `check:test-durations`. That is
- * accepted (the alternative is a test that fails under load instead), but do not
- * read a green duration report as evidence that this fixture stayed cheap.
+ * A THIRD thing this restructure costs: the fixture's cost is no longer billed
+ * to any test. Measured at identical load, this file's tests went 6987 ms ->
+ * 1247 ms while its wall time stayed ~6.8 s. That is accepted (the alternative
+ * is a test that fails under load instead), but do not read fast tests as
+ * evidence that this `createProgram` fixture stayed cheap.
  */
 describe('every public entry point is documented', () => {
   const byPackage = publicEntryPoints()

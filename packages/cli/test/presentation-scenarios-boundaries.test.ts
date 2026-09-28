@@ -1337,8 +1337,8 @@ function maxFittingN(build: (n: number) => unknown, lo: number, hi: number): num
  * The at-the-budget round trip, as a FIXTURE plus three tests (#268).
  *
  * Each budget used to find its boundary in the `describe` BODY — collection
- * time, which no timeout bounds and the duration report does not see (16 s
- * of this file's 28 s, measured quiet) — and then compile, JSON-round-trip
+ * time, which no timeout bounds (16 s of this file's 28 s, measured
+ * quiet) — and then compile, JSON-round-trip
  * AND clone-round-trip a ~288k-node payload in ONE test, which measured 3.6 s
  * quiet and ran past the 30 s budget under a full parallel `turbo test`. The
  * boundary search and the one compile are a fixture, so they live in

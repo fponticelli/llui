@@ -8,7 +8,7 @@ const aliases = {
   '@/ui': resolve(import.meta.dirname, '../../registry/llui/ui'),
 }
 
-// Two projects, ONE vitest run (so one duration report per package, #193):
+// Two projects, ONE vitest run:
 //
 //   unit     the shell's pure model and the path-document glue, in jsdom;
 //   browser  real Chromium over the gallery, including the #268 gates. Its
@@ -43,7 +43,7 @@ export default mergeConfig(
           // NOT `extends: true`: extending MERGES, and `mergeConfig`
           // concatenates `test.include`, so the shared `test/**/*.test.ts`
           // would pull every unit file into this project too. Spread the
-          // shared config instead (docs/agents/test-durations.md).
+          // shared config instead (docs/agents/tests-and-load.md).
           ...shared,
           resolve: { alias: aliases },
           test: {
