@@ -766,7 +766,9 @@ A keyboard user cannot see where the item is, so they must HEAR it. The
 machine owns a polite live region (`parts.liveRegion`) that announces the
 grab ("Picked up Apple, item 2 of 5."), every move ("Apple moved to
 position 3 of 5."), the drop and a cancel, and hidden instructions
-(`parts.instructions`) that every handle names in `aria-describedby`. The
+(`parts.instructions`) that every handle names in `aria-describedby` — if
+you supply your own keyboard help instead and do not render that part, pass
+`hasInstructions: false` so no handle names a missing element. The
 handle is a toggle button whose `aria-pressed` is the grab — the old
 `aria-grabbed` was deprecated in ARIA 1.1 and never broadly supported by
 screen readers. All the text comes from `LocaleContext` (`Locale['sortable']`),

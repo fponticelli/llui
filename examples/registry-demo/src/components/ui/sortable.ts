@@ -36,7 +36,10 @@ import { classPart } from '../../lib/utils'
  *   SortableInstructions({ ...howToAttrs }, [text(howTo)])
  *
  * The live region is `sr-only`, never `hidden`: a `display: none` region is
- * never announced. The instructions part carries `hidden` itself.
+ * never announced. The instructions part carries `hidden` itself. A list that
+ * supplies its own keyboard help and does NOT render the instructions must
+ * pass `hasInstructions: false` to `connect`, or every handle's
+ * `aria-describedby` names a missing element.
  */
 export const Sortable = classPart(div, 'flex flex-col gap-1.5')
 export const SortableItem = classPart(

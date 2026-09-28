@@ -576,7 +576,8 @@ export interface ComboboxItemParts {
 export interface ComboboxGroupParts {
   group: {
     role: 'group'
-    'aria-labelledby': string
+    /** The group label's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'combobox'
     'data-part': 'group'
     'data-group': string
@@ -656,7 +657,14 @@ export interface ComboboxParts {
    * group id; render the section element with `group` and its label element
    * (referenced by `aria-labelledby`) with `groupLabel`. Group labels are not
    * options, so navigation skips them automatically. Mirrors `select`. */
-  group: (id: string) => ComboboxGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => ComboboxGroupParts
   /** Polite live region announcing the result count / error to screen readers
    * as the async filter resolves. Render a visually-hidden element with these
    * attributes and the `text` signal as its content. */
@@ -830,10 +838,10 @@ export function connect(
         },
       }
     },
-    group: (id: string): ComboboxGroupParts => ({
+    group: (id: string, options = {}): ComboboxGroupParts => ({
       group: {
         role: 'group',
-        'aria-labelledby': groupLabelId(id),
+        'aria-labelledby': options.hasLabel === false ? undefined : groupLabelId(id),
         'data-scope': 'combobox',
         'data-part': 'group',
         'data-group': id,

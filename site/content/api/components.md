@@ -7250,6 +7250,13 @@ export interface ChartCategoryTick {
 export interface ChartConnectOptions {
   /** Base id; the title and description ids derive from it. */
   id: string
+  /**
+   * Whether the consumer renders the `desc` part (default: true). When false,
+   * the svg's `aria-labelledby` names only the title, never an element that
+   * does not exist (the `dialog` `hasDescription` rule, #268). The TITLE is
+   * the image's name — required for `role="img"` — and is always referenced.
+   */
+  hasDescription?: boolean
 }
 ```
 
@@ -8115,7 +8122,8 @@ export interface ComboboxGroup {
 export interface ComboboxGroupParts {
   group: {
     role: 'group'
-    'aria-labelledby': string
+    /** The group label's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'combobox'
     'data-part': 'group'
     'data-group': string
@@ -8276,7 +8284,14 @@ export interface ComboboxParts {
    * group id; render the section element with `group` and its label element
    * (referenced by `aria-labelledby`) with `groupLabel`. Group labels are not
    * options, so navigation skips them automatically. Mirrors `select`. */
-  group: (id: string) => ComboboxGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => ComboboxGroupParts
   /** Polite live region announcing the result count / error to screen readers
    * as the async filter resolves. Render a visually-hidden element with these
    * attributes and the `text` signal as its content. */
@@ -8401,7 +8416,14 @@ export interface ContextMenuParts {
   item: (value: string) => ContextMenuItemParts
   checkboxItem: (value: string) => ContextMenuCheckItemParts
   radioItem: (value: string) => ContextMenuCheckItemParts
-  group: (id: string) => ContextMenuGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => ContextMenuGroupParts
   separator: () => ContextMenuSeparatorParts
   subTrigger: (value: string) => ContextMenuSubTriggerParts
   subPositioner: (value: string) => ContextMenuSubPositionerParts
@@ -8963,7 +8985,10 @@ therefore owns two more parts, and both must be rendered:
   `itemLabel` to name the item; without it the announcements say "item".
 - `instructions` — the how-to text, `hidden`, which every handle references
   through `aria-describedby` (a directly referenced hidden element still
-  provides a description, and stays out of the reading order).
+  provides a description, and stays out of the reading order). A consumer
+  that supplies its own keyboard help and does not render this part passes
+  `hasInstructions: false`, so no handle names an element that does not
+  exist (the `dialog` `hasDescription` precedent, #268).
 
 ```ts
 const { text: live, ...liveAttrs } = s.liveRegion
@@ -9324,6 +9349,13 @@ export interface FieldParts {
 export interface FieldsetConnectOptions {
   /** Base id; if omitted, falls back to the id stored in state. */
   id?: string
+  /**
+   * Whether the consumer renders the `legend` part (default: true). When
+   * false the group omits `aria-labelledby` rather than naming an element
+   * that does not exist (the `dialog` `hasDescription` rule, #268). A
+   * `<fieldset>` without a legend is valid HTML; a broken idref is not.
+   */
+  hasLegend?: boolean
 }
 ```
 
@@ -9344,7 +9376,8 @@ export interface FieldsetParts {
   /** Spread onto a native `<fieldset>` element (role `group`). */
   root: {
     role: 'group'
-    'aria-labelledby': string
+    /** The legend's id, or absent when `hasLegend: false`. */
+    'aria-labelledby': string | undefined
     'aria-disabled': Signal<'true' | undefined>
     disabled: Signal<boolean>
     'data-scope': 'fieldset'
@@ -11230,7 +11263,14 @@ export interface MenuParts {
   item: (value: string) => MenuItemParts
   checkboxItem: (value: string) => MenuCheckItemParts
   radioItem: (value: string) => MenuCheckItemParts
-  group: (id: string) => MenuGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => MenuGroupParts
   separator: () => MenuSeparatorParts
   subTrigger: (value: string) => MenuSubTriggerParts
   subPositioner: (value: string) => MenuSubPositionerParts
@@ -11938,7 +11978,8 @@ export interface PinInputInit {
 export interface PinInputParts {
   root: {
     role: 'group'
-    'aria-labelledby': string
+    /** The label part's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'pin-input'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
@@ -12822,7 +12863,8 @@ export interface SelectGroup {
 export interface SelectGroupParts {
   group: {
     role: 'group'
-    'aria-labelledby': string
+    /** The group label's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'select'
     'data-part': 'group'
     'data-group': string
@@ -12982,7 +13024,14 @@ export interface SelectParts {
    * group id; render the section element with `group` and its label element
    * (referenced by `aria-labelledby`) with `groupLabel`. Group labels are not
    * options, so navigation skips them automatically. */
-  group: (id: string) => SelectGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => SelectGroupParts
   /** Selected value(s) — use for rendering the trigger label. */
   valueText: Signal<string>
 }
@@ -13243,8 +13292,8 @@ export interface SortableParts {
     /** A toggle button: pressed while this handle's item is carried. */
     'aria-pressed': Signal<boolean>
     'aria-label': string
-    /** The `instructions` part's id. */
-    'aria-describedby': string
+    /** The `instructions` part's id, or absent when `hasInstructions: false`. */
+    'aria-describedby': string | undefined
     onPointerDown: (e: PointerEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -13343,6 +13392,13 @@ export interface SparklineConnectOptions {
   label?: string
   /** Longer description, announced with the name. Defaults to empty. */
   description?: string
+  /**
+   * Whether the consumer renders the `desc` part (default: true). When false,
+   * the svg's `aria-labelledby` names only the title, never an element that
+   * does not exist (the `dialog` `hasDescription` rule, #268). The TITLE is
+   * the image's name — required for `role="img"` — and is always referenced.
+   */
+  hasDescription?: boolean
 }
 ```
 
@@ -15034,7 +15090,8 @@ export interface ToolbarGroupParts {
     role: 'group'
     'data-scope': 'toolbar'
     'data-part': 'group'
-    'aria-labelledby': string
+    /** The label part's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
   }
   label: {
     id: string
@@ -15095,7 +15152,14 @@ export interface ToolbarParts {
     'data-part': 'separator'
   }
   item: (value: string) => ToolbarItemParts
-  group: (label: string) => ToolbarGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (label: string, options?: { readonly hasLabel?: boolean }) => ToolbarGroupParts
 }
 ```
 
@@ -15256,7 +15320,8 @@ export interface TourParts {
     role: 'dialog'
     'aria-modal': 'false'
     'aria-labelledby': string
-    'aria-describedby': string
+    /** The description part's id, or absent when `hasDescription: false`. */
+    'aria-describedby': string | undefined
     'data-scope': 'tour'
     'data-part': 'root'
     hidden: Signal<boolean>
@@ -26412,7 +26477,14 @@ export interface MenuParts {
   item: (value: string) => MenuItemParts
   checkboxItem: (value: string) => MenuCheckItemParts
   radioItem: (value: string) => MenuCheckItemParts
-  group: (id: string) => MenuGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => MenuGroupParts
   separator: () => MenuSeparatorParts
   subTrigger: (value: string) => MenuSubTriggerParts
   subPositioner: (value: string) => MenuSubPositionerParts
@@ -27353,6 +27425,13 @@ export interface ConnectOptions {
   inputLabel?: (index: number) => string
   /** Validate each character before setting. Non-empty array blocks setDigit. */
   validate?: (value: string) => string[] | null
+  /**
+   * Whether the consumer renders the `label` part (default: true). When false
+   * — the group is named some other way, or not at all, which `role="group"`
+   * allows — the root omits `aria-labelledby` rather than naming an element
+   * that does not exist (the `dialog` `hasDescription` rule, #268).
+   */
+  hasLabel?: boolean
 }
 ```
 
@@ -27374,7 +27453,8 @@ export interface PinInputInit {
 export interface PinInputParts {
   root: {
     role: 'group'
-    'aria-labelledby': string
+    /** The label part's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'pin-input'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
@@ -29020,7 +29100,8 @@ export interface SelectGroup {
 export interface SelectGroupParts {
   group: {
     role: 'group'
-    'aria-labelledby': string
+    /** The group label's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'select'
     'data-part': 'group'
     'data-group': string
@@ -29146,7 +29227,14 @@ export interface SelectParts {
    * group id; render the section element with `group` and its label element
    * (referenced by `aria-labelledby`) with `groupLabel`. Group labels are not
    * options, so navigation skips them automatically. */
-  group: (id: string) => SelectGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => SelectGroupParts
   /** Selected value(s) — use for rendering the trigger label. */
   valueText: Signal<string>
 }
@@ -29407,7 +29495,8 @@ export interface ComboboxGroup {
 export interface ComboboxGroupParts {
   group: {
     role: 'group'
-    'aria-labelledby': string
+    /** The group label's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'combobox'
     'data-part': 'group'
     'data-group': string
@@ -29535,7 +29624,14 @@ export interface ComboboxParts {
    * group id; render the section element with `group` and its label element
    * (referenced by `aria-labelledby`) with `groupLabel`. Group labels are not
    * options, so navigation skips them automatically. Mirrors `select`. */
-  group: (id: string) => ComboboxGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => ComboboxGroupParts
   /** Polite live region announcing the result count / error to screen readers
    * as the async filter resolves. Render a visually-hidden element with these
    * attributes and the `text` signal as its content. */
@@ -31729,7 +31825,14 @@ export interface ContextMenuParts {
   item: (value: string) => ContextMenuItemParts
   checkboxItem: (value: string) => ContextMenuCheckItemParts
   radioItem: (value: string) => ContextMenuCheckItemParts
-  group: (id: string) => ContextMenuGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => ContextMenuGroupParts
   separator: () => ContextMenuSeparatorParts
   subTrigger: (value: string) => ContextMenuSubTriggerParts
   subPositioner: (value: string) => ContextMenuSubPositionerParts
@@ -35296,6 +35399,14 @@ export interface ConnectOptions {
   /** Whether clicking the backdrop stops the tour. Default: false — tours
    *  typically require an explicit dismiss. */
   closeOnBackdropClick?: boolean
+  /**
+   * Whether the consumer renders the `description` part (default: true — a
+   * `TourStep` always carries one). When false, the root omits
+   * `aria-describedby`, which would otherwise name an element that does not
+   * exist (the `dialog` `hasDescription` rule, #268). The title names the
+   * dialog and stays mandatory.
+   */
+  hasDescription?: boolean
 }
 ```
 
@@ -35317,7 +35428,8 @@ export interface TourParts {
     role: 'dialog'
     'aria-modal': 'false'
     'aria-labelledby': string
-    'aria-describedby': string
+    /** The description part's id, or absent when `hasDescription: false`. */
+    'aria-describedby': string | undefined
     'data-scope': 'tour'
     'data-part': 'root'
     hidden: Signal<boolean>
@@ -37646,6 +37758,13 @@ export type FieldsetMsg =
 export interface FieldsetConnectOptions {
   /** Base id; if omitted, falls back to the id stored in state. */
   id?: string
+  /**
+   * Whether the consumer renders the `legend` part (default: true). When
+   * false the group omits `aria-labelledby` rather than naming an element
+   * that does not exist (the `dialog` `hasDescription` rule, #268). A
+   * `<fieldset>` without a legend is valid HTML; a broken idref is not.
+   */
+  hasLegend?: boolean
 }
 ```
 
@@ -37666,7 +37785,8 @@ export interface FieldsetParts {
   /** Spread onto a native `<fieldset>` element (role `group`). */
   root: {
     role: 'group'
-    'aria-labelledby': string
+    /** The legend's id, or absent when `hasLegend: false`. */
+    'aria-labelledby': string | undefined
     'aria-disabled': Signal<'true' | undefined>
     disabled: Signal<boolean>
     'data-scope': 'fieldset'
@@ -37810,7 +37930,8 @@ export interface ToolbarGroupParts {
     role: 'group'
     'data-scope': 'toolbar'
     'data-part': 'group'
-    'aria-labelledby': string
+    /** The label part's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
   }
   label: {
     id: string
@@ -37871,7 +37992,14 @@ export interface ToolbarParts {
     'data-part': 'separator'
   }
   item: (value: string) => ToolbarItemParts
-  group: (label: string) => ToolbarGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (label: string, options?: { readonly hasLabel?: boolean }) => ToolbarGroupParts
 }
 ```
 
@@ -39561,6 +39689,18 @@ export interface ConnectOptions {
    * "item" and every handle has the same label.
    */
   itemLabel?: (id: string) => string
+  /**
+   * Whether the consumer renders the `instructions` part (default: true).
+   * When false, no handle carries `aria-describedby` — it would otherwise name
+   * an element that does not exist, a broken reference assistive technology
+   * reports as a missing description (the `dialog` `hasDescription` rule,
+   * #268). The default is ON, as for `dialog`, because the instructions are
+   * the ONLY place the keyboard model is described (the handle's name is just
+   * "Drag handle"): leaving them out must be a deliberate, visible choice, not
+   * the quiet default. `command-menu` defaults its description OFF only
+   * because its own view renders none; here the consumer renders the part.
+   */
+  hasInstructions?: boolean
 }
 ```
 
@@ -39629,7 +39769,10 @@ therefore owns two more parts, and both must be rendered:
   `itemLabel` to name the item; without it the announcements say "item".
 - `instructions` — the how-to text, `hidden`, which every handle references
   through `aria-describedby` (a directly referenced hidden element still
-  provides a description, and stays out of the reading order).
+  provides a description, and stays out of the reading order). A consumer
+  that supplies its own keyboard help and does not render this part passes
+  `hasInstructions: false`, so no handle names an element that does not
+  exist (the `dialog` `hasDescription` precedent, #268).
 
 ```ts
 const { text: live, ...liveAttrs } = s.liveRegion
@@ -39727,8 +39870,8 @@ export interface SortableParts {
     /** A toggle button: pressed while this handle's item is carried. */
     'aria-pressed': Signal<boolean>
     'aria-label': string
-    /** The `instructions` part's id. */
-    'aria-describedby': string
+    /** The `instructions` part's id, or absent when `hasInstructions: false`. */
+    'aria-describedby': string | undefined
     onPointerDown: (e: PointerEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -39980,6 +40123,13 @@ export interface SparklineConnectOptions {
   label?: string
   /** Longer description, announced with the name. Defaults to empty. */
   description?: string
+  /**
+   * Whether the consumer renders the `desc` part (default: true). When false,
+   * the svg's `aria-labelledby` names only the title, never an element that
+   * does not exist (the `dialog` `hasDescription` rule, #268). The TITLE is
+   * the image's name — required for `role="img"` — and is always referenced.
+   */
+  hasDescription?: boolean
 }
 ```
 
@@ -41543,7 +41693,8 @@ export interface ConnectOptions {
 export interface SearchableSelectGroupParts {
   group: {
     role: 'group'
-    'aria-labelledby': string
+    /** The group label's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'searchable-select'
     'data-part': 'group'
     'data-group': string
@@ -41719,7 +41870,14 @@ export interface SearchableSelectParts {
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */
   item: (value: string, index?: number) => SearchableSelectItemParts
-  group: (id: string) => SearchableSelectGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => SearchableSelectGroupParts
   /** Clear-selection trigger. Render only when `hasValue` is true. */
   clear: {
     type: 'button'
@@ -43134,7 +43292,8 @@ export interface OverlayOptions {
 export interface SearchableSelectGroupParts {
   group: {
     role: 'group'
-    'aria-labelledby': string
+    /** The group label's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'searchable-select'
     'data-part': 'group'
     'data-group': string
@@ -43272,7 +43431,14 @@ export interface SearchableSelectParts {
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */
   item: (value: string, index?: number) => SearchableSelectItemParts
-  group: (id: string) => SearchableSelectGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => SearchableSelectGroupParts
   /** Clear-selection trigger. Render only when `hasValue` is true. */
   clear: {
     type: 'button'
@@ -43676,6 +43842,13 @@ export interface ChartCategoryTick {
 export interface ChartConnectOptions {
   /** Base id; the title and description ids derive from it. */
   id: string
+  /**
+   * Whether the consumer renders the `desc` part (default: true). When false,
+   * the svg's `aria-labelledby` names only the title, never an element that
+   * does not exist (the `dialog` `hasDescription` rule, #268). The TITLE is
+   * the image's name — required for `role="img"` — and is always referenced.
+   */
+  hasDescription?: boolean
 }
 ```
 

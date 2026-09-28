@@ -289,6 +289,12 @@ export type SortableCaseInput = {
   /** Drag the item at `from` over the item at `to` (pointer), or grab it (keyboard). */
   readonly drag: { readonly from: number; readonly to: number } | null
   readonly keyboardGrab: number | null
+  /**
+   * Whether the list renders the machine's `instructions` part (`connect`'s
+   * `hasInstructions`). `false` is a consumer that supplies its own keyboard
+   * help instead: no handle may then name the missing part.
+   */
+  readonly hasInstructions: boolean
 }
 
 export type SplitterCaseInput = {
@@ -1176,6 +1182,7 @@ export const SPECIALIZED_TOOLS_DEFINITIONS = {
           items: SORTABLE_ITEMS,
           drag: null,
           keyboardGrab: null,
+          hasInstructions: true,
         } satisfies SortableCaseInput,
         environmentAxes: AX.dirSurface,
       },
@@ -1186,14 +1193,31 @@ export const SPECIALIZED_TOOLS_DEFINITIONS = {
           items: SORTABLE_ITEMS,
           drag: { from: 0, to: 2 },
           keyboardGrab: null,
+          hasInstructions: true,
         } satisfies SortableCaseInput,
         environmentAxes: AX.motion,
       },
       {
         id: 'keyboard-grab',
         label: 'Grabbed with the keyboard',
-        input: { items: SORTABLE_ITEMS, drag: null, keyboardGrab: 1 } satisfies SortableCaseInput,
+        input: {
+          items: SORTABLE_ITEMS,
+          drag: null,
+          keyboardGrab: 1,
+          hasInstructions: true,
+        } satisfies SortableCaseInput,
         environmentAxes: AX.surface,
+      },
+      {
+        id: 'own-instructions',
+        label: 'Consumer-owned keyboard help',
+        input: {
+          items: SORTABLE_ITEMS,
+          drag: null,
+          keyboardGrab: null,
+          hasInstructions: false,
+        } satisfies SortableCaseInput,
+        environmentAxes: AX.none,
       },
     ],
   },

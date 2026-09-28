@@ -67,7 +67,10 @@ import { allFiniteNumbers } from '../utils/number.js'
  *   `itemLabel` to name the item; without it the announcements say "item".
  * - `instructions` — the how-to text, `hidden`, which every handle references
  *   through `aria-describedby` (a directly referenced hidden element still
- *   provides a description, and stays out of the reading order).
+ *   provides a description, and stays out of the reading order). A consumer
+ *   that supplies its own keyboard help and does not render this part passes
+ *   `hasInstructions: false`, so no handle names an element that does not
+ *   exist (the `dialog` `hasDescription` precedent, #268).
  *
  * ```ts
  * const { text: live, ...liveAttrs } = s.liveRegion
@@ -359,8 +362,8 @@ export interface SortableParts {
     /** A toggle button: pressed while this handle's item is carried. */
     'aria-pressed': Signal<boolean>
     'aria-label': string
-    /** The `instructions` part's id. */
-    'aria-describedby': string
+    /** The `instructions` part's id, or absent when `hasInstructions: false`. */
+    'aria-describedby': string | undefined
     onPointerDown: (e: PointerEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -427,6 +430,18 @@ export interface ConnectOptions {
    * "item" and every handle has the same label.
    */
   itemLabel?: (id: string) => string
+  /**
+   * Whether the consumer renders the `instructions` part (default: true).
+   * When false, no handle carries `aria-describedby` — it would otherwise name
+   * an element that does not exist, a broken reference assistive technology
+   * reports as a missing description (the `dialog` `hasDescription` rule,
+   * #268). The default is ON, as for `dialog`, because the instructions are
+   * the ONLY place the keyboard model is described (the handle's name is just
+   * "Drag handle"): leaving them out must be a deliberate, visible choice, not
+   * the quiet default. `command-menu` defaults its description OFF only
+   * because its own view renders none; here the consumer renders the part.
+   */
+  hasInstructions?: boolean
 }
 
 export function connect(
@@ -439,6 +454,7 @@ export function connect(
   const layout = opts.layout ?? '1d'
   const locale = sortableLocale()
   const instructionsId = `${containerId}:instructions`
+  const describedBy = opts.hasInstructions === false ? undefined : instructionsId
   const labelOf = (id: string): string | undefined => opts.itemLabel?.(id)
 
   function announce(a: SortableAnnouncement | null): string {
@@ -714,7 +730,7 @@ export function connect(
         return d?.id === id && d?.fromContainer === containerId
       }),
       'aria-label': locale.handle(labelOf(id)),
-      'aria-describedby': instructionsId,
+      'aria-describedby': describedBy,
       onPointerDown: tagSend(send, ['start'], (e) => {
         e.preventDefault()
         const target = e.currentTarget as Element | null

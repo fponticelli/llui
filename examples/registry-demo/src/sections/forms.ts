@@ -296,6 +296,10 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
         ]),
       ]),
       row('One-time code', [
+        // The root is `aria-labelledby` its label part, so the label is rendered
+        // (visually hidden — the row heading already shows the text). A group
+        // named some other way passes `hasLabel: false` to `connect` instead.
+        Label({ ...otp.label, class: 'sr-only' }, [text('One-time code')]),
         InputOTP({ ...otp.root }, [
           InputOTPGroup([0, 1, 2, 3, 4, 5].map((i) => InputOTPSlot({ ...otp.input(i) }))),
         ]),

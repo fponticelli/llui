@@ -222,6 +222,26 @@ describe('sortable accessible parts (connect)', () => {
     },
   )
 
+  it('names the instructions only when they are rendered (hasInstructions)', () => {
+    // Default: the consumer renders the part, so every handle references it.
+    expect(parts.handle('b', 1)['aria-describedby']).toBe('list:instructions')
+    const explicit = connect(rootSignal<SortableState>(), () => {}, {
+      id: 'list',
+      hasInstructions: true,
+    })
+    expect(explicit.handle('b', 1)['aria-describedby']).toBe('list:instructions')
+    // Opted out: no handle names an element that does not exist.
+    const without = connect(rootSignal<SortableState>(), () => {}, {
+      id: 'list',
+      hasInstructions: false,
+    })
+    const handle = without.handle('b', 1)
+    expect(handle['aria-describedby']).toBeUndefined()
+    // Nothing else about the handle changes.
+    expect(handle['aria-label']).toBe('Drag handle')
+    expect(handle.role).toBe('button')
+  })
+
   it('stays silent for an announcement another container owns', () => {
     const other = connect(rootSignal<SortableState>(), () => {}, { id: 'other' })
     const announcement = {
@@ -284,7 +304,10 @@ describe('a keyboard reorder, as a screen reader hears it', () => {
   }
   type Msg = { type: 'sort'; msg: SortableMsg }
 
-  function mount(items: string[], locale?: Locale): HTMLElement {
+  function mount(
+    items: string[],
+    { locale, hasInstructions }: { locale?: Locale; hasInstructions?: boolean } = {},
+  ): HTMLElement {
     const def = component<Ctx, Msg>({
       name: 'AnnouncedSortable',
       init: () => ({ items, sort: init() }),
@@ -301,6 +324,7 @@ describe('a keyboard reorder, as a screen reader hears it', () => {
           const parts = connect(state.at('sort'), (m) => send({ type: 'sort', msg: m }), {
             id: 'list',
             itemLabel: (id) => id,
+            ...(hasInstructions === undefined ? {} : { hasInstructions }),
           })
           const { text: liveText, ...liveAttrs } = parts.liveRegion
           const { text: instructions, ...instructionAttrs } = parts.instructions
@@ -321,7 +345,10 @@ describe('a keyboard reorder, as a screen reader hears it', () => {
               }),
             ]),
             div({ ...liveAttrs }, [text(liveText)]),
-            div({ ...instructionAttrs }, [text(instructions)]),
+            // A consumer that opts out does not render the part at all.
+            ...(hasInstructions === false
+              ? []
+              : [div({ ...instructionAttrs }, [text(instructions)])]),
           ]
         }
         return locale === undefined ? build() : [provide(LocaleContext, locale, build)]
@@ -372,6 +399,25 @@ describe('a keyboard reorder, as a screen reader hears it', () => {
     expect(heard(host)).toBe('Reorder cancelled. Banana returned to position 1 of 3.')
   })
 
+  it('without rendered instructions, no handle references a missing element', () => {
+    const host = mount(['Apple', 'Banana', 'Cherry'], { hasInstructions: false })
+    expect(host.querySelector('[data-part="instructions"]')).toBeNull()
+    const handles = [...host.querySelectorAll<HTMLElement>('[data-part="handle"]')]
+    expect(handles).toHaveLength(3)
+    for (const handle of handles) expect(handle.hasAttribute('aria-describedby')).toBe(false)
+    // Every idref left in the subtree resolves.
+    for (const element of host.querySelectorAll('[aria-describedby],[aria-labelledby]')) {
+      for (const name of ['aria-describedby', 'aria-labelledby']) {
+        for (const id of (element.getAttribute(name) ?? '').split(/\s+/).filter(Boolean)) {
+          expect(document.getElementById(id), `${name}=${id}`).not.toBeNull()
+        }
+      }
+    }
+    // The announcements are unaffected.
+    key(handles[0]!, ' ')
+    expect(heard(host)).toBe('Picked up Apple, item 1 of 3.')
+  })
+
   it('speaks the provided locale', () => {
     const spanish: Locale = {
       ...en,
@@ -384,7 +430,7 @@ describe('a keyboard reorder, as a screen reader hears it', () => {
         cancelled: (item, position, count) => `Cancelado ${item ?? ''} ${position}/${count}`,
       },
     }
-    const host = mount(['Apple', 'Banana'], spanish)
+    const host = mount(['Apple', 'Banana'], { locale: spanish })
     const handle = handleOf(host, 'Banana')
     expect(handle.getAttribute('aria-label')).toBe('Asa de Banana')
     expect(host.querySelector('[data-part="instructions"]')!.textContent).toBe(

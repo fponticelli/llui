@@ -60,7 +60,8 @@ export interface FieldsetParts {
   /** Spread onto a native `<fieldset>` element (role `group`). */
   root: {
     role: 'group'
-    'aria-labelledby': string
+    /** The legend's id, or absent when `hasLegend: false`. */
+    'aria-labelledby': string | undefined
     'aria-disabled': Signal<'true' | undefined>
     disabled: Signal<boolean>
     'data-scope': 'fieldset'
@@ -87,6 +88,13 @@ export interface FieldsetParts {
 export interface FieldsetConnectOptions {
   /** Base id; if omitted, falls back to the id stored in state. */
   id?: string
+  /**
+   * Whether the consumer renders the `legend` part (default: true). When
+   * false the group omits `aria-labelledby` rather than naming an element
+   * that does not exist (the `dialog` `hasDescription` rule, #268). A
+   * `<fieldset>` without a legend is valid HTML; a broken idref is not.
+   */
+  hasLegend?: boolean
 }
 
 export function connect(
@@ -101,7 +109,7 @@ export function connect(
   return {
     root: {
       role: 'group',
-      'aria-labelledby': legendId,
+      'aria-labelledby': opts.hasLegend === false ? undefined : legendId,
       'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       disabled: state.map((s) => s.disabled),
       'data-scope': 'fieldset',

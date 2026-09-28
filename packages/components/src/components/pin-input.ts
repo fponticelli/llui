@@ -180,7 +180,8 @@ export function getValue(state: PinInputState): string {
 export interface PinInputParts {
   root: {
     role: 'group'
-    'aria-labelledby': string
+    /** The label part's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'pin-input'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
@@ -215,6 +216,13 @@ export interface ConnectOptions {
   inputLabel?: (index: number) => string
   /** Validate each character before setting. Non-empty array blocks setDigit. */
   validate?: (value: string) => string[] | null
+  /**
+   * Whether the consumer renders the `label` part (default: true). When false
+   * — the group is named some other way, or not at all, which `role="group"`
+   * allows — the root omits `aria-labelledby` rather than naming an element
+   * that does not exist (the `dialog` `hasDescription` rule, #268).
+   */
+  hasLabel?: boolean
 }
 
 export function connect(
@@ -242,7 +250,7 @@ export function connect(
   return {
     root: {
       role: 'group',
-      'aria-labelledby': labelId,
+      'aria-labelledby': opts.hasLabel === false ? undefined : labelId,
       'data-scope': 'pin-input',
       'data-part': 'root',
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),

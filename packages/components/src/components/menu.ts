@@ -264,7 +264,14 @@ export interface MenuParts {
   item: (value: string) => MenuItemParts
   checkboxItem: (value: string) => MenuCheckItemParts
   radioItem: (value: string) => MenuCheckItemParts
-  group: (id: string) => MenuGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => MenuGroupParts
   separator: () => MenuSeparatorParts
   subTrigger: (value: string) => MenuSubTriggerParts
   subPositioner: (value: string) => MenuSubPositionerParts

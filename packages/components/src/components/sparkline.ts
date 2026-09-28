@@ -923,6 +923,13 @@ export interface SparklineConnectOptions {
   label?: string
   /** Longer description, announced with the name. Defaults to empty. */
   description?: string
+  /**
+   * Whether the consumer renders the `desc` part (default: true). When false,
+   * the svg's `aria-labelledby` names only the title, never an element that
+   * does not exist (the `dialog` `hasDescription` rule, #268). The TITLE is
+   * the image's name — required for `role="img"` — and is always referenced.
+   */
+  hasDescription?: boolean
 }
 
 export function connect(
@@ -996,7 +1003,7 @@ export function connect(
       'data-scope': 'sparkline',
       'data-part': 'svg',
       role: 'img',
-      'aria-labelledby': `${titleId} ${descId}`,
+      'aria-labelledby': opts.hasDescription === false ? titleId : `${titleId} ${descId}`,
       viewBox: state.map((s) => `0 0 ${s.width} ${s.height}`),
       tabindex: 0,
       onKeyDown: tagSend(send, ['moveActive', 'firstActive', 'lastActive', 'setActive'], onKeyDown),
