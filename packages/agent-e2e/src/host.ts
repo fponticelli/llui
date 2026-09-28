@@ -1,5 +1,5 @@
 import { component, mountApp, div, button, text, COMPILER_META_KEYS } from '@llui/dom'
-import type { AgentDocs, AgentContext } from '@llui/agent/protocol'
+import { parseServerFrame, type AgentDocs, type AgentContext } from '@llui/agent/protocol'
 import {
   createAgentClient,
   agentConnect,
@@ -290,18 +290,17 @@ class RecordingWebSocket extends NativeWebSocket {
     super(url, protocols)
     this.addEventListener('message', (ev: MessageEvent) => {
       if (typeof ev.data !== 'string') return
+      let json: unknown
       try {
-        const frame = JSON.parse(ev.data) as unknown
-        if (
-          typeof frame === 'object' &&
-          frame !== null &&
-          typeof (frame as { t?: unknown }).t === 'string'
-        ) {
-          serverFrames.push(frame as RecordedFrame)
-        }
+        json = JSON.parse(ev.data)
       } catch {
         // Not JSON — the client drops it too.
+        return
       }
+      // Validated with the protocol's own schema, exactly as the agent client
+      // validates it — so the log holds the frames the client acts on.
+      const frame = parseServerFrame(json)
+      if (frame) serverFrames.push(frame)
     })
   }
 }
