@@ -8,7 +8,7 @@ import { createNote } from '../src/notes/store.js'
 import { appendStatus, currentStatus, readStatusHistory } from '../src/notes/status.js'
 import { resolveCliInvocation, startRouter, type ClaudeSpawner } from '../src/notes/router.js'
 import type { NoteFrontmatter } from '../src/notes/types.js'
-import { settle, waitUntil } from './wait-until.js'
+import { settle, waitUntil } from '../../../scripts/lib/wait-until.mjs'
 
 const fmTask: Omit<NoteFrontmatter, 'id' | 'ts'> = {
   author: 'human',
@@ -314,7 +314,7 @@ describe('startRouter', () => {
     // Wait for the CONDITION, on the TEST's budget: 3 serial tasks are a dozen
     // filesystem round-trips each, and a private 2 s deadline here is what #189
     // blew (`expected 2 to be >= 3`) on a machine saturated by workspace-wide
-    // `turbo test`. Nothing was hung — see `wait-until.ts`.
+    // `turbo test`. Nothing was hung — see `scripts/lib/wait-until.mjs`.
     await waitUntil(ctx, 'all three tasks to be spawned', () => spawner.calls.length >= 3)
     expect(spawner.calls.length).toBeGreaterThanOrEqual(3)
     expect(maxInFlight).toBe(1)

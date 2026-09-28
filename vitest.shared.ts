@@ -190,7 +190,7 @@ export default defineConfig({
     // And the budget only binds a test that lets it: a test that polls against
     // its OWN `Date.now() + n` deadline is immune to everything stated here, so
     // it flakes under contention no matter what these numbers say. That is #189,
-    // and the fix is `packages/vite-plugin/test/wait-until.ts` — wait on the
+    // and the fix is `scripts/lib/wait-until.mjs` — wait on the
     // condition, bounded by the test's `ctx.signal`, so `testTimeout` really is
     // the one budget. Copy that pattern, not a millisecond literal.
     testTimeout: 30_000,
