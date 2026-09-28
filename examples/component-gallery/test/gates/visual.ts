@@ -97,47 +97,86 @@ export function writeFileEnsuringDir(path: string, data: Buffer | string): void 
   writeFileSync(path, data)
 }
 
+export interface PaintedClip {
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
 /**
- * Screenshot everything the scenario painted: the union of every rendered
- * box under `<body>` (portaled overlays included), padded, inside the
- * viewport. Deterministic because the layout is.
+ * The page region the scenario painted: the union of every rendered box under
+ * the scenario host plus anything portaled outside the document root
+ * (overlays), padded and kept inside the viewport. Never the layout
+ * containers themselves, which span the viewport and would make every capture
+ * full-width. Deterministic because the layout is.
+ *
+ * An element that is VISUALLY HIDDEN paints nothing and contributes nothing,
+ * and neither does anything inside it: the screen-reader-only pattern
+ * (`clip: rect(0 0 0 0)`, `clip-path: inset(50%)`, or a box of at most 1x1
+ * that clips its overflow) is a 1px box pulled out by `margin: -1px`, and
+ * counting it widened a sortable capture by one column of background once
+ * the list gained a live region.
+ *
+ * Runs IN THE PAGE (`page.evaluate(paintedBounds)`), so it must stay
+ * self-contained.
  */
+export function paintedBounds(): PaintedClip {
+  const hidden = new Map<Element, boolean>()
+  const clipsEverything = (element: Element): boolean => {
+    const style = getComputedStyle(element)
+    if (style.clipPath === 'inset(50%)') return true
+    const positioned = style.position === 'absolute' || style.position === 'fixed'
+    if (positioned && style.clip === 'rect(0px, 0px, 0px, 0px)') return true
+    if (style.overflowX === 'visible' || style.overflowY === 'visible') return false
+    const rect = element.getBoundingClientRect()
+    return rect.width <= 1 && rect.height <= 1
+  }
+  const visuallyHidden = (element: Element): boolean => {
+    const known = hidden.get(element)
+    if (known !== undefined) return known
+    const parent = element.parentElement
+    const result = clipsEverything(element) || (parent !== null && visuallyHidden(parent))
+    hidden.set(element, result)
+    return result
+  }
+
+  let left = Infinity
+  let top = Infinity
+  let right = -Infinity
+  let bottom = -Infinity
+  const host = document.getElementById('gallery-scenario')
+  const root = document.getElementById('gallery-document')
+  const painted = [
+    ...Array.from(host?.querySelectorAll('*') ?? []),
+    ...Array.from(document.body.querySelectorAll('*')).filter(
+      (element) => root === null || !root.contains(element),
+    ),
+  ]
+  for (const element of painted) {
+    const style = getComputedStyle(element)
+    if (style.display === 'none' || style.visibility === 'hidden') continue
+    const rect = element.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) continue
+    if (visuallyHidden(element)) continue
+    left = Math.min(left, rect.left)
+    top = Math.min(top, rect.top)
+    right = Math.max(right, rect.right)
+    bottom = Math.max(bottom, rect.bottom)
+  }
+  const pad = 8
+  const x = Math.max(0, Math.floor(left - pad))
+  const y = Math.max(0, Math.floor(top - pad))
+  const width = Math.min(window.innerWidth, Math.ceil(right + pad)) - x
+  const height = Math.min(window.innerHeight, Math.ceil(bottom + pad)) - y
+  return width > 0 && height > 0
+    ? { x, y, width, height }
+    : { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }
+}
+
+/** Screenshot the region `paintedBounds` reports. */
 export async function captureCase(page: Page): Promise<Buffer> {
-  const clip = await page.evaluate(() => {
-    let left = Infinity
-    let top = Infinity
-    let right = -Infinity
-    let bottom = -Infinity
-    // The scenario's own content plus anything portaled outside the
-    // document root (overlays) — never the layout containers themselves,
-    // which span the viewport and would make every capture full-width.
-    const host = document.getElementById('gallery-scenario')
-    const root = document.getElementById('gallery-document')
-    const painted = [
-      ...Array.from(host?.querySelectorAll('*') ?? []),
-      ...Array.from(document.body.querySelectorAll('*')).filter(
-        (element) => root === null || !root.contains(element),
-      ),
-    ]
-    for (const element of painted) {
-      const style = getComputedStyle(element)
-      if (style.display === 'none' || style.visibility === 'hidden') continue
-      const rect = element.getBoundingClientRect()
-      if (rect.width === 0 || rect.height === 0) continue
-      left = Math.min(left, rect.left)
-      top = Math.min(top, rect.top)
-      right = Math.max(right, rect.right)
-      bottom = Math.max(bottom, rect.bottom)
-    }
-    const pad = 8
-    const x = Math.max(0, Math.floor(left - pad))
-    const y = Math.max(0, Math.floor(top - pad))
-    const width = Math.min(window.innerWidth, Math.ceil(right + pad)) - x
-    const height = Math.min(window.innerHeight, Math.ceil(bottom + pad)) - y
-    return width > 0 && height > 0
-      ? { x, y, width, height }
-      : { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }
-  })
+  const clip = await page.evaluate(paintedBounds)
   return page.screenshot({ clip, animations: 'disabled', caret: 'hide', scale: 'css' })
 }
 
