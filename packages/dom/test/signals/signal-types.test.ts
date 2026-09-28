@@ -147,6 +147,10 @@ describe('Signal.map', () => {
 // typed `(job: Signal<Job>) => job.at('status')` type-checked when handed
 // `state.map(...)` and threw at mount.
 // (`declare`d, like `s`: these bodies are type-checked, never run.)
+/** The one key of `MappedSignal['at']` — the remedy both misuse diagnostics print. */
+type AtRemedy =
+  'mapped signals have no state path: slice with .at() BEFORE .map(), or read with .map((v) => v.field); a parameter that only reads should be typed ReadSignal<T>'
+declare const remedy: AtRemedy
 declare const mapped: MappedSignal<Profile>
 declare const path: Signal<Profile>
 describe('signal hierarchy — ReadSignal / Signal / MappedSignal', () => {
@@ -224,10 +228,8 @@ describe('signal hierarchy — ReadSignal / Signal / MappedSignal', () => {
   it('the diagnostic for a mapped signal handed to a Signal names the fix', () => {
     // The optional `at` on MappedSignal is typed as an object whose only key is
     // the remedy, so both misuse diagnostics print it. Pin the key.
-    type AtKeys = keyof NonNullable<MappedSignal<Profile>['at']>
     const _ = () => {
-      const k: AtKeys =
-        'mapped signals have no state path: slice with .at() BEFORE .map(), or read with .map((v) => v.field); a parameter that only reads should be typed ReadSignal<T>'
+      const k: keyof NonNullable<MappedSignal<Profile>['at']> = remedy
       void k
     }
     void _
@@ -394,6 +396,10 @@ describe('show/branch narrowed params keep a mapped condition mapped', () => {
       const frames = s.at('items').map((items) => items[0]!)
       show(frames, (item) => {
         expectType<MappedSignal<Item>>(item)
+        // It is typed MappedSignal (not merely ReadSignal), so a `.at()` here
+        // prints the remedy rather than "property does not exist".
+        const r: keyof NonNullable<(typeof item)['at']> = remedy
+        void r
         // @ts-expect-error — the narrowed param of a mapped condition has no path
         item.at('label')
         return [text(item.map((i) => i.label))]
@@ -409,6 +415,8 @@ describe('show/branch narrowed params keep a mapped condition mapped', () => {
         .map((n): Status => (n > 0 ? { kind: 'ok', label: 'x' } : { kind: 'err', message: 'y' }))
       branch(status, (v) => v.kind, {
         ok: (v) => {
+          const r: keyof NonNullable<(typeof v)['at']> = remedy
+          void r
           // @ts-expect-error — the arm param of a mapped value has no path
           v.at('label')
           return [text(v.map((x) => x.label))]
