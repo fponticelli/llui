@@ -55304,6 +55304,18 @@ const WORKSPACE_SPEC
 
 #### Functions
 
+##### `bindScenarioAdapters()` from `@llui/cli/presentation-scenarios`
+
+Bind a family's typed adapter map to its typed catalog, returning the erased
+{@link PresentationScenarioAdapterBinding}. The map is checked against the catalog's
+definitions exactly as `dispatchScenarioSelection` checks it, and at runtime every key must
+name one of the catalog's scenarios and every value must be a function (`invalid-adapters`).
+
+```typescript
+function bindScenarioAdapters<Definitions extends PresentationScenarioDefinitions, Host, Result, Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra>(catalog: CompiledPresentationScenarioFamily<Definitions>, adapters: PresentationScenarioAdapters<Definitions, Host, Result, Extra> &
+    AdapterResultWitness<Host, Result>): PresentationScenarioAdapterBinding<Host, Result, Extra>
+```
+
 ##### `compileScenarioFamily()` from `@llui/cli/presentation-scenarios`
 
 Join family-owned semantic cases to ProductContract's canonical inventory. `definitions` must
@@ -55338,6 +55350,20 @@ not a more permissive alternative to it.
 
 ```typescript
 function decodeScenarioSelection(contract: ProductContract, catalog: unknown, selection: unknown): ResolvedPresentationScenarioSelection
+```
+
+##### `dispatchScenarioSelection()` from `@llui/cli/presentation-scenarios`
+
+Hand a resolved selection to the adapter registered for its scenario id — the typed, cast-free
+dispatch every family renderer shares. `catalog` is the family catalog the selection was
+resolved from: it is what types the adapter map (each adapter must accept its own scenario's
+case inputs, a compile error otherwise), and it is checked at runtime to actually carry the
+selection's scenario and case. Fails with `missing-adapter` when the map has no adapter for the
+scenario, and with `invalid-selection` when the selection is not from `catalog`.
+
+```typescript
+function dispatchScenarioSelection<Definitions extends PresentationScenarioDefinitions, Host, Result, Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra>(catalog: CompiledPresentationScenarioFamily<Definitions>, adapters: PresentationScenarioAdapters<Definitions, Host, Result, Extra> &
+    AdapterResultWitness<Host, Result>, selection: ResolvedPresentationScenarioSelection<Definitions>, host: Host, extra: Extra): Result
 ```
 
 ##### `resolveScenarioSelection()` from `@llui/cli/presentation-scenarios`
@@ -55409,6 +55435,72 @@ export type CompiledPresentationScenarioFamily<
     : TypedCompiledPresentationScenarioFamily<Definitions>
 ```
 
+##### `NoPresentationScenarioAdapterExtra` from `@llui/cli/presentation-scenarios`
+
+No extra context.
+
+```typescript
+export type NoPresentationScenarioAdapterExtra = Readonly<Record<never, never>>
+```
+
+##### `PresentationScenarioAdapter` from `@llui/cli/presentation-scenarios`
+
+One scenario's renderer adapter, typed by that scenario's own case inputs.
+
+```typescript
+export type PresentationScenarioAdapter<
+  Definitions extends PresentationScenarioDefinitions,
+  Id extends ScenarioId<Definitions>,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> = AdapterFor<PresentationScenarioInputs<Definitions>, Id, Host, Result, Extra>
+```
+
+##### `PresentationScenarioAdapterExtra` from `@llui/cli/presentation-scenarios`
+
+The constraint on caller-supplied extra context (for example the copied artifacts a registry
+render is narrowed to): any object, except that a protocol-owned key is `never`. It is
+F-bounded (`Extra extends PresentationScenarioAdapterExtra<Extra>`) rather than a fixed type
+with optional `never` keys, because such a type is WEAK (all-optional) and TypeScript rejects
+assigning an object that shares none of its keys to a weak type — i.e. every legitimate extra.
+The protocol's values always win at runtime too, so an untyped caller cannot forge them either.
+
+```typescript
+export type PresentationScenarioAdapterExtra<Extra> = {
+  readonly [Key in keyof Extra]: Key extends keyof PresentationScenarioAdapterContext
+    ? never
+    : Extra[Key]
+}
+```
+
+##### `PresentationScenarioAdapters` from `@llui/cli/presentation-scenarios`
+
+A family's adapter map for one renderer path, keyed by scenario id. Each adapter must accept
+every case input of the scenario it is registered under; a path that does not draw a scenario
+simply omits it (dispatching one then fails with `missing-adapter`).
+
+```typescript
+export type PresentationScenarioAdapters<
+  Definitions extends PresentationScenarioDefinitions,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> = AdaptersFor<PresentationScenarioInputs<Definitions>, Host, Result, Extra>
+```
+
+##### `PresentationScenarioCaseInput` from `@llui/cli/presentation-scenarios`
+
+The renderer input for one scenario id of a definitions literal: the union of that scenario's
+own compiled case inputs. An adapter for `Id` must accept every one of them.
+
+```typescript
+export type PresentationScenarioCaseInput<
+  Definitions extends PresentationScenarioDefinitions,
+  Id extends ScenarioId<Definitions>,
+> = PresentationScenarioInputs<Definitions>[Id]
+```
+
 ##### `PresentationScenarioDefinitions` from `@llui/cli/presentation-scenarios`
 
 Family-owned definitions keyed by ProductContract `scenarioId`.
@@ -55452,6 +55544,8 @@ export type PresentationScenarioErrorCode =
   | 'invalid-catalog'
   | 'invalid-selection'
   | 'invalid-path'
+  | 'missing-adapter'
+  | 'invalid-adapters'
 ```
 
 ##### `PresentationScenarioJson` from `@llui/cli/presentation-scenarios`
@@ -55497,6 +55591,63 @@ export type ResolvedPresentationScenarioSelection<
 ```
 
 #### Interfaces
+
+##### `PreparedPresentationScenario` from `@llui/cli/presentation-scenarios`
+
+A resolved selection with its renderer bound, ready to draw into a host.
+
+```typescript
+export interface PreparedPresentationScenario<
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> {
+  /** The protocol's resolution of the requested selection (erased: any family). */
+  readonly selection: ResolvedPresentationScenarioSelection
+  /** Dispatch the case to its adapter. Every call renders a fresh instance. */
+  render(host: Host, extra: Extra): Result
+}
+```
+
+##### `PresentationScenarioAdapterBinding` from `@llui/cli/presentation-scenarios`
+
+One family's typed adapter map bound to that family's typed catalog, exposed through a
+family-AGNOSTIC surface. This is how a consumer that handles every family generically (the
+component gallery) holds heterogeneous typed maps as one type without erasing an adapter's
+input type by cast: the binding keeps the typed catalog, so it resolves a plain selection
+itself and dispatches with the typed input the adapter was checked against.
+
+```typescript
+export interface PresentationScenarioAdapterBinding<
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> {
+  readonly family: PresentationFamily
+  /** The scenario ids this binding has an adapter for, sorted. */
+  readonly scenarioIds: readonly string[]
+  /**
+   * Resolve `selection` against the bound catalog (every `resolveScenarioSelection` failure
+   * applies), then require an adapter for its scenario (`missing-adapter`). Nothing is rendered.
+   */
+  prepare(
+    contract: ProductContract,
+    selection: PresentationScenarioSelection,
+  ): PreparedPresentationScenario<Host, Result, Extra>
+}
+```
+
+##### `PresentationScenarioAdapterContext` from `@llui/cli/presentation-scenarios`
+
+What the protocol tells every adapter besides its input.
+
+```typescript
+export interface PresentationScenarioAdapterContext<Id extends string = string> {
+  readonly scenarioId: Id
+  readonly caseId: string
+  readonly environment: PresentationScenarioEnvironment
+}
+```
 
 ##### `PresentationScenarioCase` from `@llui/cli/presentation-scenarios`
 

@@ -1809,7 +1809,7 @@ export function joinSpecializedToolsScenarios(
     return {
       productId: scenario.productId,
       displayName: entry.displayName,
-      scenarioId: scenario.scenarioId as SpecializedToolsScenarioId,
+      scenarioId: scenario.scenarioId,
       defaultCaseId: scenario.defaultCaseId,
       cases: scenario.cases,
       presentation: entry.presentation,

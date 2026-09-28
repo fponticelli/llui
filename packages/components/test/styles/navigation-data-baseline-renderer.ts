@@ -30,6 +30,7 @@ import {
 } from '@llui/dom'
 import type { ProductContract } from '@llui/cli'
 import {
+  dispatchScenarioSelection,
   resolveScenarioSelection,
   type PresentationScenarioEnvironment,
 } from '@llui/cli/presentation-scenarios'
@@ -924,24 +925,6 @@ export const BASELINE_ADAPTERS = {
   'registry:chip': chipAdapter,
 } as const satisfies Partial<Record<NavigationDataScenarioId, Adapter<never>>>
 
-function renderResolvedBaseline(
-  host: HTMLElement,
-  scenarioId: string,
-  caseId: string,
-  input: unknown,
-  environment: PresentationScenarioEnvironment,
-): Disposable {
-  const adapter = BASELINE_ADAPTERS[scenarioId as keyof typeof BASELINE_ADAPTERS]
-  if (adapter === undefined) {
-    throw new Error(`No baseline adapter registered for navigation-data scenario ${scenarioId}`)
-  }
-  return (adapter as Adapter<unknown>)(host, input, {
-    scenarioId: scenarioId as NavigationDataScenarioId,
-    caseId,
-    environment,
-  })
-}
-
 function assertBindings(scenarios: readonly NavigationDataJoinedScenario[]): void {
   const scenarioIds = scenarios.map(({ scenarioId }) => scenarioId).sort()
   const bindingIds = Object.keys(BASELINE_ADAPTERS).sort()
@@ -979,15 +962,7 @@ export function mountBaselineNavigationDataScenarios(
       host.dataset.scenarioId = scenario.scenarioId
       host.dataset.scenarioCase = scenarioCase.id
       container.append(host)
-      handles.push(
-        renderResolvedBaseline(
-          host,
-          resolved.scenarioId,
-          resolved.case.id,
-          resolved.case.input,
-          resolved.environment,
-        ),
-      )
+      handles.push(dispatchScenarioSelection(catalog, BASELINE_ADAPTERS, resolved, host, {}))
     }
   }
   return {

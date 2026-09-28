@@ -33,6 +33,7 @@ import {
 } from '@llui/dom'
 import type { ProductContract } from '@llui/cli'
 import {
+  dispatchScenarioSelection,
   resolveScenarioSelection,
   type PresentationScenarioEnvironment,
 } from '@llui/cli/presentation-scenarios'
@@ -1180,13 +1181,9 @@ export function mountRegistrySpecializedToolsScenarios(
       host.dataset.scenarioId = scenario.scenarioId
       host.dataset.scenarioCase = scenarioCase.id
       container.append(host)
-      const adapter = REGISTRY_ADAPTERS[resolved.scenarioId as keyof typeof REGISTRY_ADAPTERS]
       handles.push(
-        (adapter as Adapter<unknown>)(host, resolved.case.input, {
-          scenarioId: resolved.scenarioId as SpecializedToolsScenarioId,
-          caseId: resolved.case.id,
-          environment: resolved.environment,
-          copiedArtifactNames: scenarioCase.copiedArtifactNames,
+        dispatchScenarioSelection(catalog, REGISTRY_ADAPTERS, resolved, host, {
+          copiedArtifactNames: resolved.case.copiedArtifactNames,
         }),
       )
     }

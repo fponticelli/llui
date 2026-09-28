@@ -13,7 +13,7 @@ import { GALLERY_CATALOGS } from '../src/shared/catalogs'
 import { GALLERY_CONTRACT } from '../src/shared/contract'
 import {
   bootGalleryDocument,
-  type GalleryAdapterMap,
+  type GalleryAdapterBinding,
   type PathDocumentOptions,
 } from '../src/shared/document'
 import { GALLERY_ENTRIES } from '../src/shell/entries'
@@ -49,10 +49,10 @@ describe.each(['baseline', 'registryTailwind'] as const)('%s rendered coverage',
   })
 
   it('binds an adapter to every entry this path draws, and to nothing it cannot', async () => {
-    const maps: GalleryAdapterMap[] = await Promise.all(
+    const bindings: GalleryAdapterBinding[] = await Promise.all(
       Object.values(LOADERS[path]).map((load) => load()),
     )
-    const bound = maps.flatMap((map) => Object.keys(map))
+    const bound = bindings.flatMap(({ scenarioIds }) => scenarioIds)
     const scenarioIds = new Map(
       GALLERY_CONTRACT.entries.map((entry) => [entry.name, entry.scenarioId]),
     )

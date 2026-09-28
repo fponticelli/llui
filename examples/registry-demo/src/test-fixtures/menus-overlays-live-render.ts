@@ -8,6 +8,7 @@
 // `menus-overlays-live-render.ts` (components-demo) exactly.
 import {
   compileMenusOverlaysCatalog,
+  dispatchScenarioSelection,
   joinMenusOverlaysScenarios,
   resolveScenarioSelection,
   type MenusOverlaysDefinitions,
@@ -49,10 +50,6 @@ window.__mountMenusOverlaysRegistryCase = (contract, request) => {
     path: 'registryTailwind',
     ...(request.environment !== undefined ? { environment: request.environment } : {}),
   })
-  const adapter = REGISTRY_ADAPTERS[request.scenarioId as keyof typeof REGISTRY_ADAPTERS]
-  if (adapter === undefined) {
-    throw new Error(`No registry adapter registered for ${request.scenarioId}`)
-  }
   const host = document.createElement('section')
   host.id = request.hostId
   // The host is the case's THEMED CONTAINER, so it paints like one: a
@@ -64,11 +61,7 @@ window.__mountMenusOverlaysRegistryCase = (contract, request) => {
   host.style.background = 'var(--background)'
   host.style.color = 'var(--foreground)'
   document.body.append(host)
-  const disposable = (adapter as (host: HTMLElement, input: unknown, ctx: unknown) => Disposable)(
-    host,
-    resolved.case.input,
-    { scenarioId: request.scenarioId, caseId: resolved.case.id, environment: resolved.environment },
-  )
+  const disposable = dispatchScenarioSelection(catalog, REGISTRY_ADAPTERS, resolved, host, {})
   handles.set(request.hostId, disposable)
 }
 

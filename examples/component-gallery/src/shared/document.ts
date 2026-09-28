@@ -19,9 +19,9 @@ import {
 } from '@llui/cli/gallery'
 import {
   PresentationScenarioError,
-  resolveScenarioSelection,
+  type PresentationScenarioAdapterBinding,
+  type PresentationScenarioAdapterContext,
   type PresentationScenarioEnvironment,
-  type PresentationScenarioJsonSnapshot,
   type PresentationScenarioPath,
 } from '@llui/cli/presentation-scenarios'
 import { GALLERY_CATALOGS, catalogFor, isVisuallyAvailable, scenarioFor } from './catalogs'
@@ -33,27 +33,26 @@ import type {
   GalleryDocumentStatus,
 } from './document-protocol'
 
-export interface GalleryRenderContext {
-  readonly scenarioId: string
-  readonly caseId: string
-  readonly environment: PresentationScenarioEnvironment
+/** What the gallery tells an adapter beyond the protocol's own context. */
+export interface GalleryAdapterExtra {
   /** Copied artifacts this render is narrowed to (registry path only). */
   readonly copiedArtifactNames: readonly string[] | undefined
 }
 
-/**
- * A family adapter with its input type erased. Each family's map is typed
- * per scenario; the catalog join is what guarantees the input handed over for
- * scenario X is X's own definition input, so erasing it at the map boundary
- * loses no information the lookup ever had.
- */
-export type GalleryAdapter = (
-  host: HTMLElement,
-  input: PresentationScenarioJsonSnapshot,
-  ctx: GalleryRenderContext,
-) => { dispose(): void }
+export type GalleryRenderContext = PresentationScenarioAdapterContext & GalleryAdapterExtra
 
-export type GalleryAdapterMap = Readonly<Record<string, GalleryAdapter>>
+/**
+ * One family's renderer for this path: its TYPED adapter map bound to its
+ * TYPED catalog (`bindScenarioAdapters`), exposed through the protocol's
+ * family-agnostic binding. The binding resolves the selection itself and
+ * hands each adapter the input it was type-checked against, so no adapter's
+ * input is ever erased by a cast at this boundary.
+ */
+export type GalleryAdapterBinding = PresentationScenarioAdapterBinding<
+  HTMLElement,
+  { dispose(): void },
+  GalleryAdapterExtra
+>
 
 export interface PathDocumentOptions {
   readonly path: PresentationScenarioPath
@@ -61,7 +60,7 @@ export interface PathDocumentOptions {
    * One lazy loader per presentation family, so a document downloads only the
    * renderer for the family of the scenario it was asked for.
    */
-  readonly adapters: Readonly<Record<PresentationFamily, () => Promise<GalleryAdapterMap>>>
+  readonly adapters: Readonly<Record<PresentationFamily, () => Promise<GalleryAdapterBinding>>>
   readonly root: HTMLElement
 }
 
@@ -231,25 +230,30 @@ async function mountScenario(
       ? (location.copiedArtifact ??
         (resolvedEntry.copiedArtifact !== entry.name ? resolvedEntry.copiedArtifact : undefined))
       : undefined
-  // The typed entry, not `decodeScenarioSelection`: `catalog` is a live
-  // compiled catalog and the selection is built from a location
-  // `parseGalleryQuery` already decoded, so neither is an untyped value. The
-  // protocol still validates the selection at runtime either way.
-  const resolved = resolveScenarioSelection(GALLERY_CONTRACT, catalog, {
-    productId: entry.name,
-    path,
-    ...(location.caseId === undefined ? {} : { caseId: location.caseId }),
-    ...(location.environment === undefined ? {} : { environment: location.environment }),
-    ...(copiedArtifact === undefined ? {} : { copiedArtifact }),
-  })
-  const adapters = await loaders[entry.presentation.family]()
-  const adapter = adapters[resolved.scenarioId]
-  if (adapter === undefined) {
-    throw new DocumentFailure(
-      'missing-renderer',
-      `The ${GALLERY_PATH_LABELS[path]} document has no renderer for ${resolved.scenarioId}.`,
-    )
+  const binding = await loaders[entry.presentation.family]()
+  // The binding resolves against its own TYPED catalog (the protocol still
+  // validates the selection at runtime), then requires an adapter for the
+  // scenario — in that order, so a bad selection is reported as such even
+  // when the path also has no renderer for it.
+  let prepared
+  try {
+    prepared = binding.prepare(GALLERY_CONTRACT, {
+      productId: entry.name,
+      path,
+      ...(location.caseId === undefined ? {} : { caseId: location.caseId }),
+      ...(location.environment === undefined ? {} : { environment: location.environment }),
+      ...(copiedArtifact === undefined ? {} : { copiedArtifact }),
+    })
+  } catch (error) {
+    if (error instanceof PresentationScenarioError && error.code === 'missing-adapter') {
+      throw new DocumentFailure(
+        'missing-renderer',
+        `The ${GALLERY_PATH_LABELS[path]} document has no renderer for ${scenario.scenarioId}.`,
+      )
+    }
+    throw error
   }
+  const resolved = prepared.selection
   applyEnvironment(resolved.environment)
   const host = element('section', {
     id: 'gallery-scenario',
@@ -260,10 +264,7 @@ async function mountScenario(
     'aria-label': `${entry.displayName}: ${resolved.case.label}`,
   })
   root.replaceChildren(host)
-  const handle = adapter(host, resolved.case.input, {
-    scenarioId: resolved.scenarioId,
-    caseId: resolved.case.id,
-    environment: resolved.environment,
+  const handle = prepared.render(host, {
     copiedArtifactNames:
       copiedArtifact !== undefined ? [copiedArtifact] : resolved.case.copiedArtifactNames,
   })

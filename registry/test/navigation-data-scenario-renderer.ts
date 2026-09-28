@@ -12,6 +12,7 @@ import {
 } from '@llui/dom'
 import type { ProductContract } from '@llui/cli'
 import {
+  dispatchScenarioSelection,
   resolveScenarioSelection,
   type PresentationScenarioEnvironment,
 } from '@llui/cli/presentation-scenarios'
@@ -1129,24 +1130,6 @@ export const REGISTRY_ADAPTERS = {
   'registry:sidebar': sidebarAdapter,
 } as const satisfies Record<NavigationDataScenarioId, Adapter<never>>
 
-function renderResolvedRegistry(
-  host: HTMLElement,
-  scenarioId: string,
-  caseId: string,
-  input: unknown,
-  environment: PresentationScenarioEnvironment,
-): Disposable {
-  const adapter = REGISTRY_ADAPTERS[scenarioId as keyof typeof REGISTRY_ADAPTERS]
-  if (adapter === undefined) {
-    throw new Error(`No registry adapter registered for navigation-data scenario ${scenarioId}`)
-  }
-  return (adapter as Adapter<unknown>)(host, input, {
-    scenarioId: scenarioId as NavigationDataScenarioId,
-    caseId,
-    environment,
-  })
-}
-
 function assertBindings(scenarios: readonly NavigationDataJoinedScenario[]): void {
   const scenarioIds = scenarios.map(({ scenarioId }) => scenarioId).sort()
   const bindingIds = Object.keys(REGISTRY_ADAPTERS).sort()
@@ -1184,15 +1167,7 @@ export function mountRegistryNavigationDataScenarios(
       host.dataset.scenarioId = scenario.scenarioId
       host.dataset.scenarioCase = scenarioCase.id
       container.append(host)
-      handles.push(
-        renderResolvedRegistry(
-          host,
-          resolved.scenarioId,
-          resolved.case.id,
-          resolved.case.input,
-          resolved.environment,
-        ),
-      )
+      handles.push(dispatchScenarioSelection(catalog, REGISTRY_ADAPTERS, resolved, host, {}))
     }
   }
   return {

@@ -33,7 +33,10 @@ import {
   type Signal,
 } from '@llui/dom'
 import type { ProductContract } from '@llui/cli'
-import type { PresentationScenarioEnvironment } from '@llui/cli/presentation-scenarios'
+import {
+  dispatchScenarioSelection,
+  type PresentationScenarioEnvironment,
+} from '@llui/cli/presentation-scenarios'
 import { resolveScenarioSelection } from './menus-overlays-scenarios.js'
 import * as dialog from '../../src/components/dialog.js'
 import * as alertDialog from '../../src/components/alert-dialog.js'
@@ -1156,24 +1159,6 @@ export const BASELINE_ADAPTERS = {
   'pattern:searchable-select': searchableSelectAdapter,
 } as const satisfies Record<MenusOverlaysDefinitionScenarioId, Adapter<never>>
 
-function renderResolvedBaseline(
-  host: HTMLElement,
-  scenarioId: string,
-  caseId: string,
-  input: unknown,
-  environment: PresentationScenarioEnvironment,
-): Disposable {
-  const adapter = BASELINE_ADAPTERS[scenarioId as keyof typeof BASELINE_ADAPTERS]
-  if (adapter === undefined) {
-    throw new Error(`No baseline adapter registered for menus-overlays scenario ${scenarioId}`)
-  }
-  return (adapter as Adapter<unknown>)(host, input, {
-    scenarioId: scenarioId as MenusOverlaysDefinitionScenarioId,
-    caseId,
-    environment,
-  })
-}
-
 function assertBindings(scenarios: readonly MenusOverlaysJoinedScenario[]): void {
   const scenarioIds = scenarios.map(({ scenarioId }) => scenarioId).sort()
   const bindingIds = Object.keys(BASELINE_ADAPTERS).sort()
@@ -1208,15 +1193,7 @@ export function mountBaselineMenusOverlaysScenarios(
       host.dataset.scenarioId = scenario.scenarioId
       host.dataset.scenarioCase = scenarioCase.id
       container.append(host)
-      handles.push(
-        renderResolvedBaseline(
-          host,
-          resolved.scenarioId,
-          resolved.case.id,
-          resolved.case.input,
-          resolved.environment,
-        ),
-      )
+      handles.push(dispatchScenarioSelection(catalog, BASELINE_ADAPTERS, resolved, host, {}))
     }
   }
   return {

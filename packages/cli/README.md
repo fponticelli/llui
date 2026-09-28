@@ -265,6 +265,57 @@ optional `copiedArtifactNames` are the only fields. Renderer adapters live in ea
 separate maps keyed by `scenarioId` and case `id`; functions or renderer metadata beside a case
 are rejected without reading their values.
 
+**Dispatching a resolved case to its adapter is typed, and needs no cast.**
+`dispatchScenarioSelection(catalog, adapters, resolved, host, extra)` calls the adapter
+registered under `resolved.scenarioId` with that scenario's own case input and a context of
+`{ scenarioId, caseId, environment }` plus the caller's `extra`. The adapter MAP is checked
+against the catalog's definitions per scenario id — an adapter whose declared input does not
+accept every case input of the scenario it is registered under is a compile error, and so is an
+adapter whose context expects a different scenario id — and the call itself uses TypeScript's
+correlated-union pattern (one generic scenario id indexing the same mapped type for the adapter
+and the input), so it is checked for the one id it is made for. A map may omit scenarios a path
+does not draw; dispatching one fails with `missing-adapter`, and a selection the catalog does not
+carry fails with `invalid-selection`. `extra` may not name a protocol key (compile error; at
+runtime the protocol's values win). `bindScenarioAdapters(catalog, adapters)` erases a typed map
+for a consumer that handles every family generically: the returned binding keeps the typed
+catalog, resolves a plain `PresentationScenarioSelection` itself (`prepare`) and renders with the
+input the adapter was checked against — so heterogeneous families share one binding type without
+an adapter's input ever being cast to "any case input".
+
+```ts
+import type { ProductContract } from '@llui/cli'
+import {
+  compileScenarioFamily,
+  dispatchScenarioSelection,
+  resolveScenarioSelection,
+} from '@llui/cli/presentation-scenarios'
+
+declare const contract: ProductContract
+declare const host: HTMLElement
+
+const catalog = compileScenarioFamily(contract, 'menus-overlays', {
+  'component:dialog': {
+    defaultCaseId: 'open',
+    cases: [{ id: 'open', label: 'Open', input: { open: true }, environmentAxes: ['theme'] }],
+  },
+} as const)
+
+// Each adapter declares the input it renders; the map is checked against the cases per id.
+const BASELINE_ADAPTERS = {
+  'component:dialog': (target: HTMLElement, input: { readonly open: boolean }) => {
+    target.dataset.open = String(input.open)
+    return { dispose: () => target.replaceChildren() }
+  },
+}
+
+const resolved = resolveScenarioSelection(contract, catalog, {
+  productId: 'dialog',
+  path: 'baseline',
+})
+const handle = dispatchScenarioSelection(catalog, BASELINE_ADAPTERS, resolved, host, {})
+handle.dispose()
+```
+
 The compiled TypeScript surface is a `scenarioId`-discriminated union: each scenario retains its
 literal default and case/input union, and resolver results narrow through that same discriminator.
 JSON snapshots, environment-axis arrays, and copied-artifact arrays are recursively readonly even
