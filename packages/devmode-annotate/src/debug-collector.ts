@@ -258,10 +258,8 @@ export interface ConsoleCaptureOptions {
 export function createConsoleCapture(opts: ConsoleCaptureOptions = {}): ConsoleCaptureHandle {
   const limit = opts.limit ?? CONSOLE_BUFFER_LIMIT
   const now = opts.now ?? ((): Date => new Date())
-  const target = (opts.target ??
-    (typeof console !== 'undefined' ? (console as unknown as ConsoleLike) : undefined)) as
-    | Partial<ConsoleLike>
-    | undefined
+  const target: Partial<ConsoleLike> | undefined =
+    opts.target ?? (typeof console !== 'undefined' ? console : undefined)
 
   const buffer: ConsoleLogEntry[] = []
   const originals = new Map<LogLevel, ConsoleMethod>()
@@ -270,8 +268,11 @@ export function createConsoleCapture(opts: ConsoleCaptureOptions = {}): ConsoleC
     for (const level of CONSOLE_LEVELS) {
       const orig = target[level]
       if (typeof orig !== 'function') continue
-      const bound = orig.bind(target) as ConsoleMethod
-      originals.set(level, bound)
+      const bound: ConsoleMethod = orig.bind(target)
+      // Restore the method ITSELF on dispose, never the bound copy: a bound
+      // copy is a different function, so an identity check fails and every
+      // capture/dispose cycle would stack one more bind layer.
+      originals.set(level, orig)
       target[level] = (...args: unknown[]): void => {
         if (buffer.length >= limit) buffer.shift()
         buffer.push({
