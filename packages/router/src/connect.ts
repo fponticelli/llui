@@ -429,6 +429,9 @@ const MAX_REDIRECT_HOPS = 10
  */
 type Position = { index: number; run: string }
 
+/** A `history.go(delta)` the router issued itself, `delta` measured in `run`. */
+type OwnTraversal = { delta: number; run: string }
+
 /**
  * The position stamped on a history entry, or `null` when the entry carries
  * none this router can use.
@@ -729,12 +732,93 @@ export function connectRouter<
    * as a navigation.
    */
   let settledHash = normHash(env.hash)
-  // The POSITION a blocked navigation's `history.go` is restoring to, or `null`.
-  // Keyed on the destination rather than a bare flag: `history.go` is
-  // asynchronous and a delta it cannot reach fires nothing at all, so a flag
-  // stays armed and swallows the next genuine popstate (#103). Index and run
-  // travel together, because the same index in another run is another entry.
-  let pendingRestore: Position | null = null
+
+  /**
+   * The traversals the router ITSELF has issued — the `history.go` that undoes
+   * a guard-blocked navigation, and any correction of it — that it has not yet
+   * seen run, oldest first.
+   *
+   * WHY THEY ARE TRACKED. A router traversal is not a navigation: its only
+   * purpose is to put the URL back on the entry the application is showing. So
+   * its landing must never be guarded or dispatched, and if it lands anywhere
+   * ELSE it must be undone in turn. But `history.go` is ASYNCHRONOUS and shares
+   * ONE first-in-first-out traversal queue with the browser's own back/forward
+   * UI, so a user traversal can run between issuing a restore and applying it.
+   * Unless the router can tell its landing from the user's, two things go wrong:
+   *
+   * - a user traversal the guard ACCEPTS while the restore is queued is followed
+   *   by the stale restore, which moves the user off the route they just reached
+   *   — and an earlier revision, having forgotten the restore at the first
+   *   `popstate`, then dispatched wherever it landed: a navigation nobody asked
+   *   for;
+   * - a restore issued while another is queued has its delta measured from a
+   *   position the queued one is about to move, so the two compound.
+   *
+   * HOW A LANDING IS ATTRIBUTED. `history.go(delta)` moves the browser by
+   * `delta` from wherever the queue has put it when it RUNS. Every step the queue
+   * applies fires a `popstate` the listener sees in order, with the landed
+   * entry's stamp, and between two of them the browser does not move. So a
+   * landing is the router's exactly when it moved the browser from
+   * {@link lastSeen} by the delta of the router's oldest unrun traversal — or of
+   * a younger one, if every older one would have LAPSED from there: a traversal
+   * whose target is outside the stack is dropped by the browser and fires
+   * nothing at all.
+   *
+   * WHY A TRAVERSAL THAT MAY HAVE LAPSED IS FORGOTTEN AT ONCE. When the browser
+   * leaves an entry from which a queued traversal of ours would have lapsed, the
+   * router cannot know whether it did — or whether it is still queued behind the
+   * user traversal that just moved the browser, and will land later from
+   * somewhere it no longer lapses. Keeping it would make it a suppression with no
+   * expiry: the next traversal of that size, however much later, would be taken
+   * for the router's own and undone — #103's failure, reintroduced. Dropping it
+   * costs, in the one case where it WAS still queued, that its landing is judged
+   * by the guards like a browser navigation. Nothing refused is dispatched, the
+   * URL and the application still agree, and nothing outlives the race.
+   *
+   * WHAT CANNOT BE SEPARATED AT ALL, stated plainly: a user traversal that runs
+   * while one of the router's is queued and moves by the SAME delta. It lands
+   * exactly where the router's would have, and the router's then lands exactly
+   * where a user traversal of that delta would have — the events and entries
+   * are identical to the schedule in which the two ran the other way round, and
+   * the History API offers nothing else to tell them apart. The router takes
+   * the first landing as its own and judges the second by the guards. Again the
+   * invariants hold; what is lost is only which of two indistinguishable
+   * histories was meant.
+   *
+   * The Navigation API would remove both: `navigation.traverseTo(key)` names
+   * its destination absolutely and `NavigateEvent.info` identifies whose
+   * traversal an event is. It is not in this package's test environment
+   * (jsdom), which is why `RouterEnv` stays on the History API — see
+   * `adoptLandedEntry` for the same decision about positions.
+   */
+  const ownTraversals: OwnTraversal[] = []
+
+  /**
+   * The entry the router last saw the browser on: the landing of the last
+   * `popstate` it handled, or the entry its own last write created. What a
+   * landing's movement is measured FROM (see {@link ownTraversals}). `null` when
+   * that entry carries no position this router can measure.
+   */
+  let lastSeen: Position | null =
+    currentIndex === null || currentRun === null ? null : { index: currentIndex, run: currentRun }
+
+  /**
+   * The highest index known to exist in {@link lastSeen}'s run. Entries of one
+   * run are physically contiguous from index 0 — each was pushed directly above
+   * the one before it, and a push truncates everything above itself — so an
+   * index outside `[0, runTop]` names an entry this run does not have.
+   *
+   * It grows only by entries the router has created or seen, so after a reload
+   * it can be LOW. Low is the safe direction: a queued traversal then looks as
+   * if it might lapse, so the router forgets it and corrects rather than waits
+   * (see {@link ownTraversalWillLand}). It can be HIGH only after a push the
+   * router never saw truncated its run — a foreign `history.pushState`, or a
+   * hand-typed fragment — and then a queued traversal the router waits for can
+   * lapse, leaving the URL on the blocked route until the next navigation: the
+   * same outcome, from the same blind spot, as the stamps documented at
+   * `standing`.
+   */
+  let runTop: Position | null = lastSeen
 
   /**
    * The index of the entry we are physically STANDING on, together with the RUN
@@ -814,8 +898,133 @@ export function connectRouter<
     return { [STATE_KEY]: pos.index, [RUN_KEY]: pos.run }
   }
 
+  /**
+   * Record the entry the browser is on now as {@link lastSeen}. `created` says
+   * the router just PUSHED it, which truncated everything above it — so it is
+   * the top of its run, not merely a lower bound on it.
+   */
+  function observe(created: boolean): void {
+    // A push moves the browser without a traversal, as a user traversal does,
+    // so the router's queued traversals are re-judged against the entry being
+    // LEFT, exactly as `attributeLanding` does for a browser navigation.
+    if (created) forgetPossiblyLapsed(lastSeen)
+    const at = readPosition(env.historyState)
+    lastSeen = at
+    if (at === null) return
+    if (created || runTop === null || runTop.run !== at.run) runTop = at
+    else if (at.index > runTop.index) runTop = at
+  }
+
+  /**
+   * Whether `traversal`, run from `from`, reaches an entry that exists — so it
+   * will fire a `popstate` rather than lapse. An unmeasurable `from`, or one in
+   * another run, answers `false`: nothing about the target is known.
+   */
+  function reaches(from: Position | null, traversal: OwnTraversal): boolean {
+    if (from === null || from.run !== traversal.run) return false
+    if (runTop === null || runTop.run !== traversal.run) return false
+    const target = from.index + traversal.delta
+    return target >= 0 && target <= runTop.index
+  }
+
+  /**
+   * Whether the router's oldest queued traversal will certainly LAND from where
+   * the browser is — so that waiting for it is safe. Only then may a blocked
+   * landing, or a landing of the router's own, leave the correcting to it:
+   * waiting for a traversal that lapses silently would leave the URL on a
+   * route the application does not show, with nothing coming to fix it.
+   *
+   * It has provably not run yet: had it run from here it would have moved the
+   * browser, and had it run from an earlier entry it would have landed (and
+   * been retired) or lapsed there (and been forgotten when the browser left).
+   */
+  function ownTraversalWillLand(): boolean {
+    const next = ownTraversals[0]
+    return next !== undefined && reaches(lastSeen, next)
+  }
+
+  /**
+   * Attribute the traversal `popstate` in hand, record where it landed, and
+   * report whether it was the router's own.
+   *
+   * The queue runs the router's traversals in the order it issued them, and the
+   * browser does not move between two `popstate`s. So the landing is the
+   * router's `j`-th queued traversal exactly when it moved by that traversal's
+   * delta from {@link lastSeen} and every older one would have LAPSED from
+   * there, running first without firing. The first that fits is taken, and it
+   * and everything older are retired.
+   *
+   * Otherwise the landing is a browser navigation, and the entry it left is
+   * where the router's queued traversals are re-judged
+   * ({@link forgetPossiblyLapsed}).
+   */
+  function attributeLanding(): boolean {
+    const from = lastSeen
+    const landed = readPosition(env.historyState)
+    let ours = -1
+    if (from !== null && landed !== null && from.run === landed.run) {
+      const moved = landed.index - from.index
+      for (let j = 0; j < ownTraversals.length; j++) {
+        const traversal = ownTraversals[j]!
+        if (traversal.run === landed.run && traversal.delta === moved) {
+          ours = j
+          break
+        }
+        // One that would have LANDED from `from` has not run — the browser
+        // would have moved — so nothing younger has either.
+        if (reaches(from, traversal)) break
+      }
+    }
+    if (ours >= 0) ownTraversals.splice(0, ours + 1)
+    else forgetPossiblyLapsed(from)
+    observe(false)
+    return ours >= 0
+  }
+
+  /**
+   * The browser is leaving `from` by something other than a traversal of the
+   * router's own. Every queued traversal of ours that could have run while it
+   * stood there — the oldest, and each younger one whose elders could all have
+   * run silently — and that would have LAPSED there, may already be gone, and
+   * the router cannot find out: forget it (see {@link ownTraversals} for why
+   * forgetting is the safe direction). The first one that would have LANDED
+   * from `from` has provably not run, and neither has anything younger.
+   */
+  function forgetPossiblyLapsed(from: Position | null): void {
+    while (ownTraversals.length > 0 && !reaches(from, ownTraversals[0]!)) ownTraversals.shift()
+  }
+
+  /**
+   * Handle the router's own landing: never guarded, never dispatched. On the
+   * entry the application is showing, the restore is complete. Anywhere else a
+   * user traversal moved the browser before the router's did, so it is undone
+   * in turn — toward the entry the application shows NOW, which may be one that
+   * user traversal reached — unless another of the router's own is certain to
+   * land next and will be corrected in its turn.
+   *
+   * Returns `false` when the landing cannot be undone (the showing entry has no
+   * position in the landing's run); the listener then judges it like a browser
+   * navigation — better a guarded navigation than a URL the application does not
+   * show.
+   */
+  function settleOwnLanding(): boolean {
+    if (ownTraversalWillLand()) return true
+    const landed = lastSeen
+    if (landed === null || currentIndex === null || currentRun !== landed.run) return false
+    const delta = currentIndex - landed.index
+    if (delta !== 0) traverseOwn(delta, landed.run)
+    return true
+  }
+
+  /** Issue a traversal of the router's own. */
+  function traverseOwn(delta: number, run: string): void {
+    ownTraversals.push({ delta, run })
+    env.go(delta)
+  }
+
   function pushUrl(path: string): void {
     env.pushState(freshStamp(stand(pushStamp())), path)
+    observe(true)
   }
 
   function replaceUrl(path: string): void {
@@ -861,6 +1070,7 @@ export function connectRouter<
     // would resolve against the document base and throw the fragment away —
     // i.e. undo the navigation on the line above.
     env.replaceState(stampCurrent(next))
+    observe(true)
     return true
   }
   /**
@@ -1007,23 +1217,14 @@ export function connectRouter<
   }
 
   /**
-   * Consume the popstate our own restoring `history.go` produced. Cleared
-   * unconditionally: the traversal may land somewhere else entirely (or never
-   * fire), and an armed flag that outlives its restore swallows the next
-   * genuine popstate (#103).
+   * The listener's entry point for a traversal `popstate`: attribute it (see
+   * {@link attributeLanding}) and, when it was the router's own, settle it.
+   * Returns whether the router handled it; `false` means it is a browser
+   * navigation (or an own landing that cannot be undone) for the listener to
+   * guard and dispatch.
    */
-  function consumePopstateRestore(): boolean {
-    if (pendingRestore === null) return false
-    const expected = pendingRestore
-    pendingRestore = null
-    // The RUN is half of the identity: the same index in another run is a
-    // different entry, so matching on the number alone would swallow a genuine
-    // popstate onto it and adopt a position we are not standing at.
-    const landed = readPosition(env.historyState)
-    if (landed === null) return false
-    if (landed.index !== expected.index || landed.run !== expected.run) return false
-    stand(expected)
-    return true
+  function handleOwnLanding(): boolean {
+    return attributeLanding() && settleOwnLanding()
   }
 
   /**
@@ -1184,14 +1385,20 @@ export function connectRouter<
     if (landed.run !== currentRun) return
     const delta = currentIndex - landed.index
     if (delta === 0) return
-    // This position also identifies the restoration in hash mode: the restore's
-    // `popstate` is recognised by the entry it lands on. A fragment-changing
-    // restore also emits a `hashchange`, possibly after the BLOCKED step's own
-    // one — both find the restored URL already reconciled (`settledHash`); a
-    // same-fragment restore emits `popstate` alone. Treating either as a queued
-    // hash-write echo would leave a stale suppression behind in the latter case.
-    pendingRestore = { index: currentIndex, run: currentRun }
-    env.go(delta)
+    // A traversal of the router's own that is CERTAIN to land from here will be
+    // sent on to the showing entry from wherever it lands (`settleOwnLanding`).
+    // A second one issued now would be measured from a position the first is
+    // about to move, and the two would compound. One that might lapse is not
+    // waited for: if it does, nothing else would ever move the URL off a route
+    // the guard refused.
+    if (ownTraversalWillLand()) return
+    // In hash mode the restore's `popstate` is recognised by its movement like
+    // any other of ours. A fragment-changing restore also emits a `hashchange`,
+    // possibly after the BLOCKED step's own one — both find the restored URL
+    // already reconciled (`settledHash`); a same-fragment restore emits
+    // `popstate` alone. Treating either as a queued hash-write echo would leave
+    // a stale suppression behind in the latter case.
+    traverseOwn(delta, currentRun)
   }
 
   // Effects created by this connector carry a normalized location. A manually
@@ -1330,7 +1537,7 @@ export function connectRouter<
          */
         const handler = (event: 'popstate' | 'hashchange'): void => {
           if (router.mode === 'history') {
-            if (!consumePopstateRestore()) reconcile()
+            if (!handleOwnLanding()) reconcile()
             return
           }
           // Whatever this event decides, the URL showing when it is done has
@@ -1346,7 +1553,12 @@ export function connectRouter<
               // because validation also discards an echo whose URL is no longer
               // showing, and a restore landing must not leave one armed.
               const echo = validatePendingHashEcho()
-              if (consumePopstateRestore()) return
+              // Our own fragment write's `popstate` fires INSIDE the write, before
+              // its entry is stamped; `setHash` records the entry once it is.
+              // Measuring from the unstamped entry here would drop a restore
+              // still in flight for no reason.
+              if (echo && readPosition(env.historyState) === null) return
+              if (handleOwnLanding()) return
               if (echo) return
             } else {
               if (consumeHashEcho()) return
