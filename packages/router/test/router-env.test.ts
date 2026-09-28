@@ -689,10 +689,14 @@ describe('connect.ts names a browser global in exactly one place', () => {
   // the very edit this gate exists to stop. Naming the container catches it
   // whatever is read off it, and `globalThis` has no non-global meaning to
   // over-match.
+  //
+  // `navigation` is the Navigation API's global (`window.navigation`), read
+  // only by `browserRouterEnv`'s `navigation` adapter; everything else reaches
+  // it as `env.navigation`, which the lookbehind excludes.
   const GLOBAL_USE =
-    /(?<![\w$.'"`])(?:(?:globalThis|history|window)\s*[.[]|location\s*(?:\[|\.(?:hash|pathname|search|href|replace|assign|reload)\b))/
+    /(?<![\w$.'"`])(?:(?:globalThis|history|window|navigation)\s*[.[]|location\s*(?:\[|\.(?:hash|pathname|search|href|replace|assign|reload)\b))/
 
-  it('every location/history/window dereference is inside browserRouterEnv', () => {
+  it('every location/history/window/navigation dereference is inside browserRouterEnv', () => {
     const lines = codeLines(connectSource)
     const [from, to] = adapterRange(lines)
     const outside = lines
@@ -717,9 +721,12 @@ describe('connect.ts names a browser global in exactly one place', () => {
     expect(GLOBAL_USE.test("globalThis['location'].hash")).toBe(true)
     expect(GLOBAL_USE.test('window.location.hash')).toBe(true)
     expect(GLOBAL_USE.test('location.hash')).toBe(true)
+    expect(GLOBAL_USE.test('navigation.traverseTo(key, { info })')).toBe(true)
+    expect(GLOBAL_USE.test('globalThis.navigation.currentEntry')).toBe(true)
 
     // …and still reads a DEREFERENCE of the global, not a mention of the word.
     expect(GLOBAL_USE.test('env.historyState')).toBe(false)
+    expect(GLOBAL_USE.test('const nav = env.navigation ?? null')).toBe(false)
     expect(GLOBAL_USE.test("router.mode === 'history'")).toBe(false)
     expect(GLOBAL_USE.test('const globalThisIsNotIt = 1')).toBe(false)
   })

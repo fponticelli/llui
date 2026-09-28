@@ -30,6 +30,11 @@ const RESTORE_FIRST = ['popstate', 'popstate', 'hashchange', 'hashchange']
  */
 const STALLS_MS = [50, 200, 800]
 
+// Both restore paths: `nav=on` restores with the Navigation API's `traverseTo`
+// (what Chromium runs by default), `nav=off` with the History API's
+// `history.go` (what a browser without the Navigation API runs). The event
+// orders at stake are the same on both — a traversal task racing a queued
+// `hashchange`.
 describe('same-fragment history traversal in Chromium (#163)', () => {
   let browser: Browser
   let page: Page
@@ -61,8 +66,8 @@ describe('same-fragment history traversal in Chromium (#163)', () => {
   })
 
   /** A fresh document per run: the fixture's recorders and history are per page. */
-  async function run(stallMs: number) {
-    await page.goto(fixtureUrl)
+  async function run(stallMs: number, nav: 'on' | 'off') {
+    await page.goto(`${fixtureUrl}?nav=${nav}`)
     // The fixture assigns its hooks synchronously in a module script, which has
     // run by the time `goto` resolves on `load`.
     expect(await page.evaluate(() => window.__sameFragmentReady)).toBe(true)
@@ -83,24 +88,26 @@ describe('same-fragment history traversal in Chromium (#163)', () => {
     expect(rest).toEqual({ marker: 'entry-1', hash: '#/login', dispatches: [] })
   }
 
-  it('adopts a same-fragment landing and restores a later block from that position', async () => {
-    const result = await run(0)
-    expectSameFragmentLanding(result)
-    // Either legal delivery order: which one the browser picks is load-
-    // dependent, and the router's outcome must not be.
-    expectRestoredWithoutDispatch(result)
-  })
-
-  it('restores without dispatching when the restore is applied before the blocked hashchange', async () => {
-    const seen: string[][] = []
-    for (const stallMs of STALLS_MS) {
-      const result = await run(stallMs)
+  for (const nav of ['on', 'off'] as const) {
+    it(`Navigation API ${nav}: adopts a same-fragment landing and restores a later block from that position`, async () => {
+      const result = await run(0, nav)
       expectSameFragmentLanding(result)
+      // Either legal delivery order: which one the browser picks is load-
+      // dependent, and the router's outcome must not be.
       expectRestoredWithoutDispatch(result)
-      seen.push(result.blockedRestore.events)
-      if (result.blockedRestore.events.join() === RESTORE_FIRST.join()) break
-    }
-    // Non-vacuity: the order under test was actually delivered at least once.
-    expect(seen).toContainEqual(RESTORE_FIRST)
-  })
+    })
+
+    it(`Navigation API ${nav}: restores without dispatching when the restore is applied before the blocked hashchange`, async () => {
+      const seen: string[][] = []
+      for (const stallMs of STALLS_MS) {
+        const result = await run(stallMs, nav)
+        expectSameFragmentLanding(result)
+        expectRestoredWithoutDispatch(result)
+        seen.push(result.blockedRestore.events)
+        if (result.blockedRestore.events.join() === RESTORE_FIRST.join()) break
+      }
+      // Non-vacuity: the order under test was actually delivered at least once.
+      expect(seen).toContainEqual(RESTORE_FIRST)
+    })
+  }
 })

@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { component, mountApp, text } from '@llui/dom'
 import { createRouter, route, type RouteLocation } from '../src/index'
 import { connectRouter, type RouterEnv } from '../src/connect'
+import { sessionHistory, type Task } from './support/session-history'
 
 // A hash-mode traversal fires TWO events, and they are not delivered together.
 //
@@ -22,10 +23,11 @@ import { connectRouter, type RouterEnv } from '../src/connect'
 // per late `hashchange` — because it read each one against the live location
 // instead of recognising that the location had already been reconciled.
 //
-// This file models the session history precisely enough to deliver every legal
-// interleaving and asserts the router's observable outcome is the same for all
-// of them: exactly one dispatch per traversal it accepted, none for a traversal
-// it blocked, and a restore that lands where it started.
+// `support/session-history.ts` models the session history precisely enough to
+// deliver every legal interleaving; this file explores them and asserts the
+// router's observable outcome is the same for all of them — exactly one
+// dispatch per traversal it accepted, none for a traversal it blocked, and a
+// restore that lands where it started — on both restore paths (`FLAVOURS`).
 
 const registry = {
   home: route('/'),
@@ -39,222 +41,23 @@ type Registry = typeof registry
 type Location = RouteLocation<Registry>
 type RouteName = keyof Registry & string
 
-interface Entry {
-  path: string
-  hash: string
-  state: unknown
-}
-
-/**
- * `dom`: the DOM manipulation task source; `traverse`: the session history
- * traversal queue, which is ONE FIFO shared by `history.go()` and the
- * browser's own back/forward UI; `user`: a user traversal that has not reached
- * that queue yet (choosing it appends it to `traverse`).
- */
-interface Task {
-  source: 'dom' | 'traverse' | 'user'
-  label: string
-  run: () => void
-}
-
-/**
- * A session history with the task sources that matter here. Fragment
- * navigations and traversals are applied as the spec applies them: `popstate`
- * inside the step application, `hashchange` queued behind it. What is left to
- * choose — which source's head runs next, and WHEN a pending user traversal
- * joins the traversal queue relative to the router's own `history.go` — is the
- * `choose` callback's.
- *
- * `hash` mode addresses the fragment; `history` mode addresses the path and
- * never fires `hashchange` (its fragment never changes).
- */
-function sessionHistory(initialHash: string, mode: 'hash' | 'history' = 'hash') {
-  const entries: Entry[] = [
-    mode === 'hash'
-      ? { path: '/', hash: initialHash, state: null }
-      : { path: initialHash, hash: '', state: null },
-  ]
-  let index = 0
-  const queues: Record<Task['source'], Task[]> = { dom: [], traverse: [], user: [] }
-  /**
-   * Every traversal, in the order the queue ran it: who asked, by how much,
-   * and where it landed — `null` when it was out of range and did nothing.
-   */
-  const landings: Array<{
-    by: 'router' | 'user'
-    delta: number
-    url: string | null
-    /** The position it landed on, or `null`. */
-    to: number | null
-    /** When it joined the traversal queue, and when the queue ran it. */
-    queuedAt: number
-    ranAt: number
-    /** The stack it ran against: the position it left, and the entry count. */
-    from: number
-    size: number
-  }> = []
-  let clock = 0
-  /** The URL the router addresses in this mode, for the entry showing. */
-  const urlAt = (): string => (mode === 'hash' ? entries[index]!.hash : entries[index]!.path)
-  const traversal = (by: 'router' | 'user', delta: number): Task => {
-    const queuedAt = clock++
-    return {
-      source: 'traverse',
-      label: `${by} go(${delta})`,
-      run: () => {
-        const ran = { by, delta, queuedAt, ranAt: clock++, from: index, size: entries.length }
-        const target = index + delta
-        // Out of range: the spec aborts the traversal and fires NOTHING.
-        if (target < 0 || target >= entries.length) {
-          landings.push({ ...ran, url: null, to: null })
-          return
-        }
-        const oldHash = entries[index]!.hash
-        index = target
-        landings.push({ ...ran, url: urlAt(), to: index })
-        applyStep(oldHash)
-      },
-    }
-  }
-  const applyUrl = (url: string, current: Entry): Pick<Entry, 'path' | 'hash'> =>
-    url.startsWith('#')
-      ? { path: current.path, hash: url }
-      : { path: url.split('#')[0]!, hash: url.includes('#') ? url.slice(url.indexOf('#')) : '' }
-  // Listeners are CALLED the way a DOM listener is, with what the event
-  // carries — a `hashchange` its `newURL` fragment. The router's contract takes
-  // nothing and must not depend on it; delivering it anyway keeps this model
-  // faithful to an adapter that registers the handler as the DOM listener, and
-  // to the earlier contract under which the router read it.
-  const listeners: Array<{
-    event: 'popstate' | 'hashchange'
-    handler: (newHash?: string) => void
-  }> = []
-  const observed: string[] = []
-
-  const fire = (event: 'popstate' | 'hashchange', newHash?: string): void => {
-    observed.push(event)
-    for (const entry of [...listeners]) {
-      if (entry.event === event) entry.handler(newHash)
-    }
-  }
-
-  /** The step-application half common to a fragment navigation and a traversal. */
-  const applyStep = (oldHash: string): void => {
-    const landed = entries[index]!.hash
-    fire('popstate')
-    if (landed !== oldHash) {
-      queues.dom.push({
-        source: 'dom',
-        label: `hashchange ${landed}`,
-        run: () => fire('hashchange', landed),
-      })
-    }
-  }
-
-  const env: RouterEnv = {
-    get hash() {
-      return entries[index]!.hash
-    },
-    get pathname() {
-      return entries[index]!.path
-    },
-    get search() {
-      return ''
-    },
-    get historyState() {
-      return entries[index]!.state
-    },
-    get historyLength() {
-      return entries.length
-    },
-    setHash(next) {
-      const current = entries[index]!
-      entries.splice(index + 1)
-      entries.push({ path: current.path, hash: next, state: null })
-      index++
-      applyStep(current.hash)
-    },
-    pushState(state, url) {
-      const current = entries[index]!
-      entries.splice(index + 1)
-      entries.push({ ...applyUrl(url, current), state })
-      index++
-    },
-    replaceState(state, url) {
-      const current = entries[index]!
-      entries[index] = { ...(url === undefined ? current : applyUrl(url, current)), state }
-    },
-    back() {
-      this.go(-1)
-    },
-    forward() {
-      this.go(1)
-    },
-    go(delta) {
-      queues.traverse.push(traversal('router', delta))
-    },
-    scrollTo() {},
-    onUrlChange(event, handler) {
-      const entry = { event, handler }
-      listeners.push(entry)
-      return () => {
-        listeners.splice(listeners.indexOf(entry), 1)
-      }
-    },
-  }
-
-  return {
-    env,
-    observed,
-    landings,
-    /** The entry showing: its position in the stack and its URL. */
-    at: () => ({ index, url: urlAt(), size: entries.length }),
-    /** A tick of the clock `landings` are stamped with, for ordering other actions. */
-    now: () => clock++,
-    marker: () => (entries[index]!.state as Record<string, unknown> | null)?.['marker'],
-    mark(value: string) {
-      const current = entries[index]!
-      entries[index] = { ...current, state: { ...(current.state as object), marker: value } }
-    },
-    /** A user traversal (back button, long-press menu) that is queued NOW. */
-    userGo(delta: number): void {
-      queues.traverse.push(traversal('user', delta))
-    },
-    /**
-     * A user traversal that is still to come: the scheduler decides when it
-     * joins the traversal queue, so it is explored before, between and after
-     * every traversal the router issues.
-     */
-    userGoLater(delta: number): void {
-      this.later(`user presses go(${delta})`, () => queues.traverse.push(traversal('user', delta)))
-    },
-    /**
-     * Anything else the user does that the scheduler should place at every
-     * point — a click that runs the app's own navigation, say. It runs as a task
-     * of its own, synchronously, like the event handler it stands for.
-     */
-    later(label: string, run: () => void): void {
-      queues.user.push({ source: 'user', label, run })
-    },
-    /** Run queued tasks until none remain, letting `choose` pick the source. */
-    drain(choose: (ready: Task[]) => number): void {
-      for (let steps = 0; ; steps++) {
-        // A router that keeps traversing on its own never settles; fail loudly
-        // rather than hang the sweep.
-        if (steps > 200) throw new Error('session history did not settle in 200 tasks')
-        const ready = [queues.traverse[0], queues.dom[0], queues.user[0]].filter(
-          (t): t is Task => t !== undefined,
-        )
-        if (ready.length === 0) return
-        const task = ready[ready.length === 1 ? 0 : choose(ready)]!
-        queues[task.source].shift()
-        task.run()
-      }
-    },
-  }
-}
-
 type Scenario = (choose: (ready: Task[]) => number) => unknown
+
+/**
+ * Both ways the router can undo a blocked traversal. Every sweep in this file
+ * runs against each: the History API path (relative `history.go`, attributed by
+ * movement) is what browsers without the Navigation API run, and must stay
+ * fully covered; the Navigation API path (`traverseTo(key)`, attributed by the
+ * `navigate` event's `info`) is what the rest run.
+ */
+const FLAVOURS = [
+  { flavour: 'History API', navigation: false },
+  { flavour: 'Navigation API', navigation: true },
+] as const
+
+/** The events the History API fires — what the hash-mode delivery tests order. */
+const urlEvents = (observed: readonly string[]): string[] =>
+  observed.filter((event) => event === 'popstate' || event === 'hashchange')
 
 /**
  * Every schedule the two task sources permit, each run from scratch — router
@@ -320,136 +123,144 @@ function mountRouter(
   }
 }
 
-describe('hash-mode traversal events in every legal delivery order', () => {
-  it('the model delivers the reordered sequence the loaded browser did', () => {
-    // Guard against a vacuous sweep: the interleaving that failed in Chromium
-    // must be one of the schedules explored below.
-    const schedules = everyInterleaving((choose) => blockedRestoreScenario(choose).events)
-    expect(schedules.map((s) => s.outcome)).toContainEqual([
-      'popstate',
-      'popstate',
-      'hashchange',
-      'hashchange',
-    ])
-    expect(schedules.map((s) => s.outcome)).toContainEqual([
-      'popstate',
-      'hashchange',
-      'popstate',
-      'hashchange',
-    ])
-  })
-
-  it('a guard-blocked traversal dispatches nothing and restores, in every order (#163 browser flake)', () => {
-    const results = everyInterleaving((choose) => {
-      const { dispatches, marker, hash, afterUnblock } = blockedRestoreScenario(choose)
-      return { dispatches, marker, hash, afterUnblock }
+describe.each(FLAVOURS)(
+  'hash-mode traversal events in every legal delivery order ($flavour)',
+  ({ navigation }) => {
+    it('the model delivers the reordered sequence the loaded browser did', () => {
+      // Guard against a vacuous sweep: the interleaving that failed in Chromium
+      // must be one of the schedules explored below.
+      const schedules = everyInterleaving(
+        (choose) => blockedRestoreScenario(choose, navigation).events,
+      )
+      expect(schedules.map((s) => s.outcome)).toContainEqual([
+        'popstate',
+        'popstate',
+        'hashchange',
+        'hashchange',
+      ])
+      expect(schedules.map((s) => s.outcome)).toContainEqual([
+        'popstate',
+        'hashchange',
+        'popstate',
+        'hashchange',
+      ])
     })
-    expect(results.length).toBeGreaterThan(1)
-    for (const { schedule, outcome } of results) {
-      expect({ schedule, outcome }).toEqual({
-        schedule,
-        outcome: {
-          dispatches: [],
-          marker: 'entry-1',
-          hash: '#/login',
-          // Nothing the blocked traversal armed outlives it: the next genuine
-          // traversal dispatches exactly once.
-          afterUnblock: ['home'],
-        },
-      })
-    }
-  })
 
-  it('two queued traversals dispatch once each, in every order', () => {
-    const results = everyInterleaving((choose) => {
-      const history = sessionHistory('#/')
+    it('a guard-blocked traversal dispatches nothing and restores, in every order (#163 browser flake)', () => {
+      const results = everyInterleaving((choose) => {
+        const { dispatches, marker, hash, afterUnblock } = blockedRestoreScenario(
+          choose,
+          navigation,
+        )
+        return { dispatches, marker, hash, afterUnblock }
+      })
+      expect(results.length).toBeGreaterThan(1)
+      for (const { schedule, outcome } of results) {
+        expect({ schedule, outcome }).toEqual({
+          schedule,
+          outcome: {
+            dispatches: [],
+            marker: 'entry-1',
+            hash: '#/login',
+            // Nothing the blocked traversal armed outlives it: the next genuine
+            // traversal dispatches exactly once.
+            afterUnblock: ['home'],
+          },
+        })
+      }
+    })
+
+    it('two queued traversals dispatch once each, in every order', () => {
+      const results = everyInterleaving((choose) => {
+        const history = sessionHistory('#/', { navigation })
+        const router = mountRouter(history.env, () => false)
+        router.navigate('login')
+        history.drain(choose)
+        router.navigate('other')
+        history.drain(choose)
+        router.dispatches.length = 0
+        history.env.back()
+        history.env.back()
+        history.drain(choose)
+        const outcome = { dispatches: [...router.dispatches], hash: history.env.hash }
+        router.dispose()
+        return outcome
+      })
+      expect(results.length).toBeGreaterThan(1)
+      for (const { schedule, outcome } of results) {
+        expect({ schedule, outcome }).toEqual({
+          schedule,
+          outcome: { dispatches: ['login', 'home'], hash: '#/' },
+        })
+      }
+    })
+
+    it('a back taken before a navigation’s own hashchange ran dispatches once, in every order', () => {
+      const results = everyInterleaving((choose) => {
+        const history = sessionHistory('#/', { navigation })
+        const router = mountRouter(history.env, () => false)
+        router.navigate('login')
+        // The navigation's `hashchange` is still queued when the user goes back.
+        history.env.back()
+        history.drain(choose)
+        const outcome = { dispatches: [...router.dispatches], hash: history.env.hash }
+        router.dispose()
+        return outcome
+      })
+      expect(results.length).toBeGreaterThan(1)
+      for (const { schedule, outcome } of results) {
+        expect({ schedule, outcome }).toEqual({
+          schedule,
+          // `login` from the navigate effect itself, `home` from the traversal.
+          outcome: { dispatches: ['login', 'home'], hash: '#/' },
+        })
+      }
+    })
+
+    it('a redundant hashchange still retires its echo, so a later same-fragment traversal is seen', () => {
+      const history = sessionHistory('#/', { navigation })
       const router = mountRouter(history.env, () => false)
       router.navigate('login')
-      history.drain(choose)
-      router.navigate('other')
-      history.drain(choose)
+      // By the time its `hashchange` runs, the URL is already reconciled — but
+      // the echo the write armed must still be retired by it, or it stays armed.
+      history.drain(() => 0)
+      // A second entry showing the same fragment, created behind the router's
+      // back (a foreign `pushState`), then a traversal back onto the first.
+      history.env.pushState({ foreign: true }, '#/login')
       router.dispatches.length = 0
       history.env.back()
-      history.env.back()
-      history.drain(choose)
-      const outcome = { dispatches: [...router.dispatches], hash: history.env.hash }
+      history.drain(() => 0)
+      expect(history.env.hash).toBe('#/login')
+      // A same-fragment traversal is a real step (#163); a leftover echo armed
+      // for `#/login` would swallow it.
+      expect(router.dispatches).toEqual(['login'])
       router.dispose()
-      return outcome
     })
-    expect(results.length).toBeGreaterThan(1)
-    for (const { schedule, outcome } of results) {
-      expect({ schedule, outcome }).toEqual({
-        schedule,
-        outcome: { dispatches: ['login', 'home'], hash: '#/' },
-      })
-    }
-  })
 
-  it('a back taken before a navigation’s own hashchange ran dispatches once, in every order', () => {
-    const results = everyInterleaving((choose) => {
-      const history = sessionHistory('#/')
+    it('a URL-only replace is not read as a navigation by a hashchange from before it', () => {
+      const history = sessionHistory('#/', { navigation })
       const router = mountRouter(history.env, () => false)
       router.navigate('login')
-      // The navigation's `hashchange` is still queued when the user goes back.
-      history.env.back()
-      history.drain(choose)
-      const outcome = { dispatches: [...router.dispatches], hash: history.env.hash }
+      // `replace()` writes with `replaceState`, which fires nothing — so the one
+      // event still to come is the navigation's own, and it now finds a URL the
+      // router wrote itself.
+      router.replace('other')
+      history.drain(() => 0)
+      expect(urlEvents(history.observed)).toEqual(['popstate', 'hashchange'])
+      expect(router.dispatches).toEqual(['login'])
+      expect(history.env.hash).toBe('#/other')
       router.dispose()
-      return outcome
     })
-    expect(results.length).toBeGreaterThan(1)
-    for (const { schedule, outcome } of results) {
-      expect({ schedule, outcome }).toEqual({
-        schedule,
-        // `login` from the navigate effect itself, `home` from the traversal.
-        outcome: { dispatches: ['login', 'home'], hash: '#/' },
-      })
-    }
-  })
-
-  it('a redundant hashchange still retires its echo, so a later same-fragment traversal is seen', () => {
-    const history = sessionHistory('#/')
-    const router = mountRouter(history.env, () => false)
-    router.navigate('login')
-    // By the time its `hashchange` runs, the URL is already reconciled — but
-    // the echo the write armed must still be retired by it, or it stays armed.
-    history.drain(() => 0)
-    // A second entry showing the same fragment, created behind the router's
-    // back (a foreign `pushState`), then a traversal back onto the first.
-    history.env.pushState({ foreign: true }, '#/login')
-    router.dispatches.length = 0
-    history.env.back()
-    history.drain(() => 0)
-    expect(history.env.hash).toBe('#/login')
-    // A same-fragment traversal is a real step (#163); a leftover echo armed
-    // for `#/login` would swallow it.
-    expect(router.dispatches).toEqual(['login'])
-    router.dispose()
-  })
-
-  it('a URL-only replace is not read as a navigation by a hashchange from before it', () => {
-    const history = sessionHistory('#/')
-    const router = mountRouter(history.env, () => false)
-    router.navigate('login')
-    // `replace()` writes with `replaceState`, which fires nothing — so the one
-    // event still to come is the navigation's own, and it now finds a URL the
-    // router wrote itself.
-    router.replace('other')
-    history.drain(() => 0)
-    expect(history.observed).toEqual(['popstate', 'hashchange'])
-    expect(router.dispatches).toEqual(['login'])
-    expect(history.env.hash).toBe('#/other')
-    router.dispose()
-  })
-})
+  },
+)
 
 /**
  * The browser fixture's sequence (`test/browser/same-fragment.fixture.ts`):
  * two hash navigations, a same-fragment replace, a same-fragment back, then a
  * back onto a blocked route whose restore races that back's `hashchange`.
  */
-function blockedRestoreScenario(choose: (ready: Task[]) => number) {
-  const history = sessionHistory('')
+function blockedRestoreScenario(choose: (ready: Task[]) => number, navigation: boolean) {
+  const history = sessionHistory('', { navigation })
   let blockHome = false
   const router = mountRouter(history.env, (to) => blockHome && to.name === 'home')
 
@@ -472,7 +283,7 @@ function blockedRestoreScenario(choose: (ready: Task[]) => number) {
   history.env.back()
   history.drain(choose)
   const outcome = {
-    events: [...history.observed],
+    events: urlEvents(history.observed),
     dispatches: [...router.dispatches],
     marker: history.marker(),
     hash: history.env.hash,
@@ -532,6 +343,8 @@ type LaterAction = number | RouteName
 
 interface RaceCase {
   mode: 'hash' | 'history'
+  /** Whether the env has the Navigation API (see `FLAVOURS`). */
+  navigation: boolean
   /** The accepted entry the user starts on. */
   standing: number
   /** Routes the guard refuses once the race starts. */
@@ -588,7 +401,10 @@ interface RaceOutcome {
 }
 
 function raceScenario(c: RaceCase, choose: (ready: Task[]) => number): RaceOutcome {
-  const history = sessionHistory(c.mode === 'hash' ? '#/' : '/', c.mode)
+  const history = sessionHistory(c.mode === 'hash' ? '#/' : '/', {
+    mode: c.mode,
+    navigation: c.navigation,
+  })
   const blocked = new Set<string>()
   const isBlocked = (to: Location) => blocked.has(to.name)
   let router = mountRouter(history.env, isBlocked, c.mode)
@@ -668,6 +484,7 @@ function raceScenario(c: RaceCase, choose: (ready: Task[]) => number): RaceOutco
 function* raceCases(
   laterChoices: ReadonlyArray<readonly LaterAction[]>,
   modes: ReadonlyArray<RaceCase['mode']>,
+  navigation: boolean,
 ): Generator<RaceCase> {
   for (const mode of modes) {
     for (let standing = 0; standing < STACK.length; standing++) {
@@ -679,7 +496,7 @@ function* raceCases(
           if (target === undefined || !blocked.includes(target)) continue
           for (const later of laterChoices) {
             for (const reloaded of [false, true])
-              yield { mode, standing, blocked, first, later, reloaded }
+              yield { mode, navigation, standing, blocked, first, later, reloaded }
           }
         }
       }
@@ -752,7 +569,7 @@ function raceIntentViolations(outcome: RaceOutcome, c: RaceCase): string[] {
  *   `ownTraversals` in `connect.ts`), so its landing is judged as a browser
  *   navigation — the same answer it gives in the other history.
  */
-function indistinguishable(outcome: RaceOutcome): boolean {
+function indistinguishable(outcome: RaceOutcome): 'same-delta' | 'maybe-lapsed' | null {
   const own = outcome.traversals.filter((t) => t.by === 'router')
   const preempts = (r: Traversal, at: number) => r.queuedAt < at && at < r.ranAt
   // Judged by what the ROUTER knew of the stack, which after a reload can be
@@ -764,14 +581,16 @@ function indistinguishable(outcome: RaceOutcome): boolean {
     ...outcome.traversals.filter((t) => t.by === 'user' && t.landed !== null),
     ...outcome.navigations,
   ]
-  return own.some(
-    (r) =>
-      outcome.traversals.some(
-        (u) => u.by === 'user' && u.delta === r.delta && preempts(r, u.ranAt),
-      ) ||
-      (r.landed !== null &&
-        moves.some((m) => preempts(r, m.ranAt) && lapsesFrom(r, m.from, m.known))),
+  const sameDelta = own.some((r) =>
+    outcome.traversals.some((u) => u.by === 'user' && u.delta === r.delta && preempts(r, u.ranAt)),
   )
+  if (sameDelta) return 'same-delta'
+  const maybeLapsed = own.some(
+    (r) =>
+      r.landed !== null &&
+      moves.some((m) => preempts(r, m.ranAt) && lapsesFrom(r, m.from, m.known)),
+  )
+  return maybeLapsed ? 'maybe-lapsed' : null
 }
 
 interface RaceReport {
@@ -787,11 +606,18 @@ interface RaceReport {
   navigatedMidRestore: number
   invariant: string[]
   intent: string[]
+  /**
+   * Intent violations in schedules excluded as {@link indistinguishable}, by
+   * shape — what the History API path really does get wrong there. Never
+   * filled with the Navigation API, which excludes nothing.
+   */
+  excused: Record<'same-delta' | 'maybe-lapsed', string[]>
 }
 
 function raceReport(
   laterChoices: ReadonlyArray<readonly LaterAction[]>,
-  modes: ReadonlyArray<RaceCase['mode']> = ['hash', 'history'],
+  modes: ReadonlyArray<RaceCase['mode']>,
+  navigation: boolean,
 ): RaceReport {
   const report: RaceReport = {
     cases: 0,
@@ -802,8 +628,9 @@ function raceReport(
     navigatedMidRestore: 0,
     invariant: [],
     intent: [],
+    excused: { 'same-delta': [], 'maybe-lapsed': [] },
   }
-  for (const c of raceCases(laterChoices, modes)) {
+  for (const c of raceCases(laterChoices, modes, navigation)) {
     report.cases++
     for (const { schedule, outcome } of everyInterleaving((choose) => raceScenario(c, choose))) {
       report.schedules++
@@ -817,9 +644,16 @@ function raceReport(
         `${v} — ${JSON.stringify(c)} — ${schedule.join(' ; ')} — ` +
         o.traversals.map((t) => `${t.by}(${t.delta})→${t.landed ?? 'lapsed'}`).join(' ')
       for (const v of raceInvariantViolations(o, c)) report.invariant.push(explain(v))
-      if (indistinguishable(o)) {
+      const shape = indistinguishable(o)
+      if (shape !== null) {
         report.indistinguishable++
-        continue
+        // Undecidable only for an observer of the History API. With the
+        // Navigation API the `navigate` event names whose traversal it is, so
+        // the intent half holds for EVERY schedule.
+        if (!c.navigation) {
+          for (const v of raceIntentViolations(o, c)) report.excused[shape].push(explain(v))
+          continue
+        }
       }
       for (const v of raceIntentViolations(o, c)) report.intent.push(explain(v))
     }
@@ -827,28 +661,40 @@ function raceReport(
   return report
 }
 
-describe('a user traversal racing a blocked traversal’s restore', () => {
+/**
+ * The sweeps both flavours run: one later action in both modes; two in history
+ * mode, where no `hashchange` multiplies the schedules (hash mode's extra event
+ * is orthogonal to the race and is swept above and in the one-action half).
+ */
+function raceSweeps(navigation: boolean): RaceReport[] {
+  return [
+    raceReport([[], [-1], [1], [-2], [2], ['a'], ['c']], ['hash', 'history'], navigation),
+    raceReport(
+      [
+        [-1, 1],
+        [1, -1],
+        [-1, -1],
+        [1, 1],
+        [-1, 'c'],
+        ['a', 1],
+      ],
+      ['history'],
+      navigation,
+    ),
+  ]
+}
+
+describe('a user traversal racing a blocked traversal’s restore (History API)', () => {
   // The sweeps, shared by the assertions below: every case, every schedule.
   // Built in `beforeAll` because they are a fixture. One later action in both
   // modes; two in history mode, where no `hashchange` multiplies the schedules
   // (hash mode's extra event is orthogonal to the race and is swept above and
-  // in the one-action half). Measured, unloaded: ~1.5 s and ~1 s.
+  // in the one-action half). Measured, unloaded: ~1.5 s and ~1 s; the whole
+  // History API sweep took ~5.7 s, and the Navigation API one below ~6.9 s, at
+  // load ~29 — inside the 60 s hook budget.
   const reports: RaceReport[] = []
   beforeAll(() => {
-    reports.push(raceReport([[], [-1], [1], [-2], [2], ['a'], ['c']]))
-    reports.push(
-      raceReport(
-        [
-          [-1, 1],
-          [1, -1],
-          [-1, -1],
-          [1, 1],
-          [-1, 'c'],
-          ['a', 1],
-        ],
-        ['history'],
-      ),
-    )
+    reports.push(...raceSweeps(false))
   })
   const total = (
     key: 'schedules' | 'indistinguishable' | 'preempted' | 'lapsed' | 'navigatedMidRestore',
@@ -874,6 +720,16 @@ describe('a user traversal racing a blocked traversal’s restore', () => {
     expect(reports.flatMap((report) => report.intent).slice(0, 5)).toEqual([])
   })
 
+  it('does get the two unattributable shapes wrong — the gap the Navigation API closes', () => {
+    // The exclusion is not a formality: in some of the excluded schedules the
+    // History API path ends where the user did NOT go, or dispatches a route
+    // only its own traversal reached. The Navigation API sweep below runs the
+    // same schedules and excludes none of them.
+    for (const shape of ['same-delta', 'maybe-lapsed'] as const) {
+      expect(reports.flatMap((report) => report.excused[shape]).length).toBeGreaterThan(0)
+    }
+  })
+
   it('does not dispatch where a stale restore lands after the user moved on (the reported shape)', () => {
     // home → `a` is refused and the router queues `go(-1)` to undo it; the user
     // takes `go(2)` before that runs and lands on `c`, which the guard accepts.
@@ -887,6 +743,7 @@ describe('a user traversal racing a blocked traversal’s restore', () => {
       first: 1,
       later: [2],
       reloaded: false,
+      navigation: false,
     }
     const outcome = raceScenario(c, userFirstThenTraversals)
     expect(outcome.traversals.map((t) => `${t.by}(${t.delta})→${t.landed}`)).toEqual([
@@ -914,6 +771,7 @@ describe('a user traversal racing a blocked traversal’s restore', () => {
       first: 1,
       later: [1],
       reloaded: false,
+      navigation: false,
     }
     const outcome = raceScenario(c, userFirstThenTraversals)
     expect(outcome.traversals.map((t) => `${t.by}(${t.delta})→${t.landed}`)).toEqual([
@@ -939,4 +797,131 @@ function userFirstThenTraversals(ready: Task[]): number {
     0,
     ready.findIndex((t) => t.source === 'traverse'),
   )
+}
+
+describe('a user traversal racing a blocked traversal’s restore (Navigation API)', () => {
+  // The same cases and schedules as the History API sweep above. What changes
+  // is what the router can know: the `navigate` event says whose traversal is
+  // landing, and `traverseTo(key)` names the entry to return to — so neither
+  // exclusion the History half makes applies, and the intent half is held for
+  // every schedule, the two undecidable shapes included.
+  const reports: RaceReport[] = []
+  beforeAll(() => {
+    reports.push(...raceSweeps(true))
+  })
+  const total = (
+    key: 'schedules' | 'indistinguishable' | 'preempted' | 'lapsed' | 'navigatedMidRestore',
+  ) => reports.reduce((sum, report) => sum + report[key], 0)
+
+  it('explores the race it claims to, including both shapes the History API cannot attribute', () => {
+    for (const report of reports) {
+      expect(report.preempted).toBeGreaterThan(0)
+      expect(report.navigatedMidRestore).toBeGreaterThan(0)
+      // Schedules that ARE the two undecidable shapes — held to the intent
+      // half below instead of being excused from it.
+      expect(report.indistinguishable).toBeGreaterThan(0)
+    }
+    expect(total('schedules')).toBeGreaterThan(0)
+  })
+
+  it('always leaves the URL and the application agreeing, nothing refused dispatched, nothing armed', () => {
+    expect(reports.flatMap((report) => report.invariant).slice(0, 5)).toEqual([])
+  })
+
+  it('never treats its own traversal as a navigation — in EVERY schedule', () => {
+    expect(reports.flatMap((report) => report.intent).slice(0, 5)).toEqual([])
+  })
+
+  it('same delta: a user traversal the size of the restore, queued ahead of it, is the user’s', () => {
+    // On `a`, back onto the refused `home`; the user's `go(1)` runs before the
+    // router's restore. The History path takes the user's landing on `a` for
+    // its own, then judges its real restore — which carries the browser on to
+    // `b` — as a navigation and dispatches `b`. Here the user's landing carries
+    // no `info`, so it is guarded and dispatched as the user's; the restore
+    // then finds the browser already on `a` and does nothing.
+    const c: RaceCase = {
+      mode: 'hash',
+      standing: 1,
+      blocked: ['home'],
+      first: -1,
+      later: [1],
+      reloaded: false,
+      navigation: true,
+    }
+    const outcome = raceScenario(c, userFirstThenTraversals)
+    expect(outcome.traversals.map((t) => `${t.by}(${t.delta})→${t.landed}`)).toEqual([
+      'user(-1)→home',
+      'user(1)→a',
+      'router(0)→null',
+    ])
+    expect(outcome.dispatches).toEqual(['a'])
+    expect(outcome.showing).toBe('a')
+  })
+
+  it('maybe lapsed: a restore the app navigated away from still lands, and is the router’s', () => {
+    // On `home`, `go(2)` onto the refused `b`; the user's `go(-1)` runs first
+    // (`a`, accepted), then the app navigates to `c`, then the restore runs.
+    // Relative to `a` the History path's `go(-2)` would have lapsed, so it was
+    // forgotten — and from `c` it lands on `home`, judged as a navigation and
+    // dispatched. `traverseTo(home)` lands there too, but announced as the
+    // router's own, and is sent on to `c`.
+    const c: RaceCase = {
+      mode: 'history',
+      standing: 0,
+      blocked: ['b'],
+      first: 2,
+      later: [-1, 'c'],
+      reloaded: false,
+      navigation: true,
+    }
+    const outcome = raceScenario(
+      c,
+      inOrder('user presses go(-1)', 'user go(2)', 'user go(-1)', 'app navigates to c'),
+    )
+    expect(outcome.traversals.map((t) => `${t.by}(${t.delta})→${t.landed}`)).toEqual([
+      'user(2)→b',
+      'user(-1)→a',
+      'router(-2)→home',
+      'router(2)→c',
+    ])
+    expect(outcome.navigations.map((n) => n.to)).toEqual(['c'])
+    expect(outcome.dispatches).toEqual(['a', 'c'])
+    expect(outcome.showing).toBe('c')
+  })
+
+  it('the reported shape: a stale restore is sent on to where the user went', () => {
+    const c: RaceCase = {
+      mode: 'hash',
+      standing: 0,
+      blocked: ['a'],
+      first: 1,
+      later: [2],
+      reloaded: false,
+      navigation: true,
+    }
+    const outcome = raceScenario(c, userFirstThenTraversals)
+    expect(outcome.traversals.map((t) => `${t.by}(${t.delta})→${t.landed}`)).toEqual([
+      'user(1)→a',
+      'user(2)→c',
+      'router(-3)→home',
+      'router(3)→c',
+    ])
+    expect(outcome.dispatches).toEqual(['c'])
+    expect(outcome.showing).toBe('c')
+  })
+})
+
+/**
+ * A scripted schedule: at each choice, run the ready task named by the next
+ * label if it is ready, else the first ready task (traversals before queued
+ * `hashchange`s — the order `drain` lists them in).
+ */
+function inOrder(...labels: string[]): (ready: Task[]) => number {
+  let next = 0
+  return (ready) => {
+    const wanted = ready.findIndex((task) => task.label === labels[next])
+    if (wanted === -1) return 0
+    next++
+    return wanted
+  }
 }
