@@ -1,6 +1,7 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "globalDependencies": ["tsconfig.json"],
+  "globalPassThroughEnv": ["PLAYWRIGHT_BROWSERS_PATH"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
