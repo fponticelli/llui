@@ -1,10 +1,13 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { prebuildFixture, type PrebuiltFixture } from '../../../scripts/lib/prebuilt-fixture.mjs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), 'browser')
 
@@ -34,7 +37,7 @@ describe('a user traversal queued ahead of the router’s restore, in Chromium',
         __LLUI_TRANSITIONS__: 'true',
       },
     })
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
     page = await browser.newPage()
   })
 
