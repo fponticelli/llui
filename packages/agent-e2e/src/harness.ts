@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Page } from '@playwright/test'
+import type { Browser, LaunchOptions, Page } from '@playwright/test'
 import {
   createLluiAgentServer,
   InMemoryTokenStore,
@@ -48,9 +48,19 @@ export type E2EContext = {
   close: () => Promise<void>
 }
 
+/**
+ * Launches the browser. Tests pass the hermetic launcher from
+ * `scripts/lib/hermetic-browser.mjs` (`useHermeticBrowser()`, registered at the
+ * test file's top level), so every request the page makes is decided by the
+ * repo's network policy and an off-machine one fails the test.
+ */
+export interface BrowserLauncher {
+  launch(options?: LaunchOptions): Promise<Browser>
+}
+
 // ── setup ─────────────────────────────────────────────────────────────────────
 
-export async function setup(): Promise<E2EContext> {
+export async function setup(browserLauncher: BrowserLauncher): Promise<E2EContext> {
   // 1. Bundle the browser-side host app.
   const bundle = await bundleHost()
 
@@ -156,7 +166,7 @@ export async function setup(): Promise<E2EContext> {
   // every package's build/test at once), where a correct-but-CPU-starved browser
   // launch + bundle-serve + app mount can be slow. The vitest `hookTimeout` gives
   // the outer bound; these keep individual steps from tripping their own default.
-  const browser = await chromium.launch({ headless: true, timeout: 60_000 })
+  const browser = await browserLauncher.launch({ headless: true, timeout: 60_000 })
   const page = await browser.newPage()
   await page.goto(`http://localhost:${httpPort}/`)
   // Wait until host.ts has finished bootstrapping and exposed the globals.

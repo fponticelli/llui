@@ -7,9 +7,12 @@
  */
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser } from 'playwright'
+import type { Browser } from 'playwright'
 import { createServer, type ViteDevServer } from 'vite'
 import { collectCascade, type CascadeInventory } from './cascade-probe'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const GALLERY = resolve(import.meta.dirname, '..')
 let server: ViteDevServer
@@ -32,7 +35,7 @@ beforeAll(async () => {
     throw new Error('dev server bound no port')
   }
   base = `http://127.0.0.1:${address.port}/`
-  browser = await chromium.launch({ headless: true })
+  browser = await hermetic.launch({ headless: true })
   // WARM both path documents here, in the fixture. A dev server compiles each
   // document ON DEMAND on its first request — the shell plus two whole
   // component catalogs through the LLui compiler, one of them through

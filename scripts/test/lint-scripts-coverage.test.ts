@@ -173,11 +173,35 @@ describe('scripts/ lint coverage (#256)', () => {
     // linted by nothing, which is #252/#256 re-opened one extension over and
     // in exactly the same silent way: the gates stay green because they never
     // look. Fail here instead, so the choice is deliberate.
-    const uncovered = gitFiles('scripts').filter(
+    //
+    // ONE shape is exempt, and only in pairs: `x.d.mts` beside a tracked
+    // `x.mjs`. It is the type surface of a helper that package test suites
+    // import (their tsconfigs have no `allowJs`), it holds declarations only,
+    // and it is not unchecked — the `.mjs` annotates each export as
+    // `typeof import('./x.mjs').name`, which resolves TO the declaration, so
+    // `check:scripts` compares the two. A `.d.mts` without its `.mjs` is
+    // uncovered like anything else.
+    const files = gitFiles('scripts')
+    const declarationFor = (f: string) =>
+      f.endsWith('.d.mts') && files.includes(f.replace(/\.d\.mts$/, '.mjs'))
+    const uncovered = files.filter(
       (f) =>
-        CODE_EXTENSIONS.some((e) => f.endsWith(e)) && !GATED_EXTENSIONS.some((e) => f.endsWith(e)),
+        CODE_EXTENSIONS.some((e) => f.endsWith(e)) &&
+        !GATED_EXTENSIONS.some((e) => f.endsWith(e)) &&
+        !declarationFor(f),
     )
     expect(uncovered).toEqual([])
+    // Each exempt declaration is really bound to its implementation.
+    for (const declaration of files.filter(declarationFor)) {
+      const base = path.basename(declaration, '.d.mts')
+      const implementation = readFileSync(
+        path.join(ROOT, declaration.replace(/\.d\.mts$/, '.mjs')),
+        'utf8',
+      )
+      expect(implementation, `${declaration} is not what its .mjs is typed against`).toContain(
+        `typeof import('./${base}.mjs')`,
+      )
+    }
   })
 
   it('resolves the type-aware scripts config for EVERY covered file', async () => {

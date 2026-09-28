@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setup, type E2EContext } from '../src/harness.js'
 import { mintAndBind, parseToolResult } from '../src/test-utils.js'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 let ctx: E2EContext
 beforeEach(async () => {
-  ctx = await setup()
+  ctx = await setup(hermetic)
 })
 afterEach(async () => {
   await ctx.close()

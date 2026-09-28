@@ -1,12 +1,15 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import type { Alias } from 'vite'
 import { resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../../../scripts/lib/vite-source-aliases.mjs'
 import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
 import { loadProductContract } from './navigation-data-contract-source'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 /**
  * Closes the #264 review gap explicitly: density/closing-phase claims must be
@@ -91,7 +94,7 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
     const [baseline, registryTailwind, launched] = await Promise.all([
       buildExample('examples/components-demo'),
       buildExample('examples/registry-demo'),
-      chromium.launch({ headless: true }),
+      hermetic.launch({ headless: true }),
     ])
     builds = [baseline, registryTailwind]
     browser = launched

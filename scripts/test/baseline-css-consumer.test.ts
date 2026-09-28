@@ -36,8 +36,11 @@ import {
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { build, preview, type PreviewServer } from 'vite'
+import { useHermeticBrowser } from '../lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const repoRoot = path.resolve(import.meta.dirname, '../..')
 const fixtureDir = path.join(repoRoot, 'examples/baseline-css')
@@ -124,7 +127,7 @@ beforeAll(async () => {
   })
   const address = server.httpServer.address()
   if (address === null || typeof address === 'string') throw new Error('preview bound no port')
-  browser = await chromium.launch({ headless: true })
+  browser = await hermetic.launch({ headless: true })
   page = await browser.newPage()
   await page.goto(`http://127.0.0.1:${address.port}/`)
   await page.locator('#theme-switch').waitFor()

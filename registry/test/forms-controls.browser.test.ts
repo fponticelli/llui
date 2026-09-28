@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { component, div, li, mountApp, text, type Mountable } from '@llui/dom'
 import { compileCandidates } from '../../scripts/lib/tailwind-compile.mjs'
 import { ProductContractSchema } from '../../packages/cli/src/product-contract'
@@ -50,6 +50,9 @@ import { Textarea } from '../llui/ui/textarea'
 import { ThemeSwitchOption } from '../llui/ui/theme-switch'
 import { Toggle } from '../llui/ui/toggle'
 import { ToggleGroup, ToggleGroupItem } from '../llui/ui/toggle-group'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const ROOT = resolve(import.meta.dirname, '../..')
 const STYLES = resolve(ROOT, 'packages/components/src/styles')
@@ -791,7 +794,7 @@ describe('forms-controls baseline/registry parity in real Tailwind + Chromium', 
     const compiled = await compileCandidates(fixture.candidates)
     expect(compiled.dead).toEqual([])
     registryCss = compiled.css
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
   })
 
   afterAll(async () => {

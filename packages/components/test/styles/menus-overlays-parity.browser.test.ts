@@ -1,9 +1,12 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const STYLES = resolve(import.meta.dirname, '../../src/styles')
 const baselineCss = [
@@ -87,7 +90,7 @@ describe('menus and overlays baseline parity in Chromium', () => {
   let page: Page
 
   beforeAll(async () => {
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
     page = await browser.newPage({ viewport: { width: 1024, height: 768 } })
   })
 

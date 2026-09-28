@@ -9,10 +9,13 @@
 // needs a real browser (same Vite-dev-server + Playwright pattern as
 // `dialog-nested-focus.browser.test.ts`).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../browser')
 
@@ -37,7 +40,7 @@ describe('gradient-picker: focus + pointer capture survive a neighbour-crossing 
     })
     fixtureUrl = fixture.url('gradient-picker.fixture.html')
 
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
     page = await browser.newPage()
   })
 

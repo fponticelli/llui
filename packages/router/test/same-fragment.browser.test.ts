@@ -1,10 +1,13 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { createServer, type ViteDevServer } from 'vite'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), 'browser')
 
@@ -32,7 +35,7 @@ describe('same-fragment history traversal in Chromium (#163)', () => {
     const address = server.httpServer?.address()
     if (!address || typeof address === 'string') throw new Error('Vite did not bind a TCP port')
 
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
     page = await browser.newPage()
     await page.goto(`http://127.0.0.1:${address.port}/same-fragment.fixture.html`)
     await page.waitForFunction(() => window.__sameFragmentReady === true)

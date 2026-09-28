@@ -9,7 +9,8 @@
  * `__view` factories, undefined `__prefixes`, etc. — the issue-#5 class.
  *
  * **Hermetic.** Nothing leaves the machine: every request is routed through
- * `scripts/lib/smoke-network.ts`, which passes the example's own origin,
+ * `scripts/lib/network-policy.mjs` (the same policy and fixture the browser
+ * test suites use, via `scripts/lib/hermetic-browser.mjs`), which passes the example's own origin,
  * answers declared third-party dependencies (Iconify) from a checked-in
  * fixture, fails the intentionally-unresolvable `example.invalid` the way a
  * resolver would, and FAILS the smoke on any other off-origin request. The
@@ -28,7 +29,13 @@ import { createServer } from 'http'
 import { readFileSync, existsSync, readdirSync, statSync } from 'fs'
 import { resolve, extname, dirname } from 'path'
 import { fileURLToPath } from 'url'
-import { decideRequest, requestedIconifyEntries, staleIconifyEntries } from './lib/smoke-network'
+import {
+  misfiledAfterFirstPaintEntries,
+  requestedIconifyEntries,
+  routeContext,
+  sameOrigin,
+  staleIconifyEntries,
+} from './lib/network-policy.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const EXAMPLES_DIR = resolve(ROOT, 'examples')
@@ -237,45 +244,15 @@ async function smokeOne(ex: Example): Promise<SmokeResult> {
   const browser = await chromium.launch()
   try {
     // A service worker's fetches would bypass `route`; blocking them keeps
-    // every request on the path below.
+    // every request on the policy's path.
     const ctx = await browser.newContext({ serviceWorkers: 'block' })
-    await ctx.route('**/*', async (route) => {
-      const request = route.request()
-      for (const entry of requestedIconifyEntries(request.url())) observed.iconify.add(entry)
-      const decision = decideRequest(request.url(), origin)
-      switch (decision.kind) {
-        case 'local':
-          await route.continue()
-          return
-        case 'fixture':
-          await route.fulfill({
-            status: decision.status,
-            contentType: decision.contentType,
-            // The page reads it with a cross-origin `fetch`, as from the API.
-            headers: { 'access-control-allow-origin': '*' },
-            body: decision.body,
-          })
-          return
-        case 'declared-failure':
-          aborted.add(request)
-          await route.abort('namenotresolved')
-          return
-        case 'unexpected':
-          aborted.add(request)
-          errors.push(`network: ${decision.message}`)
-          await route.abort('blockedbyclient')
-          return
-      }
-    })
-    await ctx.routeWebSocket(/.*/, (ws) => {
-      if (new URL(ws.url()).host === `127.0.0.1:${port}`) {
-        ws.connectToServer()
-        return
-      }
-      errors.push(
-        `network: unexpected off-origin WebSocket ${ws.url()} — the smoke test is hermetic`,
-      )
-      void ws.close()
+    await routeContext(ctx, {
+      isLocal: sameOrigin(origin),
+      onRequest: (url) => {
+        for (const entry of requestedIconifyEntries(url)) observed.iconify.add(entry)
+      },
+      onAborted: (request) => aborted.add(request),
+      onUnexpected: (message) => errors.push(`network: ${message}`),
     })
     const page = await ctx.newPage()
     page.on('console', (msg: ConsoleMessage) => {
@@ -342,7 +319,12 @@ async function main() {
   if (skipped.length === 0) {
     for (const entry of staleIconifyEntries(requested)) {
       global.push(
-        `stale Iconify fixture entry "${entry}": no example requested it (scripts/lib/smoke-iconify-fixture.ts)`,
+        `stale Iconify fixture entry "${entry}": no example requested it (scripts/lib/iconify-fixture.mjs)`,
+      )
+    }
+    for (const entry of misfiledAfterFirstPaintEntries(requested)) {
+      global.push(
+        `Iconify fixture entry "${entry}" is listed in AFTER_FIRST_PAINT but a first paint requested it — move it out (scripts/lib/iconify-fixture.mjs)`,
       )
     }
     for (const name of Object.keys(PROBES)) {

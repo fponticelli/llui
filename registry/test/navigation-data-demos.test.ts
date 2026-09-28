@@ -2,10 +2,13 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { component, mountApp } from '@llui/dom'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { chromium, type Browser } from 'playwright'
+import type { Browser } from 'playwright'
 import { compileCandidates, markerName } from '../../scripts/lib/tailwind-compile.mjs'
 import * as registryMedia from '../../examples/registry-demo/src/sections/media'
 import * as baselineData from '../../examples/components-demo/src/sections/data'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const baselineCss = [
   'semantic-tokens.css',
@@ -113,7 +116,7 @@ describe('actual navigation/data demo carousel compositions', () => {
     const compiled = await compileCandidates(candidates(registryHtml))
     expect(compiled.dead).toEqual([])
     registryCss = compiled.css
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
   }, 120_000)
 
   afterAll(async () => {

@@ -95,10 +95,11 @@ Mirror `.github/workflows/ci.yml` **step for step, filters included**. Full deta
 Full detail: `docs/agents/test-durations.md`.
 
 - Workspace `testTimeout` is 30 s. Every vitest config must reach `vitest.shared.ts` (gated by `scripts/test/vitest-config-baseline.test.ts`). `mergeConfig` CONCATENATES `test.include` — override by spreading instead.
+- The per-file duration metric is test BUSY time, `min(sum, span)`: a `describe.concurrent` test's duration includes its queue time, so a raw sum is not a cost.
 - `check:test-durations` is REPORT-ONLY via `continue-on-error` in `ci.yml`. Thresholds (`4x / +400 ms`, quartile spread) are calibrated against measured noise; re-run the sweep in `scripts/lib/test-durations.mjs` before changing them.
 - Expensive fixtures belong in `beforeAll` (60 s `hookTimeout`), but hook time is invisible to the duration report.
 - Browser suites BUILD their fixture once and serve it static (`scripts/lib/prebuilt-fixture.mjs`), never a per-file Vite dev server: on-demand compiles, per-page module fan-out and a shared dependency-optimizer cache all land on the tests under load. Record fast in-page state in-page, never sleep-then-read across a round trip.
-- `pnpm smoke:examples` is hermetic: an undeclared off-origin request FAILS it (`scripts/lib/smoke-network.ts`).
+- `pnpm smoke:examples` AND every test browser are hermetic, through ONE policy and Iconify fixture (`scripts/lib/network-policy.mjs`): tests launch only via `useHermeticBrowser()` (`scripts/lib/hermetic-browser.mjs`, called at collection time; `scripts/test/hermetic-browser-coverage.test.ts` gates it), and an undeclared off-origin request FAILS the smoke or the test, naming the URL.
 - Perf-RATIO tests break on load transients in BOTH directions. Never add `retry` to one; fix the sizes, and measure a faithful slow mutant, not just the healthy arm. Measure through the shipped test, never a replica.
 
 ## Development approach

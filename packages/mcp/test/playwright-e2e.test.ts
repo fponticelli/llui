@@ -5,6 +5,7 @@ import { setTimeout as delay } from 'node:timers/promises'
 import type { Browser, Page } from 'playwright'
 import type { ViteDevServer } from 'vite'
 import { LluiMcpServer } from '../src/index'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
 
 /**
  * End-to-end test for the full MCP auto-connect chain.
@@ -71,6 +72,7 @@ async function loadPlaywright(): Promise<typeof import('playwright') | null> {
 }
 
 const playwright = await loadPlaywright()
+const hermetic = useHermeticBrowser()
 
 interface Harness {
   mcp: LluiMcpServer
@@ -140,7 +142,7 @@ async function setupHarness(): Promise<Harness> {
   const { vite, viteUrl } = await startViteServer()
 
   // 3. Launch Chromium and capture console messages
-  const browser = await playwright.chromium.launch()
+  const browser = await hermetic.launch()
   const page = await browser.newPage()
   const consoleErrors: string[] = []
   let wsErrorCount = 0

@@ -1,7 +1,7 @@
 // @vitest-environment node
 //
 // Same lightweight Playwright pattern as `color-picker-oklch-canvas.browser.
-// test.ts` (no vite dev server, `chromium.launch()` + `page.setContent()`) —
+// test.ts` (no vite dev server, `hermetic.launch()` + `page.setContent()`) —
 // but here to check `colorAt`/`toCss` against what a REAL browser actually
 // PAINTS for a `background: <gradient>`, not just that the string parses.
 //
@@ -14,7 +14,7 @@
 // canvas, then `getImageData` — which IS real Chromium compositing/color
 // management, not a re-implementation of it.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import {
   init,
   toCss,
@@ -22,12 +22,15 @@ import {
   type GradientPickerState,
 } from '../../src/components/gradient-picker'
 import { parseCssColor, cssColorToSrgb, srgbToRgb255 } from '../../src/utils/color'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 let browser: Browser
 let page: Page
 
 beforeAll(async () => {
-  browser = await chromium.launch()
+  browser = await hermetic.launch()
   page = await browser.newPage()
   await page.setContent('<!doctype html><div id="root"></div>')
 })

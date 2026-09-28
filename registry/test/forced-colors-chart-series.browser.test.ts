@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
+import type { Browser, BrowserContext, Page } from 'playwright'
 import type { Alias } from 'vite'
 import { resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../scripts/lib/vite-source-aliases.mjs'
@@ -12,6 +12,9 @@ import {
   paintedColors,
   paintedSpatialSignature,
 } from '../../packages/components/test/styles/pixel-probe'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 // Matches the fixture's SERIES keys (both examples' forced-colors-chart.ts).
 const SERIES_KEYS = ['bar1', 'bar2', 'bar3', 'area1', 'area2', 'area3']
@@ -296,7 +299,7 @@ describe('forced-colors chart series distinctness (real pixels, both paths)', ()
     const [baseline, registryTailwind, launched] = await Promise.all([
       buildExample('examples/components-demo'),
       buildExample('examples/registry-demo'),
-      chromium.launch({ headless: true }),
+      hermetic.launch({ headless: true }),
     ])
     fixtures = [baseline, registryTailwind]
     browser = launched

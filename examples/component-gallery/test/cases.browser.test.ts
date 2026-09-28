@@ -26,7 +26,7 @@
 import { join, relative } from 'node:path'
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { galleryDocumentHref, GALLERY_PATH_SEGMENTS } from '@llui/cli/gallery'
 import { DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT } from '@llui/cli/presentation-scenarios'
 import { formatAxeFinding, runAxe } from './gates/axe'
@@ -59,6 +59,9 @@ import {
   type VisualEnvironment,
   type VisualManifest,
 } from './gates/visual'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const base = inject('galleryBase')
 const CASES = gateCases()
@@ -77,7 +80,7 @@ type VisualMode = 'update' | 'compare' | 'determinism' | 'unavailable'
 let visualMode: VisualMode
 
 beforeAll(async () => {
-  browser = await chromium.launch({ headless: true })
+  browser = await hermetic.launch({ headless: true })
   pool = new DocumentPool(browser, base, 4)
   environment = { browser: browser.version(), platform: process.platform, arch: process.arch }
   visualMode = UPDATE

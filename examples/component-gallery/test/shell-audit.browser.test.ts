@@ -10,7 +10,7 @@
  * (`audit.browser.test.ts`); here axe runs with `iframes: false`.
  */
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import {
   DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
   type PresentationScenarioEnvironment,
@@ -18,13 +18,16 @@ import {
 import { formatAxeFinding, runAxe } from './gates/axe'
 import { DocumentPool } from './gates/document-page'
 import { probeMarkup } from './gates/markup-probe'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const base = inject('galleryBase')
 let browser: Browser
 let pool: DocumentPool
 
 beforeAll(async () => {
-  browser = await chromium.launch({ headless: true })
+  browser = await hermetic.launch({ headless: true })
   pool = new DocumentPool(browser, base, 4)
 })
 afterAll(async () => {

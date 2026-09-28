@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -11,6 +11,9 @@ import type {
   motionProducts,
   transitionProducts,
 } from '../browser/overlay-motion.fixture.js'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../browser')
 const stylesRoot = resolve(import.meta.dirname, '../../src/styles')
@@ -71,7 +74,7 @@ describe('overlay presence motion in Chromium', () => {
           __LLUI_TRANSITIONS__: 'true',
         },
       }),
-      chromium.launch({ headless: true }),
+      hermetic.launch({ headless: true }),
     ])
     fixtureUrl = fixture.url('overlay-motion.fixture.html')
     page = await browser.newPage()

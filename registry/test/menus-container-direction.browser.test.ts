@@ -18,9 +18,12 @@
  * `dispatchEvent`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { prebuildFixture, type PrebuiltFixture } from '../../scripts/lib/prebuilt-fixture.mjs'
 import { resolve } from 'node:path'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const repoRoot = resolve(import.meta.dirname, '../..')
 
@@ -49,7 +52,7 @@ describe('menus under an RTL APP CONTAINER, in both demos (#265 finding 6)', () 
     // every concurrent suite serving the same example (see that module's header).
     // The builds replace the per-demo warm-up page this hook used to load.
     const [launched, built] = await Promise.all([
-      chromium.launch({ headless: true }),
+      hermetic.launch({ headless: true }),
       Promise.all(
         DEMOS.map((demo) =>
           prebuildFixture({ root: resolve(repoRoot, demo.dir), inputs: ['index.html'] }),

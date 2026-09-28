@@ -14,9 +14,12 @@
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { prebuildFixture, type PrebuiltFixture } from '../../scripts/lib/prebuilt-fixture.mjs'
 import { resolve } from 'node:path'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const repoRoot = resolve(import.meta.dirname, '../..')
 
@@ -122,7 +125,7 @@ describe('actual Toast demos in Chromium (#265 task item 1)', () => {
     const [baseline, registry, launched] = await Promise.all([
       buildExample('examples/components-demo'),
       buildExample('examples/registry-demo'),
-      chromium.launch({ headless: true }),
+      hermetic.launch({ headless: true }),
     ])
     builds = [baseline, registry]
     browser = launched

@@ -8,8 +8,11 @@
  * narrow layouts and the keyboard.
  */
 import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest'
-import { chromium, type Browser, type Frame, type Page } from 'playwright'
+import type { Browser, Frame, Page } from 'playwright'
 import { collectCascade, type CascadeInventory } from './cascade-probe'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 // The production build and its preview server are the browser project's
 // shared fixture (`test/gates/global-setup.ts`, #268): built once for every
@@ -18,7 +21,7 @@ const base = inject('galleryBase')
 let browser: Browser
 
 beforeAll(async () => {
-  browser = await chromium.launch({ headless: true })
+  browser = await hermetic.launch({ headless: true })
 })
 
 afterAll(async () => {
