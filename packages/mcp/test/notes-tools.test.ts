@@ -85,6 +85,40 @@ describe('llui_list_notes', () => {
     expect(result.notes).toHaveLength(2)
     expect(result.total).toBe(5)
   })
+
+  it('filters by one kind or several', async () => {
+    createNote(notesRoot, { body: 't', frontmatter: fmBase, noteBody: {} })
+    createNote(notesRoot, {
+      body: 'r',
+      frontmatter: { ...fmBase, kind: 'rect' },
+      noteBody: {},
+    })
+    createNote(notesRoot, {
+      body: 'c',
+      frontmatter: { ...fmBase, kind: 'capture' },
+      noteBody: {},
+    })
+    const one = (await mcp.handleToolCall('llui_list_notes', { kind: 'rect' })) as {
+      notes: Array<{ kind: string }>
+    }
+    expect(one.notes.map((n) => n.kind)).toEqual(['rect'])
+    const several = (await mcp.handleToolCall('llui_list_notes', {
+      kind: ['text', 'capture'],
+    })) as { notes: Array<{ kind: string }> }
+    expect(several.notes.map((n) => n.kind).sort()).toEqual(['capture', 'text'])
+  })
+
+  it('rejects a kind that is not a NoteKind instead of silently matching nothing', async () => {
+    createNote(notesRoot, { body: 't', frontmatter: fmBase, noteBody: {} })
+    // `lasso`/`pin`/`arrow` were advertised by the old tool description but
+    // never existed as NoteKinds.
+    await expect(mcp.handleToolCall('llui_list_notes', { kind: 'lasso' })).rejects.toThrow(
+      /Invalid args for llui_list_notes/,
+    )
+    await expect(
+      mcp.handleToolCall('llui_list_notes', { kind: ['text', 'arrow'] }),
+    ).rejects.toThrow(/Invalid args for llui_list_notes/)
+  })
 })
 
 describe('llui_read_note', () => {

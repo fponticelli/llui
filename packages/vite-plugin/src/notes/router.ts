@@ -319,12 +319,29 @@ export interface ResolvedCliInvocation {
 }
 
 /**
+ * The slice of `RouterConfig` that determines the CLI invocation — exactly the
+ * fields `resolveCliInvocation` reads. A spawner needs nothing else (no notes
+ * root, no event bus), so it asks for nothing else.
+ */
+export type CliInvocationConfig = Pick<
+  RouterConfig,
+  | 'preset'
+  | 'command'
+  | 'args'
+  | 'model'
+  | 'extraArgs'
+  | 'env'
+  | 'promptVia'
+  | 'dangerouslySkipPermissions'
+>
+
+/**
  * Materialize a CLI invocation from a router config. Layers the chosen
  * preset's defaults, the explicit overrides, the model flag, and any
  * `extraArgs`. The prompt itself is appended later (or piped via stdin)
  * depending on `promptVia`.
  */
-export function resolveCliInvocation(config: RouterConfig): ResolvedCliInvocation {
+export function resolveCliInvocation(config: CliInvocationConfig): ResolvedCliInvocation {
   // When the user passes `command` without `preset`, treat it as a
   // fully custom invocation — don't layer in any preset's defaults
   // (default model, default args, default promptVia). They opted out
@@ -361,7 +378,7 @@ export function resolveCliInvocation(config: RouterConfig): ResolvedCliInvocatio
  * `LlmSpawner` so the rest of the router doesn't care which CLI is
  * underneath. Kills the child on timeout and reports `timedOut: true`.
  */
-export function createCliSpawner(config: RouterConfig): LlmSpawner {
+export function createCliSpawner(config: CliInvocationConfig): LlmSpawner {
   const invocation = resolveCliInvocation(config)
   return {
     async spawn({ prompt, cwd, timeoutMs, extraArgs, onStdoutLine }) {
@@ -429,12 +446,7 @@ export function createCliSpawner(config: RouterConfig): LlmSpawner {
  * existing call sites; new code should prefer `createCliSpawner` so
  * preset, model, env etc. propagate consistently.
  */
-export const defaultClaudeSpawner: LlmSpawner = createCliSpawner({
-  notesRoot: '',
-  projectRoot: '',
-  bus: { broadcast: () => {}, subscribe: () => () => {} } as unknown as EventBus,
-  preset: 'claude',
-})
+export const defaultClaudeSpawner: LlmSpawner = createCliSpawner({ preset: 'claude' })
 
 /**
  * Probe whether the given CLI binary is on PATH. We don't care about

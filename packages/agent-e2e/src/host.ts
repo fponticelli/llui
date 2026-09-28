@@ -8,10 +8,11 @@ import {
   type AgentEffect,
   type AgentClient,
 } from '@llui/agent/client'
+import type { RecordedFrame } from './e2e-globals.js'
 
 // ── State / Msg types ─────────────────────────────────────────────────────────
 
-type State = {
+export type State = {
   count: number
   lastDelete: string | null
   agent: {
@@ -21,7 +22,7 @@ type State = {
   }
 }
 
-type Msg =
+export type Msg =
   // ──────────────── annotated variants (exercised by e2e tests) ─────────────
   /** @intent("Increment the counter") */
   | { type: 'inc' }
@@ -282,7 +283,6 @@ AppWithMeta[COMPILER_META_KEYS.schemaHash] = 'e2e-test-hash'
 // attaches its own, and both run in the same synchronous dispatch of the
 // message event — so by the time a test observes a frame here (from a later
 // task), the client has already handled it.
-type RecordedFrame = { t: string } & Record<string, unknown>
 const serverFrames: RecordedFrame[] = []
 const NativeWebSocket = globalThis.WebSocket
 class RecordingWebSocket extends NativeWebSocket {
@@ -332,15 +332,9 @@ client = createAgentClient<State, Msg>({
   },
 })
 
-// Expose globals so the test harness (running in Node via Playwright
-// page.evaluate) can reach in without any in-browser MCP wiring.
-//
-// __lluiE2eClient: lets tests call client.effectHandler() to open a WS
-//   after minting a token — bypasses the "Connect with Claude" button.
-// __lluiE2eHandle: lets tests call handle.getState() to read state.
-// __lluiE2eFrames: the server-frame log above.
-;(globalThis as Record<string, unknown>)['__lluiE2eClient'] = client
-;(globalThis as Record<string, unknown>)['__lluiE2eHandle'] = handle
-;(globalThis as Record<string, unknown>)['__lluiE2eFrames'] = serverFrames
+// Expose the test globals (declared, with their types, in e2e-globals.ts).
+globalThis.__lluiE2eClient = client
+globalThis.__lluiE2eHandle = handle
+globalThis.__lluiE2eFrames = serverFrames
 
 client.start()

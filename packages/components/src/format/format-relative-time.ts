@@ -27,7 +27,7 @@ export function formatRelativeTime(
     numeric: opts.numeric ?? 'auto',
     style: opts.style ?? 'long',
   }
-  const key = cacheKey('rel', locale, intlOpts as Record<string, unknown>)
+  const key = cacheKey('rel', locale, intlOpts)
   const fmt = cached(key, () => new Intl.RelativeTimeFormat(locale, intlOpts))
   return fmt.format(value, unit)
 }

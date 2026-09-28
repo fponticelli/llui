@@ -81,7 +81,7 @@ export function mountSignal(
 
   if ('anchor' in t) {
     const anchor = t.anchor
-    const doc = anchor.ownerDocument as unknown as SignalDoc
+    const doc: SignalDoc = anchor.ownerDocument
     const built = renderSignalTree(doc, build, seed, false, getState, headAnon)
     const parent = anchor.parentNode
     if (!parent)

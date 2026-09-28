@@ -72,4 +72,5 @@ export {
   createWHATWGPairingConnection,
   handleCloudflareUpgrade,
   extractToken,
+  type WhatwgSocket,
 } from '../web/index.js'

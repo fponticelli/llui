@@ -3944,6 +3944,20 @@ export interface ValidationError {
 
 #### Functions
 
+##### `callDebugApiMethod()` from `@llui/dom/debug-collect`
+
+Dispatch a relay call to a method of one component's debug API. The method
+NAME and the ARGS are wire data, so this is the untyped boundary and the one
+place both relays cross it: the name is resolved at runtime, must denote a
+function the API object carries, and may not be an `Object.prototype` member
+(`constructor`, `toString`, … are reachable by name on every object but are
+not debug-API methods). Throws `unknown method: <name>` otherwise — the error
+both relays already surface.
+
+```typescript
+function callDebugApiMethod(api: object, method: string, args: readonly unknown[]): unknown
+```
+
 ##### `callRegistryMethod()` from `@llui/dom/debug-collect`
 
 Dispatch a registry pseudo-method, mirroring the relay call shape.

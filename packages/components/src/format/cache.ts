@@ -18,11 +18,14 @@ export function cached<T>(key: string, create: () => T): T {
   return instance
 }
 
-export function cacheKey(prefix: string, locale: string, opts: Record<string, unknown>): string {
+/** A cache key for a formatter built from `opts` (any `Intl.*Options` object):
+ * its defined entries in key order, so equal options give equal keys whatever
+ * order they were written in. */
+export function cacheKey(prefix: string, locale: string, opts: object): string {
+  const entries: Array<[string, unknown]> = Object.entries(opts)
   let key = `${prefix}:${locale}`
-  for (const k of Object.keys(opts).sort()) {
-    const v = opts[k]
-    if (v !== undefined) key += `:${k}=${v}`
+  for (const [k, v] of entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (v !== undefined) key += `:${k}=${String(v)}`
   }
   return key
 }

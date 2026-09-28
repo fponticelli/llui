@@ -67,6 +67,14 @@ const ALLOWED_BARE_THROWS: Record<string, Array<{ fragment: string; why: string 
         'error frame their protocol already defines. Branding it would leak a ' +
         'framework-fatal into a relay response.',
     },
+    {
+      fragment: 'unknown method:',
+      why:
+        'Same shape as the lookup miss above: `callDebugApiMethod` rejects a relay ' +
+        'method NAME (wire data) that is not a debug-API method. Only the two relays ' +
+        'call it, never a binding, and both turn it into the `unknown method` error ' +
+        'frame they already answered with before the dispatch was shared.',
+    },
   ],
 }
 

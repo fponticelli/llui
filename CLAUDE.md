@@ -105,6 +105,7 @@ Full detail: `docs/agents/tests-and-load.md`.
 - **TDD:** define the type/shape, write failing tests, then implement.
 - Tests live in each package's `test/` folder, not beside sources.
 - **No `any`** unless unavoidable. `as unknown as X` is a smell.
+- **No double assertion (`as unknown as T`, `<T><unknown>x`, `as any as T`) in `packages/*/src`** — use a real type, a checked guard/decoder, or `instanceof` (`scripts/test/no-double-assertion.test.ts`, allowlist empty and closed at both ends).
 - **Nothing is sacred.** No legacy/back-compat concerns. When assumptions change, update `site/content/` (published to [llui.dev](https://llui.dev)).
 - **No shortcuts.** Correctness and developer experience decide, not expedience.
 

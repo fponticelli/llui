@@ -218,15 +218,22 @@ const DEFAULT_CALENDAR: SparklineCalendar = { offsetMinutes: 0, weekStartsOn: 1,
 
 /** Write a bound only when it is finite, so an absent one stays ABSENT rather
  *  than becoming a `undefined`-valued key that JSON turns into `null`. */
-function writeBound(into: Record<string, unknown>, key: string, value: number | undefined): void {
+/** Set the optional numeric field `key` of `into` to `value` when it is a finite
+ * bound, and leave it ABSENT otherwise (an explicit `undefined` would still be
+ * an own key — visible to `in`, spreads and serialization). */
+function writeBound<K extends string>(
+  into: { [P in K]?: number },
+  key: K,
+  value: number | undefined,
+): void {
   const bound = finiteBound(value)
   if (bound !== undefined) into[key] = bound
 }
 
 function normalizeBand(band: SparklineBand | undefined): SparklineBand {
   const out: SparklineBand = {}
-  writeBound(out as Record<string, unknown>, 'low', band?.low)
-  writeBound(out as Record<string, unknown>, 'high', band?.high)
+  writeBound(out, 'low', band?.low)
+  writeBound(out, 'high', band?.high)
   return out
 }
 
@@ -257,9 +264,9 @@ export function init(opts: SparklineInit = {}): SparklineState {
     calendar,
     activeIndex: null,
   }
-  writeBound(state as unknown as Record<string, unknown>, 'now', opts.now)
-  writeBound(state as unknown as Record<string, unknown>, 'min', opts.min)
-  writeBound(state as unknown as Record<string, unknown>, 'max', opts.max)
+  writeBound(state, 'now', opts.now)
+  writeBound(state, 'min', opts.min)
+  writeBound(state, 'max', opts.max)
   return state
 }
 
@@ -293,13 +300,13 @@ export function update(state: SparklineState, msg: SparklineMsg): [SparklineStat
     case 'setNow': {
       const next = { ...state }
       if (msg.at === null) delete next.now
-      else writeBound(next as unknown as Record<string, unknown>, 'now', msg.at)
+      else writeBound(next, 'now', msg.at)
       return [next, []]
     }
     case 'setBand': {
       const band: SparklineBand = {}
-      writeBound(band as Record<string, unknown>, 'low', msg.low ?? undefined)
-      writeBound(band as Record<string, unknown>, 'high', msg.high ?? undefined)
+      writeBound(band, 'low', msg.low ?? undefined)
+      writeBound(band, 'high', msg.high ?? undefined)
       return [{ ...state, band }, []]
     }
     case 'setSize':

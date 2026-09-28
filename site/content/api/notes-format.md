@@ -657,6 +657,15 @@ export interface VerboseNoteBody {
 const NOTE_FILENAME_RE
 ```
 
+### `NOTE_KINDS`
+
+Every {@link NoteKind}, as a runtime list — so a validator (e.g. the MCP
+`llui_list_notes` input schema) enumerates exactly the kinds the type admits.
+
+```typescript
+const NOTE_KINDS
+```
+
 ### `NOTE_SCHEMA_VERSION`
 
 On-disk note-format schema version. Stamped into export bundles and
@@ -1163,6 +1172,17 @@ export interface VerboseNoteBody {
   transitionsInFlight?: Array<{ component: string; name: string; progress: number }>
   foreignInstances?: Array<{ component: string; library: string }>
 }
+```
+
+#### Constants
+
+##### `NOTE_KINDS` from `@llui/notes-format/note-types`
+
+Every {@link NoteKind}, as a runtime list — so a validator (e.g. the MCP
+`llui_list_notes` input schema) enumerates exactly the kinds the type admits.
+
+```typescript
+const NOTE_KINDS
 ```
 
 ### `@llui/notes-format/note-format`

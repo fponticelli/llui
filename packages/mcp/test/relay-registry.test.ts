@@ -54,4 +54,13 @@ describe('relay direct-mode component registry', () => {
     t.connectDirect(a)
     await expect(t.call('__selectComponent', ['nope'])).rejects.toThrow('unknown component: nope')
   })
+
+  it('dispatches API methods in direct mode and rejects names that are not API methods', async () => {
+    const t = relay()
+    t.connectDirect(a)
+    expect(await t.call('getState', [])).toBe('a')
+    for (const name of ['nope', 'constructor', 'toString']) {
+      await expect(t.call(name, []), name).rejects.toThrow(`unknown method: ${name}`)
+    }
+  })
 })

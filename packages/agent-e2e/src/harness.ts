@@ -5,6 +5,7 @@ import {
   defaultRateLimiter,
   type AgentServerHandle,
 } from '@llui/agent/server'
+import type { MintResponse } from '@llui/agent/protocol'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage } from 'node:http'
@@ -20,12 +21,10 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type MintResult = {
-  token: string
-  wsUrl: string
-  lapUrl: string
-  tid: string
-}
+/** The fields of the `/agent/mint` response the harness uses — typed from the
+ * protocol's own envelope, so `token` is the branded `AgentToken` the client's
+ * `AgentOpenWS` effect expects. */
+export type MintResult = Pick<MintResponse, 'token' | 'wsUrl' | 'lapUrl' | 'tid'>
 
 export type E2EContext = {
   browser: Browser
@@ -170,13 +169,9 @@ export async function setup(browserLauncher: BrowserLauncher): Promise<E2EContex
   const page = await browser.newPage()
   await page.goto(`http://localhost:${httpPort}/`)
   // Wait until host.ts has finished bootstrapping and exposed the globals.
-  await page.waitForFunction(
-    () => typeof (window as unknown as Record<string, unknown>)['__lluiE2eClient'] !== 'undefined',
-    undefined,
-    {
-      timeout: 30_000,
-    },
-  )
+  await page.waitForFunction(() => window.__lluiE2eClient !== undefined, undefined, {
+    timeout: 30_000,
+  })
 
   // ── Helper: mint + open WS ────────────────────────────────────────────────
   const mintToken = async (): Promise<MintResult> => {
@@ -189,9 +184,8 @@ export async function setup(browserLauncher: BrowserLauncher): Promise<E2EContex
 
     // Ask the browser's AgentClient to open the WS for this token.
     await page.evaluate(async (b: MintResult) => {
-      const client = (window as unknown as Record<string, unknown>)['__lluiE2eClient'] as {
-        effectHandler: (e: unknown) => Promise<void>
-      }
+      const client = window.__lluiE2eClient
+      if (!client) throw new Error('__lluiE2eClient is not installed')
       await client.effectHandler({ type: 'AgentOpenWS', token: b.token, wsUrl: b.wsUrl })
     }, body)
 

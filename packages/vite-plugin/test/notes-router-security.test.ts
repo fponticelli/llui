@@ -8,10 +8,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { resolveRouterInput } from '../src/index.js'
-import { createEventBus } from '../src/notes/event-bus.js'
 import { resolveCliInvocation } from '../src/notes/router.js'
-
-const bus = createEventBus()
 
 describe('router is opt-in (no default auto-spawn)', () => {
   it('resolves an unset router to null (disabled)', () => {
@@ -42,9 +39,6 @@ describe('router is opt-in (no default auto-spawn)', () => {
 describe('claude preset does not skip permissions by default', () => {
   it('default claude invocation contains no --dangerously-skip-permissions', () => {
     const inv = resolveCliInvocation({
-      notesRoot: '',
-      projectRoot: '',
-      bus,
       preset: 'claude',
     })
     expect(inv.command).toBe('claude')
@@ -53,9 +47,6 @@ describe('claude preset does not skip permissions by default', () => {
 
   it('appends --dangerously-skip-permissions only on explicit opt-in', () => {
     const inv = resolveCliInvocation({
-      notesRoot: '',
-      projectRoot: '',
-      bus,
       preset: 'claude',
       dangerouslySkipPermissions: true,
     })
@@ -64,9 +55,6 @@ describe('claude preset does not skip permissions by default', () => {
 
   it('ignores the opt-in for presets that expose no skip-permissions flag', () => {
     const inv = resolveCliInvocation({
-      notesRoot: '',
-      projectRoot: '',
-      bus,
       preset: 'gemini',
       dangerouslySkipPermissions: true,
     })

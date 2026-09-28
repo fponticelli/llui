@@ -24129,8 +24129,12 @@ function cached<T>(key: string, create: () => T): T
 
 ##### `cacheKey()` from `@llui/components/format/cache`
 
+A cache key for a formatter built from `opts` (any `Intl.*Options` object):
+its defined entries in key order, so equal options give equal keys whatever
+order they were written in.
+
 ```typescript
-function cacheKey(prefix: string, locale: string, opts: Record<string, unknown>): string
+function cacheKey(prefix: string, locale: string, opts: object): string
 ```
 
 ### `@llui/components/format/defaults`

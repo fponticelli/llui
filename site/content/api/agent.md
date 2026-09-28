@@ -465,7 +465,7 @@ EventEmitter API (`on('message', ...)`) rather than
 the `ws` library path.
 
 ```typescript
-function createWHATWGPairingConnection(socket: WebSocket): PairingConnection
+function createWHATWGPairingConnection(socket: WhatwgSocket): PairingConnection
 ```
 
 ### `decodeFromWire()`
@@ -2657,6 +2657,25 @@ export interface TokenStore {
 }
 ```
 
+### `WhatwgSocket`
+
+The part of a WHATWG `WebSocket` the web adapters use. The global `WebSocket`
+satisfies it structurally; so does a Cloudflare `WebSocketPair` half or a
+Deno upgraded socket, without either being asserted to be a DOM `WebSocket`.
+A message's `data` is `unknown` because the platform types it `any`: the
+adapter narrows it (string, `ArrayBuffer`, or a byte view) before decoding.
+
+```typescript
+export interface WhatwgSocket {
+  send(data: string): void
+  close(): void
+  addEventListener(type: 'message', listener: (ev: { readonly data: unknown }) => void): void
+  addEventListener(type: 'close', listener: () => void): void
+  /** Used by the Deno upgrade handler, which registers the pairing on `open`. */
+  addEventListener(type: 'open', listener: () => void, options?: { readonly once?: boolean }): void
+}
+```
+
 ## Classes
 
 ### `AgentPairingDurableObject`
@@ -4431,7 +4450,7 @@ EventEmitter API (`on('message', ...)`) rather than
 the `ws` library path.
 
 ```typescript
-function createWHATWGPairingConnection(socket: WebSocket): PairingConnection
+function createWHATWGPairingConnection(socket: WhatwgSocket): PairingConnection
 ```
 
 ##### `extractToken()` from `@llui/agent/server/web`
@@ -4487,6 +4506,27 @@ Deno.serve(async (req) => {
 function handleDenoUpgrade(req: Request, agent: AgentCoreHandle): Promise<Response>
 ```
 
+#### Interfaces
+
+##### `WhatwgSocket` from `@llui/agent/server/web`
+
+The part of a WHATWG `WebSocket` the web adapters use. The global `WebSocket`
+satisfies it structurally; so does a Cloudflare `WebSocketPair` half or a
+Deno upgraded socket, without either being asserted to be a DOM `WebSocket`.
+A message's `data` is `unknown` because the platform types it `any`: the
+adapter narrows it (string, `ArrayBuffer`, or a byte view) before decoding.
+
+```typescript
+export interface WhatwgSocket {
+  send(data: string): void
+  close(): void
+  addEventListener(type: 'message', listener: (ev: { readonly data: unknown }) => void): void
+  addEventListener(type: 'close', listener: () => void): void
+  /** Used by the Deno upgrade handler, which registers the pairing on `open`. */
+  addEventListener(type: 'open', listener: () => void, options?: { readonly once?: boolean }): void
+}
+```
+
 ### `@llui/agent/server/cloudflare`
 
 #### Functions
@@ -4506,7 +4546,7 @@ EventEmitter API (`on('message', ...)`) rather than
 the `ws` library path.
 
 ```typescript
-function createWHATWGPairingConnection(socket: WebSocket): PairingConnection
+function createWHATWGPairingConnection(socket: WhatwgSocket): PairingConnection
 ```
 
 ##### `extractToken()` from `@llui/agent/server/cloudflare`
@@ -4628,6 +4668,25 @@ export interface MinimalDurableObjectNamespace {
 ```typescript
 export interface MinimalDurableObjectStub {
   fetch(req: Request): Promise<Response>
+}
+```
+
+##### `WhatwgSocket` from `@llui/agent/server/cloudflare`
+
+The part of a WHATWG `WebSocket` the web adapters use. The global `WebSocket`
+satisfies it structurally; so does a Cloudflare `WebSocketPair` half or a
+Deno upgraded socket, without either being asserted to be a DOM `WebSocket`.
+A message's `data` is `unknown` because the platform types it `any`: the
+adapter narrows it (string, `ArrayBuffer`, or a byte view) before decoding.
+
+```typescript
+export interface WhatwgSocket {
+  send(data: string): void
+  close(): void
+  addEventListener(type: 'message', listener: (ev: { readonly data: unknown }) => void): void
+  addEventListener(type: 'close', listener: () => void): void
+  /** Used by the Deno upgrade handler, which registers the pairing on `open`. */
+  addEventListener(type: 'open', listener: () => void, options?: { readonly once?: boolean }): void
 }
 ```
 
