@@ -8,6 +8,7 @@
 // exactly the drift this module exists to make impossible.
 import { afterEach, describe, expect, it } from 'vitest'
 import {
+  callDebugApiMethod,
   callRegistryMethod,
   collectComponentInfo,
   collectDebugSnapshot,
@@ -285,6 +286,29 @@ describe('component registry resolver', () => {
       active: 'A',
     })
     expect(callRegistryMethod(acc, '__selectComponent', ['B'])).toEqual({ active: 'B' })
+  })
+
+  it('dispatches a debug-API method by name with the API as `this`', () => {
+    const calls: unknown[][] = []
+    const api = {
+      tag: 'self',
+      getState(this: { tag: string }) {
+        return this.tag
+      },
+      send(...args: unknown[]) {
+        calls.push(args)
+      },
+    }
+    expect(callDebugApiMethod(api, 'getState', [])).toBe('self')
+    expect(callDebugApiMethod(api, 'send', [{ type: 'x' }, 2])).toBeUndefined()
+    expect(calls).toEqual([[{ type: 'x' }, 2]])
+  })
+
+  it('rejects names that are not debug-API methods, Object.prototype members included', () => {
+    const api = { getState: () => 1, notAFunction: 3 }
+    for (const name of ['nope', 'notAFunction', 'constructor', 'toString', 'hasOwnProperty']) {
+      expect(() => callDebugApiMethod(api, name, []), name).toThrow(`unknown method: ${name}`)
+    }
   })
 
   it('globalRegistryAccess reads and writes the runtime globals', () => {

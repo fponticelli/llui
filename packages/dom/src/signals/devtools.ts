@@ -9,10 +9,10 @@
 
 import { resolvePath } from './mask.js'
 import {
+  callDebugApiMethod,
   callRegistryMethod,
   globalRegistryAccess,
   isRegistryMethod,
-  type RegistryMethod,
 } from './debug-collect.js'
 import type { LifetimeNode } from '../types.js'
 import type { EachDiff } from '../tracking/each-diff.js'
@@ -432,7 +432,8 @@ let relayConnected = false
 
 interface RelayRequest {
   id: string
-  method: keyof LluiDebugAPI | RegistryMethod
+  /** Wire data: a `LluiDebugAPI` method or a registry pseudo-method, checked at dispatch. */
+  method: string
   args: unknown[]
 }
 
@@ -461,14 +462,8 @@ function handleRelayMessage(ws: WebSocket, event: MessageEvent): void {
     ws.send(JSON.stringify({ id: req.id, error: '__lluiDebug not available' }))
     return
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const fn = (api as any)[req.method]
-  if (typeof fn !== 'function') {
-    ws.send(JSON.stringify({ id: req.id, error: `unknown method: ${req.method}` }))
-    return
-  }
   try {
-    const result = fn.apply(api, req.args ?? [])
+    const result = callDebugApiMethod(api, req.method, req.args ?? [])
     ws.send(JSON.stringify({ id: req.id, result: result ?? null }))
   } catch (e) {
     ws.send(JSON.stringify({ id: req.id, error: e instanceof Error ? e.message : String(e) }))

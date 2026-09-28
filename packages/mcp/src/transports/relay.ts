@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import type { LluiDebugAPI } from '@llui/dom'
 import {
+  callDebugApiMethod,
   callRegistryMethod,
   globalRegistryAccess,
   isRegistryMethod,
@@ -438,9 +439,7 @@ export class WebSocketRelayTransport implements RelayTransport {
       if (isRegistryMethod(method)) {
         return callRegistryMethod(this.registryAccess, method, args)
       }
-      const fn = (this.directApi as unknown as Record<string, unknown>)[method]
-      if (typeof fn !== 'function') throw new Error(`unknown method: ${method}`)
-      return (fn as (...a: unknown[]) => unknown).apply(this.directApi, args)
+      return callDebugApiMethod(this.directApi, method, args)
     }
     if (!this.browserWs) {
       // Caller will typically catch + surface the diagnostic via the
