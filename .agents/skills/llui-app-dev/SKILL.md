@@ -105,6 +105,9 @@ see hand-written `signalText`/`signalEach`/`signalShow` in app code, that's a sm
 There is **no `.select`**. You cannot call `.at()` on a `.map()` result (compile error) —
 including the narrowed param a `show`/`branch` arm receives when the condition is a `.map`
 or `derived` (the param IS that signal): read its fields with `.map((v) => v.field)`.
+A `show` arm's narrowed param is non-null only while the arm is mounted: a handler that
+reads it after its own `send()` closed the arm (or a timer that fires later) throws — read
+the condition signal there instead (`cond.peek()`) and handle `null`.
 Combine multiple signals with `derived(a, b, fn)` / `derived([a, b], fn)` (a module
 import, not a handle method). Reactive slots take a `Signal`, a `.map`, or a plain value.
 
