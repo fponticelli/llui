@@ -44,6 +44,7 @@ const DIRECT_EXPORTS = [
   'PresentationScenarioEnvironmentAxis',
   'PresentationScenarioError',
   'PresentationScenarioErrorCode',
+  'PresentationScenarioFamilyIds',
   'PresentationScenarioJson',
   'PresentationScenarioJsonSnapshot',
   'PresentationScenarioPath',

@@ -158,6 +158,22 @@ Gallery and visual-regression consumers import the browser-safe protocol directl
 source of product metadata. A family supplies semantic cases keyed by the contract's
 `scenarioId`, and `compileScenarioFamily` performs the exact join in canonical contract order.
 
+**The typed join is exact against the family's literal scenario ids.** `compileScenarioFamily`
+takes the family as a `PresentationScenarioFamilyIds` — `{ family, scenarioIds }` with LITERAL
+ids (`as const`) — and requires the definitions' keys to EQUAL `scenarioIds`: a missing key and
+an extra key are both compile errors, so the returned catalog's `scenarioId` union is provably
+the set of scenarios it carries. Keying exactness by the definitions' own type is not enough and
+was unsound: an object with more keys is assignable, with no cast, to a type with fewer (width
+subtyping), so a value typed `{ 'component:a': … }` could carry `'component:b'` too, pass runtime
+validation (it is a real scenario of the family) and compile into a catalog whose union omitted a
+scenario it carried. Against the family's ids, that narrowed type is MISSING `'component:b'`; and
+the ids are cross-checked against the contract at runtime, so ids that omit a contract scenario
+throw `invalid-definitions` instead of typing it away. `string` ids prove nothing and are a
+compile error — decode such input with `decodeScenarioFamily`. In this repository the ids are
+generated from `registry/registry.json` (`packages/components/test/styles/presentation-scenario-ids.ts`,
+written by `pnpm build:registry` and drift-gated by `pnpm check:generated`), so the contract stays
+the one inventory.
+
 **This is a deliberate, final API split, not an in-progress one:** `compileScenarioFamily` and
 `resolveScenarioSelection` require a STATICALLY KNOWN `Definitions` literal — there is no
 `unknown` fallthrough, so an invalid literal (an extra field on a case, an unrecognized
@@ -274,12 +290,14 @@ peek rejects an over-long array before ever enumerating its keys, and a sparse a
 missing index is found by walking only its real own keys (in the order the platform guarantees
 they arrive), never by scanning `0..length`.
 
-`resolveScenarioSelection` skips re-decoding a catalog THIS MODULE produced and the caller still
-holds a live reference to (tracked by object identity, never by structural shape — a
-`JSON.parse(JSON.stringify(catalog))` copy is a different object and is always decoded and
-integrity-checked in full). The contract integrity cross-check still always runs regardless,
-because a cached catalog can legitimately be resolved against a different (e.g. stale) contract
-than the one it was compiled against.
+`resolveScenarioSelection` accepts only a catalog THIS MODULE produced and the caller still
+holds a live reference to (tracked by object identity, never by structural shape), and skips
+re-decoding it. A typed catalog's types are earned by being compiled, so a structurally identical
+copy — a `JSON.parse(JSON.stringify(catalog))`, or a `structuredClone`, which even keeps the
+static type — is refused with `invalid-catalog`; `decodeScenarioSelection` decodes and
+integrity-checks such a copy in full and returns the erased resolution. The contract integrity
+cross-check always runs regardless, because a cached catalog can legitimately be resolved
+against a different (e.g. stale) contract than the one it was compiled against.
 
 Source case objects are exact protocol data: `id`, `label`, `input`, `environmentAxes`, and the
 optional `copiedArtifactNames` are the only fields. Renderer adapters live in each app as
@@ -314,7 +332,10 @@ import {
 declare const contract: ProductContract
 declare const host: HTMLElement
 
-const catalog = compileScenarioFamily(contract, 'menus-overlays', {
+// The family's ProductContract scenario ids, as literal types (generated from the contract).
+const MENUS_OVERLAYS = { family: 'menus-overlays', scenarioIds: ['component:dialog'] } as const
+
+const catalog = compileScenarioFamily(contract, MENUS_OVERLAYS, {
   'component:dialog': {
     defaultCaseId: 'open',
     cases: [{ id: 'open', label: 'Open', input: { open: true }, environmentAxes: ['theme'] }],

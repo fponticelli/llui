@@ -9,6 +9,7 @@ import {
   applicableFormsControlsScenarioIds,
   compileFormsControlsCatalog,
 } from './forms-controls-scenarios'
+import { PRESENTATION_SCENARIO_IDS } from './presentation-scenario-ids'
 
 const contract = loadProductContract()
 
@@ -34,8 +35,13 @@ describe('forms-controls presentation scenarios (#267)', () => {
   })
 
   it('derives cases and axes from the family table, not a second list', () => {
-    for (const [scenarioId, scenario] of Object.entries(FORM_CONTROL_SCENARIOS)) {
-      const definition = FORMS_CONTROLS_DEFINITIONS[scenarioId]!
+    // The family table has exactly the contract's ids (indexing it by every id below is checked
+    // at compile time; this rules out an EXTRA row the definitions would silently skip).
+    const scenarioIds = PRESENTATION_SCENARIO_IDS['forms-controls'].scenarioIds
+    expect(Object.keys(FORM_CONTROL_SCENARIOS).sort()).toEqual([...scenarioIds].sort())
+    for (const scenarioId of scenarioIds) {
+      const scenario = FORM_CONTROL_SCENARIOS[scenarioId]
+      const definition = FORMS_CONTROLS_DEFINITIONS[scenarioId]
       const states: ReadonlySet<string> = new Set(scenario.states)
       expect(definition.defaultCaseId, scenarioId).toBe('default')
       expect(

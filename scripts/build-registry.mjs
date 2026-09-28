@@ -11,9 +11,17 @@
 // `@llui/<pkg>@workspace:^` becomes `@llui/<pkg>@^<version>`, the workspace
 // package's version, which `llui add` enforces as a minimum (see
 // `scripts/lib/registry-dependencies.mjs`).
+//
+// It also emits the ProductContract's per-family scenario ids as a literal-typed
+// TypeScript module (`scripts/lib/presentation-scenario-ids.mjs`), which the
+// typed presentation-scenario compile path is exact against.
 import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  PRESENTATION_SCENARIO_IDS_PATH,
+  renderPresentationScenarioIds,
+} from './lib/presentation-scenario-ids.mjs'
 import { pinItemDependencies, workspaceVersions } from './lib/registry-dependencies.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -72,3 +80,10 @@ for (const sourceItem of registry.items) {
 
 await writeFile(path.join(OUT, 'registry.json'), JSON.stringify(index, null, 2) + '\n', 'utf8')
 console.log(`registry: wrote ${registry.items.length + 1} files to site/public/r`)
+
+await writeFile(
+  path.join(ROOT, PRESENTATION_SCENARIO_IDS_PATH),
+  await renderPresentationScenarioIds(registry.productContract, ROOT),
+  'utf8',
+)
+console.log(`registry: wrote ${PRESENTATION_SCENARIO_IDS_PATH}`)

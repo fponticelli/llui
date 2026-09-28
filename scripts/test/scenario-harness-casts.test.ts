@@ -42,7 +42,7 @@ const HARNESS_FILES: readonly RegExp[] = [
 ]
 
 /** Exact, not a floor: a harness that silently drops out of the scan is a finding too. */
-const EXPECTED_FILE_COUNT = 67
+const EXPECTED_FILE_COUNT = 69
 
 function harnessFiles(): string[] {
   return execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard'], {

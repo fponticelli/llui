@@ -18,15 +18,19 @@
 
 import { execFileSync } from 'node:child_process'
 
-// Generated regions that live OUTSIDE `site/`. `--strict` diffs these too, because a
-// whole-`site/` diff cannot see them (#269). Keep in sync with COMPONENT_DOC_TARGETS in
-// `site/src/component-docs.ts`; `site/test/component-docs.test.ts` asserts it.
+// Generated files and regions that live OUTSIDE `site/`. `--strict` diffs these too, because a
+// whole-`site/` diff cannot see them (#269). The Markdown targets must stay in sync with
+// COMPONENT_DOC_TARGETS in `site/src/component-docs.ts`; `site/test/component-docs.test.ts`
+// asserts it.
 const OUTSIDE_SITE = [
   'README.md',
   'packages/components/README.md',
   'packages/cli/README.md',
   '.claude/skills/llui-app-dev/references/components.md',
   '.agents/skills/llui-app-dev/references/components.md',
+  // The contract's per-family scenario ids as literal types, written by
+  // `scripts/build-registry.mjs` (`scripts/lib/presentation-scenario-ids.mjs`).
+  'packages/components/test/styles/presentation-scenario-ids.ts',
 ]
 
 // Every path the site's `generate` script writes. Keep in sync with

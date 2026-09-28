@@ -31,6 +31,7 @@ import {
   type PresentationScenarioDefinition,
   type PresentationScenarioEnvironmentAxis,
 } from '@llui/cli/presentation-scenarios'
+import { PRESENTATION_SCENARIO_IDS } from './presentation-scenario-ids'
 import type { ProductContract } from '@llui/cli'
 import {
   FORM_CONTROL_SCENARIOS,
@@ -158,22 +159,58 @@ function definitionFor(scenario: FormControlScenario): PresentationScenarioDefin
   return { defaultCaseId: 'default', cases }
 }
 
-/** Protocol definitions, keyed by ProductContract `scenarioId`. */
-export const FORMS_CONTROLS_DEFINITIONS: Readonly<
-  Record<string, ReturnType<typeof definitionFor>>
-> = Object.fromEntries(
-  Object.entries(FORM_CONTROL_SCENARIOS).map(([scenarioId, scenario]) => [
-    scenarioId,
-    definitionFor(scenario),
-  ]),
-)
-
 export type FormsControlsScenarioId = keyof typeof FORM_CONTROL_SCENARIOS & string
-export type FormsControlsCatalog = CompiledPresentationScenarioFamily
+
+function definitionOf(scenarioId: FormsControlsScenarioId): ReturnType<typeof definitionFor> {
+  return definitionFor(FORM_CONTROL_SCENARIOS[scenarioId])
+}
+
+/**
+ * Protocol definitions, keyed by ProductContract `scenarioId`. The KEYS are spelled out, once,
+ * because `compileScenarioFamily` is exact: it checks them, at compile time, against the
+ * family's contract ids (`presentation-scenario-ids.ts`, generated from the contract), so a
+ * missing or stale key is a type error here rather than a key an `Object.fromEntries` record
+ * would have hidden behind `string`. The CASES are still derived from `FORM_CONTROL_SCENARIOS`.
+ */
+export const FORMS_CONTROLS_DEFINITIONS = {
+  'component:angle-slider': definitionOf('component:angle-slider'),
+  'component:checkbox': definitionOf('component:checkbox'),
+  'component:field': definitionOf('component:field'),
+  'component:fieldset': definitionOf('component:fieldset'),
+  'component:form': definitionOf('component:form'),
+  'component:listbox': definitionOf('component:listbox'),
+  'component:number-input': definitionOf('component:number-input'),
+  'component:password-input': definitionOf('component:password-input'),
+  'component:pin-input': definitionOf('component:pin-input'),
+  'component:radio-group': definitionOf('component:radio-group'),
+  'component:rating-group': definitionOf('component:rating-group'),
+  'component:search-field': definitionOf('component:search-field'),
+  'component:slider': definitionOf('component:slider'),
+  'component:switch': definitionOf('component:switch'),
+  'component:tags-input': definitionOf('component:tags-input'),
+  'component:theme-switch': definitionOf('component:theme-switch'),
+  'component:toggle': definitionOf('component:toggle'),
+  'component:toggle-group': definitionOf('component:toggle-group'),
+  'pattern:form-field': definitionOf('pattern:form-field'),
+  'registry:button': definitionOf('registry:button'),
+  'registry:button-group': definitionOf('registry:button-group'),
+  'registry:input': definitionOf('registry:input'),
+  'registry:input-group': definitionOf('registry:input-group'),
+  'registry:label': definitionOf('registry:label'),
+  'registry:textarea': definitionOf('registry:textarea'),
+} as const
+
+export type FormsControlsCatalog = CompiledPresentationScenarioFamily<
+  typeof FORMS_CONTROLS_DEFINITIONS
+>
 
 /** Compile against a real ProductContract; throws on any key disagreement. */
 export function compileFormsControlsCatalog(contract: ProductContract): FormsControlsCatalog {
-  return compileScenarioFamily(contract, 'forms-controls', FORMS_CONTROLS_DEFINITIONS)
+  return compileScenarioFamily(
+    contract,
+    PRESENTATION_SCENARIO_IDS['forms-controls'],
+    FORMS_CONTROLS_DEFINITIONS,
+  )
 }
 
 function isVisuallyApplicable(mode: string): boolean {

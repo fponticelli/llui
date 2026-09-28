@@ -41,6 +41,7 @@ import {
   type PresentationScenarioEnvironmentAxis,
   type ResolvedPresentationScenarioSelection,
 } from '@llui/cli/presentation-scenarios'
+import { PRESENTATION_SCENARIO_IDS } from './presentation-scenario-ids'
 import type { ProductContract, ProductEntry } from '@llui/cli'
 import { axes } from './scenario-field-mutations'
 
@@ -1442,7 +1443,11 @@ export { resolveScenarioSelection }
 export type { PresentationScenarioEnvironment }
 
 export function compileSpecializedToolsCatalog(contract: ProductContract): SpecializedToolsCatalog {
-  return compileScenarioFamily(contract, 'specialized-tools', SPECIALIZED_TOOLS_DEFINITIONS)
+  return compileScenarioFamily(
+    contract,
+    PRESENTATION_SCENARIO_IDS['specialized-tools'],
+    SPECIALIZED_TOOLS_DEFINITIONS,
+  )
 }
 
 // ─── The family and its classification ─────────────────────────────────────

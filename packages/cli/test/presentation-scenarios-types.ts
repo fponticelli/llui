@@ -9,11 +9,24 @@ import {
   type PresentationScenarioCase,
   type PresentationScenarioDefinitions,
   type PresentationScenarioEnvironmentAxis,
+  type PresentationScenarioFamilyIds,
   type PresentationScenarioJsonSnapshot,
   type ResolvedPresentationScenarioSelection,
 } from '../src/presentation-scenarios.js'
 
 declare const contract: ProductContract
+
+// The literal id sets the typed path is exact against (test/presentation-scenarios-exact-ids-
+// types.ts pins the exactness itself). Each gate below uses the set whose keys its definitions
+// already match, so a gate can only fire for the reason it names.
+const MENUS_OVERLAYS = {
+  family: 'menus-overlays',
+  scenarioIds: ['component:dialog', 'component:menu'],
+} as const satisfies PresentationScenarioFamilyIds
+const DIALOG = {
+  family: 'menus-overlays',
+  scenarioIds: ['component:dialog'],
+} as const satisfies PresentationScenarioFamilyIds
 
 type Equal<Left, Right> =
   (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
@@ -52,7 +65,7 @@ const definitions = {
   },
 } as const
 
-const compiled = compileScenarioFamily(contract, 'menus-overlays', definitions)
+const compiled = compileScenarioFamily(contract, MENUS_OVERLAYS, definitions)
 type Scenario = (typeof compiled)['scenarios'][number]
 type DialogScenario = Extract<Scenario, { readonly scenarioId: 'component:dialog' }>
 type MenuScenario = Extract<Scenario, { readonly scenarioId: 'component:menu' }>
@@ -113,7 +126,7 @@ declare const serializedSelection: unknown
 // below instead. Short names keep each call on one line so prettier cannot separate the
 // `@ts-expect-error` directive from the line it applies to.
 // @ts-expect-error see above
-const rejected1 = compileScenarioFamily(contract, 'menus-overlays', serializedDefinitions)
+const rejected1 = compileScenarioFamily(contract, DIALOG, serializedDefinitions)
 // @ts-expect-error see above
 const rejected2 = resolveScenarioSelection(contract, serializedCatalog, serializedSelection)
 void [rejected1, rejected2]
@@ -148,7 +161,7 @@ const mutableDefinitions = {
   },
 } satisfies PresentationScenarioDefinitions
 
-const mutableCatalog = compileScenarioFamily(contract, 'menus-overlays', mutableDefinitions)
+const mutableCatalog = compileScenarioFamily(contract, DIALOG, mutableDefinitions)
 const mutableCase = mutableCatalog.scenarios[0]!.cases[0]!
 // @ts-expect-error emitted JSON arrays are recursively readonly without requiring `as const`
 mutableCase.input.nested.labels.push('Grace')
@@ -183,7 +196,7 @@ const extraCaseFieldDefinitions = {
   },
 }
 // @ts-expect-error an extra field on a case is rejected, not silently accepted as renderer data
-compileScenarioFamily(contract, 'menus-overlays', extraCaseFieldDefinitions)
+compileScenarioFamily(contract, DIALOG, extraCaseFieldDefinitions)
 
 // `as const` on BOTH the control and the gate: without it, `environmentAxes: ['theme']` infers
 // as plain `string[]`, which fails to compile for EVERY value (valid or not) — a bare
@@ -196,7 +209,7 @@ const validAxisDefinitions = {
     cases: [{ id: 'open', label: 'Open', input: null, environmentAxes: ['theme'] }],
   },
 } as const
-compileScenarioFamily(contract, 'menus-overlays', validAxisDefinitions) // passing control
+compileScenarioFamily(contract, DIALOG, validAxisDefinitions) // passing control
 
 const unknownAxisDefinitions = {
   'component:dialog': {
@@ -206,7 +219,7 @@ const unknownAxisDefinitions = {
 } as const
 // @ts-expect-error an unknown environmentAxes value is rejected — the control above proves this
 // fails because 'sepia' is invalid, not merely because the array is a non-const literal
-compileScenarioFamily(contract, 'menus-overlays', unknownAxisDefinitions)
+compileScenarioFamily(contract, DIALOG, unknownAxisDefinitions)
 
 // `keyof` a UNION type is the INTERSECTION of its members' keys, so an
 // excess field on only ONE arm of a union-typed cases array used to be invisible to the
@@ -226,7 +239,7 @@ const unionCaseDefinitions = {
   'component:dialog': { defaultCaseId: 'open', cases: unionCases },
 }
 // @ts-expect-error an excess field on only one arm of a union-typed cases array is still rejected
-compileScenarioFamily(contract, 'menus-overlays', unionCaseDefinitions)
+compileScenarioFamily(contract, DIALOG, unionCaseDefinitions)
 
 // `ExactDefinition` guards the SAME hole ONE LEVEL UP from `ExactCase` above: a bare
 // `Definition extends {...}` would distribute over a union `Definition` (the bad arm's `never`
@@ -246,9 +259,9 @@ declare const unionDefinitionWithExtra: UnionDefinitionBase | UnionDefinitionWit
 // Passing control: the same (non-union) shape with no excess field compiles clean — proves the
 // gate below fires because of the excess field on the union's second arm, not because a
 // definition of this general shape is rejected outright.
-compileScenarioFamily(contract, 'menus-overlays', { 'component:dialog': unionDefinitionBase })
+compileScenarioFamily(contract, DIALOG, { 'component:dialog': unionDefinitionBase })
 // @ts-expect-error an excess field on only one arm of a union-typed definition is still rejected
-compileScenarioFamily(contract, 'menus-overlays', { 'component:dialog': unionDefinitionWithExtra })
+compileScenarioFamily(contract, DIALOG, { 'component:dialog': unionDefinitionWithExtra })
 
 // A KNOWN, documented residual gap — once a value is
 // WIDENED to (or simply annotated as) `PresentationScenarioCase`, its excess fields are
@@ -273,7 +286,7 @@ const rawWidenedCase = {
 const widenedCase: PresentationScenarioCase = rawWidenedCase
 // Compiles — this is the documented gap above, not a `@ts-expect-error` gate: widening to the
 // interface type erases the excess field from what the type system can see.
-compileScenarioFamily(contract, 'menus-overlays', {
+compileScenarioFamily(contract, DIALOG, {
   'component:dialog': { defaultCaseId: 'open', cases: [widenedCase] },
 })
 
@@ -286,4 +299,4 @@ const functionInputDefinitions = {
   },
 }
 // @ts-expect-error a function in `input` is rejected — PresentationScenarioJson excludes it
-compileScenarioFamily(contract, 'menus-overlays', functionInputDefinitions)
+compileScenarioFamily(contract, DIALOG, functionInputDefinitions)
