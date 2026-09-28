@@ -129,6 +129,27 @@ llui add sonner         # copies the Toast skin; its machine is @llui/components
 
 <!-- product-contract:name-differences:end -->
 
+## Validating a product contract in the browser
+
+`@llui/cli/product-contract` is the browser-safe home of the contract's schema: it imports only
+`zod` and the dependency-free structural types, never the Node-backed modules the root entry
+carries. `parseProductContract(value, source)` validates an untyped value (a JSON import of
+`registry.json`, a fetched index) through the SAME `ProductContractSchema` `llui` reads a
+registry's `productContract` with, and throws a `ProductContractError` whose message names
+`source` and the JSON path of every violation — so an app never has to narrow the JSON with a
+cast.
+
+```ts
+import { parseProductContract } from '@llui/cli/product-contract'
+
+declare const registryJson: { readonly productContract: unknown }
+
+const contract = parseProductContract(registryJson.productContract, 'registry.json#productContract')
+// Invalid ProductContract in registry.json#productContract (1 issue):
+//   - $.entries[0].scenarioId: Invalid input: expected string, received number
+void contract
+```
+
 ## Presentation scenario protocol
 
 Gallery and visual-regression consumers import the browser-safe protocol directly from

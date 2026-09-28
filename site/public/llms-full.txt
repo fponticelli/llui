@@ -54476,6 +54476,20 @@ is part of the NAME, so the separator is the first `@` after position 0.
 function parseDependencySpec(spec: string): { name: string; range: string | null }
 ```
 
+### `parseProductContract()`
+
+Validate a value received from an untyped boundary (a JSON import, a fetched `registry.json`)
+as a `ProductContract`, through the ONE authoritative schema `llui` itself reads a registry's
+`productContract` with (`RegistrySchema`). There is no second validator: this only turns the
+schema's failure into a `ProductContractError` that names `source` and the exact path of every
+violation. Browser-safe — this module imports nothing but `zod` and the structural types — so
+an app validates a bundled contract through the `@llui/cli/product-contract` subpath instead of
+narrowing the JSON with a cast.
+
+```typescript
+function parseProductContract(value: unknown, source: string): ProductContract
+```
+
 ### `parseVersion()`
 
 Parse a FULL version (`1.2.3`, `1.2.3-rc.1+build`), or `null`.
@@ -54905,6 +54919,20 @@ export interface VersionMismatch {
 
 ## Classes
 
+### `ProductContractError`
+
+A value that is not a valid `ProductContract`: `source` names where it came from, and `issues`
+lists every violation as `<JSON path>: <reason>` in the schema's own traversal order.
+
+```typescript
+class ProductContractError extends Error {
+  name
+  source: string
+  issues: readonly string[]
+  constructor(source: string, issues: readonly string[])
+}
+```
+
 ### `VersionMismatchError`
 
 Thrown by `add()` BEFORE anything is written when an installed `@llui/*`
@@ -55298,6 +55326,363 @@ The source-registry spec `scripts/build-registry.mjs` replaces with `^<workspace
 
 ```typescript
 const WORKSPACE_SPEC
+```
+
+### `@llui/cli/product-contract`
+
+#### Functions
+
+##### `parseProductContract()` from `@llui/cli/product-contract`
+
+Validate a value received from an untyped boundary (a JSON import, a fetched `registry.json`)
+as a `ProductContract`, through the ONE authoritative schema `llui` itself reads a registry's
+`productContract` with (`RegistrySchema`). There is no second validator: this only turns the
+schema's failure into a `ProductContractError` that names `source` and the exact path of every
+violation. Browser-safe — this module imports nothing but `zod` and the structural types — so
+an app validates a bundled contract through the `@llui/cli/product-contract` subpath instead of
+narrowing the JSON with a cast.
+
+```typescript
+function parseProductContract(value: unknown, source: string): ProductContract
+```
+
+##### `resolveCopiedArtifact()` from `@llui/cli/product-contract`
+
+Resolve an `llui add` name without confusing it with an equal package name.
+
+```typescript
+function resolveCopiedArtifact(contract: ProductContract, target: string): ResolvedCopiedArtifact | undefined
+```
+
+##### `resolveProductIdentity()` from `@llui/cli/product-contract`
+
+```typescript
+function resolveProductIdentity(contract: ProductContract, name: string): ResolvedProductIdentity | undefined
+```
+
+#### Types
+
+##### `PresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export type PresentationCoverage =
+  | StyledPresentationCoverage
+  | PartialPresentationCoverage
+  | ComposedPresentationCoverage
+  | StylelessPresentationCoverage
+  | NotApplicablePresentationCoverage
+```
+
+##### `PresentationFamily` from `@llui/cli/product-contract`
+
+```typescript
+export type PresentationFamily = (typeof PRESENTATION_FAMILY_VALUES)[number]
+```
+
+##### `ProductCategory` from `@llui/cli/product-contract`
+
+```typescript
+export type ProductCategory =
+  | 'controls'
+  | 'forms'
+  | 'navigation'
+  | 'overlays'
+  | 'feedback'
+  | 'data-display'
+  | 'layout'
+  | 'media'
+  | 'patterns'
+  | 'utilities'
+```
+
+##### `ResolvedCopiedArtifact` from `@llui/cli/product-contract`
+
+```typescript
+export type ResolvedCopiedArtifact = {
+  canonical: ProductEntry
+  artifact: Omit<CopiedArtifact, 'displayName' | 'scenarioId'> & {
+    displayName: string
+    scenarioId: string
+  }
+  alias?: ProductAlias
+}
+```
+
+##### `ResolvedProductIdentity` from `@llui/cli/product-contract`
+
+```typescript
+export type ResolvedProductIdentity = {
+  canonical: ProductEntry
+  alias?: ProductAlias
+}
+```
+
+#### Interfaces
+
+##### `ComposedPresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export interface ComposedPresentationCoverage {
+  mode: 'composed'
+  products: string[]
+  rationale: string
+}
+```
+
+##### `CopiedArtifact` from `@llui/cli/product-contract`
+
+```typescript
+export interface CopiedArtifact {
+  name: string
+  displayName?: string
+  artifactKind: 'skin' | 'presentational' | 'pattern'
+  styling: StylingSupport
+  scenarioId?: string
+}
+```
+
+##### `MachineFree` from `@llui/cli/product-contract`
+
+```typescript
+export interface MachineFree {
+  kind: 'none'
+  reason: 'presentational' | 'application-owned-state'
+}
+```
+
+##### `NotApplicablePresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export interface NotApplicablePresentationCoverage {
+  mode: 'not-applicable'
+  rationale: string
+}
+```
+
+##### `PartialPresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export interface PartialPresentationCoverage {
+  mode: 'partial'
+  rationale: string
+}
+```
+
+##### `ProductAlias` from `@llui/cli/product-contract`
+
+```typescript
+export interface ProductAlias {
+  name: string
+  canonicalName: string
+}
+```
+
+##### `ProductContract` from `@llui/cli/product-contract`
+
+Canonical v2 inventory. ProductContract remains the sole product-metadata owner.
+
+```typescript
+export interface ProductContract {
+  version: 2
+  entries: ProductEntry[]
+  aliases: ProductAlias[]
+}
+```
+
+##### `ProductEntry` from `@llui/cli/product-contract`
+
+```typescript
+export interface ProductEntry {
+  name: string
+  displayName: string
+  category: ProductCategory
+  artifactKind: 'machine' | 'skin' | 'presentational' | 'pattern'
+  machine: PublicMachine | MachineFree
+  copiedArtifacts: CopiedArtifact[]
+  styling: StylingSupport
+  presentation: ProductPresentation
+  scenarioId: string
+}
+```
+
+##### `ProductPresentation` from `@llui/cli/product-contract`
+
+```typescript
+export interface ProductPresentation {
+  family: PresentationFamily
+  baseline: PresentationCoverage
+  registryTailwind: PresentationCoverage
+}
+```
+
+##### `PublicMachine` from `@llui/cli/product-contract`
+
+```typescript
+export interface PublicMachine {
+  kind: 'public'
+  importPath: string
+}
+```
+
+##### `StyledPresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export interface StyledPresentationCoverage {
+  mode: 'styled'
+}
+```
+
+##### `StylelessPresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export interface StylelessPresentationCoverage {
+  mode: 'styleless'
+  rationale: string
+}
+```
+
+##### `StylingSupport` from `@llui/cli/product-contract`
+
+```typescript
+export interface StylingSupport {
+  baseline: boolean
+  registryTailwind: boolean
+  styleless: boolean
+}
+```
+
+#### Classes
+
+##### `ProductContractError` from `@llui/cli/product-contract`
+
+A value that is not a valid `ProductContract`: `source` names where it came from, and `issues`
+lists every violation as `<JSON path>: <reason>` in the schema's own traversal order.
+
+```typescript
+class ProductContractError extends Error {
+  name
+  source: string
+  issues: readonly string[]
+  constructor(source: string, issues: readonly string[])
+}
+```
+
+#### Constants
+
+##### `ComposedPresentationCoverageSchema` from `@llui/cli/product-contract`
+
+The product owns no styling on this path; its presentation is composed from canonical products.
+
+```typescript
+const ComposedPresentationCoverageSchema
+```
+
+##### `CopiedArtifactSchema` from `@llui/cli/product-contract`
+
+```typescript
+const CopiedArtifactSchema
+```
+
+##### `MachineFreeSchema` from `@llui/cli/product-contract`
+
+```typescript
+const MachineFreeSchema
+```
+
+##### `NotApplicablePresentationCoverageSchema` from `@llui/cli/product-contract`
+
+A machine-free canonical product with no public headless artifact.
+
+```typescript
+const NotApplicablePresentationCoverageSchema
+```
+
+##### `PartialPresentationCoverageSchema` from `@llui/cli/product-contract`
+
+The product directly supplies meaningful styling but names the presentation boundary it leaves open.
+
+```typescript
+const PartialPresentationCoverageSchema
+```
+
+##### `PresentationCoverageSchema` from `@llui/cli/product-contract`
+
+One path's explicit visual-coverage classification.
+
+```typescript
+const PresentationCoverageSchema
+```
+
+##### `PresentationFamilySchema` from `@llui/cli/product-contract`
+
+Single-owner visual-language cohort. This is independent of the user-facing product category.
+ Derived from the one canonical tuple in `product-contract-types.ts` — do not restate the
+ literals here.
+
+```typescript
+const PresentationFamilySchema
+```
+
+##### `ProductAliasSchema` from `@llui/cli/product-contract`
+
+```typescript
+const ProductAliasSchema
+```
+
+##### `ProductCategorySchema` from `@llui/cli/product-contract`
+
+```typescript
+const ProductCategorySchema
+```
+
+##### `ProductContractSchema` from `@llui/cli/product-contract`
+
+Canonical v2 product inventory, including presentation ownership and validated composition.
+
+```typescript
+const ProductContractSchema
+```
+
+##### `ProductEntrySchema` from `@llui/cli/product-contract`
+
+```typescript
+const ProductEntrySchema
+```
+
+##### `ProductPresentationSchema` from `@llui/cli/product-contract`
+
+Canonical family ownership and baseline/registry coverage for one product.
+
+```typescript
+const ProductPresentationSchema
+```
+
+##### `PublicMachineSchema` from `@llui/cli/product-contract`
+
+```typescript
+const PublicMachineSchema
+```
+
+##### `StyledPresentationCoverageSchema` from `@llui/cli/product-contract`
+
+The product directly supplies the path's complete default visual treatment.
+
+```typescript
+const StyledPresentationCoverageSchema
+```
+
+##### `StylelessPresentationCoverageSchema` from `@llui/cli/product-contract`
+
+A public package machine or pattern that remains useful without owned visual treatment.
+
+```typescript
+const StylelessPresentationCoverageSchema
+```
+
+##### `StylingSupportSchema` from `@llui/cli/product-contract`
+
+```typescript
+const StylingSupportSchema
 ```
 
 ### `@llui/cli/presentation-scenarios`
