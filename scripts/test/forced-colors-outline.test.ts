@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { chromium, type Browser } from 'playwright'
+import type { Browser } from 'playwright'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -14,6 +14,9 @@ import {
   type ClassAlternative,
   type OutlineUtilityClass,
 } from '../lib/forced-colors-outline'
+import { useHermeticBrowser } from '../lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 /**
  * The forced-colors `outline-none` trap (docs/agents/styling.md, #266), gated
@@ -393,7 +396,7 @@ describe('the static verdict matches Chromium under forced colors', () => {
       })
       .join('')
 
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
     const page = await browser.newPage()
     await page.emulateMedia({ forcedColors: 'active' })
     await page.setContent(

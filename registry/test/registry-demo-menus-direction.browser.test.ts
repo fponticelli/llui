@@ -11,9 +11,12 @@
 // mounted proof rather than one standing in for the other.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { prebuildFixture, type PrebuiltFixture } from '../../scripts/lib/prebuilt-fixture.mjs'
 import { resolve } from 'node:path'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const repoRoot = resolve(import.meta.dirname, '../..')
 
@@ -35,7 +38,7 @@ describe('registry demo Menu/ContextMenu/Menubar direction consistency in Chromi
         root: resolve(repoRoot, 'examples/registry-demo'),
         inputs: ['index.html'],
       }),
-      chromium.launch({ headless: true }),
+      hermetic.launch({ headless: true }),
     ])
     url = build.url('/')
   }, 60_000)

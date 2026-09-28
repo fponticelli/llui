@@ -1,9 +1,12 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { createServer, type ViteDevServer } from 'vite'
 import type { RecordedGlide } from './flip-offset-parent.browser-fixture.js'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 interface Scenario {
   fractionalDepth?: number
@@ -72,7 +75,7 @@ describe('flip() offset-parent changes in Chromium (#217)', () => {
     })
     await vite.listen()
     origin = vite.resolvedUrls!.local[0]!
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
   })
 
   afterAll(async () => {

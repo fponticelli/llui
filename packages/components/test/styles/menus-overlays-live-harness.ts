@@ -25,12 +25,13 @@
  * a real browser.
  */
 import { afterAll, afterEach, beforeAll } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import type { Alias } from 'vite'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../../../scripts/lib/vite-source-aliases.mjs'
 import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
 import { ProductContractSchema } from '@llui/cli'
 
 export const repoRoot = resolve(import.meta.dirname, '../../../..')
@@ -126,6 +127,7 @@ export interface MenusOverlaysLiveHarness {
 /** Register the servers/browser lifecycle on the enclosing suite and return
  * the page helpers. Call once, at the top of a `describe`. */
 export function useMenusOverlaysLiveHarness(): MenusOverlaysLiveHarness {
+  const hermetic = useHermeticBrowser()
   let browser: Browser | undefined
   let fixtures: PrebuiltFixture[] = []
   let urls: Record<LivePath, string> = { baseline: '', registryTailwind: '' }
@@ -135,7 +137,7 @@ export function useMenusOverlaysLiveHarness(): MenusOverlaysLiveHarness {
     const [baseline, registryTailwind, launched] = await Promise.all([
       buildExample('examples/components-demo'),
       buildExample('examples/registry-demo'),
-      chromium.launch({ headless: true }),
+      hermetic.launch({ headless: true }),
     ])
     fixtures = [baseline, registryTailwind]
     browser = launched

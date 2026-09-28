@@ -12,10 +12,13 @@
 // and prove nothing.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../browser')
 
@@ -39,7 +42,7 @@ describe('#265 A1 — menu overlay floating direction in real Chromium layout', 
     })
     baseUrl = fixture.url('menu-rtl-floating.fixture.html')
 
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
   })
 
   afterAll(async () => {

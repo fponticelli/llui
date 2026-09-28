@@ -1,9 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { chromium, type Browser } from 'playwright'
+import type { Browser } from 'playwright'
 import { appEntry, compileCandidates, resolveCssId } from '../lib/tailwind-compile.mjs'
 import { contrast, srgb8ToLinear } from '../lib/oklch.mjs'
+import { useHermeticBrowser } from '../lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 /**
  * ─── Nothing in this repo measured token CONTRAST (#250) ─────────────────────
@@ -589,7 +592,7 @@ describe('design-token contrast (#250)', () => {
       compiled.set(entry, css)
     }
 
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
     try {
       for (const cell of CELLS) {
         const context = await browser.newContext({ colorScheme: cell.colorScheme })

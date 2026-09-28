@@ -1,9 +1,12 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser } from 'playwright'
+import type { Browser } from 'playwright'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 /**
  * #241 / #242 — the token cascade, measured in a real browser.
@@ -81,7 +84,7 @@ describe('#241/#242 — token cascade in Chromium', () => {
   beforeAll(async () => {
     if (MEDIA_GUARD === undefined)
       throw new Error('could not read the media guard out of tokens-dark.css')
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
 
     for (const os of ['light', 'dark'] as OsScheme[]) {
       const context = await browser.newContext({ colorScheme: os })

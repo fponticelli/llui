@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
+import type { Browser, BrowserContext, Page } from 'playwright'
 import * as accordionMachine from '../../src/components/accordion'
 import * as carouselMachine from '../../src/components/carousel'
 import * as chartMachine from '../../src/components/chart'
@@ -26,6 +26,9 @@ import {
   joinNavigationDataScenarios,
   scenarioEnvironmentProductIds,
 } from './navigation-data-scenarios'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const STYLES = resolve(import.meta.dirname, '../../src/styles')
 const contract = loadProductContract()
@@ -294,7 +297,7 @@ describe('navigation/data baseline presentation in Chromium', () => {
   let browser: Browser
 
   beforeAll(async () => {
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
   })
 
   afterAll(async () => {

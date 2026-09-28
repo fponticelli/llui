@@ -5,7 +5,7 @@
 // available" test logs jsdom's "Not implemented" warning and exercises only the
 // graceful no-context-available branch). This file uses the same lightweight
 // Playwright pattern as `test/styles/disabled-foundation.browser.test.ts` — no
-// vite dev server, `chromium.launch()` + `page.setContent()` — to verify the
+// vite dev server, `hermetic.launch()` + `page.setContent()` — to verify the
 // RAW BYTES `oklchPlanePixels` produces are exactly what a REAL browser Canvas
 // 2D context reads back through `putImageData`/`getImageData`.
 //
@@ -24,15 +24,18 @@
 // is covered; no single test exercises all of it against a live canvas.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { oklchPlanePixels } from '../../src/components/color-picker'
 import { inSrgbGamut } from '../../src/utils/color'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 let browser: Browser
 let page: Page
 
 beforeAll(async () => {
-  browser = await chromium.launch()
+  browser = await hermetic.launch()
   page = await browser.newPage()
   await page.setContent(`<!doctype html><canvas id="c"></canvas>`)
 })

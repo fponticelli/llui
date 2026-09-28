@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import type { Alias } from 'vite'
 import { readFileSync } from 'node:fs'
 import { relative, resolve } from 'node:path'
@@ -16,6 +16,9 @@ import {
   compileNavigationDataCatalog,
   joinNavigationDataScenarios,
 } from '../../packages/components/test/styles/navigation-data-scenarios'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const repoRoot = resolve(import.meta.dirname, '../..')
 
@@ -93,7 +96,7 @@ describe('actual navigation/data demos in Chromium', () => {
     const [baseline, registry, launched] = await Promise.all([
       buildExample('examples/components-demo'),
       buildExample('examples/registry-demo'),
-      chromium.launch({ headless: true }),
+      hermetic.launch({ headless: true }),
     ])
     fixtures = [baseline, registry]
     browser = launched
