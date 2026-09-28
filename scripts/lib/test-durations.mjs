@@ -101,12 +101,53 @@ export function percentile(values, q) {
 /**
  * Fold vitest `json` reports into per-file totals, keyed by repo-relative path.
  *
- * The metric is the SUM OF TEST DURATIONS, not the file's wall clock. Hooks are
- * deliberately excluded: the heaviest hooks in this workspace are a Chromium
- * launch and its 30 s non-configurable shutdown floor, whose cost is a property
- * of the machine rather than of any change, and folding them in would put the
- * noisiest number in the workspace into every comparison. Hook cost is what
- * `hookTimeout` is for; this is the test-work signal.
+ * The metric is a file's TEST BUSY TIME: the wall-clock time during which at
+ * least one of its tests was running. Hooks are deliberately excluded: the
+ * heaviest hooks in this workspace are a Chromium launch and its 30 s
+ * non-configurable shutdown floor, whose cost is a property of the machine
+ * rather than of any change, and folding them in would put the noisiest number
+ * in the workspace into every comparison. Hook cost is what `hookTimeout` is
+ * for; this is the test-work signal.
+ *
+ * For a SERIAL file that is simply the sum of its test durations, which is what
+ * this metric was defined as until a concurrent file showed that the sum is not
+ * a cost. Under `describe.concurrent` vitest starts a test's clock BEFORE the
+ * test waits for a `maxConcurrency` slot (`@vitest/runner` `runTest`: the
+ * `startTime` and the `now()` its duration is measured from are both taken
+ * outside `limitMaxConcurrency`), so each test's duration includes the time it
+ * sat queued behind its siblings, and the sum counts the same wall-clock second
+ * once per waiting test. Measured on the Component Gallery's
+ * `cases.browser.test.ts` (1207 tests, `maxConcurrency: 4`): a sum of
+ * 252,314,159 ms — 70 hours — for a file whose tests ran for 397 s, with 930
+ * tests reporting over 100 s each. The sum also grows QUADRATICALLY with the
+ * number of concurrent tests (test k waits for the k-1 before it), so every
+ * added case would have read as a regression of the whole file, and a load
+ * factor would be squared rather than divided out.
+ *
+ * The exact busy time is the length of the UNION of the tests' intervals, but
+ * the stock report carries no per-test start (only `duration`), so the union is
+ * not computable from it and a bespoke reporter is the thing `vitest.shared.ts`
+ * refuses on purpose. What the report DOES carry is the file's `startTime`
+ * (earliest test start) and `endTime` (latest test end). Both of
+ *
+ *   - the SUM of durations, and
+ *   - the SPAN `endTime - startTime`
+ *
+ * are upper bounds on the union, and each is EXACT in one of the two shapes:
+ * tests that never overlap make the union equal the sum (the span also counts
+ * the gaps between tests — nested hooks — which the sum rightly does not), and
+ * a concurrent pool with no idle gap makes it equal the span. So the metric is
+ * `min(sum, span)`: the tightest bound the report supports, identical to the
+ * old metric on every serial file (to within 1 ms — `startTime` is a whole-ms
+ * `Date.now()`, and the flooring of the first start is the only error, because
+ * the rest telescopes), and the file's real wall-clock test time on a
+ * concurrent one. Both terms scale with machine load, so the median de-scaling
+ * in `compareDurations` treats a concurrent file like any other. A report
+ * without usable file times (a non-vitest producer, a malformed entry) falls
+ * back to the sum.
+ *
+ * A file that appears in more than one report (two vitest projects running it)
+ * is the sum of its per-report costs: each report is a separate run of it.
  *
  * @param {readonly unknown[]} reports Parsed vitest json reports.
  * @param {string} repoRoot
@@ -119,7 +160,8 @@ export function aggregateDurations(reports, repoRoot) {
     const results = /** @type {{ testResults?: unknown[] }} */ (report)?.testResults
     if (!Array.isArray(results)) continue
     for (const file of results) {
-      const { name, assertionResults } = /** @type {Record<string, unknown>} */ (file)
+      const { name, assertionResults, startTime, endTime } =
+        /** @type {Record<string, unknown>} */ (file)
       if (typeof name !== 'string' || !Array.isArray(assertionResults)) continue
       const key = relative(repoRoot, name).split('\\').join('/')
       let total = 0
@@ -133,13 +175,29 @@ export function aggregateDurations(reports, repoRoot) {
         const duration = /** @type {Record<string, unknown>} */ (test)?.['duration']
         if (typeof duration === 'number' && Number.isFinite(duration)) total += duration
       }
-      totals[key] = (totals[key] ?? 0) + total
+      const span = testSpan(startTime, endTime)
+      totals[key] = (totals[key] ?? 0) + (span === null ? total : Math.min(total, span))
     }
   }
   // Round to 0.1 ms: the baseline is a committed artifact and full float noise
   // would make every re-record a large diff for no information.
   for (const [key, total] of Object.entries(totals)) totals[key] = Math.round(total * 10) / 10
   return totals
+}
+
+/**
+ * A file entry's `endTime - startTime`, or `null` when the pair is not two
+ * finite numbers in order — in which case only the sum is trustworthy.
+ *
+ * @param {unknown} startTime
+ * @param {unknown} endTime
+ * @returns {number | null}
+ */
+function testSpan(startTime, endTime) {
+  if (typeof startTime !== 'number' || typeof endTime !== 'number') return null
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime)) return null
+  const span = endTime - startTime
+  return span >= 0 ? span : null
 }
 
 /**

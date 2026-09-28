@@ -126,7 +126,8 @@ if (save) {
           loadAvg1m: Math.round((loadavg()[0] ?? 0) * 10) / 10,
           note: 'load per core well above ~2 means this baseline is smeared; prefer re-recording',
         },
-        metric: 'sum of test durations per file, milliseconds (hooks excluded)',
+        metric:
+          'test busy time per file, milliseconds: min(sum of test durations, first test start to last test end); hooks before the first test and after the last excluded',
         files: Object.fromEntries(Object.entries(current).sort(([a], [b]) => (a < b ? -1 : 1))),
       },
       null,

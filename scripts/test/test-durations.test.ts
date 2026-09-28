@@ -68,6 +68,194 @@ describe('aggregateDurations', () => {
   })
 })
 
+/**
+ * The CONCURRENCY half of the metric. Vitest's `json` reporter gives each test
+ * a `duration` but no start time; the file gets `startTime` (earliest test
+ * start) and `endTime` (latest test end). Under `describe.concurrent` a test's
+ * clock starts BEFORE it queues for a `maxConcurrency` slot, so its duration
+ * includes time spent waiting behind its siblings and the SUM counts the same
+ * wall-clock second once per waiting test. The quantity that means "what this
+ * file cost" is the UNION of the tests' intervals (busy time); these cases build
+ * reports the way vitest does from synthetic intervals and hold the aggregate
+ * to that union.
+ */
+describe('aggregateDurations — overlapping (concurrent) tests', () => {
+  type Interval = readonly [start: number, duration: number]
+
+  /** A vitest-shaped file entry from test intervals (start = unix ms, as `Date.now()`). */
+  function fileFrom(name: string, intervals: readonly Interval[]) {
+    const starts = intervals.map(([start]) => start)
+    const ends = intervals.map(([start, duration]) => start + duration)
+    return {
+      name: `${root}/${name}`,
+      startTime: Math.min(...starts),
+      endTime: Math.max(...ends),
+      assertionResults: intervals.map(([, duration], i) => ({ title: `t${i}`, duration })),
+    }
+  }
+
+  function cost(intervals: readonly Interval[]): number {
+    const totals = aggregateDurations([{ testResults: [fileFrom('f.test.ts', intervals)] }], root)
+    const value = totals['f.test.ts']
+    if (value === undefined) throw new Error('file missing from the aggregate')
+    return value
+  }
+
+  /** Reference busy time: the length of the union of the intervals. */
+  function union(intervals: readonly Interval[]): number {
+    const sorted = [...intervals]
+      .map(([start, duration]) => [start, start + duration] as const)
+      .sort((a, b) => a[0] - b[0])
+    let total = 0
+    let open = -Infinity
+    let close = -Infinity
+    for (const [start, end] of sorted) {
+      if (start > close) {
+        if (close > open) total += close - open
+        open = start
+        close = end
+      } else close = Math.max(close, end)
+    }
+    if (close > open) total += close - open
+    return total
+  }
+
+  const sum = (intervals: readonly Interval[]) => intervals.reduce((a, [, d]) => a + d, 0)
+  const round = (ms: number) => Math.round(ms * 10) / 10
+
+  /**
+   * `n` tests of `workMs` each under a `limit`-slot pool, all queued at `t0`,
+   * reported exactly as vitest's runner does: the clock starts at queue time.
+   */
+  function pool(n: number, workMs: number, limit: number, t0 = 1_000_000): Interval[] {
+    return Array.from({ length: n }, (_, i) => {
+      const finish = (Math.floor(i / limit) + 1) * workMs
+      return [t0, finish] as const
+    })
+  }
+
+  it('counts a serial file exactly as before: the sum, which IS the union', () => {
+    // Disjoint tests with hook gaps between them (a nested beforeAll).
+    const serial: Interval[] = [
+      [1_000, 120],
+      [1_120, 30],
+      [1_400, 250],
+      [1_650, 5],
+    ]
+    expect(union(serial)).toBe(405)
+    expect(cost(serial)).toBe(405)
+    expect(cost(serial)).toBe(sum(serial))
+  })
+
+  it('bills a describe.concurrent pool its wall time, not the queue time of every test', () => {
+    // 100 tests of 10 ms under maxConcurrency 4: 250 ms of wall clock. The sum
+    // counts test k's wait behind the k-1 before it — 52x too much here.
+    const intervals = pool(100, 10, 4)
+    expect(union(intervals)).toBe(250)
+    expect(sum(intervals)).toBe(13_000)
+    expect(cost(intervals)).toBe(250)
+  })
+
+  it('grows LINEARLY with a concurrent file, where the sum grows quadratically', () => {
+    // Doubling the tests doubles the real cost; the sum quadruples. A metric that
+    // quadruples on a doubling would read every added case as a regression.
+    const small = cost(pool(200, 10, 4))
+    const large = cost(pool(400, 10, 4))
+    expect(large / small).toBe(2)
+    expect(sum(pool(400, 10, 4)) / sum(pool(200, 10, 4))).toBeGreaterThan(3.9)
+  })
+
+  it('scales with load like a serial file does, so the median de-scaling still applies', () => {
+    // A machine 3x slower makes every unit of work 3x longer: the serial file
+    // and the concurrent file both read 3x, which is what the same-run scale
+    // estimator assumes of every file it divides.
+    const serial = (k: number): Interval[] => [
+      [0, 100 * k],
+      [100 * k, 50 * k],
+    ]
+    expect(cost(serial(3)) / cost(serial(1))).toBe(3)
+    expect(cost(pool(60, 30, 4)) / cost(pool(60, 10, 4))).toBe(3)
+  })
+
+  it('handles a file with a serial part and a concurrent part', () => {
+    const serial: Interval[] = [
+      [0, 200],
+      [200, 100],
+    ]
+    const concurrent = pool(40, 25, 4, 300)
+    const intervals = [...serial, ...concurrent]
+    expect(union(intervals)).toBe(300 + 250)
+    expect(cost(intervals)).toBe(550)
+  })
+
+  it('never reports below the busy time, nor above the sum or the span (random intervals)', () => {
+    // Deterministic LCG, so a failure is reproducible.
+    let state = 12_345
+    const next = () => (state = (state * 1_103_515_245 + 12_345) % 2_147_483_648) / 2_147_483_648
+    for (let trial = 0; trial < 200; trial++) {
+      const n = 1 + Math.floor(next() * 30)
+      const intervals: Interval[] = Array.from({ length: n }, () => [
+        Math.floor(next() * 5_000),
+        round(next() * 2_000),
+      ])
+      const starts = intervals.map(([start]) => start)
+      const span = Math.max(...intervals.map(([s, d]) => s + d)) - Math.min(...starts)
+      const value = cost(intervals)
+      expect(value).toBeGreaterThanOrEqual(round(union(intervals)) - 0.1)
+      expect(value).toBeLessThanOrEqual(round(sum(intervals)) + 0.1)
+      expect(value).toBeLessThanOrEqual(round(span) + 0.1)
+    }
+  })
+
+  it('stays within 1 ms of the sum on a serial file whose starts are whole milliseconds', () => {
+    // `startTime` is `Date.now()` (whole ms) while `duration` is a
+    // `performance.now()` difference, so a serial file's span can undercut its
+    // sum by the flooring of ONE start — never by an amount that grows with the
+    // test count, because the error telescopes.
+    let clock = 5_000.7
+    const intervals: Interval[] = []
+    for (let i = 0; i < 500; i++) {
+      const duration = 0.37 + (i % 7) * 0.61
+      intervals.push([Math.floor(clock), duration])
+      clock += duration
+    }
+    const serialSum = sum(intervals)
+    expect(cost(intervals)).toBeGreaterThanOrEqual(round(serialSum) - 1)
+    expect(cost(intervals)).toBeLessThanOrEqual(round(serialSum))
+  })
+
+  it('falls back to the sum when a report carries no usable file times', () => {
+    const entry = (extra: Record<string, unknown>) => ({
+      testResults: [
+        {
+          name: `${root}/x.test.ts`,
+          assertionResults: [{ duration: 40 }, { duration: 60 }],
+          ...extra,
+        },
+      ],
+    })
+    for (const extra of [
+      {},
+      { startTime: 10 },
+      { startTime: 'soon', endTime: 20 },
+      { startTime: 50, endTime: 10 },
+      { startTime: Number.NaN, endTime: 20 },
+    ]) {
+      expect(aggregateDurations([entry(extra)], root), JSON.stringify(extra)).toEqual({
+        'x.test.ts': 100,
+      })
+    }
+  })
+
+  it('adds a file reported by two projects: each report is its own run of it', () => {
+    const a = fileFrom('p.test.ts', pool(8, 10, 4, 0))
+    const b = fileFrom('p.test.ts', pool(8, 10, 4, 10_000))
+    expect(aggregateDurations([{ testResults: [a] }, { testResults: [b] }], root)).toEqual({
+      'p.test.ts': 40,
+    })
+  })
+})
+
 describe('compareDurations', () => {
   // THE NOISE-FLOOR OPTION IS `minDeltaMs`, AND IT IS NOT SPELLED `floorMs`.
   // Four cases below passed `{ factor: 3, floorMs: 200 }` — `floorMs` was the
