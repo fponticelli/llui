@@ -415,6 +415,55 @@ describe('compileScenarioFamily', () => {
     expect(Object.isFrozen(input)).toBe(true)
   })
 
+  it('builds one deep-frozen catalog, detached from the definitions, whichever entry point compiled it', () => {
+    // The catalog is ASSEMBLED from validated values (never the caller's objects), so later
+    // mutation of the definitions cannot reach it, and the typed and untyped entry points build
+    // the identical structure — the typed one differs only in its static type.
+    const axes: ('theme' | 'motion')[] = ['theme', 'motion']
+    const targets: string[] = ['dialog']
+    const definitions = {
+      'component:dialog': {
+        defaultCaseId: 'open',
+        cases: [
+          {
+            id: 'open',
+            label: 'Open',
+            input: { open: true },
+            environmentAxes: axes,
+            copiedArtifactNames: targets,
+          },
+        ],
+      },
+      'component:menu': {
+        defaultCaseId: 'default',
+        cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
+      },
+    } satisfies PresentationScenarioDefinitions
+
+    const typed = compileScenarioFamily(contract(), 'menus-overlays', definitions)
+    const erased = decodeScenarioFamily(contract(), 'menus-overlays', definitions)
+    expect(typed).toEqual(erased)
+    for (const catalog of [typed, erased]) {
+      expect(Object.isFrozen(catalog)).toBe(true)
+      expect(Object.isFrozen(catalog.scenarios)).toBe(true)
+      for (const scenario of catalog.scenarios) {
+        expect(Object.isFrozen(scenario)).toBe(true)
+        expect(Object.isFrozen(scenario.cases)).toBe(true)
+        for (const scenarioCase of scenario.cases) {
+          expect(Object.isFrozen(scenarioCase)).toBe(true)
+          expect(Object.isFrozen(scenarioCase.environmentAxes)).toBe(true)
+        }
+      }
+      const dialogCase = catalog.scenarios[0]!.cases[0]!
+      expect(dialogCase.environmentAxes).not.toBe(axes)
+      expect(dialogCase.copiedArtifactNames).not.toBe(targets)
+    }
+    axes.push('theme')
+    targets.push('menu')
+    expect(typed.scenarios[0]!.cases[0]!.environmentAxes).toEqual(['theme', 'motion'])
+    expect(erased.scenarios[0]!.cases[0]!.copiedArtifactNames).toEqual(['dialog'])
+  })
+
   it('handles a `__proto__` data key via defineProperty, never assignment, and preserves it as an own property (#270 finding 5)', () => {
     const proto: Record<string, unknown> = Object.create(null)
     proto['visible'] = true

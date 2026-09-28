@@ -1,10 +1,11 @@
-import type { ProductContract } from '../src/product-contract-types.js'
+import type { PresentationFamily, ProductContract } from '../src/product-contract-types.js'
 import {
   compileScenarioFamily,
   decodeScenarioFamily,
   decodeScenarioSelection,
   resolveScenarioSelection,
   type CompiledPresentationScenario,
+  type CompiledPresentationScenarioFamily,
   type PresentationScenarioCase,
   type PresentationScenarioDefinitions,
   type PresentationScenarioEnvironmentAxis,
@@ -13,6 +14,12 @@ import {
 } from '../src/presentation-scenarios.js'
 
 declare const contract: ProductContract
+
+type Equal<Left, Right> =
+  (<Value>() => Value extends Left ? 1 : 2) extends <Value>() => Value extends Right ? 1 : 2
+    ? true
+    : false
+type Assert<Value extends true> = Value
 
 const definitions = {
   'component:dialog': {
@@ -115,6 +122,16 @@ const erasedResolved = decodeScenarioSelection(contract, serializedCatalog, seri
 const erasedScenarioId: string = erasedCatalog.scenarios[0]!.scenarioId
 const erasedResolvedId: string = erasedResolved.scenarioId
 void [erasedScenarioId, erasedResolvedId]
+// The erased catalog still carries the protocol's VALIDATED unions, not decoded strings: an
+// axis is a `PresentationScenarioEnvironmentAxis`, the family a `PresentationFamily`. The
+// untyped path builds these through the membership guards, so this holds without an assertion.
+const erasedAxes: readonly PresentationScenarioEnvironmentAxis[] =
+  erasedCatalog.scenarios[0]!.cases[0]!.environmentAxes
+const erasedFamily: PresentationFamily = erasedCatalog.family
+void [erasedAxes, erasedFamily]
+type _ErasedCatalogIsTheDefault = Assert<
+  Equal<typeof erasedCatalog, CompiledPresentationScenarioFamily>
+>
 
 const mutableDefinitions = {
   'component:dialog': {
