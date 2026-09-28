@@ -168,6 +168,9 @@ importers:
       '@llui/components':
         specifier: workspace:*
         version: link:../../packages/components
+      '@llui/dom':
+        specifier: workspace:*
+        version: link:../../packages/dom
     devDependencies:
       typescript:
         specifier: ^6.0.0
