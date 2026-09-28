@@ -5762,6 +5762,20 @@ export interface ValidationError {
 
 #### Functions
 
+##### `callDebugApiMethod()` from `@llui/dom/debug-collect`
+
+Dispatch a relay call to a method of one component's debug API. The method
+NAME and the ARGS are wire data, so this is the untyped boundary and the one
+place both relays cross it: the name is resolved at runtime, must denote a
+function the API object carries, and may not be an `Object.prototype` member
+(`constructor`, `toString`, … are reachable by name on every object but are
+not debug-API methods). Throws `unknown method: <name>` otherwise — the error
+both relays already surface.
+
+```typescript
+function callDebugApiMethod(api: object, method: string, args: readonly unknown[]): unknown
+```
+
 ##### `callRegistryMethod()` from `@llui/dom/debug-collect`
 
 Dispatch a registry pseudo-method, mirroring the relay call shape.
@@ -34953,8 +34967,12 @@ function cached<T>(key: string, create: () => T): T
 
 ##### `cacheKey()` from `@llui/components/format/cache`
 
+A cache key for a formatter built from `opts` (any `Intl.*Options` object):
+its defined entries in key order, so equal options give equal keys whatever
+order they were written in.
+
 ```typescript
-function cacheKey(prefix: string, locale: string, opts: Record<string, unknown>): string
+function cacheKey(prefix: string, locale: string, opts: object): string
 ```
 
 ### `@llui/components/format/defaults`
@@ -62051,7 +62069,7 @@ EventEmitter API (`on('message', ...)`) rather than
 the `ws` library path.
 
 ```typescript
-function createWHATWGPairingConnection(socket: WebSocket): PairingConnection
+function createWHATWGPairingConnection(socket: WhatwgSocket): PairingConnection
 ```
 
 ### `decodeFromWire()`
@@ -64205,6 +64223,25 @@ export interface TokenStore {
 }
 ```
 
+### `WhatwgSocket`
+
+The part of a WHATWG `WebSocket` the web adapters use. The global `WebSocket`
+satisfies it structurally; so does a Cloudflare `WebSocketPair` half or a
+Deno upgraded socket, without either being asserted to be a DOM `WebSocket`.
+A message's `data` is `unknown` because the platform types it `any`: the
+adapter narrows it (string, `ArrayBuffer`, or a byte view) before decoding.
+
+```typescript
+export interface WhatwgSocket {
+  send(data: string): void
+  close(): void
+  addEventListener(type: 'message', listener: (ev: { readonly data: unknown }) => void): void
+  addEventListener(type: 'close', listener: () => void): void
+  /** Used by the Deno upgrade handler, which registers the pairing on `open`. */
+  addEventListener(type: 'open', listener: () => void, options?: { readonly once?: boolean }): void
+}
+```
+
 ## Classes
 
 ### `AgentPairingDurableObject`
@@ -65925,7 +65962,7 @@ EventEmitter API (`on('message', ...)`) rather than
 the `ws` library path.
 
 ```typescript
-function createWHATWGPairingConnection(socket: WebSocket): PairingConnection
+function createWHATWGPairingConnection(socket: WhatwgSocket): PairingConnection
 ```
 
 ##### `extractToken()` from `@llui/agent/server/web`
@@ -65979,6 +66016,27 @@ Deno.serve(async (req) => {
 function handleDenoUpgrade(req: Request, agent: AgentCoreHandle): Promise<Response>
 ```
 
+#### Interfaces
+
+##### `WhatwgSocket` from `@llui/agent/server/web`
+
+The part of a WHATWG `WebSocket` the web adapters use. The global `WebSocket`
+satisfies it structurally; so does a Cloudflare `WebSocketPair` half or a
+Deno upgraded socket, without either being asserted to be a DOM `WebSocket`.
+A message's `data` is `unknown` because the platform types it `any`: the
+adapter narrows it (string, `ArrayBuffer`, or a byte view) before decoding.
+
+```typescript
+export interface WhatwgSocket {
+  send(data: string): void
+  close(): void
+  addEventListener(type: 'message', listener: (ev: { readonly data: unknown }) => void): void
+  addEventListener(type: 'close', listener: () => void): void
+  /** Used by the Deno upgrade handler, which registers the pairing on `open`. */
+  addEventListener(type: 'open', listener: () => void, options?: { readonly once?: boolean }): void
+}
+```
+
 ### `@llui/agent/server/cloudflare`
 
 #### Functions
@@ -65998,7 +66056,7 @@ EventEmitter API (`on('message', ...)`) rather than
 the `ws` library path.
 
 ```typescript
-function createWHATWGPairingConnection(socket: WebSocket): PairingConnection
+function createWHATWGPairingConnection(socket: WhatwgSocket): PairingConnection
 ```
 
 ##### `extractToken()` from `@llui/agent/server/cloudflare`
@@ -66113,6 +66171,25 @@ export interface MinimalDurableObjectNamespace {
 ```typescript
 export interface MinimalDurableObjectStub {
   fetch(req: Request): Promise<Response>
+}
+```
+
+##### `WhatwgSocket` from `@llui/agent/server/cloudflare`
+
+The part of a WHATWG `WebSocket` the web adapters use. The global `WebSocket`
+satisfies it structurally; so does a Cloudflare `WebSocketPair` half or a
+Deno upgraded socket, without either being asserted to be a DOM `WebSocket`.
+A message's `data` is `unknown` because the platform types it `any`: the
+adapter narrows it (string, `ArrayBuffer`, or a byte view) before decoding.
+
+```typescript
+export interface WhatwgSocket {
+  send(data: string): void
+  close(): void
+  addEventListener(type: 'message', listener: (ev: { readonly data: unknown }) => void): void
+  addEventListener(type: 'close', listener: () => void): void
+  /** Used by the Deno upgrade handler, which registers the pairing on `open`. */
+  addEventListener(type: 'open', listener: () => void, options?: { readonly once?: boolean }): void
 }
 ```
 
@@ -69410,6 +69487,17 @@ export interface VerboseNoteBody {
 }
 ```
 
+#### Constants
+
+##### `NOTE_KINDS` from `@llui/devmode-annotate/note-types`
+
+Every {@link NoteKind}, as a runtime list — so a validator (e.g. the MCP
+`llui_list_notes` input schema) enumerates exactly the kinds the type admits.
+
+```typescript
+const NOTE_KINDS: readonly ["rect", "element", "text", "capture", "reply"]
+```
+
 ### `@llui/devmode-annotate/note-format`
 
 #### Functions
@@ -70661,6 +70749,15 @@ export interface VerboseNoteBody {
 const NOTE_FILENAME_RE
 ```
 
+### `NOTE_KINDS`
+
+Every {@link NoteKind}, as a runtime list — so a validator (e.g. the MCP
+`llui_list_notes` input schema) enumerates exactly the kinds the type admits.
+
+```typescript
+const NOTE_KINDS
+```
+
 ### `NOTE_SCHEMA_VERSION`
 
 On-disk note-format schema version. Stamped into export bundles and
@@ -71167,6 +71264,17 @@ export interface VerboseNoteBody {
   transitionsInFlight?: Array<{ component: string; name: string; progress: number }>
   foreignInstances?: Array<{ component: string; library: string }>
 }
+```
+
+#### Constants
+
+##### `NOTE_KINDS` from `@llui/notes-format/note-types`
+
+Every {@link NoteKind}, as a runtime list — so a validator (e.g. the MCP
+`llui_list_notes` input schema) enumerates exactly the kinds the type admits.
+
+```typescript
+const NOTE_KINDS
 ```
 
 ### `@llui/notes-format/note-format`

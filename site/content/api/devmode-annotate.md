@@ -1278,6 +1278,17 @@ export interface VerboseNoteBody {
 }
 ```
 
+#### Constants
+
+##### `NOTE_KINDS` from `@llui/devmode-annotate/note-types`
+
+Every {@link NoteKind}, as a runtime list — so a validator (e.g. the MCP
+`llui_list_notes` input schema) enumerates exactly the kinds the type admits.
+
+```typescript
+const NOTE_KINDS: readonly ['rect', 'element', 'text', 'capture', 'reply']
+```
+
 ### `@llui/devmode-annotate/note-format`
 
 #### Functions
