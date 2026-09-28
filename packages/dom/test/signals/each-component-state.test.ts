@@ -8,8 +8,8 @@ import { ul, li, text, each } from '../../src/signals/authoring'
 // ctx `{ item, state, index }`, so a component-state-rooted produce `(s) =>
 // s.focused` would read `ctx.focused` (undefined) and CRASH at mount. The runtime
 // re-roots such specs to read `ctx.state`. (This crash blanked the whole
-// components-demo, whose sections render component item-lists via `each` + connect
-// per-item parts.)
+// since-retired components demo, whose sections rendered component item-lists
+// via `each` + connect per-item parts.)
 
 interface S {
   items: readonly string[]

@@ -1,7 +1,7 @@
 /**
  * axe-core, injected from the pinned devDependency (never a CDN: a network
- * fetch mid-audit is flaky, unpinnable and offline-hostile — the same reason
- * `scripts/a11y-audit.ts` gives), run against a live document.
+ * fetch mid-audit is flaky, unpinnable and offline-hostile), run against a
+ * live document.
  *
  * The gate fails on `serious` and `critical` impact. Each finding is
  * reported with its rule, impact, help text, the offending selector and

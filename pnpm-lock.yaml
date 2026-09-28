@@ -213,31 +213,6 @@ importers:
         specifier: ^4.1.2
         version: 4.1.2(@types/node@22.19.15)(happy-dom@20.9.0)(jsdom@29.0.1)(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
 
-  examples/components-demo:
-    dependencies:
-      '@llui/components':
-        specifier: workspace:*
-        version: link:../../packages/components
-      '@llui/dom':
-        specifier: workspace:*
-        version: link:../../packages/dom
-      uqr:
-        specifier: ^0.1.3
-        version: 0.1.3
-    devDependencies:
-      '@llui/vite-plugin':
-        specifier: workspace:*
-        version: link:../../packages/vite-plugin
-      '@tailwindcss/vite':
-        specifier: ^4.2.2
-        version: 4.2.2(vite@8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0))
-      tailwindcss:
-        specifier: ^4.2.2
-        version: 4.2.2
-      vite:
-        specifier: ^8.0.0
-        version: 8.0.3(@emnapi/core@1.9.1)(@emnapi/runtime@1.9.1)(@types/node@22.19.15)(esbuild@0.27.5)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.9.0)
-
   examples/counter:
     dependencies:
       '@llui/dom':
@@ -5878,12 +5853,6 @@ packages:
     peerDependencies:
       browserslist: '>= 4.21.0'
 
-  uqr@0.1.3:
-    resolution:
-      {
-        integrity: sha512-0rjE8iEJe4YmT9TOhwsZtqCMRLc5DXZUI2UEYUUg63ikBkqqE5EYWaI0etFe/5KUcmcYwLih2RND1kq+hrUJXA==,
-      }
-
   uri-js@4.4.1:
     resolution:
       {
@@ -9085,8 +9054,6 @@ snapshots:
       browserslist: 4.28.2
       escalade: 3.2.0
       picocolors: 1.1.1
-
-  uqr@0.1.3: {}
 
   uri-js@4.4.1:
     dependencies:

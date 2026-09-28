@@ -219,7 +219,8 @@ Hard constraints. Several are not enforced by types or CI. **Before touching a s
 - Route `class` through `mergeClass` (a raw `cn()` stringifies signals). Style state through `data-*`, never a computed class.
 - Icons come from Iconify as rebuilt `<svg>` elements (allowlisted, never `innerHTML`). Failures are not cached.
 - CSS probes: verify by RENDERING. Hidden tabs freeze transitions; CSS Color 4 values need paint-and-read; assert the instrument on a mid-tone known pair first.
-- The components demo serves `dist/styles/` — rebuild `@llui/components` after a style source edit.
+- Example apps (`baseline-css`, `registry-demo`) serve `dist/styles/` — rebuild `@llui/components` after a style source edit. The Component Gallery aliases to source.
+- **The Component Gallery is the component inventory.** The hand-written Baseline showcase (`examples/components-demo`) is retired; `examples/registry-demo` is the copied-source SYNC FIXTURE, not a showcase. Baseline-path live compositions the browser suites drive live in `examples/baseline-css/src/test-fixtures/` (no Tailwind, no Vite plugin — linted by `packages/components/test/styles/baseline-css-lint.test.ts`).
 - **The Component Gallery (`examples/component-gallery`) renders Baseline theme and Registry skins as SEPARATE builds/documents.** Never load both systems in one document; renderers stay per path; its inventory is derived from the contract and family catalogs, never listed.
 - **Every gallery case is gated (#268):** renders `ready`, no serious/critical axe finding, intact markup/idrefs, no runtime fault, per-path visual baseline (`test/cases.browser.test.ts`), plus keyboard/pointer flows per family. Fix findings at the source; a11y exemptions are per case, closed at both ends. Baselines are recorded ONLY in CI's Playwright image (`pnpm gallery:visual:update`, or commit CI's `visual-baselines` artifact).
 

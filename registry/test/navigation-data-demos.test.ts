@@ -5,7 +5,7 @@ import { resolve } from 'node:path'
 import type { Browser } from 'playwright'
 import { compileCandidates, markerName } from '../../scripts/lib/tailwind-compile.mjs'
 import * as registryMedia from '../../examples/registry-demo/src/sections/media'
-import * as baselineData from '../../examples/components-demo/src/sections/data'
+import * as baselineData from '../../examples/baseline-css/src/test-fixtures/compositions/navigation-data'
 import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
 
 const hermetic = useHermeticBrowser()
@@ -72,7 +72,7 @@ function mountBaselineDemo(): string {
   const app = mountApp(
     host,
     component<baselineData.State, baselineData.Msg, baselineData.Effect>({
-      name: 'ActualBaselineDataDemo',
+      name: 'ActualBaselineNavigationDataComposition',
       init: baselineData.init,
       update: baselineData.update,
       onEffect: (effect, { send }) => baselineData.onEffect(effect, send),

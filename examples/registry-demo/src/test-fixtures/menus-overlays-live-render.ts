@@ -4,8 +4,9 @@
 // `REGISTRY_ADAPTERS` + `resolveScenarioSelection`) — never hand-written HTML
 // — so collision/virtual-anchor/stacked-overlay/RTL/motion claims can be
 // measured against actual rendered output in real Chromium, painted with the
-// real registry Tailwind skins (#265 finding #1/#2, part 3). Mirrors
-// `menus-overlays-live-render.ts` (components-demo) exactly.
+// real registry Tailwind skins (#265 finding #1/#2, part 3). Mirrors the
+// Baseline path's `examples/baseline-css/src/test-fixtures/menus-overlays-live-render.ts`
+// exactly.
 import {
   compileMenusOverlaysCatalog,
   dispatchScenarioSelection,

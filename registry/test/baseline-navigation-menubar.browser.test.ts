@@ -1,26 +1,23 @@
 // @vitest-environment node
 
-// #265 finding 9 — real-Chromium proof that the BASELINE demo's actual
-// mounted NavigationMenu and Menubar (examples/components-demo/src/sections/
-// surfaces.ts) deliver the accessibility tree, keyboard traversal, submenu
-// edge-flip, and focus-unwind behavior the machines themselves implement —
-// not a synthetic fixture. Every id below is one this test read off the REAL
+// #265 finding 9 — real-Chromium proof that a consumer's BASELINE-path
+// NavigationMenu and Menubar deliver the accessibility tree, keyboard
+// traversal, submenu edge-flip, and focus-unwind behavior the machines
+// themselves implement. The compositions live in the Tailwind-free Baseline
+// consumer (`examples/baseline-css/src/test-fixtures/compositions/menus.ts`,
+// moved there from the retired `examples/components-demo`): a `nav` landmark
+// with list/link anatomy and a leaf item, and a three-menu Menubar with an
+// engine-owned submenu. Every id below is one this test reads off the REAL
 // rendered page (`nav-demo:trigger:file`, `menubar-demo:view:trigger`, …),
-// and every part bag exercised is the one `surfaces.ts` actually spreads
-// (`...nv.item(...).trigger`, `...mb.menuTrigger(id)`, …) — this file makes
-// no assertions against a hand-built approximation of either component.
+// and every part bag exercised is the one that composition actually spreads
+// (`...nv.item(...).trigger`, `...mb.menuTrigger(id)`, …).
 //
-// Follows the pattern `registry/test/navigation-data-live-demos.browser.test.ts`
-// (the #264 lane) established: a real Vite dev server rooted at the demo
-// directory (so its own `vite.config.ts` — `@llui/vite-plugin` + Tailwind —
-// applies exactly as it does for `pnpm dev`/`build`), a real Chromium page,
-// and `page.evaluate` driving the DOM with raw `HTMLElement.focus()` /
-// `KeyboardEvent`s. That file's own `sourceAliasesFromExports` helper
-// (`scripts/lib/vite-source-aliases.mjs`) does not exist on this branch, so
-// this file resolves `@llui/*` the ordinary way — through the workspace's
-// `node_modules` symlinks and each package's BUILT `dist/` output (already
-// current: `pnpm --filter @llui/components build` runs ahead of this suite
-// in `verify`/CI) — rather than aliasing straight to `src/`.
+// The fixture is BUILT once through the example's own `vite.config.ts` and
+// served static (`scripts/lib/prebuilt-fixture.mjs`); `page.evaluate` drives
+// the DOM with raw `HTMLElement.focus()` / `KeyboardEvent`s. `@llui/*`
+// resolves the ordinary way — through the workspace's `node_modules` symlinks
+// and each package's BUILT `dist/` output (current: the packages build ahead
+// of this suite in `verify`/CI).
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { Browser, Page } from 'playwright'
@@ -31,8 +28,9 @@ import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
 const hermetic = useHermeticBrowser()
 
 const repoRoot = resolve(import.meta.dirname, '../..')
+const FIXTURE = 'src/test-fixtures/compositions.html'
 
-describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', () => {
+describe('Baseline NavigationMenu + Menubar in Chromium (#265 finding 9)', () => {
   let browser: Browser
   let build: PrebuiltFixture
   let url: string
@@ -45,13 +43,10 @@ describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', 
     // every fresh page, and shared the example's dependency-optimizer cache with
     // every concurrent suite serving the same example (see that module's header).
     ;[build, browser] = await Promise.all([
-      prebuildFixture({
-        root: resolve(repoRoot, 'examples/components-demo'),
-        inputs: ['index.html'],
-      }),
+      prebuildFixture({ root: resolve(repoRoot, 'examples/baseline-css'), inputs: [FIXTURE] }),
       hermetic.launch({ headless: true }),
     ])
-    url = build.url('/')
+    url = build.url(FIXTURE)
   }, 60_000)
 
   afterAll(async () => {
@@ -273,12 +268,12 @@ describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', 
     expect(result.afterSecondEscape).toEqual({ viewExpanded: 'false', focusOnViewTrigger: true })
   })
 
-  it('Menubar submenu flips side at a real viewport edge — proved against the actual demo layout, not a synthetic fixture', async () => {
+  it('Menubar submenu flips side at a real viewport edge — proved against a real application layout, not a minimal fixture', async () => {
     // #265 A4's other proof (`menu-submenu-edge-flip.browser.test.ts`)
     // exercises `menu.subOverlay` against a minimal hand-built fixture. This
-    // measures the SAME behavior through the demo's actual Menubar
-    // composition (`renderMenuOverlay` -> `menubar.subOverlay`, wired via
-    // `renderMenuItems` in `surfaces.ts`) at a viewport narrow enough that
+    // measures the SAME behavior through a real application Menubar
+    // composition (`menubar.overlay` -> `menubar.subOverlay`, wired via
+    // `renderMenubarItems` in `compositions/menus.ts`) at a viewport narrow enough that
     // the View menu's real DOM position leaves no room on the right —
     // measured directly: at this width the submenu's preferred-side box
     // would overflow past `window.innerWidth`, so a real flip is required,
@@ -313,7 +308,7 @@ describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', 
   // (`directionSyncMount(opts.id, dir => send({type:'syncDomDir', dir}))`)
   // that observes the mounted root's own live ancestor `dir` and dispatches
   // `syncDomDir`, exactly like `tabs`/`carousel`/`pagination`. This proves the
-  // BASELINE DEMO composition — not just the reducer in isolation — actually
+  // BASELINE composition — not just the reducer in isolation — actually
   // responds to a RUNTIME direction change with no reload: flipping
   // `<html dir>` after mount must re-derive `eventDirection` and swap which
   // arrow key opens a branch.
@@ -374,7 +369,7 @@ describe('baseline demo NavigationMenu + Menubar in Chromium (#265 finding 9)', 
   // observing the bar ROOT (`#menubar-demo`), and every `setDir`/`syncDomDir`
   // is propagated down into each embedded per-menu `MenuState` so a delegated
   // menu's keyboard handling and floating geometry never disagree with the
-  // bar that owns it. This proves the BASELINE DEMO's real mounted Menubar
+  // bar that owns it. This proves the BASELINE path's real mounted Menubar
   // composition (not the reducer in isolation) responds to a RUNTIME
   // direction change with no reload: flipping `<html dir>` after mount swaps
   // which arrow key moves the roving-tabindex focus BETWEEN sibling

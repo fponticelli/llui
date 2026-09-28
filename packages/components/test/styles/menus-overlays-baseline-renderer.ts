@@ -396,7 +396,8 @@ const hoverCardAdapter: Adapter<FloatingPresenceCaseInput> = (host, input, ctx) 
           send,
           parts,
           placement: input.placement,
-          content: () => [div({ ...parts.content }, [text(input.label)])],
+          arrowSelector: "[data-part='arrow']",
+          content: () => [div({ ...parts.content }, [text(input.label), div({ ...parts.arrow })])],
         }),
       ]
     },
@@ -476,7 +477,8 @@ const tooltipAdapter: Adapter<TooltipCaseInput> = (host, input, ctx) =>
           send,
           parts,
           placement: input.placement,
-          content: () => [div({ ...parts.content }, [text(input.label)])],
+          arrowSelector: "[data-part='arrow']",
+          content: () => [div({ ...parts.content }, [text(input.label), div({ ...parts.arrow })])],
         }),
       ]
     },

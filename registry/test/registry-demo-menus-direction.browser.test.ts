@@ -6,9 +6,10 @@
 // AND floating submenu geometry, now that `menu-machine.ts` (shared by
 // `menu.ts`/`context-menu.ts`, delegated to by `menubar.ts`) is migrated onto
 // the shared `@llui/interactions` direction-sync seam. Mirrors
-// `registry/test/baseline-demo-navigation-menubar.browser.test.ts`'s pattern
-// for the OTHER demo (`examples/components-demo`), so both demos get a real
-// mounted proof rather than one standing in for the other.
+// `registry/test/baseline-navigation-menubar.browser.test.ts`'s pattern for
+// the OTHER styling path (a Baseline composition in `examples/baseline-css`),
+// so both paths get a real mounted proof rather than one standing in for the
+// other.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import type { Browser, Page } from 'playwright'

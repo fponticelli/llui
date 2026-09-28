@@ -639,9 +639,9 @@ export function connect(
    * passed. `view()` runs ONCE, so that froze them at build time — and a row's
    * key in a keyed `each` is its date, which selecting a day does not change,
    * so nothing rebuilt either. Selection, focus and range preview all updated
-   * in state and never reached the DOM. (`examples/components-demo` hand-rolls
-   * its cells with `state.map(...)` and never calls `dayCell`; that was the
-   * tell.) The passed cell now supplies IDENTITY only — its `iso` — and every
+   * in state and never reached the DOM. (The since-retired components demo
+   * hand-rolled its cells with `state.map(...)` and never called `dayCell`;
+   * that was the tell.) The passed cell now supplies IDENTITY only — its `iso` — and every
    * flag is re-derived from live state for that date.
    *
    * Memoized on state identity because a bag has ~10 attributes and a month has

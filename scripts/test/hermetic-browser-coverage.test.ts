@@ -50,7 +50,6 @@ const DIRECT_LAUNCHERS: Readonly<Record<string, string>> = {
   'packages/mcp/demo.ts': 'a manual demo script, run by hand, not a test',
   'packages/mcp/test/manual-playwright.mjs':
     'a manual debugging script (`node …`), not collected by vitest',
-  'scripts/a11y-audit.ts': 'a manual audit tool, in no CI step or package script',
 }
 
 /** Each allowlisted non-guard launcher that must still apply the policy itself. */

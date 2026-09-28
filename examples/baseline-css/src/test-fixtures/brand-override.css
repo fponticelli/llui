@@ -1,5 +1,18 @@
-@import 'tailwindcss';
-@import '@llui/components/styles/tailwind.css';
+/*
+ * A consumer's BRAND OVERRIDE on the Tailwind-free Baseline path: the shipped
+ * `theme.css`, then the shadcn/ui token contract overridden the way a theme
+ * generator emits it. The live Baseline fixtures in this directory render
+ * through it, and `scripts/test/token-contrast.test.ts` discovers it (it
+ * reaches the tokens through the `@import` below) and measures every token
+ * pair it resolves to in all six (preference x OS) cells. It is the only
+ * consumer override that guard measures: #250's second regression — a
+ * `:root`-only `--destructive` winning in dark mode, 6.207:1 -> 3.750:1 —
+ * lives in exactly this shape.
+ *
+ * Moved here, unchanged, from the retired `examples/components-demo`'s entry
+ * stylesheet, minus its Tailwind imports and showcase layout: a token cascade
+ * does not depend on either.
+ */
 @import '@llui/components/styles/theme.css';
 
 /*
@@ -69,65 +82,4 @@
     --primary-foreground: oklch(0.2 0.02 258);
     --destructive: oklch(0.7 0.19 27);
   }
-}
-
-/* Demo-specific layout */
-.demo-section {
-  border-radius: var(--llui-radius-lg);
-  border: 1px solid var(--border);
-  background: var(--card);
-  padding: 1.5rem;
-}
-
-.demo-title {
-  margin-bottom: 1rem;
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--foreground);
-}
-
-/*
- * `.input` — the demo's shared text-field look. It was used at three call sites
- * for a long time while being DEFINED NOWHERE, so those fields rendered with no
- * border, no radius and no focus ring; the same sweep that found it also found a
- * `text-error` with no matching token. Both were invisible until
- * `scripts/test/tailwind-classes.test.ts` started compiling this file's classes
- * against this file. Written as plain CSS over the tokens rather than as
- * utilities at each call site, so there is one place to change it.
- */
-.input {
-  display: flex;
-  height: 2.25rem;
-  width: 100%;
-  border: 1px solid var(--border);
-  border-radius: var(--llui-radius-md);
-  background: transparent;
-  padding: 0.25rem 0.75rem;
-  font-size: 0.875rem;
-  box-shadow: var(--llui-shadow-sm);
-  transition:
-    color var(--llui-duration-fast),
-    box-shadow var(--llui-duration-fast);
-}
-
-.input::placeholder {
-  color: var(--muted-foreground);
-}
-
-.input:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 2px var(--ring);
-}
-
-.input:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-/* The sparkline's viewBox is 240x56 user units. An <svg> with no width/height
- * defaults to 300x150 and would scale the viewBox to fit, so the demo states a
- * CSS size; the geometry itself never reads layout. */
-.sparkline-svg {
-  width: 240px;
-  height: 56px;
 }

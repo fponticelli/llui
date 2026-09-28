@@ -1,7 +1,10 @@
 // TEST-ONLY fixture (registry/test/forced-colors-chart-series.browser.test.ts).
-// Not part of the curated demo — a chart with THREE bar and THREE area
-// series, enough that a flat `fill: CanvasText` under forced colors would
-// make same-mark series genuinely indistinguishable (#264).
+// The Baseline path's half: a chart with THREE bar and THREE area series,
+// enough that a flat `fill: CanvasText` under forced colors would make
+// same-mark series genuinely indistinguishable (#264), rendered in the one
+// example app with NO Tailwind — `theme.css` (through the brand override) and
+// nothing else.
+import './brand-override.css'
 import {
   button,
   circle,

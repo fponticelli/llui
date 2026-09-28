@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 /**
- * #265 finding 6, in both actual demos: `dir="rtl"` on the APP CONTAINER
+ * #265 finding 6, on both styling paths: `dir="rtl"` on the APP CONTAINER
  * (`#app`), never on `<html>`. The dropdown menu portals its content to
  * `<body>`, OUTSIDE that container, so every direction consumer must resolve
  * from the menu's ANCHOR rather than from where the portal landed:
@@ -30,16 +30,33 @@ const repoRoot = resolve(import.meta.dirname, '../..')
 interface Demo {
   readonly name: string
   readonly dir: string
+  /** The HTML entry, relative to `dir`. */
+  readonly input: string
   readonly menuId: string
   readonly subValue: string
 }
 
 const DEMOS: readonly Demo[] = [
-  { name: 'baseline', dir: 'examples/components-demo', menuId: 'menu-demo', subValue: 'Share' },
-  { name: 'registry', dir: 'examples/registry-demo', menuId: 'demo-dropdown', subValue: 'team' },
+  // The Baseline path: a consumer composition in the Tailwind-free Baseline
+  // consumer (`compositions/menus.ts`), mounted inside `#app`.
+  {
+    name: 'baseline',
+    dir: 'examples/baseline-css',
+    input: 'src/test-fixtures/compositions.html',
+    menuId: 'menu-demo',
+    subValue: 'Share',
+  },
+  // The Registry path: the copied skins in the registry sync fixture.
+  {
+    name: 'registry',
+    dir: 'examples/registry-demo',
+    input: 'index.html',
+    menuId: 'demo-dropdown',
+    subValue: 'team',
+  },
 ]
 
-describe('menus under an RTL APP CONTAINER, in both demos (#265 finding 6)', () => {
+describe('menus under an RTL APP CONTAINER, on both paths (#265 finding 6)', () => {
   let browser: Browser
   let builds: PrebuiltFixture[] = []
   const urls: Record<string, string> = {}
@@ -55,13 +72,13 @@ describe('menus under an RTL APP CONTAINER, in both demos (#265 finding 6)', () 
       hermetic.launch({ headless: true }),
       Promise.all(
         DEMOS.map((demo) =>
-          prebuildFixture({ root: resolve(repoRoot, demo.dir), inputs: ['index.html'] }),
+          prebuildFixture({ root: resolve(repoRoot, demo.dir), inputs: [demo.input] }),
         ),
       ),
     ])
     browser = launched
     builds = built
-    DEMOS.forEach((demo, i) => (urls[demo.name] = built[i]!.url('/')))
+    DEMOS.forEach((demo, i) => (urls[demo.name] = built[i]!.url(demo.input)))
   }, 120_000)
 
   afterAll(async () => {

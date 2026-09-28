@@ -20,18 +20,28 @@ import {
 
 const ROOT = path.resolve(__dirname, '../..')
 const REGISTRY = path.join(ROOT, 'registry/llui')
-// Both in-repo consumers of the theme. `components-demo` is where the SECOND
-// instance of the dead-class defect was found (`bg-surface-2` named a token that
-// never existed in any version of theme.css); `registry-demo` was outside this
-// check entirely until the icon work, so its own classes went unverified.
+// Every in-repo consumer APP, one per styling path, each compiled against its
+// OWN entry stylesheet. The retired Baseline showcase (`examples/components-demo`)
+// is where the SECOND instance of the dead-class defect was found
+// (`bg-surface-2` named a token that never existed in any version of
+// theme.css); `registry-demo` was outside this check entirely until the icon
+// work, so its own classes went unverified. The Baseline path's consumer is
+// `examples/baseline-css`: no Tailwind, so its classes are the baseline
+// recipe's own (`btn`, `btn-secondary`, `btn-sm`, …), and a class `theme.css`
+// does not define is exactly as dead as a utility Tailwind cannot build. Its
+// entry is the brand-override stylesheet its fixtures load, which `@import`s
+// `theme.css`. (The Component Gallery's Registry document renders
+// `registry-demo`'s copies, swept here and in the registry sweep above.)
 //
 // Named by their ROOT so both halves of an app are reachable: `src/` (TypeScript
 // recipes) and `index.html` (the entry point, unread by anything until #251 —
 // three dead classes sat on its `<body>` and `<p>` for a release).
-const DEMOS = [
-  path.join(ROOT, 'examples/components-demo'),
-  path.join(ROOT, 'examples/registry-demo'),
-]
+const APPS = [
+  { name: 'examples/registry-demo', entry: 'src/main.css' },
+  { name: 'examples/baseline-css', entry: 'src/test-fixtures/brand-override.css' },
+].map((app) => ({ ...app, root: path.join(ROOT, app.name) }))
+/** The Tailwind apps, whose `index.html` carries utility classes of its own. */
+const DEMOS = [path.join(ROOT, 'examples/registry-demo')]
 
 /**
  * Modules that legitimately declare NO class recipe, with the reason.
@@ -89,7 +99,7 @@ async function walkSourceFiles(dir: string): Promise<string[]> {
 }
 
 async function sourceFiles(dir: string): Promise<string[]> {
-  // Real repo sweeps (the registry, both demos' `src/`) go through git — see
+  // Real repo sweeps (the registry, both apps' `src/`) go through git — see
   // `gitLsFiles` above. A handful of tests in this file build a SYNTHETIC
   // fixture app under `mkdtemp(tmpdir())`, which sits outside this repo's
   // working tree entirely and is never git-tracked, so `git ls-files` there
@@ -102,7 +112,7 @@ async function sourceFiles(dir: string): Promise<string[]> {
 }
 
 // #264 review M2: every `UNRESOLVED_RECIPE_ALLOWED` key `extractClassCandidates`
-// actually consults across every sweep this file runs (registry + both demos),
+// actually consults across every sweep this file runs (registry + both apps),
 // accumulated here so the "closed at both ends" test below can assert it
 // against the allowlist's own key set — closed at ONE end by the resolver
 // itself (an unlisted unresolvable identifier still throws, failing this
@@ -258,9 +268,12 @@ describe('registry Tailwind classes', () => {
     expect(dead).toEqual(['z-nonexistent-layer'])
   })
 
-  it.each(DEMOS)('every class %s emits produces real CSS', async (DEMO: string) => {
-    const byFile = await appCandidates(DEMO)
-    const dead = await deadIn(byFile, path.join(DEMO, 'src/main.css'))
+  it.each(APPS)('every class $name emits produces real CSS', async ({ root, entry }) => {
+    const byFile = await appCandidates(root)
+    // Vacuity guard: an app whose recipes the extractor stopped reading would
+    // pass the dead-class assertion below over an empty set.
+    expect([...byFile.values()].flat(), root).not.toEqual([])
+    const dead = await deadIn(byFile, path.join(root, entry))
     const blame = dead.map((c) => {
       const files = [...byFile].filter(([, list]) => list.includes(c)).map(([f]) => f)
       return `  ${c}  (${files.join(', ')})`
@@ -274,9 +287,9 @@ describe('registry Tailwind classes', () => {
     // The assertion above is only worth its runtime if a dead class in the HTML
     // half can reach it. A fixture app, run through the SAME `deadIn` the demos
     // use, is what makes that checkable: `bg-surface-muted` and `text-text` are
-    // two of the three classes that really sat in `components-demo/index.html`,
-    // and `bg-background` / `mx-auto` beside them are live, so the fixture pins
-    // both directions at once.
+    // two of the three classes that really sat in the retired
+    // `components-demo/index.html`, and `bg-background` / `mx-auto` beside them
+    // are live, so the fixture pins both directions at once.
     const app = await mkdtemp(path.join(tmpdir(), 'llui-html-classes-'))
     try {
       await mkdir(path.join(app, 'src'))
@@ -300,7 +313,7 @@ describe('registry Tailwind classes', () => {
     // Vacuity guard, the same one `emits at least one class candidate per ui
     // component` provides for the TS side: an extractor that silently stopped
     // reading `class="…"` would make the compile assertion above pass over an
-    // empty set. Both entry points carry classes on `<body>` today.
+    // empty set. The registry demo's entry point carries classes on `<body>`.
     const html = path.join(DEMO, 'index.html')
     const candidates = await readFile(html, 'utf8').then((s) => extractHtmlClassCandidates(html, s))
     expect(candidates.length).toBeGreaterThan(5)
@@ -341,11 +354,11 @@ describe('registry Tailwind classes', () => {
     // Runs its OWN sweep (rather than relying on earlier tests in this file
     // to have populated `usedAllowlistKeys`, which would make this test's
     // pass/fail depend on execution order) over every corpus this file
-    // checks — the registry itself plus both demos, the same roots
+    // checks — the registry itself plus both apps, the same roots
     // `allCandidates`/`appCandidates` cover elsewhere.
     usedAllowlistKeys.clear()
     await allCandidates()
-    for (const demo of DEMOS) await appCandidates(demo)
+    for (const app of APPS) await appCandidates(app.root)
     // An entry that resolves to nothing needed any more is exactly the
     // allowlist rot CLAUDE.md warns about; an unlisted unresolvable
     // identifier would already have thrown during the sweep above, failing
@@ -358,7 +371,7 @@ describe('registry Tailwind classes', () => {
     // git-based enumeration silently missing a file the walk would still
     // find, or the reverse. Assert EXACT set equality against a differently
     // derived corpus, over every root a real sweep runs against.
-    for (const dir of [REGISTRY, ...DEMOS.map((d) => path.join(d, 'src'))]) {
+    for (const dir of [REGISTRY, ...APPS.map((app) => path.join(app.root, 'src'))]) {
       const viaGit = gitLsFiles(dir)
       const viaWalk = await walkSourceFiles(dir)
       expect(viaGit.sort()).toEqual(viaWalk.sort())

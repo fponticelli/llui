@@ -72,13 +72,19 @@ interface Demo {
 // sharing each example's dependency-optimizer cache with every concurrent
 // suite serving the same example — whose re-optimizations rewrite it and can
 // force-reload a page mid-test. A built page is one document and its bundles.
-function buildExample(directory: string): Promise<PrebuiltFixture> {
+function buildExample(directory: string, input: string): Promise<PrebuiltFixture> {
   return prebuildFixture({
     root: resolve(repoRoot, directory),
-    inputs: ['index.html'],
+    inputs: [input],
     alias: sourceAliases,
   })
 }
+
+// The Baseline path's live composition lives in the Tailwind-free Baseline
+// consumer (`examples/baseline-css/src/test-fixtures/compositions/navigation-data.ts`,
+// moved there from the retired `examples/components-demo`); the Registry
+// path's is the copied-source sync fixture's own app.
+const BASELINE_FIXTURE = 'src/test-fixtures/compositions.html'
 
 async function openDemo(browser: Browser, demo: Demo): Promise<Page> {
   const page = await browser.newPage({ viewport: { width: 1024, height: 900 } })
@@ -87,15 +93,15 @@ async function openDemo(browser: Browser, demo: Demo): Promise<Page> {
   return page
 }
 
-describe('actual navigation/data demos in Chromium', () => {
+describe('live navigation/data compositions in Chromium, both paths', () => {
   let browser: Browser
   let fixtures: PrebuiltFixture[] = []
   let demos: Demo[] = []
 
   beforeAll(async () => {
     const [baseline, registry, launched] = await Promise.all([
-      buildExample('examples/components-demo'),
-      buildExample('examples/registry-demo'),
+      buildExample('examples/baseline-css', BASELINE_FIXTURE),
+      buildExample('examples/registry-demo', 'index.html'),
       hermetic.launch({ headless: true }),
     ])
     fixtures = [baseline, registry]
@@ -103,7 +109,7 @@ describe('actual navigation/data demos in Chromium', () => {
     demos = [
       {
         path: 'baseline',
-        url: baseline.url('/'),
+        url: baseline.url(BASELINE_FIXTURE),
         carouselId: 'car-demo',
         tabsId: 'tabs-demo',
         paginationId: 'pagination-demo',
@@ -124,7 +130,7 @@ describe('actual navigation/data demos in Chromium', () => {
       },
       {
         path: 'registryTailwind',
-        url: registry.url('/'),
+        url: registry.url('index.html'),
         carouselId: 'demo-carousel',
         tabsId: 'demo-tabs',
         paginationId: 'registry-pagination-demo',
@@ -156,51 +162,29 @@ describe('actual navigation/data demos in Chromium', () => {
   // which would switch the whole file's check off — the same discipline
   // `registry-attrs.test.ts` documents). Every physical utility this guard
   // has ever found in an owned demo section was a defect to FIX, not a
-  // pattern to allow (#264 item 8) — with ONE exception, added in #265: the
-  // NavigationMenu indicator's `left-0` anchor. `watchNavMenuIndicator`
-  // (`packages/components/src/components/navigation-menu.ts`) measures
-  // `active.getBoundingClientRect().left - parent.getBoundingClientRect().left`
-  // — a REAL, remeasured PHYSICAL pixel offset, recomputed on every
-  // `data-state` flip and resize — and writes it into `--indicator-left` for
-  // a `translate-x()` the indicator resolves against. Swapping the anchor to
-  // `start-0` (logical) would double-handle direction: under `rtl`,
-  // `start-0` itself flips to the physical right edge while the measured
-  // offset is still a physical LEFT distance, so the arrow would land at the
-  // wrong edge entirely. `registry/llui/ui/navigation-menu.ts`'s accepted
-  // `NavigationMenuIndicator` recipe uses the identical `left-0` anchor for
-  // the identical reason; this is that same justified exception on the
-  // baseline path, not a case this guard's "always fixable" history covered.
-  // Closed at both ends by the assertions below — an entry that stops
-  // matching its file fails as obsolete, so this cannot silently rot into a
-  // bypass.
+  // pattern to allow (#264 item 8). Its one exception (#265: a NavigationMenu
+  // indicator's `left-0` translate anchor, resolved against a re-measured
+  // physical pixel offset) belonged to the retired Baseline showcase; the
+  // Baseline path's live composition is now Tailwind-free and carries no
+  // utility classes at all, so only the Registry path has sections to scan.
+  // Empty, and still closed at both ends by the assertions below — an entry
+  // that stops matching its file fails as obsolete.
   const PHYSICAL_UTILITY_ALLOWLIST: Readonly<
     Record<string, readonly { readonly match: string; readonly reason: string }[]>
-  > = {
-    'examples/components-demo/src/sections/surfaces.ts': [
-      {
-        match: 'left-0',
-        reason:
-          "NavigationMenu indicator's translate anchor, resolved against a real re-measured physical pixel offset (see comment above) — not a hardcoded direction assumption.",
-      },
-    ],
-  }
+  > = {}
 
-  it('keeps every demo section that actually renders a navigation-data product logically laid out', () => {
+  it('keeps every registry demo section that actually renders a navigation-data product logically laid out', () => {
     const contract = loadProductContract()
     const catalog = compileNavigationDataCatalog(contract)
     const joined = joinNavigationDataScenarios(catalog, contract)
     const tokens = navigationDataDemoTokens(joined)
 
-    // DERIVED, never hand-picked (#264): every section file EITHER demo's own
-    // `app.ts` actually mounts, narrowed to the ones whose own import
+    // DERIVED, never hand-picked (#264): every section file the registry
+    // demo's own `app.ts` actually mounts, narrowed to the ones whose own import
     // specifiers name a navigation-data family machine or copied skin. A
     // hand-written 4-file list is exactly what let `charts.ts` — carrying
     // `text-left`/`pr-3`/`ml-auto`/`mr-1` — go unscanned.
     const files = [
-      {
-        appTsPath: resolve(repoRoot, 'examples/components-demo/src/app.ts'),
-        sectionsDir: resolve(repoRoot, 'examples/components-demo/src/sections'),
-      },
       {
         appTsPath: resolve(repoRoot, 'examples/registry-demo/src/app.ts'),
         sectionsDir: resolve(repoRoot, 'examples/registry-demo/src/sections'),
@@ -214,12 +198,6 @@ describe('actual navigation/data demos in Chromium', () => {
     // this repo.
     expect(files.map((file) => relative(repoRoot, file)).sort()).toEqual(
       [
-        'examples/components-demo/src/sections/charts.ts',
-        'examples/components-demo/src/sections/content.ts',
-        'examples/components-demo/src/sections/data.ts',
-        'examples/components-demo/src/sections/inputs.ts',
-        'examples/components-demo/src/sections/surfaces.ts',
-        'examples/components-demo/src/sections/time-inputs.ts',
         'examples/registry-demo/src/sections/advanced.ts',
         'examples/registry-demo/src/sections/charts.ts',
         'examples/registry-demo/src/sections/data.ts',
@@ -273,69 +251,6 @@ describe('actual navigation/data demos in Chromium', () => {
         ).toBe(true)
       }
     }
-  })
-
-  it('baseline mounts the charts section with logical alignment and spacing that mirror under rtl', async () => {
-    // Real Chromium proof that fixing `charts.ts`'s physical utilities
-    // (`text-left`/`pr-3`/`ml-auto`/`mr-1` -> `text-start`/`pe-3`/`ms-auto`/
-    // `me-1`, #264 item 8) actually produces mirrored LOGICAL layout, not
-    // merely a class rename the guard above happens to accept.
-    const demo = demos.find((candidate) => candidate.path === 'baseline')!
-    const page = await openDemo(browser, demo)
-    const result = await page.evaluate(async () => {
-      const toggle = [...document.querySelectorAll<HTMLButtonElement>('button')].find(
-        (button) => button.textContent === 'Show the data tables',
-      )
-      if (toggle === undefined) throw new Error('Missing the chart data-table toggle')
-      toggle.click()
-
-      const passFor = (dir: 'ltr' | 'rtl') => {
-        document.documentElement.dir = dir
-        const table = document.querySelector<HTMLTableElement>(
-          '[data-scope="chart"][data-part="table"]',
-        )
-        if (table === null) throw new Error('Missing chart accessible table')
-        // Not a `th`: the HTML UA stylesheet gives table headers their own
-        // unconditional `text-align: center`, which would report 'center'
-        // regardless of the table's own `text-start` class in EITHER
-        // direction — a `td` has no such override, so it actually reflects
-        // the inherited logical alignment.
-        const cell = table.querySelector<HTMLElement>('td')
-        if (cell === null) throw new Error('Missing chart accessible table cell')
-        const valueSpan = document.querySelector<HTMLElement>('.ms-auto')
-        if (valueSpan === null) throw new Error('Missing chart legend value span')
-        const row = valueSpan.parentElement
-        if (row === null) throw new Error('Missing chart legend row')
-        const rowRect = row.getBoundingClientRect()
-        const valueRect = valueSpan.getBoundingClientRect()
-        return {
-          cellDirection: getComputedStyle(cell).direction,
-          cellTextAlign: getComputedStyle(cell).textAlign,
-          // `margin-inline-start: auto` pushes the legend value to the
-          // TRAILING edge of its own row in either direction — the RIGHT
-          // physical edge in ltr, the LEFT physical edge in rtl.
-          valueAtRowTrailingEdge:
-            dir === 'ltr'
-              ? Math.abs(valueRect.right - rowRect.right) < 2
-              : Math.abs(valueRect.left - rowRect.left) < 2,
-        }
-      }
-
-      return { ltr: passFor('ltr'), rtl: passFor('rtl') }
-    })
-    await page.close()
-
-    // Chromium reports the LOGICAL keyword itself ('start'), never resolving
-    // it to a physical 'left'/'right' — proof the class is `text-start`, not
-    // a `text-left`/`text-right` pair swapped by direction. `direction`
-    // flipping alongside it is what proves the table is actually reading
-    // the live `dir`, not merely carrying an inert logical keyword.
-    expect(result.ltr.cellTextAlign).toBe('start')
-    expect(result.ltr.cellDirection).toBe('ltr')
-    expect(result.rtl.cellTextAlign).toBe('start')
-    expect(result.rtl.cellDirection).toBe('rtl')
-    expect(result.ltr.valueAtRowTrailingEdge).toBe(true)
-    expect(result.rtl.valueAtRowTrailingEdge).toBe(true)
   })
 
   it.each(['baseline', 'registryTailwind'] as const)(

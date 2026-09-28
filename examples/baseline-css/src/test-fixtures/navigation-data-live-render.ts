@@ -2,6 +2,9 @@
 // Mounts the REAL navigation-data scenario renderer — not hand-written HTML —
 // so density/closing-phase geometry claims can be measured against actual
 // rendered output in real Chromium (#264 item C).
+// The Baseline path, and nothing else: `theme.css` (through the brand
+// override), no Tailwind, no preflight, no utilities.
+import './brand-override.css'
 import { mountBaselineNavigationDataScenarios } from '../../../../packages/components/test/styles/navigation-data-baseline-renderer'
 import { compileNavigationDataCatalog } from '../../../../packages/components/test/styles/navigation-data-scenarios'
 
