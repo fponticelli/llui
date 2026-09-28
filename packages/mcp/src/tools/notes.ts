@@ -25,6 +25,7 @@ import {
   rotateSession,
 } from '@llui/vite-plugin/notes'
 import { serializeNote } from '@llui/notes-format/note-serialize'
+import { NOTE_KINDS } from '@llui/notes-format/note-types'
 import type {
   CaptureLevel,
   NoteBody,
@@ -244,11 +245,9 @@ export function registerNotesTools(registry: ToolRegistry): void {
           .describe('Session id to read. Defaults to the current session.'),
         author: z.enum(['human', 'llm']).optional(),
         kind: z
-          .union([z.string(), z.array(z.string())])
+          .union([z.enum(NOTE_KINDS), z.array(z.enum(NOTE_KINDS))])
           .optional()
-          .describe(
-            'Filter by NoteKind: rect | lasso | pin | element | arrow | text | capture. Pass an array for multiple.',
-          ),
+          .describe(`Filter by NoteKind: ${NOTE_KINDS.join(' | ')}. Pass an array for multiple.`),
         since: z
           .string()
           .optional()
@@ -261,11 +260,7 @@ export function registerNotesTools(registry: ToolRegistry): void {
       const query: Parameters<typeof listNotes>[1] = {}
       if (args.sessionId) query.sessionId = args.sessionId
       if (args.author) query.author = args.author
-      if (args.kind !== undefined) {
-        query.kind = Array.isArray(args.kind)
-          ? (args.kind as unknown as Parameters<typeof listNotes>[1]['kind'])
-          : (args.kind as unknown as Parameters<typeof listNotes>[1]['kind'])
-      }
+      if (args.kind !== undefined) query.kind = args.kind
       if (args.since) query.since = args.since
       if (args.limit !== undefined) query.limit = args.limit
       return listNotes(ctx.notesRoot, query)
