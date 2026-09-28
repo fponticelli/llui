@@ -43,7 +43,7 @@ class TestEnv implements RouterEnv {
   historyState: unknown = null
   historyLength = 1
   readonly writes: Array<{ action: string; url?: string }> = []
-  readonly handlers = new Map<'popstate' | 'hashchange', Set<(hash?: string) => void>>()
+  readonly handlers = new Map<'popstate' | 'hashchange', Set<() => void>>()
 
   constructor(input: string, mode: 'hash' | 'history' = 'hash') {
     this.hash = mode === 'hash' ? input : ''
@@ -83,7 +83,7 @@ class TestEnv implements RouterEnv {
     this.writes.push({ action: `scroll:${x},${y}` })
   }
 
-  onUrlChange(event: 'popstate' | 'hashchange', handler: (newHash?: string) => void): () => void {
+  onUrlChange(event: 'popstate' | 'hashchange', handler: () => void): () => void {
     const handlers = this.handlers.get(event) ?? new Set()
     handlers.add(handler)
     this.handlers.set(event, handlers)
@@ -91,7 +91,7 @@ class TestEnv implements RouterEnv {
   }
 
   emit(event: 'popstate' | 'hashchange'): void {
-    for (const handler of this.handlers.get(event) ?? []) handler(this.hash)
+    for (const handler of this.handlers.get(event) ?? []) handler()
   }
 
   private applyUrl(url: string): void {

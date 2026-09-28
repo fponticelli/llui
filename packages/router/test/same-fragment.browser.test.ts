@@ -2,61 +2,102 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type ViteDevServer } from 'vite'
+import { prebuildFixture, type PrebuiltFixture } from '../../../scripts/lib/prebuilt-fixture.mjs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), 'browser')
 
+/**
+ * The two deliveries the HTML spec permits for a blocked traversal and its
+ * restore: each step fires `popstate` while it is applied and QUEUES its
+ * `hashchange`, and the restore is applied by a task on a different source, so
+ * the event loop may run it before the first `hashchange`.
+ */
+const NATURAL_ORDER = ['popstate', 'hashchange', 'popstate', 'hashchange']
+const RESTORE_FIRST = ['popstate', 'popstate', 'hashchange', 'hashchange']
+
+/**
+ * Main-thread stalls tried in turn, shortest first, until Chromium delivers
+ * {@link RESTORE_FIRST}. Measured: 5 ms already forces it on every run on this
+ * machine, so the first entry has a 10x margin and the later ones exist only
+ * for a runner loaded enough that the restore's IPC round trip outlasts it.
+ * Every attempt is asserted in full — escalating the STIMULUS is not a retry of
+ * the assertion.
+ */
+const STALLS_MS = [50, 200, 800]
+
 describe('same-fragment history traversal in Chromium (#163)', () => {
   let browser: Browser
   let page: Page
-  let server: ViteDevServer
+  let fixture: PrebuiltFixture
+  let fixtureUrl: string
 
   beforeAll(async () => {
-    server = await createServer({
+    fixture = await prebuildFixture({
       root: fixtureRoot,
-      logLevel: 'error',
-      resolve: {
-        alias: {
-          '@llui/dom': resolve(fixtureRoot, '../../../dom/src/index.ts'),
-        },
+      inputs: ['same-fragment.fixture.html'],
+      alias: {
+        '@llui/dom': resolve(fixtureRoot, '../../../dom/src/index.ts'),
       },
-      server: { host: '127.0.0.1', port: 0 },
       define: {
         __LLUI_AGENT__: 'true',
         __LLUI_TRANSITIONS__: 'true',
       },
     })
-    await server.listen()
-    const address = server.httpServer?.address()
-    if (!address || typeof address === 'string') throw new Error('Vite did not bind a TCP port')
+    fixtureUrl = fixture.url('same-fragment.fixture.html')
 
     browser = await chromium.launch({ headless: true })
     page = await browser.newPage()
-    await page.goto(`http://127.0.0.1:${address.port}/same-fragment.fixture.html`)
-    await page.waitForFunction(() => window.__sameFragmentReady === true)
   })
 
   afterAll(async () => {
     await page?.close()
     await browser?.close()
-    await server?.close()
+    await fixture?.close()
   })
 
-  it('adopts a same-fragment landing and restores a later block from that position', async () => {
-    const result = await page.evaluate(() => window.__runSameFragmentTraversal())
+  /** A fresh document per run: the fixture's recorders and history are per page. */
+  async function run(stallMs: number) {
+    await page.goto(fixtureUrl)
+    // The fixture assigns its hooks synchronously in a module script, which has
+    // run by the time `goto` resolves on `load`.
+    expect(await page.evaluate(() => window.__sameFragmentReady)).toBe(true)
+    return page.evaluate((stall) => window.__runSameFragmentTraversal(stall), stallMs)
+  }
 
+  function expectSameFragmentLanding(result: Awaited<ReturnType<typeof run>>): void {
     expect(result.sameFragment).toEqual({
       events: ['popstate'],
       marker: 'entry-1',
       dispatches: ['login'],
     })
-    expect(result.blockedRestore).toEqual({
-      events: ['popstate', 'hashchange', 'popstate', 'hashchange'],
-      marker: 'entry-1',
-      hash: '#/login',
-      dispatches: [],
-    })
+  }
+
+  function expectRestoredWithoutDispatch(result: Awaited<ReturnType<typeof run>>): void {
+    const { events, ...rest } = result.blockedRestore
+    expect([NATURAL_ORDER, RESTORE_FIRST]).toContainEqual(events)
+    expect(rest).toEqual({ marker: 'entry-1', hash: '#/login', dispatches: [] })
+  }
+
+  it('adopts a same-fragment landing and restores a later block from that position', async () => {
+    const result = await run(0)
+    expectSameFragmentLanding(result)
+    // Either legal delivery order: which one the browser picks is load-
+    // dependent, and the router's outcome must not be.
+    expectRestoredWithoutDispatch(result)
+  })
+
+  it('restores without dispatching when the restore is applied before the blocked hashchange', async () => {
+    const seen: string[][] = []
+    for (const stallMs of STALLS_MS) {
+      const result = await run(stallMs)
+      expectSameFragmentLanding(result)
+      expectRestoredWithoutDispatch(result)
+      seen.push(result.blockedRestore.events)
+      if (result.blockedRestore.events.join() === RESTORE_FIRST.join()) break
+    }
+    // Non-vacuity: the order under test was actually delivered at least once.
+    expect(seen).toContainEqual(RESTORE_FIRST)
   })
 })

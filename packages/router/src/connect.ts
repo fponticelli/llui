@@ -88,14 +88,18 @@ export interface RouterEnv {
 
   /**
    * Subscribe to a browser-driven URL change. Returns the unsubscribe, so the
-   * caller never has to hold the handler identity to detach it. A hashchange
-   * supplies the fragment from the event's `newURL`; this remains the traversal
-   * destination even when a guard synchronously rewrites `location.hash` while
-   * handling the preceding popstate. Call the handler without an argument for
-   * popstate. Custom adapters must derive the hash argument from
-   * `HashChangeEvent.newURL`, not from the live location.
+   * caller never has to hold the handler identity to detach it.
+   *
+   * The handler is a NOTIFICATION and takes nothing: the router reads where the
+   * browser is through the live members above, never from the event. An event
+   * can be delivered after the URL has moved on — a `hashchange` is queued
+   * behind the `popstate` of the same step, and a traversal applied in between
+   * (a guard-blocked navigation's restore, a second queued traversal) runs
+   * first — so its payload describes a URL that is no longer showing. An
+   * adapter may therefore register the handler directly as the DOM listener;
+   * any argument it is called with is ignored.
    */
-  onUrlChange(event: 'popstate' | 'hashchange', handler: (newHash?: string) => void): () => void
+  onUrlChange(event: 'popstate' | 'hashchange', handler: () => void): () => void
 }
 
 /**
@@ -137,14 +141,9 @@ export function browserRouterEnv(): RouterEnv {
     go: (delta) => history.go(delta),
     scrollTo: (x, y) => window.scrollTo(x, y),
     onUrlChange: (event, handler) => {
-      const listener = (browserEvent: Event) => {
-        if (event !== 'hashchange') {
-          handler()
-          return
-        }
-        const newUrl = (browserEvent as HashChangeEvent).newURL
-        handler(newUrl === '' ? undefined : new URL(newUrl).hash)
-      }
+      // A fresh closure per subscription, so subscribing the same handler twice
+      // yields two listeners that unsubscribe independently.
+      const listener = () => handler()
       window.addEventListener(event, listener)
       return () => {
         window.removeEventListener(event, listener)
@@ -680,6 +679,56 @@ export function connectRouter<
     pendingEchoCount++
     pendingEchoHash = normHash(newHash)
   }
+
+  /**
+   * The fragment the router last RECONCILED — the hash showing when it last
+   * finished handling a browser event or writing the URL itself. Hash mode
+   * only; history mode has no second event to deduplicate.
+   *
+   * WHY A `hashchange` IS JUDGED BY IT. Applying a same-document history step
+   * fires `popstate` SYNCHRONOUSLY and only QUEUES `hashchange` (HTML, "update
+   * document for history step application": a task on the DOM manipulation
+   * task source). Anything applied in between — above all the `history.go` a
+   * guard-blocked traversal restores with, which is applied by a task on a
+   * DIFFERENT source — can therefore run first, and the event loop may pick
+   * either source. So one blocked back is legally delivered as
+   *
+   *   popstate(blocked) hashchange(blocked) popstate(restore) hashchange(restore)
+   *
+   * or as
+   *
+   *   popstate(blocked) popstate(restore) hashchange(blocked) hashchange(restore)
+   *
+   * and a loaded Chromium delivered the second. The same holds for any two
+   * steps applied back to back: two queued traversals, or a navigation followed
+   * by a traversal before its `hashchange` ran. A `hashchange` is not
+   * attributable to "the `popstate` just before it", and an earlier revision
+   * that paired them that way read each late `hashchange` against the LIVE
+   * location — the restored route — and dispatched it once per late event.
+   *
+   * Every step's `popstate` fires before its `hashchange` and is handled
+   * unconditionally, so by the time a `hashchange` runs, the step it announces
+   * has been handled unless the URL changed without one. The URL showing is
+   * therefore compared with the URL last reconciled: equal means there is
+   * nothing new to handle, whichever step the event came from. Unequal means
+   * the URL moved without a `popstate` the router saw — an environment that
+   * does not fire one for a fragment change, or a URL write made behind the
+   * router's back — and it is reconciled like any other landing.
+   *
+   * The event's own destination (`HashChangeEvent.newURL`) deliberately plays
+   * no part: a late event's destination is where the browser WAS, and the
+   * router's job is where it IS.
+   *
+   * It is written in two places. The listener settles it after EVERY event it
+   * handles — which covers the redirect rewrite (made inside that handling) and
+   * the fragment push (whose `popstate` fires synchronously inside the write,
+   * and whose `hashchange` is retired as an echo in any case). The hash
+   * `replace()` effect settles it itself: it writes with `replaceState`, which
+   * fires nothing, so without that a late `hashchange` from BEFORE the write
+   * would find an unreconciled URL and dispatch the router's own URL-only write
+   * as a navigation.
+   */
+  let settledHash = normHash(env.hash)
   // The POSITION a blocked navigation's `history.go` is restoring to, or `null`.
   // Keyed on the destination rather than a bare flag: `history.go` is
   // asynchronous and a delta it cannot reach fires nothing at all, so a flag
@@ -1135,9 +1184,11 @@ export function connectRouter<
     if (landed.run !== currentRun) return
     const delta = currentIndex - landed.index
     if (delta === 0) return
-    // This position also identifies the restoration in hash mode. A fragment-
-    // changing restore emits popstate + hashchange and the listener pairs them;
-    // a same-fragment restore emits popstate alone. Treating either as a queued
+    // This position also identifies the restoration in hash mode: the restore's
+    // `popstate` is recognised by the entry it lands on. A fragment-changing
+    // restore also emits a `hashchange`, possibly after the BLOCKED step's own
+    // one — both find the restored URL already reconciled (`settledHash`); a
+    // same-fragment restore emits `popstate` alone. Treating either as a queued
     // hash-write echo would leave a stale suppression behind in the latter case.
     pendingRestore = { index: currentIndex, run: currentRun }
     env.go(delta)
@@ -1194,6 +1245,10 @@ export function connectRouter<
             // did not merely lose state under a base — it destroyed the running
             // app; this one moves the address bar and nothing else.
             env.replaceState(stampCurrent(stand(replaceStamp())), finalPath)
+            // No event reports this write, so nothing else would record it —
+            // and a late `hashchange` from before it must not read it as a
+            // browser navigation (see `settledHash`).
+            settledHash = normHash(finalPath)
           }
         } else if (effect.action === 'push') {
           pushUrl(finalPath)
@@ -1267,33 +1322,47 @@ export function connectRouter<
     const makeUnmatched: (url: string) => unknown = unmatchedFactory ?? unmatchedMsg
     return [
       onMount(() => {
-        let pendingHashchangePair: { hash: string; consumeEcho: boolean } | null = null
-
-        const handler = (event: 'popstate' | 'hashchange', eventHash?: string) => {
-          if (router.mode === 'hash') {
-            if (event === 'hashchange') {
-              if (pendingHashchangePair !== null) {
-                const pair = pendingHashchangePair
-                pendingHashchangePair = null
-                if (sameHash(eventHash ?? env.hash, pair.hash)) {
-                  if (pair.consumeEcho) consumeHashEcho()
-                  return
-                }
-              }
-              if (consumeHashEcho()) return
-            } else {
-              const consumeEchoWithPair = validatePendingHashEcho()
-              pendingHashchangePair = {
-                hash: normHash(env.hash),
-                consumeEcho: consumeEchoWithPair,
-              }
-              if (consumePopstateRestore()) return
-              if (consumeEchoWithPair) return
-            }
-          } else if (consumePopstateRestore()) {
+        /**
+         * One browser-driven URL change. History mode has one event, so it is
+         * the same event every time; hash mode has two, which are NOT delivered
+         * together — see {@link settledHash} for why a `hashchange` is judged by
+         * the URL it finds rather than by the event it follows.
+         */
+        const handler = (event: 'popstate' | 'hashchange'): void => {
+          if (router.mode === 'history') {
+            if (!consumePopstateRestore()) reconcile()
             return
           }
+          // Whatever this event decides, the URL showing when it is done has
+          // been reconciled — the restore, the echo and the redirect rewrite
+          // included, and a reducer that throws out of `send` included.
+          try {
+            if (event === 'popstate') {
+              // A `popstate` is ALWAYS processed on its own merits: it fires once
+              // per applied step, same-fragment traversals included (#163), so it
+              // cannot be deduplicated by the URL it lands on.
+              // The echo is only VALIDATED here, not consumed: our write's
+              // `hashchange` is still coming and retires it. Validated FIRST,
+              // because validation also discards an echo whose URL is no longer
+              // showing, and a restore landing must not leave one armed.
+              const echo = validatePendingHashEcho()
+              if (consumePopstateRestore()) return
+              if (echo) return
+            } else {
+              if (consumeHashEcho()) return
+              // Already reconciled: this `hashchange` belongs to a step whose
+              // `popstate` has been handled, however many other events have
+              // been delivered in between.
+              if (sameHash(env.hash, settledHash)) return
+            }
+            reconcile()
+          } finally {
+            settledHash = normHash(env.hash)
+          }
+        }
 
+        /** Dispatch, redirect, restore or report the URL that is showing. */
+        const reconcile = (): void => {
           const originalUrl = currentInput()
           const matched = router.match(originalUrl)
           if (matched === null) {
@@ -1317,9 +1386,7 @@ export function connectRouter<
           return env.onUrlChange('popstate', () => handler('popstate'))
         }
         const unsubscribePopstate = env.onUrlChange('popstate', () => handler('popstate'))
-        const unsubscribeHashchange = env.onUrlChange('hashchange', (newHash) =>
-          handler('hashchange', newHash),
-        )
+        const unsubscribeHashchange = env.onUrlChange('hashchange', () => handler('hashchange'))
         return () => {
           unsubscribePopstate()
           unsubscribeHashchange()
