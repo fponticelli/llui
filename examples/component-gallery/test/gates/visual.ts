@@ -64,10 +64,15 @@ export interface VisualManifest {
  * `RATIO` of its area, whichever is larger) exceed it. Within one environment
  * the renderings measured bit-identical (the determinism check below is
  * exactly that measurement, run on every local pass); the allowance is for
- * CPU-dispatched Skia paths across CI hosts of the same image, and it is far
- * below any real change — a token shift moves every pixel of a surface.
+ * CPU-dispatched Skia paths across CI hosts of the same image, which differ
+ * at anti-aliased EDGES (bounded by the pixel count), not across surfaces.
+ * `CHANNEL` must stay small: dark tokens sit where sRGB is compressed, and
+ * moving `--primary` from `oklch(0.205 0 0)` to `oklch(0.305 0 0)` — an
+ * obvious change — shifts every pixel of a primary button by only ~23/255.
+ * A channel allowance of 24 let that mutant pass the `button` cases (#268
+ * mutation table); 3 catches it.
  */
-export const TOLERANCE = { CHANNEL: 24, PIXELS: 12, RATIO: 0.0005 } as const
+export const TOLERANCE = { CHANNEL: 3, PIXELS: 12, RATIO: 0.0005 } as const
 
 export function readManifest(): VisualManifest | undefined {
   if (!existsSync(MANIFEST_PATH)) return undefined

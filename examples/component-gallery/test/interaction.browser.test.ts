@@ -173,7 +173,7 @@ const FLOWS: readonly Flow[] = [
       expect(await active(page)).toBe(`#${now}`)
       expect(await tabs.count()).toBeGreaterThan(1)
       const panel = page.locator(`[role="tabpanel"][aria-labelledby="${now}"]`)
-      expect(await panel.isVisible()).toBe(true)
+      await panel.waitFor({ state: 'visible', timeout: 5_000 })
     },
   },
   {
@@ -190,7 +190,8 @@ const FLOWS: readonly Flow[] = [
       const region = page.locator(
         `#${(await trigger.getAttribute('aria-controls'))!.replace(/:/g, '\\:')}`,
       )
-      expect(await region.isVisible()).toBe(true)
+      // Retrying: a skin may reveal the region over an enter transition.
+      await region.waitFor({ state: 'visible', timeout: 5_000 })
     },
   },
   {
