@@ -23,10 +23,11 @@ import { sessionHistory, type Task } from './support/session-history'
 // per late `hashchange` — because it read each one against the live location
 // instead of recognising that the location had already been reconciled.
 //
-// This file models the session history precisely enough to deliver every legal
-// interleaving and asserts the router's observable outcome is the same for all
-// of them: exactly one dispatch per traversal it accepted, none for a traversal
-// it blocked, and a restore that lands where it started.
+// `support/session-history.ts` models the session history precisely enough to
+// deliver every legal interleaving; this file explores them and asserts the
+// router's observable outcome is the same for all of them — exactly one
+// dispatch per traversal it accepted, none for a traversal it blocked, and a
+// restore that lands where it started — on both restore paths (`FLAVOURS`).
 
 const registry = {
   home: route('/'),

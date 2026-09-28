@@ -267,6 +267,31 @@ describe('attribution by the navigate event', () => {
     router.dispose()
   })
 
+  it('a cancelled restore’s announcement never claims a landing on another entry', () => {
+    const history = sessionHistory('#/', { navigation: true })
+    const blocked = new Set<string>()
+    const router = mountRouter(history.env, 'hash', blocked)
+    router.navigate('a')
+    drain(history)
+    blocked.add('home')
+    router.dispatches.length = 0
+    history.userGo(-1)
+    history.step()
+    history.cancelNextTraversal()
+    drain(history)
+    expect(history.at().url).toBe('#/')
+    // A fragment typed now fires `navigate` ('push') and then `popstate` — no
+    // traversal replaces the stale announcement of `traverseTo(a)`. Its landing
+    // is a NEW entry, so the announcement cannot be its; it is the user's, and
+    // is guarded and dispatched.
+    blocked.clear()
+    history.typeFragment('#/b')
+    drain(history)
+    expect(router.dispatches).toEqual(['b'])
+    expect(router.guarded.at(-1)).toBe('b')
+    router.dispose()
+  })
+
   it('a restore whose entry a push removed lapses without a trace', () => {
     const history = sessionHistory('/', { mode: 'history', navigation: true })
     const blocked = new Set<string>()

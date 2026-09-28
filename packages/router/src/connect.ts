@@ -965,14 +965,16 @@ export function connectRouter<
   let shownKey: string | null = nav === null ? null : nav.currentKey
 
   /**
-   * The traversal whose `navigate` event fired last and whose `popstate` has not
-   * been handled: its destination, and whether it was the router's own. A
-   * same-document traversal fires `navigate` and then, when it commits,
-   * `popstate`, and no other traversal commits in between — so the `popstate`
-   * in hand is this traversal's landing exactly when the entry it landed on is
-   * this destination. Consumed by every `popstate`; overwritten by the next
-   * traversal's `navigate`, so a traversal that never commits (cancelled by
-   * another listener) is never waited for.
+   * The traversal whose `navigate` event fired last: its destination, and
+   * whether it was the router's own. A same-document traversal fires `navigate`
+   * and then, when it commits, `popstate`, and no other traversal commits in
+   * between — so a `popstate` is this traversal's landing exactly when the entry
+   * it landed on is this destination. The KEY MATCH is the whole test, and it is
+   * sufficient: every traversal replaces this with its own announcement before
+   * its `popstate`, and the only other `popstate` — a fragment navigation's —
+   * lands on a new entry, whose key no announcement can name. So an
+   * announcement whose traversal never committed (cancelled by another
+   * `navigate` listener) can never claim a landing, and nothing waits for it.
    */
   let announced: { key: string | null; own: boolean } | null = null
 
@@ -1001,7 +1003,6 @@ export function connectRouter<
    */
   function handleAnnouncedLanding(api: RouterNavigation): boolean {
     const landing = announced
-    announced = null
     if (landing === null || !landing.own) return false
     if (landing.key === null || landing.key !== api.currentKey) return false
     returnToShown(api)
