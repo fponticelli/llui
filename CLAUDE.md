@@ -101,6 +101,7 @@ Full detail: `docs/agents/test-durations.md`.
 - Browser suites BUILD their fixture once and serve it static (`scripts/lib/prebuilt-fixture.mjs`), never a per-file Vite dev server: on-demand compiles, per-page module fan-out and a shared dependency-optimizer cache all land on the tests under load. Record fast in-page state in-page, never sleep-then-read across a round trip.
 - `pnpm smoke:examples` AND every test browser are hermetic, through ONE policy and Iconify fixture (`scripts/lib/network-policy.mjs`): tests launch only via `useHermeticBrowser()` (`scripts/lib/hermetic-browser.mjs`, called at collection time; `scripts/test/hermetic-browser-coverage.test.ts` gates it), and an undeclared off-origin request FAILS the smoke or the test, naming the URL.
 - Perf-RATIO tests break on load transients in BOTH directions. Never add `retry` to one; fix the sizes, and measure a faithful slow mutant, not just the healthy arm. Measure through the shipped test, never a replica.
+- **No test retries, anywhere** (`scripts/test/no-test-retry.test.ts`, allowlist empty and closed at both ends). Wait on the observable event or condition (`scripts/lib/wait-until.mjs`), never a sleep or a private deadline; a test's teardown must `destroy()`/close what it started.
 
 ## Development approach
 
