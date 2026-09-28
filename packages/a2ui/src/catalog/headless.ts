@@ -35,10 +35,18 @@ import {
   type ComponentId,
   type DynamicBoolean,
   type DynamicString,
-  type JsonObject,
   type JsonValue,
 } from '../protocol.js'
 import { checksOf, elx, labelledField } from './basic.js'
+import {
+  isComboboxState,
+  isDatePickerState,
+  isDialogState,
+  isTabsState,
+  readUiState,
+  uiStateJson,
+  type Guard,
+} from './ui-state.js'
 
 function toBool(value: unknown): boolean {
   return value === true || value === 'true'
@@ -49,35 +57,27 @@ function toNum(value: unknown): number {
 }
 
 /**
- * Read a stateful component's own state blob out of the surface UI-state store,
- * or the fallback if it has not been written yet. The stored value is that
- * component's JSON-serializable state, so the cast is sound at this boundary.
- */
-function readUi<T>(ui: JsonObject, id: ComponentId, fallback: T): T {
-  const value = ui[id]
-  return value === undefined ? fallback : (value as unknown as T)
-}
-
-/**
  * Drive a `@llui/components` state machine from the surface UI-state store:
  * derive its reactive state and a `send` that runs the component's OWN reducer
  * and persists the next state via `setUi`. Full behaviour (keyboard nav, focus)
- * is preserved because the real reducer runs.
+ * is preserved because the real reducer runs. The store is read through
+ * `guard` (see `ui-state.ts`): a blob of another shape reads as `initial`.
  */
 function driveUi<S, M>(
   ctx: RenderContext,
   scope: RenderScope,
   key: string,
+  guard: Guard<S>,
   initial: S,
   reducer: (state: S, msg: M) => [S, unknown[]],
 ): { state: ReadSignal<S>; send: Send<M> } {
   // Read from the (depth-scoped) scope.uiState; write via ctx.setUi (a plain
   // send, safe at any depth).
-  const state = scope.uiState.map((ui) => readUi(ui, key, initial))
+  const state = scope.uiState.map((ui) => readUiState(ui, key, guard, initial))
   const send: Send<M> = (msg) => {
-    const current = readUi(scope.uiState.peek(), key, initial)
+    const current = readUiState(scope.uiState.peek(), key, guard, initial)
     const [next] = reducer(current, msg)
-    ctx.setUi(key, next as unknown as JsonValue)
+    ctx.setUi(key, uiStateJson(next, key))
   }
   return { state, send }
 }
@@ -149,6 +149,7 @@ const Tabs: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
     ctx,
     scope,
     key,
+    isTabsState,
     initial,
     tabs.update,
   )
@@ -182,6 +183,7 @@ const Modal: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
     ctx,
     scope,
     key,
+    isDialogState,
     dialog.init(),
     dialog.update,
   )
@@ -362,7 +364,7 @@ const ChoicePicker: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   // Combobox state for the shared parts: UI (open/input/highlight) from the
   // store, selected `value` projected from the data model as labels.
   const state = derived(scope.uiState, scope.data, (ui, d) => {
-    const stored = readUi(ui, key, initial)
+    const stored = readUiState(ui, key, isComboboxState, initial)
     return { ...stored, value: toLabels(dataValues(d)) }
   })
 
@@ -384,16 +386,16 @@ const ChoicePicker: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   // reprojected from data on read, so it is never read for identity.
   const pick = (value: string, label: string): void => {
     applySelection(value)
-    const stored = readUi(scope.uiState.peek(), key, initial)
+    const stored = readUiState(scope.uiState.peek(), key, isComboboxState, initial)
     const [next] = combobox.update(stored, { type: 'selectOption', value: label })
-    ctx.setUi(key, next as unknown as JsonValue)
+    ctx.setUi(key, uiStateJson(next, key))
   }
 
   const send: Send<combobox.ComboboxMsg> = (msg) => {
     // Keyboard Enter selects the highlighted row — resolve it to a VALUE by its
     // filtered index (unambiguous even when labels repeat).
     if (msg.type === 'selectHighlighted') {
-      const stored = readUi(scope.uiState.peek(), key, initial)
+      const stored = readUiState(scope.uiState.peek(), key, isComboboxState, initial)
       // @llui/components' combobox highlights by VALUE; a2ui feeds it labels, so the
       // highlighted "value" is a label. Resolve it to the first filtered option with
       // that label (duplicate labels are display-only; row identity is the value).
@@ -405,12 +407,12 @@ const ChoicePicker: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
         return
       }
     }
-    const stored = readUi(scope.uiState.peek(), key, initial)
+    const stored = readUiState(scope.uiState.peek(), key, isComboboxState, initial)
     const [next] = combobox.update(stored, msg)
     if (msg.type === 'clear' && abs) {
       ctx.send({ type: 'setData', surfaceId: ctx.surfaceId, path: abs, value: [] })
     }
-    ctx.setUi(key, next as unknown as JsonValue)
+    ctx.setUi(key, uiStateJson(next, key))
   }
   const parts = combobox.connect(state, send, { id: domId(`cb-${key}`) })
 
@@ -418,7 +420,7 @@ const ChoicePicker: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   // duplicate labels render as independent rows. `selected` comes from the data
   // model (values); `highlighted` from the combobox's filtered index.
   const itemUnits = derived(scope.uiState, scope.data, (ui, d) => {
-    const stored = readUi(ui, key, initial)
+    const stored = readUiState(ui, key, isComboboxState, initial)
     const selectedValues = dataValues(d)
     return filteredOptions(stored.inputValue).map((o, i) => ({
       label: o.label,
@@ -532,19 +534,19 @@ const DateTimeInput: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {
   }
   const initial = datePicker.init({ value: dateValue(scope.data.peek()) })
   const state = derived(scope.uiState, scope.data, (ui, d) => ({
-    ...readUi(ui, key, initial),
+    ...readUiState(ui, key, isDatePickerState, initial),
     value: dateValue(d),
   }))
   const send: Send<datePicker.DatePickerMsg> = (msg) => {
     const current = {
-      ...readUi(scope.uiState.peek(), key, initial),
+      ...readUiState(scope.uiState.peek(), key, isDatePickerState, initial),
       value: dateValue(scope.data.peek()),
     }
     const [next] = datePicker.update(current, msg)
     if (abs && next.value !== current.value) {
       ctx.send({ type: 'setData', surfaceId: ctx.surfaceId, path: abs, value: next.value ?? '' })
     }
-    ctx.setUi(key, next as unknown as JsonValue)
+    ctx.setUi(key, uiStateJson(next, key))
   }
   const parts = datePicker.connect(state, send)
 
