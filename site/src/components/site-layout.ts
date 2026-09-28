@@ -14,7 +14,9 @@ const GUIDE_SLUGS = [
   'getting-started',
   'cookbook',
   'components',
+  'component-catalog',
   'styling',
+  'migration',
   'composition-patterns',
   'publishing-a-precompiled-library',
   'architecture',
@@ -89,6 +91,7 @@ export function siteLayout({
             navLink('/getting-started', 'getting-started', 'Getting Started', slug),
             navLink('/cookbook', 'cookbook', 'Cookbook', slug),
             navLink('/components', 'components', 'Using the Components', slug),
+            navLink('/component-catalog', 'component-catalog', 'Component Catalog', slug),
             // The gallery is a static app, not a Vike page, so client routing
             // must not intercept it (`rel="external"` is Vike's opt-out).
             navLink(
@@ -101,6 +104,7 @@ export function siteLayout({
               },
             ),
             navLink('/styling', 'styling', 'Styling & Registry', slug),
+            navLink('/migration', 'migration', 'Migration Guide', slug),
             navLink('/composition-patterns', 'composition-patterns', 'Composition Patterns', slug),
             navLink(
               '/publishing-a-precompiled-library',
