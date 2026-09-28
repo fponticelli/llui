@@ -70,19 +70,37 @@ function serializeFormState(el: Element, tag: string): string {
     // and textareas). Emit it as a `value` attribute for inputs when not already
     // present; textareas carry it as child text (handled by the caller).
     if (tag === 'input') {
-      const input = el as unknown as { value?: string; checked?: boolean; type?: string }
-      const type = (el.getAttribute('type') ?? input.type ?? 'text').toLowerCase()
+      const type = (el.getAttribute('type') ?? idlString(el, 'type') ?? 'text').toLowerCase()
       if (type === 'checkbox' || type === 'radio') {
-        if (input.checked && !el.hasAttribute('checked')) out += ' checked'
-      } else if (input.value !== undefined && input.value !== '' && !el.hasAttribute('value')) {
-        out += ` value="${escapeAttr(input.value)}"`
+        if (idlFlag(el, 'checked') && !el.hasAttribute('checked')) out += ' checked'
+      } else {
+        const value = idlString(el, 'value')
+        if (value !== undefined && value !== '' && !el.hasAttribute('value')) {
+          out += ` value="${escapeAttr(value)}"`
+        }
       }
     }
   } else if (tag === 'option') {
-    const opt = el as unknown as { selected?: boolean }
-    if (opt.selected && !el.hasAttribute('selected')) out += ' selected'
+    if (idlFlag(el, 'selected') && !el.hasAttribute('selected')) out += ' selected'
   }
   return out
+}
+
+/** A form-control IDL property the server DOM reports as a string, else
+ * `undefined`. Checked at runtime rather than asserted: the element comes from
+ * whichever server DOM the `DomEnv` wraps (jsdom, linkedom, …), so neither
+ * `instanceof HTMLInputElement` (no such global on the server) nor the static
+ * `Element` type can vouch for the property. */
+function idlString(el: Element, name: 'value' | 'type'): string | undefined {
+  const v: unknown = Reflect.get(el, name)
+  return typeof v === 'string' ? v : undefined
+}
+
+/** A boolean form-control IDL property (`checked`/`selected`); anything that is
+ * not literally `true` reads as unset. */
+function idlFlag(el: Element, name: 'checked' | 'selected'): boolean {
+  const v: unknown = Reflect.get(el, name)
+  return v === true
 }
 
 function nodeToString(node: Node): string {
@@ -119,7 +137,7 @@ function nodeToString(node: Node): string {
   if (tag === 'textarea') {
     // A textarea's value is its child TEXT, but `applyAttr('value')` set the IDL
     // `.value` (no child node). Emit the current value as escaped text content.
-    const value = (el as unknown as { value?: string }).value ?? el.textContent ?? ''
+    const value = idlString(el, 'value') ?? el.textContent ?? ''
     return `<textarea${attrs}>${escapeHtml(value)}</textarea>`
   }
   if (RAW_TEXT_ELEMENTS.has(tag)) {
