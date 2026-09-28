@@ -300,7 +300,7 @@ Render every live surface, in creation order.
 
 ```typescript
 function renderSurfaces(
-  state: Signal<A2uiState>,
+  state: ReadSignal<A2uiState>,
   send: (msg: A2uiMsg) => void,
   resolveCatalog: CatalogResolver,
   fallbackCatalog: Catalog,
@@ -697,9 +697,9 @@ Everything a builder needs to render one component and recurse into children.
 ```typescript
 export interface RenderContext {
   readonly surfaceId: string
-  readonly theme: Signal<Theme>
+  readonly theme: ReadSignal<Theme>
   /** The surface data model root (absolute `/…` bindings resolve against this). */
-  readonly rootData: Signal<JsonValue>
+  readonly rootData: ReadSignal<JsonValue>
   readonly send: (msg: A2uiMsg) => void
   readonly catalog: Catalog
   /** Write a stateful component's local UI state (Tabs active tab, Modal open). */
@@ -721,20 +721,20 @@ this wraps the whole data model; inside a template it wraps the current item.
 ```typescript
 export interface RenderScope {
   /** Reactive data for this scope (root data model, or a template item). */
-  readonly data: Signal<JsonValue>
+  readonly data: ReadSignal<JsonValue>
   /**
    * The local data-model root for THIS scope: the surface data model at the top
    * level, or the current item inside a template. Per the A2UI spec, template
    * paths are item-scoped, so both relative (`name`) and leading-slash (`/name`)
    * bindings resolve against this. Correctly scoped for the current depth.
    */
-  readonly root: Signal<JsonValue>
+  readonly root: ReadSignal<JsonValue>
   /**
    * Client-local UI state for stateful components, correctly scoped for THIS
    * depth (threaded through template rows like {@link root}). Read via this;
    * write via {@link RenderContext.setUi}.
    */
-  readonly uiState: Signal<JsonObject>
+  readonly uiState: ReadSignal<JsonObject>
   /**
    * The surface's component map, as a reactive signal. Threaded through every
    * scope (like {@link uiState}) so {@link RenderContext.renderById} can subscribe
@@ -742,7 +742,7 @@ export interface RenderScope {
    * single `updateComponents` never disposes the whole surface. Templates carry
    * it unchanged (component definitions are surface-global, not item-scoped).
    */
-  readonly components: Signal<Readonly<Record<ComponentId, ComponentNode>>>
+  readonly components: ReadSignal<Readonly<Record<ComponentId, ComponentNode>>>
   /**
    * Resolve a component-relative pointer to an ABSOLUTE data-model pointer,
    * used for two-way write-back. Absolute pointers pass through unchanged.

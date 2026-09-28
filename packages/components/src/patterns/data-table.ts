@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { allFiniteNumbers } from '../utils/number.js'
 import {
   init as tableInit,
@@ -332,9 +332,9 @@ export interface DataTableStatusParts {
   loadingOverlay: {
     'data-scope': 'data-table'
     'data-part': 'loading-overlay'
-    'aria-busy': Signal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
     'aria-live': 'polite'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   /** Empty-state region — shown when a settled request has zero rows. */
   emptyState: {
@@ -342,7 +342,7 @@ export interface DataTableStatusParts {
     'aria-live': 'polite'
     'data-scope': 'data-table'
     'data-part': 'empty-state'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   /** Error-state region — shown when the last request failed. */
   errorState: {
@@ -350,7 +350,7 @@ export interface DataTableStatusParts {
     'aria-live': 'polite'
     'data-scope': 'data-table'
     'data-part': 'error-state'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 
@@ -369,7 +369,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<DataTableState>,
+  state: ReadSignal<DataTableState>,
   send: Send<DataTableMsg>,
   opts: ConnectOptions,
 ): DataTableParts {

@@ -17,7 +17,14 @@ import {
   $convertToMarkdownString,
   registerMarkdownShortcuts,
 } from '@lexical/markdown'
-import { component, div, type Renderable, type Signal, type SignalComponentDef } from '@llui/dom'
+import {
+  component,
+  div,
+  type Renderable,
+  type ReadSignal,
+  type Signal,
+  type SignalComponentDef,
+} from '@llui/dom'
 // NB no `PROGRAMMATIC_TAG` here any more: this layer no longer writes markdown
 // into the document at all. Every inbound value goes through the seam's
 // `ForeignController`, which owns the tag along with the echo decision (#70).
@@ -57,7 +64,7 @@ export interface EditorConfig {
   /** Initial markdown (uncontrolled seed). */
   defaultValue?: string
   /** Controlled: the consumer owns this signal; the editor follows it. */
-  value?: Signal<string>
+  value?: ReadSignal<string>
   /** Debounced markdown-emission window (ms). Default 300. */
   changeDebounceMs?: number
   placeholder?: string
@@ -144,7 +151,7 @@ export interface EditorParts {
   /** The merged, surface-filtered command items. */
   items: readonly CommandItem[]
   /** Reactive format signal for `connect`-style toolbars. */
-  format: Signal<FormatState>
+  format: ReadSignal<FormatState>
 }
 
 /** Default plugin set when the consumer supplies none. */

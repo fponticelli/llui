@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import {
   typeaheadAccumulate,
@@ -631,19 +631,19 @@ export interface TreeItemParts {
   item: {
     role: 'treeitem'
     id: string
-    'aria-expanded': Signal<boolean | undefined>
-    'aria-selected': Signal<boolean | undefined>
+    'aria-expanded': ReadSignal<boolean | undefined>
+    'aria-selected': ReadSignal<boolean | undefined>
     'aria-level': number
-    'aria-busy': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-busy': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'tree-view'
     'data-part': 'item'
     'data-value': string
     'data-depth': string
-    'data-selected': Signal<'' | undefined>
-    'data-focused': Signal<'' | undefined>
-    'data-loading': Signal<'' | undefined>
-    'data-load-failed': Signal<'' | undefined>
+    'data-selected': ReadSignal<'' | undefined>
+    'data-focused': ReadSignal<'' | undefined>
+    'data-loading': ReadSignal<'' | undefined>
+    'data-load-failed': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -652,7 +652,7 @@ export interface TreeItemParts {
   branchTrigger: {
     'data-scope': 'tree-view'
     'data-part': 'branch-trigger'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     onClick: (e: MouseEvent) => void
   }
   /**
@@ -665,21 +665,21 @@ export interface TreeItemParts {
    */
   checkbox: {
     role: 'checkbox'
-    'aria-checked': Signal<'true' | 'false' | 'mixed'>
+    'aria-checked': ReadSignal<'true' | 'false' | 'mixed'>
     'data-scope': 'tree-view'
     'data-part': 'checkbox'
-    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+    'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
   }
 }
 
 export interface TreeViewParts {
   root: {
     role: 'tree'
-    'aria-multiselectable': Signal<'true' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'tree-view'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   item: (id: string, depth: number, isBranch: boolean, parentId?: string | null) => TreeItemParts
 }
@@ -695,7 +695,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<TreeViewState>,
+  state: ReadSignal<TreeViewState>,
   send: Send<TreeViewMsg>,
   opts: ConnectOptions,
 ): TreeViewParts {

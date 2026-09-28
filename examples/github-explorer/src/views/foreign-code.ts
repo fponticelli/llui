@@ -1,6 +1,6 @@
 import { foreign } from '@llui/dom'
 import type { Renderable } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { ReadSignal, Signal } from '@llui/dom'
 import type { Page } from '../types'
 
 interface FileProps {
@@ -78,7 +78,7 @@ function renderCode(el: Element, { content, filename }: FileProps): void {
  */
 export function codeView(pageSignal: Signal<Page>): Renderable {
   return [
-    foreign<Element, { props: Signal<FileProps> }>({
+    foreign<Element, { props: ReadSignal<FileProps> }>({
       tag: 'div',
       state: { props: pageSignal.map(fileProps) },
       mount: ({ el, state: sig }) => {

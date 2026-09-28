@@ -27,7 +27,7 @@ import {
   tr,
   each,
 } from '@llui/dom'
-import type { Mountable, Reactive, Renderable, Send, Signal } from '@llui/dom'
+import type { Mountable, Reactive, ReadSignal, Renderable, Send, Signal } from '@llui/dom'
 import { tabs } from '@llui/components/tabs'
 import { accordion } from '@llui/components/accordion'
 import { collapsible } from '@llui/components/collapsible'
@@ -258,7 +258,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
 
   // One reactive text node driven by the part's own `data-state` — the
   // baseline rule toggles only its colour, so the view picks the glyph.
-  const checkboxGlyph = (dataState: Signal<'checked' | 'unchecked' | 'indeterminate'>): Mountable =>
+  const checkboxGlyph = (
+    dataState: ReadSignal<'checked' | 'unchecked' | 'indeterminate'>,
+  ): Mountable =>
     text(dataState.map((s) => (s === 'checked' ? '✓' : s === 'indeterminate' ? '−' : '')))
 
   const headerCell = (parts: typeof tbl, colId: string, label: string): Mountable => {

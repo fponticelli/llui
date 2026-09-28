@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { gradientPickerLocale } from '../locale/gradient-picker.js'
 import { allFiniteNumbers, clamp, finiteOrDefault, positiveFinite } from '../utils/number.js'
@@ -1531,9 +1531,9 @@ export interface GradientStopParts {
   'aria-label': string
   'aria-valuemin': 0
   'aria-valuemax': 100
-  'aria-valuenow': Signal<number>
-  'aria-valuetext': Signal<string>
-  'aria-disabled': Signal<'true' | undefined>
+  'aria-valuenow': ReadSignal<number>
+  'aria-valuetext': ReadSignal<string>
+  'aria-disabled': ReadSignal<'true' | undefined>
   /** Every stop is independently tabbable (never -1 while enabled) — the
    * package's existing multi-thumb precedent (`slider.ts`'s `SliderThumbParts`)
    * rather than a roving single-tab-stop composite: APG's roving-tabindex
@@ -1543,12 +1543,12 @@ export interface GradientStopParts {
    * chose this way for. Tab therefore visits stops in DOM order, which
    * tracks position order since `each()` renders the reducer's own
    * position-sorted `stops` array. */
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   'data-scope': 'gradient-picker'
   'data-part': 'stop'
   'data-value': string
-  'data-selected': Signal<'' | undefined>
-  style: Signal<string>
+  'data-selected': ReadSignal<'' | undefined>
+  style: ReadSignal<string>
   onPointerDown: (e: PointerEvent) => void
   onPointerMove: (e: PointerEvent) => void
   onPointerUp: (e: PointerEvent) => void
@@ -1563,12 +1563,12 @@ export type ToggleItemPart = 'kind-toggle' | 'shape-option' | 'size-option'
 export interface ToggleItemParts {
   type: 'button'
   'aria-label': string
-  'aria-pressed': Signal<boolean>
+  'aria-pressed': ReadSignal<boolean>
   'data-scope': 'gradient-picker'
   'data-part': ToggleItemPart
   'data-value': string
-  'data-state': Signal<'on' | 'off'>
-  disabled: Signal<boolean>
+  'data-state': ReadSignal<'on' | 'off'>
+  disabled: ReadSignal<boolean>
   onClick: (e: MouseEvent) => void
 }
 
@@ -1576,15 +1576,15 @@ export interface GradientPickerParts {
   root: {
     'data-scope': 'gradient-picker'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-kind': Signal<GradientKind>
-    'data-repeating': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-kind': ReadSignal<GradientKind>
+    'data-repeating': ReadSignal<'' | undefined>
   }
   preview: {
     'data-scope': 'gradient-picker'
     'data-part': 'preview'
     'aria-hidden': 'true'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /** The horizontal stop ramp: a plain `in <space>` linear ramp of the SAME
    * stop list `toCss` serializes (finding #3 — one shared builder, never two
@@ -1597,7 +1597,7 @@ export interface GradientPickerParts {
   track: {
     'data-scope': 'gradient-picker'
     'data-part': 'track'
-    style: Signal<string>
+    style: ReadSignal<string>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
@@ -1608,7 +1608,7 @@ export interface GradientPickerParts {
   addStopButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'add-stop-button'
     onClick: (e: MouseEvent) => void
@@ -1616,7 +1616,7 @@ export interface GradientPickerParts {
   removeStopButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'remove-stop-button'
     onClick: (e: MouseEvent) => void
@@ -1625,11 +1625,11 @@ export interface GradientPickerParts {
   repeatingToggle: {
     type: 'button'
     'aria-label': string
-    'aria-pressed': Signal<boolean>
-    disabled: Signal<boolean>
+    'aria-pressed': ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'repeating-toggle'
-    'data-state': Signal<'on' | 'off'>
+    'data-state': ReadSignal<'on' | 'off'>
     onClick: (e: MouseEvent) => void
   }
   angleInput: {
@@ -1638,8 +1638,8 @@ export interface GradientPickerParts {
     max: 360
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'gradient-picker'
     'data-part': 'angle-input'
     onInput: (e: Event) => void
@@ -1658,21 +1658,21 @@ export interface GradientPickerParts {
     'aria-label': string
     'aria-valuemin': 0
     'aria-valuemax': 100
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'gradient-picker'
     'data-part': 'center-thumb'
-    style: Signal<string>
+    style: ReadSignal<string>
     onKeyDown: (e: KeyboardEvent) => void
   }
   shapeOption: (shape: RadialShape) => ToggleItemParts
   sizeOption: (size: RadialSize) => ToggleItemParts
   interpolationSpaceSelect: {
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<InterpolationSpace>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<InterpolationSpace>
     'data-scope': 'gradient-picker'
     'data-part': 'interpolation-space-select'
     onInput: (e: Event) => void
@@ -1681,8 +1681,8 @@ export interface GradientPickerParts {
     'aria-label': string
     /** Disabled when the whole picker is disabled, OR the current space has
      * no hue (only `hsl`/`oklch` do). */
-    disabled: Signal<boolean>
-    value: Signal<HueInterpolationMethod>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<HueInterpolationMethod>
     'data-scope': 'gradient-picker'
     'data-part': 'interpolation-hue-select'
     onInput: (e: Event) => void
@@ -1690,7 +1690,7 @@ export interface GradientPickerParts {
   reverseButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'reverse-button'
     onClick: (e: MouseEvent) => void
@@ -1698,7 +1698,7 @@ export interface GradientPickerParts {
   distributeButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'distribute-button'
     onClick: (e: MouseEvent) => void
@@ -1712,10 +1712,10 @@ export interface GradientPickerParts {
     autocomplete: 'off'
     spellcheck: 'false'
     'aria-label': string
-    'aria-invalid': Signal<'true' | undefined>
-    'aria-describedby': Signal<string | undefined>
-    disabled: Signal<boolean>
-    value: Signal<string>
+    'aria-invalid': ReadSignal<'true' | undefined>
+    'aria-describedby': ReadSignal<string | undefined>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'gradient-picker'
     'data-part': 'css-input'
     onInput: (e: Event) => void
@@ -1731,8 +1731,8 @@ export interface GradientPickerParts {
     role: 'alert'
     'data-scope': 'gradient-picker'
     'data-part': 'css-error'
-    visible: Signal<boolean>
-    message: Signal<string>
+    visible: ReadSignal<boolean>
+    message: ReadSignal<string>
   }
   /**
    * The embedded `color-picker`'s FULL part bag, connected over the DERIVED
@@ -1773,7 +1773,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<GradientPickerState>,
+  state: ReadSignal<GradientPickerState>,
   send: Send<GradientPickerMsg>,
   opts: ConnectOptions,
 ): GradientPickerParts {

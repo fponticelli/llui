@@ -15,7 +15,7 @@ import {
   textarea,
   type Reactive,
   type Renderable,
-  type Signal,
+  type ReadSignal,
 } from '@llui/dom'
 import type { BuildArgs, ComponentBuilder, RenderContext, RenderScope } from '../catalog.js'
 import { bindNumber, bindString, bindStringList, firstCheckError } from '../binding.js'
@@ -141,7 +141,7 @@ interface Choice {
 
 function isSelected(selected: Reactive<readonly string[]>, value: string): Reactive<boolean> {
   if (Array.isArray(selected)) return selected.includes(value)
-  return (selected as Signal<readonly string[]>).map((v) => v.includes(value))
+  return (selected as ReadSignal<readonly string[]>).map((v) => v.includes(value))
 }
 
 const ChoicePicker: ComponentBuilder = ({ node, ctx, scope }: BuildArgs) => {

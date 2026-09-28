@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { comboboxLocale } from '../locale/combobox.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
@@ -556,18 +556,18 @@ export interface ComboboxItemParts {
   item: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-create': '' | undefined
     'data-scope': 'combobox'
     'data-part': 'item'
     'data-value': string
     /** The option's live position in the FILTERED list (reactive — reused rows
      * never report a stale index). */
-    'data-index': Signal<string>
+    'data-index': ReadSignal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -595,20 +595,20 @@ export interface ComboboxParts {
   root: {
     'data-scope': 'combobox'
     'data-part': 'root'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
   }
   input: {
     type: 'text'
     role: 'combobox'
     autocomplete: 'off'
     'aria-autocomplete': 'list'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-activedescendant': Signal<string | undefined>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     id: string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'combobox'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -618,7 +618,7 @@ export interface ComboboxParts {
   trigger: {
     type: 'button'
     'aria-label': string
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     tabindex: -1
     'data-scope': 'combobox'
@@ -634,13 +634,13 @@ export interface ComboboxParts {
     role: 'listbox'
     id: string
     'aria-labelledby': string
-    'aria-busy': Signal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
-    'data-status': Signal<AsyncStatus>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-status': ReadSignal<AsyncStatus>
     /** The mutually-exclusive load projection (#265 finding 11) — see
      * {@link LoadProjection}. Mirrors the top-level `loadState` signal. */
-    'data-load-state': Signal<LoadProjection>
+    'data-load-state': ReadSignal<LoadProjection>
     'data-scope': 'combobox'
     'data-part': 'content'
   }
@@ -648,7 +648,7 @@ export interface ComboboxParts {
    * `'loading'` | `'stale-results'` | `'success'` | `'error'`. A single
    * signal instead of independent `isLoading`/`isEmpty`/`hasError` booleans,
    * so it can never contradict itself. See {@link LoadProjection}. */
-  loadState: Signal<LoadProjection>
+  loadState: ReadSignal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — it is NOT used for identity (highlight,
    * selection and ids are all value-keyed), so a reused row is never stale. */
@@ -674,7 +674,7 @@ export interface ComboboxParts {
     'aria-atomic': 'true'
     'data-scope': 'combobox'
     'data-part': 'live-region'
-    text: Signal<string>
+    text: ReadSignal<string>
   }
   empty: {
     'data-scope': 'combobox'
@@ -688,7 +688,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<ComboboxState>,
+  state: ReadSignal<ComboboxState>,
   send: Send<ComboboxMsg>,
   opts: ConnectOptions,
 ): ComboboxParts {
@@ -889,7 +889,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<ComboboxState>
+  state: ReadSignal<ComboboxState>
   send: Send<ComboboxMsg>
   parts: ComboboxParts
   content: () => Renderable

@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import {
   eventDirection,
@@ -548,14 +548,14 @@ export function reduceMenuTree<S extends MenuTreeState>(state: S, msg: MenuTreeM
 export interface MenuItemAttrs<Scope extends string> {
   role: 'menuitem' | 'menuitemcheckbox' | 'menuitemradio'
   id: string
-  'aria-disabled': Signal<'true' | undefined>
-  'aria-checked'?: Signal<'true' | 'false'>
+  'aria-disabled': ReadSignal<'true' | undefined>
+  'aria-checked'?: ReadSignal<'true' | 'false'>
   /** Bare presence flag, matching `select` / `combobox` / `listbox` and the
    * baseline stylesheet. NOT `data-state="highlighted"`: `data-state` on this
    * machine means open/closed (trigger, content), and spelling the highlight as
    * an enum value of it matched nothing anyone styles. */
-  'data-highlighted': Signal<'' | undefined>
-  'data-disabled': Signal<'' | undefined>
+  'data-highlighted': ReadSignal<'' | undefined>
+  'data-disabled': ReadSignal<'' | undefined>
   'data-scope': Scope
   'data-part': 'item'
   'data-value': string
@@ -571,7 +571,7 @@ export interface MenuItemPartsOf<Scope extends string> {
 export interface MenuCheckItemPartsOf<Scope extends string> {
   item: MenuItemAttrs<Scope> & {
     role: 'menuitemcheckbox' | 'menuitemradio'
-    'aria-checked': Signal<'true' | 'false'>
+    'aria-checked': ReadSignal<'true' | 'false'>
   }
 }
 
@@ -600,14 +600,14 @@ export interface MenuSubTriggerPartsOf<Scope extends string> {
   role: 'menuitem'
   id: string
   'aria-haspopup': 'menu'
-  'aria-expanded': Signal<boolean>
+  'aria-expanded': ReadSignal<boolean>
   'aria-controls': string
-  'aria-disabled': Signal<'true' | undefined>
+  'aria-disabled': ReadSignal<'true' | undefined>
   /** Bare presence flag, matching `select` / `combobox` / `listbox` and the
    * baseline stylesheet. NOT `data-state="highlighted"`: `data-state` on this
    * machine means open/closed (trigger, content), and spelling the highlight as
    * an enum value of it matched nothing anyone styles. */
-  'data-highlighted': Signal<'' | undefined>
+  'data-highlighted': ReadSignal<'' | undefined>
   'data-scope': Scope
   'data-part': 'subtrigger'
   'data-value': string
@@ -628,9 +628,9 @@ export interface MenuSubContentPartsOf<Scope extends string> {
   role: 'menu'
   id: string
   'aria-labelledby': string
-  'aria-activedescendant': Signal<string | undefined>
+  'aria-activedescendant': ReadSignal<string | undefined>
   tabindex: -1
-  'data-state': Signal<'open' | 'closed'>
+  'data-state': ReadSignal<'open' | 'closed'>
   'data-scope': Scope
   'data-part': 'subcontent'
   onPointerEnter: (e: PointerEvent) => void
@@ -648,7 +648,7 @@ export interface MenuTreeIds {
 
 export interface MenuTreePartsConfig<Scope extends string, S extends MenuTreeState> {
   scope: Scope
-  state: Signal<S>
+  state: ReadSignal<S>
   send: Send<MenuTreeMsg>
   ids: MenuTreeIds
   onSelect?: (value: string) => void
@@ -805,7 +805,7 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
     return levelIndex(items).get(value) ?? ''
   }
 
-  const highlightedState = (value: string): Signal<'' | undefined> =>
+  const highlightedState = (value: string): ReadSignal<'' | undefined> =>
     state.map((s) => (highlightedValues(s.highlights).has(value) ? '' : undefined))
 
   const itemAttrs = (
@@ -934,13 +934,13 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
     checkboxItem: (value: string): MenuCheckItemPartsOf<Scope> => ({
       item: itemAttrs(value, 'menuitemcheckbox') as MenuItemAttrs<Scope> & {
         role: 'menuitemcheckbox'
-        'aria-checked': Signal<'true' | 'false'>
+        'aria-checked': ReadSignal<'true' | 'false'>
       },
     }),
     radioItem: (value: string): MenuCheckItemPartsOf<Scope> => ({
       item: itemAttrs(value, 'menuitemradio') as MenuItemAttrs<Scope> & {
         role: 'menuitemradio'
-        'aria-checked': Signal<'true' | 'false'>
+        'aria-checked': ReadSignal<'true' | 'false'>
       },
     }),
     group: (id: string, options = {}): MenuGroupPartsOf<Scope> => ({
@@ -1092,7 +1092,7 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
 export interface SubOverlayOptions<Scope extends string, S> {
   /** The subTrigger value this level opens under. */
   value: string
-  state: Signal<S>
+  state: ReadSignal<S>
   /** The subTrigger/subPositioner/subContent part builders for this scope
    * (from `parts` as returned by `createMenuTreeParts`/`connect()`). */
   parts: Pick<MenuTreeParts<Scope>, 'subTrigger' | 'subPositioner' | 'subContent'>

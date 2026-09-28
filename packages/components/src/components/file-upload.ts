@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend, onTeardown, __currentBuildInfo } from '@llui/dom'
 import { fileUploadLocale } from '../locale/file-upload.js'
 import { allFiniteNumbers, finiteBound } from '../utils/number.js'
@@ -532,7 +532,7 @@ export interface FileUploadItemParts {
     'data-part': 'item'
     'data-index': string
     /** The file's upload status; absent until an upload is reported (#266). */
-    'data-upload-status': Signal<FileUploadStatus | undefined>
+    'data-upload-status': ReadSignal<FileUploadStatus | undefined>
   }
   /** A labelled progressbar, shown only while the file is uploading (#266). */
   itemProgress: {
@@ -540,8 +540,8 @@ export interface FileUploadItemParts {
     'aria-label': string
     'aria-valuemin': 0
     'aria-valuemax': 100
-    'aria-valuenow': Signal<number | undefined>
-    hidden: Signal<boolean>
+    'aria-valuenow': ReadSignal<number | undefined>
+    hidden: ReadSignal<boolean>
     'data-scope': 'file-upload'
     'data-part': 'item-progress'
   }
@@ -549,7 +549,7 @@ export interface FileUploadItemParts {
   itemProgressRange: {
     'data-scope': 'file-upload'
     'data-part': 'item-progress-range'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /**
    * Live region for the file's failure message, shown only on error. Its text
@@ -557,7 +557,7 @@ export interface FileUploadItemParts {
    */
   itemErrorText: {
     role: 'alert'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     'data-scope': 'file-upload'
     'data-part': 'item-error-text'
   }
@@ -565,7 +565,7 @@ export interface FileUploadItemParts {
   itemRetryTrigger: {
     type: 'button'
     'aria-label': string
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     'data-scope': 'file-upload'
     'data-part': 'item-retry-trigger'
     onClick: (e: MouseEvent) => void
@@ -603,18 +603,18 @@ export interface FileUploadParts {
   root: {
     'data-scope': 'file-upload'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-dragging': Signal<'' | undefined>
-    'data-invalid': Signal<'' | undefined>
-    'data-readonly': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-readonly': ReadSignal<'' | undefined>
     /** Present while any accepted file is uploading (#266). */
-    'data-uploading': Signal<'' | undefined>
+    'data-uploading': ReadSignal<'' | undefined>
   }
   dropzone: {
     'data-scope': 'file-upload'
     'data-part': 'dropzone'
-    'data-dragging': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onDragEnter: (e: DragEvent) => void
     onDragOver: (e: DragEvent) => void
@@ -625,7 +625,7 @@ export interface FileUploadParts {
     type: 'button'
     'data-scope': 'file-upload'
     'data-part': 'trigger'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   hiddenInput: {
@@ -633,11 +633,11 @@ export interface FileUploadParts {
     tabindex: -1
     'aria-hidden': 'true'
     style: string
-    disabled: Signal<boolean>
-    multiple: Signal<boolean>
-    accept: Signal<string>
-    required: Signal<boolean>
-    'aria-invalid': Signal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    multiple: ReadSignal<boolean>
+    accept: ReadSignal<string>
+    required: ReadSignal<boolean>
+    'aria-invalid': ReadSignal<'true' | undefined>
     capture?: string | boolean
     webkitdirectory?: '' | undefined
     'data-scope': 'file-upload'
@@ -697,7 +697,7 @@ const HIDDEN_STYLE =
   'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;'
 
 export function connect(
-  state: Signal<FileUploadState>,
+  state: ReadSignal<FileUploadState>,
   send: Send<FileUploadMsg>,
   opts: ConnectOptions,
 ): FileUploadParts {

@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { clipboardLocale } from '../locale/clipboard.js'
 
@@ -117,22 +117,22 @@ export interface ClipboardParts {
   root: {
     'data-scope': 'clipboard'
     'data-part': 'root'
-    'data-copied': Signal<'' | undefined>
-    'data-failed': Signal<'' | undefined>
+    'data-copied': ReadSignal<'' | undefined>
+    'data-failed': ReadSignal<'' | undefined>
   }
   trigger: {
     type: 'button'
     'aria-label': string
     'data-scope': 'clipboard'
     'data-part': 'trigger'
-    'data-copied': Signal<'' | undefined>
-    'data-failed': Signal<'' | undefined>
+    'data-copied': ReadSignal<'' | undefined>
+    'data-failed': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
   }
   input: {
     type: 'text'
     readonly: true
-    value: Signal<string>
+    value: ReadSignal<string>
     'data-scope': 'clipboard'
     'data-part': 'input'
     onFocus: (e: FocusEvent) => void
@@ -140,8 +140,8 @@ export interface ClipboardParts {
   indicator: {
     'data-scope': 'clipboard'
     'data-part': 'indicator'
-    'data-copied': Signal<'' | undefined>
-    'data-failed': Signal<'' | undefined>
+    'data-copied': ReadSignal<'' | undefined>
+    'data-failed': ReadSignal<'' | undefined>
     'aria-live': 'polite'
   }
 }
@@ -158,7 +158,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<ClipboardState>,
+  state: ReadSignal<ClipboardState>,
   send: Send<ClipboardMsg>,
   opts: ConnectOptions = {},
 ): ClipboardParts {

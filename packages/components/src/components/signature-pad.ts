@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { allFiniteNumbers } from '../utils/number.js'
 import { signaturePadLocale } from '../locale/signature-pad.js'
@@ -193,11 +193,11 @@ export interface SignaturePadParts {
     'aria-label': string
     'data-scope': 'signature-pad'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-readonly': Signal<'' | undefined>
-    'data-drawing': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-readonly': ReadSignal<'' | undefined>
+    'data-drawing': ReadSignal<'' | undefined>
     /** Present while nothing has been drawn — the placeholder hook. */
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
   }
   control: {
     'data-scope': 'signature-pad'
@@ -206,7 +206,7 @@ export interface SignaturePadParts {
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'signature-pad'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -214,7 +214,7 @@ export interface SignaturePadParts {
   undoTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'signature-pad'
     'data-part': 'undo-trigger'
     onClick: (e: MouseEvent) => void
@@ -226,7 +226,7 @@ export interface SignaturePadParts {
   }
   hiddenInput: {
     type: 'hidden'
-    value: Signal<string>
+    value: ReadSignal<string>
     name?: string
     'data-scope': 'signature-pad'
     'data-part': 'hidden-input'
@@ -241,7 +241,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<SignaturePadState>,
+  state: ReadSignal<SignaturePadState>,
   send: Send<SignaturePadMsg>,
   opts: ConnectOptions = {},
 ): SignaturePadParts {

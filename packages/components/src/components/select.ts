@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
@@ -281,17 +281,17 @@ export interface SelectItemParts {
   item: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'select'
     'data-part': 'item'
     'data-value': string
     /** The option's live position in the flat item list (reactive — reused rows
      * never report a stale index). */
-    'data-index': Signal<string>
+    'data-index': ReadSignal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -320,20 +320,20 @@ export interface SelectParts {
     type: 'button'
     role: 'combobox'
     'aria-haspopup': 'listbox'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-activedescendant': Signal<string | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
     id: string
-    disabled: Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
     /** Present while the trigger is showing the PLACEHOLDER rather than a
      * value. `valueText` already falls back to the placeholder string, but a
      * string is not something CSS can branch on, so without this the
      * placeholder renders at full foreground weight and reads as a real
      * selection. This is the attribute every shadcn Select greys it from. */
-    'data-placeholder': Signal<'' | undefined>
+    'data-placeholder': ReadSignal<'' | undefined>
     'data-scope': 'select'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -347,10 +347,10 @@ export interface SelectParts {
   content: {
     role: 'listbox'
     id: string
-    'aria-multiselectable': Signal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'select'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
@@ -361,9 +361,9 @@ export interface SelectParts {
     style: string
     /** Native form field name, or `undefined` when `name` was not supplied. */
     name: string | undefined
-    disabled: Signal<boolean>
-    multiple: Signal<boolean>
-    required: Signal<boolean>
+    disabled: ReadSignal<boolean>
+    multiple: ReadSignal<boolean>
+    required: ReadSignal<boolean>
     'data-scope': 'select'
     'data-part': 'hidden-select'
   }
@@ -371,7 +371,7 @@ export interface SelectParts {
    * `hiddenSelect` so the browser submits the selection under the form `name`. */
   hiddenOption: (value: string) => {
     value: string
-    selected: Signal<boolean>
+    selected: ReadSignal<boolean>
     'data-scope': 'select'
     'data-part': 'hidden-option'
   }
@@ -392,7 +392,7 @@ export interface SelectParts {
    */
   group: (id: string, options?: { readonly hasLabel?: boolean }) => SelectGroupParts
   /** Selected value(s) — use for rendering the trigger label. */
-  valueText: Signal<string>
+  valueText: ReadSignal<string>
 }
 
 export interface ConnectOptions {
@@ -414,7 +414,7 @@ const HIDDEN_STYLE =
   'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;'
 
 export function connect(
-  state: Signal<SelectState>,
+  state: ReadSignal<SelectState>,
   send: Send<SelectMsg>,
   opts: ConnectOptions,
 ): SelectParts {
@@ -599,7 +599,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<SelectState>
+  state: ReadSignal<SelectState>
   send: Send<SelectMsg>
   parts: SelectParts
   content: () => Renderable

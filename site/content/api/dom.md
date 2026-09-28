@@ -224,20 +224,13 @@ function bodyAttr(attrs: Record<string, HeadValue<string | boolean | null>>): Mo
 Discriminated-union render. `discriminant` selects the union's tag field
 (`v => v.kind`, `v => v.type`, …); each arm receives the NARROWED variant
 signal, so it can read variant-only fields with full types (`v.at('data')`).
-Mirrors `show`'s narrowing: over a MAPPED `value` (`.map(…)`/`derived(…)`)
-every arm's signal is a {@link MappedSignal} too, read with
-`v.map((x) => x.data)`. Rewritten by the compiler to `signalBranch`.
+Mirrors `show`'s narrowing: over a PATH `value` ({@link Signal}) each arm gets a
+`Signal`; over any other {@link ReadSignal} — a MAPPED `value`
+(`.map(…)`/`derived(…)`) or a helper's `ReadSignal` parameter — every arm's
+signal is a {@link MappedSignal}, read with `v.map((x) => x.data)`. Rewritten
+by the compiler to `signalBranch`.
 
 ```typescript
-export function branch<U extends object, D extends keyof U>(
-  value: MappedSignal<U>,
-  discriminant: (u: U) => U[D],
-  arms: {
-    [K in U[D] & (string | number)]: (v: MappedSignal<Extract<U, Record<D, K>>>) => Renderable
-  },
-  /** Optional element-level transition hooks — animate the arm swap (see `show`). */
-  transition?: TransitionOptions,
-): Mountable
 export function branch<U extends object, D extends keyof U>(
   value: Signal<U>,
   discriminant: (u: U) => U[D],
@@ -247,8 +240,17 @@ export function branch<U extends object, D extends keyof U>(
   /** Optional element-level transition hooks — animate the arm swap (see `show`). */
   transition?: TransitionOptions,
 ): Mountable
+export function branch<U extends object, D extends keyof U>(
+  value: ReadSignal<U>,
+  discriminant: (u: U) => U[D],
+  arms: {
+    [K in U[D] & (string | number)]: (v: MappedSignal<Extract<U, Record<D, K>>>) => Renderable
+  },
+  /** Optional element-level transition hooks — animate the arm swap (see `show`). */
+  transition?: TransitionOptions,
+): Mountable
 export function branch<K extends string | number>(
-  value: Signal<K>,
+  value: ReadSignal<K>,
   arms: Partial<Record<K, () => Renderable>>,
   /** Optional element-level transition hooks — animate the arm swap (see `show`). */
   transition?: TransitionOptions,
@@ -402,22 +404,26 @@ rooted at the component state, or all at the same row ctx). The result is a
 a compile error (slice the sources before combining).
 
 ```typescript
-export function derived<A, B, U>(a: Signal<A>, b: Signal<B>, fn: (a: A, b: B) => U): MappedSignal<U>
+export function derived<A, B, U>(
+  a: ReadSignal<A>,
+  b: ReadSignal<B>,
+  fn: (a: A, b: B) => U,
+): MappedSignal<U>
 export function derived<A, B, C, U>(
-  a: Signal<A>,
-  b: Signal<B>,
-  c: Signal<C>,
+  a: ReadSignal<A>,
+  b: ReadSignal<B>,
+  c: ReadSignal<C>,
   fn: (a: A, b: B, c: C) => U,
 ): MappedSignal<U>
 export function derived<A, B, C, D, U>(
-  a: Signal<A>,
-  b: Signal<B>,
-  c: Signal<C>,
-  d: Signal<D>,
+  a: ReadSignal<A>,
+  b: ReadSignal<B>,
+  c: ReadSignal<C>,
+  d: ReadSignal<D>,
   fn: (a: A, b: B, c: C, d: D) => U,
 ): MappedSignal<U>
 export function derived<T extends readonly unknown[], U>(
-  sigs: { readonly [K in keyof T]: Signal<T[K]> },
+  sigs: { readonly [K in keyof T]: ReadSignal<T[K]> },
   fn: (...values: T) => U,
 ): MappedSignal<U>
 ```
@@ -436,7 +442,7 @@ function domHeadSink(doc: SignalDoc): HeadSink
 
 ```typescript
 function each<T>(
-  items: Signal<readonly T[]>,
+  items: ReadSignal<readonly T[]>,
   opts: {
     key: (item: T) => string | number
     render: (item: Signal<T>, index: Signal<number>) => Renderable
@@ -466,7 +472,7 @@ structural child.
 
 ```typescript
 function eachArm<T>(
-  items: Signal<readonly T[]>,
+  items: ReadSignal<readonly T[]>,
   key: (item: T) => string | number,
   render: (getCtx: () => RowCtx<T>) => Renderable,
   stateDeps?: readonly string[],
@@ -485,7 +491,7 @@ it falls back to whole-state so `ctx.state` reads stay live.
 
 ```typescript
 function eachDirect<T>(
-  items: Signal<readonly T[]>,
+  items: ReadSignal<readonly T[]>,
   key: (item: T) => string | number,
   row: RowFactory,
   stateDeps?: readonly string[],
@@ -528,12 +534,12 @@ view-helper functions / uncompiled code it runs here — converting each declare
 state HANDLE to its `{produce, deps}` spec and delegating to `signalForeign`.
 
 ```typescript
-function foreign<Inst, State extends Record<string, Signal<unknown>>>(spec: {
+function foreign<Inst, State extends Record<string, ReadSignal<unknown>>>(spec: {
   tag?: string
   state?: State
   mount: (args: {
     el: Element
-    state: { [K in keyof State]: LiveSignal<State[K] extends Signal<infer T> ? T : unknown> }
+    state: { [K in keyof State]: LiveSignal<State[K] extends ReadSignal<infer T> ? T : unknown> }
   }) => Inst
   unmount?: (instance: Inst) => void
 }): Mountable
@@ -602,8 +608,12 @@ function isMountable(v: unknown): v is Mountable
 
 ### `isSignalHandle()`
 
+Is `v` a runtime signal handle (either kind)? The guard is typed with the
+READ carrier: a handle of unknown origin may be a mapped one, which has no
+`.at()`.
+
 ```typescript
-function isSignalHandle(v: unknown): v is SignalHandle<unknown>
+function isSignalHandle(v: unknown): v is ReadHandle<unknown>
 ```
 
 ### `lazy()`
@@ -905,20 +915,22 @@ function serializeNodes(nodes: readonly Node[]): string
 Conditional render: mounts `render`'s arm while `cond` is truthy (and
 `orElse`'s, if given, while it is falsy). The arm receives the NARROWED signal
 — the condition handle itself, typed non-nullable. Over a PATH condition
-(`state.at('user')`) it slices with `.at()`; over a MAPPED one
-(`state.map(pickUser)`, `derived(…)`) it is a {@link MappedSignal} like its
-condition, so read its fields with `.map((u) => u.name)`.
+(`state.at('user')`, a {@link Signal}) it is a `Signal` and slices with
+`.at()`; over any other {@link ReadSignal} — a MAPPED one (`state.map(pickUser)`,
+`derived(…)`), or a helper's `ReadSignal` parameter — it is a
+{@link MappedSignal} (no path to slice), so read its fields with
+`.map((u) => u.name)`.
 
 ```typescript
 export function show<T>(
-  cond: MappedSignal<T>,
-  render: (narrowed: MappedSignal<NonNullable<T>>) => Renderable,
+  cond: Signal<T>,
+  render: (narrowed: Signal<NonNullable<T>>) => Renderable,
   orElse?: () => Renderable,
   transition?: TransitionOptions,
 ): Mountable
 export function show<T>(
-  cond: Signal<T>,
-  render: (narrowed: Signal<NonNullable<T>>) => Renderable,
+  cond: ReadSignal<T>,
+  render: (narrowed: MappedSignal<NonNullable<T>>) => Renderable,
   orElse?: () => Renderable,
   transition?: TransitionOptions,
 ): Mountable
@@ -1223,7 +1235,7 @@ function titleTemplate(value: HeadValue<string>): Mountable
 ### `unsafeHtml()`
 
 Render a raw HTML string as live DOM nodes (escape hatch for pre-rendered
-markup — markdown, syntax highlighting). Reactive on a `Signal<string>`; a
+markup — markdown, syntax highlighting). Reactive on a `ReadSignal<string>`; a
 plain string renders once. The HTML is inserted as-is — the caller owns
 trust/sanitization.
 
@@ -1252,7 +1264,7 @@ changes). Heights come from the data — measured/auto heights are not supported
 
 ```typescript
 function virtualEach<T>(opts: {
-  items: Signal<readonly T[]>
+  items: ReadSignal<readonly T[]>
   key: (item: T) => string | number
   itemHeight: number | ((item: T, index: number) => number)
   containerHeight: number
@@ -1369,22 +1381,23 @@ export type HeadTarget =
 
 ### `HeadValue`
 
-A head value: a plain value (committed once) or a `Signal` (committed on
-mount and on every change). Mirrors how `foreign` accepts handles-or-values.
+A head value: a plain value (committed once) or a signal of either kind
+(committed on mount and on every change). Mirrors how `foreign` accepts
+handles-or-values.
 
 ```typescript
-export type HeadValue<T> = T | Signal<T>
+export type HeadValue<T> = T | ReadSignal<T>
 ```
 
 ### `IslandPropsSource`
 
-A declared reactive input to an island: a host `Signal` (the normal spelling —
-`state.at('token')`, `state.map(...)`, `derived(...)`), or the `{ produce, deps }`
-pair a `Signal` erases to. Same shape `foreign`'s declared `state` inputs take, so
+A declared reactive input to an island: a host signal of either kind (the normal
+spelling — `state.at('token')`, `state.map(...)`, `derived(...)`), or the
+`{ produce, deps }` pair a signal erases to. Same shape `foreign`'s declared `state` inputs take, so
 the dependency paths are visible to the analyzer either way.
 
 ```typescript
-export type IslandPropsSource<P> = Signal<P> | SignalSpec<P>
+export type IslandPropsSource<P> = ReadSignal<P> | SignalSpec<P>
 ```
 
 ### `MountTarget`
@@ -1427,10 +1440,11 @@ export type PropValue = string | number | boolean | null | Reactive | EventHandl
 
 ### `Reactive`
 
-A reactive value in a slot: a signal of T, or a plain T.
+A reactive value in a slot: a signal of T (either kind — a slot only reads
+it), or a plain T.
 
 ```typescript
-export type Reactive<T> = Signal<T> | T
+export type Reactive<T> = ReadSignal<T> | T
 ```
 
 ### `RegistryMethod`
@@ -1989,7 +2003,7 @@ export interface EachSource<T> {
   /** Read the list out of the state the reconcile was handed.
    *
    * The return type is DELIBERATELY nullable even though every authoring entry
-   * point is typed `Signal<readonly T[]>`: the accessor is a path walk, and
+   * point is typed `ReadSignal<readonly T[]>`: the accessor is a path walk, and
    * `mask.ts`'s `resolveSegs` is explicitly undefined-safe, so `state.at('items')`
    * over an absent/late-arriving path produces `undefined` rather than throwing.
    * The reconcile totals that with {@link createItemsResolver} — see #165. */
@@ -2339,6 +2353,53 @@ export interface LluiDebugAPI {
 }
 ```
 
+### `MappedHandle`
+
+A runtime handle produced by `.map()` / `derived()` — the same carrier as
+{@link ReadHandle}, typed {@link MappedSignal} (a mapped signal has no static
+path to slice, so it is NOT a {@link SignalHandle}).
+
+```typescript
+export interface MappedHandle<T> extends ReadHandle<T>, MappedSignal<T> {}
+```
+
+### `MappedSignal`
+
+A signal produced by `.map()` (or `derived()`). It is a {@link ReadSignal} —
+`map`, `peek`, and chaining — WITHOUT `at`: a mapped signal carries no
+statically-known state path, so there is nothing to slice into. Slice with
+`.at()` BEFORE `.map()`:
+
+    sig.at('field').map(fn)   // ✅ narrow first, then transform
+    sig.map(fn).at('field')   // ❌ no path to slice (use the form above)
+
+Two compile errors follow, both naming the fix in the message:
+
+- `.at()` on a mapped signal (`This expression is not callable`).
+- passing a mapped signal where a {@link Signal} is required (`Types of
+property 'at' are incompatible`). If that parameter only reads the signal,
+  type it {@link ReadSignal} instead.
+
+(The runtime also throws a branded error if an untyped caller reaches `.at()`.)
+
+```typescript
+export interface MappedSignal<T> extends ReadSignal<T> {
+  /**
+   * @deprecated `.at()` is unavailable after `.map()` — slice with `.at()` BEFORE `.map()` (`sig.at('field').map(fn)`), or read the field with `.map((v) => v.field)`.
+   *
+   * Declared (optional, and typed as a non-callable object whose only key is the
+   * fix) rather than omitted so that BOTH misuses fail with that text in the
+   * diagnostic: a `.at()` call, and a `MappedSignal` passed where a sliceable
+   * {@link Signal} is required. An optional property is what makes a mapped
+   * signal NOT assignable to `Signal` — a `never`-typed one would be (`never` is
+   * assignable to everything).
+   */
+  at?: {
+    readonly 'mapped signals have no state path: slice with .at() BEFORE .map(), or read with .map((v) => v.field); a parameter that only reads should be typed ReadSignal<T>': never
+  }
+}
+```
+
 ### `MessageRecord`
 
 ```typescript
@@ -2461,6 +2522,56 @@ export interface PendingEffect {
 }
 ```
 
+### `ReadHandle`
+
+A runtime signal of either kind: the {@link ReadSignal} surface PLUS the
+binding info needed to build a reactive slot at runtime (view-helper
+composition). This is what the build helpers consume — they only read.
+
+```typescript
+export interface ReadHandle<T> extends ReadSignal<T> {
+  readonly [SIGNAL]: true
+  /** resolve the value from the binding's state (component or row ctx) */
+  readonly produce: (state: unknown) => T
+  /** dependency paths into the binding's state */
+  readonly deps: readonly string[]
+  /** Root discriminant for row rebasing. `true` ⇒ this handle reads the ROW ctx
+   * (an `item`/`index` handle from `rowHandle`, or a row-aware `derived`); `false`
+   * (or absent) ⇒ it reads the COMPONENT state and must be rebased to `ctx.state`
+   * when placed inside an `each` row. Set at construction from the getter's origin,
+   * so locality never depends on string-inferring a `state`/`item`/`index` field
+   * name (which collides with a component field literally named that). */
+  readonly rowLocal?: boolean
+}
+```
+
+### `ReadSignal`
+
+The READ surface every signal shares — a reactive view of a value of type `T`
+that you can transform and read, but not slice:
+
+- `map(fn)` — transform into a derived signal (single source).
+- `peek()` — one-shot, non-reactive read (handlers / effects / lifecycle).
+
+`ReadSignal<T>` is the type to ACCEPT whenever you only read a signal: a view
+helper's parameter, a part-bag value, a slot. Both kinds of signal satisfy it —
+a path signal ({@link Signal}, from `state` / `.at()` / `constant()`) and a
+mapped one ({@link MappedSignal}, from `.map()` / `derived()`) — so a caller can
+hand it either:
+
+    const badge = (count: ReadSignal<number>) => span([text(count.map(String))])
+    badge(state.at('unread'))                        // ✅ path signal
+    badge(state.map((s) => s.inbox.length))          // ✅ mapped signal
+
+Only a parameter that calls `.at()` needs the narrower {@link Signal}.
+
+```typescript
+export interface ReadSignal<T> {
+  map<U>(fn: (value: T) => U): MappedSignal<U>
+  peek(): T
+}
+```
+
 ### `RowCtx`
 
 The per-row context a row scope mounts on: its `item` plus the current
@@ -2518,15 +2629,21 @@ export interface ShowCond {
 
 ### `Signal`
 
-A reactive view of a value of type `T`. Three methods, the entire reactive
-vocabulary alongside `derived`:
+A PATH signal: a {@link ReadSignal} that also carries a statically-known state
+path, so it can be sliced with `.at()`. The view's `state`, anything reached
+from it through `.at()`, an `each` row's `item`/`index`, and `constant(v)` are
+path signals. The full reactive vocabulary alongside `derived`:
 
 - `at(path)` — slice into a sub-signal via a statically-typed dot path.
 - `map(fn)` — transform into a derived signal (single source).
 - `peek()` — one-shot, non-reactive read (handlers / effects / lifecycle).
 
+A {@link MappedSignal} is NOT a `Signal`: it has no path to slice. Type a
+parameter `Signal<T>` only when the function calls `.at()` on it; otherwise take
+`ReadSignal<T>`, which accepts both.
+
 ```typescript
-export interface Signal<T> {
+export interface Signal<T> extends ReadSignal<T> {
   /**
    * Slice into a sub-signal via a statically-typed dot path
    * (`state.at('user.profile.name')`). The path is validated and the result type
@@ -2543,8 +2660,6 @@ export interface Signal<T> {
    * is the supported escape hatch for very deep paths.
    */
   at<P extends ValidPath<T>>(path: P): Signal<PathValue<T, P>>
-  map<U>(fn: (value: T) => U): MappedSignal<U>
-  peek(): T
 }
 ```
 
@@ -2671,24 +2786,11 @@ export interface SignalDebugHooks {
 
 ### `SignalHandle`
 
-A runtime `Signal`: the read surface PLUS the binding info needed to build a
-reactive slot at runtime (view-helper composition).
+A runtime PATH signal ({@link Signal}): a {@link ReadHandle} that can also be
+sliced with `.at()`. Built by `pathHandle`, `rowHandle` and `constant`.
 
 ```typescript
-export interface SignalHandle<T> extends Signal<T> {
-  readonly [SIGNAL]: true
-  /** resolve the value from the binding's state (component or row ctx) */
-  readonly produce: (state: unknown) => T
-  /** dependency paths into the binding's state */
-  readonly deps: readonly string[]
-  /** Root discriminant for row rebasing. `true` ⇒ this handle reads the ROW ctx
-   * (an `item`/`index` handle from `rowHandle`, or a row-aware `derived`); `false`
-   * (or absent) ⇒ it reads the COMPONENT state and must be rebased to `ctx.state`
-   * when placed inside an `each` row. Set at construction from the getter's origin,
-   * so locality never depends on string-inferring a `state`/`item`/`index` field
-   * name (which collides with a component field literally named that). */
-  readonly rowLocal?: boolean
-}
+export interface SignalHandle<T> extends ReadHandle<T>, Signal<T> {}
 ```
 
 ### `SignalLazyOptions`

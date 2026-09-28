@@ -19,13 +19,14 @@ import { resolveSegments } from './mask.js'
 import { __inRowBuild } from './build-context.js'
 import { isRowLocalDep, rebaseComponentDep } from './row-rebase.js'
 import { LluiFrameworkError } from './framework-error.js'
-import type { Signal, MappedSignal } from './types.js'
+import type { Signal, MappedSignal, ReadSignal } from './types.js'
 
 const SIGNAL = Symbol.for('llui.signal.handle')
 
-/** A runtime `Signal`: the read surface PLUS the binding info needed to build a
- * reactive slot at runtime (view-helper composition). */
-export interface SignalHandle<T> extends Signal<T> {
+/** A runtime signal of either kind: the {@link ReadSignal} surface PLUS the
+ * binding info needed to build a reactive slot at runtime (view-helper
+ * composition). This is what the build helpers consume — they only read. */
+export interface ReadHandle<T> extends ReadSignal<T> {
   readonly [SIGNAL]: true
   /** resolve the value from the binding's state (component or row ctx) */
   readonly produce: (state: unknown) => T
@@ -40,19 +41,19 @@ export interface SignalHandle<T> extends Signal<T> {
   readonly rowLocal?: boolean
 }
 
-/** A runtime handle produced by `.map()` / `derived()` — same carrier as
- * {@link SignalHandle}, but its public `at` is the {@link MappedSignal} `never`
- * (a mapped signal has no static path to slice). A `MappedHandle<T>` is
- * assignable to `SignalHandle<T>`, so it flows through the build helpers
- * unchanged. */
-export interface MappedHandle<T> extends MappedSignal<T> {
-  readonly [SIGNAL]: true
-  readonly produce: (state: unknown) => T
-  readonly deps: readonly string[]
-  readonly rowLocal?: boolean
-}
+/** A runtime PATH signal ({@link Signal}): a {@link ReadHandle} that can also be
+ * sliced with `.at()`. Built by `pathHandle`, `rowHandle` and `constant`. */
+export interface SignalHandle<T> extends ReadHandle<T>, Signal<T> {}
 
-export function isSignalHandle(v: unknown): v is SignalHandle<unknown> {
+/** A runtime handle produced by `.map()` / `derived()` — the same carrier as
+ * {@link ReadHandle}, typed {@link MappedSignal} (a mapped signal has no static
+ * path to slice, so it is NOT a {@link SignalHandle}). */
+export interface MappedHandle<T> extends ReadHandle<T>, MappedSignal<T> {}
+
+/** Is `v` a runtime signal handle (either kind)? The guard is typed with the
+ * READ carrier: a handle of unknown origin may be a mapped one, which has no
+ * `.at()`. */
+export function isSignalHandle(v: unknown): v is ReadHandle<unknown> {
   return typeof v === 'object' && v !== null && (v as Record<symbol, unknown>)[SIGNAL] === true
 }
 
@@ -191,30 +192,30 @@ function makeMappedHandle<T>(
   deps: readonly string[],
   rowLocal: boolean,
 ): MappedHandle<T> {
-  // The carrier keeps a THROWING `at` as a runtime safety net; the public type is
-  // `MappedSignal` (`at: never`), which can't hold that callable value — so build
-  // the object as a `SignalHandle` (callable `at`) and widen to `MappedHandle` on
-  // return. The compile error (`MappedSignal.at: never`, carried through the
-  // `show`/`branch` narrowed-param overloads) + the `at-after-map` lint are the
-  // guards where the mapped origin is visible; the throw covers the rest.
-  const h: SignalHandle<T> = {
+  const h: MappedHandle<T> = {
     [SIGNAL]: true,
     produce,
     deps,
     rowLocal,
     peek,
-    // Reachable from WELL-TYPED code: a `MappedSignal<T>` is assignable to
-    // `Signal<T>`, so a view helper taking `Signal<T>` (or a `show`/`branch` arm
-    // param typed that way) can be handed one. Name both fixes, with the path.
-    at: ((path: string) => {
-      throw new LluiFrameworkError(
-        `.at('${path}') on a mapped signal is unsupported: a signal produced by .map() or derived() — including the narrowed signal show()/branch() hand an arm when their condition is mapped — has no state path to slice. Read the field from its value with .map((v) => v.${path}), or slice with .at() BEFORE mapping: sig.at('${path}').map(fn).`,
-      )
-    }) as Signal<T>['at'],
-    map: (<U>(fn: (v: T) => U) =>
-      mapHandle<T, U>({ peek, produce }, fn, deps, rowLocal)) as Signal<T>['map'],
+    map: <U>(fn: (v: T) => U) => mapHandle<T, U>({ peek, produce }, fn, deps, rowLocal),
   }
-  return h as MappedHandle<T>
+  // A THROWING `at` as a runtime safety net, deliberately outside the type: the
+  // public type is `MappedSignal`, whose `at` is optional and non-callable, which
+  // is what makes a mapped signal NOT assignable to a sliceable `Signal`. So a
+  // `.at()` here is a compile error everywhere the types are honoured — a `.at()`
+  // call, a `Signal<T>` parameter handed a `.map()`, a `show`/`branch` arm over a
+  // mapped condition — and the `at-after-map` lint reports it in a direct view.
+  // This throw covers what escapes the checker (plain JS, `any`, a cast). Name
+  // every fix, with the path.
+  Object.defineProperty(h, 'at', {
+    value: (path: string): never => {
+      throw new LluiFrameworkError(
+        `.at('${path}') on a mapped signal is unsupported: a signal produced by .map() or derived() — including the narrowed signal show()/branch() hand an arm when their condition is mapped — has no state path to slice. Read the field from its value with .map((v) => v.${path}), or slice with .at() BEFORE mapping: sig.at('${path}').map(fn). A view helper that only reads its signal should type the parameter ReadSignal<T> (accepts .map() results); Signal<T> is for parameters that call .at().`,
+      )
+    },
+  })
+  return h
 }
 
 /**
@@ -276,22 +277,26 @@ function mapHandle<S, T>(
  * {@link MappedSignal} — like a `.map()`, it carries no path, so `.at()` on it is
  * a compile error (slice the sources before combining).
  */
-export function derived<A, B, U>(a: Signal<A>, b: Signal<B>, fn: (a: A, b: B) => U): MappedSignal<U>
+export function derived<A, B, U>(
+  a: ReadSignal<A>,
+  b: ReadSignal<B>,
+  fn: (a: A, b: B) => U,
+): MappedSignal<U>
 export function derived<A, B, C, U>(
-  a: Signal<A>,
-  b: Signal<B>,
-  c: Signal<C>,
+  a: ReadSignal<A>,
+  b: ReadSignal<B>,
+  c: ReadSignal<C>,
   fn: (a: A, b: B, c: C) => U,
 ): MappedSignal<U>
 export function derived<A, B, C, D, U>(
-  a: Signal<A>,
-  b: Signal<B>,
-  c: Signal<C>,
-  d: Signal<D>,
+  a: ReadSignal<A>,
+  b: ReadSignal<B>,
+  c: ReadSignal<C>,
+  d: ReadSignal<D>,
   fn: (a: A, b: B, c: C, d: D) => U,
 ): MappedSignal<U>
 export function derived<T extends readonly unknown[], U>(
-  sigs: { readonly [K in keyof T]: Signal<T[K]> },
+  sigs: { readonly [K in keyof T]: ReadSignal<T[K]> },
   fn: (...values: T) => U,
 ): MappedSignal<U>
 export function derived(...args: readonly unknown[]): MappedSignal<unknown> {
@@ -300,16 +305,16 @@ export function derived(...args: readonly unknown[]): MappedSignal<unknown> {
   // array form is exactly two args whose first is an array of signals.
   const sigs = (
     args.length === 2 && Array.isArray(args[0]) ? args[0] : args.slice(0, -1)
-  ) as readonly Signal<unknown>[]
+  ) as readonly ReadSignal<unknown>[]
   return combineSignals(sigs, fn)
 }
 
 /** Shared implementation behind every `derived(...)` overload. */
 function combineSignals(
-  sigs: readonly Signal<unknown>[],
+  sigs: readonly ReadSignal<unknown>[],
   fn: (...values: readonly unknown[]) => unknown,
 ): MappedHandle<unknown> {
-  const handles: SignalHandle<unknown>[] = []
+  const handles: ReadHandle<unknown>[] = []
   for (const s of sigs) {
     if (!isSignalHandle(s)) {
       // Branded for the same reason as `compiledAway` — a row build reaches this,
@@ -334,7 +339,7 @@ function combineSignals(
   // so a component input reading a field literally named `state`/`item`/`index`
   // still rebases correctly. Unbranded inputs (rare: a hand-built handle) fall back
   // to the legacy dep-string test.
-  const inputIsComponentRooted = (h: SignalHandle<unknown>): boolean =>
+  const inputIsComponentRooted = (h: ReadHandle<unknown>): boolean =>
     h.rowLocal === true ? false : h.rowLocal === false ? true : !h.deps.every(isRowLocalDep)
   const inputs = handles.map((h) => {
     if (rowAware && inputIsComponentRooted(h)) {

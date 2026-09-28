@@ -75,15 +75,15 @@ import { normalizeUpdateResult } from './tea-driver.js'
 import { isSignalHandle, pathHandle } from './handle.js'
 import { LluiFrameworkError } from './framework-error.js'
 import type { SignalSpec } from './foreign.js'
-import type { Signal } from './types.js'
+import type { ReadSignal } from './types.js'
 
 /**
- * A declared reactive input to an island: a host `Signal` (the normal spelling —
- * `state.at('token')`, `state.map(...)`, `derived(...)`), or the `{ produce, deps }`
- * pair a `Signal` erases to. Same shape `foreign`'s declared `state` inputs take, so
+ * A declared reactive input to an island: a host signal of either kind (the normal
+ * spelling — `state.at('token')`, `state.map(...)`, `derived(...)`), or the
+ * `{ produce, deps }` pair a signal erases to. Same shape `foreign`'s declared `state` inputs take, so
  * the dependency paths are visible to the analyzer either way.
  */
-export type IslandPropsSource<P> = Signal<P> | SignalSpec<P>
+export type IslandPropsSource<P> = ReadSignal<P> | SignalSpec<P>
 
 /** Spec for {@link signalIsland} — a component instance with its own local state. */
 export interface IslandSpec<S, M, E = never, P = never> {

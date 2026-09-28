@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { tocLocale } from '../locale/toc.js'
 
@@ -95,23 +95,23 @@ export interface TocItemParts {
     'data-scope': 'toc'
     'data-part': 'item'
     'data-level': string
-    'data-active': Signal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
     'data-value': string
   }
   link: {
     href: string
-    'aria-current': Signal<'location' | undefined>
+    'aria-current': ReadSignal<'location' | undefined>
     'data-scope': 'toc'
     'data-part': 'link'
-    'data-active': Signal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
   }
   expandTrigger: {
     type: 'button'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-label': string
     'data-scope': 'toc'
     'data-part': 'expand-trigger'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     onClick: (e: MouseEvent) => void
   }
 }
@@ -139,7 +139,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<TocState>,
+  state: ReadSignal<TocState>,
   send: Send<TocMsg>,
   opts: ConnectOptions = {},
 ): TocParts {

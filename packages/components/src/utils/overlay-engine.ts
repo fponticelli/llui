@@ -1,4 +1,4 @@
-import type { Signal, Mountable, Renderable, ElProps, TransitionOptions } from '@llui/dom'
+import type { ReadSignal, Mountable, Renderable, ElProps, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div, LluiFrameworkError } from '@llui/dom'
 import { followActiveDescendant } from './follow-active-descendant.js'
 import { pushDismissable } from './dismissable.js'
@@ -187,7 +187,7 @@ export interface OverlayRelationships {
 }
 
 export interface OverlayEngineOptions<S> {
-  state: Signal<S>
+  state: ReadSignal<S>
   /** Resolved portal host (see `resolvePortalTarget`). */
   host: Element | undefined
   /** The positioner part props spread onto the wrapping `div`. */

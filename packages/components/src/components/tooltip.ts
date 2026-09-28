@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
@@ -99,8 +99,8 @@ export function isMounted(state: TooltipState): boolean {
 export interface TooltipParts {
   trigger: {
     id: string
-    'aria-describedby': Signal<string | undefined>
-    'data-state': Signal<'open' | 'closed'>
+    'aria-describedby': ReadSignal<string | undefined>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'tooltip'
     'data-part': 'trigger'
     onPointerEnter: (e: PointerEvent) => void
@@ -118,7 +118,7 @@ export interface TooltipParts {
     role: 'tooltip'
     id: string
     style: string
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'tooltip'
     'data-part': 'content'
     onPointerEnter: (e: PointerEvent) => void
@@ -144,7 +144,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<TooltipState>,
+  state: ReadSignal<TooltipState>,
   send: Send<TooltipMsg>,
   opts: ConnectOptions,
 ): TooltipParts {
@@ -279,7 +279,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<TooltipState>
+  state: ReadSignal<TooltipState>
   send: Send<TooltipMsg>
   parts: TooltipParts
   content: () => Renderable

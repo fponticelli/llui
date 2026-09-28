@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable } from '@llui/dom'
+import type { Send, ReadSignal, Signal, Mountable } from '@llui/dom'
 import { div, input, h2, span, text, each } from '@llui/dom'
 import {
   connect as dialogConnect,
@@ -328,13 +328,13 @@ export interface CommandMenuParts {
   /** Combobox parts (root/input/content/item/group/...) for the search + list. */
   combobox: ComboboxParts
   /** Accessor for a command's keybinding hint (empty string when none). */
-  shortcutHint: (commandId: string) => Signal<string>
+  shortcutHint: (commandId: string) => ReadSignal<string>
   /** Empty-state part: `data-empty` is set when the filtered list is empty. */
   empty: {
     'data-scope': 'command-menu'
     'data-part': 'empty'
     role: 'status'
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
   }
 }
 
@@ -361,7 +361,7 @@ function groupKey(label: string): string {
  * elements exactly like the base components.
  */
 export function connect(
-  state: Signal<CommandMenuState>,
+  state: ReadSignal<CommandMenuState>,
   send: Send<CommandMenuMsg>,
   opts: ConnectOptions,
 ): CommandMenuParts {
@@ -449,6 +449,8 @@ export function connect(
 }
 
 export interface CommandMenuViewOptions {
+  /** A PATH signal: the view slices `filteredGroups` with `.at()` so the list is
+   * gated on that path alone. */
   state: Signal<CommandMenuState>
   send: Send<CommandMenuMsg>
   id: string

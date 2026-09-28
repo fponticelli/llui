@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { qrCodeLocale } from '../locale/qr-code.js'
 
 /**
@@ -127,7 +127,7 @@ export interface QrCodeParts {
     'data-part': 'root'
     'aria-label': string
     /** Present while no matrix has been supplied — the empty state hook. */
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
   }
   /**
    * The `role="img"` graphic carries its OWN accessible name. A screen-reader
@@ -137,22 +137,22 @@ export interface QrCodeParts {
     'data-scope': 'qr-code'
     'data-part': 'svg'
     role: 'img'
-    'aria-label': Signal<string>
-    viewBox: Signal<string>
+    'aria-label': ReadSignal<string>
+    viewBox: ReadSignal<string>
     'shape-rendering': 'crispEdges'
   }
   /** Spread onto a `<rect>`: sized to the module grid so it covers the quiet background. */
   background: {
     'data-scope': 'qr-code'
     'data-part': 'background'
-    width: Signal<string>
-    height: Signal<string>
+    width: ReadSignal<string>
+    height: ReadSignal<string>
   }
   /** Spread onto a `<path>`: one sub-path per dark module. */
   foreground: {
     'data-scope': 'qr-code'
     'data-part': 'foreground'
-    d: Signal<string>
+    d: ReadSignal<string>
   }
   downloadTrigger: {
     type: 'button'
@@ -160,7 +160,7 @@ export interface QrCodeParts {
     'data-scope': 'qr-code'
     'data-part': 'download-trigger'
     /** Nothing to download until a matrix exists. */
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
 }
@@ -173,7 +173,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<QrCodeState>,
+  state: ReadSignal<QrCodeState>,
   send: Send<QrCodeMsg>,
   opts: ConnectOptions = {},
 ): QrCodeParts {

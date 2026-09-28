@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal, Signal } from '@llui/dom'
 import { enSparkline, sparklineLocale } from '../locale/sparkline.js'
 import { deriveOnce } from '../utils/derive.js'
 import { finiteBound } from '../utils/number.js'
@@ -814,8 +814,8 @@ export interface SparklineParts {
   root: {
     'data-scope': 'sparkline'
     'data-part': 'root'
-    'data-stale': Signal<'' | undefined>
-    'data-active': Signal<'' | undefined>
+    'data-stale': ReadSignal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
   }
   /**
    * The `<svg>`. `role="img"` named through its own `<title>`/`<desc>`; the
@@ -828,7 +828,7 @@ export interface SparklineParts {
     'data-part': 'svg'
     role: 'img'
     'aria-labelledby': string
-    viewBox: Signal<string>
+    viewBox: ReadSignal<string>
     tabindex: 0
     onKeyDown: (e: KeyboardEvent) => void
     onPointerMove: (e: PointerEvent) => void
@@ -841,25 +841,25 @@ export interface SparklineParts {
   table: {
     'data-scope': 'sparkline'
     'data-part': 'table'
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
   }
   /** The reference band. Stays MOUNTED and hides itself, so a band appearing or
    *  disappearing does not rebuild the layer. */
   band: {
     'data-scope': 'sparkline'
     'data-part': 'band'
-    'data-band': Signal<'between' | 'below' | 'above' | undefined>
-    d: Signal<string>
-    hidden: Signal<boolean>
+    'data-band': ReadSignal<'between' | 'below' | 'above' | undefined>
+    d: ReadSignal<string>
+    hidden: ReadSignal<boolean>
   }
-  line: { 'data-scope': 'sparkline'; 'data-part': 'line'; d: Signal<string> }
+  line: { 'data-scope': 'sparkline'; 'data-part': 'line'; d: ReadSignal<string> }
   /** The right edge. `data-stale` is set when it is later than the last
    *  reading. */
   now: {
     'data-scope': 'sparkline'
     'data-part': 'now'
-    'data-stale': Signal<'' | undefined>
-    d: Signal<string>
+    'data-stale': ReadSignal<'' | undefined>
+    d: ReadSignal<string>
   }
   /** A `<g>` stacking layer. Static — spread it on each layer group. */
   layer: { 'data-scope': 'sparkline'; 'data-part': 'layer' }
@@ -877,23 +877,23 @@ export interface SparklineParts {
   tickProps: (tick: Signal<SparklineTick>) => {
     'data-scope': 'sparkline'
     'data-part': 'grid'
-    'data-unit': Signal<'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'>
-    d: Signal<string>
+    'data-unit': ReadSignal<'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'>
+    d: ReadSignal<string>
   }
   dotProps: (dot: Signal<SparklineDot>) => {
     'data-scope': 'sparkline'
     'data-part': 'dot'
-    'data-tone': Signal<'below' | 'in' | 'above' | 'none'>
-    'data-last': Signal<'' | undefined>
-    'data-active': Signal<'' | undefined>
-    cx: Signal<number>
-    cy: Signal<number>
+    'data-tone': ReadSignal<'below' | 'in' | 'above' | 'none'>
+    'data-last': ReadSignal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
+    cx: ReadSignal<number>
+    cy: ReadSignal<number>
   }
   spanProps: (span: Signal<SparklineSpan>) => {
     'data-scope': 'sparkline'
     'data-part': 'span'
-    'data-grain': Signal<string>
-    d: Signal<string>
+    'data-grain': ReadSignal<string>
+    d: ReadSignal<string>
   }
   /** Tooltip ATTRIBUTES — spreadable, with its own reactive `hidden`. */
   tooltip: {
@@ -901,19 +901,19 @@ export interface SparklineParts {
     'data-part': 'tooltip'
     role: 'status'
     'aria-live': 'polite'
-    hidden: Signal<boolean>
-    style: Signal<string>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
-  ticks: Signal<SparklineTick[]>
-  dots: Signal<SparklineDot[]>
-  spans: Signal<SparklineSpan[]>
-  rows: Signal<SparklineRow[]>
+  ticks: ReadSignal<SparklineTick[]>
+  dots: ReadSignal<SparklineDot[]>
+  spans: ReadSignal<SparklineSpan[]>
+  rows: ReadSignal<SparklineRow[]>
   /** The dot under the cursor, or `null`. */
-  activeDot: Signal<SparklineDot | null>
+  activeDot: ReadSignal<SparklineDot | null>
   /** The composed accessible name — the locale's phrasing of
    *  {@link SparklineGeometry.summary}, or `opts.label` when given. */
-  label: Signal<string>
-  summary: Signal<SparklineSummary>
+  label: ReadSignal<string>
+  summary: ReadSignal<SparklineSummary>
 }
 
 export interface SparklineConnectOptions {
@@ -933,7 +933,7 @@ export interface SparklineConnectOptions {
 }
 
 export function connect(
-  state: Signal<SparklineState>,
+  state: ReadSignal<SparklineState>,
   send: Send<SparklineMsg>,
   opts: SparklineConnectOptions,
 ): SparklineParts {

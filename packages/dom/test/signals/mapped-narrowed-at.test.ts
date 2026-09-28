@@ -5,7 +5,8 @@ import { isFrameworkError } from '../../src/signals/framework-error'
 import type { MappedSignal, Signal } from '../../src/signals/types'
 
 // A `.map()`/`derived()` signal has no state path, so `.at()` on it is
-// unsupported: a type error (`MappedSignal.at: never`) and a runtime throw. A
+// unsupported: a type error (`MappedSignal` has no callable `.at()` and is NOT
+// assignable to the sliceable `Signal`) and a runtime throw. A
 // `show`/`branch` narrowed param IS its condition handle, so a narrowed param
 // over a MAPPED condition is a mapped signal too. The component-gallery shell
 // (#267) hit this: its error arm's `v.map((s) => s.message)` was rejected by the
@@ -13,6 +14,9 @@ import type { MappedSignal, Signal } from '../../src/signals/types'
 //
 // These pin the runtime half of that contract: the idiomatic `.map` read works
 // and stays reactive, and the `.at()` read fails with a branded, actionable error.
+// Well-typed code can no longer reach the throw (a mapped signal does not widen to
+// `Signal`), so each case reaches it through a `@ts-expect-error` — the stand-in
+// for plain JS, `any` or a cast — which also pins the compile error.
 
 type Frame = { status: 'loading' } | { status: 'ready' } | { status: 'error'; message: string }
 interface S {
@@ -33,9 +37,9 @@ describe('.at() on a mapped signal', () => {
       view: ({ state }) => {
         const frame = state.at('frames').map((frames) => frames['a']!)
         try {
-          // A view helper typed `Signal<T>` can receive a mapped signal (a
-          // `MappedSignal<T>` IS a `Signal<T>`), so the call is reachable from
-          // well-typed code; reproduce it through that widening.
+          // A view helper typed `Signal<T>` handed a mapped signal: a compile
+          // error now, reached here past the checker.
+          // @ts-expect-error — a MappedSignal is not a Signal (no path to slice)
           const widened: Signal<Frame> = frame
           widened.at('status')
         } catch (err) {
@@ -49,6 +53,7 @@ describe('.at() on a mapped signal', () => {
     expect(message).toContain(".at('status')")
     expect(message).toContain('.map((v) => v.status)')
     expect(message).toContain('BEFORE')
+    expect(message).toContain('ReadSignal<T>')
     h.dispose()
   })
 
@@ -66,7 +71,8 @@ describe('.at() on a mapped signal', () => {
             }),
             (failed) => {
               // `failed` is the mapped condition handle; the type says so (see the
-              // type test in signal-types.test.ts), widened here to reach the throw.
+              // type test in signal-types.test.ts), forced here to reach the throw.
+              // @ts-expect-error — a MappedSignal is not a Signal (no path to slice)
               const widened: Signal<{ status: 'error'; message: string }> = failed
               return [text(widened.at('message'))]
             },

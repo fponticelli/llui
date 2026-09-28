@@ -1,5 +1,5 @@
 import { onMount, tagSend, type Mountable } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { retainedExit } from '../internal/retained-exit.js'
 import {
   createDisclosureExitCompletionMount,
@@ -119,19 +119,19 @@ export function update(state: CollapsibleState, msg: CollapsibleMsg): [Collapsib
 
 export interface CollapsibleParts {
   root: {
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'collapsible'
     'data-part': 'root'
   }
   trigger: {
     type: 'button'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    disabled: Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'collapsible'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -140,12 +140,12 @@ export interface CollapsibleParts {
     role: 'region'
     id: string
     'aria-labelledby': string
-    hidden: Signal<boolean>
-    'data-state': Signal<'open' | 'closing' | 'closed'>
+    hidden: ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closing' | 'closed'>
     'data-scope': 'collapsible'
     'data-part': 'content'
-    'aria-hidden': Signal<'true' | undefined>
-    inert: Signal<boolean>
+    'aria-hidden': ReadSignal<'true' | undefined>
+    inert: ReadSignal<boolean>
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
@@ -184,7 +184,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<CollapsibleState>,
+  state: ReadSignal<CollapsibleState>,
   send: Send<CollapsibleMsg>,
   opts: ConnectOptions,
 ): CollapsibleParts {

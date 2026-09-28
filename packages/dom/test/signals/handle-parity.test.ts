@@ -2,11 +2,11 @@ import { describe, it, expect, vi } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
 import { el, signalText } from '../../src/signals/dom'
 import { pathHandle, isSignalHandle } from '../../src/signals/handle'
-import type { Signal } from '../../src/signals/types'
+import type { ReadSignal } from '../../src/signals/types'
 import { tagSend } from '../../src/binding-descriptors'
 
 /** Evaluate a signal handle against a concrete state value (test-only). */
-function read<T>(sig: Signal<T>, state: unknown): T {
+function read<T>(sig: ReadSignal<T>, state: unknown): T {
   if (!isSignalHandle(sig)) throw new Error('expected a signal handle')
   return sig.produce(state) as T
 }

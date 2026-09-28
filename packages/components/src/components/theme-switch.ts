@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 
 /**
  * Theme Switch — light/dark/system theme toggle.
@@ -170,7 +170,7 @@ export interface ThemeSwitchParts {
     'data-scope': 'theme-switch'
     'data-part': 'option'
     'data-theme': Theme
-    'aria-pressed': Signal<boolean>
+    'aria-pressed': ReadSignal<boolean>
     'aria-label': string
     onClick: (e: MouseEvent) => void
   }
@@ -178,7 +178,7 @@ export interface ThemeSwitchParts {
     type: 'button'
     'data-scope': 'theme-switch'
     'data-part': 'toggle'
-    'data-theme': Signal<Theme>
+    'data-theme': ReadSignal<Theme>
     'aria-label': string
     onClick: (e: MouseEvent) => void
   }
@@ -197,7 +197,7 @@ const LABELS: Record<Theme, string> = {
 }
 
 export function connect(
-  state: Signal<ThemeSwitchState>,
+  state: ReadSignal<ThemeSwitchState>,
   send: Send<ThemeSwitchMsg>,
   opts: ConnectOptions,
 ): ThemeSwitchParts {

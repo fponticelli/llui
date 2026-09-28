@@ -31,9 +31,11 @@ overlay components), plus a namespace object at the bottom.
 - **`init(opts): XState`** — no signal args.
 - **`update(state, msg): [XState, never[]]`** — pure, synchronous, exhaustive
   `switch (msg.type)`. Most headless components emit no effects → `never[]`.
-- **`connect(state: Signal<XState>, send: Send<XMsg>, opts: ConnectOptions): XParts`** —
+- **`connect(state: ReadSignal<XState>, send: Send<XMsg>, opts: ConnectOptions): XParts`** —
   takes the **sliced signal handle** (the consumer passes `state.at('tabs')`), never an
-  accessor. Returns a **part-bag**: an object of prop-bags the consumer spreads onto
+  accessor. Type it `ReadSignal` (connect only reads it — a consumer may hand it a
+  `.map()`/`constant()`), and the reactive part-bag props `ReadSignal<…>` too; use
+  `Signal<…>` only for a parameter the code slices with `.at()` (e.g. a row handle). Returns a **part-bag**: an object of prop-bags the consumer spreads onto
   elements. Reactive props are `state.map(s => …)` signals; event handlers are wrapped in
   **`tagSend(send, ['variant', …], fn)`** (from `@llui/dom`) so the agent protocol knows
   which Msg variants a handler dispatches. Wrap EVERY handler in `tagSend`.

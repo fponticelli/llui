@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { popoverLocale } from '../locale/popover.js'
 import { type Placement } from '../utils/floating.js'
@@ -92,10 +92,10 @@ export interface PopoverParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'dialog'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'popover'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -110,7 +110,7 @@ export interface PopoverParts {
     id: string
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'popover'
     'data-part': 'content'
     onAnimationEnd: (e: AnimationEvent) => void
@@ -145,7 +145,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<PopoverState>,
+  state: ReadSignal<PopoverState>,
   send: Send<PopoverMsg>,
   opts: ConnectOptions,
 ): PopoverParts {
@@ -216,7 +216,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<PopoverState>
+  state: ReadSignal<PopoverState>
   send: Send<PopoverMsg>
   parts: PopoverParts
   content: () => Renderable

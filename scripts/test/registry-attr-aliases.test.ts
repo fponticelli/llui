@@ -70,6 +70,21 @@ afterAll(async () => {
   await rm(root, { recursive: true, force: true })
 })
 
+describe('the value arm unwraps every signal wrapper a part prop is declared with', () => {
+  // Part props are `.map()` results, declared `ReadSignal<X>`. A wrapper name the
+  // unwrapper does not know yields no verdict (fails OPEN), silently — the
+  // `Signal` -> `ReadSignal` rename did exactly that to every recipe value check.
+  for (const wrapper of ['ReadSignal', 'Signal', 'MappedSignal', 'Reactive']) {
+    it(`reads the literal union inside ${wrapper}<…>`, async () => {
+      const source = `export interface P { root: { 'data-x': ${wrapper}<'on' | 'off' | undefined> } }`
+      const file = path.join(src, 'main.ts')
+      await writeFile(file, source)
+      const map: Map<string, Set<string> | null> = publishedAttrValues(file, source, new Map())
+      expect([...(map.get('data-x') ?? [])].sort()).toEqual(['off', 'on'])
+    })
+  }
+})
+
 describe('the value arm follows a same-package type alias', () => {
   it('resolves an alias declared in the same file', async () => {
     const source = [

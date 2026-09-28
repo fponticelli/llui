@@ -1,4 +1,4 @@
-import type { Mountable, Send, Signal } from '@llui/dom'
+import type { Mountable, Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { carouselLocale } from '../locale/carousel.js'
 import {
@@ -341,21 +341,21 @@ export interface CarouselSlideParts {
     'data-scope': 'carousel'
     'data-part': 'slide'
     'data-index': string
-    'data-active': Signal<'' | undefined>
-    hidden: Signal<boolean>
+    'data-active': ReadSignal<'' | undefined>
+    hidden: ReadSignal<boolean>
   }
   indicator: {
     type: 'button'
     role: 'tab'
     /** APG roving tab stop: only the selected indicator participates in Tab. */
-    tabindex: Signal<0 | -1>
+    tabindex: ReadSignal<0 | -1>
     'aria-label': string
-    'aria-selected': Signal<boolean>
+    'aria-selected': ReadSignal<boolean>
     'aria-controls': string
     'data-scope': 'carousel'
     'data-part': 'indicator'
     'data-index': string
-    'data-active': Signal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -369,7 +369,7 @@ export interface CarouselParts {
     'aria-label': string
     'data-scope': 'carousel'
     'data-part': 'root'
-    'data-paused': Signal<'' | undefined>
+    'data-paused': ReadSignal<'' | undefined>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
     onFocusIn: (e: FocusEvent) => void
@@ -383,11 +383,11 @@ export interface CarouselParts {
      * transition off (`[data-dragging] { transition: none }`) so the track
      * follows the finger 1:1 instead of easing.
      */
-    'data-dragging': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
     /** Live track offset (px) to follow the finger: `translateX(var)`. */
-    'data-drag-offset': Signal<string | undefined>
+    'data-drag-offset': ReadSignal<string | undefined>
     /** Physical pointer delta consumed by either skin's track transform. */
-    'style.--carousel-drag-offset': Signal<string | undefined>
+    'style.--carousel-drag-offset': ReadSignal<string | undefined>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
@@ -407,7 +407,7 @@ export interface CarouselParts {
   nextTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'carousel'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
@@ -415,7 +415,7 @@ export interface CarouselParts {
   prevTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'carousel'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -436,7 +436,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<CarouselState>,
+  state: ReadSignal<CarouselState>,
   send: Send<CarouselMsg>,
   opts: ConnectOptions,
 ): CarouselParts {

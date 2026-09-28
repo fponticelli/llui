@@ -1,6 +1,6 @@
 import { foreign } from '@llui/dom'
 import type { Renderable } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { ReadSignal, Signal } from '@llui/dom'
 import type { Page } from '../types'
 
 interface ReadmeInstance {
@@ -17,7 +17,7 @@ interface ReadmeInstance {
  */
 export function readmeView(pageSignal: Signal<Page>): Renderable {
   return [
-    foreign<ReadmeInstance, { html: Signal<string> }>({
+    foreign<ReadmeInstance, { html: ReadSignal<string> }>({
       tag: 'div',
       state: {
         html: pageSignal.map((page) => {

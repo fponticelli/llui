@@ -280,7 +280,7 @@ Build reactive toolbar parts from the format signal. Spread `item(id)` onto a
 
 ```typescript
 function connectToolbar(
-  format: Signal<FormatState>,
+  format: ReadSignal<FormatState>,
   send: Send<EditorMsg>,
   items: readonly CommandItem[],
 ): ToolbarParts
@@ -1097,7 +1097,7 @@ export interface EditorConfig {
   /** Initial markdown (uncontrolled seed). */
   defaultValue?: string
   /** Controlled: the consumer owns this signal; the editor follows it. */
-  value?: Signal<string>
+  value?: ReadSignal<string>
   /** Debounced markdown-emission window (ms). Default 300. */
   changeDebounceMs?: number
   placeholder?: string
@@ -1136,7 +1136,7 @@ export interface EditorParts {
   /** The merged, surface-filtered command items. */
   items: readonly CommandItem[]
   /** Reactive format signal for `connect`-style toolbars. */
-  format: Signal<FormatState>
+  format: ReadSignal<FormatState>
 }
 ```
 
@@ -1299,9 +1299,9 @@ export interface InitOptions {
 ```typescript
 export interface LinkDialogOptions {
   /** The `{ open }` slice driving the modal. */
-  dialog: Signal<DialogState>
+  dialog: ReadSignal<DialogState>
   /** The URL input value. */
-  url: Signal<string>
+  url: ReadSignal<string>
   /** Called as the user edits the URL. */
   onInput: (url: string) => void
   /** Called on Apply / Enter. */
@@ -1496,10 +1496,10 @@ export interface ToolbarItemParts {
   'data-id': string
   'aria-label': string
   title: string
-  'aria-pressed': Signal<'true' | 'false'>
-  'aria-disabled': Signal<'true' | undefined>
-  disabled: Signal<boolean>
-  'data-active': Signal<'' | undefined>
+  'aria-pressed': ReadSignal<'true' | 'false'>
+  'aria-disabled': ReadSignal<'true' | undefined>
+  disabled: ReadSignal<boolean>
+  'data-active': ReadSignal<'' | undefined>
   onClick: (e: MouseEvent) => void
 }
 ```
@@ -1508,7 +1508,7 @@ export interface ToolbarItemParts {
 
 ```typescript
 export interface ToolbarOptions {
-  format: Signal<FormatState>
+  format: ReadSignal<FormatState>
   send: Send<EditorMsg>
   items: readonly CommandItem[]
   /** Explicit grouped layout of ids; defaults to grouping by `item.group`. */
@@ -1520,7 +1520,7 @@ export interface ToolbarOptions {
   blockSelect?: boolean
   /** Collaborative-session status. When supplied AND `enabled`, the toolbar
    * appends a presence indicator (connection dot + live peer count). */
-  collab?: Signal<CollabStatus>
+  collab?: ReadSignal<CollabStatus>
   'aria-label'?: string
 }
 ```
@@ -1886,7 +1886,7 @@ Build reactive toolbar parts from the format signal. Spread `item(id)` onto a
 
 ```typescript
 function connectToolbar(
-  format: Signal<FormatState>,
+  format: ReadSignal<FormatState>,
   send: Send<EditorMsg>,
   items: readonly CommandItem[],
 ): ToolbarParts
@@ -1912,10 +1912,10 @@ export interface ToolbarItemParts {
   'data-id': string
   'aria-label': string
   title: string
-  'aria-pressed': Signal<'true' | 'false'>
-  'aria-disabled': Signal<'true' | undefined>
-  disabled: Signal<boolean>
-  'data-active': Signal<'' | undefined>
+  'aria-pressed': ReadSignal<'true' | 'false'>
+  'aria-disabled': ReadSignal<'true' | undefined>
+  disabled: ReadSignal<boolean>
+  'data-active': ReadSignal<'' | undefined>
   onClick: (e: MouseEvent) => void
 }
 ```
@@ -1924,7 +1924,7 @@ export interface ToolbarItemParts {
 
 ```typescript
 export interface ToolbarOptions {
-  format: Signal<FormatState>
+  format: ReadSignal<FormatState>
   send: Send<EditorMsg>
   items: readonly CommandItem[]
   /** Explicit grouped layout of ids; defaults to grouping by `item.group`. */
@@ -1936,7 +1936,7 @@ export interface ToolbarOptions {
   blockSelect?: boolean
   /** Collaborative-session status. When supplied AND `enabled`, the toolbar
    * appends a presence indicator (connection dot + live peer count). */
-  collab?: Signal<CollabStatus>
+  collab?: ReadSignal<CollabStatus>
   'aria-label'?: string
 }
 ```

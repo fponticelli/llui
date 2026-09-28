@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { finiteBound } from '../utils/number.js'
 
@@ -108,11 +108,11 @@ export interface BreadcrumbsParts {
     'data-value': string
   }
   link: (id: string) => {
-    'aria-current': Signal<'page' | undefined>
+    'aria-current': ReadSignal<'page' | undefined>
     'data-scope': 'breadcrumbs'
     'data-part': 'link'
     'data-value': string
-    'data-current': Signal<'' | undefined>
+    'data-current': ReadSignal<'' | undefined>
   }
   separator: {
     'aria-hidden': 'true'
@@ -140,7 +140,7 @@ function isCurrent(state: BreadcrumbsState, id: string): boolean {
 }
 
 export function connect(
-  state: Signal<BreadcrumbsState>,
+  state: ReadSignal<BreadcrumbsState>,
   send: Send<BreadcrumbsMsg>,
   opts: ConnectOptions = {},
 ): BreadcrumbsParts {

@@ -1,4 +1,4 @@
-import { tagSend, type Send, type Signal } from '@llui/dom'
+import { tagSend, type Send, type ReadSignal } from '@llui/dom'
 import type { AgentSession, AgentToken } from '../protocol.js'
 import type { AgentEffect } from './effects.js'
 
@@ -509,20 +509,20 @@ export type AgentConnectConnectOptions = {
  * as a `Signal`; reactive props are derived from it via `state.map(...)`.
  */
 export type ConnectBag = {
-  root: { 'data-scope': 'agent-connect'; 'data-state': Signal<AgentConnectStatus> }
-  mintTrigger: { onClick: () => void; disabled: Signal<boolean> }
-  pendingTokenBox: { 'data-part': 'pending-token'; 'data-visible': Signal<boolean> }
-  copyConnectSnippetButton: { onClick: () => void; disabled: Signal<boolean> }
+  root: { 'data-scope': 'agent-connect'; 'data-state': ReadSignal<AgentConnectStatus> }
+  mintTrigger: { onClick: () => void; disabled: ReadSignal<boolean> }
+  pendingTokenBox: { 'data-part': 'pending-token'; 'data-visible': ReadSignal<boolean> }
+  copyConnectSnippetButton: { onClick: () => void; disabled: ReadSignal<boolean> }
   sessionsList: { 'data-part': 'sessions-list' }
   sessionItem: (tid: string) => { 'data-part': 'session-item'; 'data-tid': string }
   revokeButton: (tid: string) => { onClick: () => void }
-  resumeBanner: { 'data-part': 'resume-banner'; 'data-visible': Signal<boolean> }
+  resumeBanner: { 'data-part': 'resume-banner'; 'data-visible': ReadSignal<boolean> }
   resumeItem: (tid: string) => { 'data-part': 'resume-item'; 'data-tid': string }
   resumeButton: (tid: string) => { onClick: () => void }
   dismissButton: (tid: string) => { onClick: () => void }
   error: {
     'data-part': 'error'
-    'data-visible': Signal<boolean>
+    'data-visible': ReadSignal<boolean>
     onClick: () => void
   }
 }
@@ -533,7 +533,7 @@ export type ConnectBag = {
  * element helpers.
  */
 export function connect(
-  state: Signal<AgentConnectState>,
+  state: ReadSignal<AgentConnectState>,
   send: Send<AgentConnectMsg>,
   _opts: AgentConnectConnectOptions = {},
 ): ConnectBag {

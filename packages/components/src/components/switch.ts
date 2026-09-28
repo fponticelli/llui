@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 
 /**
  * Switch — two-state on/off control. Semantically like a checkbox but
@@ -43,23 +43,23 @@ export function update(state: SwitchState, msg: SwitchMsg): [SwitchState, never[
 export interface SwitchParts {
   root: {
     role: 'switch'
-    'aria-checked': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'checked' | 'unchecked'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-checked': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'switch'
     'data-part': 'root'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   track: {
-    'data-state': Signal<'checked' | 'unchecked'>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
     'data-scope': 'switch'
     'data-part': 'track'
   }
   thumb: {
-    'data-state': Signal<'checked' | 'unchecked'>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
     'data-scope': 'switch'
     'data-part': 'thumb'
   }
@@ -69,8 +69,8 @@ export interface SwitchParts {
     'aria-hidden': 'true'
     tabindex: -1
     style: string
-    checked: Signal<boolean>
-    disabled: Signal<boolean>
+    checked: ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'switch'
     'data-part': 'hidden-input'
   }
@@ -79,7 +79,7 @@ export interface SwitchParts {
 const HIDDEN_STYLE =
   'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;'
 
-export function connect(state: Signal<SwitchState>, send: Send<SwitchMsg>): SwitchParts {
+export function connect(state: ReadSignal<SwitchState>, send: Send<SwitchMsg>): SwitchParts {
   return {
     root: {
       role: 'switch',

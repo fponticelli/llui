@@ -17,7 +17,7 @@ import {
   span,
   text,
   type Send,
-  type Signal,
+  type ReadSignal,
 } from '@llui/dom'
 import { lockBodyScroll, pushFocusTrap } from '@llui/interactions'
 import * as checkbox from '@llui/components/checkbox'
@@ -70,7 +70,7 @@ function driveUi<S, M>(
   key: string,
   initial: S,
   reducer: (state: S, msg: M) => [S, unknown[]],
-): { state: Signal<S>; send: Send<M> } {
+): { state: ReadSignal<S>; send: Send<M> } {
   // Read from the (depth-scoped) scope.uiState; write via ctx.setUi (a plain
   // send, safe at any depth).
   const state = scope.uiState.map((ui) => readUi(ui, key, initial))

@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { deriveOnceN, membershipSet } from '../utils/derive.js'
@@ -105,14 +105,14 @@ export interface RadioItemParts {
   root: {
     role: 'radio'
     id: string
-    'aria-checked': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'checked' | 'unchecked'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-checked': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'radio-group'
     'data-part': 'item'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -123,7 +123,7 @@ export interface RadioItemParts {
     for: string
   }
   indicator: {
-    'data-state': Signal<'checked' | 'unchecked'>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
     'data-scope': 'radio-group'
     'data-part': 'indicator'
   }
@@ -132,12 +132,12 @@ export interface RadioItemParts {
 export interface RadioGroupParts {
   root: {
     role: 'radiogroup'
-    'aria-orientation': Signal<Orientation>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-orientation': ReadSignal<Orientation>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'radio-group'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   item: (value: string) => RadioItemParts
 }
@@ -147,7 +147,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<RadioGroupState>,
+  state: ReadSignal<RadioGroupState>,
   send: Send<RadioGroupMsg>,
   opts: ConnectOptions,
 ): RadioGroupParts {

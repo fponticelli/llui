@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 
 /**
  * Avatar — image with automatic fallback. Tracks image load status so
@@ -51,14 +51,14 @@ export interface AvatarParts {
   root: {
     'data-scope': 'avatar'
     'data-part': 'root'
-    'data-status': Signal<ImageStatus>
+    'data-status': ReadSignal<ImageStatus>
     'data-density': AvatarDensity | undefined
   }
   image: {
     'data-scope': 'avatar'
     'data-part': 'image'
-    'data-status': Signal<ImageStatus>
-    hidden: Signal<boolean>
+    'data-status': ReadSignal<ImageStatus>
+    hidden: ReadSignal<boolean>
     alt: string
     onLoad: (e: Event) => void
     onError: (e: Event) => void
@@ -67,9 +67,9 @@ export interface AvatarParts {
   fallback: {
     'data-scope': 'avatar'
     'data-part': 'fallback'
-    'data-status': Signal<ImageStatus>
-    hidden: Signal<boolean>
-    'aria-hidden': Signal<'true' | undefined>
+    'data-status': ReadSignal<ImageStatus>
+    hidden: ReadSignal<boolean>
+    'aria-hidden': ReadSignal<'true' | undefined>
   }
 }
 
@@ -80,7 +80,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<AvatarState>,
+  state: ReadSignal<AvatarState>,
   send: Send<AvatarMsg>,
   opts: ConnectOptions = {},
 ): AvatarParts {

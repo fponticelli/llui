@@ -12,7 +12,7 @@
 //     vulnerable/misconfigured renderer is an XSS sink. Return sanitized
 //     markup (e.g. via DOMPurify) or prefer the Node form.
 
-import { foreign, type Mountable, type Signal } from '@llui/dom'
+import { foreign, type Mountable, type ReadSignal } from '@llui/dom'
 
 /** A preview renderer: source string → safe DOM node, or trusted HTML string. */
 export type PreviewRender = (source: string) => string | Node
@@ -27,11 +27,11 @@ interface PreviewInstance {
  * are mounted directly (no sanitization). See the module header.
  */
 export function renderedPreview(
-  source: Signal<string>,
+  source: ReadSignal<string>,
   render: PreviewRender,
   tag = 'div',
 ): Mountable {
-  return foreign<PreviewInstance, { source: Signal<string> }>({
+  return foreign<PreviewInstance, { source: ReadSignal<string> }>({
     tag,
     state: { source },
     mount: ({ el, state }) => {

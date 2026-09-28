@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { imageCropperLocale } from '../locale/image-cropper.js'
 import { allFiniteNumbers, clamp, finiteBound, positiveFinite } from '../utils/number.js'
@@ -375,9 +375,9 @@ export interface ImageCropperParts {
   root: {
     'data-scope': 'image-cropper'
     'data-part': 'root'
-    'data-dragging': Signal<'' | undefined>
-    'data-resizing': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-resizing': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   image: {
     'data-scope': 'image-cropper'
@@ -395,11 +395,11 @@ export interface ImageCropperParts {
   cropBox: {
     role: 'group'
     tabindex: 0
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
     'aria-keyshortcuts': string
     'data-scope': 'image-cropper'
     'data-part': 'crop-box'
-    style: Signal<string>
+    style: ReadSignal<string>
     onPointerDown: (e: PointerEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -432,7 +432,7 @@ const ARROW_NUDGE: Readonly<Record<string, readonly [number, number]>> = {
 }
 
 export function connect(
-  state: Signal<ImageCropperState>,
+  state: ReadSignal<ImageCropperState>,
   send: Send<ImageCropperMsg>,
   opts: ConnectOptions = {},
 ): ImageCropperParts {

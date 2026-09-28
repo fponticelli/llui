@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { timerLocale } from '../locale/timer.js'
 import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
@@ -162,10 +162,10 @@ export interface TimerParts {
   root: {
     'data-scope': 'timer'
     'data-part': 'root'
-    'data-running': Signal<'' | undefined>
-    'data-direction': Signal<Direction>
+    'data-running': ReadSignal<'' | undefined>
+    'data-direction': ReadSignal<Direction>
     /** Present once a countdown has reached its target (see `isComplete`). */
-    'data-complete': Signal<'' | undefined>
+    'data-complete': ReadSignal<'' | undefined>
   }
   display: {
     role: 'timer'
@@ -178,7 +178,7 @@ export interface TimerParts {
     'aria-label': string
     'data-scope': 'timer'
     'data-part': 'start-trigger'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   pauseTrigger: {
@@ -186,7 +186,7 @@ export interface TimerParts {
     'aria-label': string
     'data-scope': 'timer'
     'data-part': 'pause-trigger'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   resetTrigger: {
@@ -212,7 +212,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<TimerState>,
+  state: ReadSignal<TimerState>,
   send: Send<TimerMsg>,
   opts: ConnectOptions = {},
 ): TimerParts {

@@ -477,9 +477,9 @@ export interface LexicalForeignOptions<Emit = unknown> {
   /** Initial document (uncontrolled) — ignored when `value` is provided. */
   defaultValue?: string
   /** Controlled document signal; the editor follows it (echo-guarded). */
-  value?: Signal<string>
+  value?: ReadSignal<string>
   /** Reactive read-only flag (always supplied by the host's state). */
-  readonly: Signal<boolean>
+  readonly: ReadSignal<boolean>
   /** Debounce window (ms) for outbound serialization. Default 300. */
   changeDebounceMs?: number
   /** Register the built-in `@lexical/history` undo stack. Default `true`.

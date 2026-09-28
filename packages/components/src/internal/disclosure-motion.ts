@@ -402,7 +402,7 @@ export function createDisclosureExitCompletionMount(
       // This cleanup also runs when the WHOLE APP is being disposed (every
       // mount's cleanup runs on teardown), in which case `onSettle`'s
       // `send` is a no-op that logs a dev-only "send() after dispose()"
-      // notice — harmless, but noise. `Send<M>`/`Signal<T>` expose no
+      // notice — harmless, but noise. `Send<M>`/`ReadSignal<T>` expose no
       // public "is this app disposed" query (#264 review-264k considered
       // this and found none), and `@llui/components` must not reach into
       // `@llui/dom`'s internal mount-host state to invent one, so this is

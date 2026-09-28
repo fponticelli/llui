@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { allFiniteNumbers, clamp, clampToStep, finiteBound, stepBy } from '../utils/number.js'
 
@@ -207,19 +207,19 @@ function horizontalPositionPercent(state: SliderState, percent: number): number 
 export interface SliderThumbParts {
   thumb: {
     role: 'slider'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-orientation': Signal<Orientation>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-orientation': ReadSignal<Orientation>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'slider'
     'data-part': 'thumb'
     'data-index': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onKeyDown: (e: KeyboardEvent) => void
-    style: Signal<string>
+    style: ReadSignal<string>
   }
 }
 
@@ -227,32 +227,32 @@ export interface SliderParts {
   root: {
     'data-scope': 'slider'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   control: {
     'data-scope': 'slider'
     'data-part': 'control'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
     onPointerDown: (e: PointerEvent) => void
   }
   track: {
     'data-scope': 'slider'
     'data-part': 'track'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
   }
   range: {
     'data-scope': 'slider'
     'data-part': 'range'
-    'data-orientation': Signal<Orientation>
-    style: Signal<string>
+    'data-orientation': ReadSignal<Orientation>
+    style: ReadSignal<string>
   }
   thumb: (index: number) => SliderThumbParts
   /** Current raw values — reactive convenience. */
-  value: Signal<number[]>
+  value: ReadSignal<number[]>
 }
 
-export function connect(state: Signal<SliderState>, send: Send<SliderMsg>): SliderParts {
+export function connect(state: ReadSignal<SliderState>, send: Send<SliderMsg>): SliderParts {
   return {
     root: {
       'data-scope': 'slider',

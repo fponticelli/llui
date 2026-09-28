@@ -21,7 +21,7 @@ import {
   type Mountable,
   type PropValue,
   type Renderable,
-  type Signal,
+  type ReadSignal,
 } from '@llui/dom'
 import type { BuildArgs, ComponentBuilder } from '../catalog.js'
 import { bindString, bindUrl, firstCheckError, resolveDynamic, type Check } from '../binding.js'
@@ -46,7 +46,7 @@ export function elx(
 export function labelledField(
   labelText: Renderable,
   control: Renderable,
-  error: Signal<string | null> | null = null,
+  error: ReadSignal<string | null> | null = null,
 ): Renderable {
   const children: ChildNode[] = [span({ class: 'a2ui-field-label' }, labelText), ...control]
   if (error) {

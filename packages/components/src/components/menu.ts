@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import {
@@ -230,10 +230,10 @@ export interface MenuParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'menu'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'menu'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -250,11 +250,11 @@ export interface MenuParts {
     'aria-labelledby': string
     /** The id of the virtually-focused (highlighted) item at the root level, so
      * assistive tech announces it while DOM focus stays on the container. */
-    'aria-activedescendant': Signal<string | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
     tabindex: -1
     /** Reflects the presence lifecycle: 'opening' | 'open' | 'closing' | 'closed'.
      * Stays mounted while 'closing' so the exit animation can run. */
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'menu'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
@@ -295,7 +295,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<MenuState>,
+  state: ReadSignal<MenuState>,
   send: Send<MenuMsg>,
   opts: ConnectOptions,
 ): MenuParts {
@@ -384,7 +384,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<MenuState>
+  state: ReadSignal<MenuState>
   send: Send<MenuMsg>
   parts: MenuParts
   content: () => Renderable
@@ -452,7 +452,7 @@ export function overlay(opts: OverlayOptions): Mountable {
 export interface SubOverlayOptions {
   /** The subTrigger value this level opens under. */
   value: string
-  state: Signal<MenuState>
+  state: ReadSignal<MenuState>
   parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
   content: () => Renderable
   target?: string | HTMLElement

@@ -108,6 +108,18 @@ or `derived` (the param IS that signal): read its fields with `.map((v) => v.fie
 Combine multiple signals with `derived(a, b, fn)` / `derived([a, b], fn)` (a module
 import, not a handle method). Reactive slots take a `Signal`, a `.map`, or a plain value.
 
+**Three signal types — type helper parameters by what they DO.** `Signal<T>` is a PATH
+signal (`state`, anything from `.at()`, an `each` row's `item`/`index`, `constant(v)`) and
+has `.at()`. `MappedSignal<T>` is a `.map()`/`derived()` result: no path, no `.at()`, and
+NOT assignable to `Signal`. `ReadSignal<T>` is the read-only supertype of both (`map` +
+`peek`). Every read-only API takes `ReadSignal` (element props, `text`, `each` items,
+`show`/`branch` conditions, `derived` inputs, `foreign` state, `island` props, every
+`@llui/components` `connect(state, …)`). A view helper takes **`ReadSignal<T>` unless it
+calls `.at()` on the parameter**, and `Signal<T>` when it does. `Argument of type
+'MappedSignal<X>' is not assignable to parameter of type 'Signal<X>'` means exactly that:
+retype the parameter `ReadSignal<X>` if the helper only reads, or pass a `.at()` slice if
+it slices — never cast.
+
 To mount: `mountApp(container, def, opts?)` → a handle with `send`, `batch`,
 `getState()`, `subscribe(fn)`, `flush()`, `dispose()`. `opts.scheduler: 'raf'` coalesces
 DOM commits to one per frame (default `'sync'`, where `send` applies immediately).

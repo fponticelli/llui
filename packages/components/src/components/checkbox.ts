@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 
 /**
  * Checkbox — a tri-state form control (checked / unchecked / indeterminate).
@@ -69,14 +69,14 @@ export interface CheckboxParts {
   /** The visual box/container — `role="checkbox"` for accessibility. */
   root: {
     role: 'checkbox'
-    'aria-checked': Signal<'true' | 'false' | 'mixed'>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
-    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-checked': ReadSignal<'true' | 'false' | 'mixed'>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'checkbox'
     'data-part': 'root'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -86,16 +86,16 @@ export interface CheckboxParts {
     'aria-hidden': 'true'
     tabindex: -1
     style: string
-    checked: Signal<boolean>
-    indeterminate: Signal<boolean>
-    disabled: Signal<boolean>
-    required: Signal<boolean>
+    checked: ReadSignal<boolean>
+    indeterminate: ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
+    required: ReadSignal<boolean>
     'data-scope': 'checkbox'
     'data-part': 'hidden-input'
   }
   /** Optional indicator child (the checkmark). */
   indicator: {
-    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+    'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
     'data-scope': 'checkbox'
     'data-part': 'indicator'
   }
@@ -104,7 +104,7 @@ export interface CheckboxParts {
 const HIDDEN_STYLE =
   'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;'
 
-export function connect(state: Signal<CheckboxState>, send: Send<CheckboxMsg>): CheckboxParts {
+export function connect(state: ReadSignal<CheckboxState>, send: Send<CheckboxMsg>): CheckboxParts {
   return {
     root: {
       role: 'checkbox',

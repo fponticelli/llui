@@ -25,6 +25,7 @@ import {
   thead,
   tr,
   type Mountable,
+  type ReadSignal,
   type Send,
   type Signal,
 } from '@llui/dom'
@@ -612,7 +613,7 @@ const stepsAdapter: Adapter<StepsCaseInput> = (host, input, ctx) =>
 // the machine reports as unchecked or indeterminate the moment selection
 // changes (#264). Shared shape with the registry renderer's identical need.
 function tableCheckboxGlyph(
-  dataState: Signal<'checked' | 'unchecked' | 'indeterminate'>,
+  dataState: ReadSignal<'checked' | 'unchecked' | 'indeterminate'>,
 ): Mountable {
   return text(dataState.map((s) => (s === 'checked' ? '✓' : s === 'indeterminate' ? '−' : '')))
 }

@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { floatingPanelLocale } from '../locale/floating-panel.js'
 import { allFiniteNumbers, clamp, finiteBound, finiteOrDefault } from '../utils/number.js'
@@ -289,12 +289,12 @@ export interface FloatingPanelParts {
     'aria-label': string
     'data-scope': 'floating-panel'
     'data-part': 'root'
-    'data-dragging': Signal<'' | undefined>
-    'data-resizing': Signal<'' | undefined>
-    'data-minimized': Signal<'' | undefined>
-    'data-maximized': Signal<'' | undefined>
-    hidden: Signal<boolean>
-    style: Signal<string>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-resizing': ReadSignal<'' | undefined>
+    'data-minimized': ReadSignal<'' | undefined>
+    'data-maximized': ReadSignal<'' | undefined>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
   /**
    * Pointer drag starts here, and it is also a keyboard stop (#266): arrows
@@ -321,13 +321,13 @@ export interface FloatingPanelParts {
   content: {
     'data-scope': 'floating-panel'
     'data-part': 'content'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   minimizeTrigger: {
     type: 'button'
     'aria-label': string
     /** A toggle: `'true'` while minimized. */
-    'aria-pressed': Signal<'true' | 'false'>
+    'aria-pressed': ReadSignal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'minimize-trigger'
     onClick: (e: MouseEvent) => void
@@ -336,7 +336,7 @@ export interface FloatingPanelParts {
     type: 'button'
     'aria-label': string
     /** A toggle: `'true'` while maximized. */
-    'aria-pressed': Signal<'true' | 'false'>
+    'aria-pressed': ReadSignal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'maximize-trigger'
     onClick: (e: MouseEvent) => void
@@ -398,7 +398,7 @@ function arrowDelta(e: KeyboardEvent): readonly [number, number] | undefined {
 }
 
 export function connect(
-  state: Signal<FloatingPanelState>,
+  state: ReadSignal<FloatingPanelState>,
   send: Send<FloatingPanelMsg>,
   opts: ConnectOptions = {},
 ): FloatingPanelParts {

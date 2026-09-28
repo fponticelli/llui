@@ -41,6 +41,7 @@ import {
   type Mountable,
   type Renderable,
   type Send,
+  type ReadSignal,
   type Signal,
 } from '@llui/dom'
 import {
@@ -440,9 +441,9 @@ function radioGroup<T extends string>(
   name: string,
   title: string,
   options: readonly { value: T; label: string }[],
-  selected: Signal<T | undefined>,
+  selected: ReadSignal<T | undefined>,
   onSelect: (value: T) => void,
-  disabled?: Signal<boolean>,
+  disabled?: ReadSignal<boolean>,
 ): Mountable {
   return fieldset(
     {

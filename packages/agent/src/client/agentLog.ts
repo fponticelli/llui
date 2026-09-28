@@ -50,7 +50,7 @@ export function update(
 }
 
 // Connect bag:
-import { tagSend, type Send, type Signal } from '@llui/dom'
+import { tagSend, type Send, type ReadSignal } from '@llui/dom'
 
 /**
  * Static prop bag with reactive (Signal-handle) values. See
@@ -62,18 +62,18 @@ import { tagSend, type Send, type Signal } from '@llui/dom'
  */
 export type ConnectBag = {
   root: { 'data-scope': 'agent-log' }
-  list: { 'data-part': 'list'; 'data-count': Signal<number> }
+  list: { 'data-part': 'list'; 'data-count': ReadSignal<number> }
   entryItem: (id: string) => {
     'data-part': 'entry'
     'data-id': string
-    'data-kind': Signal<LogKind | 'missing'>
+    'data-kind': ReadSignal<LogKind | 'missing'>
   }
   filterControls: {
-    clearButton: { onClick: () => void; disabled: Signal<boolean> }
+    clearButton: { onClick: () => void; disabled: ReadSignal<boolean> }
     setFilter: (filter: AgentLogFilter) => void
   }
   /** Filtered view of entries — respects state.filter. */
-  visibleEntries: Signal<readonly LogEntry[]>
+  visibleEntries: ReadSignal<readonly LogEntry[]>
   /**
    * Reactive (Signal) value for an entry's structural diff (JSON-Patch).
    * Resolves to the entry's `stateDiff` when present, `null` otherwise —
@@ -89,7 +89,7 @@ export type ConnectBag = {
    * what consumers expect when reading from a sidecar that may outlive
    * the visibility filter.
    */
-  entryDiff: (id: string) => Signal<StateDiff | null>
+  entryDiff: (id: string) => ReadSignal<StateDiff | null>
 }
 
 function filterEntries(s: AgentLogState): readonly LogEntry[] {
@@ -100,7 +100,7 @@ function filterEntries(s: AgentLogState): readonly LogEntry[] {
   })
 }
 
-export function connect(state: Signal<AgentLogState>, send: Send<AgentLogMsg>): ConnectBag {
+export function connect(state: ReadSignal<AgentLogState>, send: Send<AgentLogMsg>): ConnectBag {
   // A single derived handle for the filtered list; reused by the
   // per-item lookups below so the filter logic lives in one place.
   const visible = state.map(filterEntries)
@@ -109,8 +109,8 @@ export function connect(state: Signal<AgentLogState>, send: Send<AgentLogMsg>): 
   // calls `bag.entryDiff(entry.id)` once per row at view-construction —
   // caching keeps each row's handle stable across re-renders, so the
   // underlying binding short-circuits when state hasn't changed.
-  const diffSignalCache = new Map<string, Signal<StateDiff | null>>()
-  const kindSignalCache = new Map<string, Signal<LogKind | 'missing'>>()
+  const diffSignalCache = new Map<string, ReadSignal<StateDiff | null>>()
+  const kindSignalCache = new Map<string, ReadSignal<LogKind | 'missing'>>()
 
   return {
     root: { 'data-scope': 'agent-log' },
