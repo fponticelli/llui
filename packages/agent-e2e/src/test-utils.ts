@@ -18,10 +18,7 @@ export function remainingBudget(test: WaitContext): number {
 /** How many frames of type `t` the agent server has sent this page so far. */
 export function serverFrameCount(page: Page, t: string): Promise<number> {
   return page.evaluate(
-    (type: string) =>
-      (
-        (window as unknown as Record<string, unknown>)['__lluiE2eFrames'] as Array<{ t: string }>
-      ).filter((f) => f.t === type).length,
+    (type: string) => (window.__lluiE2eFrames ?? []).filter((f) => f.t === type).length,
     t,
   )
 }
@@ -40,9 +37,7 @@ export async function waitForServerFrame(
 ): Promise<void> {
   await page.waitForFunction(
     ([type, n]: [string, number]) =>
-      (
-        (window as unknown as Record<string, unknown>)['__lluiE2eFrames'] as Array<{ t: string }>
-      ).filter((f) => f.t === type).length > n,
+      (window.__lluiE2eFrames ?? []).filter((f) => f.t === type).length > n,
     [t, seen] as [string, number],
     { timeout: remainingBudget(test) },
   )
