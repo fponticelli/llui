@@ -41,12 +41,7 @@
         "$TURBO_ROOT$/scripts/lib/vite-source-aliases.mjs",
         "$TURBO_ROOT$/packages/interactions/src/**"
       ],
-      "env": [
-        "LLUI_TEST_DURATIONS",
-        "LLUI_VISUAL_OUTPUT",
-        "LLUI_VISUAL_REQUIRED",
-        "LLUI_VISUAL_UPDATE"
-      ]
+      "env": ["LLUI_VISUAL_OUTPUT", "LLUI_VISUAL_REQUIRED", "LLUI_VISUAL_UPDATE"]
     }
   }
 }

@@ -40,7 +40,11 @@ export const REPO_ROOT = resolve(GALLERY_DIR, '../..')
 export const BASELINE_DIR = resolve(GALLERY_DIR, 'test/visual-baselines')
 export const MANIFEST_PATH = resolve(BASELINE_DIR, 'manifest.json')
 
-/** Relative values resolve against the REPO ROOT, like `LLUI_TEST_DURATIONS`. */
+/**
+ * Relative values resolve against the REPO ROOT, not the package cwd: CI sets a
+ * relative value because its container mounts the workspace at a different
+ * path than `github.workspace` names.
+ */
 export function visualOutputDir(): string {
   return resolve(REPO_ROOT, process.env['LLUI_VISUAL_OUTPUT'] ?? '.visual-output')
 }

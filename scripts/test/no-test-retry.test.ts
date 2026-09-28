@@ -29,7 +29,7 @@ import ts from 'typescript'
  *     and a dynamic-import wait that passed only because an earlier test had
  *     warmed the module cache.
  *
- * Measurements and per-site detail: `docs/agents/test-durations.md`. Retry is
+ * Measurements and per-site detail: `docs/agents/tests-and-load.md`. Retry is
  * ALSO wrong for perf-ratio tests, for a different reason (#246): a transient
  * that reddens healthy code greens a real regression just as often.
  *

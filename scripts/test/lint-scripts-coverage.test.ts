@@ -221,9 +221,8 @@ describe('scripts/ lint coverage (#256)', () => {
       const config = (await eslint.calculateConfigForFile(file)) as ResolvedConfig
       const project = config.languageOptions?.parserOptions?.project
       // `Array.isArray` is typed `arg is any[]`, so narrowing an `unknown` with
-      // it hands back `any[]` and every read off it is unchecked — the exact
-      // trap this change documents at `scripts/lib/test-durations.mjs`, and one
-      // the lint gate cannot catch here because the sinks (`String(p)`, `!== 2`)
+      // it hands back `any[]` and every read off it is unchecked — a trap the
+      // lint gate cannot catch here because the sinks (`String(p)`, `!== 2`)
       // both accept `any`. Re-declare as `unknown[]` before reading.
       const projectPaths: readonly unknown[] = Array.isArray(project) ? project : []
       if (!projectPaths.some((p) => typeof p === 'string' && p.includes('tsconfig.scripts'))) {
@@ -318,13 +317,12 @@ describe('scripts/ lint coverage (#256)', () => {
     ).toBeGreaterThan(0)
 
     for (const step of invoking) {
-      // `continue-on-error` on the `Test durations` step is deliberate and
-      // documented; here it would silently turn a build-failing gate back into
-      // a log line. Checked on EVERY invocation, so a clean step followed by a
-      // neutered duplicate is caught too.
+      // `continue-on-error` here would silently turn a build-failing gate back
+      // into a log line. Checked on EVERY invocation, so a clean step followed
+      // by a neutered duplicate is caught too.
       expect(step).not.toContain('continue-on-error')
       // A step that never RUNS is neutered just as effectively. Scoped to this
-      // step's own keys, so the deliberate `if: always()` elsewhere is untouched.
+      // step's own keys, so a deliberate `if:` on another step is untouched.
       expect(step).not.toMatch(/^ {8}if:/m)
     }
 

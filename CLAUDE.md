@@ -8,7 +8,7 @@ This file holds the RULES. The measurements, incident history and reasoning behi
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | [`docs/agents/workflow.md`](docs/agents/workflow.md)             | worktrees, pre-commit lock, stash ban, symlinks + prettier, `llui-mcp` watchdog   |
 | [`docs/agents/ci.md`](docs/agents/ci.md)                         | CI vs local, `check:scripts` / `lint:scripts` / `check:docs` gates, step order    |
-| [`docs/agents/test-durations.md`](docs/agents/test-durations.md) | duration baseline, timeouts, load vs load-transient, perf-ratio tests             |
+| [`docs/agents/tests-and-load.md`](docs/agents/tests-and-load.md) | timeouts, load vs load-transient, perf-ratio tests, fixtures, no-retry rule       |
 | [`docs/agents/verification.md`](docs/agents/verification.md)     | faithful mutation testing, focus/overlay probes, NUL bytes in source              |
 | [`docs/agents/runtime.md`](docs/agents/runtime.md)               | `@llui/dom` concepts and invariants in full                                       |
 | [`docs/agents/compiler.md`](docs/agents/compiler.md)             | `@llui/compiler` invariants in full (signal recognition, rows, lint rules)        |
@@ -38,8 +38,6 @@ pnpm test:scripts         # Root scripts/test suite
 pnpm format               # Prettier format everything
 pnpm format:check         # Check formatting without writing
 pnpm gallery              # Component Gallery dev server (shell + both path documents)
-pnpm test:durations       # Record the per-file test-duration baseline
-pnpm check:test-durations # Diff against that baseline (report-only, load-normalized)
 
 # Single package — run each script SEPARATELY (see Committing)
 pnpm --filter @llui/dom build
@@ -88,16 +86,15 @@ Mirror `.github/workflows/ci.yml` **step for step, filters included**. Full deta
 - `pnpm check:docs` type-checks README examples. `@doc-skip`, `@doc-setup` and `DOC_ONLY_MODULES` can all hide real staleness — review them like an allowlist.
 - A test must not depend on a directory an earlier CI step created. Fix the assumption (`mkdirSync(dir, { recursive: true })`), never the step order.
 - `verify` fails fast: red at `Type check` tells you nothing about the tests. Run later steps locally too.
-- `LLUI_TEST_DURATIONS` stays RELATIVE in `ci.yml` (container path ≠ host path); both writer and reader resolve it against the repo root.
+- Output-path env vars in `ci.yml` (e.g. `LLUI_VISUAL_OUTPUT`) stay RELATIVE (container path ≠ host path) and are resolved against the repo root.
 
-## Test durations and timeouts
+## Tests, load and timeouts
 
-Full detail: `docs/agents/test-durations.md`.
+Full detail: `docs/agents/tests-and-load.md`.
 
 - Workspace `testTimeout` is 30 s. Every vitest config must reach `vitest.shared.ts` (gated by `scripts/test/vitest-config-baseline.test.ts`). `mergeConfig` CONCATENATES `test.include` — override by spreading instead.
-- The per-file duration metric is test BUSY time, `min(sum, span)`: a `describe.concurrent` test's duration includes its queue time, so a raw sum is not a cost.
-- `check:test-durations` is REPORT-ONLY via `continue-on-error` in `ci.yml`. Thresholds (`4x / +400 ms`, quartile spread) are calibrated against measured noise; re-run the sweep in `scripts/lib/test-durations.mjs` before changing them.
-- Expensive fixtures belong in `beforeAll` (60 s `hookTimeout`), but hook time is invisible to the duration report.
+- No gate watches per-file test duration (the 30 s budget ended the old 5 s canary; a duration baseline was tried and removed). A test nearing its budget wants to be CHEAPER, never a bigger budget.
+- Expensive fixtures belong in `beforeAll` (60 s `hookTimeout`), never in a `describe` body (collection time is unbudgeted).
 - Browser suites BUILD their fixture once and serve it static (`scripts/lib/prebuilt-fixture.mjs`), never a per-file Vite dev server: on-demand compiles, per-page module fan-out and a shared dependency-optimizer cache all land on the tests under load. Record fast in-page state in-page, never sleep-then-read across a round trip.
 - `pnpm smoke:examples` AND every test browser are hermetic, through ONE policy and Iconify fixture (`scripts/lib/network-policy.mjs`): tests launch only via `useHermeticBrowser()` (`scripts/lib/hermetic-browser.mjs`, called at collection time; `scripts/test/hermetic-browser-coverage.test.ts` gates it), and an undeclared off-origin request FAILS the smoke or the test, naming the URL.
 - Perf-RATIO tests break on load transients in BOTH directions. Never add `retry` to one; fix the sizes, and measure a faithful slow mutant, not just the healthy arm. Measure through the shipped test, never a replica.

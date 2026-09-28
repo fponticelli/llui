@@ -44,9 +44,6 @@ pnpm format               # Prettier format everything
 pnpm format:check         # Check formatting without writing
 pnpm gallery              # Component Gallery: shell + Baseline theme + Registry skins on one origin
 
-pnpm test:durations       # Record the per-file test-duration baseline from a full run (#193)
-pnpm check:test-durations # Re-run and diff against that baseline (load-normalized, see below)
-
 # Single package
 pnpm --filter @llui/dom build
 pnpm --filter @llui/dom test

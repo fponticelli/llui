@@ -332,7 +332,7 @@ Sized from measurement, not taste. Against `examples/virtualization` on a
 dev server, at load ~19 on 4 CPUs: 0.7-1.2 s cold, 0.5-1.0 s warm. The
 slow case this must still admit is a large app's FIRST on-demand compile,
 measured at 7.3-9.0 s under similar load for the components demo
-(`docs/agents/test-durations.md`, loose-d) — so 30 s leaves ~3x over the
+(`docs/agents/tests-and-load.md`, loose-d) — so 30 s leaves ~3x over the
 worst real attach and ~25x over a typical one, while a page that will
 never become ready (wrong URL, app without the dev runtime) still fails
 with a named `attach_timeout` instead of hanging the tool call.
