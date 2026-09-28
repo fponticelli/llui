@@ -7,5 +7,5 @@
  * builds the runtime-neutral router and registry; the handlers
  * exported here handle the WebSocket upgrade half.
  */
-export { createWHATWGPairingConnection } from './adapter.js'
+export { createWHATWGPairingConnection, type WhatwgSocket } from './adapter.js'
 export { handleCloudflareUpgrade, handleDenoUpgrade, extractToken } from './upgrade.js'
