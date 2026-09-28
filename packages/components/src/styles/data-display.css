@@ -362,7 +362,14 @@
   transition: opacity var(--llui-duration-fast);
 }
 
+/* A dimmed (isolated-out) series fades its SWATCH and strikes its label: the
+ * label is a live toggle's text, so it keeps full contrast (#268 audit — an
+ * item-wide opacity took it to 1.7:1). */
 [data-scope='chart'][data-part='legend-item'][data-dimmed] {
+  text-decoration: line-through;
+}
+
+[data-scope='chart'][data-part='legend-item'][data-dimmed] [data-part='legend-swatch'] {
   opacity: 0.4;
 }
 

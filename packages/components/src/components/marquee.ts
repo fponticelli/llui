@@ -114,6 +114,7 @@ export interface MarqueeParts {
     'data-direction': Signal<MarqueeDirection>
     'data-axis': Signal<'horizontal' | 'vertical'>
     'data-disabled': Signal<'' | undefined>
+    'aria-disabled': Signal<'true' | undefined>
     style: Signal<string>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
@@ -133,6 +134,8 @@ export function connect(state: Signal<MarqueeState>, send: Send<MarqueeMsg>): Ma
       'data-direction': state.map((s) => s.direction),
       'data-axis': state.map((s) => axis(s.direction)),
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      // Dimmed as disabled, so announced as disabled (#268 audit).
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       style: state.map(
         (st) =>
           `--marquee-duration:${st.durationSec}s;` +

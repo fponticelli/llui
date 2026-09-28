@@ -473,9 +473,11 @@
   color: var(--accent-foreground);
 }
 
+/* Outside-month days are live, selectable buttons: muted, never faded — an
+ * `opacity: 0.5` took them to 1.96:1 (#268 audit), and shadcn's current
+ * `outside` modifier dropped its opacity for the same reason. */
 [data-scope='date-picker'][data-part='day-cell']:not([data-in-month]) {
   color: var(--muted-foreground);
-  opacity: 0.5;
 }
 
 [data-scope='date-picker'][data-part='day-cell'][data-today] {
@@ -1524,9 +1526,14 @@
     transform var(--llui-duration-normal);
 }
 
+/* The carried item stays fully legible — a keyboard grab has no pointer to
+ * show where it is, so its label is the feedback. It is marked by a dashed
+ * edge and a muted fill instead of `opacity: 0.5`, which took its text to
+ * 3.69:1 (#268 audit). */
 [data-scope='sortable'][data-part='item'][data-dragging] {
+  border-style: dashed;
+  background: var(--muted);
   box-shadow: var(--llui-shadow-md);
-  opacity: 0.5;
 }
 
 [data-scope='sortable'][data-part='item'][data-over] {

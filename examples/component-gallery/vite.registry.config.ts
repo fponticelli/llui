@@ -12,6 +12,7 @@ import { defineConfig } from 'vite'
 import llui from '@llui/vite-plugin'
 import tailwindcss from '@tailwindcss/vite'
 import {
+  CACHE_DIRS,
   PATH_DOCUMENTS,
   componentSourceAliases,
   renderCopiedRegistrySource,
@@ -19,6 +20,7 @@ import {
 
 export default defineConfig({
   root: PATH_DOCUMENTS.registry.root,
+  cacheDir: CACHE_DIRS.registry,
   base: './',
   plugins: [
     renderCopiedRegistrySource(),

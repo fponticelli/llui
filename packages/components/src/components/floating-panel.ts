@@ -302,6 +302,14 @@ export interface FloatingPanelParts {
    * positioned with physical `left`/`top`.
    */
   dragHandle: {
+    /**
+     * A focusable, NAMED group: without a role an `aria-label` is prohibited
+     * on a generic element and assistive tech announced nothing (#268 audit).
+     * `group`, not `button`: the handle is the title bar and CONTAINS the
+     * minimize/maximize/close buttons (a button may not), and its action is
+     * the arrow keys `aria-keyshortcuts` names, not an activation.
+     */
+    role: 'group'
     tabindex: 0
     'aria-label': string
     'aria-keyshortcuts': string
@@ -342,6 +350,10 @@ export interface FloatingPanelParts {
   }
   /** A resize grip; also a keyboard stop whose arrows resize from this grip (#266). */
   resizeHandle: (handle: ResizeHandle) => {
+    /** A focusable, named group (see `dragHandle`): its action is the arrow
+     *  keys, and a thin edge grip is a window-chrome affordance, not a
+     *  pointer button. */
+    role: 'group'
     tabindex: 0
     'aria-label': string
     'aria-keyshortcuts': string
@@ -412,6 +424,7 @@ export function connect(
       }),
     },
     dragHandle: {
+      role: 'group',
       tabindex: 0,
       'aria-label': opts.moveLabel ?? locale.move,
       'aria-keyshortcuts': ARROW_KEYS,
@@ -454,6 +467,7 @@ export function connect(
       onClick: tagSend(send, ['close'], () => send({ type: 'close' })),
     },
     resizeHandle: (handle: ResizeHandle) => ({
+      role: 'group',
       tabindex: 0,
       'aria-label': opts.resizeLabel ?? locale.resize,
       'aria-keyshortcuts': ARROW_KEYS,

@@ -88,12 +88,45 @@ function repoConfigPaths(): string[] {
 
 const configPaths = repoConfigPaths()
 
+interface ResolvedTest {
+  readonly testTimeout?: number
+  readonly hookTimeout?: number
+  readonly include?: readonly string[]
+  readonly name?: string
+  readonly projects?: readonly unknown[]
+}
+
 interface ResolvedConfig {
-  readonly test?: {
-    readonly testTimeout?: number
-    readonly hookTimeout?: number
-    readonly include?: readonly string[]
+  readonly test?: ResolvedTest
+}
+
+/**
+ * The INLINE projects a config declares (#268: the Component Gallery runs a
+ * `unit` and a `browser` project in one vitest run). A project is its own
+ * config: one that does not `extends: true` and does not spread the shared
+ * `test` block runs on vitest's stock 5 s budget — the #249 defect, one level
+ * down — so each is checked like a top-level config. A project with
+ * `extends: true` inherits the root's already-checked budgets unless it states
+ * its own, which is then checked too.
+ */
+function inlineProjects(config: ResolvedConfig): { name: string; test: ResolvedTest }[] {
+  const out: { name: string; test: ResolvedTest }[] = []
+  for (const [index, project] of (config.test?.projects ?? []).entries()) {
+    if (typeof project !== 'object' || project === null) continue
+    const record = project as { extends?: unknown; test?: ResolvedTest }
+    const test = record.test ?? {}
+    const name = test.name ?? `#${index}`
+    const inherited = record.extends === true ? config.test : undefined
+    out.push({
+      name,
+      test: {
+        ...test,
+        testTimeout: test.testTimeout ?? inherited?.testTimeout,
+        hookTimeout: test.hookTimeout ?? inherited?.hookTimeout,
+      },
+    })
   }
+  return out
 }
 
 const loaded = new Map<string, ResolvedConfig>(
@@ -171,15 +204,30 @@ describe('the vitest configuration set', () => {
     expect(base?.hookTimeout).toBeTypeOf('number')
 
     const diverged: string[] = []
+    let projects = 0
     for (const path of configPaths) {
-      const test = loaded.get(path)?.test
-      for (const field of ['testTimeout', 'hookTimeout'] as const) {
-        if (test?.[field] === base?.[field]) continue
-        if (BUDGET_ALLOWED[`${path}: ${field}`]) continue
-        diverged.push(`${path}: ${field} is ${String(test?.[field])}, shared is ${base?.[field]}`)
+      const config = loaded.get(path) ?? {}
+      const scopes = [
+        { label: path, test: config.test },
+        ...inlineProjects(config).map(({ name, test }) => ({
+          label: `${path} [project ${name}]`,
+          test,
+        })),
+      ]
+      projects += scopes.length - 1
+      for (const { label, test } of scopes) {
+        for (const field of ['testTimeout', 'hookTimeout'] as const) {
+          if (test?.[field] === base?.[field]) continue
+          if (BUDGET_ALLOWED[`${label}: ${field}`]) continue
+          diverged.push(
+            `${label}: ${field} is ${String(test?.[field])}, shared is ${base?.[field]}`,
+          )
+        }
       }
     }
     expect(diverged).toEqual([])
+    // Vacuity: the project walk found the gallery's two projects.
+    expect(projects).toBeGreaterThanOrEqual(2)
   })
 
   it('discovers only the root scripts suite from the scripts config', () => {

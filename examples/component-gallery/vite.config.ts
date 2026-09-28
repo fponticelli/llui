@@ -12,7 +12,7 @@
  */
 import { defineConfig, createServer, type Plugin, type ViteDevServer } from 'vite'
 import llui from '@llui/vite-plugin'
-import { OUT_DIR, PATH_DOCUMENTS, SHELL_ROOT } from './gallery.config'
+import { CACHE_DIRS, OUT_DIR, PATH_DOCUMENTS, SHELL_ROOT } from './gallery.config'
 
 function servePathDocuments(): Plugin {
   return {
@@ -64,6 +64,7 @@ export default defineConfig({
   // through the shell's (Tailwind-free, alias-free) pipeline.
   root: SHELL_ROOT,
   base: './',
+  cacheDir: CACHE_DIRS.shell,
   plugins: [servePathDocuments(), llui({ mcpPort: false, devmodeAnnotate: false, agent: false })],
   build: {
     target: 'es2022',

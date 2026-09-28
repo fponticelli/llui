@@ -1,5 +1,5 @@
 import { runInNewContext } from 'node:vm'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { ProductContractSchema, type ProductContract } from '../src/product-contract'
 import {
   DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
@@ -1299,6 +1299,12 @@ describe('presentation scenario boundary decoding', () => {
  * of the budget being probed) — measures the actual boundary empirically rather than
  * hand-deriving a fixed per-shape overhead constant, which is exactly the class of arithmetic
  * mistake the earlier `reserveScaffolding` design made three times over. `hi` must already fail.
+ *
+ * It GALLOPS DOWN from `hi` before bisecting (#268). The budgets' boundaries sit a few units
+ * under `hi` (the scaffolding a payload carries is small), and every probe near the top decodes
+ * a ~288k-node family (~0.9 s quiet); bisecting from 0 spent 18 probes getting there, galloping
+ * spends a handful. Still exact, still monotone-only: the bracket it hands the bisection is a
+ * measured fit and a measured failure.
  */
 function maxFittingN(build: (n: number) => unknown, lo: number, hi: number): number {
   const fits = (n: number): boolean => {
@@ -1312,12 +1318,71 @@ function maxFittingN(build: (n: number) => unknown, lo: number, hi: number): num
   if (fits(hi)) throw new Error('maxFittingN: hi must already fail to fit')
   let low = lo
   let high = hi
+  for (let step = 1; hi - step > lo; step *= 2) {
+    if (fits(hi - step)) {
+      low = hi - step
+      break
+    }
+    high = hi - step
+  }
   while (high - low > 1) {
     const mid = low + Math.floor((high - low) / 2)
     if (fits(mid)) low = mid
     else high = mid
   }
   return low
+}
+
+/**
+ * The at-the-budget round trip, as a FIXTURE plus three tests (#268).
+ *
+ * Each budget used to find its boundary in the `describe` BODY — collection
+ * time, which no timeout bounds and the duration report does not see (16 s
+ * of this file's 28 s, measured quiet) — and then compile, JSON-round-trip
+ * AND clone-round-trip a ~288k-node payload in ONE test, which measured 3.6 s
+ * quiet and ran past the 30 s budget under a full parallel `turbo test`. The
+ * boundary search and the one compile are a fixture, so they live in
+ * `beforeAll` (the 60 s hook budget, sized for exactly this); the three
+ * independent properties are three tests (the #197 lesson: a test whose
+ * duration is a sum of independent work is the shape that runs out of
+ * budget). What is asserted is unchanged.
+ */
+function describeBudgetRoundTrip(
+  budget: string,
+  build: (n: number) => unknown,
+  hi: number,
+): { boundary(): number } {
+  let boundary = -1
+  let input: unknown
+  let catalog: ReturnType<typeof decodeScenarioFamily>
+  const contract = productContract()
+  const selection = { productId: 'dialog', path: 'baseline' as const }
+  beforeAll(() => {
+    boundary = maxFittingN(build, 0, hi)
+    input = build(boundary)
+    catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
+  })
+  it(`compiles exactly at the ${budget} budget`, () => {
+    expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
+  })
+  it(`round-trips the ${budget}-budget catalog through JSON`, () => {
+    const viaJson = decodeScenarioSelection(
+      contract,
+      JSON.parse(JSON.stringify(catalog)) as unknown,
+      selection,
+    )
+    expect(viaJson.case.input).toEqual(input)
+  })
+  it(`round-trips the ${budget}-budget catalog through structuredClone`, () => {
+    const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
+    expect(viaClone.case.input).toEqual(input)
+  })
+  return {
+    boundary: () => {
+      if (boundary < 0) throw new Error(`${budget} boundary read before its fixture ran`)
+      return boundary
+    },
+  }
 }
 
 describe('one cost model governs compileScenarioFamily and every catalog derived from it', () => {
@@ -1337,31 +1402,14 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
   }
 
   describe('NODES', () => {
-    const boundary = maxFittingN(
+    const nodes = describeBudgetRoundTrip(
+      'node',
       flatNullInput,
-      0,
       PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyNodes,
     )
 
-    it('compiles and round-trips exactly at the node budget', () => {
-      const input = flatNullInput(boundary)
-      const contract = productContract()
-      const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
-      expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
-
-      const selection = { productId: 'dialog', path: 'baseline' as const }
-      const viaJson = decodeScenarioSelection(
-        contract,
-        JSON.parse(JSON.stringify(catalog)) as unknown,
-        selection,
-      )
-      expect(viaJson.case.input).toEqual(input)
-      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
-      expect(viaClone.case.input).toEqual(input)
-    })
-
     it('rejects one past the node budget, citing the caller-written path', () => {
-      const input = flatNullInput(boundary + 1)
+      const input = flatNullInput(nodes.boundary() + 1)
       const error = errorFrom(() =>
         decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
       )
@@ -1376,28 +1424,11 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
   })
 
   describe('FIELDS', () => {
-    const boundary = maxFittingN(
+    describeBudgetRoundTrip(
+      'field',
       nestedPairsInput,
-      0,
       PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyFields,
     )
-
-    it('compiles and round-trips exactly at the field budget', () => {
-      const input = nestedPairsInput(boundary)
-      const contract = productContract()
-      const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
-      expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
-
-      const selection = { productId: 'dialog', path: 'baseline' as const }
-      const viaJson = decodeScenarioSelection(
-        contract,
-        JSON.parse(JSON.stringify(catalog)) as unknown,
-        selection,
-      )
-      expect(viaJson.case.input).toEqual(input)
-      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
-      expect(viaClone.case.input).toEqual(input)
-    })
 
     it('rejects one past the field budget, citing the caller-written path', () => {
       // A single flat object wide enough to exceed `MAX_FIELDS` outright reports the field limit
@@ -1425,31 +1456,14 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
       for (let index = 0; index < fieldCount; index += 1) input[`f${index}`] = 'x'.repeat(unitSize)
       return input
     }
-    const boundaryFields = maxFittingN(
+    const stringUnits = describeBudgetRoundTrip(
+      'string-unit',
       stringUnitsInput,
-      0,
       Math.ceil(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyStringUnits / unitSize) + 1,
     )
 
-    it('compiles and round-trips exactly at the string-unit budget', () => {
-      const input = stringUnitsInput(boundaryFields)
-      const contract = productContract()
-      const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
-      expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
-
-      const selection = { productId: 'dialog', path: 'baseline' as const }
-      const viaJson = decodeScenarioSelection(
-        contract,
-        JSON.parse(JSON.stringify(catalog)) as unknown,
-        selection,
-      )
-      expect(viaJson.case.input).toEqual(input)
-      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
-      expect(viaClone.case.input).toEqual(input)
-    })
-
     it('rejects one field past the string-unit budget, citing the caller-written path', () => {
-      const input = stringUnitsInput(boundaryFields + 1)
+      const input = stringUnitsInput(stringUnits.boundary() + 1)
       const error = errorFrom(() =>
         decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
       )

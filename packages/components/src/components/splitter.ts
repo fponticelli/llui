@@ -120,11 +120,17 @@ export function positionFromPoint(
 }
 
 export interface SplitterParts {
+  /**
+   * A layout container: its panels hold the CONSUMER's content. It carries no
+   * disabled state — the resize trigger is the control and publishes its own
+   * (`aria-disabled`, out of the tab order). A root `data-disabled` made every
+   * disabled-state stylesheet dim the panels with it, taking ordinary text to
+   * 3.69:1 (#268 audit).
+   */
   root: {
     'data-scope': 'splitter'
     'data-part': 'root'
     'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
     'data-dragging': Signal<'' | undefined>
   }
   primaryPanel: {
@@ -166,7 +172,6 @@ export function connect(state: Signal<SplitterState>, send: Send<SplitterMsg>): 
       'data-scope': 'splitter',
       'data-part': 'root',
       'data-orientation': state.map((s) => s.orientation),
-      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       'data-dragging': state.map((s) => (s.dragging ? '' : undefined)),
     },
     primaryPanel: {

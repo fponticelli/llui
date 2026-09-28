@@ -86,18 +86,30 @@ export interface EditableParts {
   }
   submitTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: Signal<boolean>
     'data-scope': 'editable'
     'data-part': 'submit-trigger'
     onClick: (e: MouseEvent) => void
   }
   cancelTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: Signal<boolean>
     'data-scope': 'editable'
     'data-part': 'cancel-trigger'
     onClick: (e: MouseEvent) => void
   }
   editTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: Signal<boolean>
     'data-scope': 'editable'
     'data-part': 'edit-trigger'
     onClick: (e: MouseEvent) => void
@@ -185,18 +197,21 @@ export function connect(
     },
     submitTrigger: {
       type: 'button',
+      disabled: state.map((s) => s.disabled),
       'data-scope': 'editable',
       'data-part': 'submit-trigger',
       onClick: () => trySubmit(),
     },
     cancelTrigger: {
       type: 'button',
+      disabled: state.map((s) => s.disabled),
       'data-scope': 'editable',
       'data-part': 'cancel-trigger',
       onClick: tagSend(send, ['cancel'], () => send({ type: 'cancel' })),
     },
     editTrigger: {
       type: 'button',
+      disabled: state.map((s) => s.disabled),
       'data-scope': 'editable',
       'data-part': 'edit-trigger',
       onClick: tagSend(send, ['edit'], () => send({ type: 'edit' })),

@@ -240,10 +240,13 @@ export const ChartTooltipValue = classPart(
 export const ChartLegend = classPart(div, 'flex items-center justify-center gap-4 pt-3')
 
 /** A `<button>`, not a div: `parts.legendItem(key)` spreads `type="button"` and
- *  `aria-pressed`, and isolating a series must be reachable from the keyboard. */
+ *  `aria-pressed`, and isolating a series must be reachable from the keyboard.
+ *  A dimmed series fades its SWATCH and strikes its label — the label is a live
+ *  toggle's text and keeps full contrast (#268 audit: an item-wide
+ *  `opacity-40` took it to 1.7:1). */
 export const ChartLegendItem = classPart(
   button,
-  'flex cursor-pointer items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 text-xs text-muted-foreground transition-opacity data-dimmed:opacity-40 motion-reduce:transition-none [&>svg]:h-3 [&>svg]:w-3',
+  'group/legend-item flex cursor-pointer items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 text-xs text-muted-foreground data-dimmed:line-through [&>svg]:h-3 [&>svg]:w-3',
 )
 
 /** `parts.legendSwatch(key)` spreads `data-series-cue`: without it the chip
@@ -251,7 +254,7 @@ export const ChartLegendItem = classPart(
  *  system colour across every legend entry (#264 review item 7). */
 export const ChartLegendSwatch = classPart(
   span,
-  'size-2 shrink-0 rounded-[2px] bg-(--mark-color) forced-colors:[forced-color-adjust:none] forced-colors:border forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:data-[series-cue=solid]:bg-[CanvasText] forced-colors:data-[series-cue=solid]:bg-none forced-colors:data-[series-cue=short-dash]:[background-image:var(--llui-chart-swatch-short-dash)] forced-colors:data-[series-cue=dot]:[background-image:var(--llui-chart-swatch-dot)] forced-colors:data-[series-cue=dot]:[background-size:4px_4px] forced-colors:data-[series-cue=long-dash]:[background-image:var(--llui-chart-swatch-long-dash)] forced-colors:data-[series-cue=dash-dot]:[background-image:var(--llui-chart-swatch-dash-dot)] forced-colors:data-[series-cue=grid]:[background-image:var(--llui-chart-swatch-grid)] forced-colors:data-[series-cue=cross-hatch]:[background-image:var(--llui-chart-swatch-cross-hatch)]',
+  'size-2 shrink-0 rounded-[2px] bg-(--mark-color) transition-opacity group-data-dimmed/legend-item:opacity-40 motion-reduce:transition-none forced-colors:[forced-color-adjust:none] forced-colors:border forced-colors:border-[CanvasText] forced-colors:bg-[Canvas] forced-colors:data-[series-cue=solid]:bg-[CanvasText] forced-colors:data-[series-cue=solid]:bg-none forced-colors:data-[series-cue=short-dash]:[background-image:var(--llui-chart-swatch-short-dash)] forced-colors:data-[series-cue=dot]:[background-image:var(--llui-chart-swatch-dot)] forced-colors:data-[series-cue=dot]:[background-size:4px_4px] forced-colors:data-[series-cue=long-dash]:[background-image:var(--llui-chart-swatch-long-dash)] forced-colors:data-[series-cue=dash-dot]:[background-image:var(--llui-chart-swatch-dash-dot)] forced-colors:data-[series-cue=grid]:[background-image:var(--llui-chart-swatch-grid)] forced-colors:data-[series-cue=cross-hatch]:[background-image:var(--llui-chart-swatch-cross-hatch)]',
 )
 
 // ── Accessible fallback ───────────────────────────────────────────────────

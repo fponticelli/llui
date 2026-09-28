@@ -90,6 +90,8 @@ export interface Locale {
    *  `YYYY-MM-DD` in the sparkline's own calendar offset. */
   sparkline: { empty: string; range: (count: number, from: string, to: string) => string }
   steps: { label: string }
+  /** Accessible names of the table's selection checkboxes (#268). */
+  table: { selectAll: string; selectRow: string }
   tagsInput: { input: string; remove: string; clear: string }
   timePicker: { label: string; hours: string; minutes: string; period: string }
   timer: { start: string; pause: string; reset: string }

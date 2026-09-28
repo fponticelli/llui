@@ -10,10 +10,11 @@
  */
 import { defineConfig } from 'vite'
 import llui from '@llui/vite-plugin'
-import { PATH_DOCUMENTS, componentSourceAliases } from './gallery.config'
+import { CACHE_DIRS, PATH_DOCUMENTS, componentSourceAliases } from './gallery.config'
 
 export default defineConfig({
   root: PATH_DOCUMENTS.baseline.root,
+  cacheDir: CACHE_DIRS.baseline,
   base: './',
   plugins: [llui({ mcpPort: false, devmodeAnnotate: false, agent: false })],
   resolve: { alias: componentSourceAliases() },

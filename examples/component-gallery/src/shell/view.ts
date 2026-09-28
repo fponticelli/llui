@@ -302,7 +302,7 @@ function pathExplainer(path: PresentationScenarioPath): Mountable {
           : 'shadcn-style source you own: llui add <name> copies Tailwind v4 skins into your app, over @llui/components machines and tokens.css. Covers every copied skin and presentational component.',
       ),
     ]),
-    pre([
+    pre({ tabindex: '0' }, [
       code([
         text(
           baseline
@@ -429,7 +429,9 @@ function installBlock(entry: GalleryEntry, path: PresentationScenarioPath): Moun
         ]),
     ...(summary.install.length === 0
       ? [p({ class: 'rationale' }, [text('Nothing to install on this path.')])]
-      : [pre([code([text(summary.install.join('\n'))])])]),
+      : // A scrollable region is a keyboard stop, or a keyboard user cannot
+        // read the part of an install line that overflows (#268 audit).
+        [pre({ tabindex: '0' }, [code([text(summary.install.join('\n'))])])]),
   ])
 }
 
@@ -802,11 +804,15 @@ export function shellChrome(state: Signal<State>, send: Send<Msg>): Renderable {
         show(
           state.at('notices').map((notices) => notices.length > 0),
           () => [
-            ul({ class: 'notices', role: 'status', 'aria-label': 'Link corrections' }, [
-              each(state.at('notices'), {
-                key: (notice) => notice,
-                render: (notice) => [li([text(notice)])],
-              }),
+            // The live region WRAPS the list: a `role` on the `ul` itself
+            // replaced its list semantics and orphaned every item (#268 audit).
+            div({ class: 'notices', role: 'status', 'aria-label': 'Link corrections' }, [
+              ul([
+                each(state.at('notices'), {
+                  key: (notice) => notice,
+                  render: (notice) => [li([text(notice)])],
+                }),
+              ]),
             ]),
           ],
         ),

@@ -51,9 +51,24 @@ describe('the composed dev server (#267)', () => {
       const frame = await (
         await page.waitForSelector(`.frame-panel[data-path="${path}"] iframe`)
       ).contentFrame()
-      // A document's FIRST dev request compiles its whole family renderer on
-      // demand; under a full `turbo test` that has been measured past 60 s.
-      await frame!.waitForSelector('html[data-gallery-status="ready"]', { timeout: 150_000 })
+      // Wait for the document to SETTLE, then require `ready`: waiting for
+      // `ready` alone turned a document that settled `error` into a silent
+      // full-budget wait. That is exactly how #268 found the real cause of
+      // this test's "load timeouts": the three dev servers shared ONE Vite
+      // dependency cache, overwrote each other's optimizer hash, and a
+      // document's dependency requests came back `504 Outdated Optimize Dep`
+      // (`CACHE_DIRS` in gallery.config.ts). Measured after the fix: ~4 s
+      // cold, so the test runs on the workspace budget again.
+      await frame!.waitForSelector(
+        'html[data-gallery-status="ready"], html[data-gallery-status="error"]',
+        { state: 'attached' },
+      )
+      const status = await frame!.evaluate(() => [
+        document.documentElement.getAttribute('data-gallery-status'),
+        document.documentElement.getAttribute('data-gallery-error'),
+        document.body.textContent?.trim().slice(0, 300),
+      ])
+      expect(status, path).toEqual(['ready', null, expect.any(String)])
       cascades.push(await frame!.evaluate(collectCascade))
     }
     const [baseline, registry] = cascades as [CascadeInventory, CascadeInventory]
@@ -66,5 +81,5 @@ describe('the composed dev server (#267)', () => {
     expect(tailwind(registry.rules).length).toBeGreaterThan(20)
     expect(parts(registry.rules)).toEqual([])
     await page.close()
-  }, 330_000)
+  })
 })

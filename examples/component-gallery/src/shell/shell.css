@@ -431,6 +431,11 @@ body {
   color: var(--g-muted);
 }
 
+.notices ul {
+  margin: 0;
+  padding: 0;
+}
+
 .notices {
   margin: 0 0 1rem;
   padding: 0.625rem 0.875rem 0.625rem 2rem;
@@ -701,6 +706,14 @@ body {
 
 .suggestions {
   padding-inline-start: 1.25rem;
+}
+
+/* 24px pointer targets (WCAG 2.5.8, #268 audit): stacked inline links were
+ * 18px tall with 21px between them. */
+.suggestions a {
+  display: inline-block;
+  min-height: 1.5rem;
+  line-height: 1.5rem;
 }
 
 /* ── Narrow screens ─────────────────────────────────────────────────── */

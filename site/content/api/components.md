@@ -8461,6 +8461,12 @@ export interface DateInputParts {
     readonly: Signal<boolean>
     required: Signal<boolean>
     'aria-invalid': Signal<'true' | undefined>
+    /**
+     * The error text's id while the value is invalid — so the field names its
+     * own error rather than relying on the one-shot `role="alert"`
+     * announcement (#268). Absent without a `ConnectOptions.id`.
+     */
+    'aria-describedby': Signal<string | undefined>
     placeholder?: string
     'data-scope': 'date-input'
     'data-part': 'input'
@@ -8476,6 +8482,8 @@ export interface DateInputParts {
     onClick: (e: MouseEvent) => void
   }
   errorText: {
+    /** `<id>:error` when `ConnectOptions.id` is given. */
+    id: string | undefined
     role: 'alert'
     'aria-live': 'polite'
     'data-scope': 'date-input'
@@ -8762,7 +8770,8 @@ export interface DialogParts {
     id: string
     'aria-modal': 'true' | undefined
     'aria-labelledby': string
-    'aria-describedby': string
+    /** The description part's id, or absent when `hasDescription: false`. */
+    'aria-describedby': string | undefined
     tabindex: -1
     'data-state': Signal<PresenceStatus>
     'data-scope': 'dialog'
@@ -9126,18 +9135,30 @@ export interface EditableParts {
   }
   submitTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: Signal<boolean>
     'data-scope': 'editable'
     'data-part': 'submit-trigger'
     onClick: (e: MouseEvent) => void
   }
   cancelTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: Signal<boolean>
     'data-scope': 'editable'
     'data-part': 'cancel-trigger'
     onClick: (e: MouseEvent) => void
   }
   editTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: Signal<boolean>
     'data-scope': 'editable'
     'data-part': 'edit-trigger'
     onClick: (e: MouseEvent) => void
@@ -9212,6 +9233,7 @@ export interface FieldParts {
     'data-part': 'root'
     'data-invalid': Signal<'' | undefined>
     'data-disabled': Signal<'' | undefined>
+    'aria-disabled': Signal<'true' | undefined>
   }
   /** The `<label>`. `htmlFor` focuses the control on click. */
   label: {
@@ -9499,6 +9521,7 @@ export interface FileUploadParts {
     'data-scope': 'file-upload'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
+    'aria-disabled': Signal<'true' | undefined>
     'data-dragging': Signal<'' | undefined>
     'data-invalid': Signal<'' | undefined>
     'data-readonly': Signal<'' | undefined>
@@ -9689,6 +9712,14 @@ export interface FloatingPanelParts {
    * positioned with physical `left`/`top`.
    */
   dragHandle: {
+    /**
+     * A focusable, NAMED group: without a role an `aria-label` is prohibited
+     * on a generic element and assistive tech announced nothing (#268 audit).
+     * `group`, not `button`: the handle is the title bar and CONTAINS the
+     * minimize/maximize/close buttons (a button may not), and its action is
+     * the arrow keys `aria-keyshortcuts` names, not an activation.
+     */
+    role: 'group'
     tabindex: 0
     'aria-label': string
     'aria-keyshortcuts': string
@@ -9729,6 +9760,10 @@ export interface FloatingPanelParts {
   }
   /** A resize grip; also a keyboard stop whose arrows resize from this grip (#266). */
   resizeHandle: (handle: ResizeHandle) => {
+    /** A focusable, named group (see `dragHandle`): its action is the arrow
+     *  keys, and a thin edge grip is a window-chrome affordance, not a
+     *  pointer button. */
+    role: 'group'
     tabindex: 0
     'aria-label': string
     'aria-keyshortcuts': string
@@ -10842,6 +10877,8 @@ export interface Locale {
    *  `YYYY-MM-DD` in the sparkline's own calendar offset. */
   sparkline: { empty: string; range: (count: number, from: string, to: string) => string }
   steps: { label: string }
+  /** Accessible names of the table's selection checkboxes (#268). */
+  table: { selectAll: string; selectRow: string }
   tagsInput: { input: string; remove: string; clear: string }
   timePicker: { label: string; hours: string; minutes: string; period: string }
   timer: { start: string; pause: string; reset: string }
@@ -10874,6 +10911,7 @@ export interface MarqueeParts {
     'data-direction': Signal<MarqueeDirection>
     'data-axis': Signal<'horizontal' | 'vertical'>
     'data-disabled': Signal<'' | undefined>
+    'aria-disabled': Signal<'true' | undefined>
     style: Signal<string>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
@@ -13656,11 +13694,17 @@ export interface SplitterInit {
 
 ```typescript
 export interface SplitterParts {
+  /**
+   * A layout container: its panels hold the CONSUMER's content. It carries no
+   * disabled state — the resize trigger is the control and publishes its own
+   * (`aria-disabled`, out of the tab order). A root `data-disabled` made every
+   * disabled-state stylesheet dim the panels with it, taking ordinary text to
+   * 3.69:1 (#268 audit).
+   */
   root: {
     'data-scope': 'splitter'
     'data-part': 'root'
     'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
     'data-dragging': Signal<'' | undefined>
   }
   primaryPanel: {
@@ -13917,6 +13961,12 @@ export interface TableCellParts {
 ```typescript
 export interface TableCheckboxParts {
   role: 'checkbox'
+  /**
+   * The checkbox's accessible name (localized; `Locale['table']`). A
+   * `role="checkbox"` span has no content to be named by, so without it
+   * assistive tech announced an unnamed checkbox in every row (#268).
+   */
+  'aria-label': string
   'aria-checked': Signal<'true' | 'false' | 'mixed'>
   'data-scope': 'table'
   'data-part': 'select-all' | 'row-checkbox'
@@ -19790,6 +19840,32 @@ Find focusable descendants within a container.
 export declare function isFocusable(el: Element): boolean
 ```
 
+### `@llui/components/utils/follow-active-descendant`
+
+#### Functions
+
+##### `followActiveDescendant()` from `@llui/components/utils/follow-active-descendant`
+
+Keep the item an `aria-activedescendant` names scrolled into view (#268).
+
+Every LLui list-like overlay — menu, select, combobox, searchable-select,
+context menu, menubar — keeps DOM focus on its content (or input) and moves
+a HIGHLIGHT through `aria-activedescendant`. Nothing scrolled the
+highlighted item into view, so in a list taller than its popup the keyboard
+highlight walked off the visible area: a keyboard user pressing End saw
+nothing happen, and with a pointer out of the way there was no other cue.
+(Native focus scrolls itself; an active descendant is not focus.)
+
+One observer per open overlay, filtered to the one attribute and disconnected
+on teardown. It watches the whole document because the owner of the
+attribute is not always inside the popup — a combobox's lives on its INPUT —
+and acts only when the named item IS inside `container`, so a sibling
+widget's highlight never scrolls this one.
+
+```typescript
+function followActiveDescendant(container: HTMLElement): () => void
+```
+
 ### `@llui/components/utils/index`
 
 #### Functions
@@ -25403,6 +25479,14 @@ export interface ConnectOptions {
   modal?: boolean
   /** Accessible label for the close button (default: 'Close'). */
   closeLabel?: string
+  /**
+   * Whether the consumer renders the `description` part (default: true).
+   * When false, the content omits `aria-describedby` — which would otherwise
+   * name an element that does not exist, a broken reference assistive tech
+   * reports as a missing description (#268). The title stays mandatory: a
+   * dialog without a name is not accessible.
+   */
+  hasDescription?: boolean
 }
 ```
 
@@ -25446,7 +25530,8 @@ export interface DialogParts {
     id: string
     'aria-modal': 'true' | undefined
     'aria-labelledby': string
-    'aria-describedby': string
+    /** The description part's id, or absent when `hasDescription: false`. */
+    'aria-describedby': string | undefined
     tabindex: -1
     'data-state': Signal<PresenceStatus>
     'data-scope': 'dialog'
@@ -30043,18 +30128,30 @@ export interface EditableParts {
   }
   submitTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: Signal<boolean>
     'data-scope': 'editable'
     'data-part': 'submit-trigger'
     onClick: (e: MouseEvent) => void
   }
   cancelTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: Signal<boolean>
     'data-scope': 'editable'
     'data-part': 'cancel-trigger'
     onClick: (e: MouseEvent) => void
   }
   editTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: Signal<boolean>
     'data-scope': 'editable'
     'data-part': 'edit-trigger'
     onClick: (e: MouseEvent) => void
@@ -30342,11 +30439,17 @@ export interface SplitterInit {
 
 ```typescript
 export interface SplitterParts {
+  /**
+   * A layout container: its panels hold the CONSUMER's content. It carries no
+   * disabled state — the resize trigger is the control and publishes its own
+   * (`aria-disabled`, out of the tab order). A root `data-disabled` made every
+   * disabled-state stylesheet dim the panels with it, taking ordinary text to
+   * 3.69:1 (#268 audit).
+   */
   root: {
     'data-scope': 'splitter'
     'data-part': 'root'
     'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
     'data-dragging': Signal<'' | undefined>
   }
   primaryPanel: {
@@ -30823,6 +30926,7 @@ export interface FileUploadParts {
     'data-scope': 'file-upload'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
+    'aria-disabled': Signal<'true' | undefined>
     'data-dragging': Signal<'' | undefined>
     'data-invalid': Signal<'' | undefined>
     'data-readonly': Signal<'' | undefined>
@@ -34384,6 +34488,7 @@ export interface MarqueeParts {
     'data-direction': Signal<MarqueeDirection>
     'data-axis': Signal<'horizontal' | 'vertical'>
     'data-disabled': Signal<'' | undefined>
+    'aria-disabled': Signal<'true' | undefined>
     style: Signal<string>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
@@ -35351,6 +35456,12 @@ export type IsoDate = string
 export interface ConnectOptions {
   placeholder?: string
   clearLabel?: string
+  /**
+   * Base id. With it, the error text gets `<id>:error` and the input's
+   * `aria-describedby` names it while the value is invalid; without it the
+   * error is announced once (`role="alert"`) but not associated with the field.
+   */
+  id?: string
 }
 ```
 
@@ -35388,6 +35499,12 @@ export interface DateInputParts {
     readonly: Signal<boolean>
     required: Signal<boolean>
     'aria-invalid': Signal<'true' | undefined>
+    /**
+     * The error text's id while the value is invalid — so the field names its
+     * own error rather than relying on the one-shot `role="alert"`
+     * announcement (#268). Absent without a `ConnectOptions.id`.
+     */
+    'aria-describedby': Signal<string | undefined>
     placeholder?: string
     'data-scope': 'date-input'
     'data-part': 'input'
@@ -35403,6 +35520,8 @@ export interface DateInputParts {
     onClick: (e: MouseEvent) => void
   }
   errorText: {
+    /** `<id>:error` when `ConnectOptions.id` is given. */
+    id: string | undefined
     role: 'alert'
     'aria-live': 'polite'
     'data-scope': 'date-input'
@@ -36101,6 +36220,14 @@ export interface FloatingPanelParts {
    * positioned with physical `left`/`top`.
    */
   dragHandle: {
+    /**
+     * A focusable, NAMED group: without a role an `aria-label` is prohibited
+     * on a generic element and assistive tech announced nothing (#268 audit).
+     * `group`, not `button`: the handle is the title bar and CONTAINS the
+     * minimize/maximize/close buttons (a button may not), and its action is
+     * the arrow keys `aria-keyshortcuts` names, not an activation.
+     */
+    role: 'group'
     tabindex: 0
     'aria-label': string
     'aria-keyshortcuts': string
@@ -36141,6 +36268,10 @@ export interface FloatingPanelParts {
   }
   /** A resize grip; also a keyboard stop whose arrows resize from this grip (#266). */
   resizeHandle: (handle: ResizeHandle) => {
+    /** A focusable, named group (see `dragHandle`): its action is the arrow
+     *  keys, and a thin edge grip is a window-chrome affordance, not a
+     *  pointer button. */
+    role: 'group'
     tabindex: 0
     'aria-label': string
     'aria-keyshortcuts': string
@@ -37292,6 +37423,7 @@ export interface FieldParts {
     'data-part': 'root'
     'data-invalid': Signal<'' | undefined>
     'data-disabled': Signal<'' | undefined>
+    'aria-disabled': Signal<'true' | undefined>
   }
   /** The `<label>`. `htmlFor` focuses the control on click. */
   label: {
@@ -38387,6 +38519,12 @@ export interface TableCellParts {
 ```typescript
 export interface TableCheckboxParts {
   role: 'checkbox'
+  /**
+   * The checkbox's accessible name (localized; `Locale['table']`). A
+   * `role="checkbox"` span has no content to be named by, so without it
+   * assistive tech announced an unnamed checkbox in every row (#268).
+   */
+  'aria-label': string
   'aria-checked': Signal<'true' | 'false' | 'mixed'>
   'data-scope': 'table'
   'data-part': 'select-all' | 'row-checkbox'
@@ -40694,6 +40832,12 @@ export interface CommandGroup {
 export interface ConnectOptions {
   /** Unique id per palette instance (used for ARIA wiring). */
   id: string
+  /**
+   * Whether the consumer renders `dialog.description` (default: false — the
+   * palette's own `view()` renders a title and no description). Forwarded to
+   * the dialog so `aria-describedby` never names a missing element (#268).
+   */
+  hasDescription?: boolean
 }
 ```
 
@@ -42243,6 +42387,12 @@ export interface CommandMenuViewOptions {
 export interface ConnectOptions {
   /** Unique id per palette instance (used for ARIA wiring). */
   id: string
+  /**
+   * Whether the consumer renders `dialog.description` (default: false — the
+   * palette's own `view()` renders a title and no description). Forwarded to
+   * the dialog so `aria-describedby` never names a missing element (#268).
+   */
+  hasDescription?: boolean
 }
 ```
 

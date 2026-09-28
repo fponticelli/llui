@@ -162,7 +162,8 @@ export interface DialogParts {
     id: string
     'aria-modal': 'true' | undefined
     'aria-labelledby': string
-    'aria-describedby': string
+    /** The description part's id, or absent when `hasDescription: false`. */
+    'aria-describedby': string | undefined
     tabindex: -1
     'data-state': Signal<PresenceStatus>
     'data-scope': 'dialog'
@@ -198,6 +199,14 @@ export interface ConnectOptions {
   modal?: boolean
   /** Accessible label for the close button (default: 'Close'). */
   closeLabel?: string
+  /**
+   * Whether the consumer renders the `description` part (default: true).
+   * When false, the content omits `aria-describedby` — which would otherwise
+   * name an element that does not exist, a broken reference assistive tech
+   * reports as a missing description (#268). The title stays mandatory: a
+   * dialog without a name is not accessible.
+   */
+  hasDescription?: boolean
 }
 
 export function connect(
@@ -242,7 +251,7 @@ export function connect(
       id: contentId,
       'aria-modal': modal ? 'true' : undefined,
       'aria-labelledby': titleId,
-      'aria-describedby': descId,
+      'aria-describedby': opts.hasDescription === false ? undefined : descId,
       tabindex: -1,
       'data-state': state.map(statusOf),
       'data-scope': 'dialog',

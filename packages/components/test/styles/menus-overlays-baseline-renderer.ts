@@ -262,6 +262,8 @@ function nestedDialogAdapter(
       const inner = dialog.connect(state.at('inner'), sendTo('inner'), {
         id: 'd-nested',
         modal: true,
+        // The confirmation renders a title and no description (#268 audit).
+        hasDescription: false,
       })
       return [
         button({ ...outer.trigger }, [text('Open')]),
@@ -427,7 +429,14 @@ const popoverAdapter: Adapter<FloatingPresenceCaseInput> = (host, input, ctx) =>
           parts,
           placement: input.placement,
           arrowSelector: "[data-part='arrow']",
-          content: () => [div({ ...parts.content }, [text(input.label), div({ ...parts.arrow })])],
+          // The content is a named dialog: `aria-labelledby` names the title
+          // part, so the title must be rendered (#268 audit).
+          content: () => [
+            div({ ...parts.content }, [
+              div({ ...parts.title }, [text(input.label)]),
+              div({ ...parts.arrow }),
+            ]),
+          ],
         }),
       ]
     },
@@ -748,7 +757,8 @@ const selectAdapter: Adapter<SelectCaseInput> = (host, input, ctx) =>
     (state, send) => {
       const parts = select.connect(state, send, { id: 's' })
       return [
-        button({ ...parts.trigger }, [text('Select')]),
+        // role="combobox" takes no name from its content (#268 audit).
+        button({ ...parts.trigger, 'aria-label': 'Fruit' }, [text('Select')]),
         select.overlay({
           target: host,
           state,
@@ -789,20 +799,25 @@ const comboboxAdapter: Adapter<ComboboxCaseInput> = (host, caseInput, ctx) =>
     combobox.update,
     (state, send) => {
       const parts = combobox.connect(state, send, { id: 'cb' })
+      // Hidden only when SETTLED empty: a loading listbox stays exposed, since
+      // `aria-busy` is how it announces the load (and permits it no options).
+      const empty = caseInput.items.length === 0 && caseInput.status !== 'loading'
       return [
-        input({ ...parts.input }),
+        input({ ...parts.input, 'aria-label': 'Fruit' }),
         combobox.overlay({
           target: host,
           state,
           send,
           parts,
+          // A listbox owns only options: with nothing to list it is HIDDEN
+          // (still the element `aria-controls` names) and the empty state is
+          // its sibling (#268 audit).
           content: () => [
             div(
-              { ...parts.content },
-              caseInput.items.length === 0
-                ? [div({ 'data-scope': 'combobox', 'data-part': 'empty' }, [text('No results')])]
-                : caseInput.items.map((value) => div({ ...parts.item(value).item }, [text(value)])),
+              { ...parts.content, hidden: empty },
+              caseInput.items.map((value) => div({ ...parts.item(value).item }, [text(value)])),
             ),
+            ...(empty ? [div({ ...parts.empty }, [text('No results')])] : []),
           ],
         }),
       ]
@@ -836,25 +851,49 @@ const searchableSelectAdapter: Adapter<ComboboxCaseInput> = (host, caseInput, ct
     searchableSelect.update,
     (state, send) => {
       const parts = searchableSelect.connect(state, send, { id: 'ss' })
+      // Hidden only when SETTLED empty: a loading listbox stays exposed, since
+      // `aria-busy` is how it announces the load (and permits it no options).
+      const empty = caseInput.items.length === 0 && caseInput.status !== 'loading'
+      // The popup box carries the presence attributes; the LISTBOX inside it
+      // owns only options — the filter field sits above it, the empty state
+      // beside it (#268 audit: the field used to sit inside the listbox and
+      // the options outside it).
+      const {
+        role,
+        id,
+        'aria-labelledby': labelledBy,
+        'aria-busy': busy,
+        'aria-multiselectable': multiselectable,
+        tabindex,
+        ...popup
+      } = parts.content
       return [
-        button({ ...parts.trigger }, [text('Searchable select')]),
+        // role="combobox" takes no name from its content.
+        button({ ...parts.trigger, 'aria-label': 'Fruit' }, [text('Searchable select')]),
         searchableSelect.overlay({
           target: host,
           state,
           send,
           parts,
           content: () => [
-            div({ ...parts.content }, [input({ ...parts.input })]),
-            div(
-              { 'data-scope': 'searchable-select', 'data-part': 'list' },
-              caseInput.items.length === 0
-                ? [
-                    div({ 'data-scope': 'searchable-select', 'data-part': 'empty' }, [
-                      text('No results'),
-                    ]),
-                  ]
-                : caseInput.items.map((value) => div({ ...parts.item(value).item }, [text(value)])),
-            ),
+            div({ ...popup }, [
+              input({ ...parts.input, 'aria-label': 'Filter fruit' }),
+              div(
+                {
+                  role,
+                  id,
+                  'aria-labelledby': labelledBy,
+                  'aria-busy': busy,
+                  'aria-multiselectable': multiselectable,
+                  tabindex,
+                  hidden: empty,
+                  'data-scope': 'searchable-select',
+                  'data-part': 'list',
+                },
+                caseInput.items.map((value) => div({ ...parts.item(value).item }, [text(value)])),
+              ),
+              ...(empty ? [div({ ...parts.empty }, [text('No results')])] : []),
+            ]),
           ],
         }),
       ]
@@ -980,6 +1019,9 @@ const commandMenuAdapter: Adapter<CommandMenuCaseInput> = (host, caseInput, ctx)
     commandMenu.update,
     (state, send) => {
       const parts = commandMenu.connect(state, send, { id: 'cmd' })
+      // A named dialog (its title), a labelled search field, and a listbox
+      // that owns only options — the empty-state `status` sits beside it
+      // (#268 audit).
       return [
         button({ ...parts.dialog.trigger }, [text('Open command menu')]),
         dialog.overlay({
@@ -991,11 +1033,17 @@ const commandMenuAdapter: Adapter<CommandMenuCaseInput> = (host, caseInput, ctx)
           parts: parts.dialog,
           content: () => [
             div({ ...parts.dialog.content }, [
-              input({ ...parts.combobox.input }),
-              div({ ...parts.empty }, [text('No commands match')]),
-              ...caseInput.commands.map((c) =>
-                div({ ...parts.combobox.item(c.id).item }, [text(c.label)]),
+              h2({ ...parts.dialog.title }, [text('Command palette')]),
+              div({ ...parts.combobox.root }, [
+                input({ ...parts.combobox.input, 'aria-labelledby': parts.dialog.title.id }),
+              ]),
+              div(
+                { ...parts.combobox.content },
+                caseInput.commands.map((c) =>
+                  div({ ...parts.combobox.item(c.id).item }, [text(c.label)]),
+                ),
               ),
+              div({ ...parts.empty }, [text('No commands match')]),
             ]),
           ],
         }),

@@ -44,6 +44,10 @@ import * as dateInput from '../../packages/components/src/components/date-input.
 import * as datePicker from '../../packages/components/src/components/date-picker.js'
 import * as editable from '../../packages/components/src/components/editable.js'
 import * as fileUpload from '../../packages/components/src/components/file-upload.js'
+import {
+  floatingPanelPointerWiring,
+  splitterPointerWiring,
+} from '../../packages/components/test/styles/pointer-wiring'
 import * as floatingPanel from '../../packages/components/src/components/floating-panel.js'
 import * as gradientPicker from '../../packages/components/src/components/gradient-picker.js'
 import * as imageCropper from '../../packages/components/src/components/image-cropper.js'
@@ -412,7 +416,8 @@ const clipboardAdapter: Adapter<ClipboardCaseInput> = (host, data, ctx) =>
     (state, send) => {
       const parts = clipboard.connect(state, send)
       return Clipboard({ ...parts.root }, [
-        ClipboardInput({ ...parts.input }),
+        // The machine publishes no label part: the consumer names the field.
+        ClipboardInput({ ...parts.input, 'aria-label': 'Value to copy' }),
         ClipboardTrigger({ ...parts.trigger }, [
           CheckIcon({ class: state.map((s) => (s.copied ? '' : 'hidden')) }),
           CopyIcon({ class: state.map((s) => (s.copied ? 'hidden' : '')) }),
@@ -482,9 +487,13 @@ const dateInputAdapter: Adapter<DateInputCaseInput> = (host, data, ctx) =>
     () => dateInputInit(data),
     dateInput.update,
     (state, send) => {
-      const parts = dateInput.connect(state, send, { placeholder: 'YYYY-MM-DD' })
+      const parts = dateInput.connect(state, send, {
+        placeholder: 'YYYY-MM-DD',
+        id: `registry-date-input-${ctx.caseId}`,
+      })
       return DateInput({ ...parts.root }, [
-        DateInputControl({ ...parts.input }),
+        // The machine publishes no label part: the consumer names the field.
+        DateInputControl({ ...parts.input, 'aria-label': 'Date' }),
         DateInputClearTrigger({ ...parts.clearTrigger }, [XIcon()]),
         DateInputErrorText({ ...parts.errorText }, [
           text(state.map((s) => (s.error === null ? '' : (DATE_INPUT_ERRORS[s.error] ?? '')))),
@@ -673,18 +682,21 @@ const floatingPanelAdapter: Adapter<FloatingPanelCaseInput> = (host, data, ctx) 
     floatingPanel.update,
     (state, send) => {
       const parts = floatingPanel.connect(state, send, { label: data.title })
-      return FloatingPanel({ ...parts.root }, [
-        FloatingPanelDragHandle({ ...parts.dragHandle }, [
-          span({ class: 'flex-1' }, [text(data.title)]),
-          FloatingPanelMinimizeTrigger({ ...parts.minimizeTrigger }, [MinusIcon()]),
-          FloatingPanelMaximizeTrigger({ ...parts.maximizeTrigger }, [MaximizeIcon()]),
-          FloatingPanelCloseTrigger({ ...parts.closeTrigger }, [XIcon()]),
+      return [
+        floatingPanelPointerWiring(send),
+        FloatingPanel({ ...parts.root }, [
+          FloatingPanelDragHandle({ ...parts.dragHandle }, [
+            span({ class: 'flex-1' }, [text(data.title)]),
+            FloatingPanelMinimizeTrigger({ ...parts.minimizeTrigger }, [MinusIcon()]),
+            FloatingPanelMaximizeTrigger({ ...parts.maximizeTrigger }, [MaximizeIcon()]),
+            FloatingPanelCloseTrigger({ ...parts.closeTrigger }, [XIcon()]),
+          ]),
+          FloatingPanelContent({ ...parts.content }, [text(data.body)]),
+          ...(['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'] as const).map((handle) =>
+            FloatingPanelResizeHandle({ ...parts.resizeHandle(handle) }),
+          ),
         ]),
-        FloatingPanelContent({ ...parts.content }, [text(data.body)]),
-        ...(['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'] as const).map((handle) =>
-          FloatingPanelResizeHandle({ ...parts.resizeHandle(handle) }),
-        ),
-      ])
+      ]
     },
   )
 }
@@ -898,15 +910,18 @@ const splitterAdapter: Adapter<SplitterCaseInput> = (host, data, ctx) => {
     splitter.update,
     (state, send) => {
       const parts = splitter.connect(state, send)
-      return ResizablePanelGroup({ ...parts.root, class: 'rounded-md border' }, [
-        ResizablePanel({ ...parts.primaryPanel }, [
-          div({ class: 'p-3 text-sm' }, [text('Outline')]),
+      return [
+        splitterPointerWiring(state, send),
+        ResizablePanelGroup({ ...parts.root, class: 'rounded-md border' }, [
+          ResizablePanel({ ...parts.primaryPanel }, [
+            div({ class: 'p-3 text-sm' }, [text('Outline')]),
+          ]),
+          ResizableHandle({ ...parts.resizeTrigger }),
+          ResizablePanel({ ...parts.secondaryPanel }, [
+            div({ class: 'p-3 text-sm' }, [text('Editor')]),
+          ]),
         ]),
-        ResizableHandle({ ...parts.resizeTrigger }),
-        ResizablePanel({ ...parts.secondaryPanel }, [
-          div({ class: 'p-3 text-sm' }, [text('Editor')]),
-        ]),
-      ])
+      ]
     },
   )
 }
@@ -1040,10 +1055,12 @@ const aspectRatioAdapter: Adapter<AspectRatioCaseInput> = (host, data, ctx) => {
       view: () => [
         div({ class: 'w-64' }, [
           AspectRatio({ ratio, class: 'rounded-md border bg-muted' }, [
-            div(
-              { class: 'flex size-full items-center justify-center text-sm text-muted-foreground' },
-              [text(data.label)],
-            ),
+            // Sample content, in the foreground ink: `text-muted-foreground`
+            // on `bg-muted` is the one sub-AA token pair (#268 audit), and
+            // placeholder copy has no reason to use it.
+            div({ class: 'flex size-full items-center justify-center text-sm' }, [
+              text(data.label),
+            ]),
           ]),
         ]),
       ],
