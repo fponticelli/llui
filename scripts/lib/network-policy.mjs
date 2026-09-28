@@ -291,10 +291,11 @@ export function misfiledAfterFirstPaintEntries(requested, afterFirstPaint = AFTE
  * @typedef {object} RouteHooks
  * @property {LocalPolicy} isLocal Which URLs are the caller's own servers.
  * @property {(message: string) => void} onUnexpected Called once per request
- *   (HTTP or WebSocket) the policy refuses, with a message naming its URL and
- *   the page that made it. The request has already been aborted.
- * @property {(url: string) => void} [onRequest] Observes every HTTP request
- *   before it is decided (the smoke collects requested Iconify glyphs here).
+ *   (HTTP or WebSocket) the policy refuses that the page ISSUED, with a
+ *   message naming its URL and the page that made it — whether the policy's
+ *   own route aborted it or some other route let it through.
+ * @property {(url: string) => void} [onRequest] Observes every HTTP request the
+ *   page issues (the smoke collects requested Iconify glyphs here).
  * @property {(request: import('playwright').Request) => void} [onAborted]
  *   Observes every request the policy aborted on purpose (declared failures
  *   included), so a `requestfailed` listener can tell them from real failures.
@@ -316,11 +317,33 @@ function initiator(request) {
 
 /**
  * Apply the policy to every HTTP request and WebSocket of `context`. The ONE
- * place the decision is turned into Playwright routing, shared by the smoke
- * and the test suites.
+ * place the decision is turned into Playwright routing and reporting, shared
+ * by the smoke and the test suites.
+ *
+ * TWO MECHANISMS, because routing alone depends on ORDER. Playwright runs the
+ * NEWEST matching route handler first (page routes before context routes), so
+ * a caller that registers its own `route(…)` after this one and calls
+ * `continue()` — or `fulfill()` — decides the request before the policy's
+ * handler ever runs. So:
+ *
+ *  - ROUTING is the first line of defence: it is what keeps a disallowed
+ *    request off the network and answers the Iconify fixture. It REPORTS
+ *    nothing for HTTP.
+ *  - OBSERVATION is what reports. Every HTTP request fires the context's
+ *    `request` event whatever any route handler then does with it (measured:
+ *    it fires for requests a route aborts, continues or fulfills), and every
+ *    WebSocket that is actually opened fires its page's `websocket` event. Each
+ *    is judged against the same `decideRequest`, so a disallowed request the
+ *    page ISSUED is reported exactly once, whichever handler decided it. That
+ *    includes a request a caller's own route stubbed: an external dependency
+ *    is declared here, with a fixture, never answered ad hoc by one suite.
+ *
+ * A WebSocket the policy's own `routeWebSocket` handler refuses is closed
+ * without being opened, so no `websocket` event fires for it (measured); that
+ * handler reports it instead, and the two paths never both see one socket.
  *
  * Service workers must be blocked on the context (`serviceWorkers: 'block'`):
- * a worker's fetches bypass `route`, which would be a hole in the policy.
+ * a worker's fetches bypass `route`, which would be a hole in the routing.
  *
  * @param {import('playwright').BrowserContext} context
  * @param {RouteHooks} hooks
@@ -328,9 +351,31 @@ function initiator(request) {
  */
 export async function routeContext(context, hooks) {
   const { isLocal, onUnexpected, onRequest, onAborted } = hooks
+  /** @param {string} url */
+  const refusedSocket = (url) =>
+    `unexpected off-origin WebSocket ${url} — browser pages are hermetic; declare the dependency in scripts/lib/network-policy.mjs`
+
+  // Observation first, so nothing issued between the two registrations
+  // escapes it.
+  context.on('request', (request) => {
+    onRequest?.(request.url())
+    const decision = decideRequest(request.url(), isLocal)
+    if (decision.kind === 'unexpected') {
+      onUnexpected(`${decision.message} (requested by ${initiator(request)})`)
+    }
+  })
+  /** @param {import('playwright').Page} page */
+  const watchPage = (page) => {
+    page.on('websocket', (ws) => {
+      if (decideSocket(ws.url(), isLocal)) return
+      onUnexpected(`${refusedSocket(ws.url())} (opened by ${page.url()})`)
+    })
+  }
+  for (const page of context.pages()) watchPage(page)
+  context.on('page', watchPage)
+
   await context.route('**/*', async (route) => {
     const request = route.request()
-    onRequest?.(request.url())
     const decision = decideRequest(request.url(), isLocal)
     switch (decision.kind) {
       case 'local':
@@ -346,24 +391,29 @@ export async function routeContext(context, hooks) {
         })
         return
       case 'declared-failure':
-        onAborted?.(request)
-        await route.abort('namenotresolved')
-        return
       case 'unexpected':
+        // Reported by the `request` observer above, not here.
         onAborted?.(request)
-        onUnexpected(`${decision.message} (requested by ${initiator(request)})`)
-        await route.abort('blockedbyclient')
+        await route.abort(decision.kind === 'unexpected' ? 'blockedbyclient' : 'namenotresolved')
         return
     }
   })
   await context.routeWebSocket(/.*/, async (ws) => {
-    if (URL.canParse(ws.url()) && isLocal(new URL(ws.url()))) {
+    if (decideSocket(ws.url(), isLocal)) {
       ws.connectToServer()
       return
     }
-    onUnexpected(
-      `unexpected off-origin WebSocket ${ws.url()} — browser pages are hermetic; declare the dependency in scripts/lib/network-policy.mjs`,
-    )
+    onUnexpected(refusedSocket(ws.url()))
     await ws.close()
   })
+}
+
+/**
+ * Whether a WebSocket URL is one of the caller's own servers.
+ * @param {string} url
+ * @param {LocalPolicy} isLocal
+ * @returns {boolean}
+ */
+function decideSocket(url, isLocal) {
+  return URL.canParse(url) && isLocal(new URL(url))
 }

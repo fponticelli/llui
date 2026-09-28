@@ -27,8 +27,16 @@ beforeAll(async () => {
       res.end(`self.addEventListener('fetch', () => {})`)
       return
     }
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
-    res.end(req.url === '/data' ? 'local-ok' : '<!doctype html><title>probe</title>')
+    // CORS-open, so a page can also read it under the STUB host name below.
+    res.writeHead(200, {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Access-Control-Allow-Origin': '*',
+    })
+    res.end(
+      new URL(req.url ?? '/', 'http://x').pathname === '/data'
+        ? 'local-ok'
+        : '<!doctype html><title>probe</title>',
+    )
   })
   await new Promise<void>((ok) => server.listen(0, '127.0.0.1', ok))
   const address = server.address()
@@ -121,6 +129,148 @@ describe('guardBrowser (a real Chromium)', () => {
     })
     expect(outcome).toEqual({ registered: false, count: 0 })
     await page.context().close()
+  })
+})
+
+/**
+ * THE ROUTE-ORDER BYPASS. Playwright runs the NEWEST matching route handler
+ * first, so a suite that registers its own `route(…)` after the guard and
+ * calls `continue()` (or `fulfill()`) decides the request before the guard's
+ * handler ever sees it. The guard therefore also OBSERVES every request
+ * (`request` events fire whatever the handlers decide) and every opened
+ * WebSocket, and judges each against the same policy.
+ *
+ * There is no network here, so the "external" host is made REAL and
+ * deterministic with Chromium's own resolver override: `stub.hermetic.example`
+ * resolves to the local server. A request that gets through therefore
+ * actually completes, and each case asserts that it did — the bypass is live,
+ * not assumed — before asserting that it was reported.
+ */
+describe('the guard does not depend on route order', () => {
+  const STUB_HOST = 'stub.hermetic.example'
+  const refused: string[] = []
+  let browser: Browser
+
+  beforeAll(async () => {
+    const port = new URL(origin).port
+    browser = guardBrowser(
+      await chromium.launch({
+        headless: true,
+        args: [`--host-resolver-rules=MAP ${STUB_HOST} 127.0.0.1:${port}`],
+      }),
+      (message) => refused.push(message),
+    )
+  })
+
+  afterAll(async () => {
+    await browser?.close()
+  })
+
+  async function freshPage(): Promise<Page> {
+    refused.length = 0
+    const page = await browser.newPage()
+    await page.goto(`${origin}/`)
+    return page
+  }
+
+  it('reports an external request a LATER context route let through with continue()', async () => {
+    const page = await freshPage()
+    const context = page.context()
+    await context.route(`http://${STUB_HOST}/**`, (route) => route.continue())
+    const url = `http://${STUB_HOST}/data`
+    // It really left the page and reached the (stubbed) external host.
+    expect(await fetchFrom(page, url)).toBe('200:local-ok')
+    expect(refused).toHaveLength(1)
+    expect(refused[0]).toContain(url)
+    expect(refused[0]).toContain(`requested by ${origin}/`)
+    await context.close()
+  })
+
+  it('reports one a PAGE route (which runs before every context route) let through', async () => {
+    const page = await freshPage()
+    await page.route(`http://${STUB_HOST}/**`, (route) => route.continue())
+    const url = `http://${STUB_HOST}/data?via=page`
+    expect(await fetchFrom(page, url)).toBe('200:local-ok')
+    expect(refused).toHaveLength(1)
+    expect(refused[0]).toContain(url)
+    await page.context().close()
+  })
+
+  it('reports one a suite route answered itself: external hosts are declared in the policy, not stubbed per suite', async () => {
+    const page = await freshPage()
+    await page.route(`https://${STUB_HOST}/**`, (route) =>
+      route.fulfill({
+        status: 200,
+        headers: { 'access-control-allow-origin': '*' },
+        body: 'suite-stub',
+      }),
+    )
+    const url = `https://${STUB_HOST}/stubbed.json`
+    expect(await fetchFrom(page, url)).toBe('200:suite-stub')
+    expect(refused).toHaveLength(1)
+    expect(refused[0]).toContain(url)
+    await page.context().close()
+  })
+
+  it('reports an external WebSocket a later routeWebSocket connected to its server', async () => {
+    const page = await freshPage()
+    const context = page.context()
+    let suiteHandled = false
+    await context.routeWebSocket(/hermetic\.example/, (ws) => {
+      suiteHandled = true
+      ws.connectToServer()
+    })
+    const url = `ws://${STUB_HOST}/socket`
+    await page.evaluate((target) => {
+      new WebSocket(target)
+    }, url)
+    // The suite's handler, not the guard's, decided it: the bypass is live.
+    await expect.poll(() => suiteHandled).toBe(true)
+    await expect.poll(() => refused.length).toBe(1)
+    expect(refused[0]).toContain(url)
+    await context.close()
+  })
+
+  it('still reports a request the guard itself blocked exactly ONCE (route and observer do not double-count)', async () => {
+    const page = await freshPage()
+    expect(await fetchFrom(page, UNEXPECTED)).toMatch(/^rejected:/)
+    await page.evaluate(() => {
+      new WebSocket('wss://hermetic-probe.example.com/once')
+    })
+    await expect.poll(() => refused.length).toBe(2)
+    // Settle, then prove no late duplicate arrives.
+    await page.waitForTimeout(250)
+    expect(refused).toHaveLength(2)
+    expect(refused[0]).toContain(UNEXPECTED)
+    expect(refused[1]).toContain('wss://hermetic-probe.example.com/once')
+    await page.context().close()
+  })
+})
+
+describe('useHermeticBrowser fails a test whose own route let an external request through', () => {
+  const STUB_HOST = 'stub.hermetic.example'
+  const hermetic = useHermeticBrowser()
+  let browser: Browser
+
+  beforeAll(async () => {
+    browser = await hermetic.launch({
+      headless: true,
+      args: [`--host-resolver-rules=MAP ${STUB_HOST} 127.0.0.1:${new URL(origin).port}`],
+    })
+  })
+
+  afterAll(async () => {
+    await browser?.close()
+  })
+
+  // Green ONLY because the guard's afterEach reddened it. Drop the observer
+  // and the suite route wins silently: the test passes and this goes red.
+  it.fails('a continue() route on an external host is a failure, not a pass', async () => {
+    const page = await browser.newPage()
+    await page.goto(`${origin}/`)
+    await page.route(`http://${STUB_HOST}/**`, (route) => route.continue())
+    expect(await fetchFrom(page, `http://${STUB_HOST}/data`)).toBe('200:local-ok')
+    await page.close()
   })
 })
 
