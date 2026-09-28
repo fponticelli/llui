@@ -20,9 +20,23 @@ import { classPart } from '@/lib/utils'
  * claims the gesture for scrolling and the drag never starts on touch.
  *
  * The handle is also the KEYBOARD path (Space grabs, arrows move, Escape
- * cancels): it carries a focus ring, and a keyboard grab — `aria-grabbed` on
+ * cancels): it carries a focus ring, and a keyboard grab — `aria-pressed` on
  * the handle — is shown in the primary colour, since there is no pointer
  * position to show where the item is being carried (#266).
+ *
+ * A screen-reader user hears the drag through the machine's `liveRegion`
+ * ("Picked up Apple, item 2 of 5.", each move, the drop, a cancel) and learns
+ * the keys from its `instructions`, which every handle names in
+ * `aria-describedby`. Render BOTH, outside the list. Their bags carry `text`
+ * for the element's CHILD, not an attribute, so spread the rest:
+ *
+ *   const { text: live, ...liveAttrs } = parts.liveRegion
+ *   const { text: howTo, ...howToAttrs } = parts.instructions
+ *   SortableLiveRegion({ ...liveAttrs }, [text(live)])
+ *   SortableInstructions({ ...howToAttrs }, [text(howTo)])
+ *
+ * The live region is `sr-only`, never `hidden`: a `display: none` region is
+ * never announced. The instructions part carries `hidden` itself.
  */
 export const Sortable = classPart(div, 'flex flex-col gap-1.5')
 export const SortableItem = classPart(
@@ -31,5 +45,13 @@ export const SortableItem = classPart(
 )
 export const SortableHandle = classPart(
   div,
-  "flex cursor-grab touch-none items-center text-muted-foreground outline-none active:cursor-grabbing focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-grabbed:text-primary [&_svg:not([class*='size-'])]:size-4",
+  "flex cursor-grab touch-none items-center text-muted-foreground outline-none active:cursor-grabbing focus-visible:ring-[3px] focus-visible:ring-ring/50 aria-pressed:text-primary [&_svg:not([class*='size-'])]:size-4",
 )
+/** The machine's polite live region: visually hidden, still announced. */
+export const SortableLiveRegion = classPart(div, 'sr-only')
+/**
+ * The handles' description. The part carries `hidden` (a directly referenced
+ * hidden element still describes); `sr-only` keeps it off-screen even if a
+ * caller drops that attribute.
+ */
+export const SortableInstructions = classPart(div, 'sr-only')

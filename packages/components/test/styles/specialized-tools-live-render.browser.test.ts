@@ -420,7 +420,7 @@ describe('specialized-tools live render, both styling paths, real Chromium (#266
 
       expect(await focusIn('sortable', 'idle', '[data-part="handle"]')).toBe(true)
       await page.keyboard.press('Space')
-      const grabbed = await attr('sortable', 'idle', '[data-part="handle"]', 'aria-grabbed')
+      const grabbed = await attr('sortable', 'idle', '[data-part="handle"]', 'aria-pressed')
       await page.close()
 
       expect(cropBefore).toBe('Crop area: 240 × 180 at 60, 45')

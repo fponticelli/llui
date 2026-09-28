@@ -9,7 +9,8 @@
  * The flows cover the foundational interaction patterns: focus restoration,
  * focus trapping, roving focus, selection, dismissal (Escape and outside
  * pointer), drag and resize (pointer and keyboard), reordering a live list
- * (pointer and keyboard), and live validation.
+ * (pointer and keyboard), live validation, and announcements (what a screen
+ * reader hears, read from the component's own live region).
  * `the flow set` below pins that every family and every pattern is covered on
  * both paths, so the matrix cannot quietly thin out.
  *
@@ -54,6 +55,8 @@ type Pattern =
   | 'validation'
   | 'keyboard-activation'
   | 'reorder'
+  /** A state change a screen reader must HEAR, asserted through the live region's text. */
+  | 'announcement'
 
 interface Flow {
   readonly entry: string
@@ -425,37 +428,61 @@ const FLOWS: readonly Flow[] = [
     entry: 'sortable',
     caseId: 'idle',
     name: 'Space grabs, arrows move the drop target, Space drops and the list reorders',
-    patterns: ['reorder', 'keyboard-activation', 'focus-restoration'],
+    patterns: ['reorder', 'keyboard-activation', 'focus-restoration', 'announcement'],
     async run(page) {
       const items = part(page, 'sortable', 'item')
       const before = await sortableOrder(page)
       expect(before).toHaveLength(3)
       const handle = items.nth(0).locator('[data-part="handle"]')
       expect(await handle.getAttribute('role')).toBe('button')
-      expect(await handle.getAttribute('aria-grabbed')).toBe('false')
+      // `aria-pressed` carries the grab; the deprecated `aria-grabbed` is gone.
+      expect(await handle.getAttribute('aria-pressed')).toBe('false')
+      expect(await page.locator('[aria-grabbed]').count()).toBe(0)
+      // The handle is DESCRIBED by the machine's instructions, a real element.
+      const describedBy = await handle.getAttribute('aria-describedby')
+      const instructions = part(page, 'sortable', 'instructions')
+      expect(await instructions.getAttribute('id')).toBe(describedBy)
+      expect(await instructions.textContent()).toMatch(/press space or enter/i)
+      // The live region is polite, rendered, and says nothing yet.
+      const live = part(page, 'sortable', 'live-region')
+      expect(await live.getAttribute('role')).toBe('status')
+      expect(await live.getAttribute('aria-live')).toBe('polite')
+      // Rendered (a `display: none` region is never announced) yet visually
+      // hidden: a clipped box no larger than one pixel.
+      expect(await live.isVisible()).toBe(true)
+      const liveBox = await live.boundingBox()
+      expect(liveBox !== null && liveBox.width <= 1 && liveBox.height <= 1).toBe(true)
+      const heard = async (): Promise<string> => (await live.textContent()) ?? ''
+      expect(await heard()).toBe('')
 
       // Escape puts a grabbed item back where it was.
       await focus(handle)
       await page.keyboard.press('Space')
-      expect(await handle.getAttribute('aria-grabbed')).toBe('true')
+      expect(await handle.getAttribute('aria-pressed')).toBe('true')
+      expect(await heard()).toBe(`Picked up ${before[0]}, item 1 of 3.`)
       await page.keyboard.press('ArrowDown')
+      expect(await heard()).toBe(`${before[0]} moved to position 2 of 3.`)
       await page.keyboard.press('Escape')
+      expect(await heard()).toBe(`Reorder cancelled. ${before[0]} returned to position 1 of 3.`)
       expect(await sortableOrder(page)).toEqual(before)
-      expect(await page.locator('[aria-grabbed="true"]').count()).toBe(0)
+      expect(await page.locator('[aria-pressed="true"]').count()).toBe(0)
 
       await page.keyboard.press('Space')
       expect(await items.nth(0).getAttribute('data-dragging')).toBe('')
       await page.keyboard.press('ArrowDown')
       await page.keyboard.press('ArrowDown')
+      expect(await heard()).toBe(`${before[0]} moved to position 3 of 3.`)
       // Past the end is not a slot: the target stays on the last item.
       await page.keyboard.press('ArrowDown')
       const over = page.locator('[data-scope="sortable"][data-part="item"][data-over]')
       expect(await over.count()).toBe(1)
       expect(await over.getAttribute('data-id')).toBe(await items.nth(2).getAttribute('data-id'))
+      expect(await heard()).toBe(`${before[0]} moved to position 3 of 3.`)
       await page.keyboard.press('Space')
 
       expect(await sortableOrder(page)).toEqual([before[1], before[2], before[0]])
-      expect(await page.locator('[aria-grabbed="true"]').count()).toBe(0)
+      expect(await heard()).toBe(`Dropped ${before[0]}. Moved from position 1 to position 3 of 3.`)
+      expect(await page.locator('[aria-pressed="true"]').count()).toBe(0)
       // Focus stays on the handle of the item just placed, now last.
       expect(
         await items
@@ -488,7 +515,11 @@ const FLOWS: readonly Flow[] = [
           .locator('[data-scope="sortable"][data-part="root"]')
           .getAttribute('data-dragging'),
       ).toBeNull()
-      expect(await page.locator('[aria-grabbed="true"]').count()).toBe(0)
+      expect(await page.locator('[aria-pressed="true"]').count()).toBe(0)
+      // A pointer drag is announced too: the drop names where the item landed.
+      expect(await part(page, 'sortable', 'live-region').textContent()).toBe(
+        `Dropped ${before[0]}. Moved from position 1 to position 3 of 3.`,
+      )
     },
   },
   {
@@ -530,6 +561,7 @@ const PATTERNS: readonly Pattern[] = [
   'validation',
   'keyboard-activation',
   'reorder',
+  'announcement',
 ]
 
 function flowCases(flow: Flow): GalleryCase[] {

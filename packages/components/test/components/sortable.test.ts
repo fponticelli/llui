@@ -23,7 +23,7 @@ describe('reorder utility', () => {
 
 describe('sortable reducer', () => {
   it('initializes with no dragging', () => {
-    expect(init()).toEqual({ dragging: null })
+    expect(init()).toEqual({ dragging: null, announcement: null })
   })
 
   it('start sets dragging state', () => {
@@ -31,6 +31,7 @@ describe('sortable reducer', () => {
       type: 'start',
       id: 'item-1',
       index: 2,
+      count: 10,
       container: 'list1',
       x: 0,
       y: 0,
@@ -45,11 +46,13 @@ describe('sortable reducer', () => {
       startY: 0,
       currentX: 0,
       currentY: 0,
+      count: 10,
     })
   })
 
   it('move updates currentIndex', () => {
     const started: SortableState = {
+      announcement: null,
       dragging: {
         id: 'item-1',
         startIndex: 2,
@@ -60,6 +63,7 @@ describe('sortable reducer', () => {
         startY: 0,
         currentX: 0,
         currentY: 0,
+        count: 10,
       },
     }
     const [s] = update(started, { type: 'move', index: 4, container: 'list1', x: 0, y: 0 })
@@ -68,6 +72,7 @@ describe('sortable reducer', () => {
 
   it('move is idempotent when index is unchanged', () => {
     const started: SortableState = {
+      announcement: null,
       dragging: {
         id: 'x',
         startIndex: 0,
@@ -78,6 +83,7 @@ describe('sortable reducer', () => {
         startY: 0,
         currentX: 0,
         currentY: 0,
+        count: 10,
       },
     }
     const [next] = update(started, { type: 'move', index: 3, container: 'list1', x: 0, y: 0 })
@@ -91,6 +97,7 @@ describe('sortable reducer', () => {
 
   it('drop clears dragging', () => {
     const started: SortableState = {
+      announcement: null,
       dragging: {
         id: 'x',
         startIndex: 0,
@@ -101,6 +108,7 @@ describe('sortable reducer', () => {
         startY: 0,
         currentX: 0,
         currentY: 0,
+        count: 10,
       },
     }
     const [s] = update(started, { type: 'drop' })
@@ -109,6 +117,7 @@ describe('sortable reducer', () => {
 
   it('cancel clears dragging', () => {
     const started: SortableState = {
+      announcement: null,
       dragging: {
         id: 'x',
         startIndex: 0,
@@ -119,6 +128,7 @@ describe('sortable reducer', () => {
         startY: 0,
         currentX: 0,
         currentY: 0,
+        count: 10,
       },
     }
     const [s] = update(started, { type: 'cancel' })
@@ -135,7 +145,9 @@ describe('sortable.connect', () => {
 
   it('root data-dragging reflects state', () => {
     const parts = connect(rootSignal(), vi.fn(), { id: 'list1' })
-    expect(read(parts.root['data-dragging'], { dragging: null })).toBeUndefined()
+    expect(
+      read(parts.root['data-dragging'], { dragging: null, announcement: null }),
+    ).toBeUndefined()
     expect(
       read(parts.root['data-dragging'], {
         dragging: {
@@ -148,6 +160,7 @@ describe('sortable.connect', () => {
           startY: 0,
           currentX: 0,
           currentY: 0,
+          count: 10,
         },
       }),
     ).toBe('')
@@ -168,6 +181,7 @@ describe('sortable.connect', () => {
           startY: 0,
           currentX: 0,
           currentY: 0,
+          count: 10,
         },
       }),
     ).toBe('')
@@ -183,6 +197,7 @@ describe('sortable.connect', () => {
           startY: 0,
           currentX: 0,
           currentY: 0,
+          count: 10,
         },
       }),
     ).toBeUndefined()
@@ -201,6 +216,8 @@ describe('sortable.connect', () => {
       type: 'start',
       id: 'apple',
       index: 2,
+      // Outside any rendered list the count can only be floored at the item's own slot.
+      count: 3,
       container: 'list1',
       y: expect.any(Number),
     })
@@ -211,12 +228,13 @@ describe('sortable.connect', () => {
     expect(parts.item('x', 3)['data-index']).toBe('3')
   })
 
-  it('handle has aria-grabbed reflecting drag state', () => {
+  it('handle has aria-pressed reflecting drag state (aria-grabbed is deprecated)', () => {
     const parts = connect(rootSignal(), vi.fn(), { id: 'list1' })
     const h = parts.handle('apple', 2)
-    expect(read(h['aria-grabbed'], { dragging: null })).toBe(false)
+    expect(read(h['aria-pressed'], { dragging: null, announcement: null })).toBe(false)
     expect(
-      read(h['aria-grabbed'], {
+      read(h['aria-pressed'], {
+        announcement: null,
         dragging: {
           id: 'apple',
           startIndex: 2,
@@ -227,6 +245,7 @@ describe('sortable.connect', () => {
           startY: 0,
           currentX: 0,
           currentY: 0,
+          count: 10,
         },
       }),
     ).toBe(true)
@@ -257,6 +276,7 @@ describe('sortable keyboard events', () => {
       type: 'toggleGrab',
       id: 'apple',
       index: 1,
+      count: 2,
       container: 'list1',
     })
     expect(e.defaultPrevented).toBe(true)
@@ -270,6 +290,7 @@ describe('sortable keyboard events', () => {
       type: 'toggleGrab',
       id: 'apple',
       index: 1,
+      count: 2,
       container: 'list1',
     })
   })
@@ -307,7 +328,13 @@ describe('sortable keyboard events', () => {
 
 describe('sortable reducer — keyboard messages', () => {
   it('toggleGrab starts when not dragging', () => {
-    const [s] = update(init(), { type: 'toggleGrab', id: 'apple', index: 2, container: 'list1' })
+    const [s] = update(init(), {
+      type: 'toggleGrab',
+      id: 'apple',
+      index: 2,
+      count: 10,
+      container: 'list1',
+    })
     expect(s.dragging).toEqual({
       id: 'apple',
       startIndex: 2,
@@ -318,11 +345,13 @@ describe('sortable reducer — keyboard messages', () => {
       startY: 0,
       currentX: 0,
       currentY: 0,
+      count: 10,
     })
   })
 
   it('toggleGrab drops when already dragging', () => {
     const state: SortableState = {
+      announcement: null,
       dragging: {
         id: 'apple',
         startIndex: 0,
@@ -333,14 +362,22 @@ describe('sortable reducer — keyboard messages', () => {
         startY: 0,
         currentX: 0,
         currentY: 0,
+        count: 10,
       },
     }
-    const [s] = update(state, { type: 'toggleGrab', id: 'banana', index: 1, container: 'list1' })
+    const [s] = update(state, {
+      type: 'toggleGrab',
+      id: 'banana',
+      index: 1,
+      count: 10,
+      container: 'list1',
+    })
     expect(s.dragging).toBeNull()
   })
 
   it('moveBy updates currentIndex when dragging', () => {
     const state: SortableState = {
+      announcement: null,
       dragging: {
         id: 'apple',
         startIndex: 0,
@@ -351,6 +388,7 @@ describe('sortable reducer — keyboard messages', () => {
         startY: 0,
         currentX: 0,
         currentY: 0,
+        count: 10,
       },
     }
     const [s] = update(state, { type: 'moveBy', delta: 1 })
@@ -359,6 +397,7 @@ describe('sortable reducer — keyboard messages', () => {
 
   it('moveBy negative delta works', () => {
     const state: SortableState = {
+      announcement: null,
       dragging: {
         id: 'apple',
         startIndex: 0,
@@ -369,6 +408,7 @@ describe('sortable reducer — keyboard messages', () => {
         startY: 0,
         currentX: 0,
         currentY: 0,
+        count: 10,
       },
     }
     const [s] = update(state, { type: 'moveBy', delta: -2 })
@@ -377,6 +417,7 @@ describe('sortable reducer — keyboard messages', () => {
 
   it('moveBy clamps at zero', () => {
     const state: SortableState = {
+      announcement: null,
       dragging: {
         id: 'apple',
         startIndex: 0,
@@ -387,6 +428,7 @@ describe('sortable reducer — keyboard messages', () => {
         startY: 0,
         currentX: 0,
         currentY: 0,
+        count: 10,
       },
     }
     const [s] = update(state, { type: 'moveBy', delta: -5 })
@@ -401,13 +443,29 @@ describe('sortable reducer — keyboard messages', () => {
 
 describe('sortable cross-container', () => {
   it('start sets fromContainer and toContainer to the same value', () => {
-    const [s] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', x: 0, y: 0 })
+    const [s] = update(init(), {
+      type: 'start',
+      id: 'a',
+      index: 0,
+      count: 10,
+      container: 'todo',
+      x: 0,
+      y: 0,
+    })
     expect(s.dragging?.fromContainer).toBe('todo')
     expect(s.dragging?.toContainer).toBe('todo')
   })
 
   it('move to a different container updates toContainer', () => {
-    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', x: 0, y: 0 })
+    const [s1] = update(init(), {
+      type: 'start',
+      id: 'a',
+      index: 0,
+      count: 10,
+      container: 'todo',
+      x: 0,
+      y: 0,
+    })
     const [s2] = update(s1, { type: 'move', index: 2, container: 'done', x: 0, y: 0 })
     expect(s2.dragging?.fromContainer).toBe('todo')
     expect(s2.dragging?.toContainer).toBe('done')
@@ -415,20 +473,44 @@ describe('sortable cross-container', () => {
   })
 
   it('move within the same container updates only currentIndex', () => {
-    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', x: 0, y: 0 })
+    const [s1] = update(init(), {
+      type: 'start',
+      id: 'a',
+      index: 0,
+      count: 10,
+      container: 'todo',
+      x: 0,
+      y: 0,
+    })
     const [s2] = update(s1, { type: 'move', index: 3, container: 'todo', x: 0, y: 0 })
     expect(s2.dragging?.toContainer).toBe('todo')
     expect(s2.dragging?.currentIndex).toBe(3)
   })
 
   it('move is idempotent when both index and container are unchanged', () => {
-    const [s1] = update(init(), { type: 'start', id: 'a', index: 2, container: 'todo', x: 0, y: 0 })
+    const [s1] = update(init(), {
+      type: 'start',
+      id: 'a',
+      index: 2,
+      count: 10,
+      container: 'todo',
+      x: 0,
+      y: 0,
+    })
     const [s2] = update(s1, { type: 'move', index: 2, container: 'todo', x: 0, y: 0 })
     expect(s2).toBe(s1)
   })
 
   it('moving from one container to another then back', () => {
-    const [s1] = update(init(), { type: 'start', id: 'a', index: 0, container: 'todo', x: 0, y: 0 })
+    const [s1] = update(init(), {
+      type: 'start',
+      id: 'a',
+      index: 0,
+      count: 10,
+      container: 'todo',
+      x: 0,
+      y: 0,
+    })
     const [s2] = update(s1, { type: 'move', index: 0, container: 'done', x: 0, y: 0 })
     const [s3] = update(s2, { type: 'move', index: 1, container: 'todo', x: 0, y: 0 })
     expect(s3.dragging?.fromContainer).toBe('todo')
@@ -449,6 +531,7 @@ describe('sortable cross-container', () => {
     const doneParts = connect(rootSignal(), vi.fn(), { id: 'done' })
     const state: Ctx = {
       sort: {
+        announcement: null,
         dragging: {
           id: 'task-1',
           startIndex: 0,
@@ -459,6 +542,7 @@ describe('sortable cross-container', () => {
           startY: 0,
           currentX: 0,
           currentY: 0,
+          count: 10,
         },
       },
     }
@@ -511,6 +595,7 @@ describe('sortable cross-container', () => {
       type: 'start',
       id: 'p1',
       index: 2, // live DOM index, NOT the stale captured 0
+      count: 5, // the live DOM count of the list
       container: 'list1',
       y: expect.any(Number),
     })
@@ -558,6 +643,7 @@ describe('sortable cross-container', () => {
     // Simulate a drop-target at DOM index 4 (dragging down from live idx 2)
     const state: Ctx = {
       sort: {
+        announcement: null,
         dragging: {
           id: 'p1',
           startIndex: 2,
@@ -568,6 +654,7 @@ describe('sortable cross-container', () => {
           startY: 0,
           currentX: 0,
           currentY: 0,
+          count: 10,
         },
       },
     }
@@ -624,6 +711,7 @@ describe('sortable cross-container', () => {
 
     const state: Ctx = {
       sort: {
+        announcement: null,
         dragging: {
           id: 'p1',
           startIndex: 2,
@@ -634,6 +722,7 @@ describe('sortable cross-container', () => {
           startY: 0,
           currentX: 0,
           currentY: 0,
+          count: 10,
         },
       },
     }
@@ -652,6 +741,7 @@ describe('sortable cross-container', () => {
     const doneParts = connect(rootSignal(), vi.fn(), { id: 'done' })
     const state: Ctx = {
       sort: {
+        announcement: null,
         dragging: {
           id: 'task-1',
           startIndex: 0,
@@ -662,6 +752,7 @@ describe('sortable cross-container', () => {
           startY: 0,
           currentX: 0,
           currentY: 0,
+          count: 10,
         },
       },
     }

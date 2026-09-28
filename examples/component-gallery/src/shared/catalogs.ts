@@ -22,8 +22,19 @@ import { compileSpecializedToolsCatalog } from '../../../../packages/components/
 import { GALLERY_CONTRACT } from './contract'
 
 /**
- * The families' own TYPED catalogs, held as the ERASED catalog type with no
- * cast: every typed catalog is a subtype of `CompiledPresentationScenarioFamily`
+ * Each family's catalog, compiled ONCE and kept TYPED. A path document's
+ * family loader binds that family's typed adapter map to its typed catalog
+ * (`bindScenarioAdapters`), which is what checks every adapter against its
+ * own scenario's case inputs — so these must stay typed, not erased.
+ */
+export const FORMS_CONTROLS_CATALOG = compileFormsControlsCatalog(GALLERY_CONTRACT)
+export const NAVIGATION_DATA_CATALOG = compileNavigationDataCatalog(GALLERY_CONTRACT)
+export const MENUS_OVERLAYS_CATALOG = compileMenusOverlaysCatalog(GALLERY_CONTRACT)
+export const SPECIALIZED_TOOLS_CATALOG = compileSpecializedToolsCatalog(GALLERY_CONTRACT)
+
+/**
+ * The same typed catalogs, held as the ERASED catalog type with no cast:
+ * every typed catalog is a subtype of `CompiledPresentationScenarioFamily`
  * (pinned by `packages/cli/test/presentation-scenarios-erasure-types.ts`). The
  * gallery handles every family generically, so it reads them through the
  * erased shape; the definitions are in-repo typed modules, not serialized
@@ -31,10 +42,10 @@ import { GALLERY_CONTRACT } from './contract'
  * the runtime validation and contract join are the same either way.
  */
 export const GALLERY_CATALOGS: readonly CompiledPresentationScenarioFamily[] = [
-  compileFormsControlsCatalog(GALLERY_CONTRACT),
-  compileNavigationDataCatalog(GALLERY_CONTRACT),
-  compileMenusOverlaysCatalog(GALLERY_CONTRACT),
-  compileSpecializedToolsCatalog(GALLERY_CONTRACT),
+  FORMS_CONTROLS_CATALOG,
+  NAVIGATION_DATA_CATALOG,
+  MENUS_OVERLAYS_CATALOG,
+  SPECIALIZED_TOOLS_CATALOG,
 ]
 
 const scenarioByProduct = new Map<string, CompiledPresentationScenario>()

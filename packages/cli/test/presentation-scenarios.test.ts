@@ -2,11 +2,14 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import { ProductContractSchema, type ProductContract } from '../src/product-contract'
 import {
   DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
+  bindScenarioAdapters,
   compileScenarioFamily,
   decodeScenarioFamily,
   decodeScenarioSelection,
+  dispatchScenarioSelection,
   PresentationScenarioError,
   resolveScenarioSelection,
+  type PresentationScenarioAdapterBinding,
   type PresentationScenarioDefinitions,
 } from '../src/presentation-scenarios'
 
@@ -1144,5 +1147,277 @@ describe('resolveScenarioSelection', () => {
       expect(error).toBeInstanceOf(PresentationScenarioError)
       expect(error).toMatchObject({ code: 'invalid-catalog' })
     }
+  })
+})
+
+/** Two scenarios with deliberately different input shapes, so a crossed dispatch is visible. */
+const dispatchDefinitions = {
+  'component:dialog': {
+    defaultCaseId: 'open',
+    cases: [
+      { id: 'open', label: 'Open', input: { open: true }, environmentAxes: ['direction'] },
+      { id: 'closed', label: 'Closed', input: { open: false }, environmentAxes: [] },
+    ],
+  },
+  'component:menu': {
+    defaultCaseId: 'items',
+    cases: [{ id: 'items', label: 'Items', input: { items: ['Open'] }, environmentAxes: [] }],
+  },
+} as const satisfies PresentationScenarioDefinitions
+
+interface RecordedCall {
+  readonly adapter: string
+  readonly host: string
+  readonly input: unknown
+  readonly context: unknown
+}
+
+function recordingAdapters(calls: RecordedCall[]) {
+  return {
+    'component:dialog': (host: string, input: { readonly open: boolean }, context: object) => {
+      calls.push({ adapter: 'dialog', host, input, context })
+      return `dialog:${String(input.open)}`
+    },
+    'component:menu': (
+      host: string,
+      input: { readonly items: readonly string[] },
+      context: object,
+    ) => {
+      calls.push({ adapter: 'menu', host, input, context })
+      return `menu:${input.items.join(',')}`
+    },
+  } as const
+}
+
+function expectScenarioError(run: () => unknown, code: string, issues: readonly string[]): void {
+  try {
+    run()
+    expect.unreachable(`expected a ${code} PresentationScenarioError`)
+  } catch (error) {
+    expect(error).toBeInstanceOf(PresentationScenarioError)
+    expect(error).toMatchObject({ code, issues })
+  }
+}
+
+describe('dispatchScenarioSelection', () => {
+  it('calls exactly the adapter registered for the resolved scenario, with the case input, host and context', () => {
+    const productContract = contract()
+    const catalog = compileScenarioFamily(productContract, 'menus-overlays', dispatchDefinitions)
+    const calls: RecordedCall[] = []
+    const adapters = recordingAdapters(calls)
+
+    const dialog = resolveScenarioSelection(productContract, catalog, {
+      productId: 'dialog',
+      path: 'baseline',
+      environment: { direction: 'rtl' },
+    })
+    const menu = resolveScenarioSelection(productContract, catalog, {
+      productId: 'menu',
+      path: 'baseline',
+    })
+
+    expect(dispatchScenarioSelection(catalog, adapters, dialog, 'host-a', {})).toBe('dialog:true')
+    expect(
+      dispatchScenarioSelection(catalog, adapters, menu, 'host-b', { copiedArtifactNames: [] }),
+    ).toBe('menu:Open')
+    expect(calls).toEqual([
+      {
+        adapter: 'dialog',
+        host: 'host-a',
+        input: { open: true },
+        context: {
+          scenarioId: 'component:dialog',
+          caseId: 'open',
+          environment: { ...DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT, direction: 'rtl' },
+        },
+      },
+      {
+        adapter: 'menu',
+        host: 'host-b',
+        input: { items: ['Open'] },
+        context: {
+          copiedArtifactNames: [],
+          scenarioId: 'component:menu',
+          caseId: 'items',
+          environment: DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
+        },
+      },
+    ])
+    // The adapter receives the resolved case's OWN input, not a copy.
+    expect(calls[0]!.input).toBe(dialog.case.input)
+  })
+
+  it('lets the protocol-owned context keys win over an untyped extra that smuggles one', () => {
+    const productContract = contract()
+    const catalog = compileScenarioFamily(productContract, 'menus-overlays', dispatchDefinitions)
+    const calls: RecordedCall[] = []
+    const resolved = resolveScenarioSelection(productContract, catalog, {
+      productId: 'dialog',
+      caseId: 'closed',
+      path: 'baseline',
+    })
+    // What an untyped (serialized) caller could hand over; the typed signature forbids it.
+    const forged: Readonly<Record<string, never>> = JSON.parse(
+      '{"scenarioId":"component:menu","caseId":"items","environment":null,"note":"kept"}',
+    )
+
+    dispatchScenarioSelection(catalog, recordingAdapters(calls), resolved, 'host', forged)
+
+    expect(calls).toEqual([
+      {
+        adapter: 'dialog',
+        host: 'host',
+        input: { open: false },
+        context: {
+          note: 'kept',
+          scenarioId: 'component:dialog',
+          caseId: 'closed',
+          environment: DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
+        },
+      },
+    ])
+  })
+
+  it('fails with missing-adapter, calling nothing, when the scenario has no registered adapter', () => {
+    const productContract = contract()
+    const catalog = compileScenarioFamily(productContract, 'menus-overlays', dispatchDefinitions)
+    const calls: RecordedCall[] = []
+    const { 'component:dialog': dialogOnly } = recordingAdapters(calls)
+    const menu = resolveScenarioSelection(productContract, catalog, {
+      productId: 'menu',
+      path: 'baseline',
+    })
+
+    expectScenarioError(
+      () =>
+        dispatchScenarioSelection(catalog, { 'component:dialog': dialogOnly }, menu, 'host', {}),
+      'missing-adapter',
+      ['$.scenarioId: no adapter is registered for scenario "component:menu".'],
+    )
+    expect(calls).toEqual([])
+  })
+
+  it('rejects a selection that was not resolved from the catalog it is dispatched with', () => {
+    const productContract = contract()
+    const erasedCatalog = decodeScenarioFamily(
+      productContract,
+      'menus-overlays',
+      dispatchDefinitions,
+    )
+    const formsCatalog = decodeScenarioFamily(productContract, 'forms-controls', {
+      'component:switch': {
+        defaultCaseId: 'on',
+        cases: [{ id: 'on', label: 'On', input: { checked: true }, environmentAxes: [] }],
+      },
+    })
+    const calls: RecordedCall[] = []
+    const erasedAdapters = {
+      'component:dialog': (host: string, input: unknown, context: object) => {
+        calls.push({ adapter: 'dialog', host, input, context })
+        return 'dialog'
+      },
+      'component:switch': (host: string, input: unknown, context: object) => {
+        calls.push({ adapter: 'switch', host, input, context })
+        return 'switch'
+      },
+    }
+    const switchSelection = decodeScenarioSelection(productContract, formsCatalog, {
+      productId: 'switch',
+      path: 'baseline',
+    })
+    const dialogSelection = decodeScenarioSelection(productContract, erasedCatalog, {
+      productId: 'dialog',
+      path: 'baseline',
+    })
+
+    expectScenarioError(
+      () => dispatchScenarioSelection(erasedCatalog, erasedAdapters, switchSelection, 'host', {}),
+      'invalid-selection',
+      [
+        '$.scenarioId: scenario "component:switch" of product "switch" is not in compiled family "menus-overlays".',
+      ],
+    )
+    expectScenarioError(
+      () =>
+        dispatchScenarioSelection(
+          erasedCatalog,
+          erasedAdapters,
+          { ...dialogSelection, case: { ...dialogSelection.case, id: 'ghost' } },
+          'host',
+          {},
+        ),
+      'invalid-selection',
+      ['$.case.id: case "ghost" is not a case of scenario "component:dialog".'],
+    )
+    expect(calls).toEqual([])
+  })
+})
+
+describe('bindScenarioAdapters', () => {
+  it('erases a typed map to one family-agnostic binding that resolves, then renders', () => {
+    const productContract = contract()
+    const catalog = compileScenarioFamily(productContract, 'menus-overlays', dispatchDefinitions)
+    const calls: RecordedCall[] = []
+    const binding = bindScenarioAdapters(catalog, recordingAdapters(calls))
+    expectTypeOf(binding).toEqualTypeOf<PresentationScenarioAdapterBinding<string, string>>()
+
+    expect(binding.family).toBe('menus-overlays')
+    expect(binding.scenarioIds).toEqual(['component:dialog', 'component:menu'])
+    expect(Object.isFrozen(binding.scenarioIds)).toBe(true)
+
+    const prepared = binding.prepare(productContract, {
+      productId: 'dialog',
+      caseId: 'closed',
+      path: 'registryTailwind',
+    })
+    // Resolution is the protocol's own: identical to resolving the typed catalog directly.
+    expect(prepared.selection).toEqual(
+      resolveScenarioSelection(productContract, catalog, {
+        productId: 'dialog',
+        caseId: 'closed',
+        path: 'registryTailwind',
+      }),
+    )
+    // Preparing renders nothing; rendering dispatches exactly once, to the right adapter.
+    expect(calls).toEqual([])
+    expect(prepared.render('host', {})).toBe('dialog:false')
+    expect(calls.map(({ adapter, input }) => ({ adapter, input }))).toEqual([
+      { adapter: 'dialog', input: { open: false } },
+    ])
+  })
+
+  it('reports a bad selection before a missing adapter, and a missing adapter before any render', () => {
+    const productContract = contract()
+    const catalog = compileScenarioFamily(productContract, 'menus-overlays', dispatchDefinitions)
+    const calls: RecordedCall[] = []
+    const { 'component:dialog': dialogOnly } = recordingAdapters(calls)
+    const binding = bindScenarioAdapters(catalog, { 'component:dialog': dialogOnly })
+
+    expect(binding.scenarioIds).toEqual(['component:dialog'])
+    expectScenarioError(
+      () => binding.prepare(productContract, { productId: 'menu', caseId: 'x', path: 'baseline' }),
+      'unknown-case',
+      ['$.caseId: unknown case "x" for product "menu".'],
+    )
+    expectScenarioError(
+      () => binding.prepare(productContract, { productId: 'menu', path: 'baseline' }),
+      'missing-adapter',
+      ['$.scenarioId: no adapter is registered for scenario "component:menu".'],
+    )
+    expect(calls).toEqual([])
+  })
+
+  it('rejects, at bind time, an adapter for no scenario of the catalog and a non-function adapter', () => {
+    const productContract = contract()
+    const catalog = decodeScenarioFamily(productContract, 'menus-overlays', dispatchDefinitions)
+    // What an untyped map could carry; `never` values keep the typed signature honest.
+    const bogus: Readonly<Record<string, never>> = JSON.parse(
+      '{"component:stale":{},"component:dialog":1}',
+    )
+
+    expectScenarioError(() => bindScenarioAdapters(catalog, bogus), 'invalid-adapters', [
+      '$["component:dialog"]: adapter is not a function.',
+      '$["component:stale"]: no scenario "component:stale" in compiled family "menus-overlays".',
+    ])
   })
 })

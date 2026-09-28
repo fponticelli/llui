@@ -11,6 +11,7 @@
 // `dispose()` handle to drive presence transitions after mount.
 import {
   compileMenusOverlaysCatalog,
+  dispatchScenarioSelection,
   joinMenusOverlaysScenarios,
   resolveScenarioSelection,
   type MenusOverlaysDefinitions,
@@ -55,10 +56,6 @@ window.__mountMenusOverlaysBaselineCase = (contract, request) => {
     path: 'baseline',
     ...(request.environment !== undefined ? { environment: request.environment } : {}),
   })
-  const adapter = BASELINE_ADAPTERS[request.scenarioId as keyof typeof BASELINE_ADAPTERS]
-  if (adapter === undefined) {
-    throw new Error(`No baseline adapter registered for ${request.scenarioId}`)
-  }
   const host = document.createElement('section')
   host.id = request.hostId
   // The host is the case's THEMED CONTAINER, so it paints like one: a
@@ -70,11 +67,7 @@ window.__mountMenusOverlaysBaselineCase = (contract, request) => {
   host.style.background = 'var(--background)'
   host.style.color = 'var(--foreground)'
   document.body.append(host)
-  const disposable = (adapter as (host: HTMLElement, input: unknown, ctx: unknown) => Disposable)(
-    host,
-    resolved.case.input,
-    { scenarioId: request.scenarioId, caseId: resolved.case.id, environment: resolved.environment },
-  )
+  const disposable = dispatchScenarioSelection(catalog, BASELINE_ADAPTERS, resolved, host, {})
   handles.set(request.hostId, disposable)
 }
 

@@ -534,6 +534,8 @@ export type PresentationScenarioErrorCode =
   | 'invalid-catalog'
   | 'invalid-selection'
   | 'invalid-path'
+  | 'missing-adapter'
+  | 'invalid-adapters'
 
 /** A stable, machine-readable protocol or selection failure. */
 export class PresentationScenarioError extends Error {
@@ -2589,4 +2591,326 @@ export function decodeScenarioSelection(
   selection: unknown,
 ): ResolvedPresentationScenarioSelection {
   return resolveScenarioSelectionUnknown(contract, catalog, selection)
+}
+
+// ─── Adapter dispatch ─────────────────────────────────────────────────────────────────────────
+//
+// Renderer adapters live in each app as separate maps keyed by scenario id (the protocol never
+// owns a renderer). Handing a resolved case to "the adapter for its scenario id" is the one step
+// every renderer shares, and it is exactly where a map lookup loses the correlation between the
+// id and the input: `adapters[selection.scenarioId]` over a union of ids is a union of adapters,
+// which TypeScript can only call with the INTERSECTION of their inputs. Every family renderer
+// papered over that with two casts (`adapter as Adapter<unknown>`, `scenarioId as XScenarioId`),
+// and a cast checks nothing — a map whose menu adapter took a select input compiled.
+//
+// The fix is TypeScript's correlated-union pattern (TS 4.6, microsoft/TypeScript#47109): ONE
+// mapped type of per-id inputs (`Inputs`), an adapter map mapped over the same keys, and a
+// selection written as `{ [P in Id]: … Inputs[P] … }[Id]` for a GENERIC `Id`. Indexing the
+// adapter map with the selection's `scenarioId` then yields `(input: Inputs[Id]) => …` and the
+// selection's input IS `Inputs[Id]`, so the call type-checks for the one id it is made for and
+// for no other. The generic body is deliberately written over a bare `Inputs` type parameter
+// rather than over `Definitions`: measured, relating `Inputs<Definitions>[Id2]` to
+// `Inputs<Definitions>[Id]` through the compiled-case conditional types is permissive (a probe
+// feeding one id's input to another id's adapter compiled), while over a plain `Inputs[K]` it is
+// rejected. The public signatures below instantiate `Inputs` from the catalog's definitions, so
+// the MAP is still checked against the real case inputs, per id, at every call site.
+
+/** Per-scenario renderer inputs: each id's own compiled case inputs, as a union. */
+type PresentationScenarioInputs<Definitions extends PresentationScenarioDefinitions> = {
+  readonly [Id in ScenarioId<Definitions>]: CompiledPresentationScenarioCase<
+    DefinitionCase<Definitions, Id>
+  >['input']
+}
+
+/**
+ * The renderer input for one scenario id of a definitions literal: the union of that scenario's
+ * own compiled case inputs. An adapter for `Id` must accept every one of them.
+ */
+export type PresentationScenarioCaseInput<
+  Definitions extends PresentationScenarioDefinitions,
+  Id extends ScenarioId<Definitions>,
+> = PresentationScenarioInputs<Definitions>[Id]
+
+/** What the protocol tells every adapter besides its input. */
+export interface PresentationScenarioAdapterContext<Id extends string = string> {
+  readonly scenarioId: Id
+  readonly caseId: string
+  readonly environment: PresentationScenarioEnvironment
+}
+
+/**
+ * The constraint on caller-supplied extra context (for example the copied artifacts a registry
+ * render is narrowed to): any object, except that a protocol-owned key is `never`. It is
+ * F-bounded (`Extra extends PresentationScenarioAdapterExtra<Extra>`) rather than a fixed type
+ * with optional `never` keys, because such a type is WEAK (all-optional) and TypeScript rejects
+ * assigning an object that shares none of its keys to a weak type — i.e. every legitimate extra.
+ * The protocol's values always win at runtime too, so an untyped caller cannot forge them either.
+ */
+export type PresentationScenarioAdapterExtra<Extra> = {
+  readonly [Key in keyof Extra]: Key extends keyof PresentationScenarioAdapterContext
+    ? never
+    : Extra[Key]
+}
+
+/** No extra context. */
+export type NoPresentationScenarioAdapterExtra = Readonly<Record<never, never>>
+
+type AdapterFor<
+  Inputs,
+  Id extends keyof Inputs & string,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra>,
+> = (
+  host: Host,
+  input: Inputs[Id],
+  context: PresentationScenarioAdapterContext<Id> & Extra,
+) => Result
+
+type AdaptersFor<Inputs, Host, Result, Extra extends PresentationScenarioAdapterExtra<Extra>> = {
+  readonly [Id in keyof Inputs & string]?: AdapterFor<Inputs, Id, Host, Result, Extra>
+}
+
+/** One scenario's renderer adapter, typed by that scenario's own case inputs. */
+export type PresentationScenarioAdapter<
+  Definitions extends PresentationScenarioDefinitions,
+  Id extends ScenarioId<Definitions>,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> = AdapterFor<PresentationScenarioInputs<Definitions>, Id, Host, Result, Extra>
+
+/**
+ * A family's adapter map for one renderer path, keyed by scenario id. Each adapter must accept
+ * every case input of the scenario it is registered under; a path that does not draw a scenario
+ * simply omits it (dispatching one then fails with `missing-adapter`).
+ */
+export type PresentationScenarioAdapters<
+  Definitions extends PresentationScenarioDefinitions,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> = AdaptersFor<PresentationScenarioInputs<Definitions>, Host, Result, Extra>
+
+/**
+ * A second, NON-mapped view of the same map, intersected into the public parameters purely as an
+ * inference site for `Host` and `Result`. The per-id map is keyed by `keyof` a definitions type
+ * that is itself still being inferred in the same call, and TypeScript infers nothing into a
+ * mapped type whose key set is still generic — measured, `const handle = dispatch…(…)` came back
+ * `unknown` and every caller had to annotate. An index signature is inferred from property by
+ * property, so the adapters' own host and return types flow out. It adds no constraint the mapped
+ * type does not already impose (every adapter must take the host and return the result).
+ */
+type AdapterResultWitness<Host, Result> = {
+  readonly [scenarioId: string]: ((host: Host, ...rest: never[]) => Result) | undefined
+}
+
+type CorrelatedSelection<Inputs, Id extends keyof Inputs & string> = {
+  readonly [P in Id]: {
+    readonly scenarioId: P
+    readonly case: { readonly id: string; readonly input: Inputs[P] }
+    readonly environment: PresentationScenarioEnvironment
+  }
+}[Id]
+
+function missingAdapter(scenarioId: string): PresentationScenarioError {
+  const diagnostics = new DiagnosticCollector()
+  diagnostics.add(
+    propertyPath(ROOT_DIAGNOSTIC_PATH, 'scenarioId'),
+    'no adapter is registered for scenario ',
+    quoted(scenarioId),
+  )
+  return diagnostics.error('missing-adapter')
+}
+
+function hasOwnAdapter(adapters: object, scenarioId: string): boolean {
+  return Object.prototype.hasOwnProperty.call(adapters, scenarioId)
+}
+
+/** The one correlated call. No cast: `adapters[selection.scenarioId]` is `AdaptersFor[Id]`. */
+function dispatchCorrelated<
+  Inputs,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra>,
+  Id extends keyof Inputs & string,
+>(
+  adapters: AdaptersFor<Inputs, Host, Result, Extra>,
+  selection: CorrelatedSelection<Inputs, Id>,
+  host: Host,
+  extra: Extra,
+): Result {
+  const scenarioId = selection.scenarioId
+  // An OWN property only: a map is a plain object literal, and `toString` is not an adapter.
+  const adapter = hasOwnAdapter(adapters, scenarioId) ? adapters[scenarioId] : undefined
+  if (adapter === undefined) throw missingAdapter(scenarioId)
+  // Protocol keys are spread LAST so they win over an untyped extra that carries one.
+  const context: PresentationScenarioAdapterContext<Id> & Extra = {
+    ...extra,
+    scenarioId,
+    caseId: selection.case.id,
+    environment: selection.environment,
+  }
+  return adapter(host, selection.case.input, context)
+}
+
+/** Fails unless `selection` names a scenario, product and case this catalog actually carries. */
+function assertSelectionInCatalog(
+  catalog: CompiledPresentationScenarioFamily,
+  selection: ResolvedPresentationScenarioSelection,
+): void {
+  const diagnostics = new DiagnosticCollector()
+  const scenario = catalog.scenarios.find(
+    ({ scenarioId, productId }) =>
+      scenarioId === selection.scenarioId && productId === selection.productId,
+  )
+  if (scenario === undefined) {
+    diagnostics.add(
+      propertyPath(ROOT_DIAGNOSTIC_PATH, 'scenarioId'),
+      'scenario ',
+      quoted(selection.scenarioId),
+      ' of product ',
+      quoted(selection.productId),
+      ' is not in compiled family ',
+      quoted(catalog.family),
+    )
+    throw diagnostics.error('invalid-selection')
+  }
+  if (!scenario.cases.some(({ id }) => id === selection.case.id)) {
+    diagnostics.add(
+      propertyPath(propertyPath(ROOT_DIAGNOSTIC_PATH, 'case'), 'id'),
+      'case ',
+      quoted(selection.case.id),
+      ' is not a case of scenario ',
+      quoted(selection.scenarioId),
+    )
+    throw diagnostics.error('invalid-selection')
+  }
+}
+
+/**
+ * Hand a resolved selection to the adapter registered for its scenario id — the typed, cast-free
+ * dispatch every family renderer shares. `catalog` is the family catalog the selection was
+ * resolved from: it is what types the adapter map (each adapter must accept its own scenario's
+ * case inputs, a compile error otherwise), and it is checked at runtime to actually carry the
+ * selection's scenario and case. Fails with `missing-adapter` when the map has no adapter for the
+ * scenario, and with `invalid-selection` when the selection is not from `catalog`.
+ */
+export function dispatchScenarioSelection<
+  Definitions extends PresentationScenarioDefinitions,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+>(
+  catalog: CompiledPresentationScenarioFamily<Definitions>,
+  adapters: PresentationScenarioAdapters<Definitions, Host, Result, Extra> &
+    AdapterResultWitness<Host, Result>,
+  selection: ResolvedPresentationScenarioSelection<Definitions>,
+  host: Host,
+  extra: Extra,
+): Result {
+  const erasedCatalog: CompiledPresentationScenarioFamily = catalog
+  const erasedSelection: ResolvedPresentationScenarioSelection = selection
+  assertSelectionInCatalog(erasedCatalog, erasedSelection)
+  return dispatchCorrelated<
+    PresentationScenarioInputs<Definitions>,
+    Host,
+    Result,
+    Extra,
+    ScenarioId<Definitions>
+  >(adapters, selection, host, extra)
+}
+
+/** A resolved selection with its renderer bound, ready to draw into a host. */
+export interface PreparedPresentationScenario<
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> {
+  /** The protocol's resolution of the requested selection (erased: any family). */
+  readonly selection: ResolvedPresentationScenarioSelection
+  /** Dispatch the case to its adapter. Every call renders a fresh instance. */
+  render(host: Host, extra: Extra): Result
+}
+
+/**
+ * One family's typed adapter map bound to that family's typed catalog, exposed through a
+ * family-AGNOSTIC surface. This is how a consumer that handles every family generically (the
+ * component gallery) holds heterogeneous typed maps as one type without erasing an adapter's
+ * input type by cast: the binding keeps the typed catalog, so it resolves a plain selection
+ * itself and dispatches with the typed input the adapter was checked against.
+ */
+export interface PresentationScenarioAdapterBinding<
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> {
+  readonly family: PresentationFamily
+  /** The scenario ids this binding has an adapter for, sorted. */
+  readonly scenarioIds: readonly string[]
+  /**
+   * Resolve `selection` against the bound catalog (every `resolveScenarioSelection` failure
+   * applies), then require an adapter for its scenario (`missing-adapter`). Nothing is rendered.
+   */
+  prepare(
+    contract: ProductContract,
+    selection: PresentationScenarioSelection,
+  ): PreparedPresentationScenario<Host, Result, Extra>
+}
+
+/**
+ * Bind a family's typed adapter map to its typed catalog, returning the erased
+ * {@link PresentationScenarioAdapterBinding}. The map is checked against the catalog's
+ * definitions exactly as `dispatchScenarioSelection` checks it, and at runtime every key must
+ * name one of the catalog's scenarios and every value must be a function (`invalid-adapters`).
+ */
+export function bindScenarioAdapters<
+  Definitions extends PresentationScenarioDefinitions,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+>(
+  catalog: CompiledPresentationScenarioFamily<Definitions>,
+  adapters: PresentationScenarioAdapters<Definitions, Host, Result, Extra> &
+    AdapterResultWitness<Host, Result>,
+): PresentationScenarioAdapterBinding<Host, Result, Extra> {
+  const erasedCatalog: CompiledPresentationScenarioFamily = catalog
+  const known = new Set(erasedCatalog.scenarios.map(({ scenarioId }) => scenarioId))
+  const diagnostics = new DiagnosticCollector()
+  const entries: readonly (readonly [string, unknown])[] = Object.entries(adapters)
+  for (const [scenarioId, adapter] of entries) {
+    const path = propertyPath(ROOT_DIAGNOSTIC_PATH, scenarioId)
+    if (!known.has(scenarioId)) {
+      diagnostics.add(
+        path,
+        'no scenario ',
+        quoted(scenarioId),
+        ' in compiled family ',
+        quoted(erasedCatalog.family),
+      )
+    } else if (typeof adapter !== 'function') {
+      diagnostics.add(path, 'adapter is not a function')
+    }
+  }
+  diagnostics.throwIfAny('invalid-adapters')
+  const scenarioIds = Object.freeze(entries.map(([scenarioId]) => scenarioId).sort())
+  return Object.freeze({
+    family: erasedCatalog.family,
+    scenarioIds,
+    prepare(
+      contract: ProductContract,
+      selection: PresentationScenarioSelection,
+    ): PreparedPresentationScenario<Host, Result, Extra> {
+      const resolved = resolveScenarioSelection(contract, catalog, selection)
+      const erasedSelection: ResolvedPresentationScenarioSelection = resolved
+      if (!hasOwnAdapter(adapters, erasedSelection.scenarioId)) {
+        throw missingAdapter(erasedSelection.scenarioId)
+      }
+      return Object.freeze({
+        selection: erasedSelection,
+        render: (host: Host, extra: Extra): Result =>
+          dispatchScenarioSelection(catalog, adapters, resolved, host, extra),
+      })
+    },
+  })
 }

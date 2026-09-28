@@ -2,8 +2,13 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { ProductContractSchema } from '@llui/cli'
+import { ProductContractError } from '@llui/cli/product-contract'
 import { GALLERY_CATALOGS } from '../src/shared/catalogs'
-import { GALLERY_CONTRACT } from '../src/shared/contract'
+import {
+  GALLERY_CONTRACT,
+  GALLERY_CONTRACT_SOURCE,
+  loadGalleryContract,
+} from '../src/shared/contract'
 import {
   GALLERY_CATEGORIES,
   GALLERY_ENTRIES,
@@ -19,6 +24,28 @@ describe('the gallery inventory is the contract (#267)', () => {
       productContract: unknown
     }
     expect(ProductContractSchema.parse(manifest.productContract)).toEqual(GALLERY_CONTRACT)
+  })
+
+  it('refuses a malformed contract loudly, naming the source and the violating path', () => {
+    const [first, ...rest] = GALLERY_CONTRACT.entries
+    const malformed: unknown = {
+      ...GALLERY_CONTRACT,
+      entries: [{ ...first, scenarioId: 42 }, ...rest],
+    }
+    let thrown: unknown
+    try {
+      loadGalleryContract(malformed)
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown).toBeInstanceOf(ProductContractError)
+    if (!(thrown instanceof ProductContractError)) return
+    expect(thrown.source).toBe(GALLERY_CONTRACT_SOURCE)
+    expect(thrown.message).toContain(
+      `Invalid ProductContract in registry/registry.json#productContract (1 issue):\n  - $.entries[0].scenarioId: `,
+    )
+    // …and the same loader accepts the real one unchanged.
+    expect(loadGalleryContract(GALLERY_CONTRACT)).toEqual(GALLERY_CONTRACT)
   })
 
   it('has exactly one entry per canonical product — no more, no fewer', () => {

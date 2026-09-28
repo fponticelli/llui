@@ -111,6 +111,28 @@ describe('build outputs (#267)', () => {
     expect(modules('registry', /^registry\/llui\//)).toEqual([])
   })
 
+  it('every document validates the contract through the browser-safe CLI subpaths only', () => {
+    // `contract.ts` validates registry.json's productContract with the CLI's
+    // authoritative schema (`@llui/cli/product-contract`). The CLI's ROOT
+    // entry is Node-backed (fs, path, child processes); none of it, and no
+    // Node built-in, may reach a browser document.
+    const BROWSER_SAFE_CLI = [
+      'packages/cli/dist/gallery.js',
+      'packages/cli/dist/presentation-scenarios.js',
+      'packages/cli/dist/product-contract-types.js',
+      'packages/cli/dist/product-contract.js',
+    ]
+    for (const name of Object.keys(CONFIGS) as Build[]) {
+      const cli = [...new Set(modules(name, /^packages\/cli\//))].sort()
+      expect(cli, name).toContain('packages/cli/dist/product-contract.js')
+      expect(
+        cli.filter((id) => !BROWSER_SAFE_CLI.includes(id)),
+        name,
+      ).toEqual([])
+      expect(modules(name, /(^|\0)node:|__vite-browser-external/), name).toEqual([])
+    }
+  })
+
   it('the shell carries neither styling system nor any renderer', () => {
     const { css } = outputs.shell
     expect(css.length).toBeGreaterThan(1000)

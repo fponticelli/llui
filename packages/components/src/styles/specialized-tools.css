@@ -1502,7 +1502,23 @@
 /* ─── Sortable ───
  * Three states, and each is a different answer: the carried item
  * (`data-dragging`), WHERE the drop lands (`data-over`), and the items making
- * room (`data-shift`). A keyboard grab is the handle's `aria-grabbed`. */
+ * room (`data-shift`). A keyboard grab is the handle's `aria-pressed`. */
+
+/* The machine's live region announces grab/move/drop/cancel. Visually hidden
+ * but RENDERED — a `display: none` live region is never announced. (Its
+ * `instructions` sibling carries `hidden`, which is correct for a description:
+ * `aria-describedby` still reads a directly referenced hidden element.) */
+[data-scope='sortable'][data-part='live-region'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 [data-scope='sortable'][data-part='root'] {
   display: flex;
@@ -1560,7 +1576,7 @@
   cursor: grabbing;
 }
 
-[data-scope='sortable'][data-part='handle'][aria-grabbed='true'] {
+[data-scope='sortable'][data-part='handle'][aria-pressed='true'] {
   color: var(--primary);
 }
 

@@ -433,7 +433,12 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   })
   const so = sortable.connect(state.at('sortable'), (m) => send({ type: 'sortable', msg: m }), {
     id: 'sortable-demo',
+    // Ids are the labels here, so a listener hears "Picked up Drafts, item 2 of 5."
+    itemLabel: (id) => id,
   })
+  // Rendered as each element's CHILD, never spread as an attribute.
+  const { text: sortableLive, ...sortableLiveAttrs } = so.liveRegion
+  const { text: sortableHowTo, ...sortableHowToAttrs } = so.instructions
   const dt = dataTable.connect(state.at('dataTable'), (m) => send({ type: 'dataTable', msg: m }), {
     id: 'dt-demo',
     paginationLabel: 'Table pages',
@@ -684,13 +689,14 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
               // Resolve the row's CURRENT position from the live order — the
               // build-time `idx` goes stale once rows have been reordered (the
               // each() is keyed by label, so a moved row keeps its original idx).
-              const currentIndex = state.peek().order.indexOf(label)
+              const order = state.peek().order
               send({
                 type: 'sortable',
                 msg: {
                   type: 'start',
                   id: label,
-                  index: currentIndex,
+                  index: order.indexOf(label),
+                  count: order.length,
                   container: 'sortable-demo',
                   x: e.clientX,
                   y: e.clientY,
@@ -991,6 +997,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
             },
           }),
         ]),
+        // Keyboard users hear the drag: grab, each move, the drop, a cancel.
+        div({ ...sortableLiveAttrs, class: 'sr-only' }, [text(sortableLive)]),
+        div({ ...sortableHowToAttrs }, [text(sortableHowTo)]),
         div({ class: 'mt-3 text-sm text-muted-foreground' }, [
           text('Order: '),
           text(state.at('order').map((o) => o.join(' → '))),

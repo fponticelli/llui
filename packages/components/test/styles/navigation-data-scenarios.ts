@@ -1420,7 +1420,7 @@ export function joinNavigationDataScenarios(
     return {
       productId: scenario.productId,
       displayName: entry.displayName,
-      scenarioId: scenario.scenarioId as NavigationDataScenarioId,
+      scenarioId: scenario.scenarioId,
       defaultCaseId: scenario.defaultCaseId,
       cases: scenario.cases,
       presentation: entry.presentation,

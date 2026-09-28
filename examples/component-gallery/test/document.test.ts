@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GALLERY_DOCUMENT_MESSAGE_TYPE } from '@llui/cli/gallery'
 import {
+  bindScenarioAdapters,
+  type PresentationScenarioJsonSnapshot,
+} from '@llui/cli/presentation-scenarios'
+import type { PresentationFamily } from '@llui/cli'
+import { GALLERY_CATALOGS } from '../src/shared/catalogs'
+import {
   bootGalleryDocument,
-  type GalleryAdapter,
-  type GalleryAdapterMap,
+  type GalleryAdapterBinding,
   type GalleryDocumentHandle,
+  type GalleryRenderContext,
   type PathDocumentOptions,
 } from '../src/shared/document'
 import { isGalleryDocumentMessage } from '../src/shared/document-protocol'
@@ -21,7 +27,14 @@ afterEach(() => {
 })
 
 const drawn: { scenarioId: string; caseId: string; environment: unknown; artifacts: unknown }[] = []
-const recording: GalleryAdapter = (host, _input, ctx) => {
+type RecordingAdapter = (
+  host: HTMLElement,
+  input: PresentationScenarioJsonSnapshot,
+  ctx: GalleryRenderContext,
+) => { dispose(): void }
+type RecordingMap = Readonly<Record<string, RecordingAdapter>>
+
+const recording: RecordingAdapter = (host, _input, ctx) => {
   drawn.push({
     scenarioId: ctx.scenarioId,
     caseId: ctx.caseId,
@@ -32,18 +45,28 @@ const recording: GalleryAdapter = (host, _input, ctx) => {
   return { dispose: () => host.replaceChildren() }
 }
 
-function loaders(map: GalleryAdapterMap): PathDocumentOptions['adapters'] {
+/** Bind each family's share of `map` (the keys its catalog owns) to that family's catalog. */
+function loaders(map: RecordingMap): PathDocumentOptions['adapters'] {
+  const load = (family: PresentationFamily) => () => {
+    const catalog = GALLERY_CATALOGS.find((candidate) => candidate.family === family)!
+    const owned = new Set(catalog.scenarios.map(({ scenarioId }) => scenarioId))
+    const binding: GalleryAdapterBinding = bindScenarioAdapters(
+      catalog,
+      Object.fromEntries(Object.entries(map).filter(([scenarioId]) => owned.has(scenarioId))),
+    )
+    return Promise.resolve(binding)
+  }
   return {
-    'forms-controls': () => Promise.resolve(map),
-    'navigation-data': () => Promise.resolve(map),
-    'menus-overlays': () => Promise.resolve(map),
-    'specialized-tools': () => Promise.resolve(map),
+    'forms-controls': load('forms-controls'),
+    'navigation-data': load('navigation-data'),
+    'menus-overlays': load('menus-overlays'),
+    'specialized-tools': load('specialized-tools'),
   }
 }
 
 async function boot(
   search: string,
-  map: GalleryAdapterMap,
+  map: RecordingMap,
   path: PathDocumentOptions['path'] = 'baseline',
 ): Promise<{ root: HTMLElement; status: string }> {
   window.history.replaceState(null, '', `/${search}`)

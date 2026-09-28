@@ -20,7 +20,7 @@ const custom: Locale = {
     goToSlide: (i) => `Ir a la diapositiva ${i + 1}`,
   },
   pagination: { ...en.pagination, page: (n) => `Página ${n}` },
-  sortable: { handle: 'Asa de arrastre' },
+  sortable: { ...en.sortable, handle: () => 'Asa de arrastre' },
 }
 
 type S = {

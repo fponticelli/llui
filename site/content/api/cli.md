@@ -308,6 +308,20 @@ is part of the NAME, so the separator is the first `@` after position 0.
 function parseDependencySpec(spec: string): { name: string; range: string | null }
 ```
 
+### `parseProductContract()`
+
+Validate a value received from an untyped boundary (a JSON import, a fetched `registry.json`)
+as a `ProductContract`, through the ONE authoritative schema `llui` itself reads a registry's
+`productContract` with (`RegistrySchema`). There is no second validator: this only turns the
+schema's failure into a `ProductContractError` that names `source` and the exact path of every
+violation. Browser-safe — this module imports nothing but `zod` and the structural types — so
+an app validates a bundled contract through the `@llui/cli/product-contract` subpath instead of
+narrowing the JSON with a cast.
+
+```typescript
+function parseProductContract(value: unknown, source: string): ProductContract
+```
+
 ### `parseVersion()`
 
 Parse a FULL version (`1.2.3`, `1.2.3-rc.1+build`), or `null`.
@@ -744,6 +758,20 @@ export interface VersionMismatch {
 
 ## Classes
 
+### `ProductContractError`
+
+A value that is not a valid `ProductContract`: `source` names where it came from, and `issues`
+lists every violation as `<JSON path>: <reason>` in the schema's own traversal order.
+
+```typescript
+class ProductContractError extends Error {
+  name
+  source: string
+  issues: readonly string[]
+  constructor(source: string, issues: readonly string[])
+}
+```
+
 ### `VersionMismatchError`
 
 Thrown by `add()` BEFORE anything is written when an installed `@llui/*`
@@ -1139,9 +1167,392 @@ The source-registry spec `scripts/build-registry.mjs` replaces with `^<workspace
 const WORKSPACE_SPEC
 ```
 
+### `@llui/cli/product-contract`
+
+#### Functions
+
+##### `parseProductContract()` from `@llui/cli/product-contract`
+
+Validate a value received from an untyped boundary (a JSON import, a fetched `registry.json`)
+as a `ProductContract`, through the ONE authoritative schema `llui` itself reads a registry's
+`productContract` with (`RegistrySchema`). There is no second validator: this only turns the
+schema's failure into a `ProductContractError` that names `source` and the exact path of every
+violation. Browser-safe — this module imports nothing but `zod` and the structural types — so
+an app validates a bundled contract through the `@llui/cli/product-contract` subpath instead of
+narrowing the JSON with a cast.
+
+```typescript
+function parseProductContract(value: unknown, source: string): ProductContract
+```
+
+##### `resolveCopiedArtifact()` from `@llui/cli/product-contract`
+
+Resolve an `llui add` name without confusing it with an equal package name.
+
+```typescript
+function resolveCopiedArtifact(
+  contract: ProductContract,
+  target: string,
+): ResolvedCopiedArtifact | undefined
+```
+
+##### `resolveProductIdentity()` from `@llui/cli/product-contract`
+
+```typescript
+function resolveProductIdentity(
+  contract: ProductContract,
+  name: string,
+): ResolvedProductIdentity | undefined
+```
+
+#### Types
+
+##### `PresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export type PresentationCoverage =
+  | StyledPresentationCoverage
+  | PartialPresentationCoverage
+  | ComposedPresentationCoverage
+  | StylelessPresentationCoverage
+  | NotApplicablePresentationCoverage
+```
+
+##### `PresentationFamily` from `@llui/cli/product-contract`
+
+```typescript
+export type PresentationFamily = (typeof PRESENTATION_FAMILY_VALUES)[number]
+```
+
+##### `ProductCategory` from `@llui/cli/product-contract`
+
+```typescript
+export type ProductCategory =
+  | 'controls'
+  | 'forms'
+  | 'navigation'
+  | 'overlays'
+  | 'feedback'
+  | 'data-display'
+  | 'layout'
+  | 'media'
+  | 'patterns'
+  | 'utilities'
+```
+
+##### `ResolvedCopiedArtifact` from `@llui/cli/product-contract`
+
+```typescript
+export type ResolvedCopiedArtifact = {
+  canonical: ProductEntry
+  artifact: Omit<CopiedArtifact, 'displayName' | 'scenarioId'> & {
+    displayName: string
+    scenarioId: string
+  }
+  alias?: ProductAlias
+}
+```
+
+##### `ResolvedProductIdentity` from `@llui/cli/product-contract`
+
+```typescript
+export type ResolvedProductIdentity = {
+  canonical: ProductEntry
+  alias?: ProductAlias
+}
+```
+
+#### Interfaces
+
+##### `ComposedPresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export interface ComposedPresentationCoverage {
+  mode: 'composed'
+  products: string[]
+  rationale: string
+}
+```
+
+##### `CopiedArtifact` from `@llui/cli/product-contract`
+
+```typescript
+export interface CopiedArtifact {
+  name: string
+  displayName?: string
+  artifactKind: 'skin' | 'presentational' | 'pattern'
+  styling: StylingSupport
+  scenarioId?: string
+}
+```
+
+##### `MachineFree` from `@llui/cli/product-contract`
+
+```typescript
+export interface MachineFree {
+  kind: 'none'
+  reason: 'presentational' | 'application-owned-state'
+}
+```
+
+##### `NotApplicablePresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export interface NotApplicablePresentationCoverage {
+  mode: 'not-applicable'
+  rationale: string
+}
+```
+
+##### `PartialPresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export interface PartialPresentationCoverage {
+  mode: 'partial'
+  rationale: string
+}
+```
+
+##### `ProductAlias` from `@llui/cli/product-contract`
+
+```typescript
+export interface ProductAlias {
+  name: string
+  canonicalName: string
+}
+```
+
+##### `ProductContract` from `@llui/cli/product-contract`
+
+Canonical v2 inventory. ProductContract remains the sole product-metadata owner.
+
+```typescript
+export interface ProductContract {
+  version: 2
+  entries: ProductEntry[]
+  aliases: ProductAlias[]
+}
+```
+
+##### `ProductEntry` from `@llui/cli/product-contract`
+
+```typescript
+export interface ProductEntry {
+  name: string
+  displayName: string
+  category: ProductCategory
+  artifactKind: 'machine' | 'skin' | 'presentational' | 'pattern'
+  machine: PublicMachine | MachineFree
+  copiedArtifacts: CopiedArtifact[]
+  styling: StylingSupport
+  presentation: ProductPresentation
+  scenarioId: string
+}
+```
+
+##### `ProductPresentation` from `@llui/cli/product-contract`
+
+```typescript
+export interface ProductPresentation {
+  family: PresentationFamily
+  baseline: PresentationCoverage
+  registryTailwind: PresentationCoverage
+}
+```
+
+##### `PublicMachine` from `@llui/cli/product-contract`
+
+```typescript
+export interface PublicMachine {
+  kind: 'public'
+  importPath: string
+}
+```
+
+##### `StyledPresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export interface StyledPresentationCoverage {
+  mode: 'styled'
+}
+```
+
+##### `StylelessPresentationCoverage` from `@llui/cli/product-contract`
+
+```typescript
+export interface StylelessPresentationCoverage {
+  mode: 'styleless'
+  rationale: string
+}
+```
+
+##### `StylingSupport` from `@llui/cli/product-contract`
+
+```typescript
+export interface StylingSupport {
+  baseline: boolean
+  registryTailwind: boolean
+  styleless: boolean
+}
+```
+
+#### Classes
+
+##### `ProductContractError` from `@llui/cli/product-contract`
+
+A value that is not a valid `ProductContract`: `source` names where it came from, and `issues`
+lists every violation as `<JSON path>: <reason>` in the schema's own traversal order.
+
+```typescript
+class ProductContractError extends Error {
+  name
+  source: string
+  issues: readonly string[]
+  constructor(source: string, issues: readonly string[])
+}
+```
+
+#### Constants
+
+##### `ComposedPresentationCoverageSchema` from `@llui/cli/product-contract`
+
+The product owns no styling on this path; its presentation is composed from canonical products.
+
+```typescript
+const ComposedPresentationCoverageSchema
+```
+
+##### `CopiedArtifactSchema` from `@llui/cli/product-contract`
+
+```typescript
+const CopiedArtifactSchema
+```
+
+##### `MachineFreeSchema` from `@llui/cli/product-contract`
+
+```typescript
+const MachineFreeSchema
+```
+
+##### `NotApplicablePresentationCoverageSchema` from `@llui/cli/product-contract`
+
+A machine-free canonical product with no public headless artifact.
+
+```typescript
+const NotApplicablePresentationCoverageSchema
+```
+
+##### `PartialPresentationCoverageSchema` from `@llui/cli/product-contract`
+
+The product directly supplies meaningful styling but names the presentation boundary it leaves open.
+
+```typescript
+const PartialPresentationCoverageSchema
+```
+
+##### `PresentationCoverageSchema` from `@llui/cli/product-contract`
+
+One path's explicit visual-coverage classification.
+
+```typescript
+const PresentationCoverageSchema
+```
+
+##### `PresentationFamilySchema` from `@llui/cli/product-contract`
+
+Single-owner visual-language cohort. This is independent of the user-facing product category.
+Derived from the one canonical tuple in `product-contract-types.ts` — do not restate the
+literals here.
+
+```typescript
+const PresentationFamilySchema
+```
+
+##### `ProductAliasSchema` from `@llui/cli/product-contract`
+
+```typescript
+const ProductAliasSchema
+```
+
+##### `ProductCategorySchema` from `@llui/cli/product-contract`
+
+```typescript
+const ProductCategorySchema
+```
+
+##### `ProductContractSchema` from `@llui/cli/product-contract`
+
+Canonical v2 product inventory, including presentation ownership and validated composition.
+
+```typescript
+const ProductContractSchema
+```
+
+##### `ProductEntrySchema` from `@llui/cli/product-contract`
+
+```typescript
+const ProductEntrySchema
+```
+
+##### `ProductPresentationSchema` from `@llui/cli/product-contract`
+
+Canonical family ownership and baseline/registry coverage for one product.
+
+```typescript
+const ProductPresentationSchema
+```
+
+##### `PublicMachineSchema` from `@llui/cli/product-contract`
+
+```typescript
+const PublicMachineSchema
+```
+
+##### `StyledPresentationCoverageSchema` from `@llui/cli/product-contract`
+
+The product directly supplies the path's complete default visual treatment.
+
+```typescript
+const StyledPresentationCoverageSchema
+```
+
+##### `StylelessPresentationCoverageSchema` from `@llui/cli/product-contract`
+
+A public package machine or pattern that remains useful without owned visual treatment.
+
+```typescript
+const StylelessPresentationCoverageSchema
+```
+
+##### `StylingSupportSchema` from `@llui/cli/product-contract`
+
+```typescript
+const StylingSupportSchema
+```
+
 ### `@llui/cli/presentation-scenarios`
 
 #### Functions
+
+##### `bindScenarioAdapters()` from `@llui/cli/presentation-scenarios`
+
+Bind a family's typed adapter map to its typed catalog, returning the erased
+{@link PresentationScenarioAdapterBinding}. The map is checked against the catalog's
+definitions exactly as `dispatchScenarioSelection` checks it, and at runtime every key must
+name one of the catalog's scenarios and every value must be a function (`invalid-adapters`).
+
+```typescript
+function bindScenarioAdapters<
+  Definitions extends PresentationScenarioDefinitions,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+>(
+  catalog: CompiledPresentationScenarioFamily<Definitions>,
+  adapters: PresentationScenarioAdapters<Definitions, Host, Result, Extra> &
+    AdapterResultWitness<Host, Result>,
+): PresentationScenarioAdapterBinding<Host, Result, Extra>
+```
 
 ##### `compileScenarioFamily()` from `@llui/cli/presentation-scenarios`
 
@@ -1189,6 +1600,31 @@ function decodeScenarioSelection(
   catalog: unknown,
   selection: unknown,
 ): ResolvedPresentationScenarioSelection
+```
+
+##### `dispatchScenarioSelection()` from `@llui/cli/presentation-scenarios`
+
+Hand a resolved selection to the adapter registered for its scenario id — the typed, cast-free
+dispatch every family renderer shares. `catalog` is the family catalog the selection was
+resolved from: it is what types the adapter map (each adapter must accept its own scenario's
+case inputs, a compile error otherwise), and it is checked at runtime to actually carry the
+selection's scenario and case. Fails with `missing-adapter` when the map has no adapter for the
+scenario, and with `invalid-selection` when the selection is not from `catalog`.
+
+```typescript
+function dispatchScenarioSelection<
+  Definitions extends PresentationScenarioDefinitions,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+>(
+  catalog: CompiledPresentationScenarioFamily<Definitions>,
+  adapters: PresentationScenarioAdapters<Definitions, Host, Result, Extra> &
+    AdapterResultWitness<Host, Result>,
+  selection: ResolvedPresentationScenarioSelection<Definitions>,
+  host: Host,
+  extra: Extra,
+): Result
 ```
 
 ##### `resolveScenarioSelection()` from `@llui/cli/presentation-scenarios`
@@ -1264,6 +1700,72 @@ export type CompiledPresentationScenarioFamily<
     : TypedCompiledPresentationScenarioFamily<Definitions>
 ```
 
+##### `NoPresentationScenarioAdapterExtra` from `@llui/cli/presentation-scenarios`
+
+No extra context.
+
+```typescript
+export type NoPresentationScenarioAdapterExtra = Readonly<Record<never, never>>
+```
+
+##### `PresentationScenarioAdapter` from `@llui/cli/presentation-scenarios`
+
+One scenario's renderer adapter, typed by that scenario's own case inputs.
+
+```typescript
+export type PresentationScenarioAdapter<
+  Definitions extends PresentationScenarioDefinitions,
+  Id extends ScenarioId<Definitions>,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> = AdapterFor<PresentationScenarioInputs<Definitions>, Id, Host, Result, Extra>
+```
+
+##### `PresentationScenarioAdapterExtra` from `@llui/cli/presentation-scenarios`
+
+The constraint on caller-supplied extra context (for example the copied artifacts a registry
+render is narrowed to): any object, except that a protocol-owned key is `never`. It is
+F-bounded (`Extra extends PresentationScenarioAdapterExtra<Extra>`) rather than a fixed type
+with optional `never` keys, because such a type is WEAK (all-optional) and TypeScript rejects
+assigning an object that shares none of its keys to a weak type — i.e. every legitimate extra.
+The protocol's values always win at runtime too, so an untyped caller cannot forge them either.
+
+```typescript
+export type PresentationScenarioAdapterExtra<Extra> = {
+  readonly [Key in keyof Extra]: Key extends keyof PresentationScenarioAdapterContext
+    ? never
+    : Extra[Key]
+}
+```
+
+##### `PresentationScenarioAdapters` from `@llui/cli/presentation-scenarios`
+
+A family's adapter map for one renderer path, keyed by scenario id. Each adapter must accept
+every case input of the scenario it is registered under; a path that does not draw a scenario
+simply omits it (dispatching one then fails with `missing-adapter`).
+
+```typescript
+export type PresentationScenarioAdapters<
+  Definitions extends PresentationScenarioDefinitions,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> = AdaptersFor<PresentationScenarioInputs<Definitions>, Host, Result, Extra>
+```
+
+##### `PresentationScenarioCaseInput` from `@llui/cli/presentation-scenarios`
+
+The renderer input for one scenario id of a definitions literal: the union of that scenario's
+own compiled case inputs. An adapter for `Id` must accept every one of them.
+
+```typescript
+export type PresentationScenarioCaseInput<
+  Definitions extends PresentationScenarioDefinitions,
+  Id extends ScenarioId<Definitions>,
+> = PresentationScenarioInputs<Definitions>[Id]
+```
+
 ##### `PresentationScenarioDefinitions` from `@llui/cli/presentation-scenarios`
 
 Family-owned definitions keyed by ProductContract `scenarioId`.
@@ -1307,6 +1809,8 @@ export type PresentationScenarioErrorCode =
   | 'invalid-catalog'
   | 'invalid-selection'
   | 'invalid-path'
+  | 'missing-adapter'
+  | 'invalid-adapters'
 ```
 
 ##### `PresentationScenarioJson` from `@llui/cli/presentation-scenarios`
@@ -1352,6 +1856,63 @@ export type ResolvedPresentationScenarioSelection<
 ```
 
 #### Interfaces
+
+##### `PreparedPresentationScenario` from `@llui/cli/presentation-scenarios`
+
+A resolved selection with its renderer bound, ready to draw into a host.
+
+```typescript
+export interface PreparedPresentationScenario<
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> {
+  /** The protocol's resolution of the requested selection (erased: any family). */
+  readonly selection: ResolvedPresentationScenarioSelection
+  /** Dispatch the case to its adapter. Every call renders a fresh instance. */
+  render(host: Host, extra: Extra): Result
+}
+```
+
+##### `PresentationScenarioAdapterBinding` from `@llui/cli/presentation-scenarios`
+
+One family's typed adapter map bound to that family's typed catalog, exposed through a
+family-AGNOSTIC surface. This is how a consumer that handles every family generically (the
+component gallery) holds heterogeneous typed maps as one type without erasing an adapter's
+input type by cast: the binding keeps the typed catalog, so it resolves a plain selection
+itself and dispatches with the typed input the adapter was checked against.
+
+```typescript
+export interface PresentationScenarioAdapterBinding<
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> {
+  readonly family: PresentationFamily
+  /** The scenario ids this binding has an adapter for, sorted. */
+  readonly scenarioIds: readonly string[]
+  /**
+   * Resolve `selection` against the bound catalog (every `resolveScenarioSelection` failure
+   * applies), then require an adapter for its scenario (`missing-adapter`). Nothing is rendered.
+   */
+  prepare(
+    contract: ProductContract,
+    selection: PresentationScenarioSelection,
+  ): PreparedPresentationScenario<Host, Result, Extra>
+}
+```
+
+##### `PresentationScenarioAdapterContext` from `@llui/cli/presentation-scenarios`
+
+What the protocol tells every adapter besides its input.
+
+```typescript
+export interface PresentationScenarioAdapterContext<Id extends string = string> {
+  readonly scenarioId: Id
+  readonly caseId: string
+  readonly environment: PresentationScenarioEnvironment
+}
+```
 
 ##### `PresentationScenarioCase` from `@llui/cli/presentation-scenarios`
 

@@ -48,6 +48,7 @@
  */
 import {
   compileScenarioFamily,
+  dispatchScenarioSelection,
   resolveScenarioSelection,
   type CompiledPresentationScenarioFamily,
   type PresentationScenarioEnvironmentAxis,
@@ -1294,7 +1295,7 @@ export function compileMenusOverlaysCatalog(contract: ProductContract): MenusOve
   return compileScenarioFamily(contract, 'menus-overlays', MENUS_OVERLAYS_DEFINITIONS)
 }
 
-export { resolveScenarioSelection }
+export { dispatchScenarioSelection, resolveScenarioSelection }
 export type { PresentationScenarioEnvironment }
 
 /** One menus-overlays scenario joined with its ProductContract entry — the
@@ -1323,7 +1324,7 @@ export function joinMenusOverlaysScenarios(
     return {
       productId: scenario.productId,
       displayName: entry.displayName,
-      scenarioId: scenario.scenarioId as MenusOverlaysDefinitionScenarioId,
+      scenarioId: scenario.scenarioId,
       defaultCaseId: scenario.defaultCaseId,
       cases: scenario.cases,
       presentation: entry.presentation,

@@ -33,6 +33,7 @@ import {
 } from '@llui/dom'
 import type { ProductContract } from '@llui/cli'
 import {
+  dispatchScenarioSelection,
   resolveScenarioSelection,
   type PresentationScenarioEnvironment,
 } from '@llui/cli/presentation-scenarios'
@@ -202,7 +203,13 @@ import {
   SignaturePadHiddenInput,
   SignaturePadUndoTrigger,
 } from '../llui/ui/signature-pad'
-import { Sortable, SortableHandle, SortableItem } from '../llui/ui/sortable'
+import {
+  Sortable,
+  SortableHandle,
+  SortableInstructions,
+  SortableItem,
+  SortableLiveRegion,
+} from '../llui/ui/sortable'
 import { Steps, StepsItem, StepsSeparator, StepsTrigger } from '../llui/ui/steps'
 import {
   TimePicker,
@@ -274,6 +281,7 @@ import {
   scrollAreaInit,
   signaturePadInit,
   SORTABLE_CONTAINER,
+  sortableItemLabel,
   sortableScenarioInit,
   sortableScenarioUpdate,
   splitterInit,
@@ -887,23 +895,33 @@ const sortableAdapter: Adapter<SortableCaseInput> = (host, data, ctx) =>
     () => sortableScenarioInit(data),
     sortableScenarioUpdate,
     (state, send) => {
-      const parts = sortable.connect(state.at('sort'), send, { id: SORTABLE_CONTAINER })
-      return Sortable({ ...parts.root }, [
-        each(state.at('items'), {
-          key: (item) => item.id,
-          render: (item, index) => {
-            // Keyed by id: the id is the row's identity for its whole life.
-            const id = item.peek().id
-            const at = index.peek()
-            return [
-              SortableItem({ ...parts.item(id, at) }, [
-                SortableHandle({ ...parts.handle(id, at) }, [GripVerticalIcon()]),
-                span([text(item.at('label'))]),
-              ]),
-            ]
-          },
-        }),
-      ])
+      const parts = sortable.connect(state.at('sort'), send, {
+        id: SORTABLE_CONTAINER,
+        itemLabel: sortableItemLabel(data),
+      })
+      // `text` is each bag's CHILD, not an attribute (see the skin's doc).
+      const { text: live, ...liveAttrs } = parts.liveRegion
+      const { text: howTo, ...howToAttrs } = parts.instructions
+      return [
+        Sortable({ ...parts.root }, [
+          each(state.at('items'), {
+            key: (item) => item.id,
+            render: (item, index) => {
+              // Keyed by id: the id is the row's identity for its whole life.
+              const id = item.peek().id
+              const at = index.peek()
+              return [
+                SortableItem({ ...parts.item(id, at) }, [
+                  SortableHandle({ ...parts.handle(id, at) }, [GripVerticalIcon()]),
+                  span([text(item.at('label'))]),
+                ]),
+              ]
+            },
+          }),
+        ]),
+        SortableLiveRegion({ ...liveAttrs }, [text(live)]),
+        SortableInstructions({ ...howToAttrs }, [text(howTo)]),
+      ]
     },
   )
 
@@ -1180,13 +1198,9 @@ export function mountRegistrySpecializedToolsScenarios(
       host.dataset.scenarioId = scenario.scenarioId
       host.dataset.scenarioCase = scenarioCase.id
       container.append(host)
-      const adapter = REGISTRY_ADAPTERS[resolved.scenarioId as keyof typeof REGISTRY_ADAPTERS]
       handles.push(
-        (adapter as Adapter<unknown>)(host, resolved.case.input, {
-          scenarioId: resolved.scenarioId as SpecializedToolsScenarioId,
-          caseId: resolved.case.id,
-          environment: resolved.environment,
-          copiedArtifactNames: scenarioCase.copiedArtifactNames,
+        dispatchScenarioSelection(catalog, REGISTRY_ADAPTERS, resolved, host, {
+          copiedArtifactNames: resolved.case.copiedArtifactNames,
         }),
       )
     }

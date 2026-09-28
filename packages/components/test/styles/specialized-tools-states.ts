@@ -250,6 +250,7 @@ export function sortableInit(data: SortableCaseInput): sortable.SortableState {
         type: 'start',
         id: sortableItemId(data.drag.from),
         index: data.drag.from,
+        count: data.items.length,
         container: SORTABLE_CONTAINER,
         x: 0,
         y: 0,
@@ -263,6 +264,7 @@ export function sortableInit(data: SortableCaseInput): sortable.SortableState {
         type: 'toggleGrab',
         id: sortableItemId(data.keyboardGrab),
         index: data.keyboardGrab,
+        count: data.items.length,
         container: SORTABLE_CONTAINER,
       },
     ])
@@ -287,6 +289,16 @@ export function sortableScenarioInit(data: SortableCaseInput): SortableScenarioS
     items: data.items.map((label, index) => ({ id: sortableItemId(index), label })),
     sort: sortableInit(data),
   }
+}
+
+/**
+ * The label a listener hears for a sortable row (`connect`'s `itemLabel`). A
+ * row's id is its identity for its whole life (`sortableScenarioInit`), so the
+ * case input maps ids to labels once, whatever order the rows are in now.
+ */
+export function sortableItemLabel(data: SortableCaseInput): (id: string) => string {
+  const labels = new Map(sortableScenarioInit(data).items.map((item) => [item.id, item.label]))
+  return (id) => labels.get(id) ?? id
 }
 
 export function sortableScenarioUpdate(

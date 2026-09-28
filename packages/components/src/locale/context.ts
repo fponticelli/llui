@@ -85,7 +85,20 @@ export interface Locale {
   progress: { loading: string }
   qrCode: { label: string; download: string }
   signaturePad: { label: string; clear: string; undo: string }
-  sortable: { handle: string }
+  /**
+   * The sortable's accessible text. `item` is the consumer's `itemLabel(id)` (or `undefined`
+   * without one); positions and counts are 1-based, as a listener counts them. The four
+   * announcements are read by the machine's polite live region; `instructions` is the hidden
+   * description every handle references through `aria-describedby`.
+   */
+  sortable: {
+    handle: (item: string | undefined) => string
+    instructions: string
+    grabbed: (item: string | undefined, position: number, count: number) => string
+    moved: (item: string | undefined, position: number, count: number) => string
+    dropped: (item: string | undefined, from: number, to: number, count: number) => string
+    cancelled: (item: string | undefined, position: number, count: number) => string
+  }
   /** The composed accessible name of a sparkline. `from`/`to` arrive as
    *  `YYYY-MM-DD` in the sparkline's own calendar offset. */
   sparkline: { empty: string; range: (count: number, from: string, to: string) => string }

@@ -41,6 +41,7 @@ import {
 } from '@llui/dom'
 import type { ProductContract } from '@llui/cli'
 import {
+  dispatchScenarioSelection,
   resolveScenarioSelection,
   type PresentationScenarioEnvironment,
 } from '@llui/cli/presentation-scenarios'
@@ -109,6 +110,7 @@ import {
   scrollAreaInit,
   signaturePadInit,
   SORTABLE_CONTAINER,
+  sortableItemLabel,
   sortableScenarioInit,
   sortableScenarioUpdate,
   splitterInit,
@@ -725,23 +727,34 @@ const sortableAdapter: Adapter<SortableCaseInput> = (host, data, ctx) =>
     () => sortableScenarioInit(data),
     sortableScenarioUpdate,
     (state, send) => {
-      const parts = sortable.connect(state.at('sort'), send, { id: SORTABLE_CONTAINER })
-      return div({ ...parts.root }, [
-        each(state.at('items'), {
-          key: (item) => item.id,
-          render: (item, index) => {
-            // Keyed by id: the id is the row's identity for its whole life.
-            const id = item.peek().id
-            const at = index.peek()
-            return [
-              div({ ...parts.item(id, at) }, [
-                div({ ...parts.handle(id, at) }, [glyph('grip')]),
-                span([text(item.at('label'))]),
-              ]),
-            ]
-          },
-        }),
-      ])
+      const parts = sortable.connect(state.at('sort'), send, {
+        id: SORTABLE_CONTAINER,
+        itemLabel: sortableItemLabel(data),
+      })
+      // `text` is each bag's CHILD, not an attribute; the baseline sheet hides
+      // the live region visually and the instructions part carries `hidden`.
+      const { text: live, ...liveAttrs } = parts.liveRegion
+      const { text: howTo, ...howToAttrs } = parts.instructions
+      return [
+        div({ ...parts.root }, [
+          each(state.at('items'), {
+            key: (item) => item.id,
+            render: (item, index) => {
+              // Keyed by id: the id is the row's identity for its whole life.
+              const id = item.peek().id
+              const at = index.peek()
+              return [
+                div({ ...parts.item(id, at) }, [
+                  div({ ...parts.handle(id, at) }, [glyph('grip')]),
+                  span([text(item.at('label'))]),
+                ]),
+              ]
+            },
+          }),
+        ]),
+        div({ ...liveAttrs }, [text(live)]),
+        div({ ...howToAttrs }, [text(howTo)]),
+      ]
     },
   )
 
@@ -910,24 +923,6 @@ export const BASELINE_ADAPTERS = {
   'pattern:wizard': wizardAdapter,
 } as const satisfies Partial<Record<SpecializedToolsScenarioId, Adapter<never>>>
 
-function renderResolved(
-  host: HTMLElement,
-  scenarioId: string,
-  caseId: string,
-  data: unknown,
-  environment: PresentationScenarioEnvironment,
-): Disposable {
-  const adapter = BASELINE_ADAPTERS[scenarioId as keyof typeof BASELINE_ADAPTERS]
-  if (adapter === undefined) {
-    throw new Error(`No baseline adapter registered for specialized-tools scenario ${scenarioId}`)
-  }
-  return (adapter as Adapter<unknown>)(host, data, {
-    scenarioId: scenarioId as SpecializedToolsScenarioId,
-    caseId,
-    environment,
-  })
-}
-
 function assertBindings(scenarios: readonly SpecializedToolsJoinedScenario[]): void {
   const expected = scenarios.map(({ scenarioId }) => scenarioId).sort()
   const bound = Object.keys(BASELINE_ADAPTERS).sort()
@@ -975,15 +970,7 @@ export function mountBaselineSpecializedToolsScenarios(
       host.dataset.scenarioId = scenario.scenarioId
       host.dataset.scenarioCase = scenarioCase.id
       container.append(host)
-      handles.push(
-        renderResolved(
-          host,
-          resolved.scenarioId,
-          resolved.case.id,
-          resolved.case.input,
-          resolved.environment,
-        ),
-      )
+      handles.push(dispatchScenarioSelection(catalog, BASELINE_ADAPTERS, resolved, host, {}))
     }
   }
   return {

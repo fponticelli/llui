@@ -1760,7 +1760,8 @@ export const INPUT_MODALITY_PARITY: Readonly<
   sortable: {
     keyboard: 'Space/Enter grabs, arrows move, Escape cancels',
     pointerTouch: 'drag by the handle; touch-action none',
-    assistiveTech: 'handle is a button with aria-grabbed and a live instruction',
+    assistiveTech:
+      'handle is a toggle button (aria-pressed while grabbed) described by hidden instructions; a polite live region announces grab, each move, drop and cancel with the position',
   },
   splitter: {
     keyboard: 'arrows (flipped under RTL), PageUp/PageDown, Home/End',
@@ -1809,7 +1810,7 @@ export function joinSpecializedToolsScenarios(
     return {
       productId: scenario.productId,
       displayName: entry.displayName,
-      scenarioId: scenario.scenarioId as SpecializedToolsScenarioId,
+      scenarioId: scenario.scenarioId,
       defaultCaseId: scenario.defaultCaseId,
       cases: scenario.cases,
       presentation: entry.presentation,
