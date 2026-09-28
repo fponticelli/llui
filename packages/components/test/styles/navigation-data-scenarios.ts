@@ -29,6 +29,7 @@ import {
   type PresentationScenarioEnvironmentAxis,
   type ResolvedPresentationScenarioSelection,
 } from '@llui/cli/presentation-scenarios'
+import { PRESENTATION_SCENARIO_IDS } from './presentation-scenario-ids'
 import type { ProductContract, ProductEntry } from '@llui/cli'
 import {
   axes,
@@ -1257,7 +1258,11 @@ export const NAVIGATION_DATA_CASES: ScenarioDefinitionsOf<NavigationDataInputs> 
  * `PresentationScenarioError` if the contract's navigation-data products and
  * this module's keys are not in exact agreement (missing or stale). */
 export function compileNavigationDataCatalog(contract: ProductContract): NavigationDataCatalog {
-  return compileScenarioFamily(contract, 'navigation-data', NAVIGATION_DATA_DEFINITIONS)
+  return compileScenarioFamily(
+    contract,
+    PRESENTATION_SCENARIO_IDS['navigation-data'],
+    NAVIGATION_DATA_DEFINITIONS,
+  )
 }
 
 /**

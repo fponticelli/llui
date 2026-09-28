@@ -54,6 +54,7 @@ import {
   type PresentationScenarioEnvironment,
   type ResolvedPresentationScenarioSelection,
 } from '@llui/cli/presentation-scenarios'
+import { PRESENTATION_SCENARIO_IDS } from './presentation-scenario-ids'
 import type { ProductContract, ProductEntry } from '@llui/cli'
 import type { ToastType, ToastPlacement } from '../../src/components/toast.js'
 import type { SelectionMode } from '../../src/components/select.js'
@@ -1320,7 +1321,11 @@ export function isMenusOverlaysScenarioId(id: string): id is MenusOverlaysDefini
  * `PresentationScenarioError` if the contract's menus-overlays products and
  * this module's keys are not in exact agreement (missing or stale). */
 export function compileMenusOverlaysCatalog(contract: ProductContract): MenusOverlaysCatalog {
-  return compileScenarioFamily(contract, 'menus-overlays', MENUS_OVERLAYS_DEFINITIONS)
+  return compileScenarioFamily(
+    contract,
+    PRESENTATION_SCENARIO_IDS['menus-overlays'],
+    MENUS_OVERLAYS_DEFINITIONS,
+  )
 }
 
 export { dispatchScenarioSelection, resolveScenarioSelection }

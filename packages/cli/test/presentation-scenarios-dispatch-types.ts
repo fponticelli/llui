@@ -61,7 +61,11 @@ const definitions = {
   },
 } as const
 
-const catalog = compileScenarioFamily(contract, 'menus-overlays', definitions)
+const MENUS_OVERLAYS = {
+  family: 'menus-overlays',
+  scenarioIds: ['component:dialog', 'component:menu'],
+} as const
+const catalog = compileScenarioFamily(contract, MENUS_OVERLAYS, definitions)
 const resolved = resolveScenarioSelection(contract, catalog, {
   productId: 'dialog',
   path: 'baseline',
@@ -216,7 +220,8 @@ const otherDefinitions = {
     cases: [{ id: 'first', label: 'First', input: { value: 'a' }, environmentAxes: [] }],
   },
 } as const
-const otherCatalog = compileScenarioFamily(contract, 'navigation-data', otherDefinitions)
+const TABS = { family: 'navigation-data', scenarioIds: ['component:tabs'] } as const
+const otherCatalog = compileScenarioFamily(contract, TABS, otherDefinitions)
 const otherResolved = resolveScenarioSelection(contract, otherCatalog, {
   productId: 'tabs',
   path: 'baseline',

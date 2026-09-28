@@ -61,12 +61,14 @@ const dialogDefinitions = {
   },
 } as const
 
-const datePickerCatalog = compileScenarioFamily(
-  contract,
-  'specialized-tools',
-  datePickerDefinitions,
-)
-const dialogCatalog = compileScenarioFamily(contract, 'menus-overlays', dialogDefinitions)
+const SPECIALIZED_TOOLS = {
+  family: 'specialized-tools',
+  scenarioIds: ['component:date-picker', 'component:editable'],
+} as const
+const MENUS_OVERLAYS = { family: 'menus-overlays', scenarioIds: ['component:dialog'] } as const
+
+const datePickerCatalog = compileScenarioFamily(contract, SPECIALIZED_TOOLS, datePickerDefinitions)
+const dialogCatalog = compileScenarioFamily(contract, MENUS_OVERLAYS, dialogDefinitions)
 
 // ─── Erasure: typed ⊂ erased, with no cast ──────────────────────────────────────────────────
 

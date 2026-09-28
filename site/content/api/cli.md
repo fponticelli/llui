@@ -1548,7 +1548,7 @@ function bindScenarioAdapters<
   Result,
   Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
 >(
-  catalog: CompiledPresentationScenarioFamily<Definitions>,
+  catalog: TypedCompiledPresentationScenarioFamily<Definitions>,
   adapters: PresentationScenarioAdapters<Definitions, Host, Result, Extra> &
     AdapterResultWitness<Host, Result>,
 ): PresentationScenarioAdapterBinding<Host, Result, Extra>
@@ -1556,20 +1556,34 @@ function bindScenarioAdapters<
 
 ##### `compileScenarioFamily()` from `@llui/cli/presentation-scenarios`
 
-Join family-owned semantic cases to ProductContract's canonical inventory. `definitions` must
-be statically known here — there is no `unknown` fallthrough, so a `Definitions` literal that
-fails to satisfy `PresentationScenarioDefinitions` (an extra field on a case, an unknown
-`environmentAxes` value, a function in `input`, …) is a COMPILE error, not a value silently
-degraded to `CompiledPresentationScenarioFamily`'s erased, `string`-keyed shape. For a
-definitions value received from an untyped/serialized boundary, decode it with
-`decodeScenarioFamily` instead.
+Join family-owned semantic cases to ProductContract's canonical inventory, EXACTLY: the
+definitions' keys must equal `family.scenarioIds` — the family's ProductContract scenario ids
+as a literal `PresentationScenarioFamilyIds` — so a missing key and an extra key are both
+compile errors, and the returned catalog's `scenarioId` union is provably the set of scenarios
+it carries. Width subtyping cannot hide a scenario: a definitions type narrowed below the
+family's ids is MISSING an id (compile error), and `family.scenarioIds` is itself cross-checked
+against `contract` at runtime, so ids that omit a contract scenario (or name one it lacks)
+throw `invalid-definitions` instead of typing it away.
+
+`definitions` must be statically known — there is no `unknown` fallthrough, so a literal that
+fails `PresentationScenarioDefinitions` (an extra field on a case, an unknown `environmentAxes`
+value, a function in `input`, …) is a COMPILE error. For definitions (or ids) received from an
+untyped/serialized boundary, decode them with `decodeScenarioFamily` instead.
+
+The typed catalog is CONSTRUCTED, not asserted: each scenario is built for its own literal id
+(`typedScenario`) from the validated erased catalog, in contract order. The one residual
+assertion is the per-case snapshot typing (`compiledCaseOf`), documented at its definition.
 
 ```typescript
-function compileScenarioFamily<const Definitions extends PresentationScenarioDefinitions>(
+function compileScenarioFamily<
+  const Id extends string,
+  const Definitions extends PresentationScenarioDefinitions &
+    PresentationScenarioDefinitionsFor<Id>,
+>(
   contract: ProductContract,
-  family: PresentationFamily,
-  definitions: ExactDefinitions<Definitions>,
-): CompiledPresentationScenarioFamily<Definitions>
+  family: PresentationScenarioFamilyIds<PresentationFamily, Id>,
+  definitions: Definitions & NoInfer<ExactFamilyDefinitions<Definitions, Id>>,
+): TypedCompiledPresentationScenarioFamily<Definitions>
 ```
 
 ##### `decodeScenarioFamily()` from `@llui/cli/presentation-scenarios`
@@ -1618,10 +1632,10 @@ function dispatchScenarioSelection<
   Result,
   Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
 >(
-  catalog: CompiledPresentationScenarioFamily<Definitions>,
+  catalog: TypedCompiledPresentationScenarioFamily<Definitions>,
   adapters: PresentationScenarioAdapters<Definitions, Host, Result, Extra> &
     AdapterResultWitness<Host, Result>,
-  selection: ResolvedPresentationScenarioSelection<Definitions>,
+  selection: TypedResolvedPresentationScenarioSelection<Definitions>,
   host: Host,
   extra: Extra,
 ): Result
@@ -1635,12 +1649,17 @@ that fails to satisfy its typed shape is a COMPILE error rather than a value sil
 and narrowed away to `string`. For a catalog or selection received from an
 untyped/serialized boundary, decode it with `decodeScenarioSelection` instead.
 
+`catalog` must be the very object `compileScenarioFamily` (or `decodeScenarioFamily`) returned
+— its types were earned by being compiled against the contract, so a copy of it (even a
+`structuredClone`, which keeps the static type) throws `invalid-catalog`. The result is built
+from that catalog's own typed scenario and case, never asserted.
+
 ```typescript
 function resolveScenarioSelection<Definitions extends PresentationScenarioDefinitions>(
   contract: ProductContract,
-  catalog: CompiledPresentationScenarioFamily<Definitions>,
+  catalog: TypedCompiledPresentationScenarioFamily<Definitions>,
   selection: PresentationScenarioSelection,
-): ResolvedPresentationScenarioSelection<Definitions>
+): TypedResolvedPresentationScenarioSelection<Definitions>
 ```
 
 #### Types
@@ -1655,16 +1674,7 @@ export type CompiledPresentationScenario<
 > =
   string extends ScenarioId<Definitions>
     ? ErasedCompiledPresentationScenario
-    : {
-        readonly [Id in ScenarioId<Definitions>]: {
-          readonly productId: string
-          readonly scenarioId: Id
-          readonly defaultCaseId: Definitions[Id]['defaultCaseId']
-          readonly cases: readonly CompiledPresentationScenarioCase<
-            DefinitionCase<Definitions, Id>
-          >[]
-        }
-      }[ScenarioId<Definitions>]
+    : TypedCompiledScenarios<Definitions>[ScenarioId<Definitions>]
 ```
 
 ##### `CompiledPresentationScenarioCase` from `@llui/cli/presentation-scenarios`
@@ -1852,7 +1862,10 @@ Definition-correlated renderer input returned for a presentation selection.
 ```typescript
 export type ResolvedPresentationScenarioSelection<
   Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
-> = ResolvedScenario<CompiledPresentationScenario<Definitions>>
+> =
+  string extends ScenarioId<Definitions>
+    ? ErasedResolvedPresentationScenarioSelection
+    : TypedResolvedPresentationScenarioSelection<Definitions>
 ```
 
 #### Interfaces
@@ -1941,6 +1954,25 @@ export interface PresentationScenarioDefinition<
 > {
   readonly defaultCaseId: string
   readonly cases: readonly Case[]
+}
+```
+
+##### `PresentationScenarioFamilyIds` from `@llui/cli/presentation-scenarios`
+
+The literal scenario-id set one presentation family declares in ProductContract — the typed
+compile path's source of exactness. `compileScenarioFamily` requires its definitions' keys to
+EQUAL `scenarioIds` (a missing or an extra key is a compile error), and cross-checks
+`scenarioIds` against the contract at runtime, so a compiled catalog's `scenarioId` union is
+provably the set of scenarios it carries. A literal (`as const`) value is required: `string`
+ids prove nothing, and definitions with them decode through `decodeScenarioFamily` instead.
+
+```typescript
+export interface PresentationScenarioFamilyIds<
+  Family extends PresentationFamily = PresentationFamily,
+  Id extends string = string,
+> {
+  readonly family: Family
+  readonly scenarioIds: readonly Id[]
 }
 ```
 

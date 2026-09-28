@@ -11,6 +11,7 @@ import {
   resolveScenarioSelection,
   type PresentationScenarioAdapterBinding,
   type PresentationScenarioDefinitions,
+  type PresentationScenarioFamilyIds,
 } from '../src/presentation-scenarios'
 import { ownObject, ownPath } from './untyped-access'
 
@@ -49,6 +50,16 @@ function contract(): ProductContract {
   })
 }
 
+/** A literal menus-overlays id set, the typed compile path's source of exactness. */
+function menusOverlays<const Id extends string>(
+  ...scenarioIds: readonly Id[]
+): PresentationScenarioFamilyIds<'menus-overlays', Id> {
+  return { family: 'menus-overlays', scenarioIds }
+}
+
+/** `contract()`'s menus-overlays scenarios, in contract order. */
+const MENUS_OVERLAYS = menusOverlays('component:dialog', 'component:menu')
+
 describe('compileScenarioFamily', () => {
   it('joins definitions in canonical ProductContract order without copying product metadata', () => {
     const definitions = {
@@ -76,7 +87,7 @@ describe('compileScenarioFamily', () => {
       },
     } as const satisfies PresentationScenarioDefinitions
 
-    const compiled = compileScenarioFamily(contract(), 'menus-overlays', definitions)
+    const compiled = compileScenarioFamily(contract(), MENUS_OVERLAYS, definitions)
 
     expect(compiled).toEqual({
       version: 1,
@@ -121,8 +132,11 @@ describe('compileScenarioFamily', () => {
       'component:stale': definition,
     } as const satisfies PresentationScenarioDefinitions
 
+    // The typed path rejects these keys at COMPILE time (test/presentation-scenarios-exact-ids-
+    // types.ts); the runtime join that backs it is shared, and is exercised here through the
+    // untyped entry point.
     try {
-      compileScenarioFamily(contract(), 'menus-overlays', definitions)
+      decodeScenarioFamily(contract(), 'menus-overlays', definitions)
       expect.unreachable('invalid family definitions must throw')
     } catch (error) {
       expect(error).toBeInstanceOf(PresentationScenarioError)
@@ -134,6 +148,81 @@ describe('compileScenarioFamily', () => {
         ],
       })
     }
+  })
+
+  // The width-subtyping hole, at runtime. A value may carry MORE keys than its type declares, with
+  // no cast; when the hidden key is a real scenario of the family, only the runtime can see it.
+  describe('scenario ids the typed path is exact against', () => {
+    const definition = {
+      defaultCaseId: 'default',
+      cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
+    } as const
+    const both = { 'component:dialog': definition, 'component:menu': definition }
+
+    it('rejects ids that omit a contract scenario, instead of typing it away', () => {
+      // The narrowed type is exactly the (too small) id set, so this call compiles; before the
+      // ids were cross-checked, it returned a catalog typed `'component:dialog'` that carried the
+      // menu scenario too.
+      const narrowed: { readonly 'component:dialog': typeof definition } = both
+      try {
+        compileScenarioFamily(contract(), menusOverlays('component:dialog'), narrowed)
+        expect.unreachable('ids omitting a contract scenario must throw')
+      } catch (error) {
+        expect(error).toBeInstanceOf(PresentationScenarioError)
+        expect(error).toMatchObject({
+          code: 'invalid-definitions',
+          // The contract join alone finds nothing wrong — `component:menu` IS a scenario of the
+          // family — which is exactly why the width-subtyped value used to get through.
+          issues: [
+            '$.scenarioIds: omits ProductContract scenario "component:menu" of presentation family "menus-overlays".',
+          ],
+        })
+      }
+    })
+
+    it('rejects ids the contract does not declare for the family, and duplicates', () => {
+      const withGhost = { ...both, 'component:ghost': definition }
+      try {
+        compileScenarioFamily(
+          contract(),
+          menusOverlays('component:dialog', 'component:menu', 'component:menu', 'component:ghost'),
+          withGhost,
+        )
+        expect.unreachable('ids naming a non-contract scenario must throw')
+      } catch (error) {
+        expect(error).toBeInstanceOf(PresentationScenarioError)
+        expect(error).toMatchObject({
+          code: 'invalid-definitions',
+          issues: [
+            '$.scenarioIds: duplicate scenario id "component:menu".',
+            '$.scenarioIds: scenario id "component:ghost" is not a ProductContract scenario of presentation family "menus-overlays".',
+            '$["component:ghost"]: stale definition for presentation family "menus-overlays".',
+          ],
+        })
+      }
+    })
+
+    it('rejects ids of a DIFFERENT family, even when every key matches', () => {
+      const forms = {
+        family: 'forms-controls',
+        scenarioIds: ['component:dialog', 'component:menu'],
+      } as const
+      expect(() => compileScenarioFamily(contract(), forms, both)).toThrow(
+        PresentationScenarioError,
+      )
+    })
+
+    it('returns a catalog carrying exactly the ids, in contract order', () => {
+      const reversed = menusOverlays('component:menu', 'component:dialog')
+      const catalog = compileScenarioFamily(contract(), reversed, {
+        'component:menu': definition,
+        'component:dialog': definition,
+      })
+      expect(catalog.scenarios.map(({ scenarioId }) => scenarioId)).toEqual([
+        'component:dialog',
+        'component:menu',
+      ])
+    })
   })
 
   it('rejects invalid and duplicate case ids and a missing default case together', () => {
@@ -161,7 +250,7 @@ describe('compileScenarioFamily', () => {
     } as const satisfies PresentationScenarioDefinitions
 
     try {
-      compileScenarioFamily(contract(), 'menus-overlays', definitions)
+      compileScenarioFamily(contract(), MENUS_OVERLAYS, definitions)
       expect.unreachable('invalid cases must throw')
     } catch (error) {
       expect(error).toBeInstanceOf(PresentationScenarioError)
@@ -186,7 +275,7 @@ describe('compileScenarioFamily', () => {
     } as const satisfies PresentationScenarioDefinitions
 
     try {
-      compileScenarioFamily(contract(), 'menus-overlays', definitions)
+      compileScenarioFamily(contract(), MENUS_OVERLAYS, definitions)
       expect.unreachable('an empty scenario must throw')
     } catch (error) {
       expect(error).toBeInstanceOf(PresentationScenarioError)
@@ -213,7 +302,7 @@ describe('compileScenarioFamily', () => {
     } as const satisfies PresentationScenarioDefinitions
 
     try {
-      compileScenarioFamily(contract(), 'menus-overlays', definitions)
+      compileScenarioFamily(contract(), MENUS_OVERLAYS, definitions)
       expect.unreachable('an invalid default case id must throw')
     } catch (error) {
       expect(error).toBeInstanceOf(PresentationScenarioError)
@@ -366,7 +455,7 @@ describe('compileScenarioFamily', () => {
       },
     } as const satisfies PresentationScenarioDefinitions
 
-    const compiled = compileScenarioFamily(contract(), 'menus-overlays', definitions)
+    const compiled = compileScenarioFamily(contract(), MENUS_OVERLAYS, definitions)
     const compiledInput = compiled.scenarios[0]!.cases[0]!.input
     input.rows.push('Mutation after compilation')
 
@@ -401,7 +490,7 @@ describe('compileScenarioFamily', () => {
       },
     } as const satisfies PresentationScenarioDefinitions
 
-    const compiled = compileScenarioFamily(contract(), 'menus-overlays', definitions)
+    const compiled = compileScenarioFamily(contract(), MENUS_OVERLAYS, definitions)
     const dialog = compiled.scenarios.find(({ scenarioId }) => scenarioId === 'component:dialog')
     const input = ownObject(dialog, 'cases', 0, 'input')
 
@@ -440,7 +529,7 @@ describe('compileScenarioFamily', () => {
       },
     } satisfies PresentationScenarioDefinitions
 
-    const typed = compileScenarioFamily(contract(), 'menus-overlays', definitions)
+    const typed = compileScenarioFamily(contract(), MENUS_OVERLAYS, definitions)
     const erased = decodeScenarioFamily(contract(), 'menus-overlays', definitions)
     expect(typed).toEqual(erased)
     for (const catalog of [typed, erased]) {
@@ -534,7 +623,11 @@ describe('compileScenarioFamily', () => {
       },
     } as const
 
-    const compiled = compileScenarioFamily(drawerContract, 'menus-overlays', definitions)
+    const compiled = compileScenarioFamily(
+      drawerContract,
+      menusOverlays('component:drawer'),
+      definitions,
+    )
     const compiledCase = compiled.scenarios[0]!.cases[0]!
 
     expect(Object.keys(compiledCase)).toEqual(['id', 'label', 'input', 'environmentAxes'])
@@ -584,7 +677,7 @@ describe('compileScenarioFamily', () => {
     } as const satisfies PresentationScenarioDefinitions
 
     try {
-      compileScenarioFamily(drawerContract, 'menus-overlays', definitions)
+      compileScenarioFamily(drawerContract, menusOverlays('component:drawer'), definitions)
       expect.unreachable('invalid copied-artifact targets must throw')
     } catch (error) {
       expect(error).toBeInstanceOf(PresentationScenarioError)
@@ -615,7 +708,7 @@ describe('resolveScenarioSelection', () => {
       },
     } as const satisfies PresentationScenarioDefinitions
     const productContract = contract()
-    const catalog = compileScenarioFamily(productContract, 'menus-overlays', definitions)
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, definitions)
 
     const resolved = resolveScenarioSelection(productContract, catalog, {
       productId: 'dialog',
@@ -652,7 +745,7 @@ describe('resolveScenarioSelection', () => {
       },
     } as const satisfies PresentationScenarioDefinitions
     const productContract = contract()
-    const catalog = compileScenarioFamily(productContract, 'menus-overlays', definitions)
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, definitions)
 
     expect(
       resolveScenarioSelection(productContract, catalog, {
@@ -701,7 +794,7 @@ describe('resolveScenarioSelection', () => {
       },
     } as const satisfies PresentationScenarioDefinitions
     const productContract = contract()
-    const catalog = compileScenarioFamily(productContract, 'menus-overlays', definitions)
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, definitions)
 
     try {
       resolveScenarioSelection(productContract, catalog, selection)
@@ -723,7 +816,7 @@ describe('resolveScenarioSelection', () => {
         cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
       },
     } as const satisfies PresentationScenarioDefinitions
-    const catalog = compileScenarioFamily(contract(), 'menus-overlays', definitions)
+    const catalog = compileScenarioFamily(contract(), MENUS_OVERLAYS, definitions)
     const staleContract = ProductContractSchema.parse({
       version: 2,
       entries: [product('menu')],
@@ -760,7 +853,7 @@ describe('resolveScenarioSelection', () => {
       },
     } as const satisfies PresentationScenarioDefinitions
     const productContract = contract()
-    const catalog = compileScenarioFamily(productContract, 'menus-overlays', definitions)
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, definitions)
     const dialogScenario = catalog.scenarios[0]!
     const menuScenario = catalog.scenarios[1]!
     const invalidCatalogs = [
@@ -850,7 +943,7 @@ describe('resolveScenarioSelection', () => {
       entries: [unavailable],
       aliases: [],
     })
-    const catalog = compileScenarioFamily(unavailableContract, 'menus-overlays', {
+    const catalog = compileScenarioFamily(unavailableContract, menusOverlays('component:badge'), {
       'component:badge': {
         defaultCaseId: 'default',
         cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
@@ -899,7 +992,7 @@ describe('resolveScenarioSelection', () => {
       },
     } as const satisfies PresentationScenarioDefinitions
     const productContract = contract()
-    const catalog = compileScenarioFamily(productContract, 'menus-overlays', definitions)
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, definitions)
 
     try {
       decodeScenarioSelection(productContract, catalog, {
@@ -946,7 +1039,7 @@ describe('resolveScenarioSelection', () => {
       ],
       aliases: [],
     })
-    const catalog = compileScenarioFamily(drawerContract, 'menus-overlays', {
+    const catalog = compileScenarioFamily(drawerContract, menusOverlays('component:drawer'), {
       'component:drawer': {
         defaultCaseId: 'open',
         cases: [
@@ -1042,26 +1135,34 @@ describe('resolveScenarioSelection', () => {
       ],
       aliases: [],
     })
-    const ambiguousCatalog = compileScenarioFamily(ambiguousContract, 'menus-overlays', {
-      'component:picker': {
-        defaultCaseId: 'default',
-        cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
+    const ambiguousCatalog = compileScenarioFamily(
+      ambiguousContract,
+      menusOverlays('component:picker'),
+      {
+        'component:picker': {
+          defaultCaseId: 'default',
+          cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
+        },
       },
-    })
-    const unavailableCatalog = compileScenarioFamily(ambiguousContract, 'menus-overlays', {
-      'component:picker': {
-        defaultCaseId: 'baseline-only',
-        cases: [
-          {
-            id: 'baseline-only',
-            label: 'Baseline only',
-            input: null,
-            environmentAxes: [],
-            copiedArtifactNames: [],
-          },
-        ],
+    )
+    const unavailableCatalog = compileScenarioFamily(
+      ambiguousContract,
+      menusOverlays('component:picker'),
+      {
+        'component:picker': {
+          defaultCaseId: 'baseline-only',
+          cases: [
+            {
+              id: 'baseline-only',
+              label: 'Baseline only',
+              input: null,
+              environmentAxes: [],
+              copiedArtifactNames: [],
+            },
+          ],
+        },
       },
-    })
+    )
     const selections: readonly {
       catalog: typeof ambiguousCatalog | typeof unavailableCatalog
       issue: string
@@ -1120,7 +1221,7 @@ describe('resolveScenarioSelection', () => {
       ],
       aliases: [],
     })
-    const catalog = compileScenarioFamily(machineOnlyContract, 'menus-overlays', {
+    const catalog = compileScenarioFamily(machineOnlyContract, menusOverlays('component:tooltip'), {
       'component:tooltip': {
         defaultCaseId: 'default',
         cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
@@ -1154,7 +1255,7 @@ describe('resolveScenarioSelection', () => {
       },
     } as const satisfies PresentationScenarioDefinitions
     const productContract = contract()
-    const catalog = compileScenarioFamily(productContract, 'menus-overlays', definitions)
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, definitions)
     const trustedCase = catalog.scenarios[0]!.cases[0]!
 
     // The PRODUCED catalog: resolving against it returns the SAME case object (and its `input`)
@@ -1192,6 +1293,65 @@ describe('resolveScenarioSelection', () => {
     } catch (error) {
       expect(error).toBeInstanceOf(PresentationScenarioError)
       expect(error).toMatchObject({ code: 'invalid-catalog' })
+    }
+  })
+
+  it('types a resolution only from a catalog this module built', () => {
+    const definition = {
+      defaultCaseId: 'default',
+      cases: [{ id: 'default', label: 'Default', input: { open: true }, environmentAxes: [] }],
+    } as const
+    const productContract = contract()
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, {
+      'component:dialog': definition,
+      'component:menu': definition,
+    })
+    // `structuredClone` keeps the static type, so this copy CLAIMS the typed catalog's scenario
+    // union without having been built against the contract. The typed path refuses it; the
+    // untyped path decodes it in full and returns the erased resolution.
+    const copy = structuredClone(catalog)
+    const selection = { productId: 'dialog', path: 'baseline' } as const
+    try {
+      resolveScenarioSelection(productContract, copy, selection)
+      expect.unreachable('a copied typed catalog must not be resolved as typed')
+    } catch (error) {
+      expect(error).toBeInstanceOf(PresentationScenarioError)
+      expect(error).toMatchObject({
+        code: 'invalid-catalog',
+        issues: [
+          '$: a typed catalog must be the one compileScenarioFamily or decodeScenarioFamily returned; decode a copied or serialized catalog with decodeScenarioSelection.',
+        ],
+      })
+    }
+    expect(decodeScenarioSelection(productContract, copy, selection)).toEqual(
+      resolveScenarioSelection(productContract, catalog, selection),
+    )
+  })
+
+  it('never builds a typed catalog from a value that reads differently than it validated', () => {
+    const definition = {
+      defaultCaseId: 'default',
+      cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
+    } as const
+    // A Proxy reports one `defaultCaseId` through the property DESCRIPTOR the decoder snapshots,
+    // and another through a plain read. Plain data cannot do this (the decoder rejects accessors);
+    // the typed construction must still never take its value from the unvalidated read.
+    const shifty = new Proxy(definition, {
+      get: (target, key, receiver): unknown =>
+        key === 'defaultCaseId' ? 'elsewhere' : Reflect.get(target, key, receiver),
+    })
+    try {
+      compileScenarioFamily(contract(), MENUS_OVERLAYS, {
+        'component:dialog': shifty,
+        'component:menu': definition,
+      })
+      expect.unreachable('a definition that changed after validation must throw')
+    } catch (error) {
+      expect(error).toBeInstanceOf(PresentationScenarioError)
+      expect(error).toMatchObject({
+        code: 'invalid-definitions',
+        issues: ['$["component:dialog"]: definition changed after it was validated.'],
+      })
     }
   })
 })
@@ -1248,7 +1408,7 @@ function expectScenarioError(run: () => unknown, code: string, issues: readonly 
 describe('dispatchScenarioSelection', () => {
   it('calls exactly the adapter registered for the resolved scenario, with the case input, host and context', () => {
     const productContract = contract()
-    const catalog = compileScenarioFamily(productContract, 'menus-overlays', dispatchDefinitions)
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, dispatchDefinitions)
     const calls: RecordedCall[] = []
     const adapters = recordingAdapters(calls)
 
@@ -1295,7 +1455,7 @@ describe('dispatchScenarioSelection', () => {
 
   it('lets the protocol-owned context keys win over an untyped extra that smuggles one', () => {
     const productContract = contract()
-    const catalog = compileScenarioFamily(productContract, 'menus-overlays', dispatchDefinitions)
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, dispatchDefinitions)
     const calls: RecordedCall[] = []
     const resolved = resolveScenarioSelection(productContract, catalog, {
       productId: 'dialog',
@@ -1326,7 +1486,7 @@ describe('dispatchScenarioSelection', () => {
 
   it('fails with missing-adapter, calling nothing, when the scenario has no registered adapter', () => {
     const productContract = contract()
-    const catalog = compileScenarioFamily(productContract, 'menus-overlays', dispatchDefinitions)
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, dispatchDefinitions)
     const calls: RecordedCall[] = []
     const { 'component:dialog': dialogOnly } = recordingAdapters(calls)
     const menu = resolveScenarioSelection(productContract, catalog, {
@@ -1402,7 +1562,7 @@ describe('dispatchScenarioSelection', () => {
 describe('bindScenarioAdapters', () => {
   it('erases a typed map to one family-agnostic binding that resolves, then renders', () => {
     const productContract = contract()
-    const catalog = compileScenarioFamily(productContract, 'menus-overlays', dispatchDefinitions)
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, dispatchDefinitions)
     const calls: RecordedCall[] = []
     const binding = bindScenarioAdapters(catalog, recordingAdapters(calls))
     expectTypeOf(binding).toEqualTypeOf<PresentationScenarioAdapterBinding<string, string>>()
@@ -1434,7 +1594,7 @@ describe('bindScenarioAdapters', () => {
 
   it('reports a bad selection before a missing adapter, and a missing adapter before any render', () => {
     const productContract = contract()
-    const catalog = compileScenarioFamily(productContract, 'menus-overlays', dispatchDefinitions)
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, dispatchDefinitions)
     const calls: RecordedCall[] = []
     const { 'component:dialog': dialogOnly } = recordingAdapters(calls)
     const binding = bindScenarioAdapters(catalog, { 'component:dialog': dialogOnly })

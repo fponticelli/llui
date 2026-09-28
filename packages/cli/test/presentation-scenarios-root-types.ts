@@ -55,6 +55,8 @@ import type { ResolvedPresentationScenarioSelection as RootResolved } from '../s
 // @ts-expect-error direct-subpath-only type
 import type { PresentationScenarioErrorCode as RootErrorCode } from '../src/index.js'
 // @ts-expect-error direct-subpath-only type
+import type { PresentationScenarioFamilyIds as RootFamilyIds } from '../src/index.js'
+// @ts-expect-error direct-subpath-only type
 import type { PresentationScenarioCaseInput as RootCaseInput } from '../src/index.js'
 // @ts-expect-error direct-subpath-only type
 import type { PresentationScenarioAdapterContext as RootAdapterContext } from '../src/index.js'
@@ -100,6 +102,7 @@ type RootTypes =
   | RootSelection
   | RootResolved
   | RootErrorCode
+  | RootFamilyIds
   | RootCaseInput<never, never>
   | RootAdapterContext
   | RootAdapterExtra<never>
