@@ -50752,9 +50752,13 @@ function commandMenuUpdate(state: CommandMenuState, msg: CommandMenuMsg): [Comma
 ##### `commandMenuView()` from `@llui/components/patterns`
 
 Default palette view: a combobox (search input + grouped command list) inside
-the dialog overlay. Selecting a command dispatches `execute`; Escape clears
-the query then closes. Consumers wanting a custom row template should drive
-the part bags from `connect()` directly.
+the dialog overlay. The listbox owns one `option` per FILTERED command,
+bucketed into labelled `group`s (an ungrouped command sits directly in the
+listbox, with no group and so no dangling label reference). The combobox
+input's own key handling drives the machine's highlight — arrows/Home/End
+move it, Enter runs it, Escape clears the query then closes — and a pointer
+click runs the clicked command. Consumers wanting a custom row template
+should drive the part bags from `connect()` directly.
 
 ```typescript
 function commandMenuView(opts: CommandMenuViewOptions): Mountable
@@ -50892,6 +50896,18 @@ export type CommandMenuMsg =
   | { type: 'execute'; commandId: string }
   /** @humanOnly */
   | { type: 'escape' }
+  /** @humanOnly */
+  | { type: 'highlight'; commandId: string }
+  /** @humanOnly */
+  | { type: 'highlightNext' }
+  /** @humanOnly */
+  | { type: 'highlightPrev' }
+  /** @humanOnly */
+  | { type: 'highlightFirst' }
+  /** @humanOnly */
+  | { type: 'highlightLast' }
+  /** @humanOnly */
+  | { type: 'executeHighlighted' }
   /** @humanOnly */
   | { type: 'setCommands'; commands: Command[] }
 ```
@@ -51204,6 +51220,12 @@ export interface CommandMenuState {
   recents: string[]
   /** Max recents retained for ranking. */
   maxRecents: number
+  /**
+   * The keyboard-highlighted command id (the combobox's active descendant).
+   * Always an ENABLED member of `filtered` while open; `null` when closed or
+   * when nothing enabled matches.
+   */
+  highlighted: string | null
 }
 ```
 
@@ -52525,9 +52547,13 @@ function update(state: CommandMenuState, msg: CommandMenuMsg): [CommandMenuState
 ##### `view()` from `@llui/components/patterns/command-menu`
 
 Default palette view: a combobox (search input + grouped command list) inside
-the dialog overlay. Selecting a command dispatches `execute`; Escape clears
-the query then closes. Consumers wanting a custom row template should drive
-the part bags from `connect()` directly.
+the dialog overlay. The listbox owns one `option` per FILTERED command,
+bucketed into labelled `group`s (an ungrouped command sits directly in the
+listbox, with no group and so no dangling label reference). The combobox
+input's own key handling drives the machine's highlight — arrows/Home/End
+move it, Enter runs it, Escape clears the query then closes — and a pointer
+click runs the clicked command. Consumers wanting a custom row template
+should drive the part bags from `connect()` directly.
 
 ```typescript
 function view(opts: CommandMenuViewOptions): Mountable
@@ -52574,6 +52600,18 @@ export type CommandMenuMsg =
   | { type: 'execute'; commandId: string }
   /** @humanOnly */
   | { type: 'escape' }
+  /** @humanOnly */
+  | { type: 'highlight'; commandId: string }
+  /** @humanOnly */
+  | { type: 'highlightNext' }
+  /** @humanOnly */
+  | { type: 'highlightPrev' }
+  /** @humanOnly */
+  | { type: 'highlightFirst' }
+  /** @humanOnly */
+  | { type: 'highlightLast' }
+  /** @humanOnly */
+  | { type: 'executeHighlighted' }
   /** @humanOnly */
   | { type: 'setCommands'; commands: Command[] }
 ```
@@ -52656,6 +52694,12 @@ export interface CommandMenuState {
   recents: string[]
   /** Max recents retained for ranking. */
   maxRecents: number
+  /**
+   * The keyboard-highlighted command id (the combobox's active descendant).
+   * Always an ENABLED member of `filtered` while open; `null` when closed or
+   * when nothing enabled matches.
+   */
+  highlighted: string | null
 }
 ```
 

@@ -581,18 +581,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
               ...cmd.combobox.input,
               class: 'w-full px-4 py-3 text-sm outline-none',
               placeholder: 'Type a command…',
-              onKeyDown: (e: KeyboardEvent) => {
-                if (e.key === 'Escape') {
-                  e.preventDefault()
-                  send({ type: 'commandMenu', msg: { type: 'escape' } })
-                  return
-                }
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  const first = state.peek().commandMenu.filtered.find((c) => !c.disabled)
-                  if (first) sendCommandMenu({ type: 'execute', commandId: first.id })
-                }
-              },
+              // Keys come from the part's own handler: arrows/Home/End move
+              // the machine's highlight, Enter runs it, Escape clears the
+              // query and then closes.
             }),
           ]),
           div({ ...cmd.combobox.content, class: 'max-h-72 overflow-y-auto p-1' }, [

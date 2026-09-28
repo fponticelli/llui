@@ -314,6 +314,42 @@ const FLOWS: readonly Flow[] = [
     },
   },
   {
+    entry: 'command-menu',
+    caseId: 'open',
+    name: 'typing filters the listbox, arrows move the active option, Escape clears then closes',
+    patterns: ['selection', 'keyboard-activation', 'dismissal'],
+    async run(page) {
+      const search = page.locator('input[role="combobox"]').first()
+      await search.waitFor()
+      const listbox = page.locator(`[id="${await search.getAttribute('aria-controls')}"]`)
+      expect(await listbox.getAttribute('role')).toBe('listbox')
+      const options = listbox.locator('[role="option"]')
+      const labels = await options.allTextContents()
+      expect(labels.length).toBeGreaterThan(1)
+      // The palette highlights its first command, and the input names it.
+      const first = await search.getAttribute('aria-activedescendant')
+      expect(first).toBe(await options.nth(0).getAttribute('id'))
+      await focus(search)
+      await page.keyboard.press('ArrowDown')
+      const next = await search.getAttribute('aria-activedescendant')
+      expect(next).toBe(await options.nth(1).getAttribute('id'))
+      expect(await page.locator(`[id="${next}"]`).getAttribute('data-highlighted')).toBe('')
+
+      // Filtering keeps only the matching commands as options.
+      const target = labels[1] ?? ''
+      await page.keyboard.type(target)
+      expect(await options.allTextContents()).toEqual([target])
+      expect(await search.getAttribute('aria-activedescendant')).toBe(
+        await options.nth(0).getAttribute('id'),
+      )
+      await page.keyboard.press('Escape')
+      expect(await search.inputValue()).toBe('')
+      expect(await options.allTextContents()).toEqual(labels)
+      await page.keyboard.press('Escape')
+      await listbox.waitFor({ state: 'detached' })
+    },
+  },
+  {
     entry: 'select',
     caseId: 'closed',
     name: 'the keyboard opens the list and commits a selection',

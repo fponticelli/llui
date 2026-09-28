@@ -1,5 +1,5 @@
 import type { Send, Signal, Mountable } from '@llui/dom'
-import { div, input, h2, text } from '@llui/dom'
+import { div, input, h2, span, text, each } from '@llui/dom'
 import {
   connect as dialogConnect,
   overlay as dialogOverlay,
@@ -13,6 +13,7 @@ import {
   type ComboboxGroup,
 } from '../components/combobox.js'
 import { finiteOrDefault } from '../utils/number.js'
+import { firstEnabledIndex, lastEnabledIndex, nextEnabledIndex } from '../utils/list-navigation.js'
 
 /**
  * CommandMenu — a ⌘K command palette.
@@ -31,6 +32,13 @@ import { finiteOrDefault } from '../utils/number.js'
  *
  * Escape follows the cmdk convention: a first Escape with a non-empty query
  * clears the query (staying open); a second Escape (empty query) closes.
+ *
+ * The keyboard HIGHLIGHT is machine state (`highlighted`, a command id), again
+ * following cmdk: an open palette always highlights the first enabled filtered
+ * command, a filter keeps a highlight that is still visible and re-seeds one
+ * that is not, and arrows/Home/End walk the enabled filtered commands. It is
+ * projected onto the combobox's `aria-activedescendant` / `data-highlighted`,
+ * so Enter runs exactly the command a screen reader announced.
  *
  * ```ts
  * onMount(() => watchHotkey((m) => send({ type: 'cmd', msg: m })))
@@ -76,6 +84,12 @@ export interface CommandMenuState {
   recents: string[]
   /** Max recents retained for ranking. */
   maxRecents: number
+  /**
+   * The keyboard-highlighted command id (the combobox's active descendant).
+   * Always an ENABLED member of `filtered` while open; `null` when closed or
+   * when nothing enabled matches.
+   */
+  highlighted: string | null
 }
 
 export type CommandMenuMsg =
@@ -89,6 +103,18 @@ export type CommandMenuMsg =
   | { type: 'execute'; commandId: string }
   /** @humanOnly */
   | { type: 'escape' }
+  /** @humanOnly */
+  | { type: 'highlight'; commandId: string }
+  /** @humanOnly */
+  | { type: 'highlightNext' }
+  /** @humanOnly */
+  | { type: 'highlightPrev' }
+  /** @humanOnly */
+  | { type: 'highlightFirst' }
+  /** @humanOnly */
+  | { type: 'highlightLast' }
+  /** @humanOnly */
+  | { type: 'executeHighlighted' }
   /** @humanOnly */
   | { type: 'setCommands'; commands: Command[] }
 
@@ -155,9 +181,46 @@ function computeFiltered(state: { commands: Command[]; query: string; recents: s
   return { filtered: ranked, filteredGroups }
 }
 
+function enabledIds(filtered: Command[]): { items: string[]; disabled: string[] } {
+  return {
+    items: filtered.map((c) => c.id),
+    disabled: filtered.filter((c) => c.disabled).map((c) => c.id),
+  }
+}
+
+function isHighlightable(filtered: Command[], id: string | null): id is string {
+  return id !== null && filtered.some((c) => c.id === id && !c.disabled)
+}
+
 function recompute(state: CommandMenuState): CommandMenuState {
   const { filtered, filteredGroups } = computeFiltered(state)
-  return { ...state, filtered, filteredGroups }
+  // cmdk: an open palette always highlights something it can run. A highlight
+  // still visible after a filter survives; one filtered out re-seeds to the
+  // first enabled command, never a stale id `aria-activedescendant` would name.
+  let highlighted: string | null = null
+  if (state.open) {
+    if (isHighlightable(filtered, state.highlighted)) highlighted = state.highlighted
+    else {
+      const { items, disabled } = enabledIds(filtered)
+      const index = firstEnabledIndex(items, disabled)
+      highlighted = index === null ? null : items[index]!
+    }
+  }
+  return { ...state, filtered, filteredGroups, highlighted }
+}
+
+function move(state: CommandMenuState, to: 'next' | 'prev' | 'first' | 'last'): CommandMenuState {
+  const { items, disabled } = enabledIds(state.filtered)
+  const from = state.highlighted === null ? -1 : items.indexOf(state.highlighted)
+  const index =
+    to === 'first'
+      ? firstEnabledIndex(items, disabled)
+      : to === 'last'
+        ? lastEnabledIndex(items, disabled)
+        : nextEnabledIndex(items, disabled, from === -1 ? null : from, to === 'next' ? 1 : -1)
+  const highlighted = index === null ? null : items[index]!
+  if (highlighted === state.highlighted) return state
+  return { ...state, highlighted }
 }
 
 export function init(opts: CommandMenuInit = {}): CommandMenuState {
@@ -171,11 +234,25 @@ export function init(opts: CommandMenuInit = {}): CommandMenuState {
     filteredGroups: [],
     recents,
     maxRecents: finiteOrDefault(opts.maxRecents, 50),
+    highlighted: null,
   })
 }
 
 function pushRecent(recents: string[], id: string, max: number): string[] {
   return [id, ...recents.filter((r) => r !== id)].slice(0, max)
+}
+
+function execute(
+  state: CommandMenuState,
+  commandId: string,
+): [CommandMenuState, CommandMenuEffect[]] {
+  const command = state.commands.find((c) => c.id === commandId)
+  if (!command || command.disabled) return [state, []]
+  const recents = pushRecent(state.recents, command.id, state.maxRecents)
+  return [
+    recompute({ ...state, open: false, query: '', recents }),
+    [{ type: 'execute', commandId: command.id }],
+  ]
 }
 
 export function update(
@@ -184,20 +261,30 @@ export function update(
 ): [CommandMenuState, CommandMenuEffect[]] {
   switch (msg.type) {
     case 'open':
-      return [recompute({ ...state, open: true, query: '' }), []]
+      return [recompute({ ...state, open: true, query: '', highlighted: null }), []]
     case 'close':
       return [recompute({ ...state, open: false, query: '' }), []]
     case 'setQuery':
       return [recompute({ ...state, query: msg.query }), []]
-    case 'execute': {
-      const command = state.commands.find((c) => c.id === msg.commandId)
-      if (!command || command.disabled) return [state, []]
-      const recents = pushRecent(state.recents, command.id, state.maxRecents)
-      return [
-        recompute({ ...state, open: false, query: '', recents }),
-        [{ type: 'execute', commandId: command.id }],
-      ]
-    }
+    case 'execute':
+      return execute(state, msg.commandId)
+    case 'executeHighlighted':
+      if (!state.open || state.highlighted === null) return [state, []]
+      return execute(state, state.highlighted)
+    case 'highlight':
+      // A pointer-move fires per tick: an unchanged or unrunnable target
+      // returns the SAME state so the reconciler skips the commit.
+      if (!state.open || state.highlighted === msg.commandId) return [state, []]
+      if (!isHighlightable(state.filtered, msg.commandId)) return [state, []]
+      return [{ ...state, highlighted: msg.commandId }, []]
+    case 'highlightNext':
+      return [state.open ? move(state, 'next') : state, []]
+    case 'highlightPrev':
+      return [state.open ? move(state, 'prev') : state, []]
+    case 'highlightFirst':
+      return [state.open ? move(state, 'first') : state, []]
+    case 'highlightLast':
+      return [state.open ? move(state, 'last') : state, []]
     case 'escape':
       // cmdk convention: clear a non-empty query first, then close.
       if (state.query !== '') return [recompute({ ...state, query: '' }), []]
@@ -262,6 +349,11 @@ export interface ConnectOptions {
   hasDescription?: boolean
 }
 
+/** The combobox group id for a command group label ('' is the ungrouped bucket). */
+function groupKey(label: string): string {
+  return label === '' ? '__ungrouped' : label
+}
+
 /**
  * Project the composed slice into dialog + combobox part bags plus a
  * `shortcutHint` accessor and an empty-state part. The dialog/combobox sends
@@ -293,14 +385,14 @@ export function connect(
         items: s.filtered.map((c) => c.id),
         groups: s.filteredGroups.map(
           (g): ComboboxGroup => ({
-            id: g.label || '__ungrouped',
+            id: groupKey(g.label),
             label: g.label,
             items: g.commands.map((c) => c.id),
           }),
         ),
         disabledItems: s.commands.filter((c) => c.disabled).map((c) => c.id),
         filteredItems: s.filtered.map((c) => c.id),
-        highlightedValue: null,
+        highlightedValue: s.highlighted,
         selectionMode: 'single',
         disabled: false,
         allowCreate: false,
@@ -320,9 +412,21 @@ export function connect(
         case 'close':
           send({ type: 'escape' })
           return
-        // open / highlight* / selectHighlighted / clear / setValue / setItems /
-        // load* are handled by combobox-local UI state or are not used by the
-        // palette; the agent drives selection via `execute`.
+        case 'highlight':
+          if (m.value !== null) send({ type: 'highlight', commandId: m.value })
+          return
+        case 'highlightNext':
+        case 'highlightPrev':
+        case 'highlightFirst':
+        case 'highlightLast':
+          send({ type: m.type })
+          return
+        case 'selectHighlighted':
+          send({ type: 'executeHighlighted' })
+          return
+        // `open` (the palette is already open whenever its input exists),
+        // clear / setValue / setItems / load* are not palette concepts; the
+        // agent drives selection via `execute`.
         default:
           return
       }
@@ -359,14 +463,30 @@ export interface CommandMenuViewOptions {
 
 /**
  * Default palette view: a combobox (search input + grouped command list) inside
- * the dialog overlay. Selecting a command dispatches `execute`; Escape clears
- * the query then closes. Consumers wanting a custom row template should drive
- * the part bags from `connect()` directly.
+ * the dialog overlay. The listbox owns one `option` per FILTERED command,
+ * bucketed into labelled `group`s (an ungrouped command sits directly in the
+ * listbox, with no group and so no dangling label reference). The combobox
+ * input's own key handling drives the machine's highlight — arrows/Home/End
+ * move it, Enter runs it, Escape clears the query then closes — and a pointer
+ * click runs the clicked command. Consumers wanting a custom row template
+ * should drive the part bags from `connect()` directly.
  */
 export function view(opts: CommandMenuViewOptions): Mountable {
   const parts = connect(opts.state, opts.send, { id: opts.id })
   const title = opts.title ?? 'Command palette'
   const emptyText = opts.emptyText ?? 'No matching commands'
+
+  // A command row. Keyed by command id, so the id captured here is the row's
+  // identity for its whole life; label/shortcut still read reactively.
+  const commandRow = (command: Signal<Command>): Mountable => {
+    const id = command.peek().id
+    return div({ ...parts.combobox.item(id).item, class: 'command-menu__item' }, [
+      span({ class: 'command-menu__label' }, [text(command.at('label'))]),
+      span({ class: 'command-menu__shortcut', 'aria-hidden': 'true' }, [
+        text(command.map((c) => c.shortcut ?? '')),
+      ]),
+    ])
+  }
 
   return dialogOverlay({
     state: opts.state.map((s) => ({ open: s.open })),
@@ -385,23 +505,35 @@ export function view(opts: CommandMenuViewOptions): Mountable {
             'aria-labelledby': parts.dialog.title.id,
             class: 'command-menu__input',
             placeholder: opts.inputLabel ?? 'Type a command…',
-            onKeyDown: (e: KeyboardEvent) => {
-              if (e.key === 'Escape') {
-                e.preventDefault()
-                opts.send({ type: 'escape' })
-                return
-              }
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                const first = opts.state.peek().filtered.find((c) => !c.disabled)
-                if (first) opts.send({ type: 'execute', commandId: first.id })
-              }
-            },
           }),
         ]),
         // The empty-state `status` sits BESIDE the listbox: a listbox may own
         // only options and groups (#268 audit).
-        div({ ...parts.combobox.content, class: 'command-menu__list' }),
+        div({ ...parts.combobox.content, class: 'command-menu__list' }, [
+          each(opts.state.at('filteredGroups'), {
+            key: (g) => g.label,
+            render: (group) => {
+              // Keyed by label, so the label is fixed for the row's life.
+              const label = group.peek().label
+              const rows = each(group.at('commands'), {
+                key: (c) => c.id,
+                render: (c) => [commandRow(c)],
+              })
+              if (label === '') {
+                return [div({ class: 'command-menu__group', 'data-ungrouped': '' }, [rows])]
+              }
+              const groupParts = parts.combobox.group(groupKey(label))
+              return [
+                div({ ...groupParts.group, class: 'command-menu__group' }, [
+                  div({ ...groupParts.groupLabel, class: 'command-menu__group-label' }, [
+                    text(label),
+                  ]),
+                  rows,
+                ]),
+              ]
+            },
+          }),
+        ]),
         div({ ...parts.empty, class: 'command-menu__empty' }, [text(emptyText)]),
       ]),
     ],
