@@ -63,11 +63,31 @@ function withoutFrontmatter(text: string): string {
   return match === null ? text : match[0].replace(/[^\n]/g, '') + text.slice(match[0].length)
 }
 
-/** Every link, definition, image and raw-HTML href in a Markdown document. */
-export function collectLinks(text: string): DocLink[] {
-  const tree = unified().use(remarkParse).use(remarkGfm).parse(withoutFrontmatter(text))
+/**
+ * One Markdown document, parsed ONCE. Its links are read off the mdast; its heading ids are
+ * derived from the SAME mdast on first request (mdast → hast → rehype-slug, the site's real
+ * pipeline — the transform builds a new tree and leaves the mdast untouched). The parse is the
+ * whole cost (measured: `site/content/api/components.md`, ~1.4 MB, takes ~1.5 s through
+ * remark-parse + remark-gfm and ~0.15 s through the hast transform), so a document that is both
+ * link-checked and an anchor target must never be parsed twice.
+ */
+export interface ParsedDoc {
+  /** Every link, definition, image and raw-HTML href in the document. */
+  readonly links: readonly DocLink[]
+  /** The heading ids the site (and GitHub) generate for it, plus explicit HTML ids. */
+  anchors(): ReadonlySet<string>
+}
+
+const markdown = unified().use(remarkParse).use(remarkGfm)
+const headingIds = unified()
+  .use(remarkParse)
+  .use(remarkGfm)
+  .use(remarkRehype, { allowDangerousHtml: true })
+  .use(rehypeSlug)
+
+function linksOf(mdast: TreeNode): DocLink[] {
   const links: DocLink[] = []
-  walk(tree as TreeNode, (node) => {
+  walk(mdast, (node) => {
     const line = node.position?.start.line ?? 0
     if ((node.type === 'link' || node.type === 'definition' || node.type === 'image') && node.url) {
       links.push({ url: node.url, line })
@@ -78,14 +98,7 @@ export function collectLinks(text: string): DocLink[] {
   return links
 }
 
-/** The heading ids the site (and GitHub) generate for a document, plus explicit HTML ids. */
-export function anchorIds(text: string): Set<string> {
-  const processor = unified()
-    .use(remarkParse)
-    .use(remarkGfm)
-    .use(remarkRehype, { allowDangerousHtml: true })
-    .use(rehypeSlug)
-  const hast = processor.runSync(processor.parse(withoutFrontmatter(text))) as TreeNode
+function idsOf(hast: TreeNode): Set<string> {
   const ids = new Set<string>()
   walk(hast, (node) => {
     const id = node.properties?.id
@@ -97,6 +110,21 @@ export function anchorIds(text: string): Set<string> {
   return ids
 }
 
+export function parseDoc(text: string): ParsedDoc {
+  const mdast = markdown.parse(withoutFrontmatter(text))
+  const links = linksOf(mdast as TreeNode)
+  let ids: Set<string> | undefined
+  return {
+    links,
+    anchors: () => (ids ??= idsOf(headingIds.runSync(mdast) as TreeNode)),
+  }
+}
+
+/** The heading ids the site (and GitHub) generate for a document, plus explicit HTML ids. */
+export function anchorIds(text: string): ReadonlySet<string> {
+  return parseDoc(text).anchors()
+}
+
 export interface LinkContext {
   readonly repoRoot: string
   /** Repo-relative paths of every tracked file (and directory prefixes are derived from it). */
@@ -104,6 +132,11 @@ export interface LinkContext {
   /** Slugs of the example apps built under `/apps/<slug>/`. */
   readonly exampleApps: ReadonlySet<string>
   readonly contract: ProductContract
+  /**
+   * Parsed documents by repo-relative path, shared by the link check and the anchor check so
+   * each file is parsed at most once per context (see {@link documentAt}).
+   */
+  readonly documents: Map<string, ParsedDoc>
 }
 
 export interface BrokenLink {
@@ -113,15 +146,14 @@ export interface BrokenLink {
   readonly reason: string
 }
 
-const anchorCache = new Map<string, Set<string>>()
-
-function anchorsOf(context: LinkContext, repoPath: string): Set<string> {
-  let ids = anchorCache.get(repoPath)
-  if (ids === undefined) {
-    ids = anchorIds(readFileSync(resolve(context.repoRoot, repoPath), 'utf-8'))
-    anchorCache.set(repoPath, ids)
+/** The document at `repoPath`, read and parsed on first use and cached on the context. */
+export function documentAt(context: LinkContext, repoPath: string): ParsedDoc {
+  let doc = context.documents.get(repoPath)
+  if (doc === undefined) {
+    doc = parseDoc(readFileSync(resolve(context.repoRoot, repoPath), 'utf-8'))
+    context.documents.set(repoPath, doc)
   }
-  return ids
+  return doc
 }
 
 function isTrackedPath(context: LinkContext, repoPath: string): boolean {
@@ -146,7 +178,9 @@ function splitUrl(url: string): { path: string; query: string; hash: string } {
 
 function checkAnchor(context: LinkContext, repoPath: string, hash: string): string | undefined {
   if (hash === '' || !repoPath.endsWith('.md')) return undefined
-  return anchorsOf(context, repoPath).has(hash) ? undefined : `no heading #${hash} in ${repoPath}`
+  return documentAt(context, repoPath).anchors().has(hash)
+    ? undefined
+    : `no heading #${hash} in ${repoPath}`
 }
 
 function checkGallery(context: LinkContext, rest: string, query: string): string | undefined {

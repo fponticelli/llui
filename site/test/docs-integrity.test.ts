@@ -6,6 +6,20 @@
  * Files are enumerated with `git ls-files --cached --others --exclude-standard`, never a
  * filesystem walk: `.claude/worktrees/` holds full checkouts of sibling lanes that a walk would
  * scan too (gitignored, so git never lists them).
+ *
+ * Cost: parsing is the whole bill (remark-parse + remark-gfm, ~5.5 s for the corpus; the
+ * ~1.4 MB generated `site/content/api/components.md` alone is ~1.5 s). It used to be paid twice
+ * for every anchor target — once for its links, once more for its heading ids — inside ONE test
+ * that carried every file (~7.5 s quiet; 57-140 s, past its 30 s budget, at load ~25-47 on 4
+ * CPUs). Now each document is parsed exactly once and shared by the link and anchor checks
+ * through `context.documents`, and the link check is one test per file: a document is parsed by
+ * its own test, so a failure names its file and no test carries more than its own parse plus
+ * the first-use parse of a page it anchors into (the worst is `packages/cli/README.md`, which
+ * anchors into the API page above: ~1.9 s quiet, ~15 s at load ~30). The parse deliberately
+ * stays OUT of `beforeAll`: as a fixture the whole corpus is ONE hook's bill, measured at
+ * 42-46 s of the 60 s `hookTimeout` at load ~25-31 — the #246 caveat, the cost leaves the tests
+ * without leaving the budget. The file list is enumerated at collection time to name those
+ * tests (two `git ls-files` calls, milliseconds), and the instrument test asserts that list.
  */
 import { beforeAll, describe, expect, it } from 'vitest'
 import { execFileSync } from 'child_process'
@@ -16,7 +30,7 @@ import { REPO_ROOT, loadComponentDocsInput } from '../src/generate-component-doc
 import {
   anchorIds,
   checkLink,
-  collectLinks,
+  documentAt,
   type BrokenLink,
   type LinkContext,
 } from './support/doc-links.js'
@@ -67,6 +81,8 @@ function countCheckedFiles(): string[] {
   ].sort()
 }
 
+const LINK_CHECKED = linkCheckedFiles()
+
 let context: LinkContext
 
 beforeAll(() => {
@@ -75,12 +91,13 @@ beforeAll(() => {
     tracked: new Set(gitFiles('.')),
     exampleApps: new Set(EXAMPLES.map(({ slug }) => slug)),
     contract: loadComponentDocsInput().contract,
+    documents: new Map(),
   }
 })
 
 describe('the instrument', () => {
   it('enumerates through git, never into sibling worktrees', () => {
-    const files = linkCheckedFiles()
+    const files = LINK_CHECKED
     expect(files.filter((file) => file.startsWith('.claude/worktrees/'))).toEqual([])
     expect(files).toContain('README.md')
     expect(files).toContain('site/content/components.md')
@@ -146,21 +163,20 @@ describe('the instrument', () => {
   })
 })
 
-describe('docs integrity', () => {
-  it('every internal link and anchor resolves', () => {
+describe('docs integrity: every internal link and anchor resolves in', () => {
+  it.each(LINK_CHECKED)('%s', (file) => {
     const broken: BrokenLink[] = []
-    for (const file of linkCheckedFiles()) {
-      const text = readFileSync(resolve(REPO_ROOT, file), 'utf-8')
-      for (const { url, line } of collectLinks(text)) {
-        const reason = checkLink(context, file, url)
-        if (reason !== undefined) broken.push({ file, line, url, reason })
-      }
+    for (const { url, line } of documentAt(context, file).links) {
+      const reason = checkLink(context, file, url)
+      if (reason !== undefined) broken.push({ file, line, url, reason })
     }
     expect(
       broken.map(({ file, line, url, reason }) => `${file}:${line} ${url} — ${reason}`),
     ).toEqual([])
   })
+})
 
+describe('docs integrity', () => {
   it('no hand-written component count survives outside a generated region', () => {
     const hits = countCheckedFiles().flatMap((file) =>
       manualCounts(file, readFileSync(resolve(REPO_ROOT, file), 'utf-8')),
