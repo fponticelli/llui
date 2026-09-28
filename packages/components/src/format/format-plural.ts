@@ -31,7 +31,7 @@ export function resolvePluralCategory(
   if (opts.maximumSignificantDigits !== undefined)
     intlOpts.maximumSignificantDigits = opts.maximumSignificantDigits
 
-  const key = cacheKey('plural', locale, intlOpts as Record<string, unknown>)
+  const key = cacheKey('plural', locale, intlOpts)
   const rules = cached(key, () => new Intl.PluralRules(locale, intlOpts))
   return rules.select(value) as PluralCategory
 }

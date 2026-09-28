@@ -13,7 +13,7 @@ export function formatList(value: string[], opts: FormatListOptions = {}): strin
     type: opts.type ?? 'conjunction',
     style: opts.style ?? 'long',
   }
-  const key = cacheKey('list', locale, intlOpts as Record<string, unknown>)
+  const key = cacheKey('list', locale, intlOpts)
   const fmt = cached(key, () => new Intl.ListFormat(locale, intlOpts))
   return fmt.format(value)
 }

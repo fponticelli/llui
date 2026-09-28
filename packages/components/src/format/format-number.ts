@@ -42,7 +42,7 @@ export function formatNumber(value: number, opts: FormatNumberOptions = {}): str
   if (opts.maximumSignificantDigits !== undefined)
     intlOpts.maximumSignificantDigits = opts.maximumSignificantDigits
 
-  const key = cacheKey('num', locale, intlOpts as Record<string, unknown>)
+  const key = cacheKey('num', locale, intlOpts)
   const fmt = cached(key, () => new Intl.NumberFormat(locale, intlOpts))
   return fmt.format(value)
 }
