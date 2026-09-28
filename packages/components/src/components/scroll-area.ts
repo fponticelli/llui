@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { allFiniteNumbers } from '../utils/number.js'
 
 /**
@@ -157,8 +157,8 @@ export interface ScrollAreaParts {
   root: {
     'data-scope': 'scroll-area'
     'data-part': 'root'
-    'data-scrolling': Signal<'' | undefined>
-    'data-hovered': Signal<'' | undefined>
+    'data-scrolling': ReadSignal<'' | undefined>
+    'data-hovered': ReadSignal<'' | undefined>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
   }
@@ -176,35 +176,35 @@ export interface ScrollAreaParts {
     'data-scope': 'scroll-area'
     'data-part': 'scrollbar'
     'data-axis': 'x'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
   scrollbarY: {
     'data-scope': 'scroll-area'
     'data-part': 'scrollbar'
     'data-axis': 'y'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
   thumbX: {
     'data-scope': 'scroll-area'
     'data-part': 'thumb'
     'data-axis': 'x'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   thumbY: {
     'data-scope': 'scroll-area'
     'data-part': 'thumb'
     'data-axis': 'y'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   corner: {
     'data-scope': 'scroll-area'
     'data-part': 'corner'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
 }
 
 export function connect(
-  state: Signal<ScrollAreaState>,
+  state: ReadSignal<ScrollAreaState>,
   send: Send<ScrollAreaMsg>,
 ): ScrollAreaParts {
   return {

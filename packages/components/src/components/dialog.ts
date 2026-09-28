@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { dialogLocale } from '../locale/dialog.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
@@ -139,16 +139,16 @@ export interface DialogParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'dialog'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'dialog'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
   }
   backdrop: {
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'dialog'
     'data-part': 'backdrop'
     'aria-hidden': 'true'
@@ -165,7 +165,7 @@ export interface DialogParts {
     /** The description part's id, or absent when `hasDescription: false`. */
     'aria-describedby': string | undefined
     tabindex: -1
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'dialog'
     'data-part': 'content'
     onAnimationEnd: (e: AnimationEvent) => void
@@ -210,7 +210,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<DialogState>,
+  state: ReadSignal<DialogState>,
   send: Send<DialogMsg>,
   opts: ConnectOptions,
 ): DialogParts {
@@ -287,7 +287,7 @@ export interface OverlayOptions {
    */
   positionerClass?: string
   /** Dialog state slice as a Signal. */
-  state: Signal<DialogState>
+  state: ReadSignal<DialogState>
   /** Send dispatcher for dialog messages. */
   send: Send<DialogMsg>
   /** Parts from `connect()` — used to locate the content element by id. */

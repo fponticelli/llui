@@ -178,7 +178,7 @@ function topLevelPaths(diff: StateDiff | undefined): string[] {
   return Array.from(seen)
 }
 
-import { type Send, type Signal } from '@llui/dom'
+import { type Send, type ReadSignal } from '@llui/dom'
 
 type RegionAction = {
   entryId: string
@@ -196,31 +196,31 @@ export type ConnectBag = {
    * returns the same handle across renders, keeping the underlying
    * binding's short-circuit valid.
    */
-  flashing: (path: string) => Signal<boolean>
+  flashing: (path: string) => ReadSignal<boolean>
   /**
    * Convenience signal: resolves to `className` (default `'agent-flash'`)
    * while flashing, otherwise `undefined`. Spread into element bags
    * via `class: bag.flashClass('items')`. Cached per `(path, className)`
    * pair.
    */
-  flashClass: (path: string, className?: string) => Signal<string | undefined>
+  flashClass: (path: string, className?: string) => ReadSignal<string | undefined>
   /**
    * Metadata about the action that touched this path, or null when
    * the spotlight isn't on this path. Useful for tooltips or aria-live
    * narration: "agent → SelectAlternative just changed alternatives."
    * Cached per `path`.
    */
-  regionAction: (path: string) => Signal<RegionAction>
+  regionAction: (path: string) => ReadSignal<RegionAction>
   /**
    * Direct signal on the latest dispatch envelope. Useful for a
    * single panel-level "now flashing: X" indicator outside the
    * per-region instrumentation.
    */
-  latestDispatch: Signal<AgentAttentionState['latestDispatch']>
+  latestDispatch: ReadSignal<AgentAttentionState['latestDispatch']>
 }
 
 export function connect(
-  state: Signal<AgentAttentionState>,
+  state: ReadSignal<AgentAttentionState>,
   _send: Send<AgentAttentionMsg>,
 ): ConnectBag {
   // Per-call-shape derived-signal caches. Caching by `(path, className)`
@@ -228,9 +228,9 @@ export function connect(
   // short-circuits — without it, `bag.flashing('items')` would allocate
   // a fresh handle each call. Hosts also iterate these in tight inner
   // loops, where per-render allocation costs would compound.
-  const flashingCache = new Map<string, Signal<boolean>>()
-  const flashClassCache = new Map<string, Signal<string | undefined>>()
-  const regionActionCache = new Map<string, Signal<RegionAction>>()
+  const flashingCache = new Map<string, ReadSignal<boolean>>()
+  const flashClassCache = new Map<string, ReadSignal<string | undefined>>()
+  const regionActionCache = new Map<string, ReadSignal<RegionAction>>()
 
   const matches = (s: AgentAttentionState, path: string): boolean => {
     const d = s.latestDispatch

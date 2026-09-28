@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 
 /**
@@ -89,22 +89,22 @@ export interface FormParts {
   root: {
     'data-scope': 'form'
     'data-part': 'root'
-    'data-state': Signal<FormStatus>
-    'aria-busy': Signal<'true' | undefined>
+    'data-state': ReadSignal<FormStatus>
+    'aria-busy': ReadSignal<'true' | undefined>
   }
   field: (name: string) => {
     'data-scope': 'form'
     'data-part': 'field'
-    'data-touched': Signal<'' | undefined>
-    touched: Signal<boolean>
+    'data-touched': ReadSignal<'' | undefined>
+    touched: ReadSignal<boolean>
     onBlur: (e: FocusEvent) => void
   }
   submit: {
     type: 'submit'
     'data-scope': 'form'
     'data-part': 'submit'
-    'data-state': Signal<FormStatus>
-    disabled: Signal<boolean>
+    'data-state': ReadSignal<FormStatus>
+    disabled: ReadSignal<boolean>
   }
 }
 
@@ -113,7 +113,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<FormState>,
+  state: ReadSignal<FormState>,
   send: Send<FormMsg>,
   _opts: ConnectOptions,
 ): FormParts {

@@ -8,7 +8,7 @@
  * rebuilds the tree — the structural `each` key is stable across data updates.
  */
 
-import { derived, div, each, type Renderable, type Signal } from '@llui/dom'
+import { derived, div, each, type Renderable, type ReadSignal } from '@llui/dom'
 import type { Catalog, CatalogResolver, RenderContext, RenderScope } from './catalog.js'
 import { warnOnce } from './catalog.js'
 import type {
@@ -114,9 +114,9 @@ function themeStyle(theme: Theme): string {
 // ── Render context construction ────────────────────────────────────
 function makeContext(
   surfaceId: string,
-  theme: Signal<Theme>,
-  rootData: Signal<JsonValue>,
-  components: Signal<Readonly<Record<ComponentId, ComponentNode>>>,
+  theme: ReadSignal<Theme>,
+  rootData: ReadSignal<JsonValue>,
+  components: ReadSignal<Readonly<Record<ComponentId, ComponentNode>>>,
   send: (msg: A2uiMsg) => void,
   catalog: Catalog,
 ): RenderContext {
@@ -203,7 +203,7 @@ function renderNode(ctx: RenderContext, id: ComponentId, scope: RenderScope): Re
     return []
   }
 
-  const units: Signal<readonly NodeUnit[]> = derived(
+  const units: ReadSignal<readonly NodeUnit[]> = derived(
     scope.components,
     scope.data,
     scope.root,
@@ -259,7 +259,7 @@ function renderChildren(
   // is the row component's node identity: folding it into the row key rebuilds
   // every row when the template's component DEFINITION changes (rows can't use a
   // per-id `each` — see `buildNode`), while `rowKey` handles data reorder/edits.
-  const rows: Signal<readonly TemplateRow[]> = derived(
+  const rows: ReadSignal<readonly TemplateRow[]> = derived(
     scope.root,
     scope.data,
     scope.uiState,
@@ -309,7 +309,7 @@ function renderChildren(
 // the inner structural unit) — a handle reaching for root state would be
 // re-scoped to the row and read the wrong value.
 function renderSurface(
-  surface: Signal<Surface>,
+  surface: ReadSignal<Surface>,
   send: (msg: A2uiMsg) => void,
   resolveCatalog: CatalogResolver,
   fallbackCatalog: Catalog,
@@ -323,10 +323,10 @@ function renderSurface(
   // `each` here anymore: the root is rendered via `renderNode`, whose per-id
   // `each` reacts to the component map arriving/changing — so `updateComponents`
   // rebuilds only the nodes that changed, never the whole surface.
-  const rootData: Signal<JsonValue> = surface.map((su) => su.dataModel)
-  const theme: Signal<Theme> = surface.map((su) => su.theme)
-  const uiState: Signal<JsonObject> = surface.map((su) => su.uiState)
-  const components: Signal<Readonly<Record<ComponentId, ComponentNode>>> = surface.map(
+  const rootData: ReadSignal<JsonValue> = surface.map((su) => su.dataModel)
+  const theme: ReadSignal<Theme> = surface.map((su) => su.theme)
+  const uiState: ReadSignal<JsonObject> = surface.map((su) => su.uiState)
+  const components: ReadSignal<Readonly<Record<ComponentId, ComponentNode>>> = surface.map(
     (su) => su.components,
   )
 
@@ -358,12 +358,12 @@ function renderSurface(
 
 /** Render every live surface, in creation order. */
 export function renderSurfaces(
-  state: Signal<A2uiState>,
+  state: ReadSignal<A2uiState>,
   send: (msg: A2uiMsg) => void,
   resolveCatalog: CatalogResolver,
   fallbackCatalog: Catalog,
 ): Renderable {
-  const surfaces: Signal<readonly Surface[]> = state.map((s) => {
+  const surfaces: ReadSignal<readonly Surface[]> = state.map((s) => {
     const out: Surface[] = []
     for (const id of s.order) {
       const su = s.surfaces[id]

@@ -13,7 +13,7 @@ import {
   unsafeHtml,
   type Mountable,
   type Send,
-  type Signal,
+  type ReadSignal,
 } from '@llui/dom'
 import type { CommandItem } from '../plugins/types.js'
 import type { CollabStatus, EditorMsg, FormatState } from '../state.js'
@@ -25,10 +25,10 @@ export interface ToolbarItemParts {
   'data-id': string
   'aria-label': string
   title: string
-  'aria-pressed': Signal<'true' | 'false'>
-  'aria-disabled': Signal<'true' | undefined>
-  disabled: Signal<boolean>
-  'data-active': Signal<'' | undefined>
+  'aria-pressed': ReadSignal<'true' | 'false'>
+  'aria-disabled': ReadSignal<'true' | undefined>
+  disabled: ReadSignal<boolean>
+  'data-active': ReadSignal<'' | undefined>
   onClick: (e: MouseEvent) => void
 }
 
@@ -45,7 +45,7 @@ export interface ToolbarParts {
 /** Build reactive toolbar parts from the format signal. Spread `item(id)` onto a
  * `<button>`; `aria-pressed` / `data-active` / `disabled` track the format. */
 export function connectToolbar(
-  format: Signal<FormatState>,
+  format: ReadSignal<FormatState>,
   send: Send<EditorMsg>,
   items: readonly CommandItem[],
 ): ToolbarParts {
@@ -132,7 +132,7 @@ function groupItems(items: readonly CommandItem[]): string[][] {
 }
 
 export interface ToolbarOptions {
-  format: Signal<FormatState>
+  format: ReadSignal<FormatState>
   send: Send<EditorMsg>
   items: readonly CommandItem[]
   /** Explicit grouped layout of ids; defaults to grouping by `item.group`. */
@@ -144,12 +144,12 @@ export interface ToolbarOptions {
   blockSelect?: boolean
   /** Collaborative-session status. When supplied AND `enabled`, the toolbar
    * appends a presence indicator (connection dot + live peer count). */
-  collab?: Signal<CollabStatus>
+  collab?: ReadSignal<CollabStatus>
   'aria-label'?: string
 }
 
 /** Connection/presence indicator for a collaborative session. */
-function presenceIndicator(collab: Signal<CollabStatus>): Mountable {
+function presenceIndicator(collab: ReadSignal<CollabStatus>): Mountable {
   const statusOf = (c: CollabStatus): string =>
     c.connected ? (c.synced ? 'synced' : 'connecting') : 'offline'
   return div({ 'data-scope': 'md-toolbar', 'data-part': 'presence' }, [
@@ -172,7 +172,7 @@ function presenceIndicator(collab: Signal<CollabStatus>): Mountable {
 
 /** Render the `block` group as a native `<select>` of block types. */
 function blockTypeSelect(
-  format: Signal<FormatState>,
+  format: ReadSignal<FormatState>,
   send: Send<EditorMsg>,
   blockItems: readonly CommandItem[],
 ): Mountable {

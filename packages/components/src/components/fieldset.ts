@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 
 /**
  * Fieldset — group wiring for a set of related controls (e.g. an address block).
@@ -62,12 +62,12 @@ export interface FieldsetParts {
     role: 'group'
     /** The legend's id, or absent when `hasLegend: false`. */
     'aria-labelledby': string | undefined
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'fieldset'
     'data-part': 'root'
-    'data-invalid': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   /** The `<legend>` naming the group. */
   legend: {
@@ -98,7 +98,7 @@ export interface FieldsetConnectOptions {
 }
 
 export function connect(
-  state: Signal<FieldsetState>,
+  state: ReadSignal<FieldsetState>,
   _send: Send<FieldsetMsg>,
   opts: FieldsetConnectOptions = {},
 ): FieldsetParts {

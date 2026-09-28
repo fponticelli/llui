@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { tourLocale } from '../locale/tour.js'
 import { allFiniteNumbers, finiteOrDefault } from '../utils/number.js'
@@ -141,7 +141,7 @@ export interface TourParts {
     'aria-describedby': string | undefined
     'data-scope': 'tour'
     'data-part': 'root'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   backdrop: {
     'data-scope': 'tour'
@@ -170,7 +170,7 @@ export interface TourParts {
   }
   prevTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'tour'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -179,7 +179,7 @@ export interface TourParts {
     type: 'button'
     'data-scope': 'tour'
     'data-part': 'next-trigger'
-    'data-last': Signal<'' | undefined>
+    'data-last': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
   }
   closeTrigger: {
@@ -208,7 +208,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<TourState>,
+  state: ReadSignal<TourState>,
   send: Send<TourMsg>,
   opts: ConnectOptions,
 ): TourParts {

@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { finiteOrDefault } from '../utils/number.js'
 
 /**
@@ -116,13 +116,13 @@ export interface AsyncListParts {
   root: {
     'data-scope': 'async-list'
     'data-part': 'root'
-    'data-status': Signal<AsyncStatus>
+    'data-status': ReadSignal<AsyncStatus>
     /** `'true'` while a page request is in flight — the list's content is changing. */
-    'aria-busy': Signal<'true' | 'false'>
+    'aria-busy': ReadSignal<'true' | 'false'>
     /** Present once a load has SETTLED with zero items: the empty-state hook. */
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
     /** Present when the source reports no further pages. */
-    'data-exhausted': Signal<'' | undefined>
+    'data-exhausted': ReadSignal<'' | undefined>
   }
   sentinel: {
     'data-scope': 'async-list'
@@ -131,7 +131,7 @@ export interface AsyncListParts {
   }
   loadMoreTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'async-list'
     'data-part': 'load-more-trigger'
     onClick: (e: MouseEvent) => void
@@ -140,7 +140,7 @@ export interface AsyncListParts {
     type: 'button'
     'data-scope': 'async-list'
     'data-part': 'retry-trigger'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   errorText: {
@@ -148,12 +148,12 @@ export interface AsyncListParts {
     'aria-live': 'polite'
     'data-scope': 'async-list'
     'data-part': 'error-text'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 
 export function connect<T>(
-  state: Signal<AsyncListState<T>>,
+  state: ReadSignal<AsyncListState<T>>,
   send: Send<AsyncListMsg<T>>,
 ): AsyncListParts {
   return {

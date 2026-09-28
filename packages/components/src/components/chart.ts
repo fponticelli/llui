@@ -1,5 +1,5 @@
 import { elNS, tagSend } from '@llui/dom'
-import type { Mountable, Send, Signal } from '@llui/dom'
+import type { Mountable, Send, ReadSignal } from '@llui/dom'
 import { deriveOnce } from '../utils/derive.js'
 import { allFiniteNumbers, finiteBound, positiveFiniteOrDefault } from '../utils/number.js'
 import {
@@ -852,9 +852,9 @@ export interface ChartParts {
     // Spelled out rather than aliased: `scripts/test/registry-attrs.test.ts`
     // reads part-bag VALUES syntactically, and an imported alias reads as an
     // open type it declines to give a verdict on.
-    'data-coord': Signal<'cartesian' | 'polar'>
-    'data-domain': Signal<'value' | 'share'>
-    'data-active': Signal<'' | undefined>
+    'data-coord': ReadSignal<'cartesian' | 'polar'>
+    'data-domain': ReadSignal<'value' | 'share'>
+    'data-active': ReadSignal<'' | undefined>
     /** Per-instance forced-colors fill custom properties — see `connect()`'s
      * own doc for why these must be per-chart rather than a shared global. */
     style: string
@@ -875,7 +875,7 @@ export interface ChartParts {
     'data-part': 'svg'
     role: 'img'
     'aria-labelledby': string
-    viewBox: Signal<string>
+    viewBox: ReadSignal<string>
     tabindex: 0
     onKeyDown: (e: KeyboardEvent) => void
     onPointerMove: (e: PointerEvent) => void
@@ -888,7 +888,7 @@ export interface ChartParts {
   table: {
     'data-scope': 'chart'
     'data-part': 'table'
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
   }
   /** Tooltip ATTRIBUTES — spreadable, with its own reactive `hidden`. */
   tooltip: {
@@ -896,8 +896,8 @@ export interface ChartParts {
     'data-part': 'tooltip'
     role: 'status'
     'aria-live': 'polite'
-    hidden: Signal<boolean>
-    style: Signal<string>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
   /** A `<g>` stacking layer. Static — spread it on each layer group. */
   layer: { 'data-scope': 'chart'; 'data-part': 'layer' }
@@ -920,9 +920,9 @@ export interface ChartParts {
     'data-scope': 'chart'
     'data-part': 'legend-item'
     'data-series': string
-    'data-series-cue': Signal<ChartSeriesCue>
-    'data-dimmed': Signal<'' | undefined>
-    'aria-pressed': Signal<boolean>
+    'data-series-cue': ReadSignal<ChartSeriesCue>
+    'data-dimmed': ReadSignal<'' | undefined>
+    'aria-pressed': ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   /** The legend's colour chip. Spreadable onto its own element (a `<span>` in
@@ -933,7 +933,7 @@ export interface ChartParts {
   legendSwatch: (key: string) => {
     'data-scope': 'chart'
     'data-part': 'legend-swatch'
-    'data-series-cue': Signal<ChartSeriesCue>
+    'data-series-cue': ReadSignal<ChartSeriesCue>
   }
   /** Attributes for one drawn mark. Spread onto a `<path>` and pass `d`. */
   markProps: (mark: ChartMark) => {
@@ -948,14 +948,14 @@ export interface ChartParts {
     onPointerEnter: (e: PointerEvent) => void
   }
   // Derived geometry, as signals the view renders with `each`.
-  marks: Signal<ChartMark[]>
-  vertices: Signal<ChartVertex[]>
-  gridLines: Signal<ChartGridLine[]>
-  categoryTicks: Signal<ChartCategoryTick[]>
-  tooltipRows: Signal<ChartTooltipRow[]>
-  activeLabel: Signal<string>
-  rows: Signal<ChartRow[]>
-  series: Signal<ChartSeries[]>
+  marks: ReadSignal<ChartMark[]>
+  vertices: ReadSignal<ChartVertex[]>
+  gridLines: ReadSignal<ChartGridLine[]>
+  categoryTicks: ReadSignal<ChartCategoryTick[]>
+  tooltipRows: ReadSignal<ChartTooltipRow[]>
+  activeLabel: ReadSignal<string>
+  rows: ReadSignal<ChartRow[]>
+  series: ReadSignal<ChartSeries[]>
 }
 
 export interface ChartConnectOptions {
@@ -971,7 +971,7 @@ export interface ChartConnectOptions {
 }
 
 export function connect(
-  state: Signal<ChartState>,
+  state: ReadSignal<ChartState>,
   send: Send<ChartMsg>,
   opts: ChartConnectOptions,
 ): ChartParts {

@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { allFiniteNumbers } from '../utils/number.js'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
@@ -180,19 +180,19 @@ export interface WizardParts {
     'aria-label': string
     'data-scope': 'steps'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   nextTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
-    'aria-busy': Signal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    'aria-busy': ReadSignal<'true' | undefined>
     'data-scope': 'steps'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
   }
   prevTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -208,7 +208,7 @@ export interface WizardConnectOptions {
 }
 
 export function connect(
-  state: Signal<WizardState>,
+  state: ReadSignal<WizardState>,
   send: Send<WizardMsg>,
   opts: WizardConnectOptions = {},
 ): WizardParts {

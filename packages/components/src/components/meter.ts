@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal, Signal } from '@llui/dom'
 import { deriveOnce } from '../utils/derive.js'
 import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
 
@@ -350,47 +350,47 @@ function computeLayout(state: MeterState): MeterBandGeometry[] {
 export interface MeterParts {
   root: {
     role: 'meter'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
     'aria-label': string | undefined
     // Spelled out rather than aliased: `scripts/test/registry-attrs.test.ts`
     // reads part-bag VALUES syntactically and gives an ALIAS no verdict, which
     // is how the shipped skin came to style `data-[state=critical]` against a
     // machine emitting `low`/`high` — two rules of dead CSS, for a release.
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     /** The current band's id — absent when the reading is in no band. */
-    'data-band': Signal<string | undefined>
+    'data-band': ReadSignal<string | undefined>
     'data-scope': 'meter'
     'data-part': 'root'
   }
   track: {
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     'data-scope': 'meter'
     'data-part': 'track'
   }
   /** The filled bar of a classic gauge: `inline-size` up to the reading. */
   range: {
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     'data-scope': 'meter'
     'data-part': 'range'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /** The reading itself, for a BANDED track: positioned, not filled. */
   marker: {
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
-    'data-band': Signal<string | undefined>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-band': ReadSignal<string | undefined>
     'data-scope': 'meter'
     'data-part': 'marker'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   label: {
     'data-scope': 'meter'
     'data-part': 'label'
   }
   /** The laid-out bands, for `each` — key rows on `band.id`. */
-  bands: Signal<MeterBandGeometry[]>
+  bands: ReadSignal<MeterBandGeometry[]>
   /**
    * Attributes for one laid-out band, taking the ROW HANDLE `each` hands the
    * render function. It returns signals rather than plain values so the bag is
@@ -400,10 +400,10 @@ export interface MeterParts {
   bandProps: (band: Signal<MeterBandGeometry>) => {
     'data-scope': 'meter'
     'data-part': 'band'
-    'data-band': Signal<string>
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
-    'data-current': Signal<'' | undefined>
-    style: Signal<string>
+    'data-band': ReadSignal<string>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-current': ReadSignal<'' | undefined>
+    style: ReadSignal<string>
   }
   /**
    * One band by id, for a view that names its bands statically. An id no band
@@ -415,15 +415,15 @@ export interface MeterParts {
     'data-scope': 'meter'
     'data-part': 'band'
     'data-band': string
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
-    'data-current': Signal<'' | undefined>
-    hidden: Signal<boolean>
-    style: Signal<string>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-current': ReadSignal<'' | undefined>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
   /** The formatted reading, WITHOUT the band name. */
-  valueText: Signal<string>
+  valueText: ReadSignal<string>
   /** The current band's announced name, or `''`. */
-  bandLabel: Signal<string>
+  bandLabel: ReadSignal<string>
 }
 
 export interface ConnectOptions {
@@ -433,7 +433,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<MeterState>,
+  state: ReadSignal<MeterState>,
   _send: Send<MeterMsg>,
   opts: ConnectOptions = {},
 ): MeterParts {

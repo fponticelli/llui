@@ -1,4 +1,4 @@
-import type { Mountable, Send, Signal } from '@llui/dom'
+import type { Mountable, Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { navigationMenuLocale } from '../locale/navigation-menu.js'
 import {
@@ -160,12 +160,12 @@ export interface NavItemParts {
     /** For a branch item this is the disclosure button controlling its panel;
      * `undefined` for a plain link trigger. */
     'aria-controls': string | undefined
-    'aria-expanded': Signal<boolean | undefined>
+    'aria-expanded': ReadSignal<boolean | undefined>
     'data-scope': 'navigation-menu'
     'data-part': 'trigger'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onPointerEnter: (e: PointerEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -176,8 +176,8 @@ export interface NavItemParts {
     'aria-labelledby': string
     'data-scope': 'navigation-menu'
     'data-part': 'content'
-    'data-state': Signal<'open' | 'closed'>
-    hidden: Signal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
+    hidden: ReadSignal<boolean>
     onPointerEnter: (e: PointerEvent) => void
   }
 }
@@ -197,7 +197,7 @@ export interface NavMenuParts {
     'aria-label': string
     'data-scope': 'navigation-menu'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     onPointerLeave: (e: PointerEvent) => void
     onPointerEnter: (e: PointerEvent) => void
   }
@@ -224,7 +224,7 @@ export interface NavMenuParts {
     'aria-hidden': 'true'
     'data-scope': 'navigation-menu'
     'data-part': 'indicator'
-    'data-state': Signal<'visible' | 'hidden'>
+    'data-state': ReadSignal<'visible' | 'hidden'>
   }
   /** Place once anywhere in the same build to keep automatic direction live —
    * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
@@ -260,7 +260,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<NavMenuState>,
+  state: ReadSignal<NavMenuState>,
   send: Send<NavMenuMsg>,
   opts: ConnectOptions,
 ): NavMenuParts {

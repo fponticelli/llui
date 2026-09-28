@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { allFiniteNumbers } from '../utils/number.js'
 import { toastLocale } from '../locale/toast.js'
@@ -371,20 +371,20 @@ export interface ToastItemParts {
      * {@link politeness}), never frozen at mount — an `update` patching
      * either is visible here.
      */
-    role: Signal<'status' | 'alert'>
+    role: ReadSignal<'status' | 'alert'>
     'aria-atomic': 'true'
     /** Reactive — see `role` above. */
-    'aria-live': Signal<ToastPoliteness>
+    'aria-live': ReadSignal<ToastPoliteness>
     id: string
     'data-scope': 'toast'
     'data-part': 'root'
     /** Reactive: an `update` patching `type` (e.g. a promise toast moving
      * loading → success) is visible here, not frozen at mount. */
-    'data-type': Signal<ToastType>
+    'data-type': ReadSignal<ToastType>
     'data-id': string
     /** Reactive presence status (closed/opening/open/closing) for CSS-driven
      * enter/exit animations. */
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
     /** Bubbling — a plain (non-bubbling) `onFocus`/`onBlur` here would never
@@ -417,7 +417,7 @@ export interface ToastItemParts {
      * the accessibility tree and the tab order. Hiding it while it has focus
      * is safe for the `'focus'` pause reason: the browser's focus fixup fires
      * `blur`/`focusout` on the row (verified in Chromium), which releases it. */
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     /** Dismisses the toast; ignored while it is not `dismissable`. */
     onClick: (e: MouseEvent) => void
   }
@@ -430,11 +430,11 @@ export interface ToasterParts {
     tabindex: -1
     'data-scope': 'toast'
     'data-part': 'region'
-    'data-placement': Signal<ToastPlacement>
+    'data-placement': ReadSignal<ToastPlacement>
   }
   /**
    * Build the per-row part descriptors for one toast. Takes the row's
-   * `Signal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
+   * `ReadSignal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
    * consumers don't `.peek()` in a reactive slot (which the signal compiler
    * rejects). Only `id` is immutable for a toast's lifetime — created then
    * dismissed, never structurally replaced — so this reads `id` once
@@ -442,13 +442,13 @@ export interface ToasterParts {
    * if `id` changes); every other field (`type`, `ariaLive`, `status`, …) is
    * bound reactively so an `update` patch renders wherever it appears.
    */
-  toast: (toast: Signal<Toast>) => ToastItemParts
+  toast: (toast: ReadSignal<Toast>) => ToastItemParts
   /**
    * Reactive fraction (in [0,1]) of the countdown remaining for the toast with
    * `id` — for a countdown progress bar. Sticky toasts report 1; a dismissed /
    * missing toast reports 0.
    */
-  progress: (id: string) => Signal<number>
+  progress: (id: string) => ReadSignal<number>
   /**
    * Reactive presence: whether the toast with `id` is still in the queue (i.e.
    * should be mounted). Stays true through `'closing'` so the exit animation can
@@ -456,7 +456,7 @@ export interface ToasterParts {
    * `toasts` already handles the actual mount/unmount — this is for consumers
    * coordinating other elements off a single toast's lifecycle.
    */
-  isPresent: (id: string) => Signal<boolean>
+  isPresent: (id: string) => ReadSignal<boolean>
 }
 
 export interface ConnectOptions {
@@ -465,7 +465,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<ToasterState>,
+  state: ReadSignal<ToasterState>,
   send: Send<ToasterMsg>,
   opts: ConnectOptions = {},
 ): ToasterParts {
@@ -482,7 +482,7 @@ export function connect(
       'data-part': 'region',
       'data-placement': state.map((s) => s.placement),
     },
-    toast: (toastSig: Signal<Toast>): ToastItemParts => {
+    toast: (toastSig: ReadSignal<Toast>): ToastItemParts => {
       // `id` is the only identity-bearing field that is immutable for a
       // toast's lifetime (created → dismissed, never structurally replaced),
       // so it alone is read once to build id-derived descriptors and event
@@ -545,8 +545,9 @@ export function connect(
         },
       }
     },
-    progress: (id: string): Signal<number> => state.map((s) => progress(s, id)),
-    isPresent: (id: string): Signal<boolean> => state.map((s) => s.toasts.some((t) => t.id === id)),
+    progress: (id: string): ReadSignal<number> => state.map((s) => progress(s, id)),
+    isPresent: (id: string): ReadSignal<boolean> =>
+      state.map((s) => s.toasts.some((t) => t.id === id)),
   }
 }
 

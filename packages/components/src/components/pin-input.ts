@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { pinInputLocale } from '../locale/pin-input.js'
@@ -184,7 +184,7 @@ export interface PinInputParts {
     'aria-labelledby': string | undefined
     'data-scope': 'pin-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   label: {
     id: string
@@ -193,14 +193,14 @@ export interface PinInputParts {
   }
   /** Props for the input at a given index. */
   input: (index: number) => {
-    type: Signal<'text' | 'password'>
-    inputmode: Signal<'numeric' | 'text'>
-    pattern: Signal<string>
+    type: ReadSignal<'text' | 'password'>
+    inputmode: ReadSignal<'numeric' | 'text'>
+    pattern: ReadSignal<string>
     maxlength: 1
     autocomplete: 'off'
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'pin-input'
     'data-part': 'input'
     'data-index': string
@@ -226,7 +226,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<PinInputState>,
+  state: ReadSignal<PinInputState>,
   send: Send<PinInputMsg>,
   opts: ConnectOptions,
 ): PinInputParts {

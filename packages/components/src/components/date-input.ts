@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { dateInputLocale } from '../locale/date-input.js'
 
@@ -193,25 +193,25 @@ export interface DateInputParts {
   root: {
     'data-scope': 'date-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-invalid': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
   }
   input: {
     type: 'text'
     inputmode: 'numeric'
     autocomplete: 'off'
     spellcheck: false
-    value: Signal<string>
-    disabled: Signal<boolean>
-    readonly: Signal<boolean>
-    required: Signal<boolean>
-    'aria-invalid': Signal<'true' | undefined>
+    value: ReadSignal<string>
+    disabled: ReadSignal<boolean>
+    readonly: ReadSignal<boolean>
+    required: ReadSignal<boolean>
+    'aria-invalid': ReadSignal<'true' | undefined>
     /**
      * The error text's id while the value is invalid — so the field names its
      * own error rather than relying on the one-shot `role="alert"`
      * announcement (#268). Absent without a `ConnectOptions.id`.
      */
-    'aria-describedby': Signal<string | undefined>
+    'aria-describedby': ReadSignal<string | undefined>
     placeholder?: string
     'data-scope': 'date-input'
     'data-part': 'input'
@@ -221,7 +221,7 @@ export interface DateInputParts {
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'date-input'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -233,7 +233,7 @@ export interface DateInputParts {
     'aria-live': 'polite'
     'data-scope': 'date-input'
     'data-part': 'error-text'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 
@@ -249,7 +249,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<DateInputState>,
+  state: ReadSignal<DateInputState>,
   send: Send<DateInputMsg>,
   opts: ConnectOptions = {},
 ): DateInputParts {

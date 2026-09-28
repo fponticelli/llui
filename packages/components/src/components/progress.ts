@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { enProgress } from '../locale/progress.js'
 import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
 
@@ -72,33 +72,33 @@ export function valueState(state: ProgressState): 'indeterminate' | 'complete' |
 export interface ProgressParts {
   root: {
     role: 'progressbar'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number | undefined>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number | undefined>
     'aria-label': string | undefined
-    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
-    'data-orientation': Signal<ProgressOrientation>
+    'data-state': ReadSignal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': ReadSignal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'root'
   }
   track: {
-    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
-    'data-orientation': Signal<ProgressOrientation>
+    'data-state': ReadSignal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': ReadSignal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'track'
   }
   range: {
-    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
-    'data-orientation': Signal<ProgressOrientation>
+    'data-state': ReadSignal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': ReadSignal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'range'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   label: {
     'data-scope': 'progress'
     'data-part': 'label'
   }
-  valueText: Signal<string>
+  valueText: ReadSignal<string>
 }
 
 export interface ConnectOptions {
@@ -108,7 +108,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<ProgressState>,
+  state: ReadSignal<ProgressState>,
   _send: Send<ProgressMsg>,
   opts: ConnectOptions = {},
 ): ProgressParts {

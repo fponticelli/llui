@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
@@ -262,17 +262,17 @@ export interface SearchableSelectItemParts {
   item: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'searchable-select'
     'data-part': 'item'
     'data-value': string
     /** The option's live position in the filtered list (reactive — reused rows
      * never report a stale index). */
-    'data-index': Signal<string>
+    'data-index': ReadSignal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -300,7 +300,7 @@ export interface SearchableSelectParts {
   root: {
     'data-scope': 'searchable-select'
     'data-part': 'root'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
   }
   /** The closed-state trigger button. Displays the selection (via
    * `triggerLabel`) and opens the popup. Handles closed-trigger typeahead. */
@@ -308,33 +308,33 @@ export interface SearchableSelectParts {
     type: 'button'
     role: 'combobox'
     'aria-haspopup': 'listbox'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     id: string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'searchable-select'
     'data-part': 'trigger'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   /** Text to render inside the trigger: placeholder, single label, or a joined
    * multi-select summary. */
-  triggerLabel: Signal<string>
+  triggerLabel: ReadSignal<string>
   /** Whether a selection exists (drive showing/hiding the clear button). */
-  hasValue: Signal<boolean>
+  hasValue: ReadSignal<boolean>
   /** The filter input rendered inside the popup, above the listbox. */
   input: {
     type: 'text'
     role: 'combobox'
     autocomplete: 'off'
     'aria-autocomplete': 'list'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-activedescendant': Signal<string | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
     id: string
-    value: Signal<string>
+    value: ReadSignal<string>
     'data-scope': 'searchable-select'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -349,14 +349,14 @@ export interface SearchableSelectParts {
     role: 'listbox'
     id: string
     'aria-labelledby': string
-    'aria-busy': Signal<'true' | undefined>
-    'aria-multiselectable': Signal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
-    'data-status': Signal<AsyncStatus>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-status': ReadSignal<AsyncStatus>
     /** The mutually-exclusive load projection (#265 finding 11); mirrors the
      * top-level `loadState` signal. See `combobox`'s `LoadProjection`. */
-    'data-load-state': Signal<LoadProjection>
+    'data-load-state': ReadSignal<LoadProjection>
     'data-scope': 'searchable-select'
     'data-part': 'content'
   }
@@ -367,7 +367,7 @@ export interface SearchableSelectParts {
    * flight while the previous items are still mounted and selectable;
    * `'error'` is reported the same whether or not stale items remain
    * mounted underneath it. */
-  loadState: Signal<LoadProjection>
+  loadState: ReadSignal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */
@@ -399,7 +399,7 @@ export interface SearchableSelectParts {
     'aria-atomic': 'true'
     'data-scope': 'searchable-select'
     'data-part': 'live-region'
-    text: Signal<string>
+    text: ReadSignal<string>
   }
   /** Empty-state container. `hidden` is false only when the SETTLED filtered
    * list is empty — never while loading, revalidating, or after a failed
@@ -407,7 +407,7 @@ export interface SearchableSelectParts {
   empty: {
     'data-scope': 'searchable-select'
     'data-part': 'empty'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 
@@ -435,7 +435,7 @@ function triggerLabelOf(s: SearchableSelectState): string {
 }
 
 export function connect(
-  state: Signal<SearchableSelectState>,
+  state: ReadSignal<SearchableSelectState>,
   send: Send<SearchableSelectMsg>,
   opts: ConnectOptions,
 ): SearchableSelectParts {
@@ -692,7 +692,7 @@ export interface OverlayOptions {
    * this popup a stacking context at all.
    */
   positionerClass?: string
-  state: Signal<SearchableSelectState>
+  state: ReadSignal<SearchableSelectState>
   send: Send<SearchableSelectMsg>
   parts: SearchableSelectParts
   /** Renders the popup body (filter input + listbox). */

@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { allFiniteNumbers, clamp, finiteBound, finiteOrDefault } from '../utils/number.js'
 
@@ -130,36 +130,36 @@ export interface SplitterParts {
   root: {
     'data-scope': 'splitter'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-dragging': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-dragging': ReadSignal<'' | undefined>
   }
   primaryPanel: {
     'data-scope': 'splitter'
     'data-part': 'primary-panel'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   secondaryPanel: {
     'data-scope': 'splitter'
     'data-part': 'secondary-panel'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   resizeTrigger: {
     role: 'separator'
-    'aria-orientation': Signal<Orientation>
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-orientation': ReadSignal<Orientation>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'splitter'
     'data-part': 'resize-trigger'
-    'data-orientation': Signal<Orientation>
-    tabindex: Signal<number>
+    'data-orientation': ReadSignal<Orientation>
+    tabindex: ReadSignal<number>
     onKeyDown: (e: KeyboardEvent) => void
     onPointerDown: (e: PointerEvent) => void
   }
 }
 
-export function connect(state: Signal<SplitterState>, send: Send<SplitterMsg>): SplitterParts {
+export function connect(state: ReadSignal<SplitterState>, send: Send<SplitterMsg>): SplitterParts {
   const sizeProp = (s: SplitterState, inverted: boolean): string => {
     const pos = s.position
     const axis = s.orientation === 'horizontal' ? 'width' : 'height'

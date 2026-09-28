@@ -1,5 +1,5 @@
 import { onMount, tagSend, type Mountable } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { focusRovingItem } from '../utils/roving.js'
 import { getElementByIdInScope } from '../utils/root-scope.js'
 import {
@@ -209,12 +209,12 @@ export function update(state: AccordionState, msg: AccordionMsg): [AccordionStat
 export interface AccordionItemParts {
   trigger: {
     type: 'button'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
-    disabled: Signal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'accordion'
     'data-part': 'trigger'
     'data-value': string
@@ -225,13 +225,13 @@ export interface AccordionItemParts {
     role: 'region'
     id: string
     'aria-labelledby': string
-    'data-state': Signal<'open' | 'closing' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closing' | 'closed'>
     'data-scope': 'accordion'
     'data-part': 'content'
     'data-value': string
-    hidden: Signal<boolean>
-    'aria-hidden': Signal<'true' | undefined>
-    inert: Signal<boolean>
+    hidden: ReadSignal<boolean>
+    'aria-hidden': ReadSignal<'true' | undefined>
+    inert: ReadSignal<boolean>
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
@@ -240,8 +240,8 @@ export interface AccordionItemParts {
     onTransitionCancel: (e: TransitionEvent) => void
   }
   item: {
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'accordion'
     'data-part': 'item'
     'data-value': string
@@ -296,7 +296,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<AccordionState>,
+  state: ReadSignal<AccordionState>,
   send: Send<AccordionMsg>,
   opts: ConnectOptions,
 ): AccordionParts {

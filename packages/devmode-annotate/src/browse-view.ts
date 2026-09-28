@@ -24,6 +24,7 @@ import {
   show,
   portal,
   text,
+  type ReadSignal,
   type Signal,
   type Renderable,
   type SignalViewBag,
@@ -666,7 +667,7 @@ function loadedExpansion(
   onReplay: boolean,
   noteId: string,
   item: Signal<RowVM>,
-  data: Signal<ExpansionData>,
+  data: ReadSignal<ExpansionData>,
 ): Renderable {
   return [
     // Screenshot preview (click → lightbox).
@@ -766,7 +767,7 @@ function actionRow(
   onReplay: boolean,
   noteId: string,
   item: Signal<RowVM>,
-  data: Signal<ExpansionData>,
+  data: ReadSignal<ExpansionData>,
 ): Renderable {
   return [
     div({ 'style.display': 'flex', 'style.gap': '6px', 'style.justifyContent': 'flex-end' }, [
@@ -867,7 +868,7 @@ function expansionView(
   send: Send,
   onReplay: boolean,
   item: Signal<RowVM>,
-  exp: Signal<ExpansionData | 'loading'>,
+  exp: ReadSignal<ExpansionData | 'loading'>,
 ): Renderable {
   const noteId = item.peek().id
   return [

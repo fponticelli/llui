@@ -1,11 +1,11 @@
 // Test helpers for the signal-handle connect() API.
 //
-// A migrated component's `connect(state: Signal<State>, send)` returns prop bags
-// whose reactive values are Signal HANDLES (state.map(...)). To exercise a prop
+// A migrated component's `connect(state: ReadSignal<State>, send)` returns prop
+// bags whose reactive values are signal HANDLES (state.map(...)). To exercise a prop
 // against a given state in a unit test, pass `rootSignal()` to connect() and read
 // a prop with `read(prop, stateValue)`.
 
-import { pathHandle, isSignalHandle, type Signal } from '@llui/dom'
+import { pathHandle, isSignalHandle, type ReadSignal, type Signal } from '@llui/dom'
 
 /**
  * The value a valueless root signal reports from `peek()`. There is none: a
@@ -34,7 +34,8 @@ export const rootSignal = <S>(): Signal<S> => pathHandle<S>(noLiveValue, '')
  * whose handlers peek. */
 export const signalOf = <S>(value: S): Signal<S> => pathHandle<S>(() => value, '')
 
-/** Evaluate a connect() prop (a Signal handle) against a concrete state value. */
-export function read<T>(prop: Signal<T> | T, state: unknown): T {
+/** Evaluate a connect() prop (a signal handle of either kind) against a concrete
+ * state value. */
+export function read<T>(prop: ReadSignal<T> | T, state: unknown): T {
   return isSignalHandle(prop) ? (prop.produce(state) as T) : (prop as T)
 }

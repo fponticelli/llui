@@ -3,7 +3,7 @@
 // and reports changes through callbacks, so any owner (the link plugin) can wire
 // it to its own messages.
 
-import { button, div, input, text, type Mountable, type Signal } from '@llui/dom'
+import { button, div, input, text, type Mountable, type ReadSignal } from '@llui/dom'
 import {
   connect as connectDialog,
   overlay as overlayDialog,
@@ -13,9 +13,9 @@ import {
 
 export interface LinkDialogOptions {
   /** The `{ open }` slice driving the modal. */
-  dialog: Signal<DialogState>
+  dialog: ReadSignal<DialogState>
   /** The URL input value. */
-  url: Signal<string>
+  url: ReadSignal<string>
   /** Called as the user edits the URL. */
   onInput: (url: string) => void
   /** Called on Apply / Enter. */

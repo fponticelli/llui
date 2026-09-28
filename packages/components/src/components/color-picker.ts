@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable } from '@llui/dom'
 import { tagSend, onMount, mountable, registerBinding, currentDoc, isSignalHandle } from '@llui/dom'
 import { colorPickerLocale } from '../locale/color-picker.js'
 import {
@@ -672,7 +672,10 @@ export function eyeDropperSupportMount(send: Send<ColorPickerMsg>): Mountable {
  * `onMount` (which hands back the real node), and only LATER hue/maxChroma
  * changes repaint directly through the cached reference.
  */
-export function areaCanvasBinding(state: Signal<ColorPickerState>, canvasId: string): Renderable {
+export function areaCanvasBinding(
+  state: ReadSignal<ColorPickerState>,
+  canvasId: string,
+): Renderable {
   let canvas: HTMLCanvasElement | null = null
   let lastKey: string | null = null
   const paint = (): void => {
@@ -811,21 +814,21 @@ export interface ColorPickerParts {
   root: {
     'data-scope': 'color-picker'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-model': Signal<ColorModel>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-model': ReadSignal<ColorModel>
     /** Bare boolean (package convention): present when the current OKLCH
      * color falls outside sRGB. Always absent in HSV mode (an HSV color is
      * an sRGB parameterization by construction). */
-    'data-out-of-gamut': Signal<'' | undefined>
+    'data-out-of-gamut': ReadSignal<'' | undefined>
   }
   /** Cycles the active model between `'hsv'` and `'oklch'`. */
   modelToggle: {
     type: 'button'
-    'aria-label': Signal<string>
-    disabled: Signal<boolean>
+    'aria-label': ReadSignal<string>
+    disabled: ReadSignal<boolean>
     'data-scope': 'color-picker'
     'data-part': 'model-toggle'
-    'data-model': Signal<ColorModel>
+    'data-model': ReadSignal<ColorModel>
     onClick: (e: MouseEvent) => void
   }
   hueSlider: {
@@ -834,8 +837,8 @@ export interface ColorPickerParts {
     max: 360
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'hue-slider'
     onInput: (e: Event) => void
@@ -846,9 +849,9 @@ export interface ColorPickerParts {
     max: 100
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'saturation-slider'
     onInput: (e: Event) => void
@@ -859,9 +862,9 @@ export interface ColorPickerParts {
     max: 100
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'lightness-slider'
     onInput: (e: Event) => void
@@ -870,12 +873,12 @@ export interface ColorPickerParts {
   chromaSlider: {
     type: 'range'
     min: 0
-    max: Signal<number>
-    step: Signal<number>
+    max: ReadSignal<number>
+    step: ReadSignal<number>
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'chroma-slider'
     onInput: (e: Event) => void
@@ -887,9 +890,9 @@ export interface ColorPickerParts {
     max: 1
     step: number
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'oklch-lightness-slider'
     onInput: (e: Event) => void
@@ -898,8 +901,8 @@ export interface ColorPickerParts {
     type: 'text'
     autocomplete: 'off'
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'hex-input'
     onInput: (e: Event) => void
@@ -909,7 +912,7 @@ export interface ColorPickerParts {
     'data-scope': 'color-picker'
     'data-part': 'preview'
     'aria-hidden': 'true'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /** The 2D area track. The machine owns the pointer-drag lifecycle
    * (capture on down, released on up/cancel, primary button only, ignored
@@ -921,11 +924,11 @@ export interface ColorPickerParts {
   area: {
     'data-scope': 'color-picker'
     'data-part': 'area'
-    'data-model': Signal<ColorModel>
+    'data-model': ReadSignal<ColorModel>
     // HSV-mode hue backdrop only; empty in OKLCH mode, where `areaCanvas`
     // paints the plane instead (the sRGB gamut boundary is not expressible
     // as a CSS gradient).
-    style: Signal<string>
+    style: ReadSignal<string>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
@@ -950,16 +953,16 @@ export interface ColorPickerParts {
    * not a fixed string — the axes it labels are literally different. */
   areaThumb: {
     role: 'slider'
-    'aria-label': Signal<string>
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-label': ReadSignal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'color-picker'
     'data-part': 'area-thumb'
-    style: Signal<string>
+    style: ReadSignal<string>
     onKeyDown: (e: KeyboardEvent) => void
   }
   /** Alpha (opacity) range input, 0..1. Wired to the existing alpha state. */
@@ -969,9 +972,9 @@ export interface ColorPickerParts {
     max: 1
     step: number
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'alpha-slider'
     onInput: (e: Event) => void
@@ -983,10 +986,10 @@ export interface ColorPickerParts {
   eyeDropperTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
-    hidden: Signal<boolean>
+    disabled: ReadSignal<boolean>
+    hidden: ReadSignal<boolean>
     /** Bare boolean (package convention). */
-    'data-unsupported': Signal<'' | undefined>
+    'data-unsupported': ReadSignal<'' | undefined>
     'data-scope': 'color-picker'
     'data-part': 'eyedropper-trigger'
     onClick: (e: MouseEvent) => void
@@ -1005,11 +1008,11 @@ export interface ColorPickerParts {
 export interface SwatchParts {
   type: 'button'
   'aria-label': string
-  'aria-pressed': Signal<boolean>
+  'aria-pressed': ReadSignal<boolean>
   'data-scope': 'color-picker'
   'data-part': 'swatch'
   'data-value': string
-  'data-state': Signal<'selected' | undefined>
+  'data-state': ReadSignal<'selected' | undefined>
   style: string
   onClick: (e: MouseEvent) => void
 }
@@ -1036,7 +1039,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<ColorPickerState>,
+  state: ReadSignal<ColorPickerState>,
   send: Send<ColorPickerMsg>,
   opts: ConnectOptions = {},
 ): ColorPickerParts {

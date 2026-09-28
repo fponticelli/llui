@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
@@ -114,12 +114,12 @@ export function update(state: TagsInputState, msg: TagsInputMsg): [TagsInputStat
 
 export interface TagItemParts {
   root: {
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     'data-scope': 'tags-input'
     'data-part': 'tag'
     'data-value': string
     'data-index': string
-    'data-focused': Signal<'' | undefined>
+    'data-focused': ReadSignal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
   }
@@ -136,17 +136,17 @@ export interface TagItemParts {
 export interface TagsInputParts {
   root: {
     role: 'group'
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'tags-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   input: {
     type: 'text'
     autocomplete: 'off'
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'tags-input'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -176,7 +176,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<TagsInputState>,
+  state: ReadSignal<TagsInputState>,
   send: Send<TagsInputMsg>,
   opts: ConnectOptions = {},
 ): TagsInputParts {

@@ -34,7 +34,7 @@ import {
 import { registerRichText } from '@lexical/rich-text'
 import { registerHistory, createEmptyHistoryState } from '@lexical/history'
 import { mergeRegister } from '@lexical/utils'
-import { foreign, type LiveSignal, type Mountable, type Signal } from '@llui/dom'
+import { foreign, type LiveSignal, type Mountable, type ReadSignal } from '@llui/dom'
 import { createCommitHub } from './commit.js'
 import type { LexicalPlugin } from './plugin.js'
 import { registerShortcuts } from './register.js'
@@ -129,9 +129,9 @@ export interface LexicalForeignOptions<Emit = unknown> {
   /** Initial document (uncontrolled) — ignored when `value` is provided. */
   defaultValue?: string
   /** Controlled document signal; the editor follows it (echo-guarded). */
-  value?: Signal<string>
+  value?: ReadSignal<string>
   /** Reactive read-only flag (always supplied by the host's state). */
-  readonly: Signal<boolean>
+  readonly: ReadSignal<boolean>
   /** Debounce window (ms) for outbound serialization. Default 300. */
   changeDebounceMs?: number
   /** Register the built-in `@lexical/history` undo stack. Default `true`.
@@ -552,7 +552,7 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
   }
 
   if (controlled) {
-    return foreign<ForeignInst, { readonly: Signal<boolean>; value: Signal<string> }>({
+    return foreign<ForeignInst, { readonly: ReadSignal<boolean>; value: ReadSignal<string> }>({
       tag: 'div',
       state: { readonly, value: controlled },
       mount: ({ el, state }) => mountEditor(el, state.readonly, state.value),
@@ -560,7 +560,7 @@ export function lexicalForeign<Emit = unknown>(opts: LexicalForeignOptions<Emit>
     })
   }
 
-  return foreign<ForeignInst, { readonly: Signal<boolean> }>({
+  return foreign<ForeignInst, { readonly: ReadSignal<boolean> }>({
     tag: 'div',
     state: { readonly },
     mount: ({ el, state }) => mountEditor(el, state.readonly, undefined),

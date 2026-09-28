@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
@@ -275,14 +275,14 @@ export interface MenubarTriggerParts {
   role: 'menuitem'
   id: string
   'aria-haspopup': 'menu'
-  'aria-expanded': Signal<boolean>
+  'aria-expanded': ReadSignal<boolean>
   'aria-controls': string
-  'aria-disabled': Signal<'true' | undefined>
+  'aria-disabled': ReadSignal<'true' | undefined>
   'data-scope': 'menubar'
   'data-part': 'trigger'
-  'data-state': Signal<'open' | 'closed'>
+  'data-state': ReadSignal<'open' | 'closed'>
   'data-value': string
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   onClick: (e: MouseEvent) => void
   onPointerEnter: (e: PointerEvent) => void
   onFocus: (e: FocusEvent) => void
@@ -318,7 +318,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<MenubarState>,
+  state: ReadSignal<MenubarState>,
   send: Send<MenubarMsg>,
   opts: ConnectOptions,
 ): MenubarParts {
@@ -360,7 +360,7 @@ export function connect(
     wrapChildSend<MenubarMsg, MenuMsg>(send, (msg) => ({ type: 'menuMsg', id, msg }), ['menuMsg'])
 
   // A per-menu Signal narrowed to the embedded MenuState.
-  const menuSignal = (id: string): Signal<MenuState> =>
+  const menuSignal = (id: string): ReadSignal<MenuState> =>
     state.map((s) => s.menuStates[id] ?? menuInit())
 
   // ONE delegated bag per menu id, memoized. Two reasons it must be memoized
@@ -502,7 +502,7 @@ export interface MenubarOverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<MenubarState>
+  state: ReadSignal<MenubarState>
   send: Send<MenubarMsg>
   /** The menu id this overlay renders. */
   menuId: string
@@ -585,8 +585,8 @@ export interface SubOverlayOptions {
   menuId: string
   /** The subTrigger value this level opens under. */
   value: string
-  /** The ROOT `Signal<MenubarState>` — the same one passed to `connect()`. */
-  state: Signal<MenubarState>
+  /** The ROOT `ReadSignal<MenubarState>` — the same one passed to `connect()`. */
+  state: ReadSignal<MenubarState>
   parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
   content: () => Renderable
   target?: string | HTMLElement

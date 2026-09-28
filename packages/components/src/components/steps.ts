@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { stepsLocale } from '../locale/steps.js'
 import { allFiniteNumbers, finiteOrDefault } from '../utils/number.js'
@@ -118,23 +118,23 @@ export interface StepsItemParts {
   item: {
     'data-scope': 'steps'
     'data-part': 'item'
-    'data-status': Signal<StepStatus>
+    'data-status': ReadSignal<StepStatus>
     'data-index': string
-    'aria-current': Signal<'step' | undefined>
+    'aria-current': ReadSignal<'step' | undefined>
   }
   trigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'trigger'
-    'data-status': Signal<StepStatus>
+    'data-status': ReadSignal<StepStatus>
     onClick: (e: MouseEvent) => void
   }
   separator: {
     'data-scope': 'steps'
     'data-part': 'separator'
-    'data-status': Signal<StepStatus>
+    'data-status': ReadSignal<StepStatus>
     'aria-hidden': 'true'
   }
 }
@@ -145,18 +145,18 @@ export interface StepsParts {
     'aria-label': string
     'data-scope': 'steps'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   nextTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
   }
   prevTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -169,7 +169,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<StepsState>,
+  state: ReadSignal<StepsState>,
   send: Send<StepsMsg>,
   opts: ConnectOptions = {},
 ): StepsParts {

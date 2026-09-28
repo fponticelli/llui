@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { type Placement } from '../utils/floating.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
@@ -80,8 +80,8 @@ export interface HoverCardParts {
   trigger: {
     id: string
     'aria-controls': string
-    'aria-expanded': Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
+    'aria-expanded': ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'hover-card'
     'data-part': 'trigger'
     onPointerEnter: (e: PointerEvent) => void
@@ -96,7 +96,7 @@ export interface HoverCardParts {
   }
   content: {
     id: string
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'hover-card'
     'data-part': 'content'
     onPointerEnter: (e: PointerEvent) => void
@@ -119,7 +119,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<HoverCardState>,
+  state: ReadSignal<HoverCardState>,
   send: Send<HoverCardMsg>,
   opts: ConnectOptions,
 ): HoverCardParts {
@@ -228,7 +228,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<HoverCardState>
+  state: ReadSignal<HoverCardState>
   send: Send<HoverCardMsg>
   parts: HoverCardParts
   content: () => Renderable

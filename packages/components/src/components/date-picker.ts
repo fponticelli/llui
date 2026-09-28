@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { datePickerLocale } from '../locale/date-picker.js'
@@ -527,23 +527,23 @@ export interface DayCellParts {
     // Signals, not plain values: `view()` runs once, so a snapshot here freezes
     // every flag at build time and no selection, focus move or range preview
     // ever reaches the DOM. See `live` in `connect`.
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'date-picker'
     'data-part': 'day-cell'
     /** The cell's identity — the one genuinely static attribute. */
     'data-date': string
-    'data-in-month': Signal<'' | undefined>
-    'data-today': Signal<'' | undefined>
-    'data-selected': Signal<'' | undefined>
-    'data-focused': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
-    'data-range-start': Signal<'' | undefined>
-    'data-range-end': Signal<'' | undefined>
-    'data-in-range': Signal<'' | undefined>
+    'data-in-month': ReadSignal<'' | undefined>
+    'data-today': ReadSignal<'' | undefined>
+    'data-selected': ReadSignal<'' | undefined>
+    'data-focused': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-range-start': ReadSignal<'' | undefined>
+    'data-range-end': ReadSignal<'' | undefined>
+    'data-in-range': ReadSignal<'' | undefined>
     /** An individually unavailable date (also disabled) — distinct from out-of-bounds. */
-    'data-unavailable': Signal<'' | undefined>
+    'data-unavailable': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -569,7 +569,7 @@ export interface DatePickerParts {
   root: {
     'data-scope': 'date-picker'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   /**
    * Grid part factory. `offset` (default 0) selects which month this grid
@@ -578,7 +578,7 @@ export interface DatePickerParts {
    */
   grid: (offset?: number) => {
     role: 'grid'
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
     'data-scope': 'date-picker'
     'data-part': 'grid'
     'data-month-offset': number
@@ -591,7 +591,7 @@ export interface DatePickerParts {
   prevMonthTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'date-picker'
     'data-part': 'prev-month-trigger'
     onClick: (e: MouseEvent) => void
@@ -599,7 +599,7 @@ export interface DatePickerParts {
   nextMonthTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'date-picker'
     'data-part': 'next-month-trigger'
     onClick: (e: MouseEvent) => void
@@ -620,7 +620,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<DatePickerState>,
+  state: ReadSignal<DatePickerState>,
   send: Send<DatePickerMsg>,
   opts: ConnectOptions = {},
 ): DatePickerParts {

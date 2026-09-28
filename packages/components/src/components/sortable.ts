@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { sortableLocale } from '../locale/sortable.js'
 import { allFiniteNumbers } from '../utils/number.js'
 
@@ -332,7 +332,7 @@ export interface SortableParts {
     'data-scope': 'sortable'
     'data-part': 'root'
     'data-container-id': string
-    'data-dragging': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
     onPointerCancel: (e: PointerEvent) => void
@@ -345,11 +345,11 @@ export interface SortableParts {
     'data-part': 'item'
     'data-index': string
     'data-id': string
-    'data-dragging': Signal<'' | undefined>
-    'data-over': Signal<'' | undefined>
-    'data-shift': Signal<'up' | 'down' | undefined>
-    'style.transform': Signal<string | undefined>
-    'style.zIndex': Signal<string | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-over': ReadSignal<'' | undefined>
+    'data-shift': ReadSignal<'up' | 'down' | undefined>
+    'style.transform': ReadSignal<string | undefined>
+    'style.zIndex': ReadSignal<string | undefined>
   }
   handle: (
     id: string,
@@ -360,7 +360,7 @@ export interface SortableParts {
     role: 'button'
     tabindex: 0
     /** A toggle button: pressed while this handle's item is carried. */
-    'aria-pressed': Signal<boolean>
+    'aria-pressed': ReadSignal<boolean>
     'aria-label': string
     /** The `instructions` part's id, or absent when `hasInstructions: false`. */
     'aria-describedby': string | undefined
@@ -380,7 +380,7 @@ export interface SortableParts {
     'aria-atomic': 'true'
     'data-scope': 'sortable'
     'data-part': 'live-region'
-    text: Signal<string>
+    text: ReadSignal<string>
   }
   /**
    * The keyboard instructions every handle's `aria-describedby` points at.
@@ -445,7 +445,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<SortableState>,
+  state: ReadSignal<SortableState>,
   send: Send<SortableMsg>,
   opts: ConnectOptions,
 ): SortableParts {
