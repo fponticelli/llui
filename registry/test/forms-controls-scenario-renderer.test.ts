@@ -67,18 +67,30 @@ describe('forms-controls registry renderer (#267)', () => {
     const container = mountAll()
     const q = (product: string, caseId: string, selector: string) =>
       at(container, product, caseId).querySelector<HTMLElement>(selector)
+    const element = <Kind extends Element>(
+      kind: new () => Kind,
+      product: string,
+      caseId: string,
+      selector: string,
+    ): Kind => {
+      const node = q(product, caseId, selector)
+      if (!(node instanceof kind)) {
+        throw new Error(`${product}/${caseId}: ${selector} is not a ${kind.name}`)
+      }
+      return node
+    }
 
     expect(q('checkbox', 'checked', '[role="checkbox"]')?.getAttribute('data-state')).toBe(
       'checked',
     )
     expect(q('checkbox', 'invalid', '[role="checkbox"]')?.getAttribute('aria-invalid')).toBe('true')
     expect(q('switch', 'checked', '[role="switch"]')?.getAttribute('aria-checked')).toBe('true')
-    expect((q('input', 'disabled', 'input') as HTMLInputElement).disabled).toBe(true)
-    expect((q('input', 'read-only', 'input') as HTMLInputElement).readOnly).toBe(true)
+    expect(element(HTMLInputElement, 'input', 'disabled', 'input').disabled).toBe(true)
+    expect(element(HTMLInputElement, 'input', 'read-only', 'input').readOnly).toBe(true)
     expect(q('input', 'invalid', 'input')?.getAttribute('aria-invalid')).toBe('true')
-    expect((q('textarea', 'placeholder', 'textarea') as HTMLTextAreaElement).value).toBe('')
+    expect(element(HTMLTextAreaElement, 'textarea', 'placeholder', 'textarea').value).toBe('')
     expect(q('button', 'loading', 'button')?.getAttribute('aria-busy')).toBe('true')
-    expect((q('button', 'loading', 'button') as HTMLButtonElement).disabled).toBe(true)
+    expect(element(HTMLButtonElement, 'button', 'loading', 'button').disabled).toBe(true)
     expect(q('form-field', 'invalid', '[role="alert"]')?.textContent).toBe('Username is required')
     expect(q('theme-switch', 'selected', '[aria-pressed="true"]')?.textContent).toBe('D')
   })

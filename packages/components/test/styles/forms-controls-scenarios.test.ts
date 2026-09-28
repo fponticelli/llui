@@ -36,14 +36,14 @@ describe('forms-controls presentation scenarios (#267)', () => {
   it('derives cases and axes from the family table, not a second list', () => {
     for (const [scenarioId, scenario] of Object.entries(FORM_CONTROL_SCENARIOS)) {
       const definition = FORMS_CONTROLS_DEFINITIONS[scenarioId]!
-      const states = scenario.states as readonly string[]
+      const states: ReadonlySet<string> = new Set(scenario.states)
       expect(definition.defaultCaseId, scenarioId).toBe('default')
       expect(
         definition.cases.map(({ id }) => id),
         scenarioId,
-      ).toEqual(FORMS_CONTROLS_CASE_STATES.filter((state) => states.includes(state)))
+      ).toEqual(FORMS_CONTROLS_CASE_STATES.filter((state) => states.has(state)))
       const axes = Object.entries(FORMS_CONTROLS_ENVIRONMENT_STATES)
-        .filter(([state]) => states.includes(state))
+        .filter(([state]) => states.has(state))
         .map(([, axis]) => axis)
       for (const scenarioCase of definition.cases) {
         expect(scenarioCase.environmentAxes, `${scenarioId}/${scenarioCase.id}`).toEqual(axes)

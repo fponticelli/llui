@@ -118,7 +118,8 @@ const num = (input: FormsControlsCaseInput, key: string, fallback = 0): number =
 }
 const list = (input: FormsControlsCaseInput, key: string): string[] => {
   const value = input.sample[key]
-  return Array.isArray(value) ? [...(value as readonly string[])] : []
+  // `readonly string[]` is the only object a `SampleValue` can be.
+  return typeof value === 'object' ? [...value] : []
 }
 /** Inline, so this file names no class that some stylesheet would have to define. */
 const ROW_STYLE = 'display:flex;align-items:center;gap:0.5rem'

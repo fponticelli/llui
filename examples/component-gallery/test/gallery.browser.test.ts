@@ -28,17 +28,22 @@ afterAll(async () => {
   await browser?.close()
 })
 
+/** Each opened page's uncaught errors, recorded from its `pageerror` events. */
+const PAGE_ERRORS = new WeakMap<Page, string[]>()
+
 async function open(query: string, viewport = { width: 1400, height: 1000 }): Promise<Page> {
   const page = await browser.newPage({ viewport })
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(error.message))
-  ;(page as Page & { errors: string[] }).errors = errors
+  PAGE_ERRORS.set(page, errors)
   await page.goto(`${base}${query}`)
   return page
 }
 
 function pageErrors(page: Page): string[] {
-  return (page as Page & { errors: string[] }).errors
+  const errors = PAGE_ERRORS.get(page)
+  if (errors === undefined) throw new Error('page was not opened through open()')
+  return errors
 }
 
 async function readyFrame(page: Page, path: 'baseline' | 'registry'): Promise<Frame> {

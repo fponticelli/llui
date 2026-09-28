@@ -20,8 +20,11 @@ const REPO = resolve(import.meta.dirname, '../../..')
 
 describe('the gallery inventory is the contract (#267)', () => {
   it('reads the one canonical contract, which the authoritative schema accepts', () => {
-    const manifest = JSON.parse(readFileSync(resolve(REPO, 'registry/registry.json'), 'utf8')) as {
-      productContract: unknown
+    const manifest: unknown = JSON.parse(
+      readFileSync(resolve(REPO, 'registry/registry.json'), 'utf8'),
+    )
+    if (typeof manifest !== 'object' || manifest === null || !('productContract' in manifest)) {
+      throw new Error('registry/registry.json carries no productContract')
     }
     expect(ProductContractSchema.parse(manifest.productContract)).toEqual(GALLERY_CONTRACT)
   })

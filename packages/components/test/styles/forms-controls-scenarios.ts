@@ -90,7 +90,7 @@ export interface FormsControlsCaseInput {
 }
 
 function isCaseState(state: string): state is FormsControlsCaseState {
-  return (FORMS_CONTROLS_CASE_STATES as readonly string[]).includes(state)
+  return FORMS_CONTROLS_CASE_STATES.some((candidate) => candidate === state)
 }
 
 function isSampleValue(value: unknown): value is SampleValue {
@@ -135,7 +135,7 @@ function environmentAxesFor(
 ): PresentationScenarioEnvironmentAxis[] {
   const axes: PresentationScenarioEnvironmentAxis[] = []
   for (const [state, axis] of Object.entries(FORMS_CONTROLS_ENVIRONMENT_STATES)) {
-    if ((states as readonly string[]).includes(state)) axes.push(axis)
+    if (states.some((declared) => declared === state)) axes.push(axis)
   }
   return axes
 }

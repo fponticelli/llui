@@ -42,34 +42,20 @@ import {
   type ResolvedPresentationScenarioSelection,
 } from '@llui/cli/presentation-scenarios'
 import type { ProductContract, ProductEntry } from '@llui/cli'
+import { axes } from './scenario-field-mutations'
 
 // Individual named arrays, never a `Record`-typed lookup (see
 // navigation-data-scenarios.ts): an index signature widens every read to
 // `T | undefined` under `noUncheckedIndexedAccess`.
 const AX = {
-  none: [] as readonly PresentationScenarioEnvironmentAxis[],
-  surface: ['theme', 'forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
-  dirSurface: [
-    'theme',
-    'direction',
-    'forcedColors',
-  ] as readonly PresentationScenarioEnvironmentAxis[],
-  responsive: [
-    'theme',
-    'direction',
-    'viewport',
-    'forcedColors',
-  ] as readonly PresentationScenarioEnvironmentAxis[],
-  motion: ['theme', 'motion', 'forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
-  all: [
-    'theme',
-    'direction',
-    'motion',
-    'viewport',
-    'forcedColors',
-  ] as readonly PresentationScenarioEnvironmentAxis[],
-  theme: ['theme'] as readonly PresentationScenarioEnvironmentAxis[],
-  dir: ['direction'] as readonly PresentationScenarioEnvironmentAxis[],
+  none: axes(),
+  surface: axes('theme', 'forcedColors'),
+  dirSurface: axes('theme', 'direction', 'forcedColors'),
+  responsive: axes('theme', 'direction', 'viewport', 'forcedColors'),
+  motion: axes('theme', 'motion', 'forcedColors'),
+  all: axes('theme', 'direction', 'motion', 'viewport', 'forcedColors'),
+  theme: axes('theme'),
+  dir: axes('direction'),
 }
 
 // ─── Deterministic fixtures ───────────────────────────────────────────────

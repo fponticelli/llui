@@ -56,10 +56,15 @@ const hermetic = useHermeticBrowser()
 
 const ROOT = resolve(import.meta.dirname, '../..')
 const STYLES = resolve(ROOT, 'packages/components/src/styles')
-const registryManifest = JSON.parse(
+const registryManifest: unknown = JSON.parse(
   readFileSync(resolve(ROOT, 'registry/registry.json'), 'utf8'),
-) as {
-  productContract?: unknown
+)
+if (
+  typeof registryManifest !== 'object' ||
+  registryManifest === null ||
+  !('productContract' in registryManifest)
+) {
+  throw new Error('registry/registry.json carries no productContract')
 }
 const formProducts = ProductContractSchema.parse(registryManifest.productContract).entries.filter(
   ({ presentation }) => presentation.family === 'forms-controls',
@@ -74,6 +79,8 @@ const baselineCss = [
   .join('\n')
 
 type ScenarioId = keyof typeof FORM_CONTROL_SCENARIOS
+
+const isScenarioId = (id: string): id is ScenarioId => Object.hasOwn(FORM_CONTROL_SCENARIOS, id)
 type StylingPath = 'baseline' | 'registry'
 
 const applicableProductIds = (path: StylingPath): string[] =>
@@ -91,7 +98,8 @@ const renderedProductIds = (markup: string): string[] => {
   template.innerHTML = markup
   return [...template.content.querySelectorAll<HTMLElement>('[data-scenario-id]')]
     .map((element) => {
-      const scenarioId = element.dataset['scenarioId'] as ScenarioId
+      const scenarioId = element.dataset['scenarioId'] ?? ''
+      if (!isScenarioId(scenarioId)) throw new Error(`unknown scenario id ${scenarioId}`)
       return FORM_CONTROL_SCENARIOS[scenarioId].productId
     })
     .sort()

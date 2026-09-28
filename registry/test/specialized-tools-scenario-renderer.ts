@@ -1107,6 +1107,16 @@ const GLYPH_FACTORIES = {
   Search: SearchIcon,
 } as const
 
+type GlyphName = keyof typeof GLYPH_FACTORIES
+
+const isGlyphName = (name: string): name is GlyphName => Object.hasOwn(GLYPH_FACTORIES, name)
+
+/** A case naming a glyph this renderer has no icon for fails by name. */
+function glyphFactory(name: string): (typeof GLYPH_FACTORIES)[GlyphName] {
+  if (!isGlyphName(name)) throw new Error(`no registry icon for glyph ${name}`)
+  return GLYPH_FACTORIES[name]
+}
+
 const iconsAdapter: Adapter<IconsCaseInput> = (host, data, ctx) => {
   applyEnvironmentAttrs(host, ctx.environment)
   return mountApp(
@@ -1120,7 +1130,7 @@ const iconsAdapter: Adapter<IconsCaseInput> = (host, data, ctx) => {
           { class: 'flex items-center gap-3 text-foreground' },
           data.glyphs.map((name) =>
             span({ 'data-glyph': name, class: 'inline-flex' }, [
-              GLYPH_FACTORIES[name as keyof typeof GLYPH_FACTORIES]({
+              glyphFactory(name)({
                 class: data.sizeClass === 'large' ? 'size-8' : 'size-4',
               }),
             ]),
@@ -1188,7 +1198,7 @@ export function mountRegistrySpecializedToolsScenarios(
     for (const scenarioCase of scenario.cases) {
       const environment = Object.fromEntries(
         Object.entries(options.environment ?? {}).filter(([axis]) =>
-          (scenarioCase.environmentAxes as readonly string[]).includes(axis),
+          scenarioCase.environmentAxes.some((declared) => declared === axis),
         ),
       )
       const resolved = resolveScenarioSelection<SpecializedToolsDefinitions>(contract, catalog, {

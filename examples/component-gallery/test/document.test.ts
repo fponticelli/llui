@@ -147,13 +147,19 @@ describe('a gallery path document (#267)', () => {
   })
 
   it('posts every status change to a framing parent on its own origin', async () => {
-    const parent = { postMessage: vi.fn() }
-    vi.spyOn(window, 'parent', 'get').mockReturnValue(parent as unknown as Window)
+    // A REAL framing window (an iframe's), so the stub needs no cast to be a `Window`.
+    const frame = document.createElement('iframe')
+    document.body.append(frame)
+    const parent = frame.contentWindow
+    if (parent === null) throw new Error('the framing iframe has no window')
+    const postMessage = vi.spyOn(parent, 'postMessage').mockImplementation(() => undefined)
+    vi.spyOn(window, 'parent', 'get').mockReturnValue(parent)
     await boot('?entry=accordion&case=open', { 'component:accordion': recording })
-    const messages = parent.postMessage.mock.calls.map(([message, origin]) => {
+    const messages = postMessage.mock.calls.map(([message, origin]) => {
       expect(origin).toBe(window.location.origin)
       expect(isGalleryDocumentMessage(message)).toBe(true)
-      return message as { type: string; status: string; entry: string; caseId: string }
+      if (!isGalleryDocumentMessage(message)) throw new Error('not a gallery document message')
+      return message
     })
     expect(messages.map(({ status }) => status)).toEqual(['loading', 'ready'])
     expect(messages[1]).toMatchObject({

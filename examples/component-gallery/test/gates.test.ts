@@ -151,7 +151,7 @@ describe('applyExemptions', () => {
 })
 
 describe('the gate matrix', () => {
-  const visual = (mode: string) => isVisuallyAvailable(mode as never)
+  const visual = isVisuallyAvailable
 
   it('is the contract’s rendered set, exactly', () => {
     const expected = GALLERY_CONTRACT.entries.flatMap((entry) =>

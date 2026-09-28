@@ -44,8 +44,8 @@ export function collectCascade(): CascadeInventory {
         }
         rules.push({ selector: rule.selectorText, properties, layers })
         if (rule.cssRules.length > 0) visit(rule.cssRules, layers)
-      } else if ('cssRules' in rule) {
-        visit((rule as CSSGroupingRule).cssRules, layers)
+      } else if ('cssRules' in rule && rule.cssRules instanceof CSSRuleList) {
+        visit(rule.cssRules, layers)
       }
     }
   }

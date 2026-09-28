@@ -100,8 +100,8 @@ export function withOverrides(
   galleryCase: GalleryCase,
   overrides: Partial<PresentationScenarioEnvironment>,
 ): GalleryCase {
-  for (const axis of Object.keys(overrides) as Axis[]) {
-    if (!galleryCase.axes.includes(axis)) {
+  for (const axis of Object.keys(overrides)) {
+    if (!galleryCase.axes.some((declared) => declared === axis)) {
       throw new Error(`${caseTitle(galleryCase)} does not declare the ${axis} axis`)
     }
   }

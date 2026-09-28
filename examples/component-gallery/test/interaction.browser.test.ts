@@ -82,7 +82,8 @@ const activeMatches = (page: Page, selector: string): Promise<boolean> =>
 
 /** Focus with the element's OWN `focus()` (verification.md focus probes). */
 async function focus(locator: Locator): Promise<void> {
-  await locator.evaluate((element) => (element as HTMLElement).focus())
+  // Playwright types a locator's element as `HTMLElement | SVGElement`, both of which focus.
+  await locator.evaluate((element) => element.focus())
 }
 
 async function center(locator: Locator): Promise<{ x: number; y: number }> {

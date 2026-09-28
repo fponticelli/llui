@@ -177,7 +177,8 @@ const num = (input: FormsControlsCaseInput, key: string, fallback = 0): number =
 }
 const list = (input: FormsControlsCaseInput, key: string): string[] => {
   const value = input.sample[key]
-  return Array.isArray(value) ? [...(value as readonly string[])] : []
+  // `readonly string[]` is the only object a `SampleValue` can be.
+  return typeof value === 'object' ? [...value] : []
 }
 
 /** ARIA a consumer spreads AFTER a part bag for states its machine does not model. */

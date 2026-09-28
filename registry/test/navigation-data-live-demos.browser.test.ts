@@ -378,43 +378,70 @@ describe('live navigation/data compositions in Chromium, both paths', () => {
       const demo = demos.find((candidate) => candidate.path === path)!
       const disclosure = demo.disclosures.find((candidate) => candidate.product === product)!
       const page = await openDemo(browser, demo)
-      // The exit is RECORDED in-page, from the interrupting click to `closed`,
-      // and timed with the page's own clock. This used to sleep 40 ms in the
-      // test process and then read `data-state` over a round trip, which under
-      // load outlived the whole exit animation and read `closed` where the
-      // property held (seen at 8 busy loops on 4 CPUs): the same race #268
-      // fixed for the dialog's presence test. An exit that snaps shut instead
-      // of running still fails, on `closedAfterMs`.
-      const exit = await page.evaluate(async ({ triggerId, contentId }) => {
-        const trigger = document.getElementById(triggerId) as HTMLButtonElement
-        const content = document.getElementById(contentId) as HTMLElement
-        trigger.click()
-        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-        trigger.click()
-        if (content.dataset['state'] !== 'closing' || content.hidden) {
-          throw new Error('Exit was not retained after interrupting enter')
-        }
-        const interruptedAt = performance.now()
-        const states = ['closing']
-        return new Promise<{ states: string[]; closedAfterMs: number }>((resolve, reject) => {
-          const observer = new MutationObserver(() => {
+      // The interrupted exit is driven through the Web Animations API, never
+      // raced against a clock. A sleep in the test process read `data-state`
+      // over a round trip that under load outlived the whole exit, and the
+      // in-page `closedAfterMs >= 40` bound that replaced it still depended on
+      // a timer landing before the animation did. Now, in the same task as the
+      // interrupting click, the new exit's own CSS animation is PAUSED: the
+      // item must stay `closing` across frames and a generous real wait (no
+      // snap-shut or timer settle survives that), then, FINISHED, it must read
+      // `closed` by the time that `animationend` reaches `window` — inside the
+      // dispatch the exit completes on (see navigation-data-live-render's
+      // closing test for the same technique on the rendered closing case).
+      const exit = await page.evaluate(
+        async ({ triggerId, contentId, pausedFrames, pausedWaitMs }) => {
+          const trigger = document.getElementById(triggerId)
+          const content = document.getElementById(contentId)
+          if (!(trigger instanceof HTMLButtonElement) || content === null) {
+            throw new Error('Missing live disclosure parts')
+          }
+          const nextFrame = (): Promise<void> =>
+            new Promise((resolve) => requestAnimationFrame(() => resolve()))
+          trigger.click()
+          await nextFrame()
+          trigger.click()
+          if (content.dataset['state'] !== 'closing' || content.hidden) {
+            throw new Error('Exit was not retained after interrupting enter')
+          }
+          const exitName = getComputedStyle(content).animationName
+          const exits = content
+            .getAnimations()
+            .filter(
+              (animation) =>
+                animation instanceof CSSAnimation && animation.animationName === exitName,
+            )
+          const current = exits[0]
+          if (exits.length !== 1 || current === undefined) {
+            throw new Error(`expected one "${exitName}" exit, found ${exits.length}`)
+          }
+          current.pause()
+          const states = ['closing']
+          new MutationObserver(() => {
             const state = content.dataset['state'] ?? '(none)'
             if (states.at(-1) !== state) states.push(state)
-            if (state !== 'closed') return
-            observer.disconnect()
-            clearTimeout(bound)
-            resolve({ states, closedAfterMs: performance.now() - interruptedAt })
+          }).observe(content, { attributes: true, attributeFilter: ['data-state'] })
+
+          for (let frame = 0; frame < pausedFrames; frame += 1) await nextFrame()
+          await new Promise<void>((resolve) => setTimeout(resolve, pausedWaitMs))
+          const held = { states: [...states], playState: current.playState }
+
+          const stateAtAnimationEnd = await new Promise<string | undefined>((resolve) => {
+            const onEnd = (event: AnimationEvent): void => {
+              if (event.target !== content || event.animationName !== exitName) return
+              window.removeEventListener('animationend', onEnd)
+              resolve(content.dataset['state'])
+            }
+            window.addEventListener('animationend', onEnd)
+            current.finish()
           })
-          observer.observe(content, { attributes: true, attributeFilter: ['data-state'] })
-          // A bound with a message, not a silent wait for the test budget.
-          const bound = setTimeout(() => {
-            observer.disconnect()
-            reject(new Error(`exit never completed: ${states.join(' -> ')}`))
-          }, 10_000)
-        })
-      }, disclosure)
+          return { held, stateAtAnimationEnd, states: [...states] }
+        },
+        { ...disclosure, pausedFrames: 10, pausedWaitMs: 1_000 },
+      )
+      expect(exit.held).toEqual({ states: ['closing'], playState: 'paused' })
+      expect(exit.stateAtAnimationEnd).toBe('closed')
       expect(exit.states).toEqual(['closing', 'closed'])
-      expect(exit.closedAfterMs).toBeGreaterThanOrEqual(40)
       expect(
         await page.locator(`[id="${disclosure.contentId}"]`).getAttribute('hidden'),
       ).not.toBeNull()

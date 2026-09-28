@@ -14,18 +14,24 @@ import { build, resolveConfig, type Plugin } from 'vite'
 
 const GALLERY = resolve(import.meta.dirname, '..')
 const REPO = resolve(GALLERY, '../..')
-const CONFIGS = {
+const BUILDS = ['shell', 'baseline', 'registry'] as const
+type Build = (typeof BUILDS)[number]
+const CONFIGS: Readonly<Record<Build, string>> = {
   shell: 'vite.config.ts',
   baseline: 'vite.baseline.config.ts',
   registry: 'vite.registry.config.ts',
-} as const
-type Build = keyof typeof CONFIGS
+}
 
 interface Output {
   readonly modules: string[]
   css: string
 }
-const outputs = {} as Record<Build, Output>
+const emptyOutput = (): Output => ({ modules: [], css: '' })
+const outputs: Record<Build, Output> = {
+  shell: emptyOutput(),
+  baseline: emptyOutput(),
+  registry: emptyOutput(),
+}
 let outDir: string
 
 function capture(into: Output): Plugin {
@@ -49,10 +55,10 @@ beforeAll(async () => {
   outDir = mkdtempSync(join(tmpdir(), 'llui-gallery-graph-'))
   process.env['LLUI_GALLERY_OUT'] = outDir
   try {
-    for (const [name, config] of Object.entries(CONFIGS) as [Build, string][]) {
-      outputs[name] = { modules: [], css: '' }
+    for (const name of BUILDS) {
+      outputs[name] = emptyOutput()
       await build({
-        configFile: resolve(GALLERY, config),
+        configFile: resolve(GALLERY, CONFIGS[name]),
         logLevel: 'error',
         plugins: [capture(outputs[name])],
       })
@@ -122,7 +128,7 @@ describe('build outputs (#267)', () => {
       'packages/cli/dist/product-contract-types.js',
       'packages/cli/dist/product-contract.js',
     ]
-    for (const name of Object.keys(CONFIGS) as Build[]) {
+    for (const name of BUILDS) {
       const cli = [...new Set(modules(name, /^packages\/cli\//))].sort()
       expect(cli, name).toContain('packages/cli/dist/product-contract.js')
       expect(
