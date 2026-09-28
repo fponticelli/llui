@@ -619,8 +619,9 @@ function tableCheckboxGlyph(
 
 // `table.ts` tracks only sort STATE by design — its own doc says the
 // consumer "performs the actual data sort ... by feeding pre-sorted `rows`
-// back in" (see `examples/components-demo/src/sections/data.ts`'s identical
-// `resolveTableSort`). Without this follow-up, `toggleSort` flips
+// back in" (see the Baseline composition
+// `examples/baseline-css/src/test-fixtures/compositions/navigation-data.ts`'s
+// identical `resolveTableSort`). Without this follow-up, `toggleSort` flips
 // `aria-sort` on the header while every row stays in its original DOM
 // position — exactly the "gallery Table ignores sort" gap (#264). The
 // fixture's one sortable column ('name') is the row id itself.

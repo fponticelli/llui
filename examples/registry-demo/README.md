@@ -1,19 +1,28 @@
-# Registry skins showcase
+# Registry skins sync fixture
 
-A curated app on the **Registry skins** path: every item in the
-[LLui registry](../../registry), rendered from source that `llui add` copied into this app.
-Nothing on the page is imported from a styling package — `src/components/ui/` is ordinary
-project source, and editing it changes what you see.
+**A test fixture, not a showcase.** This app holds the source `llui add` copies into a
+consumer project — every item in the [LLui registry](../../registry), checked in under
+`src/components/ui/` and `src/lib/` — so the repository can prove that copy compiles, boots
+and stays in sync with the registry. It is not published on the site.
 
-For each component's deterministic scenarios side by side with the Baseline theme, use the
-[Component Gallery](../component-gallery) (`pnpm gallery`) — its Registry skins document
-renders these same copied files.
+To browse the components, use the [Component Gallery](../component-gallery) (`pnpm gallery`):
+its Registry skins document renders these same copied files, with each component's
+deterministic scenarios side by side with the Baseline theme. The
+[component catalog](https://llui.dev/component-catalog) lists every item, with the machine
+each skin spreads and the items that deliberately have none.
 
-It covers every registry item — shadcn/ui's set plus the components LLui has and shadcn
-does not. The [component catalog](https://llui.dev/component-catalog) lists them, with the
-machine each skin spreads and the items that deliberately have none.
+What depends on it:
 
-## What it demonstrates
+- `scripts/test/registry-demo-sync.test.ts` — the copied files match what `llui add`
+  produces from the current registry.
+- The Component Gallery's Registry skins document — it renders the copies here, never the
+  registry source (`examples/component-gallery/gallery.config.ts`).
+- The Registry-path arms of the live browser suites in `registry/test/` and
+  `packages/components/test/styles/` — they build this app and its `src/test-fixtures/`.
+- `pnpm smoke:examples`, `turbo check` and the class, attribute and motion guards under
+  `scripts/test/`.
+
+## What it pins
 
 - **What `llui add` copies.** Presentational element helpers (`Button`, `Card`, `Input`,
   `Badge`, …) with no machine at all; skins over `@llui/components` machines (`Switch`,

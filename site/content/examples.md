@@ -22,14 +22,6 @@ Every example below is a real LLui app, built from source and embedded live. Ope
     <h3>Form Validation</h3>
     <p>A sign-up form with Zod schema validation and live field errors.</p>
   </a>
-  <a class="example-card" href="/examples/registry-demo">
-    <h3>Registry skins showcase</h3>
-    <p>A curated app built on the Registry skins path: source copied in by `llui add`.</p>
-  </a>
-  <a class="example-card" href="/examples/components-demo">
-    <h3>Baseline theme showcase</h3>
-    <p>A curated app of @llui/components machines styled by the Baseline theme.</p>
-  </a>
   <a class="example-card" href="/examples/dashboard">
     <h3>Dashboard</h3>
     <p>KPI cards, animated charts, a reorderable list, locale + theme switching.</p>

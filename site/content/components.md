@@ -43,8 +43,6 @@ both, together.
 > Every component is live in the [Component Gallery](/apps/component-gallery/): search for it
 > once and open its deterministic scenarios (disabled, invalid, open, loading, …) on either
 > path — **Baseline theme** or **Registry skins** — side by side, in two isolated documents.
-> The [Registry skins showcase](/examples/registry-demo) is the copied source in a real app,
-> the closest thing to a reference implementation.
 
 ## Choosing a styling path
 
@@ -1061,8 +1059,6 @@ reorder throws `NotFoundError` or duplicates rows.
   names, aliases, styling support and gallery link, generated from the product contract.
 - **[The Component Gallery](/apps/component-gallery/)** — every component's scenarios on
   both styling paths.
-- **[The Registry skins showcase](/examples/registry-demo)** — the copied source wired into
-  a real app. Its section files are the reference for any part bag you are unsure about.
 - **[Styling & Registry](/styling)** — the token contract and the registry's own rules.
 - **[Composition Patterns](/composition-patterns)** — factoring views, and when a child
   component boundary is worth it.

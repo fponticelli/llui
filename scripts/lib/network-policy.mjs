@@ -31,8 +31,8 @@
  *    (`@llui/components/icon` fetches glyph bodies from it at mount).
  *  - `declared-failure`: a host a page requests PRECISELY so it fails —
  *    `example.invalid` (RFC 6761 reserves `.invalid`; it can never resolve),
- *    used by the components demo to exercise the avatar's image-error
- *    fallback. Aborted as `namenotresolved`, which is what a real resolver
+ *    used by the Baseline consumer example (`examples/baseline-css`) to
+ *    exercise the avatar's image-error fallback. Aborted as `namenotresolved`, which is what a real resolver
  *    would say, deterministically.
  *  - `unexpected`: anything else. Aborted, and the smoke or the test FAILS
  *    naming the URL. A new network dependency has to be declared here, with a
@@ -70,7 +70,7 @@ export const ICONIFY_ORIGIN = 'https://api.iconify.design'
 const DECLARED_FAILURE_HOSTS = [
   {
     host: 'example.invalid',
-    why: 'RFC 6761 reserved name; the components demo points an avatar at it to render the fallback',
+    why: 'RFC 6761 reserved name; the Baseline consumer example points an avatar at it to render the fallback',
   },
 ]
 

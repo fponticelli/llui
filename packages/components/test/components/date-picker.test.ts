@@ -418,8 +418,8 @@ describe('date-picker.connect range + multi-month + presets', () => {
    * keyed `each` is its date, which selecting a day does not change. Every
    * selection, focus move and range preview was therefore invisible: the state
    * updated, `monthGrid` recomputed, and the DOM kept the flags it was born
-   * with. `examples/components-demo` hand-rolls its own cells with
-   * `state.map(...)` bindings and never calls `dayCell` — that was the tell.
+   * with. The since-retired components demo hand-rolled its own cells with
+   * `state.map(...)` bindings and never called `dayCell` — that was the tell.
    *
    * The passed `DayCell` still supplies the cell's IDENTITY (`iso`); the flags
    * are re-derived from live state for that date.

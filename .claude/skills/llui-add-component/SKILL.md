@@ -127,7 +127,8 @@ A component with a VISUAL surface is not finished when its machine is, and there
 consumers of its `data-*` contract, not one:
 
 1. **`registry/llui/ui/<name>.ts`** — the shadcn-styled skin, copied into consumer projects by
-   `llui add`, rendered in `examples/registry-demo`.
+   `llui add`, rendered by the Component Gallery's Registry skins document from the copies in
+   the `examples/registry-demo` sync fixture.
 2. **`packages/components/src/styles/theme.css`** — the opt-in BASELINE stylesheet, which
    styles the same parts with `[data-scope][data-part]` rules for apps with no Tailwind build.
    A component with no rules here is simply unstyled for every baseline consumer.
@@ -145,7 +146,7 @@ For the registry half specifically, two guards will fail the build if you skip e
   `MACHINE_OF` map, so a new skin that names no machine fails rather than silently falling out
   of coverage — add it there (`[]` for a layout-only skin).
 - **`scripts/test/registry-demo-sync.test.ts`** requires every published registry item to be
-  copied into the demo, byte-identical to what `llui add` produces today.
+  copied into that fixture, byte-identical to what `llui add` produces today.
 
 The **Component Gallery** (`examples/component-gallery`, `pnpm gallery`) then shows the
 component on both paths with no gallery edit: its entry comes from the ProductContract and

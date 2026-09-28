@@ -12,7 +12,8 @@
 //   2. inside `createVariants({ ... })`: `base`, every string leaf under
 //      `variants`, and each `compoundVariants[].class`
 //   3. a literal `class:` property in an element props bag — how app code
-//      (`examples/components-demo`) spells the same thing
+//      (`examples/registry-demo`'s sections, `examples/baseline-css`) spells
+//      the same thing
 //
 // `classPartWithDefaults` is in that list for the same reason `classPart` is:
 // its recipe sits in the same argument position, and a helper this file does not
@@ -29,7 +30,7 @@
 //
 // `extractHtmlClassCandidates` is the same question asked of an app's HTML entry
 // point, which is the ONE file every demo has and which nothing read until #251:
-// `examples/components-demo/index.html` carried `bg-surface-muted` / `text-text`
+// the since-retired `examples/components-demo/index.html` carried `bg-surface-muted` / `text-text`
 // / `text-text-muted` on `<body>` and `<p>`, all of the dead `bg-surface-2`
 // token family, all compiling to no CSS, and no check in the repo opened the
 // file.
@@ -624,9 +625,9 @@ function scriptKind(fileName) {
  * HTML file are text that merely LOOKS like markup, and reading them would fail
  * a build for the wrong reason:
  *
- *   • a COMMENT. `components-demo/index.html` carries one naming the dead tokens
- *     this extractor exists to catch; a comment showing example markup would
- *     otherwise contribute every class in it.
+ *   • a COMMENT. The since-retired `components-demo/index.html` carried one
+ *     naming the dead tokens this extractor exists to catch; a comment showing
+ *     example markup would otherwise contribute every class in it.
  *   • the body of a `<script>` or `<style>`. A string `class="x"` inside inline
  *     JS is not markup.
  *

@@ -303,17 +303,15 @@ Nothing was written. Pass --force to copy the files anyway.
 
 ### Demos and scripts
 
-The two demo apps were renamed after the styling path each one shows. Their directories,
-package names and URLs are unchanged.
+The [Component Gallery](/apps/component-gallery/) is the component inventory: it renders
+every component, with deterministic scenarios, on both paths, and the
+[component catalog](/component-catalog) links each component to its gallery page. The two
+hand-written showcase apps are gone from that role:
 
-| Before            | After                       | Where                                                                              |
-| ----------------- | --------------------------- | ---------------------------------------------------------------------------------- |
-| "Components Demo" | **Baseline theme showcase** | `examples/components-demo`, [/examples/components-demo](/examples/components-demo) |
-| "Registry Demo"   | **Registry skins showcase** | `examples/registry-demo`, [/examples/registry-demo](/examples/registry-demo)       |
-
-Neither showcase is the inventory any more. The [Component Gallery](/apps/component-gallery/)
-renders every component, with deterministic scenarios, on both paths — and the
-[component catalog](/component-catalog) links each component to its gallery page.
+| Before                                                                | Now                                                                                                                                                                                      |
+| --------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| "Components Demo" (`examples/components-demo`)                        | **Removed.** The Gallery's Baseline theme document shows every component on that path. `/examples/components-demo` and its `@llui/example-components-demo` package no longer exist.      |
+| "Registry Demo" (`examples/registry-demo`, `/examples/registry-demo`) | **A test fixture, not a showcase.** It keeps the source `llui add` copied, so the repository can check that copy stays in sync with the registry. It is no longer published on the site. |
 
 New root scripts in the LLui repository:
 

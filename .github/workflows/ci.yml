@@ -137,7 +137,7 @@ jobs:
       # ban is the `Scripts lint` step BELOW (#256, closed): ESLint now runs
       # here, type-aware, with the `no-unsafe-*` family and `no-explicit-any` at
       # error, and zero explicit `any`s survive. (This comment used to claim two
-      # did. Only ONE was TypeScript — `a11y-audit.ts`, now typed from
+      # did. Only ONE was TypeScript — `a11y-audit.ts` (since deleted), typed from
       # axe-core's own declarations. The other, `jfb-trace-start.ts`'s
       # `entries: any[]`, sits inside a TEMPLATE LITERAL: source text this
       # script splices into an upstream JS file, so no gate here has an opinion

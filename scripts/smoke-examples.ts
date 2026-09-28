@@ -172,9 +172,10 @@ async function holds(
 }
 
 const PROBES: Readonly<Record<string, Probe>> = {
-  // The avatar is pointed at `example.invalid` so its image ERRORS: the
-  // machine must reach `error` and the fallback must be the visible half.
-  'components-demo': async (page) => {
+  // The Baseline consumer's avatar is pointed at `example.invalid` so its
+  // image ERRORS: the machine must reach `error` and the fallback must be the
+  // visible half.
+  'baseline-css': async (page) => {
     const failure = await holds(
       page,
       () => {

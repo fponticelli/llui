@@ -752,7 +752,8 @@ describe('transformSignalComponentSource', () => {
     // Regression: `div(section(...))` — a children argument that is a function
     // CALL returning Node[], not an array literal — was lowered to
     // `el("div", {}, [])`, DROPPING the children. (This blanked every section of
-    // the components-demo, which composes `main([div(section.view(...)), …])`.)
+    // the since-retired components demo, which composed
+    // `main([div(section.view(...)), …])`.)
     // The call must be left verbatim so the runtime authoring helper's
     // Array.isArray dispatch routes the Node[] arg to children.
     it('does not drop a dynamic (call-expression) children argument', () => {

@@ -463,7 +463,7 @@ replaces was shipped, untested against a real Tailwind build, and broken —
 - **Added** [Styling & the component registry](https://llui.dev/styling) — the
   token contract, the two mutually exclusive styling paths, the Tailwind
   namespace traps, and what `overlay()` does and does not give you.
-- **Added** the [Registry Demo](https://llui.dev/examples/registry-demo) example:
+- **Added** the [Registry Demo](https://github.com/fponticelli/llui/tree/main/examples/registry-demo) example:
   every registry component on one page, rendered from source `llui add` copied
   into the app. Its `src/components/ui/` is checked in, so CI compiles and
   browser-boots the CLI's actual output.
