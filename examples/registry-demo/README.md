@@ -9,16 +9,17 @@ For each component's deterministic scenarios side by side with the Baseline them
 [Component Gallery](../component-gallery) (`pnpm gallery`) — its Registry skins document
 renders these same copied files.
 
-Coverage is shadcn/ui parity minus Chart and Sidebar, plus the components LLui has and
-shadcn does not (rating group, tags input, tree view, steps, meter, number input,
-toolbar).
+It covers every registry item — shadcn/ui's set plus the components LLui has and shadcn
+does not. The [component catalog](https://llui.dev/component-catalog) lists them, with the
+machine each skin spreads and the items that deliberately have none.
 
 ## What it demonstrates
 
-- **The two kinds of registry item.** Presentational element helpers (`Button`, `Card`,
-  `Input`, `Textarea`, `Label`, `Badge`, `Separator`, `Skeleton`, `Alert`, `Table`) and
-  skins over `@llui/components` (`Switch`, `Tabs`, `Accordion`, `Dialog`, `Popover`,
-  `Tooltip`) where the state machine, keyboard handling and ARIA stay in the package.
+- **What `llui add` copies.** Presentational element helpers (`Button`, `Card`, `Input`,
+  `Badge`, …) with no machine at all; skins over `@llui/components` machines (`Switch`,
+  `Tabs`, `Dialog`, `Table`, …) where the state machine, keyboard handling and ARIA stay in
+  the package; and the adapters of composed patterns (`form`, `data-table`). The copied file
+  and the machine import are different artifacts, and their names can differ.
 - **Tokens without the baseline stylesheet.** `src/main.css` imports
   `@llui/components/styles/tokens.css`, not `theme.css`. The baseline's
   `[data-scope][data-part]` rules are unlayered, and unlayered CSS beats
@@ -36,14 +37,15 @@ toolbar).
 
 ## UI
 
-One page in five groups — Presentational, Forms, Data display, Navigation & disclosure,
-Overlays. The overlay triggers sit at the bottom; every overlay portals to `<body>`.
+One page of groups — presentational items, icons, forms, data display, navigation and
+disclosure, layout, menus, media, composed patterns, pickers and overlays. The overlay
+triggers sit at the bottom; every overlay portals to `<body>`.
 
-## Type-checked, unlike the other examples
+## Type-checked copied source
 
-This example has a `tsconfig.json` and a `check` script, so `turbo check` compiles it in
-CI. That is deliberate: `src/components/ui/` is the CLI's real output, so if `llui add`
-ever emits something that does not compile, this is where it surfaces. It caught four
+`turbo check` compiles this example in CI, like every example. Here it matters more:
+`src/components/ui/` is the CLI's real output, so if `llui add` ever emits something that
+does not compile, this is where it surfaces. It caught four
 defects the day it was added, three of them the same one — a `connect()` accessor
 returning a BAG OF BAGS (`item(value)` → `{ trigger, content, item }`), where spreading
 the wrapper emits `trigger="[object Object]"` and silently drops every real attribute.

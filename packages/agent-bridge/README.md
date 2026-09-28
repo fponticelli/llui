@@ -1,6 +1,6 @@
 # llui-agent
 
-MCP bridge for the [LLui Agent Protocol](../../docs/superpowers/specs/2026-04-19-llui-agent-design.md). Install once into your LLM client; paste the connect snippet from any LLui app to bind the conversation to that app.
+MCP bridge for the [LLui Agent Protocol](https://llui.dev/agents). Install once into your LLM client; paste the connect snippet from any LLui app to bind the conversation to that app.
 
 ## Install (Claude Desktop)
 

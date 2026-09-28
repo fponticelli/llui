@@ -263,7 +263,7 @@ one flat switch; an LLM generates it mechanically from the types.
 
 Components that render an overlay (dialog, popover, tooltip) also export an `overlay()`
 view helper that builds the portal tree and wires accessibility utilities — see the
-[Composition recipe in the cookbook](cookbook.md#library-components-connect--delegated-update).
+[Composition recipe in the cookbook](https://llui.dev/cookbook#library-components-connect--delegated-update).
 
 ---
 

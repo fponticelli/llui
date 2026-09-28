@@ -78,9 +78,11 @@ by `scenarioId` and case `id`, never extra fields attached to a case.
 
 ## Fidelity to shadcn/ui
 
-Recipes are ported VERBATIM from shadcn/ui's source (new-york-v4, MIT © 2023
-shadcn), measured at a **98% mean class-set match** across the 45 components with
-an upstream counterpart — 38 of them at 100%.
+Recipes are ported from shadcn/ui's source (new-york-v4, MIT © 2023 shadcn), keeping
+the upstream classes and adding only what LLui needs: logical RTL utilities,
+`forced-colors:` variants and LLui's `data-*` attributes. When the port was measured, the class sets matched upstream at a **98% mean**
+across the components with an upstream counterpart, most of them exactly; recipes added
+since were ported the same way.
 
 Two items are ports of something that could not come across whole, and each says
 so in its own header: **`form`** is upstream's five recipes re-bound to
@@ -89,8 +91,8 @@ so in its own header: **`form`** is upstream's five recipes re-bound to
 tooltip/legend recipes, but draws with `@llui/components/chart` because Recharts
 is React-only.
 
-**`chip` has no upstream counterpart** and is excluded from that 45 rather than
-counted as a miss. It is `badge`'s geometry with its colour derived from its
+**`chip` has no upstream counterpart** and is excluded from that measurement
+rather than counted as a miss. It is `badge`'s geometry with its colour derived from its
 value (`chipHue` in `@llui/components/styles`), which shadcn has no equivalent
 of — see `llui/ui/chip.ts` for why the two colour declarations live in the recipe
 and not in a `--chip-fill` token.

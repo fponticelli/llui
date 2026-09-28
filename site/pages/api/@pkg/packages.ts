@@ -48,7 +48,7 @@ export const PACKAGES: PackageMeta[] = [
   {
     slug: 'components',
     category: 'libraries',
-    blurb: '66 headless components + shadcn-token theme',
+    blurb: 'Headless component machines + Baseline theme',
   },
   {
     slug: 'cli',

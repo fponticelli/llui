@@ -420,7 +420,7 @@ function userCard(user: Signal<UserSlice>): Renderable {
 view: ({ state }) => [userCard(state.at('currentUser'))]
 ```
 
-See [composition-patterns.md](./composition-patterns.md) for the full set of patterns
+See [Composition Patterns](/composition-patterns) for the full set of patterns
 (sliced signal, `each` over a sliced list, derived signal, `Node[]` slots, and library
 `connect()`).
 
