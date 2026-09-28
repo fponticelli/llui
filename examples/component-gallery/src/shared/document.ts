@@ -19,7 +19,7 @@ import {
 } from '@llui/cli/gallery'
 import {
   PresentationScenarioError,
-  decodeScenarioSelection,
+  resolveScenarioSelection,
   type PresentationScenarioEnvironment,
   type PresentationScenarioJsonSnapshot,
   type PresentationScenarioPath,
@@ -231,7 +231,11 @@ async function mountScenario(
       ? (location.copiedArtifact ??
         (resolvedEntry.copiedArtifact !== entry.name ? resolvedEntry.copiedArtifact : undefined))
       : undefined
-  const resolved = decodeScenarioSelection(GALLERY_CONTRACT, catalog, {
+  // The typed entry, not `decodeScenarioSelection`: `catalog` is a live
+  // compiled catalog and the selection is built from a location
+  // `parseGalleryQuery` already decoded, so neither is an untyped value. The
+  // protocol still validates the selection at runtime either way.
+  const resolved = resolveScenarioSelection(GALLERY_CONTRACT, catalog, {
     productId: entry.name,
     path,
     ...(location.caseId === undefined ? {} : { caseId: location.caseId }),

@@ -1179,9 +1179,7 @@ export function mountRegistrySpecializedToolsScenarios(
           scenarioId: resolved.scenarioId as SpecializedToolsScenarioId,
           caseId: resolved.case.id,
           environment: resolved.environment,
-          copiedArtifactNames: Array.isArray(scenarioCase.copiedArtifactNames)
-            ? (scenarioCase.copiedArtifactNames as readonly string[])
-            : undefined,
+          copiedArtifactNames: scenarioCase.copiedArtifactNames,
         }),
       )
     }
