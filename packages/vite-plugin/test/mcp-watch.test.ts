@@ -1,31 +1,26 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdirSync, writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, unlinkSync, existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import llui from '../src/index'
+import { waitUntil } from '../../../scripts/lib/wait-until.mjs'
 
 /**
  * Tests the configureServer hook that exposes /__llui_mcp_status (middleware
  * served from the active marker file written by `@llui/mcp`) and dispatches
  * `llui:mcp-ready` HMR events on connection / file watch fire.
  *
- * The marker file lives at the workspace root — same logic the plugin uses —
- * so the test resolves it the same way.
+ * The marker lives in a PRIVATE state directory per test, handed to the plugin
+ * through `LLUI_MCP_STATE_DIR` — the same override `@llui/mcp`'s suites use
+ * (#85). This file used to write the REAL workspace marker
+ * (`node_modules/.cache/llui-mcp/active.json`), shared with a developer's
+ * running `llui-mcp` and with any other run of this suite from the same
+ * checkout, so the watcher test could not prove the event it saw was its own.
  */
 
-function findWorkspaceRoot(start: string = process.cwd()): string {
-  let dir = resolve(start)
-  let lastPackageJson: string | null = null
-  while (true) {
-    if (existsSync(resolve(dir, 'pnpm-workspace.yaml'))) return dir
-    if (existsSync(resolve(dir, '.git'))) return dir
-    if (existsSync(resolve(dir, 'package.json'))) lastPackageJson = dir
-    const parent = dirname(dir)
-    if (parent === dir) return lastPackageJson ?? start
-    dir = parent
-  }
-}
-
-const ACTIVE_PATH = resolve(findWorkspaceRoot(), 'node_modules/.cache/llui-mcp/active.json')
+let stateDir = ''
+let ACTIVE_PATH = ''
+const savedStateDirEnv = process.env['LLUI_MCP_STATE_DIR']
 
 interface SentEvent {
   type: string
@@ -135,10 +130,6 @@ function callMiddleware(server: FakeServer, path: string): MockResponse {
   return res
 }
 
-function ensureMarkerDir(): void {
-  mkdirSync(dirname(ACTIVE_PATH), { recursive: true })
-}
-
 function removeMarker(): void {
   if (existsSync(ACTIVE_PATH)) unlinkSync(ACTIVE_PATH)
 }
@@ -147,8 +138,11 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
   const activeServers: FakeServer[] = []
 
   beforeEach(() => {
-    removeMarker()
-    ensureMarkerDir()
+    // The plugin resolves the marker path when `llui()` is CALLED, so the
+    // override must be in place before each test's `setup()`.
+    stateDir = mkdtempSync(join(tmpdir(), 'llui-mcp-watch-'))
+    process.env['LLUI_MCP_STATE_DIR'] = stateDir
+    ACTIVE_PATH = join(stateDir, 'active.json')
   })
 
   afterEach(() => {
@@ -157,7 +151,9 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
     // Leaking these causes EMFILE on macOS when the full suite runs.
     for (const s of activeServers) closeFakeServer(s)
     activeServers.length = 0
-    removeMarker()
+    if (savedStateDirEnv === undefined) delete process.env['LLUI_MCP_STATE_DIR']
+    else process.env['LLUI_MCP_STATE_DIR'] = savedStateDirEnv
+    rmSync(stateDir, { recursive: true, force: true })
   })
 
   function setup(opts: { mcpPort?: number | false } = { mcpPort: 5200 }): FakeServer {
@@ -310,50 +306,44 @@ describe('vite-plugin: /__llui_mcp_status middleware', () => {
     expect(ready?.data).toEqual({ port: 5200, devUrl: 'http://127.0.0.1:5173' })
   })
 
-  // Exercises the real parent-directory fs.watch path — OS fs-event delivery is
-  // inherently timing-sensitive and can lag badly under full-repo parallel load,
-  // so retry transient starvation on top of the generous poll deadline.
-  it(
-    'stamps devUrl when the marker is created after listening fires (dirWatcher path)',
-    { retry: 2 },
-    async () => {
-      // Full MCP-after-Vite integration: listening fires with no marker,
-      // the plugin caches the URL, then MCP later writes the marker. The
-      // parent-directory watcher must detect the creation, call
-      // stampDevUrl(), and notify HMR with the devUrl attached.
-      const fake = setup({ mcpPort: 5200 })
-      // Fire listening first, while marker absent.
-      for (const cb of fake.httpServer?.listeningHandlers ?? []) cb()
-      expect(existsSync(ACTIVE_PATH)).toBe(false)
-      fake.sent.length = 0
+  // Exercises the real parent-directory fs.watch path. How soon the OS
+  // delivers the event is not ours to bound, so the wait is on the CONDITION
+  // (the watcher's HMR announcement) and ends only with the test's own budget.
+  // It used to poll against a private 8 s deadline under `retry: 2` — up to
+  // 24 s of hand-picked deadline shadowing the workspace budget — and that
+  // retry arithmetic was the only reason given for keeping the literal.
+  it('stamps devUrl when the marker is created after listening fires (dirWatcher path)', async (ctx) => {
+    // Full MCP-after-Vite integration: listening fires with no marker,
+    // the plugin caches the URL, then MCP later writes the marker. The
+    // parent-directory watcher must detect the creation, call
+    // stampDevUrl(), and notify HMR with the devUrl attached.
+    const fake = setup({ mcpPort: 5200 })
+    // Fire listening first, while marker absent.
+    for (const cb of fake.httpServer?.listeningHandlers ?? []) cb()
+    expect(existsSync(ACTIVE_PATH)).toBe(false)
+    fake.sent.length = 0
 
-      // MCP now writes the marker without devUrl.
-      writeFileSync(ACTIVE_PATH, JSON.stringify({ port: 5200, pid: 42 }))
+    // MCP now writes the marker without devUrl.
+    writeFileSync(ACTIVE_PATH, JSON.stringify({ port: 5200, pid: 42 }))
 
-      // Wait for fs.watch to fire. The poll exits the instant the watcher stamps
-      // the marker, so a generous deadline only costs time when the OS is slow to
-      // deliver the fs event — which is exactly the flake seen under full-repo
-      // parallel `turbo test` load. The test's own timeout (below) bounds it.
-      const deadline = Date.now() + 8000
-      while (Date.now() < deadline) {
-        const marker = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as { devUrl?: string }
-        if (marker.devUrl === 'http://127.0.0.1:5173') break
-        await new Promise((r) => setTimeout(r, 20))
-      }
+    // The watcher stamps the marker and THEN announces it, so the
+    // announcement is the event to wait for; the marker is asserted after.
+    await waitUntil(ctx, 'the dirWatcher to stamp devUrl and notify HMR', () =>
+      fake.sent.some((m) => m.event === 'llui:mcp-ready'),
+    )
 
-      const marker = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as {
-        port: number
-        pid: number
-        devUrl?: string
-      }
-      expect(marker.devUrl).toBe('http://127.0.0.1:5173')
-      expect(marker.port).toBe(5200)
-      expect(marker.pid).toBe(42)
+    const marker = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as {
+      port: number
+      pid: number
+      devUrl?: string
+    }
+    expect(marker.devUrl).toBe('http://127.0.0.1:5173')
+    expect(marker.port).toBe(5200)
+    expect(marker.pid).toBe(42)
 
-      // The dirWatcher-triggered notification should carry the stamped devUrl.
-      const ready = fake.sent.find((m) => m.event === 'llui:mcp-ready')
-      expect(ready).toBeDefined()
-      expect(ready?.data).toEqual({ port: 5200, devUrl: 'http://127.0.0.1:5173' })
-    },
-  )
+    // The dirWatcher-triggered notification should carry the stamped devUrl.
+    const ready = fake.sent.find((m) => m.event === 'llui:mcp-ready')
+    expect(ready).toBeDefined()
+    expect(ready?.data).toEqual({ port: 5200, devUrl: 'http://127.0.0.1:5173' })
+  })
 })
