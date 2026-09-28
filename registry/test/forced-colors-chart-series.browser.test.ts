@@ -16,7 +16,8 @@ import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
 
 const hermetic = useHermeticBrowser()
 
-// Matches the fixture's SERIES keys (both examples' forced-colors-chart.ts).
+// Matches the fixture's SERIES keys (both paths' `src/test-fixtures/forced-colors-chart.ts`:
+// `examples/baseline-css` for the Baseline theme, `examples/registry-demo` for the Registry skins).
 const SERIES_KEYS = ['bar1', 'bar2', 'bar3', 'area1', 'area2', 'area3']
 
 /**
@@ -297,7 +298,7 @@ describe('forced-colors chart series distinctness (real pixels, both paths)', ()
 
   beforeAll(async () => {
     const [baseline, registryTailwind, launched] = await Promise.all([
-      buildExample('examples/components-demo'),
+      buildExample('examples/baseline-css'),
       buildExample('examples/registry-demo'),
       hermetic.launch({ headless: true }),
     ])

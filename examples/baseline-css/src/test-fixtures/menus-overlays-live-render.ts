@@ -9,6 +9,9 @@
 // mount, because several of this suite's assertions need the SAME product
 // mounted twice on one page (stacked/nested overlays) or need a live
 // `dispose()` handle to drive presence transitions after mount.
+// The Baseline path, and nothing else: `theme.css` (through the brand
+// override), no Tailwind, no preflight, no utilities.
+import './brand-override.css'
 import {
   compileMenusOverlaysCatalog,
   dispatchScenarioSelection,

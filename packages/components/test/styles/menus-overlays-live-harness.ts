@@ -5,11 +5,12 @@
  * source aliases, the contract join and the per-case mount protocol cannot
  * drift between suites.
  *
- * Each app (`examples/components-demo` for the baseline path,
- * `examples/registry-demo` for the registry path) serves its own
- * `src/test-fixtures/menus-overlays-live-render.ts`, which exposes a
- * per-case mount on `window`. Every case mounts in its OWN page: never a
- * shared style universe between two cases, or between the two paths.
+ * Each path's fixture root (`examples/baseline-css` — the Tailwind-free
+ * Baseline consumer — for the baseline path, `examples/registry-demo` for the
+ * registry path) serves its own `src/test-fixtures/menus-overlays-live-render.ts`,
+ * which exposes a per-case mount on `window`. Every case mounts in its OWN
+ * page: never a shared style universe between two cases, or between the two
+ * paths.
  *
  * Both fixtures are BUILT once per suite and served static
  * (`scripts/lib/prebuilt-fixture.mjs`), not served by a Vite dev server. On a
@@ -135,7 +136,7 @@ export function useMenusOverlaysLiveHarness(): MenusOverlaysLiveHarness {
 
   beforeAll(async () => {
     const [baseline, registryTailwind, launched] = await Promise.all([
-      buildExample('examples/components-demo'),
+      buildExample('examples/baseline-css'),
       buildExample('examples/registry-demo'),
       hermetic.launch({ headless: true }),
     ])

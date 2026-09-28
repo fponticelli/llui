@@ -1,8 +1,11 @@
 // @vitest-environment node
 
 /**
- * Real-Chromium proof of the Toast contract in BOTH actual demos
- * (`examples/components-demo`, `examples/registry-demo`) — not only the
+ * Real-Chromium proof of the Toast contract in a live, consumer-driven
+ * composition on BOTH styling paths — the Baseline theme's
+ * (`examples/baseline-css/src/test-fixtures/compositions/toast.ts`, in the
+ * Tailwind-free Baseline consumer) and the Registry skins'
+ * (`examples/registry-demo`, the copied-source sync fixture) — not only the
  * isolated scenario-renderer harness in
  * `packages/components/test/styles/menus-overlays-live-render.browser.test.ts`
  * (#265, task item 1). Mirrors the pattern of
@@ -26,6 +29,8 @@ const repoRoot = resolve(import.meta.dirname, '../..')
 interface Demo {
   readonly path: 'baseline' | 'registryTailwind'
   readonly dir: string
+  /** The HTML entry, relative to `dir`. */
+  readonly input: string
   /** Locator for the button that pushes a toast of a given type. */
   readonly trigger: (type: string) => string
   /** Locator for the async (loading -> success) trigger. */
@@ -39,13 +44,15 @@ interface Demo {
 const DEMOS: readonly Demo[] = [
   {
     path: 'baseline',
-    dir: 'examples/components-demo',
+    dir: 'examples/baseline-css',
+    input: 'src/test-fixtures/compositions.html',
     trigger: (type) => `#toast-trigger-${type}`,
     asyncTrigger: '#toast-trigger-async',
   },
   {
     path: 'registryTailwind',
     dir: 'examples/registry-demo',
+    input: 'index.html',
     trigger: (type) => `[data-toast-demo-type="${type}"]`,
     asyncTrigger: '[data-toast-demo-type="async"]',
   },
@@ -56,8 +63,8 @@ const DEMOS: readonly Demo[] = [
 // the first test to navigate, re-sent its whole unbundled module graph to
 // every fresh page, and shared the example's dependency-optimizer cache with
 // every concurrent suite serving the same example (see that module's header).
-function buildExample(directory: string): Promise<PrebuiltFixture> {
-  return prebuildFixture({ root: resolve(repoRoot, directory), inputs: ['index.html'] })
+function buildExample(demo: Demo): Promise<PrebuiltFixture> {
+  return prebuildFixture({ root: resolve(repoRoot, demo.dir), inputs: [demo.input] })
 }
 
 declare global {
@@ -116,23 +123,21 @@ async function recordToastStates(page: Page): Promise<void> {
 const statesOf = (page: Page, id: string): Promise<string[] | undefined> =>
   page.evaluate((key) => window.__toastStates?.[key], id)
 
-describe('actual Toast demos in Chromium (#265 task item 1)', () => {
+describe('live Toast compositions in Chromium, both paths (#265 task item 1)', () => {
   let browser: Browser
   let builds: PrebuiltFixture[] = []
   const urls: Record<string, string> = {}
 
   beforeAll(async () => {
-    const [baseline, registry, launched] = await Promise.all([
-      buildExample('examples/components-demo'),
-      buildExample('examples/registry-demo'),
+    const [built, launched] = await Promise.all([
+      Promise.all(DEMOS.map((demo) => buildExample(demo))),
       hermetic.launch({ headless: true }),
     ])
-    builds = [baseline, registry]
+    builds = built
     browser = launched
-    urls.baseline = baseline.url('/')
-    urls.registryTailwind = registry.url('/')
-    // Two whole-app builds: the compile a dev server used to spread over the
-    // first test of each demo is paid here, once, under the hook's budget.
+    DEMOS.forEach((demo, i) => (urls[demo.path] = built[i]!.url(demo.input)))
+    // One build per path: the compile a dev server used to spread over the
+    // first test of each is paid here, once, under the hook's budget.
   }, 120_000)
 
   afterAll(async () => {

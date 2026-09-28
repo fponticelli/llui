@@ -19,7 +19,8 @@ const hermetic = useHermeticBrowser()
  * test, which is a real regression guard for the STYLESHEET but was never
  * evidence for the RENDERER). This file mounts
  * `mountBaselineNavigationDataScenarios` / `mountRegistryNavigationDataScenarios`
- * through a real Vite dev server for each example app and measures real
+ * through a prebuilt fixture per path (`examples/baseline-css` for the
+ * Baseline theme, `examples/registry-demo` for the Registry skins) and measures real
  * `getBoundingClientRect()` geometry and real `data-state`/`aria-hidden`/
  * `inert` on the live DOM those renderers produce.
  */
@@ -92,7 +93,7 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
 
   beforeAll(async () => {
     const [baseline, registryTailwind, launched] = await Promise.all([
-      buildExample('examples/components-demo'),
+      buildExample('examples/baseline-css'),
       buildExample('examples/registry-demo'),
       hermetic.launch({ headless: true }),
     ])

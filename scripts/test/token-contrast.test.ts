@@ -90,7 +90,7 @@ const hermetic = useHermeticBrowser()
  *
  * ─── Source, not `dist/` ─────────────────────────────────────────────────────
  *
- * The demos render `@llui/components`'s BUILT `dist/styles/`, so a `src/` edit is
+ * The example apps render `@llui/components`'s BUILT `dist/styles/`, so a `src/` edit is
  * invisible to them until the package is rebuilt. This guard compiles through
  * `scripts/lib/tailwind-compile.mjs`, whose loader redirects `@llui/*` specifiers
  * to the workspace SOURCE for exactly that reason: the check describes the tree
@@ -209,7 +209,10 @@ type Exemption = { reason: string; atLeast: number }
 
 const ALLOWED_BELOW_AA: Record<string, Exemption> = Object.fromEntries(
   [
-    'examples/components-demo/src/main.css',
+    // A consumer brand override on the Tailwind-free Baseline path (moved
+    // here from the retired Baseline showcase's entry stylesheet): it
+    // overrides `--primary`/`--destructive` only, so `muted` stays upstream's.
+    'examples/baseline-css/src/test-fixtures/brand-override.css',
     'examples/registry-demo/src/main.css',
     // The #266 live-render fixture is `@import '../main.css'` plus two
     // `@source` lines, so it IS registry-demo's palette, measured separately
@@ -234,7 +237,7 @@ const ALLOWED_BELOW_AA: Record<string, Exemption> = Object.fromEntries(
         // light-mode-only shortfall of 0.15.
         reason:
           'shadcn/ui upstream value for secondary text; changing it forks the palette from every shadcn theme',
-        // Measured 4.349:1 in all three light cells, on both demos.
+        // Measured 4.349:1 in all three light cells, in every entry above.
         atLeast: 4.34,
       },
     ]),
