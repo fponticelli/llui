@@ -102,7 +102,9 @@ see hand-written `signalText`/`signalEach`/`signalShow` in app code, that's a sm
 - **`state.map(fn)`** — derive a reactive value. Reads the **whole** state (its dep is the root).
 - **`state.peek()`** — one-shot, non-reactive read. Only in event handlers, effects, and `onMount` — **never** in a reactive slot.
 
-There is **no `.select`**. You cannot call `.at()` on a `.map()` result (compile error).
+There is **no `.select`**. You cannot call `.at()` on a `.map()` result (compile error) —
+including the narrowed param a `show`/`branch` arm receives when the condition is a `.map`
+or `derived` (the param IS that signal): read its fields with `.map((v) => v.field)`.
 Combine multiple signals with `derived(a, b, fn)` / `derived([a, b], fn)` (a module
 import, not a handle method). Reactive slots take a `Signal`, a `.map`, or a plain value.
 

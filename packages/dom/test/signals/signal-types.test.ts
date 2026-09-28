@@ -1,6 +1,7 @@
 import { describe, it } from 'vitest'
 import { derived } from '../../src/signals/handle'
-import type { Signal, LiveSignal } from '../../src/signals/types'
+import type { Signal, LiveSignal, MappedSignal } from '../../src/signals/types'
+import { show, branch, text } from '../../src/signals/authoring'
 
 // Type-level surface guards, mirroring the repo convention (scope-types.test.ts):
 // declarations live in never-called functions; `pnpm check` is the real
@@ -229,6 +230,51 @@ describe('derived', () => {
     const _ = () => {
       // @ts-expect-error — derived(...) yields a mapped signal; slice the sources instead
       derived(s.at('count'), s.at('count'), (a, b) => ({ x: a + b })).at('x')
+    }
+    void _
+  })
+})
+
+// A `show`/`branch` narrowed param IS the condition handle, so over a MAPPED
+// condition it is a mapped signal: `.at()` on it throws at runtime, and the type
+// must say so (the gallery shell #267 reached that throw through a narrowed param
+// typed as a plain `Signal`).
+describe('show/branch narrowed params keep a mapped condition mapped', () => {
+  type Status = { kind: 'ok'; label: string } | { kind: 'err'; message: string }
+
+  it('show over a mapped condition: the narrowed param rejects .at(), allows .map()', () => {
+    const _ = () => {
+      const frames = s.at('items').map((items) => items[0]!)
+      show(frames, (item) => {
+        expectType<MappedSignal<Item>>(item)
+        // @ts-expect-error — the narrowed param of a mapped condition has no path
+        item.at('label')
+        return [text(item.map((i) => i.label))]
+      })
+    }
+    void _
+  })
+
+  it('branch over a mapped value: every arm param rejects .at(), allows .map()', () => {
+    const _ = () => {
+      const status = s
+        .at('count')
+        .map((n): Status => (n > 0 ? { kind: 'ok', label: 'x' } : { kind: 'err', message: 'y' }))
+      branch(status, (v) => v.kind, {
+        ok: (v) => {
+          // @ts-expect-error — the arm param of a mapped value has no path
+          v.at('label')
+          return [text(v.map((x) => x.label))]
+        },
+        err: (v) => [text(v.map((x) => x.message))],
+      })
+    }
+    void _
+  })
+
+  it('over a PATH condition the narrowed param still slices with .at()', () => {
+    const _ = () => {
+      show(s.at('session'), (session) => [text(session.at('token'))])
     }
     void _
   })

@@ -31,6 +31,9 @@ All are module imports from `@llui/dom`. They own child scopes and reconcile.
 
 Mounts `render()` when `cond` is truthy, else `orElse?()`. `cond` is a `Signal`/`.map`.
 The arm is its own scope that receives state updates while mounted; toggling swaps arms.
+The arm's param is `cond` itself, narrowed: over `state.at('user')` it slices with
+`.at('name')`; over a `.map`/`derived` condition it is mapped too, so read fields with
+`.map((u) => u.name)` (`.at()` there is a type + build error). Same for `branch` arms.
 
 ```ts
 show(

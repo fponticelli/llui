@@ -198,6 +198,7 @@ Hard constraints. Several are not enforced by types or CI. **Before touching a s
 - **`peek-in-slot` is scoped to slots and an exemption is sticky** (#245). A change may only REMOVE reports versus main.
 - **An `each` row rebases onto component state only for a name that provably denotes it** (#247). Pruned rows must widen the each's dep mask, or the row goes stale.
 - **`tagSend` variants must match what the handler dispatches** (`tag-send-drift`). Under-declaration is reported when attributable; over-declaration only when the dispatch set is provably complete. When the two directions disagree, BAIL.
+- **`prefer-at-over-map` recommends `.at()` only on a provable PATH receiver** (`RootShape`). A `show`/`branch` narrowed param IS its condition handle: over a `.map`/`derived` condition it is mapped, and `.at()` on it is `at-after-map` (#267).
 - **`imperative-dom-mutation`:** DOM writes from a view's own element-helper event handler are build errors; `foreign()`/`island()`/`subApp()` are exempt.
 - **Named function expressions are never lowered** — lowering relocates the body and drops the self-binding (#181).
 - **Parse via the ONE `ts.createSourceFile` in `src/parse.ts`** with the real filename's ScriptKind; share one `ParsedModule`; never mutate the tree.

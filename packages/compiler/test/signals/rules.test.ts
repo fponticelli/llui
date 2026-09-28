@@ -143,6 +143,100 @@ describe('prefer-at-over-map', () => {
   })
 })
 
+// The rule's fix is `.at()`, and `.at()` only exists on a PATH signal: on a
+// mapped one (`.map`/`derived`) it is a type error and throws at runtime. So the
+// rule may only fire where the receiver provably carries a path — never on a
+// mapped signal, and never on a `show`/`branch` narrowed param whose condition
+// is mapped (that param IS the condition handle). The component-gallery shell
+// hit exactly this: an error arm's `v.map((s) => s.message)` was rejected with
+// "use .at('message')", and `.at('message')` threw.
+describe('prefer-at-over-map — only where .at() is valid', () => {
+  const preferAt = (src: string): number =>
+    lint(src).filter((d) => d.rule === 'prefer-at-over-map').length
+
+  it('does NOT flag a projection chained after a signal .map()', () => {
+    expect(preferAt('text(state.map(pick).map((v) => v.name))')).toBe(0)
+    expect(preferAt("text(state.at('a').map((a) => a.find(ok)).map((v) => v.name))")).toBe(0)
+  })
+  it('does NOT flag a projection on an .at() slice of a mapped signal (that .at is the error)', () => {
+    const src = "text(state.map(pick).at('x').map((v) => v.y))"
+    expect(preferAt(src)).toBe(0)
+    expect(rules(src)).toContain('at-after-map')
+  })
+  it('does NOT flag a projection chained after derived()', () => {
+    expect(
+      preferAt(
+        "text(derived([state.at('a'), state.at('b')], (a, b) => ({ x: a + b })).map((v) => v.x))",
+      ),
+    ).toBe(0)
+  })
+  it('does NOT flag a show() narrowed param whose condition is mapped', () => {
+    expect(
+      preferAt("show(state.at('frames').map(pick), (f) => [text(f.map((x) => x.message))])"),
+    ).toBe(0)
+  })
+  it('does NOT flag a branch() arm param whose value is mapped (both forms)', () => {
+    expect(
+      preferAt(
+        "branch(state.at('frames').map(pick), (x) => x.status, { error: (v) => [text(v.map((e) => e.message))] })",
+      ),
+    ).toBe(0)
+    expect(
+      preferAt(
+        "branch(state.at('frames').map(pick), 'status', { error: (v) => [text(v.map((e) => e.message))] })",
+      ),
+    ).toBe(0)
+  })
+  it('does NOT flag a narrowed param whose condition is not provably a path (an alias)', () => {
+    // `status` is a local the walk cannot see through: it may well be mapped (it
+    // is, in the gallery), so demanding `.at()` would be demanding a throw.
+    expect(
+      preferAt(
+        "const status = state.at('frames').map(pick); branch(status, (x) => x.status, { error: (v) => [text(v.map((e) => e.message))] })",
+      ),
+    ).toBe(0)
+  })
+  it('does NOT flag a narrowed param nested under a mapped narrowed param', () => {
+    expect(
+      preferAt(
+        'show(state.map(pick), (u) => [show(u.map((x) => x.profile.main), (p) => [text(p.map((x) => x.name))])])',
+      ),
+    ).toBe(0)
+  })
+  it('STILL flags a show()/branch() narrowed param whose condition is a path', () => {
+    expect(preferAt("show(state.at('user'), (u) => [text(u.map((x) => x.name))])")).toBe(1)
+    expect(
+      preferAt(
+        "branch(state.at('view'), 'type', { loaded: (v) => [text(v.map((x) => x.count))] })",
+      ),
+    ).toBe(1)
+    expect(
+      preferAt(
+        "branch(state.at('view'), (x) => x.type, { loaded: (v) => [text(v.map((x) => x.count))] })",
+      ),
+    ).toBe(1)
+  })
+  it('STILL flags a narrowed param nested under a path narrowed param', () => {
+    expect(
+      preferAt(
+        "show(state.at('user'), (u) => [show(u.at('profile'), (p) => [text(p.map((x) => x.name))])])",
+      ),
+    ).toBe(1)
+  })
+  it('STILL flags an each row item even when the items are mapped (a row handle is a path)', () => {
+    expect(
+      preferAt(
+        'each(state.map(rows), { key: (r) => r.id, render: (item) => [text(item.map((r) => r.name))] })',
+      ),
+    ).toBe(1)
+  })
+  it('STILL flags a projection on a path slice of a path narrowed param', () => {
+    expect(
+      preferAt("show(state.at('user'), (u) => [text(u.at('profile').map((p) => p.name))])"),
+    ).toBe(1)
+  })
+})
+
 // The whole-`state`-coarseness rule was removed: rendering a whole-state object is
 // already a TYPE error (`text`/`AttrValue` = `Reactive<string|number>`), and a
 // `Signal` coerced into a template/operator is caught by `operator-on-signal`
@@ -575,6 +669,62 @@ describe('at-after-map', () => {
     const msg = messageFor("text(state.at('a').map((a) => a).at('x'))", 'at-after-map')
     expect(msg).toContain('.at()')
     expect(msg).toContain('BEFORE')
+  })
+
+  // A show()/branch() narrowed param IS its condition handle, so when the
+  // condition is mapped the param is too, and `.at()` on it throws at runtime.
+  it('flags .at() on a show() narrowed param whose condition is mapped', () => {
+    expect(rules("show(state.at('frames').map(pick), (f) => [text(f.at('message'))])")).toContain(
+      'at-after-map',
+    )
+    expect(
+      rules("show(derived([state.at('a')], (a) => a), (f) => [text(f.at('message'))])"),
+    ).toContain('at-after-map')
+  })
+  it('flags .at() on a branch() arm param whose value is mapped (both forms)', () => {
+    expect(
+      rules(
+        "branch(state.at('frames').map(pick), (x) => x.status, { error: (v) => [text(v.at('message'))] })",
+      ),
+    ).toContain('at-after-map')
+    expect(
+      rules(
+        "branch(state.at('frames').map(pick), 'status', { error: (v) => [text(v.at('message'))] })",
+      ),
+    ).toContain('at-after-map')
+  })
+  it('flags .at() through a nested narrowed param that inherits a mapped condition', () => {
+    expect(rules("show(state.map(pick), (u) => [show(u, (p) => [text(p.at('name'))])])")).toContain(
+      'at-after-map',
+    )
+  })
+  it('does NOT flag .at() on a narrowed param whose condition is a path', () => {
+    expect(rules("show(state.at('user'), (u) => [text(u.at('name'))])")).not.toContain(
+      'at-after-map',
+    )
+    expect(
+      rules("branch(state.at('view'), 'type', { loaded: (v) => [text(v.at('count'))] })"),
+    ).not.toContain('at-after-map')
+    expect(
+      rules(
+        "each(state.map(rows), { key: (r) => r.id, render: (item) => [text(item.at('name'))] })",
+      ),
+    ).not.toContain('at-after-map')
+  })
+  it('does NOT flag a narrowed param rebound by a nested scope', () => {
+    expect(
+      rules(
+        "show(state.map(pick), (f) => [button({ onClick: () => { const f = pathSig; f.at('x') } }, [])])",
+      ),
+    ).not.toContain('at-after-map')
+  })
+  it('names the narrowed param and the .map() read in the message', () => {
+    const msg = messageFor(
+      "show(state.at('frames').map(pick), (f) => [text(f.at('message'))])",
+      'at-after-map',
+    )
+    expect(msg).toContain('`f`')
+    expect(msg).toContain('f.map((v) => v.message)')
   })
 })
 

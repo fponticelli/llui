@@ -139,10 +139,10 @@ describe('constant — .at() / .map() composition', () => {
     const mapped = constant({ a: 1 }).map((v) => v)
     // The public type is `at: never` (so `mapped.at('a')` is a COMPILE error, and
     // the `at-after-map` lint rule is the other half); the runtime carrier keeps
-    // the throwing safety net every other derived handle has, for uncompiled JS
-    // callers that get past both.
+    // the throwing safety net every other derived handle has, for callers that
+    // get past both (and it names the path it was asked for).
     const escape = mapped as unknown as { at: (p: string) => unknown }
-    expect(() => escape.at('a')).toThrow(/\.at\(\) on a mapped/)
+    expect(() => escape.at('a')).toThrow(/\.at\('a'\) on a mapped signal is unsupported/)
   })
 
   it('.at().map() is the supported order and works', () => {
