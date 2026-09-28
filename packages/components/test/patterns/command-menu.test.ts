@@ -204,9 +204,10 @@ describe('commandMenu highlight', () => {
 
   it('filtering keeps a still-visible highlight and re-seeds a filtered-out one', () => {
     let s = open(init({ commands: COMMANDS }))
-    s = update(s, { type: 'highlight', commandId: 'save' })[0]
-    s = update(s, { type: 'setQuery', query: 's' })[0]
-    expect(ids(s)).toBe('save')
+    s = update(s, { type: 'highlight', commandId: 'open-file' })[0]
+    s = update(s, { type: 'setQuery', query: 'file' })[0]
+    expect(ids(s)).toBe('open-file')
+    // (A re-seed would pick `new-file`, the first enabled match.)
     s = update(s, { type: 'setQuery', query: 'copy' })[0]
     expect(ids(s)).toBe('copy')
     s = update(s, { type: 'setQuery', query: 'zzz' })[0]
