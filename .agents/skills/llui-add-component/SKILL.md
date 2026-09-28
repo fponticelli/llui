@@ -52,6 +52,16 @@ Parts carry static ARIA/`data-*` attributes + reactive `Signal` props + ids deri
 component-specific options. Use `data-scope` / `data-part` / `data-state` conventions for
 stable selectors. Address repeated items by value via sub-parts (e.g. `tabs.connect(...).item('a').trigger`).
 
+**An idref may only name a part the consumer MUST render.** If a part is optional — a
+description, instructions, a group's label, anything whose absence leaves the widget
+conformant — gate every `aria-labelledby`/`aria-describedby` pointing at it behind an
+explicit option (`hasDescription`, `hasInstructions`, `hasLabel`, `group(id, { hasLabel })`),
+default ON so the documented complete render is unchanged, and emit `undefined` when it is
+off. A broken idref is an accessibility defect and fails the gallery's markup probe. A part
+that supplies something ARIA REQUIRES (a dialog's or `role="img"`'s name, the reason for an
+invalid state) is mandatory instead: document it, give it no option (`dialog`'s title).
+`test/components/optional-part-idrefs.test.ts` pins every gated site.
+
 ## i18n
 
 Pull locale strings with `const locale = useContext(LocaleContext)` (from `../locale.js`)

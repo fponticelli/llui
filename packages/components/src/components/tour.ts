@@ -137,7 +137,8 @@ export interface TourParts {
     role: 'dialog'
     'aria-modal': 'false'
     'aria-labelledby': string
-    'aria-describedby': string
+    /** The description part's id, or absent when `hasDescription: false`. */
+    'aria-describedby': string | undefined
     'data-scope': 'tour'
     'data-part': 'root'
     hidden: Signal<boolean>
@@ -196,6 +197,14 @@ export interface ConnectOptions {
   /** Whether clicking the backdrop stops the tour. Default: false — tours
    *  typically require an explicit dismiss. */
   closeOnBackdropClick?: boolean
+  /**
+   * Whether the consumer renders the `description` part (default: true — a
+   * `TourStep` always carries one). When false, the root omits
+   * `aria-describedby`, which would otherwise name an element that does not
+   * exist (the `dialog` `hasDescription` rule, #268). The title names the
+   * dialog and stays mandatory.
+   */
+  hasDescription?: boolean
 }
 
 export function connect(
@@ -213,7 +222,7 @@ export function connect(
       role: 'dialog',
       'aria-modal': 'false',
       'aria-labelledby': titleId,
-      'aria-describedby': descId,
+      'aria-describedby': opts.hasDescription === false ? undefined : descId,
       'data-scope': 'tour',
       'data-part': 'root',
       hidden: state.map((s) => !s.open),

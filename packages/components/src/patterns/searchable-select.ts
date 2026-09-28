@@ -281,7 +281,8 @@ export interface SearchableSelectItemParts {
 export interface SearchableSelectGroupParts {
   group: {
     role: 'group'
-    'aria-labelledby': string
+    /** The group label's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'searchable-select'
     'data-part': 'group'
     'data-group': string
@@ -371,7 +372,14 @@ export interface SearchableSelectParts {
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */
   item: (value: string, index?: number) => SearchableSelectItemParts
-  group: (id: string) => SearchableSelectGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => SearchableSelectGroupParts
   /** Clear-selection trigger. Render only when `hasValue` is true. */
   clear: {
     type: 'button'
@@ -614,8 +622,8 @@ export function connect(
         },
       }
     },
-    group: (id: string): SearchableSelectGroupParts => {
-      const inner = cb.group(id)
+    group: (id: string, options = {}): SearchableSelectGroupParts => {
+      const inner = cb.group(id, options)
       return {
         group: {
           role: 'group',

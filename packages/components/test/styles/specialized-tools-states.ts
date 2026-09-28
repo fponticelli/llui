@@ -291,6 +291,11 @@ export function sortableScenarioInit(data: SortableCaseInput): SortableScenarioS
   }
 }
 
+/** The keyboard help a consumer renders ITSELF when it opts out of the machine's
+ * `instructions` part (the `own-instructions` case, `hasInstructions: false`). */
+export const SORTABLE_OWN_HELP =
+  'Space or Enter picks an item up; the arrow keys move it; Escape cancels.'
+
 /**
  * The label a listener hears for a sortable row (`connect`'s `itemLabel`). A
  * row's id is its identity for its whole life (`sortableScenarioInit`), so the

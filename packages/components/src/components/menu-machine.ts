@@ -578,7 +578,8 @@ export interface MenuCheckItemPartsOf<Scope extends string> {
 export interface MenuGroupPartsOf<Scope extends string> {
   group: {
     role: 'group'
-    'aria-labelledby': string
+    /** The label part's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': Scope
     'data-part': 'group'
   }
@@ -662,7 +663,14 @@ export interface MenuTreeParts<Scope extends string> {
   item: (value: string) => MenuItemPartsOf<Scope>
   checkboxItem: (value: string) => MenuCheckItemPartsOf<Scope>
   radioItem: (value: string) => MenuCheckItemPartsOf<Scope>
-  group: (id: string) => MenuGroupPartsOf<Scope>
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => MenuGroupPartsOf<Scope>
   separator: () => MenuSeparatorPartsOf<Scope>
   subTrigger: (value: string) => MenuSubTriggerPartsOf<Scope>
   subPositioner: (value: string) => MenuSubPositionerPartsOf<Scope>
@@ -935,10 +943,10 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
         'aria-checked': Signal<'true' | 'false'>
       },
     }),
-    group: (id: string): MenuGroupPartsOf<Scope> => ({
+    group: (id: string, options = {}): MenuGroupPartsOf<Scope> => ({
       group: {
         role: 'group',
-        'aria-labelledby': ids.groupLabelId(id),
+        'aria-labelledby': options.hasLabel === false ? undefined : ids.groupLabelId(id),
         'data-scope': scope,
         'data-part': 'group',
       },

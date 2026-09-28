@@ -281,6 +281,7 @@ import {
   scrollAreaInit,
   signaturePadInit,
   SORTABLE_CONTAINER,
+  SORTABLE_OWN_HELP,
   sortableItemLabel,
   sortableScenarioInit,
   sortableScenarioUpdate,
@@ -898,6 +899,9 @@ const sortableAdapter: Adapter<SortableCaseInput> = (host, data, ctx) =>
       const parts = sortable.connect(state.at('sort'), send, {
         id: SORTABLE_CONTAINER,
         itemLabel: sortableItemLabel(data),
+        // A consumer that renders its own help opts out, so no handle names
+        // the missing part (`own-instructions` case).
+        hasInstructions: data.hasInstructions,
       })
       // `text` is each bag's CHILD, not an attribute (see the skin's doc).
       const { text: live, ...liveAttrs } = parts.liveRegion
@@ -920,7 +924,9 @@ const sortableAdapter: Adapter<SortableCaseInput> = (host, data, ctx) =>
           }),
         ]),
         SortableLiveRegion({ ...liveAttrs }, [text(live)]),
-        SortableInstructions({ ...howToAttrs }, [text(howTo)]),
+        data.hasInstructions
+          ? SortableInstructions({ ...howToAttrs }, [text(howTo)])
+          : p({ class: 'text-sm text-muted-foreground' }, [text(SORTABLE_OWN_HELP)]),
       ]
     },
   )

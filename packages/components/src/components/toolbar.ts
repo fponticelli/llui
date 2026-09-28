@@ -117,7 +117,8 @@ export interface ToolbarGroupParts {
     role: 'group'
     'data-scope': 'toolbar'
     'data-part': 'group'
-    'aria-labelledby': string
+    /** The label part's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
   }
   label: {
     id: string
@@ -144,7 +145,14 @@ export interface ToolbarParts {
     'data-part': 'separator'
   }
   item: (value: string) => ToolbarItemParts
-  group: (label: string) => ToolbarGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (label: string, options?: { readonly hasLabel?: boolean }) => ToolbarGroupParts
 }
 
 export interface ConnectOptions {
@@ -243,12 +251,12 @@ export function connect(
         }),
       },
     }),
-    group: (label: string): ToolbarGroupParts => ({
+    group: (label: string, options = {}): ToolbarGroupParts => ({
       root: {
         role: 'group',
         'data-scope': 'toolbar',
         'data-part': 'group',
-        'aria-labelledby': groupLabelId(label),
+        'aria-labelledby': options.hasLabel === false ? undefined : groupLabelId(label),
       },
       label: {
         id: groupLabelId(label),

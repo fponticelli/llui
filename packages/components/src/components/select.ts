@@ -300,7 +300,8 @@ export interface SelectItemParts {
 export interface SelectGroupParts {
   group: {
     role: 'group'
-    'aria-labelledby': string
+    /** The group label's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
     'data-scope': 'select'
     'data-part': 'group'
     'data-group': string
@@ -382,7 +383,14 @@ export interface SelectParts {
    * group id; render the section element with `group` and its label element
    * (referenced by `aria-labelledby`) with `groupLabel`. Group labels are not
    * options, so navigation skips them automatically. */
-  group: (id: string) => SelectGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => SelectGroupParts
   /** Selected value(s) — use for rendering the trigger label. */
   valueText: Signal<string>
 }
@@ -559,10 +567,10 @@ export function connect(
         }),
       },
     }),
-    group: (id: string): SelectGroupParts => ({
+    group: (id: string, options = {}): SelectGroupParts => ({
       group: {
         role: 'group',
-        'aria-labelledby': groupLabelId(id),
+        'aria-labelledby': options.hasLabel === false ? undefined : groupLabelId(id),
         'data-scope': 'select',
         'data-part': 'group',
         'data-group': id,

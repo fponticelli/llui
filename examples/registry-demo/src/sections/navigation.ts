@@ -11,7 +11,12 @@ import {
   AccordionTrigger,
 } from '../components/ui/accordion'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '../components/ui/collapsible'
-import { Toolbar, ToolbarGroup, ToolbarSeparator } from '../components/ui/toolbar'
+import {
+  Toolbar,
+  ToolbarGroup,
+  ToolbarGroupLabel,
+  ToolbarSeparator,
+} from '../components/ui/toolbar'
 import { Button, buttonVariants } from '../components/ui/button'
 import { Kbd } from '../components/ui/kbd'
 import { section } from './shared'
@@ -85,6 +90,7 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
   const toolbar = toolbarC.connect(state.at('toolbar'), (m) => send({ type: 'toolbar', msg: m }), {
     id: 'demo-toolbar',
   })
+  const formatGroup = toolbar.group('format')
 
   return [
     tabs.directionSync,
@@ -140,12 +146,15 @@ export function view(state: Signal<State>, send: Send<Msg>): readonly Mountable[
 
     section('Toolbar', 'Roving focus across groups — arrow keys move, Tab leaves.', [
       Toolbar({ ...toolbar.root }, [
-        ToolbarGroup(
-          { ...toolbar.group('format').root },
-          TOOLS.map((tool) =>
+        // The group is `aria-labelledby` its label part, so the label is
+        // rendered (visually hidden: it names the grouping, it is not a heading).
+        // A group rendered WITHOUT one passes `{ hasLabel: false }` instead.
+        ToolbarGroup({ ...formatGroup.root }, [
+          ToolbarGroupLabel({ ...formatGroup.label, class: 'sr-only' }, [text('Formatting')]),
+          ...TOOLS.map((tool) =>
             Button({ ...toolbar.item(tool).root, variant: 'ghost', size: 'sm' }, [text(tool)]),
           ),
-        ),
+        ]),
         ToolbarSeparator({ ...toolbar.separator }),
         // A HINT, not a control — `Kbd` renders a keycap, and a bare "Try →"
         // beside three real buttons reads as a fourth one. Naming both keys and
