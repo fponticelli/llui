@@ -417,45 +417,51 @@ describe('reactive markdown — differential fuzz (streamed DOM vs cold DOM)', (
     }
   }
 
-  // KEPT above the shared 30s `testTimeout` (`vitest.shared.ts`, #147): this
-  // mounts and streams 120 documents through the real reactive path, which is
-  // legitimately slow — ~5s idle, ~19s when the rest of the monorepo's suites
-  // are running beside it. 30s is only ~1.6x that measured worst case, which is
-  // not enough headroom for the thing the shared budget exists to absorb.
-  // Widen the budget rather than thin the corpus — the trial count is the point.
-  it(
-    'streamed DOM equals a cold render across 120 generated documents',
-    { timeout: 60_000 },
-    () => {
-      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      for (let trial = 0; trial < 120; trial++) {
-        const rnd = rng(trial * 7919 + 13)
-        const blocks: string[] = []
-        const count = 2 + Math.floor(rnd() * 6)
-        for (let i = 0; i < count; i++) blocks.push(BLOCKS[Math.floor(rnd() * BLOCKS.length)]!)
-        const doc = blocks.join('\n')
+  /** Trial `trial`'s document, streamed as its successive prefixes. */
+  function trialSteps(trial: number): string[] {
+    const rnd = rng(trial * 7919 + 13)
+    const blocks: string[] = []
+    const count = 2 + Math.floor(rnd() * 6)
+    for (let i = 0; i < count; i++) blocks.push(BLOCKS[Math.floor(rnd() * BLOCKS.length)]!)
+    const doc = blocks.join('\n')
 
-        // Stream the document in 1–12 character chunks, the shape an LLM token
-        // stream has: mid-word, mid-fence and mid-definition prefixes all occur.
-        const steps: string[] = []
-        for (let pos = 0; pos < doc.length; ) {
-          pos = Math.min(doc.length, pos + 1 + Math.floor(rnd() * 12))
-          steps.push(doc.slice(0, pos))
-        }
+    // Stream the document in 1–12 character chunks, the shape an LLM token
+    // stream has: mid-word, mid-fence and mid-definition prefixes all occur.
+    const steps: string[] = []
+    for (let pos = 0; pos < doc.length; ) {
+      pos = Math.min(doc.length, pos + 1 + Math.floor(rnd() * 12))
+      steps.push(doc.slice(0, pos))
+    }
+    return steps
+  }
 
-        const live = mountReactive(steps[0] ?? '')
-        try {
-          for (const src of steps) {
-            live.set(src)
-            expect(domSig(body(live.container)), `trial ${trial} at ${JSON.stringify(src)}`).toBe(
-              coldHtml(src),
-            )
-          }
-        } finally {
-          live.cleanup()
-        }
+  // ONE TEST PER TRIAL, over the same 120 seeded documents and every streamed step
+  // of each. This used to be a single test carrying all 120 on a raised 60 s budget
+  // (#147: ~5 s idle, ~19 s beside the monorepo's suites), and it still timed out
+  // (70-197 s at load ~25-38 on 4 CPUs). The cost is ~1650 streamed steps, each a
+  // live reactive update (incremental parse, the dev full-parse assertion, keyed
+  // reconcile) plus a cold oracle render, split roughly half and half, and none of
+  // it is shared between trials: there is no fixture to hoist and nothing to
+  // deduplicate (1507 of the 1647 streamed sources are distinct). Comparing only
+  // at checkpoints would miss a stale block that a later step heals, so every
+  // step is still compared. Splitting is the lever that keeps every comparison:
+  // a trial is ~0.1-0.25 s quiet and 3-4.5 s at that load, on the shared budget;
+  // a failure names its trial (rerun it alone with `-t "trial 17$"`); and the dev
+  // assertion's console.error is pinned to the trial that tripped it.
+  it.each(Array.from({ length: 120 }, (_, trial) => trial))('trial %i', (trial) => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const steps = trialSteps(trial)
+    const live = mountReactive(steps[0] ?? '')
+    try {
+      for (const src of steps) {
+        live.set(src)
+        expect(domSig(body(live.container)), `trial ${trial} at ${JSON.stringify(src)}`).toBe(
+          coldHtml(src),
+        )
       }
-      expect(spy).not.toHaveBeenCalled()
-    },
-  )
+    } finally {
+      live.cleanup()
+    }
+    expect(spy).not.toHaveBeenCalled()
+  })
 })
