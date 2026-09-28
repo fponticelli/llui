@@ -1,7 +1,8 @@
 import { describe, it } from 'vitest'
-import { derived } from '../../src/signals/handle'
-import type { Signal, LiveSignal, MappedSignal } from '../../src/signals/types'
-import { show, branch, text } from '../../src/signals/authoring'
+import { derived, constant } from '../../src/signals/handle'
+import type { Signal, LiveSignal, MappedSignal, ReadSignal } from '../../src/signals/types'
+import { show, branch, text, each, div, span, unsafeHtml } from '../../src/signals/authoring'
+import type { Renderable } from '../../src/signals/element'
 
 // Type-level surface guards, mirroring the repo convention (scope-types.test.ts):
 // declarations live in never-called functions; `pnpm check` is the real
@@ -127,12 +128,158 @@ describe('Signal.at — invalid paths rejected', () => {
 })
 
 describe('Signal.map', () => {
-  it('returns a Signal of the mapped type', () => {
+  it('returns a MappedSignal (a ReadSignal) of the mapped type', () => {
     const _ = () => {
-      const upper: Signal<string> = s.at('user.id').map((id) => id.toUpperCase())
-      expectType<Signal<string>>(upper)
-      const len: Signal<number> = s.at('items').map((arr) => arr.length)
-      expectType<Signal<number>>(len)
+      const upper: MappedSignal<string> = s.at('user.id').map((id) => id.toUpperCase())
+      expectType<ReadSignal<string>>(upper)
+      expectType<string>(upper.peek())
+      const len: ReadSignal<number> = s.at('items').map((arr) => arr.length)
+      expectType<number>(len.peek())
+    }
+    void _
+  })
+})
+
+// The signal hierarchy: `ReadSignal<T>` is the read-only supertype; `Signal<T>`
+// (a PATH signal, sliceable with `.at()`) and `MappedSignal<T>` (from
+// `.map()`/`derived()`, no path) both extend it, and NEITHER is assignable to the
+// other. The load-bearing direction is mapped -> Signal: while it held, a helper
+// typed `(job: Signal<Job>) => job.at('status')` type-checked when handed
+// `state.map(...)` and threw at mount.
+// (`declare`d, like `s`: these bodies are type-checked, never run.)
+declare const mapped: MappedSignal<Profile>
+declare const path: Signal<Profile>
+describe('signal hierarchy — ReadSignal / Signal / MappedSignal', () => {
+  it('the fixtures are what they claim: .map() yields a MappedSignal, .at() a Signal', () => {
+    const _ = () => {
+      const m: typeof mapped = s.at('user').map((u) => u.profile)
+      const p: typeof path = s.at('user.profile')
+      void m
+      void p
+    }
+    void _
+  })
+
+  it('a mapped signal is NOT a Signal (the helper that slices rejects it)', () => {
+    const _ = () => {
+      const slices = (p: Signal<Profile>): Signal<string> => p.at('name')
+      // @ts-expect-error — a MappedSignal has no path; `slices` needs `.at()`
+      slices(mapped)
+      // @ts-expect-error — nor by assignment
+      const asSignal: Signal<Profile> = mapped
+      void asSignal
+      // the paired control: the same helper accepts a path signal
+      slices(path)
+    }
+    void _
+  })
+
+  it('a derived signal is NOT a Signal either', () => {
+    const _ = () => {
+      const both = derived(s.at('count'), s.at('user.id'), (n, id) => ({ n, id }))
+      // @ts-expect-error — derived(...) is mapped; it has no path to slice
+      const asSignal: Signal<{ n: number; id: string }> = both
+      void asSignal
+      const asRead: ReadSignal<{ n: number; id: string }> = both
+      void asRead
+    }
+    void _
+  })
+
+  it('both kinds are ReadSignals (the helper that only reads accepts either)', () => {
+    const _ = () => {
+      const reads = (p: ReadSignal<Profile>): ReadSignal<string> => p.map((x) => x.name)
+      reads(mapped)
+      reads(path)
+      reads(constant<Profile>({ name: 'n' }))
+      const fromMapped: ReadSignal<Profile> = mapped
+      const fromPath: ReadSignal<Profile> = path
+      void fromMapped
+      void fromPath
+    }
+    void _
+  })
+
+  it('a path signal is NOT a MappedSignal (the show/branch overloads rely on it)', () => {
+    const _ = () => {
+      // @ts-expect-error — a path signal carries `.at()`, which a MappedSignal forbids
+      const asMapped: MappedSignal<Profile> = path
+      void asMapped
+      const control: MappedSignal<Profile> = mapped
+      void control
+    }
+    void _
+  })
+
+  it('.at() is not part of ReadSignal', () => {
+    const _ = (r: ReadSignal<Profile>) => {
+      // @ts-expect-error — ReadSignal has no `.at()`; take Signal<T> to slice
+      r.at('name')
+      expectType<string>(r.peek().name)
+      expectType<MappedSignal<string>>(r.map((p) => p.name))
+    }
+    void _
+  })
+
+  it('the diagnostic for a mapped signal handed to a Signal names the fix', () => {
+    // The optional `at` on MappedSignal is typed as an object whose only key is
+    // the remedy, so both misuse diagnostics print it. Pin the key.
+    type AtKeys = keyof NonNullable<MappedSignal<Profile>['at']>
+    const _ = () => {
+      const k: AtKeys =
+        'mapped signals have no state path: slice with .at() BEFORE .map(), or read with .map((v) => v.field); a parameter that only reads should be typed ReadSignal<T>'
+      void k
+    }
+    void _
+  })
+})
+
+// Every API that only READS a signal accepts `ReadSignal<T>` — so the common
+// case, `state.map(...)` into an element helper, keeps compiling unannotated.
+describe('read-only APIs accept both signal kinds', () => {
+  it('element props, text and unsafeHtml take a mapped or a path signal', () => {
+    const _ = () => {
+      const label = s.at('user.id').map((id) => id.toUpperCase())
+      const readParam = (r: ReadSignal<string>): Renderable => [
+        div({ title: r, class: label, 'data-id': s.at('user.id') }, [
+          text(r),
+          text(label),
+          text(s.at('count')),
+          unsafeHtml(label),
+          span([text(s.map((st) => st.count))]),
+        ]),
+      ]
+      void readParam
+    }
+    void _
+  })
+
+  it('each takes a mapped items signal; its rows are PATH signals', () => {
+    const _ = () => {
+      const visible = s.at('items').map((items) => items.filter((i) => i.price > 0))
+      each(visible, {
+        key: (i) => i.label,
+        render: (item, index) => {
+          expectType<Signal<Item>>(item)
+          expectType<Signal<number>>(index)
+          return [text(item.at('label'))]
+        },
+      })
+      const fromParam = (items: ReadSignal<readonly Item[]>): Renderable => [
+        each(items, { key: (i) => i.label, render: (item) => [text(item.at('label'))] }),
+      ]
+      void fromParam
+    }
+    void _
+  })
+
+  it('derived takes mapped inputs', () => {
+    const _ = () => {
+      const a = s.at('count').map((n) => n * 2)
+      const out = derived(a, s.at('user.id'), (n, id) => `${id}:${n}`)
+      expectType<MappedSignal<string>>(out)
+      const arr = derived([a, a.map(String)], (n, str) => `${str}${n}`)
+      expectType<MappedSignal<string>>(arr)
     }
     void _
   })
@@ -148,15 +295,15 @@ describe('Signal.map — .at() after .map() is a compile error', () => {
     void _
   })
 
-  it('still allows the idiomatic slice-then-map, and a mapped signal is a Signal', () => {
+  it('still allows the idiomatic slice-then-map, and a mapped signal is a ReadSignal', () => {
     const _ = () => {
-      const name: Signal<string> = s
+      const name: MappedSignal<string> = s
         .at('user')
         .at('profile')
         .map((p) => p.name)
-      expectType<Signal<string>>(name)
-      // a MappedSignal flows into anything that accepts Signal<T>
-      const accept = (_v: Signal<string>): void => {}
+      expectType<ReadSignal<string>>(name)
+      // a MappedSignal flows into anything that accepts ReadSignal<T>
+      const accept = (_v: ReadSignal<string>): void => {}
       accept(s.at('user.id').map((id) => id))
     }
     void _
@@ -164,11 +311,11 @@ describe('Signal.map — .at() after .map() is a compile error', () => {
 
   it('allows chaining .map() after .map()', () => {
     const _ = () => {
-      const out: Signal<string> = s
+      const out: MappedSignal<string> = s
         .at('count')
         .map((n) => n + 1)
         .map((n) => String(n))
-      expectType<Signal<string>>(out)
+      expectType<ReadSignal<string>>(out)
     }
     void _
   })
@@ -177,11 +324,11 @@ describe('Signal.map — .at() after .map() is a compile error', () => {
 describe('derived', () => {
   it('combines independent signals (array form), callback receives spread values', () => {
     const _ = () => {
-      const label: Signal<string> = derived(
+      const label: MappedSignal<string> = derived(
         [s.at('user.id'), s.at('count')],
         (id, n) => `${id}:${n}`,
       )
-      expectType<Signal<string>>(label)
+      expectType<ReadSignal<string>>(label)
     }
     void _
   })
@@ -198,19 +345,19 @@ describe('derived', () => {
 
   it('variadic form: 2 sources, positional value types inferred', () => {
     const _ = () => {
-      const label: Signal<string> = derived(s.at('user.id'), s.at('count'), (id, n) => {
+      const label: MappedSignal<string> = derived(s.at('user.id'), s.at('count'), (id, n) => {
         expectType<string>(id)
         expectType<number>(n)
         return `${id}:${n}`
       })
-      expectType<Signal<string>>(label)
+      expectType<ReadSignal<string>>(label)
     }
     void _
   })
 
   it('variadic form: 3 sources', () => {
     const _ = () => {
-      const out: Signal<string> = derived(
+      const out: MappedSignal<string> = derived(
         s.at('count'),
         s.at('user.id'),
         s.at('user.profile.email'),
@@ -221,7 +368,7 @@ describe('derived', () => {
           return id
         },
       )
-      expectType<Signal<string>>(out)
+      expectType<ReadSignal<string>>(out)
     }
     void _
   })
@@ -273,8 +420,43 @@ describe('show/branch narrowed params keep a mapped condition mapped', () => {
   })
 
   it('over a PATH condition the narrowed param still slices with .at()', () => {
+    const _ = (status: Signal<Status>) => {
+      show(s.at('session'), (session) => {
+        expectType<Signal<{ token: string }>>(session)
+        return [text(session.at('token'))]
+      })
+      branch(status, (v) => v.kind, {
+        ok: (v) => {
+          expectType<Signal<{ kind: 'ok'; label: string }>>(v)
+          return [text(v.at('label'))]
+        },
+        err: (v) => [text(v.at('message'))],
+      })
+    }
+    void _
+  })
+
+  it('over a ReadSignal (a helper param of unknown kind) the narrowed param reads, never slices', () => {
     const _ = () => {
-      show(s.at('session'), (session) => [text(session.at('token'))])
+      const helper = (session: ReadSignal<{ token: string } | null>): Renderable => [
+        show(session, (live) => {
+          // @ts-expect-error — the condition may be mapped, so the arm may not slice
+          live.at('token')
+          return [text(live.map((x) => x.token))]
+        }),
+      ]
+      void helper
+      const statusOf = (st: ReadSignal<Status>): Renderable => [
+        branch(st, (v) => v.kind, {
+          ok: (v) => [text(v.map((x) => x.label))],
+          err: (v) => [text(v.map((x) => x.message))],
+        }),
+      ]
+      void statusOf
+      const keyed = (k: ReadSignal<'a' | 'b'>): Renderable => [
+        branch(k, { a: () => [text('A')], b: () => [text('B')] }),
+      ]
+      void keyed
     }
     void _
   })

@@ -8,9 +8,9 @@
 //
 // `component` and `mountApp` route to the signal runtime.
 
-import type { Signal, LiveSignal, MappedSignal } from './types.js'
+import type { Signal, LiveSignal, MappedSignal, ReadSignal } from './types.js'
 import type { TransitionOptions } from '../types.js'
-import { isSignalHandle, rowHandle } from './handle.js'
+import { isSignalHandle, rowHandle, type SignalHandle, type MappedHandle } from './handle.js'
 import { LluiFrameworkError } from './framework-error.js'
 import { react, type Mountable } from './build-context.js'
 import {
@@ -64,8 +64,9 @@ export function mapSend<Outer, Inner>(
  */
 export const noSend: Send<unknown> = () => {}
 
-/** A reactive value in a slot: a signal of T, or a plain T. */
-export type Reactive<T> = Signal<T> | T
+/** A reactive value in a slot: a signal of T (either kind — a slot only reads
+ * it), or a plain T. */
+export type Reactive<T> = ReadSignal<T> | T
 
 const compiledAway = (name: string): never => {
   // A FRAMEWORK authoring/wiring invariant, and branded as one: this is reachable
@@ -91,7 +92,7 @@ export function text(value: Reactive<string | number>): Mountable {
 }
 
 /** Render a raw HTML string as live DOM nodes (escape hatch for pre-rendered
- * markup — markdown, syntax highlighting). Reactive on a `Signal<string>`; a
+ * markup — markdown, syntax highlighting). Reactive on a `ReadSignal<string>`; a
  * plain string renders once. The HTML is inserted as-is — the caller owns
  * trust/sanitization. */
 export function unsafeHtml(value: Reactive<string>): Mountable {
@@ -298,7 +299,7 @@ export const svgDesc = svgHelper('desc')
 const WHOLE_STATE_DEPS: readonly string[] = ['']
 
 export function each<T>(
-  items: Signal<readonly T[]>,
+  items: ReadSignal<readonly T[]>,
   opts: {
     key: (item: T) => string | number
     render: (item: Signal<T>, index: Signal<number>) => Renderable
@@ -339,7 +340,7 @@ export function each<T>(
  * compiler's pass-2 helper-each lowering when the row factory bails on a
  * structural child. */
 export function eachArm<T>(
-  items: Signal<readonly T[]>,
+  items: ReadSignal<readonly T[]>,
   key: (item: T) => string | number,
   // The compiled arm. Binding producers read the ctx passed to them; `getCtx`
   // exposes the LIVE row ctx for event handlers (`getCtx().item.id` at event
@@ -367,7 +368,7 @@ export function eachArm<T>(
  * compiler passes the collected set, often empty); omitted (legacy emissions),
  * it falls back to whole-state so `ctx.state` reads stay live. */
 export function eachDirect<T>(
-  items: Signal<readonly T[]>,
+  items: ReadSignal<readonly T[]>,
   key: (item: T) => string | number,
   row: RowFactory,
   stateDeps?: readonly string[],
@@ -385,15 +386,11 @@ export function eachDirect<T>(
 /** Conditional render: mounts `render`'s arm while `cond` is truthy (and
  * `orElse`'s, if given, while it is falsy). The arm receives the NARROWED signal
  * — the condition handle itself, typed non-nullable. Over a PATH condition
- * (`state.at('user')`) it slices with `.at()`; over a MAPPED one
- * (`state.map(pickUser)`, `derived(…)`) it is a {@link MappedSignal} like its
- * condition, so read its fields with `.map((u) => u.name)`. */
-export function show<T>(
-  cond: MappedSignal<T>,
-  render: (narrowed: MappedSignal<NonNullable<T>>) => Renderable,
-  orElse?: () => Renderable,
-  transition?: TransitionOptions,
-): Mountable
+ * (`state.at('user')`, a {@link Signal}) it is a `Signal` and slices with
+ * `.at()`; over any other {@link ReadSignal} — a MAPPED one (`state.map(pickUser)`,
+ * `derived(…)`), or a helper's `ReadSignal` parameter — it is a
+ * {@link MappedSignal} (no path to slice), so read its fields with
+ * `.map((u) => u.name)`. */
 export function show<T>(
   cond: Signal<T>,
   render: (narrowed: Signal<NonNullable<T>>) => Renderable,
@@ -401,11 +398,18 @@ export function show<T>(
   transition?: TransitionOptions,
 ): Mountable
 export function show<T>(
-  cond: Signal<T>,
-  // Typed as the NARROWER `MappedSignal` view because that is the one type both
-  // overloads' arms accept: a path-condition arm takes a `Signal`, which a
-  // `MappedSignal` is. The value passed is the same runtime handle either way.
+  cond: ReadSignal<T>,
   render: (narrowed: MappedSignal<NonNullable<T>>) => Renderable,
+  orElse?: () => Renderable,
+  transition?: TransitionOptions,
+): Mountable
+export function show<T>(
+  cond: ReadSignal<T>,
+  // The implementation serves BOTH overloads, so its arm accepts a handle that
+  // satisfies either one's narrowed type. The handle passed is the condition
+  // itself, which IS of the kind its overload promised (a path condition's arm
+  // gets the path handle, a mapped condition's arm the mapped handle).
+  render: (narrowed: Signal<NonNullable<T>> & MappedSignal<NonNullable<T>>) => Renderable,
   orElse?: () => Renderable,
   // Optional element-level transition hooks (from `@llui/transitions` — e.g.
   // `fade()`, `slide()`): `enter` animates the arm in after it mounts, `leave`
@@ -417,8 +421,11 @@ export function show<T>(
   if (!isSignalHandle(cond)) return compiledAway('show')
   // the arm reads component state; the cond handle IS the narrowed signal. A
   // path-rooted one's `.at()` resolves against the same state the arm scope
-  // receives; a mapped one has no `.at()` (its overload types the arm so).
-  const narrowed = cond as Signal<NonNullable<T>> as MappedSignal<NonNullable<T>>
+  // receives; a mapped one has no `.at()` (its overload types the arm so). The
+  // cast states what the type system cannot see through a runtime handle: the
+  // arm only runs while `cond` is truthy (the `NonNullable` narrowing), and the
+  // handle is of whichever kind the selected overload promised its arm.
+  const narrowed = cond as SignalHandle<NonNullable<T>> & MappedHandle<NonNullable<T>>
   return signalShow(
     { produce: cond.produce, deps: cond.deps, componentRooted: cond.rowLocal !== true },
     () => render(narrowed),
@@ -430,18 +437,11 @@ export function show<T>(
 /** Discriminated-union render. `discriminant` selects the union's tag field
  * (`v => v.kind`, `v => v.type`, …); each arm receives the NARROWED variant
  * signal, so it can read variant-only fields with full types (`v.at('data')`).
- * Mirrors `show`'s narrowing: over a MAPPED `value` (`.map(…)`/`derived(…)`)
- * every arm's signal is a {@link MappedSignal} too, read with
- * `v.map((x) => x.data)`. Rewritten by the compiler to `signalBranch`. */
-export function branch<U extends object, D extends keyof U>(
-  value: MappedSignal<U>,
-  discriminant: (u: U) => U[D],
-  arms: {
-    [K in U[D] & (string | number)]: (v: MappedSignal<Extract<U, Record<D, K>>>) => Renderable
-  },
-  /** Optional element-level transition hooks — animate the arm swap (see `show`). */
-  transition?: TransitionOptions,
-): Mountable
+ * Mirrors `show`'s narrowing: over a PATH `value` ({@link Signal}) each arm gets a
+ * `Signal`; over any other {@link ReadSignal} — a MAPPED `value`
+ * (`.map(…)`/`derived(…)`) or a helper's `ReadSignal` parameter — every arm's
+ * signal is a {@link MappedSignal}, read with `v.map((x) => x.data)`. Rewritten
+ * by the compiler to `signalBranch`. */
 export function branch<U extends object, D extends keyof U>(
   value: Signal<U>,
   discriminant: (u: U) => U[D],
@@ -451,15 +451,24 @@ export function branch<U extends object, D extends keyof U>(
   /** Optional element-level transition hooks — animate the arm swap (see `show`). */
   transition?: TransitionOptions,
 ): Mountable
+export function branch<U extends object, D extends keyof U>(
+  value: ReadSignal<U>,
+  discriminant: (u: U) => U[D],
+  arms: {
+    [K in U[D] & (string | number)]: (v: MappedSignal<Extract<U, Record<D, K>>>) => Renderable
+  },
+  /** Optional element-level transition hooks — animate the arm swap (see `show`). */
+  transition?: TransitionOptions,
+): Mountable
 /** Render keyed by a plain string/number signal's value (no narrowing). */
 export function branch<K extends string | number>(
-  value: Signal<K>,
+  value: ReadSignal<K>,
   arms: Partial<Record<K, () => Renderable>>,
   /** Optional element-level transition hooks — animate the arm swap (see `show`). */
   transition?: TransitionOptions,
 ): Mountable
 export function branch(
-  value: Signal<unknown>,
+  value: ReadSignal<unknown>,
   arg1: unknown,
   arg2?: unknown,
   arg3?: unknown,
@@ -468,7 +477,7 @@ export function branch(
   if (typeof arg1 === 'function') {
     // 3-arg: discriminant fn + narrowed arms; `arg3` is the optional transition.
     const discFn = arg1 as (u: unknown) => string | number
-    const armMap = arg2 as Record<string, (v: Signal<unknown>) => Renderable>
+    const armMap = arg2 as Record<string, (v: ReadSignal<unknown>) => Renderable>
     const transition = arg3 as TransitionOptions | undefined
     const lowered: Record<string, () => Renderable> = {}
     for (const k of Object.keys(armMap)) lowered[k] = () => armMap[k]!(value)
@@ -513,7 +522,7 @@ export function lazy<LS = unknown, LM = unknown, LE = unknown>(
  * variable-height rows (cumulative offsets via a prefix sum, rebuilt when `items`
  * changes). Heights come from the data — measured/auto heights are not supported. */
 export function virtualEach<T>(opts: {
-  items: Signal<readonly T[]>
+  items: ReadSignal<readonly T[]>
   key: (item: T) => string | number
   itemHeight: number | ((item: T, index: number) => number)
   containerHeight: number
@@ -555,12 +564,12 @@ export function virtualEach<T>(opts: {
  * the compiler lowers a direct-view `foreign()` to `signalForeign`, but in
  * view-helper functions / uncompiled code it runs here — converting each declared
  * state HANDLE to its `{produce, deps}` spec and delegating to `signalForeign`. */
-export function foreign<Inst, State extends Record<string, Signal<unknown>>>(spec: {
+export function foreign<Inst, State extends Record<string, ReadSignal<unknown>>>(spec: {
   tag?: string
   state?: State
   mount: (args: {
     el: Element
-    state: { [K in keyof State]: LiveSignal<State[K] extends Signal<infer T> ? T : unknown> }
+    state: { [K in keyof State]: LiveSignal<State[K] extends ReadSignal<infer T> ? T : unknown> }
   }) => Inst
   unmount?: (instance: Inst) => void
 }): Mountable {

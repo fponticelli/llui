@@ -1,9 +1,10 @@
 // Signals — the view-layer reactive surface.
 //
-// `Signal<T>` is the authoring API for reading state in views. It is a
-// COMPILE-TIME FICTION: the Vite compiler erases `state.at('a.b')` / `.map` /
-// `derived` into chunked-mask-gated bindings, so there is no runtime Signal object
-// on the common path (see docs/proposals/signals/). The interfaces here define the
+// `Signal<T>` (sliceable, path-rooted) / `MappedSignal<T>` (from `.map`/`derived`)
+// and their shared read-only supertype `ReadSignal<T>` are the authoring API for
+// reading state in views. They are a COMPILE-TIME FICTION: the Vite compiler
+// erases `state.at('a.b')` / `.map` / `derived` into chunked-mask-gated bindings,
+// so there is no runtime Signal object on the common path (see docs/proposals/signals/). The interfaces here define the
 // authored surface and the static path typing the compiler keys off.
 //
 // `LiveSignal<T>` is the ONE place signals materialize at runtime: the
@@ -83,14 +84,44 @@ export type ValidPath<T, D extends number = PathDepthBudget> = T extends null | 
       : never
 
 /**
- * A reactive view of a value of type `T`. Three methods, the entire reactive
- * vocabulary alongside `derived`:
+ * The READ surface every signal shares — a reactive view of a value of type `T`
+ * that you can transform and read, but not slice:
+ *
+ * - `map(fn)` — transform into a derived signal (single source).
+ * - `peek()` — one-shot, non-reactive read (handlers / effects / lifecycle).
+ *
+ * `ReadSignal<T>` is the type to ACCEPT whenever you only read a signal: a view
+ * helper's parameter, a part-bag value, a slot. Both kinds of signal satisfy it —
+ * a path signal ({@link Signal}, from `state` / `.at()` / `constant()`) and a
+ * mapped one ({@link MappedSignal}, from `.map()` / `derived()`) — so a caller can
+ * hand it either:
+ *
+ *     const badge = (count: ReadSignal<number>) => span([text(count.map(String))])
+ *     badge(state.at('unread'))                        // ✅ path signal
+ *     badge(state.map((s) => s.inbox.length))          // ✅ mapped signal
+ *
+ * Only a parameter that calls `.at()` needs the narrower {@link Signal}.
+ */
+export interface ReadSignal<T> {
+  map<U>(fn: (value: T) => U): MappedSignal<U>
+  peek(): T
+}
+
+/**
+ * A PATH signal: a {@link ReadSignal} that also carries a statically-known state
+ * path, so it can be sliced with `.at()`. The view's `state`, anything reached
+ * from it through `.at()`, an `each` row's `item`/`index`, and `constant(v)` are
+ * path signals. The full reactive vocabulary alongside `derived`:
  *
  * - `at(path)` — slice into a sub-signal via a statically-typed dot path.
  * - `map(fn)` — transform into a derived signal (single source).
  * - `peek()` — one-shot, non-reactive read (handlers / effects / lifecycle).
+ *
+ * A {@link MappedSignal} is NOT a `Signal`: it has no path to slice. Type a
+ * parameter `Signal<T>` only when the function calls `.at()` on it; otherwise take
+ * `ReadSignal<T>`, which accepts both.
  */
-export interface Signal<T> {
+export interface Signal<T> extends ReadSignal<T> {
   /**
    * Slice into a sub-signal via a statically-typed dot path
    * (`state.at('user.profile.name')`). The path is validated and the result type
@@ -107,26 +138,40 @@ export interface Signal<T> {
    * is the supported escape hatch for very deep paths.
    */
   at<P extends ValidPath<T>>(path: P): Signal<PathValue<T, P>>
-  map<U>(fn: (value: T) => U): MappedSignal<U>
-  peek(): T
 }
 
 /**
- * A signal produced by `.map()` (or `derived()`). It has the same reactive
- * vocabulary as {@link Signal} — `map`, `peek`, and chaining — EXCEPT `at`: a
- * mapped signal carries no statically-known state path, so there is nothing to
- * slice into. `.at()` on it is therefore a COMPILE ERROR (and throws at
- * runtime). Slice with `.at()` BEFORE `.map()`:
+ * A signal produced by `.map()` (or `derived()`). It is a {@link ReadSignal} —
+ * `map`, `peek`, and chaining — WITHOUT `at`: a mapped signal carries no
+ * statically-known state path, so there is nothing to slice into. Slice with
+ * `.at()` BEFORE `.map()`:
  *
  *     sig.at('field').map(fn)   // ✅ narrow first, then transform
  *     sig.map(fn).at('field')   // ❌ no path to slice (use the form above)
  *
- * A `MappedSignal<T>` is still assignable to `Signal<T>`, so it flows into every
- * slot/helper that accepts a signal unchanged.
+ * Two compile errors follow, both naming the fix in the message:
+ *
+ * - `.at()` on a mapped signal (`This expression is not callable`).
+ * - passing a mapped signal where a {@link Signal} is required (`Types of
+ *   property 'at' are incompatible`). If that parameter only reads the signal,
+ *   type it {@link ReadSignal} instead.
+ *
+ * (The runtime also throws a branded error if an untyped caller reaches `.at()`.)
  */
-export interface MappedSignal<T> extends Signal<T> {
-  /** @deprecated `.at()` is unavailable after `.map()` — slice with `.at()` BEFORE `.map()` (`sig.at('field').map(fn)`). */
-  at: never
+export interface MappedSignal<T> extends ReadSignal<T> {
+  /**
+   * @deprecated `.at()` is unavailable after `.map()` — slice with `.at()` BEFORE `.map()` (`sig.at('field').map(fn)`), or read the field with `.map((v) => v.field)`.
+   *
+   * Declared (optional, and typed as a non-callable object whose only key is the
+   * fix) rather than omitted so that BOTH misuses fail with that text in the
+   * diagnostic: a `.at()` call, and a `MappedSignal` passed where a sliceable
+   * {@link Signal} is required. An optional property is what makes a mapped
+   * signal NOT assignable to `Signal` — a `never`-typed one would be (`never` is
+   * assignable to everything).
+   */
+  at?: {
+    readonly 'mapped signals have no state path: slice with .at() BEFORE .map(), or read with .map((v) => v.field); a parameter that only reads should be typed ReadSignal<T>': never
+  }
 }
 
 /**

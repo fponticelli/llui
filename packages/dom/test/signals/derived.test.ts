@@ -80,11 +80,11 @@ describe('derived (runtime handle)', () => {
     const a = pathHandle<{ x: number }>(() => ({ a: { x: 1 } }), 'a')
     const b = pathHandle<{ x: number }>(() => ({ b: { x: 2 } }), 'b')
     const combined = derived([a, b], (p: { x: number }, q: { x: number }) => ({ x: p.x + q.x }))
-    // `.at()` on a mapped/combined signal is a COMPILE error now (MappedSignal.at
-    // is `never`) — bypass the type to assert the runtime safety net still throws
-    // for any code that reaches here uncompiled.
-    const escaped = combined as unknown as { at: (path: string) => unknown }
-    expect(() => escaped.at('x')).toThrow()
+    // `.at()` on a mapped/combined signal is a COMPILE error (a MappedSignal has
+    // no callable `.at`) — reached past the checker to assert the runtime safety
+    // net still throws for any code that gets here uncompiled.
+    // @ts-expect-error — `.at()` on a MappedSignal
+    expect(() => combined.at('x')).toThrow()
   })
 
   it('renders + reacts in a component view (the form-validation field() shape)', () => {

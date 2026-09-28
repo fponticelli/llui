@@ -40,7 +40,7 @@ export interface EachSource<T> {
   /** Read the list out of the state the reconcile was handed.
    *
    * The return type is DELIBERATELY nullable even though every authoring entry
-   * point is typed `Signal<readonly T[]>`: the accessor is a path walk, and
+   * point is typed `ReadSignal<readonly T[]>`: the accessor is a path walk, and
    * `mask.ts`'s `resolveSegs` is explicitly undefined-safe, so `state.at('items')`
    * over an absent/late-arriving path produces `undefined` rather than throwing.
    * The reconcile totals that with {@link createItemsResolver} — see #165. */
