@@ -18,8 +18,9 @@
 //                              does not exist on a mapped signal (#267)
 //   at-after-map             — `sig.map(fn).at('x')` / `derived(…).at('x')`, or
 //                              `.at()` on a show/branch narrowed param over a mapped
-//                              condition: a mapped signal has no static path to
-//                              slice (runtime throw + type error) — slice with
+//                              condition: a mapped signal (`MappedSignal`, not a
+//                              `Signal`) has no static path to slice (runtime
+//                              throw + type error) — slice with
 //                              `.at()` BEFORE `.map()`, or read with `.map`
 //
 // (There is deliberately no whole-`state`-coarseness rule: rendering a whole-state
@@ -1265,13 +1266,13 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
           const field = arg && ts.isStringLiteralLike(arg) ? arg.text : 'field'
           push(
             'at-after-map',
-            `\`${recv.text}\` is the narrowed signal of a show()/branch() whose condition is mapped (.map()/derived()), so it has no statically-known path to slice and .at() on it throws at runtime. Read the field from its value: \`${recv.text}.map((v) => v.${field})\` — or narrow on a path signal instead (slice with .at() BEFORE mapping).`,
+            `\`${recv.text}\` is the narrowed signal of a show()/branch() whose condition is mapped (.map()/derived()), so it is a MappedSignal — it has no statically-known path to slice and .at() on it throws at runtime. Read the field from its value: \`${recv.text}.map((v) => v.${field})\` — or narrow on a path signal instead (slice with .at() BEFORE mapping).`,
             node.expression.name,
           )
         } else {
           push(
             'at-after-map',
-            `.at() after .map()/derived() has no statically-known path to slice — slice with .at() BEFORE mapping: \`sig.at('field').map(fn)\`, not \`sig.map(fn).at('field')\`.`,
+            `.at() after .map()/derived() has no statically-known path to slice (the result is a MappedSignal, not a Signal) — slice with .at() BEFORE mapping: \`sig.at('field').map(fn)\`, not \`sig.map(fn).at('field')\`.`,
             node.expression.name,
           )
         }
