@@ -14,8 +14,8 @@ afterEach(async () => {
 })
 
 describe('e2e: send_message', () => {
-  it('inc dispatches successfully and state.count becomes 1', async () => {
-    await mintAndBind(ctx)
+  it('inc dispatches successfully and state.count becomes 1', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const result = await ctx.mcpClient.callTool({
       name: 'send_message',
@@ -40,8 +40,8 @@ describe('e2e: send_message', () => {
     expect(stateVal.count).toBe(1)
   })
 
-  it('signOut is rejected with human-only', async () => {
-    await mintAndBind(ctx)
+  it('signOut is rejected with human-only', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const result = await ctx.mcpClient.callTool({
       name: 'send_message',
@@ -56,8 +56,8 @@ describe('e2e: send_message', () => {
     expect(body.reason).toBe('human-only')
   })
 
-  it('sequence inc, inc, dec → count = 1', async () => {
-    await mintAndBind(ctx)
+  it('sequence inc, inc, dec → count = 1', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const send = (type: string) =>
       ctx.mcpClient.callTool({ name: 'send_message', arguments: { msg: { type } } })

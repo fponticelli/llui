@@ -269,6 +269,44 @@ AppWithMeta.__bindingDescriptors = [
 
 AppWithMeta[COMPILER_META_KEYS.schemaHash] = 'e2e-test-hash'
 
+// ── Server-frame log (test instrumentation) ───────────────────────────────────
+// Every frame the agent server sends this page, in arrival order, so a test
+// can wait for the protocol EVENT it depends on instead of sleeping and hoping
+// it happened: `hello-ack` (the server has recorded this client's hello — the
+// pairing is ready) and `watch` (a `/wait` long-poll is armed in this page).
+// Without them the suite slept 100 ms "to let the long-poll register" and
+// polled `describe` against private 10 s deadlines, under a package-wide
+// `retry: 2`.
+//
+// The listener is attached in the constructor, i.e. BEFORE the agent client
+// attaches its own, and both run in the same synchronous dispatch of the
+// message event — so by the time a test observes a frame here (from a later
+// task), the client has already handled it.
+type RecordedFrame = { t: string } & Record<string, unknown>
+const serverFrames: RecordedFrame[] = []
+const NativeWebSocket = globalThis.WebSocket
+class RecordingWebSocket extends NativeWebSocket {
+  constructor(url: string | URL, protocols?: string | string[]) {
+    super(url, protocols)
+    this.addEventListener('message', (ev: MessageEvent) => {
+      if (typeof ev.data !== 'string') return
+      try {
+        const frame = JSON.parse(ev.data) as unknown
+        if (
+          typeof frame === 'object' &&
+          frame !== null &&
+          typeof (frame as { t?: unknown }).t === 'string'
+        ) {
+          serverFrames.push(frame as RecordedFrame)
+        }
+      } catch {
+        // Not JSON — the client drops it too.
+      }
+    })
+  }
+}
+globalThis.WebSocket = RecordingWebSocket
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 const root = document.getElementById('app')!
@@ -300,7 +338,9 @@ client = createAgentClient<State, Msg>({
 // __lluiE2eClient: lets tests call client.effectHandler() to open a WS
 //   after minting a token — bypasses the "Connect with Claude" button.
 // __lluiE2eHandle: lets tests call handle.getState() to read state.
+// __lluiE2eFrames: the server-frame log above.
 ;(globalThis as Record<string, unknown>)['__lluiE2eClient'] = client
 ;(globalThis as Record<string, unknown>)['__lluiE2eHandle'] = handle
+;(globalThis as Record<string, unknown>)['__lluiE2eFrames'] = serverFrames
 
 client.start()

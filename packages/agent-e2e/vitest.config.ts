@@ -24,12 +24,6 @@ export default mergeConfig(
       include: ['test/**/*.e2e.test.ts'],
       environment: 'node',
       fileParallelism: false, // serve from one browser to keep things simple
-      // Every test here drives a real browser + agent server + WS round-trips.
-      // These are correct but timing-sensitive under full-repo parallel load, where
-      // the OS/event loop can be starved enough that a single attempt occasionally
-      // misses a deadline. Retry the transient starvation — a genuinely broken test
-      // still fails all attempts.
-      retry: 2,
     },
   }),
 )

@@ -69,9 +69,9 @@ export async function setup(browserLauncher: BrowserLauncher): Promise<E2EContex
     tokenStore: new InMemoryTokenStore(),
     identityResolver: async () => 'e2e-user',
     auditSink: { write: async () => undefined },
-    // Tests poll mint+connect (retry until the WS hello lands) which, under load,
-    // can exceed the production 30/min default. Rate limiting isn't under test
-    // here, so lift it well clear of any retry storm.
+    // Rate limiting isn't under test here, and the production 30/min default
+    // would make the suite's behaviour depend on how many LAP calls one test
+    // happens to make. Lift it clear of anything a test does.
     rateLimiter: defaultRateLimiter({ perBucket: '100000/minute' }),
   })
 
