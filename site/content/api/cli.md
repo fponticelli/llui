@@ -1244,23 +1244,24 @@ export type CompiledPresentationScenarioCase<
       readonly label: Case['label']
       readonly input: PresentationScenarioJsonSnapshot<Case['input']>
       readonly environmentAxes: Readonly<Case['environmentAxes']>
-      readonly copiedArtifactNames?: Readonly<NonNullable<Case['copiedArtifactNames']>>
-    }
+    } & CompiledCopiedArtifactNames<Case>
   : never
 ```
 
 ##### `CompiledPresentationScenarioFamily` from `@llui/cli/presentation-scenarios`
 
-Deterministic, JSON-safe catalog for one presentation family.
+Deterministic, JSON-safe catalog for one presentation family. With no type argument this is
+the ERASED, family-agnostic catalog; every typed catalog (a `compileScenarioFamily` result) is
+assignable to it without a cast, while keeping its own literal scenario ids, case ids, axes
+and copied-artifact names.
 
 ```typescript
 export type CompiledPresentationScenarioFamily<
   Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
-> = {
-  readonly version: 1
-  readonly family: PresentationFamily
-  readonly scenarios: readonly CompiledPresentationScenario<Definitions>[]
-}
+> =
+  string extends ScenarioId<Definitions>
+    ? ErasedCompiledPresentationScenarioFamily
+    : TypedCompiledPresentationScenarioFamily<Definitions>
 ```
 
 ##### `PresentationScenarioDefinitions` from `@llui/cli/presentation-scenarios`

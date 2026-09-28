@@ -3,35 +3,38 @@
  * against the canonical contract. This is the ONLY place the gallery learns
  * which cases a product has, and it learns it from the family definitions
  * the renderers and browser suites already share (#263–#266) — never from a
- * list of its own. `compileScenarioFamily` throws on any disagreement between
- * a family's keys and the contract, so a stale catalog cannot load.
+ * list of its own. Each family's `compile…Catalog` goes through
+ * `compileScenarioFamily`, which throws on any disagreement between a
+ * family's keys and the contract, so a stale catalog cannot load.
  *
  * Shared by the shell and both path documents: it carries contract data and
  * scenario data only, never a renderer.
  */
 import type { ProductEntry } from '@llui/cli'
-import {
-  decodeScenarioFamily,
-  type CompiledPresentationScenario,
-  type CompiledPresentationScenarioFamily,
+import type {
+  CompiledPresentationScenario,
+  CompiledPresentationScenarioFamily,
 } from '@llui/cli/presentation-scenarios'
-import { FORMS_CONTROLS_DEFINITIONS } from '../../../../packages/components/test/styles/forms-controls-scenarios'
-import { MENUS_OVERLAYS_DEFINITIONS } from '../../../../packages/components/test/styles/menus-overlays-scenarios'
-import { NAVIGATION_DATA_DEFINITIONS } from '../../../../packages/components/test/styles/navigation-data-scenarios'
-import { SPECIALIZED_TOOLS_DEFINITIONS } from '../../../../packages/components/test/styles/specialized-tools-scenarios'
+import { compileFormsControlsCatalog } from '../../../../packages/components/test/styles/forms-controls-scenarios'
+import { compileMenusOverlaysCatalog } from '../../../../packages/components/test/styles/menus-overlays-scenarios'
+import { compileNavigationDataCatalog } from '../../../../packages/components/test/styles/navigation-data-scenarios'
+import { compileSpecializedToolsCatalog } from '../../../../packages/components/test/styles/specialized-tools-scenarios'
 import { GALLERY_CONTRACT } from './contract'
 
 /**
- * Compiled through `decodeScenarioFamily` — the same validation and join as
- * each family's typed `compile…Catalog`, returning the ERASED catalog shape
- * the gallery works in (it handles every family generically, so the
- * per-scenario literal types would only have to be erased again).
+ * The families' own TYPED catalogs, held as the ERASED catalog type with no
+ * cast: every typed catalog is a subtype of `CompiledPresentationScenarioFamily`
+ * (pinned by `packages/cli/test/presentation-scenarios-erasure-types.ts`). The
+ * gallery handles every family generically, so it reads them through the
+ * erased shape; the definitions are in-repo typed modules, not serialized
+ * input, so there is nothing for `decodeScenarioFamily` to decode here — and
+ * the runtime validation and contract join are the same either way.
  */
 export const GALLERY_CATALOGS: readonly CompiledPresentationScenarioFamily[] = [
-  decodeScenarioFamily(GALLERY_CONTRACT, 'forms-controls', FORMS_CONTROLS_DEFINITIONS),
-  decodeScenarioFamily(GALLERY_CONTRACT, 'navigation-data', NAVIGATION_DATA_DEFINITIONS),
-  decodeScenarioFamily(GALLERY_CONTRACT, 'menus-overlays', MENUS_OVERLAYS_DEFINITIONS),
-  decodeScenarioFamily(GALLERY_CONTRACT, 'specialized-tools', SPECIALIZED_TOOLS_DEFINITIONS),
+  compileFormsControlsCatalog(GALLERY_CONTRACT),
+  compileNavigationDataCatalog(GALLERY_CONTRACT),
+  compileMenusOverlaysCatalog(GALLERY_CONTRACT),
+  compileSpecializedToolsCatalog(GALLERY_CONTRACT),
 ]
 
 const scenarioByProduct = new Map<string, CompiledPresentationScenario>()

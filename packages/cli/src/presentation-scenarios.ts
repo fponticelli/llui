@@ -371,6 +371,35 @@ type ExactDefinitions<Definitions> = {
   readonly [ScenarioId in keyof Definitions]: ExactDefinition<Definitions[ScenarioId]>
 }
 
+/**
+ * The compiled `copiedArtifactNames` field for ONE (already-distributed) case member, keyed on
+ * whether that member DECLARES the key — never on an indexed access that assumes it does.
+ *
+ * `copiedArtifactNames` is the protocol's one OPTIONAL case field, and a statically-known
+ * definitions literal routinely has cases that omit it. Indexing such a member,
+ * `Case['copiedArtifactNames']`, is legal inside a conditional true-branch only because the
+ * CONSTRAINT (`PresentationScenarioCase`) declares the key; once instantiated with a concrete
+ * literal member that lacks it, the access resolves to `unknown`, `NonNullable<unknown>` is `{}`,
+ * and the field became `Readonly<{}>` — which is not assignable to the erased catalog's
+ * `readonly string[]`, so NO typed family catalog was assignable to
+ * `CompiledPresentationScenarioFamily` (the gallery had to re-decode every family to get an
+ * erased one). Branching on key PRESENCE fixes the cause rather than the symptom:
+ *
+ * - a member that declares the key keeps it with its own optionality (a homomorphic map over
+ *   `Pick`, so an `as const` literal's REQUIRED `readonly ['calendar']` stays required and
+ *   literal, and the erased case's optional `readonly string[]` stays optional);
+ * - a member that omits it gets `copiedArtifactNames?: never` — it restricts no artifacts, reads
+ *   as `undefined`, and is assignable to the erased optional field under either setting of
+ *   `exactOptionalPropertyTypes` (where `?: undefined` would not be). Runtime agrees: the
+ *   compiler emits the key only when the case supplied it.
+ */
+type CompiledCopiedArtifactNames<Case extends PresentationScenarioCase> =
+  'copiedArtifactNames' extends keyof Case
+    ? {
+        readonly [Key in keyof Pick<Case, 'copiedArtifactNames'>]: Readonly<NonNullable<Case[Key]>>
+      }
+    : { readonly copiedArtifactNames?: never }
+
 /** Canonical renderer input copied from a validated family case. */
 export type CompiledPresentationScenarioCase<
   Case extends PresentationScenarioCase = PresentationScenarioCase,
@@ -380,8 +409,7 @@ export type CompiledPresentationScenarioCase<
       readonly label: Case['label']
       readonly input: PresentationScenarioJsonSnapshot<Case['input']>
       readonly environmentAxes: Readonly<Case['environmentAxes']>
-      readonly copiedArtifactNames?: Readonly<NonNullable<Case['copiedArtifactNames']>>
-    }
+    } & CompiledCopiedArtifactNames<Case>
   : never
 
 type ScenarioId<Definitions extends PresentationScenarioDefinitions> = keyof Definitions & string
@@ -414,14 +442,56 @@ export type CompiledPresentationScenario<
         }
       }[ScenarioId<Definitions>]
 
-/** Deterministic, JSON-safe catalog for one presentation family. */
-export type CompiledPresentationScenarioFamily<
-  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
-> = {
+/**
+ * The erased, family-agnostic catalog — what `CompiledPresentationScenarioFamily` (no type
+ * argument) and `decodeScenarioFamily` denote. Every typed catalog is assignable to it.
+ */
+type ErasedCompiledPresentationScenarioFamily = {
   readonly version: 1
   readonly family: PresentationFamily
-  readonly scenarios: readonly CompiledPresentationScenario<Definitions>[]
+  readonly scenarios: readonly ErasedCompiledPresentationScenario[]
 }
+
+/** A catalog typed by one statically-known definitions literal. */
+type TypedCompiledPresentationScenarioFamily<Definitions extends PresentationScenarioDefinitions> =
+  {
+    readonly version: 1
+    readonly family: PresentationFamily
+    readonly scenarios: readonly CompiledPresentationScenario<Definitions>[]
+  }
+
+// Deliberately a CONDITIONAL over two distinct aliases, not one object type generic in
+// `Definitions`, because the erased catalog must be a SUPERTYPE of every typed one (the gallery
+// holds all families as one `readonly CompiledPresentationScenarioFamily[]`). When TypeScript
+// compares two instantiations of the SAME generic alias it does not compare their structure: it
+// relates their type ARGUMENTS under the alias's measured variance. `Definitions` reaches the
+// scenario union through `keyof Definitions` (the `scenarioId` discriminant — contravariant) and
+// through `Definitions[Id]` (the cases — covariant), so the measurement comes back INVARIANT, and
+// it is a reliable measurement (no mapped/template marker flags it "unreliable"), so no
+// structural fallback runs: `Family<{ 'component:x': … }>` against `Family<Record<string, …>>`
+// was rejected as "`Record<string, …>` is not assignable to `{ 'component:x': … }`" even with
+// every property structurally compatible. An `out` annotation would silence that and be UNSOUND:
+// a definitions type with MORE keys is a subtype of one with fewer, but its catalog carries
+// scenario ids the smaller catalog's discriminant union does not contain.
+//
+// Resolving the erased and typed cases to DIFFERENT aliases makes typed→erased a STRUCTURAL
+// relation, which is exactly the sound check: literal ids/defaults/cases are subtypes of their
+// erased `string`/`readonly …[]` forms. Typed→typed keeps the conservative invariant check,
+// erased→typed stays rejected (a `string` scenario id is not a literal), and inference of
+// `Definitions` from a catalog argument (`resolveScenarioSelection`) still works through the
+// conditional. `test/presentation-scenarios-erasure-types.ts` pins all of it.
+/**
+ * Deterministic, JSON-safe catalog for one presentation family. With no type argument this is
+ * the ERASED, family-agnostic catalog; every typed catalog (a `compileScenarioFamily` result) is
+ * assignable to it without a cast, while keeping its own literal scenario ids, case ids, axes
+ * and copied-artifact names.
+ */
+export type CompiledPresentationScenarioFamily<
+  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
+> =
+  string extends ScenarioId<Definitions>
+    ? ErasedCompiledPresentationScenarioFamily
+    : TypedCompiledPresentationScenarioFamily<Definitions>
 
 /** Route-like request for one scenario case, renderer path, and environment. */
 export interface PresentationScenarioSelection {

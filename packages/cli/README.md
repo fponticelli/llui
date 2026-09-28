@@ -146,6 +146,15 @@ validation and diagnostics, deliberately without static narrowing. Do not reintr
 `unknown` overload on the typed pair to "simplify" the surface: that overload is exactly what let
 an invalid literal silently degrade instead of failing to compile (#270).
 
+**A typed catalog is assignable to the erased one, with no cast.** A consumer that handles every
+family generically (the Component Gallery) holds each family's `compileScenarioFamily` result
+in one `readonly CompiledPresentationScenarioFamily[]` — it does not re-decode the definitions
+to get an erased catalog, because `decodeScenarioFamily` is for serialized input, not for
+erasing types. Erasure is one-way and costs the typed value nothing: the typed catalog keeps its
+literal scenario ids, case ids, axes and copied-artifact names (`readonly ['calendar']`, or
+`undefined` for a case that names none), an erased catalog is not assignable back to a typed
+one, and a catalog with more scenario ids is not assignable to a smaller family's catalog type.
+
 **Compile-time exactness has known limits — the runtime decoder is the actual backstop.**
 `compileScenarioFamily`'s generic parameter closes the most common excess-property holes,
 including a union-typed cases array where only ONE member carries the excess field (`keyof` a
