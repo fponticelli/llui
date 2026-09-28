@@ -10,7 +10,7 @@
 // `dialog-nested-focus.browser.test.ts`).
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type ViteDevServer } from 'vite'
+import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -19,29 +19,23 @@ const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../browser
 describe('gradient-picker: focus + pointer capture survive a neighbour-crossing reorder (finding #9)', () => {
   let browser: Browser
   let page: Page
-  let server: ViteDevServer
+  let fixture: PrebuiltFixture
   let fixtureUrl: string
 
   beforeAll(async () => {
-    server = await createServer({
+    fixture = await prebuildFixture({
       root: fixtureRoot,
-      logLevel: 'error',
-      resolve: {
-        alias: {
-          '@llui/dom': resolve(fixtureRoot, '../../../dom/src/index.ts'),
-          '@llui/interactions': resolve(fixtureRoot, '../../../interactions/src/index.ts'),
-        },
+      inputs: ['gradient-picker.fixture.html'],
+      alias: {
+        '@llui/dom': resolve(fixtureRoot, '../../../dom/src/index.ts'),
+        '@llui/interactions': resolve(fixtureRoot, '../../../interactions/src/index.ts'),
       },
-      server: { host: '127.0.0.1', port: 0 },
       define: {
         __LLUI_AGENT__: 'true',
         __LLUI_TRANSITIONS__: 'true',
       },
     })
-    await server.listen()
-    const address = server.httpServer?.address()
-    if (!address || typeof address === 'string') throw new Error('Vite did not bind a TCP port')
-    fixtureUrl = `http://127.0.0.1:${address.port}/gradient-picker.fixture.html`
+    fixtureUrl = fixture.url('gradient-picker.fixture.html')
 
     browser = await chromium.launch({ headless: true })
     page = await browser.newPage()
@@ -55,7 +49,7 @@ describe('gradient-picker: focus + pointer capture survive a neighbour-crossing 
   afterAll(async () => {
     await page?.close()
     await browser?.close()
-    await server?.close()
+    await fixture?.close()
   })
 
   it('keyboard: nudging the middle stop past the last stop keeps focus on the SAME DOM node', async () => {

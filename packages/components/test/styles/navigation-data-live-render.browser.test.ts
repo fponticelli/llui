@@ -2,9 +2,10 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type Alias, type ViteDevServer } from 'vite'
+import type { Alias } from 'vite'
 import { resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../../../scripts/lib/vite-source-aliases.mjs'
+import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
 import { loadProductContract } from './navigation-data-contract-source'
 
 /**
@@ -53,19 +54,19 @@ const sourceAliases: Alias[] = [
   { find: '@/ui', replacement: resolve(repoRoot, 'registry/llui/ui') },
 ]
 
-async function startExample(directory: string): Promise<{ server: ViteDevServer; url: string }> {
-  const server = await createServer({
+// Built once and served static (`scripts/lib/prebuilt-fixture.mjs`) rather
+// than by a Vite dev server: a dev server compiled the app on demand inside
+// the first test to navigate, re-sent its whole unbundled module graph to
+// every fresh page, and shared the example's dependency-optimizer cache with
+// every concurrent suite serving the same example (see that module's header).
+const FIXTURE = 'src/test-fixtures/navigation-data-live-render.html'
+
+function buildExample(directory: string): Promise<PrebuiltFixture> {
+  return prebuildFixture({
     root: resolve(repoRoot, directory),
-    logLevel: 'error',
-    resolve: { alias: sourceAliases },
-    server: { host: '127.0.0.1', port: 0 },
+    inputs: [FIXTURE],
+    alias: sourceAliases,
   })
-  await server.listen()
-  const address = server.httpServer?.address()
-  if (address === null || address === undefined || typeof address === 'string') {
-    throw new Error(`Vite did not bind ${directory} to a TCP port`)
-  }
-  return { server, url: `http://127.0.0.1:${address.port}/` }
 }
 
 interface Fixture {
@@ -83,33 +84,34 @@ declare global {
 
 describe('navigation/data scenario renderer, mounted live in Chromium (#264 item C)', () => {
   let browser: Browser
-  let servers: ViteDevServer[] = []
+  let builds: PrebuiltFixture[] = []
   let fixtures: Fixture[] = []
 
   beforeAll(async () => {
-    const [baseline, registryTailwind] = await Promise.all([
-      startExample('examples/components-demo'),
-      startExample('examples/registry-demo'),
+    const [baseline, registryTailwind, launched] = await Promise.all([
+      buildExample('examples/components-demo'),
+      buildExample('examples/registry-demo'),
+      chromium.launch({ headless: true }),
     ])
-    servers = [baseline.server, registryTailwind.server]
+    builds = [baseline, registryTailwind]
+    browser = launched
     fixtures = [
       {
         path: 'baseline',
-        url: `${baseline.url}src/test-fixtures/navigation-data-live-render.html`,
+        url: baseline.url(FIXTURE),
         mountFn: '__mountNavigationDataBaseline',
       },
       {
         path: 'registryTailwind',
-        url: `${registryTailwind.url}src/test-fixtures/navigation-data-live-render.html`,
+        url: registryTailwind.url(FIXTURE),
         mountFn: '__mountNavigationDataRegistry',
       },
     ]
-    browser = await chromium.launch({ headless: true })
   }, 120_000)
 
   afterAll(async () => {
     await browser?.close()
-    await Promise.all(servers.map((server) => server.close()))
+    await Promise.all(builds.map((build) => build.close()))
   })
 
   async function openMounted(fixture: Fixture): Promise<Page> {

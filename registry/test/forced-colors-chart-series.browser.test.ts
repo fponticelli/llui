@@ -2,9 +2,10 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
-import { createServer, type Alias, type ViteDevServer } from 'vite'
+import type { Alias } from 'vite'
 import { resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../scripts/lib/vite-source-aliases.mjs'
+import { prebuildFixture, type PrebuiltFixture } from '../../scripts/lib/prebuilt-fixture.mjs'
 import { contrast, srgb8ToLinear } from '../../scripts/lib/oklch.mjs'
 import {
   distinctPaintedColorCount,
@@ -63,19 +64,19 @@ const sourceAliases: Alias[] = [
   }),
 ]
 
-async function startExample(directory: string): Promise<{ server: ViteDevServer; url: string }> {
-  const server = await createServer({
+const FIXTURE = 'src/test-fixtures/forced-colors-chart.html'
+
+// Built once and served static (`scripts/lib/prebuilt-fixture.mjs`): every
+// test opens its own forced-colors context, and on a Vite dev server each of
+// those pages re-fetched the fixture's whole unbundled module graph, the first
+// one compiling it on demand inside a test's budget, while sharing each
+// example's dependency-optimizer cache with every concurrent suite serving it.
+function buildExample(directory: string): Promise<PrebuiltFixture> {
+  return prebuildFixture({
     root: resolve(repoRoot, directory),
-    logLevel: 'error',
-    resolve: { alias: sourceAliases },
-    server: { host: '127.0.0.1', port: 0 },
+    inputs: [FIXTURE],
+    alias: sourceAliases,
   })
-  await server.listen()
-  const address = server.httpServer?.address()
-  if (address === null || address === undefined || typeof address === 'string') {
-    throw new Error(`Vite did not bind ${directory} to a TCP port`)
-  }
-  return { server, url: `http://127.0.0.1:${address.port}/` }
 }
 
 interface RGB {
@@ -288,28 +289,26 @@ async function selfCheckHarness(page: Page): Promise<void> {
 
 describe('forced-colors chart series distinctness (real pixels, both paths)', () => {
   let browser: Browser
-  let servers: ViteDevServer[] = []
+  let fixtures: PrebuiltFixture[] = []
   let demos: { path: 'baseline' | 'registryTailwind'; url: string }[] = []
 
   beforeAll(async () => {
-    const [baseline, registryTailwind] = await Promise.all([
-      startExample('examples/components-demo'),
-      startExample('examples/registry-demo'),
+    const [baseline, registryTailwind, launched] = await Promise.all([
+      buildExample('examples/components-demo'),
+      buildExample('examples/registry-demo'),
+      chromium.launch({ headless: true }),
     ])
-    servers = [baseline.server, registryTailwind.server]
+    fixtures = [baseline, registryTailwind]
+    browser = launched
     demos = [
-      { path: 'baseline', url: `${baseline.url}src/test-fixtures/forced-colors-chart.html` },
-      {
-        path: 'registryTailwind',
-        url: `${registryTailwind.url}src/test-fixtures/forced-colors-chart.html`,
-      },
+      { path: 'baseline', url: baseline.url(FIXTURE) },
+      { path: 'registryTailwind', url: registryTailwind.url(FIXTURE) },
     ]
-    browser = await chromium.launch({ headless: true })
   }, 120_000)
 
   afterAll(async () => {
     await browser?.close()
-    await Promise.all(servers.map((server) => server.close()))
+    await Promise.all(fixtures.map((fixture) => fixture.close()))
   })
 
   it.each(['baseline', 'registryTailwind'] as const)(

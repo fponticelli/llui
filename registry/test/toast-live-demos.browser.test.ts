@@ -15,7 +15,7 @@
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type ViteDevServer } from 'vite'
+import { prebuildFixture, type PrebuiltFixture } from '../../scripts/lib/prebuilt-fixture.mjs'
 import { resolve } from 'node:path'
 
 const repoRoot = resolve(import.meta.dirname, '../..')
@@ -48,18 +48,13 @@ const DEMOS: readonly Demo[] = [
   },
 ]
 
-async function startExample(directory: string): Promise<{ server: ViteDevServer; url: string }> {
-  const server = await createServer({
-    root: resolve(repoRoot, directory),
-    logLevel: 'error',
-    server: { host: '127.0.0.1', port: 0 },
-  })
-  await server.listen()
-  const address = server.httpServer?.address()
-  if (address === null || address === undefined || typeof address === 'string') {
-    throw new Error(`Vite did not bind ${directory} to a TCP port`)
-  }
-  return { server, url: `http://127.0.0.1:${address.port}/` }
+// Built once and served static (`scripts/lib/prebuilt-fixture.mjs`) rather
+// than by a Vite dev server: a dev server compiled the app on demand inside
+// the first test to navigate, re-sent its whole unbundled module graph to
+// every fresh page, and shared the example's dependency-optimizer cache with
+// every concurrent suite serving the same example (see that module's header).
+function buildExample(directory: string): Promise<PrebuiltFixture> {
+  return prebuildFixture({ root: resolve(repoRoot, directory), inputs: ['index.html'] })
 }
 
 declare global {
@@ -120,23 +115,26 @@ const statesOf = (page: Page, id: string): Promise<string[] | undefined> =>
 
 describe('actual Toast demos in Chromium (#265 task item 1)', () => {
   let browser: Browser
-  let servers: ViteDevServer[] = []
+  let builds: PrebuiltFixture[] = []
   const urls: Record<string, string> = {}
 
   beforeAll(async () => {
-    const [baseline, registry] = await Promise.all([
-      startExample('examples/components-demo'),
-      startExample('examples/registry-demo'),
+    const [baseline, registry, launched] = await Promise.all([
+      buildExample('examples/components-demo'),
+      buildExample('examples/registry-demo'),
+      chromium.launch({ headless: true }),
     ])
-    servers = [baseline.server, registry.server]
-    urls.baseline = baseline.url
-    urls.registryTailwind = registry.url
-    browser = await chromium.launch({ headless: true })
-  }, 60_000)
+    builds = [baseline, registry]
+    browser = launched
+    urls.baseline = baseline.url('/')
+    urls.registryTailwind = registry.url('/')
+    // Two whole-app builds: the compile a dev server used to spread over the
+    // first test of each demo is paid here, once, under the hook's budget.
+  }, 120_000)
 
   afterAll(async () => {
     await browser?.close()
-    await Promise.all(servers.map((s) => s.close()))
+    await Promise.all(builds.map((build) => build.close()))
   })
 
   const REGION = '[data-scope="toast"][data-part="region"]'
