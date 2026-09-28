@@ -25,7 +25,7 @@
  * navigation already provides: every case is a full page load of its own
  * document, and the slot's fault sink is reset in between.
  */
-import type { Browser, BrowserContext, Page } from 'playwright'
+import type { Browser, BrowserContext, BrowserContextOptions, Page } from 'playwright'
 import type { GalleryCase } from './matrix'
 import { documentHref } from './matrix'
 
@@ -36,6 +36,18 @@ export const WINDOW = {
   wide: { width: 1280, height: 800 },
   narrow: { width: 390, height: 844 },
 } as const
+
+/**
+ * The context every gate page renders in. The rendering fingerprint
+ * (`fingerprint.ts`) is measured in a context with exactly these options, so
+ * it identifies the rendering the cases are captured with.
+ */
+export const GATE_CONTEXT_OPTIONS = {
+  viewport: WINDOW.wide,
+  deviceScaleFactor: 1,
+  locale: 'en-US',
+  timezoneId: 'UTC',
+} as const satisfies BrowserContextOptions
 
 export interface RuntimeFaults {
   console: string[]
@@ -189,12 +201,7 @@ export class DocumentPool {
     const free = this.#free.pop()
     if (free !== undefined) return free
     if (this.#all.length < this.#size) {
-      const context = await this.#browser.newContext({
-        viewport: WINDOW.wide,
-        deviceScaleFactor: 1,
-        locale: 'en-US',
-        timezoneId: 'UTC',
-      })
+      const context = await this.#browser.newContext(GATE_CONTEXT_OPTIONS)
       const slot: Slot = { context, page: await context.newPage(), faults: emptyFaults() }
       await instrument(context, new URL(this.#base).origin, () => slot.faults)
       this.#all.push(slot)

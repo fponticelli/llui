@@ -50,15 +50,20 @@ import {
   baselinePath,
   captureStable,
   comparePngs,
+  decideVisualMode,
+  describeDifferences,
   describeEnvironment,
+  MANIFEST_VERSION,
   readManifest,
-  sameEnvironment,
   visualOutputDir,
   withinTolerance,
   writeFileEnsuringDir,
+  type EnvironmentDifference,
   type VisualEnvironment,
   type VisualManifest,
+  type VisualMode,
 } from './gates/visual'
+import { declaredFontStacks, measureRendering } from './gates/fingerprint'
 import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
 
 const hermetic = useHermeticBrowser()
@@ -68,28 +73,60 @@ const CASES = gateCases()
 const VISUAL_KEYS = visualCases().map(caseKey).sort()
 const UPDATE = process.env['LLUI_VISUAL_UPDATE'] === '1'
 const REQUIRED = process.env['LLUI_VISUAL_REQUIRED'] === '1'
-const manifest = readManifest()
+// An update REPLACES the manifest, so it never depends on the old one parsing.
+const manifest = UPDATE ? undefined : readManifest()
 
 let browser: Browser
 let pool: DocumentPool
-let environment: VisualEnvironment
+/**
+ * This run's environment, fingerprinted over the stacks the documents declare
+ * NOW — what an update or a candidate set records. Measured only when one is
+ * written.
+ */
+let environment: VisualEnvironment | undefined
+let identity: Pick<VisualEnvironment, 'browser' | 'platform' | 'arch'>
+/** Why the baselines cannot be compared here (empty in compare mode). */
+let differences: readonly EnvironmentDifference[] = []
 /** Captures recorded this run, for a baseline (update) or a candidate set (CI). */
 const recorded = new Map<string, { width: number; height: number }>()
 
-type VisualMode = 'update' | 'compare' | 'determinism' | 'unavailable'
 let visualMode: VisualMode
 
 beforeAll(async () => {
   browser = await hermetic.launch({ headless: true })
   pool = new DocumentPool(browser, base, 4)
-  environment = { browser: browser.version(), platform: process.platform, arch: process.arch }
-  visualMode = UPDATE
-    ? 'update'
-    : manifest !== undefined && sameEnvironment(manifest.environment, environment)
-      ? 'compare'
-      : REQUIRED
-        ? 'unavailable'
-        : 'determinism'
+  identity = { browser: browser.version(), platform: process.platform, arch: process.arch }
+  // The fingerprint is measured over the RECORDED stacks, so it renders the
+  // very calibration document the manifest's was taken from.
+  const declared = await declaredFontStacks(browser, base)
+  const recordedStacks =
+    manifest === undefined ? declared : Object.keys(manifest.environment.rendering.stacks)
+  const current = { ...identity, rendering: await measureRendering(browser, recordedStacks) }
+  const decision = decideVisualMode({
+    update: UPDATE,
+    required: REQUIRED,
+    recorded: manifest?.environment,
+    current,
+    declaredStacks: declared,
+  })
+  visualMode = decision.mode
+  differences = decision.differences
+  if (visualMode === 'determinism') {
+    console.warn(
+      `visual gate: checking determinism only, not comparing baselines — ${
+        manifest === undefined ? 'no baselines are recorded' : describeDifferences(differences)
+      }`,
+    )
+  }
+  if (visualMode === 'update' || writesCandidates()) {
+    environment =
+      manifest === undefined
+        ? current
+        : {
+            ...identity,
+            rendering: await measureRendering(browser, declared),
+          }
+  }
   if (UPDATE) rmSync(BASELINE_DIR, { recursive: true, force: true })
   if (writesCandidates()) rmSync(candidateDir(), { recursive: true, force: true })
 })
@@ -100,9 +137,9 @@ afterAll(async () => {
   if (visualMode === 'update' || writesCandidates()) {
     // Only a COMPLETE capture may become a manifest: a filtered run must never
     // truncate the baseline set.
-    if (recorded.size !== VISUAL_KEYS.length) return
+    if (recorded.size !== VISUAL_KEYS.length || environment === undefined) return
     const next: VisualManifest = {
-      version: 1,
+      version: MANIFEST_VERSION,
       environment,
       cases: Object.fromEntries([...recorded].sort(([a], [b]) => a.localeCompare(b))),
     }
@@ -121,12 +158,10 @@ function candidateDir(): string {
 }
 
 function unavailableReason(): string {
-  const where =
-    manifest === undefined
-      ? 'no baselines are recorded yet'
-      : `the baselines were recorded on ${describeEnvironment(manifest.environment)}`
+  const why =
+    manifest === undefined ? 'no baselines are recorded yet' : describeDifferences(differences)
   return (
-    `visual baselines cannot be compared on ${describeEnvironment(environment)} (${where}). ` +
+    `visual baselines cannot be compared on ${describeEnvironment(identity)}: ${why}. ` +
     'This run wrote a complete candidate set, captured in THIS environment, to ' +
     `${relative(process.cwd(), candidateDir())} (the CI job uploads it as the ` +
     '`visual-baselines` artifact): review it and commit it as ' +
@@ -201,6 +236,12 @@ describe('the gate matrix', () => {
     expect(
       renderedCases().filter(({ path }) => path === 'registryTailwind').length,
     ).toBeGreaterThan(300)
+  })
+
+  // One failure that says WHY nothing was compared, before the per-case ones.
+  it('compares against the baselines, or — only where not required — checks determinism', () => {
+    if (visualMode === 'unavailable') throw new Error(unavailableReason())
+    expect(['update', 'compare', 'determinism']).toContain(visualMode)
   })
 
   it('has a baseline for exactly the visual matrix — none missing, none orphaned', (ctx) => {

@@ -1,8 +1,11 @@
 // @ts-check
 /**
  * Recording the Component Gallery's visual baselines IN CI'S OWN ENVIRONMENT
- * (#268). A screenshot baseline is only reproducible on the browser build and
- * platform that produced it, and CI's `verify` job runs inside the official
+ * (#268). A screenshot baseline is only reproducible where the rendering is —
+ * the browser build and platform that produced it AND the same fonts and
+ * rasteriser (the manifest's rendering fingerprint, which is why recording
+ * on a host with CI's Chromium build is still not enough) — and CI's `verify`
+ * job runs inside the official
  * Playwright image named in `.github/workflows/ci.yml` — so baselines are
  * recorded in that same image, on linux/amd64 (the runner's architecture).
  * `scripts/test/visual-container.test.ts` pins the image to the one `ci.yml`
