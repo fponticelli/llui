@@ -25,6 +25,12 @@ export const NOTE_KINDS = [
 type UnlistedNoteKind = Exclude<NoteKind, (typeof NOTE_KINDS)[number]>
 const _everyNoteKindListed: [UnlistedNoteKind] extends [never] ? true : UnlistedNoteKind = true
 
+/** Whether `v` is a {@link NoteKind} — the check for any kind read from outside
+ * the type system (a filename, parsed frontmatter, a request). */
+export function isNoteKind(v: unknown): v is NoteKind {
+  return NOTE_KINDS.some((kind) => kind === v)
+}
+
 export type NoteIntent = 'task' | 'note'
 
 export type NoteStatus =

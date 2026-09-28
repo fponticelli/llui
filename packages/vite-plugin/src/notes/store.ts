@@ -17,7 +17,14 @@ import {
 } from 'node:fs'
 import { join, resolve, sep } from 'node:path'
 
-import { deriveFilename, deriveSlug, nextId, parseFilename } from '@llui/notes-format/note-format'
+import {
+  deriveFilename,
+  deriveSlug,
+  filenameIdNum,
+  nextId,
+  parseFilename,
+} from '@llui/notes-format/note-format'
+import { isNoteKind } from '@llui/notes-format/note-types'
 
 import { parseNote, serializeNote, type SerializedNote } from './frontmatter.js'
 import { resolveCurrentSession } from './session.js'
@@ -93,7 +100,9 @@ function nextIdAndFilename(
   // Scan existing ids; new id is max+1. We also check OTHER files
   // (anything matching the canonical filename regex) to skip past gaps
   // caused by out-of-band file writes (e.g. a HUD that wrote a placeholder).
-  const id = nextId(filenames.map((f) => parseFilename(f)?.idNum ?? 0))
+  // `filenameIdNum`, not `parseFilename`: a note file of an unknown kind still
+  // occupies its id, and must not be handed out again.
+  const id = nextId(filenames.map((f) => filenameIdNum(f) ?? 0))
 
   // Resolve collisions: if the natural filename is taken, suffix -2, -3,
   // … before the .md extension. Rare path (same id + same slug as an
@@ -290,7 +299,8 @@ function preview(prose: string, max = 80): string {
  * Build a summary for one note file. Returns `null` when the filename is
  * not a canonical note name (e.g. a stray `README.md` — legitimately not a
  * note, so silently skipped). THROWS when a canonical note file fails to
- * parse — that is corruption the caller must surface, not swallow.
+ * parse, or names a kind (in its filename or frontmatter) that is not a
+ * `NoteKind` — that is corruption the caller must surface, not swallow.
  */
 function noteFileToSummary(
   notesRoot: string,
@@ -309,13 +319,16 @@ function noteFileToSummary(
     replyTo?: string
     proposedDiff?: { summary?: string }
   }
+  // The frontmatter is parsed YAML: its kind is only a `NoteKind` if checked.
+  const kind: unknown = fm.kind
+  if (!isNoteKind(kind)) throw new Error(`${filename}: unknown note kind "${String(kind)}"`)
   const summary: NoteSummary = {
     id: fm.id,
     sessionId,
     filename,
     ts: fm.ts,
     author: fm.author,
-    kind: fm.kind,
+    kind,
     url: fm.url,
     componentPath: fm.componentPath,
     preview: preview(note.prose),
