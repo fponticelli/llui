@@ -437,7 +437,8 @@ describe('menus-overlays registry motion policy', () => {
       title: 'Overlay motion',
       description:
         'Shared presence, physical-side, and nonzero reduced-motion policy for overlay and transient skins.',
-      dependencies: [],
+      // Its presence recipes are tw-animate-css classes (registry-tw-animate.test.ts).
+      dependencies: ['tw-animate-css'],
       registryDependencies: [],
       files: [
         {
