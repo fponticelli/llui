@@ -7,7 +7,7 @@ Parses Markdown to a real [mdast](https://github.com/syntax-tree/mdast) AST
 through LLui's own authoring helpers as **live reactive DOM** — never an HTML
 string. That means:
 
-- **Reactive** — drive it with a `Signal<string>`; the view updates when the source changes.
+- **Reactive** — drive it with a signal (`ReadSignal<string>`: a `.at()` slice or a `.map()`); the view updates when the source changes.
 - **Streaming-friendly** — top-level blocks are content-hash-keyed, so a growing
   document (e.g. LLM output) reuses the DOM of unchanged earlier blocks and only
   rebuilds the changing tail.

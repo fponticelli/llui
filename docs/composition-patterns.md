@@ -19,11 +19,26 @@ paths its signal reads.
 | Helper shape                                  | Pattern                           | Composition surface                                                                       |
 | --------------------------------------------- | --------------------------------- | ----------------------------------------------------------------------------------------- |
 | Renders a slice of state                      | **1 — sliced signal**             | Helper takes `Signal<Slice>`; caller passes `state.at('slice')`                           |
-| Renders a list of rows                        | **2 — `each` over a sliced list** | Helper takes `Signal<Row[]>`; per-row `item` signal feeds the cell bindings               |
-| Renders a single derived value                | **3 — derived signal**            | Helper takes `Signal<T>`; caller passes `state.map(fn)` or a `.at()` slice                |
+| Renders a list of rows                        | **2 — `each` over a sliced list** | Helper takes `ReadSignal<Row[]>`; per-row `item` signal feeds the cell bindings           |
+| Renders a single derived value                | **3 — derived signal**            | Helper takes `ReadSignal<T>`; caller passes `state.map(fn)` or a `.at()` slice            |
 | Layout chrome (header, sidebar, dialog frame) | **4 — child slots**               | Helper takes `children: ChildNode[]`; caller fills slots with its own bindings            |
 | Library component with its own state machine  | **5 — `connect()` + delegation**  | Component exports `init`/`update`/`connect`; parent owns the slice, routes messages       |
 | Widget whose state nobody else reads          | **`island()` (T2)**               | Own update loop + mask scope; props in via `props`/`onProps`, messages out via `onHandle` |
+
+### Which signal type does a helper take?
+
+There are two kinds of signal, and one type that covers both:
+
+| Type              | What it is                                                                        | `.at()`? |
+| ----------------- | --------------------------------------------------------------------------------- | -------- |
+| `Signal<T>`       | a PATH signal — the view's `state`, anything from `.at()`, an `each` row's `item` | yes      |
+| `MappedSignal<T>` | the result of `.map()` / `derived()` — it has no state path                       | no       |
+| `ReadSignal<T>`   | either of the above: `map` + `peek`, no `.at()`                                   | no       |
+
+Type a helper's parameter **`ReadSignal<T>` unless the helper calls `.at()` on it**, and
+`Signal<T>` when it does. A `ReadSignal` parameter accepts `state.at('x')` AND
+`state.map(fn)`; a `Signal` parameter rejects a mapped signal at compile time (a
+`MappedSignal` is not a `Signal`), which is what you want — `.at()` on it would throw.
 
 ---
 
@@ -60,6 +75,8 @@ view: ({ state, send }) => [userCard(state.at('currentUser'), send)]
 What you get:
 
 - The helper's type signature is tight (`Signal<UserSlice>`), decoupled from the host.
+  It is `Signal`, not `ReadSignal`, because the helper slices with `.at()` — so a caller
+  handing it `state.map(pickUser)` gets a compile error instead of a mount-time throw.
 - Each binding inside reads a precise path (`currentUser.active`, `currentUser.name`, …),
   so the runtime gates it on exactly those paths.
 - Adding the helper to a new host is just passing the right slice.
@@ -70,13 +87,16 @@ What you get:
 
 **When**: a generic helper renders a list of rows whose per-row fields change in place.
 
-**Composition**: the helper takes a `Signal<Row[]>`. `each` gives the row render a per-row
-`item: Signal<Row>` (and an `index: Signal<number>`). Cell bindings read `item.at('field')`
-so they update surgically when that row's data changes.
+**Composition**: the helper takes a `ReadSignal<Row[]>` — `each` only reads its items, so
+the caller may pass a slice (`state.at('rows')`) or a filtered view
+(`state.at('rows').map((rs) => rs.filter(visible))`). `each` gives the row render a
+per-row `item: Signal<Row>` (and an `index: Signal<number>`) — row handles are always
+PATH signals, whatever the items signal was. Cell bindings read `item.at('field')` so
+they update surgically when that row's data changes.
 
 ```ts
 import { each, tr, td, text, show, span } from '@llui/dom'
-import type { Signal, Renderable } from '@llui/dom'
+import type { ReadSignal, Renderable } from '@llui/dom'
 
 interface Row {
   id: string
@@ -84,7 +104,7 @@ interface Row {
   banned: boolean
 }
 
-function table(rows: Signal<Row[]>): Renderable {
+function table(rows: ReadSignal<Row[]>): Renderable {
   return [
     each(rows, {
       key: (r) => r.id, // ← plain id; do NOT include mutable fields
@@ -130,16 +150,17 @@ render: (item) => [
 **When**: a generic helper renders one reactive value (button label, status badge, error
 text). No iteration.
 
-**Composition**: the helper takes a `Signal<T>` and plugs it directly into a primitive.
-The caller does the derivation at the call site with `.map` or a `.at()` slice.
+**Composition**: the helper takes a `ReadSignal<T>` and plugs it directly into a
+primitive. The caller does the derivation at the call site with `.map` or a `.at()` slice —
+`ReadSignal` accepts both, where `Signal<T>` would reject the `.map` result.
 
 ```ts
 import { span, text } from '@llui/dom'
-import type { Signal, Mountable } from '@llui/dom'
+import type { ReadSignal, Mountable } from '@llui/dom'
 
 // Helper takes the already-derived signal — no callback, no host state type.
 // A single element helper returns a `Mountable` (materialized when placed).
-function statusBadge(className: Signal<string>): Mountable {
+function statusBadge(className: ReadSignal<string>): Mountable {
   return span({ class: className })
 }
 
@@ -220,7 +241,7 @@ pass the sliced signal in (Pattern 1); if nobody does, mount it as an `island()`
 `State`, `Msg`, and `update`.
 
 **Composition**: this is the convention used across `@llui/components`. The component
-exports pure `init` / `update` functions plus `connect(state: Signal<Slice>, send, opts?)`
+exports pure `init` / `update` functions plus `connect(state: ReadSignal<Slice>, send, opts?)`
 which returns reactive props to spread onto elements. The parent owns the slice in its
 state, delegates to the component's `update`, and routes the component's messages through
 its own `Msg` union.
@@ -271,7 +292,13 @@ view helper that builds the portal tree and wires accessibility utilities — se
 
 **Passing a `(s) => T` callback across a helper boundary.** The signal runtime has no
 notion of an accessor callback — reactivity flows through signals. A helper that wants a
-reactive value takes a `Signal<T>`; the caller derives it at the call site.
+reactive value takes a `ReadSignal<T>`; the caller derives it at the call site.
+
+**Typing a read-only helper parameter `Signal<T>`.** `Signal` is the PATH signal — it
+promises `.at()`. A helper that only reads (`map`, `peek`, or passing the signal into a
+slot) must take `ReadSignal<T>`, or every caller that derives (`state.map(fn)`,
+`derived(…)`) gets `Argument of type 'MappedSignal<…>' is not assignable to parameter of
+type 'Signal<…>'`. The fix is the parameter type, never a cast.
 
 **Reading the whole `state` signal in a helper.** Pass a sliced signal
 (`state.at('slice')`), not the root `state`. A helper that maps over the entire state

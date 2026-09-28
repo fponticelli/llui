@@ -374,10 +374,10 @@ a **signal handle** for its slice plus the parent's `send`.
 
 ```typescript
 import { nav, button, text } from '@llui/dom'
-import type { Signal, Send, Renderable } from '@llui/dom'
+import type { ReadSignal, Send, Renderable } from '@llui/dom'
 
-// views/header.ts
-export function header(user: Signal<{ name: string } | null>, send: Send<Msg>): Renderable {
+// views/header.ts — only READS `user`, so it takes a ReadSignal (either kind)
+export function header(user: ReadSignal<{ name: string } | null>, send: Send<Msg>): Renderable {
   return [
     nav([
       text(user.map((u) => u?.name ?? 'Guest')),
@@ -391,7 +391,11 @@ view: ({ state, send }) => [header(state.at('user'), send), mainContent(state, s
 ```
 
 A child view function receives whatever signal granularity it needs — `state.at('user')`
-for a narrow slice, or `state.map((s) => …)` for a derived view. Reactivity has no nesting
+for a narrow slice, or `state.map((s) => …)` for a derived view. Type the parameter
+`ReadSignal<T>` when the helper only reads it (it then accepts both), and `Signal<T>` only
+when the helper slices it with `.at()` — a `.map()`/`derived()` result is a
+`MappedSignal`, which has no path, so passing it to a `Signal` parameter is a compile
+error rather than a mount-time throw. Reactivity has no nesting
 tax: `state.at('dashboard').at('toolbar').at('menuOpen')` gets its own dependency path, and
 unchanged subtrees gate out under a structural-sharing reducer.
 
@@ -399,7 +403,8 @@ unchanged subtrees gate out under a structural-sharing reducer.
 
 A reusable view function takes a `Signal<Slice>` and reads via the signal's own
 `.at`/`.map` — no `(s) => …` callbacks cross the boundary, and the helper's type stays
-decoupled from the parent's full state shape.
+decoupled from the parent's full state shape. It takes `Signal` (not `ReadSignal`)
+because it slices with `.at()`, so callers must hand it a path signal.
 
 ```typescript
 import { div, text, span } from '@llui/dom'
@@ -532,7 +537,7 @@ case 'selectItem': {
 ### Library components: `connect()` + delegated update
 
 `@llui/components` use a state-machine + `connect` convention. The component exports pure
-`init` / `update` functions plus `connect(state: Signal<Slice>, send, opts?)` returning
+`init` / `update` functions plus `connect(state: ReadSignal<Slice>, send, opts?)` returning
 reactive props to spread onto elements. The parent owns the slice, delegates to the
 component's `update`, and routes its messages through its own `Msg` union.
 
@@ -586,10 +591,10 @@ through every view function:
 
 ```typescript
 import { createContext, provide, useContext, div, text } from '@llui/dom'
-import type { Signal, Renderable } from '@llui/dom'
+import type { ReadSignal, Renderable } from '@llui/dom'
 
 // Declare a typed context with a default value:
-const ThemeContext = createContext<Signal<'light' | 'dark'>>(/* default */ undefined!)
+const ThemeContext = createContext<ReadSignal<'light' | 'dark'>>(/* default */ undefined!)
 
 // Provide a value to every descendant built inside the render callback:
 view: ({ state, send }) =>
@@ -726,7 +731,7 @@ case 'sort': {
   return [{ ...state, items, sort: s }, fx]
 }
 
-// In view — connect() takes a Signal<SortableState>:
+// In view — connect() takes a ReadSignal<SortableState> (a slice or a .map):
 view: ({ state, send }) => {
   const parts = sortable.connect(
     state.at('sort'),
@@ -1046,9 +1051,9 @@ immediately and on every change.
 
 ```typescript
 import { foreign } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { ReadSignal } from '@llui/dom'
 
-foreign<{ root: ShadowRoot }, { html: Signal<string> }>({
+foreign<{ root: ShadowRoot }, { html: ReadSignal<string> }>({
   state: { html: state.at('readmeHtml') },
   mount: ({ el, state: sig }) => {
     const root = el.attachShadow({ mode: 'open' })
@@ -1066,9 +1071,9 @@ foreign<{ root: ShadowRoot }, { html: Signal<string> }>({
 
 ```typescript
 import { foreign } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { ReadSignal } from '@llui/dom'
 
-foreign<{ el: HTMLElement }, { content: Signal<string> }>({
+foreign<{ el: HTMLElement }, { content: ReadSignal<string> }>({
   state: { content: state.at('fileContent') },
   mount: ({ el, state: sig }) => {
     sig.content.bind((content) => {
@@ -1378,14 +1383,14 @@ function panel(state: Signal<State>) {
 
 ### Visual attention layer
 
-`agentAttention.connect(state, send).flashClass(path)` returns a `Signal<string | undefined>` that resolves to `'agent-flash'` when the path is in the most recent dispatch's affected set. Drop the handle straight onto a reactive `class` slot:
+`agentAttention.connect(state, send).flashClass(path)` returns a `ReadSignal<string | undefined>` that resolves to `'agent-flash'` when the path is in the most recent dispatch's affected set. Drop the handle straight onto a reactive `class` slot:
 
 ```ts
 const att = agentAttention.connect(state.at('agent').at('attention'), (m) =>
   send({ type: 'agent', sub: 'attention', msg: m }),
 )
 
-// In your view layout — flashClass('cart') is a Signal, so the class is reactive:
+// In your view layout — flashClass('cart') is a signal, so the class is reactive:
 div({ class: att.flashClass('cart') }, [
   // cart contents — flashes when an agent dispatch touches /cart/*
 ])

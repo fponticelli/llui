@@ -245,7 +245,7 @@ icon('lucide:star', { class: 'size-5' }) // fixed glyph
 icon(state.at('kind').map(kindToIconName)) // follows state
 ```
 
-`name` is `'prefix:name'` (bare = Lucide) or a `Signal<string>`. Fetched from
+`name` is `'prefix:name'` (bare = Lucide) or a `ReadSignal<string>`. Fetched from
 `api.iconify.design` at mount, ONE request per prefix per tick, sanitized against an
 allowlist (never `innerHTML`). `iconConfig.api` self-hosts; `loadIcon(name)` pre-warms.
 The registry's `llui add icons` is a shadcn-shaped wrapper over it — factories

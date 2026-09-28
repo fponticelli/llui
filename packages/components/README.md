@@ -77,7 +77,7 @@ const App = component<State, Msg, never>({
 
 1. **`init(opts?)`** — creates the initial state
 2. **`update(state, msg)`** — pure reducer, returns `[newState, effects[]]`
-3. **`connect(state: Signal<Slice>, send, opts?)`** — takes a signal handle for the component's state slice (e.g. `state.at('tabs')`), returns parts objects with reactive props, ARIA attributes, and event handlers. Spread parts onto your elements: `div({ ...parts.root }, [...])`
+3. **`connect(state: ReadSignal<Slice>, send, opts?)`** — takes a signal handle for the component's state slice (e.g. `state.at('tabs')`), returns parts objects with reactive props, ARIA attributes, and event handlers. Spread parts onto your elements: `div({ ...parts.root }, [...])`
 4. **Overlay helpers** (dialog, popover, menu, etc.) — `overlay()` wires up portals, focus traps, dismiss layers, and positioning
 
 ## Components
@@ -128,16 +128,16 @@ lists above and the [component catalog](https://llui.dev/component-catalog) are.
 
 ```typescript
 import { div, show } from '@llui/dom'
-import type { Renderable, Signal } from '@llui/dom'
+import type { Renderable, ReadSignal } from '@llui/dom'
 import { menu, type MenuItem, type MenuParts, type MenuState } from '@llui/components/menu'
 
 // Signature only — a real call site closes over its own `state`/`send`;
 // the parameters below just name the types each argument has.
 function renderSubTrigger(
-  state: Signal<MenuState>,
+  state: ReadSignal<MenuState>,
   parts: MenuParts,
   it: MenuItem,
-  openPath: Signal<readonly string[]>,
+  openPath: ReadSignal<readonly string[]>,
   renderChildren: (children: readonly MenuItem[]) => Renderable,
 ) {
   // before
@@ -328,7 +328,7 @@ icon('lucide:star', { class: 'size-5' })
 icon('simple-icons:github')
 ```
 
-`name` may be a `Signal<string>`, in which case the glyph follows the state. The
+`name` may be a `ReadSignal<string>`, in which case the glyph follows the state. The
 response is untrusted markup and is rebuilt from an element/attribute allowlist —
 never assigned to `innerHTML`. Icons are async (SSR emits the sized empty box)
 and need the network; point `iconConfig.api` at a self-hosted Iconify to drop the

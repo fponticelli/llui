@@ -191,6 +191,7 @@ Hard constraints. Several are not enforced by types or CI. **Before touching a s
 - Disposing a container mount removes the nodes it inserted. `provide()` context is snapshotted at each primitive's placement.
 - **Output-equality belongs only to `ValueBinding`.** Every structural reconcile is side-effect-free when nothing changed.
 - `state.at('x')` rows are gatable; `state.map(...)`/whole-state rows re-run on every change (O(n) cliff).
+- **A mapped signal is NOT a `Signal`.** `ReadSignal<T>` (`map`/`peek`) is the supertype of `Signal<T>` (path, has `.at()`) and `MappedSignal<T>` (`.map`/`derived`). Anything that only reads takes `ReadSignal`; `Signal` only where `.at()` is called. Never restore `MappedSignal.at: never` (it re-enables the widening).
 - Stateless widgets use `constant(v)` + `noSend`; never fake them with `pathHandle`, never type a no-op sender as `Send<never>`.
 
 ### Compiler (`@llui/compiler`) — `docs/agents/compiler.md`

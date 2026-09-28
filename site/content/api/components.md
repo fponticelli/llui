@@ -2690,12 +2690,12 @@ function hsvToRgb255(hsv: Hsv): Rgb255
 Render one Iconify glyph as a real `<svg>`.
 
 `name` is `prefix:name` (`'lucide:star'`, `'simple-icons:github'`; a bare
-name is a Lucide glyph) or a `Signal<string>` of one, in which case the glyph
+name is a Lucide glyph) or a `ReadSignal<string>` of one, in which case the glyph
 follows the signal. `props` spread onto the `<svg>`; `class` is passed through
 as given, so a caller sizes and colours the glyph from there.
 
 ```typescript
-function icon(name: string | Signal<string>, props?: ElProps): Mountable
+function icon(name: string | ReadSignal<string>, props?: ElProps): Mountable
 ```
 
 ##### `indexMap()` from `@llui/components`
@@ -2891,7 +2891,7 @@ function membershipSet<T>(): (values: readonly T[] | null | undefined) => Readon
 
 ```typescript
 function menubarConnect(
-  state: Signal<MenubarState>,
+  state: ReadSignal<MenubarState>,
   send: Send<MenubarMsg>,
   opts: ConnectOptions,
 ): MenubarParts
@@ -6405,12 +6405,12 @@ export interface AccordionInit {
 export interface AccordionItemParts {
   trigger: {
     type: 'button'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
-    disabled: Signal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'accordion'
     'data-part': 'trigger'
     'data-value': string
@@ -6421,13 +6421,13 @@ export interface AccordionItemParts {
     role: 'region'
     id: string
     'aria-labelledby': string
-    'data-state': Signal<'open' | 'closing' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closing' | 'closed'>
     'data-scope': 'accordion'
     'data-part': 'content'
     'data-value': string
-    hidden: Signal<boolean>
-    'aria-hidden': Signal<'true' | undefined>
-    inert: Signal<boolean>
+    hidden: ReadSignal<boolean>
+    'aria-hidden': ReadSignal<'true' | undefined>
+    inert: ReadSignal<boolean>
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
@@ -6436,8 +6436,8 @@ export interface AccordionItemParts {
     onTransitionCancel: (e: TransitionEvent) => void
   }
   item: {
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'accordion'
     'data-part': 'item'
     'data-value': string
@@ -6536,7 +6536,7 @@ export interface AlertDialogOverlayOptions {
    * below — which is exactly how this one was missed the first time.
    */
   positionerClass?: string
-  state: Signal<DialogState>
+  state: ReadSignal<DialogState>
   send: Send<DialogMsg>
   parts: AlertDialogParts
   content: () => Renderable
@@ -6657,17 +6657,17 @@ export interface AngleSliderInit {
 export interface AngleSliderParts {
   root: {
     role: 'slider'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
     'aria-orientation': 'horizontal'
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-readonly': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-readonly': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'angle-slider'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
   }
   control: {
@@ -6682,7 +6682,7 @@ export interface AngleSliderParts {
   thumb: {
     'data-scope': 'angle-slider'
     'data-part': 'thumb'
-    'data-value': Signal<string>
+    'data-value': ReadSignal<string>
   }
   valueText: {
     'data-scope': 'angle-slider'
@@ -6691,7 +6691,7 @@ export interface AngleSliderParts {
   /** A hidden input for form participation. */
   hiddenInput: {
     type: 'hidden'
-    value: Signal<string>
+    value: ReadSignal<string>
     name?: string
     'data-scope': 'angle-slider'
     'data-part': 'hidden-input'
@@ -6743,13 +6743,13 @@ export interface AsyncListParts {
   root: {
     'data-scope': 'async-list'
     'data-part': 'root'
-    'data-status': Signal<AsyncStatus>
+    'data-status': ReadSignal<AsyncStatus>
     /** `'true'` while a page request is in flight — the list's content is changing. */
-    'aria-busy': Signal<'true' | 'false'>
+    'aria-busy': ReadSignal<'true' | 'false'>
     /** Present once a load has SETTLED with zero items: the empty-state hook. */
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
     /** Present when the source reports no further pages. */
-    'data-exhausted': Signal<'' | undefined>
+    'data-exhausted': ReadSignal<'' | undefined>
   }
   sentinel: {
     'data-scope': 'async-list'
@@ -6758,7 +6758,7 @@ export interface AsyncListParts {
   }
   loadMoreTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'async-list'
     'data-part': 'load-more-trigger'
     onClick: (e: MouseEvent) => void
@@ -6767,7 +6767,7 @@ export interface AsyncListParts {
     type: 'button'
     'data-scope': 'async-list'
     'data-part': 'retry-trigger'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   errorText: {
@@ -6775,7 +6775,7 @@ export interface AsyncListParts {
     'aria-live': 'polite'
     'data-scope': 'async-list'
     'data-part': 'error-text'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 ```
@@ -6807,14 +6807,14 @@ export interface AvatarParts {
   root: {
     'data-scope': 'avatar'
     'data-part': 'root'
-    'data-status': Signal<ImageStatus>
+    'data-status': ReadSignal<ImageStatus>
     'data-density': AvatarDensity | undefined
   }
   image: {
     'data-scope': 'avatar'
     'data-part': 'image'
-    'data-status': Signal<ImageStatus>
-    hidden: Signal<boolean>
+    'data-status': ReadSignal<ImageStatus>
+    hidden: ReadSignal<boolean>
     alt: string
     onLoad: (e: Event) => void
     onError: (e: Event) => void
@@ -6823,9 +6823,9 @@ export interface AvatarParts {
   fallback: {
     'data-scope': 'avatar'
     'data-part': 'fallback'
-    'data-status': Signal<ImageStatus>
-    hidden: Signal<boolean>
-    'aria-hidden': Signal<'true' | undefined>
+    'data-status': ReadSignal<ImageStatus>
+    hidden: ReadSignal<boolean>
+    'aria-hidden': ReadSignal<'true' | undefined>
   }
 }
 ```
@@ -6895,11 +6895,11 @@ export interface BreadcrumbsParts {
     'data-value': string
   }
   link: (id: string) => {
-    'aria-current': Signal<'page' | undefined>
+    'aria-current': ReadSignal<'page' | undefined>
     'data-scope': 'breadcrumbs'
     'data-part': 'link'
     'data-value': string
-    'data-current': Signal<'' | undefined>
+    'data-current': ReadSignal<'' | undefined>
   }
   separator: {
     'aria-hidden': 'true'
@@ -7013,7 +7013,7 @@ export interface CarouselParts {
     'aria-label': string
     'data-scope': 'carousel'
     'data-part': 'root'
-    'data-paused': Signal<'' | undefined>
+    'data-paused': ReadSignal<'' | undefined>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
     onFocusIn: (e: FocusEvent) => void
@@ -7027,11 +7027,11 @@ export interface CarouselParts {
      * transition off (`[data-dragging] { transition: none }`) so the track
      * follows the finger 1:1 instead of easing.
      */
-    'data-dragging': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
     /** Live track offset (px) to follow the finger: `translateX(var)`. */
-    'data-drag-offset': Signal<string | undefined>
+    'data-drag-offset': ReadSignal<string | undefined>
     /** Physical pointer delta consumed by either skin's track transform. */
-    'style.--carousel-drag-offset': Signal<string | undefined>
+    'style.--carousel-drag-offset': ReadSignal<string | undefined>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
@@ -7051,7 +7051,7 @@ export interface CarouselParts {
   nextTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'carousel'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
@@ -7059,7 +7059,7 @@ export interface CarouselParts {
   prevTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'carousel'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -7082,21 +7082,21 @@ export interface CarouselSlideParts {
     'data-scope': 'carousel'
     'data-part': 'slide'
     'data-index': string
-    'data-active': Signal<'' | undefined>
-    hidden: Signal<boolean>
+    'data-active': ReadSignal<'' | undefined>
+    hidden: ReadSignal<boolean>
   }
   indicator: {
     type: 'button'
     role: 'tab'
     /** APG roving tab stop: only the selected indicator participates in Tab. */
-    tabindex: Signal<0 | -1>
+    tabindex: ReadSignal<0 | -1>
     'aria-label': string
-    'aria-selected': Signal<boolean>
+    'aria-selected': ReadSignal<boolean>
     'aria-controls': string
     'data-scope': 'carousel'
     'data-part': 'indicator'
     'data-index': string
-    'data-active': Signal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -7176,12 +7176,12 @@ export interface CascadeLevelParts {
   }
   select: {
     id: string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'cascade-select'
     'data-part': 'level-select'
     'data-level': string
-    'data-ready': Signal<'' | undefined>
+    'data-ready': ReadSignal<'' | undefined>
     onChange: (e: Event) => void
   }
 }
@@ -7204,13 +7204,13 @@ export interface CascadeSelectParts {
   root: {
     'data-scope': 'cascade-select'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-complete': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-complete': ReadSignal<'' | undefined>
   }
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'cascade-select'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -7366,9 +7366,9 @@ export interface ChartParts {
     // Spelled out rather than aliased: `scripts/test/registry-attrs.test.ts`
     // reads part-bag VALUES syntactically, and an imported alias reads as an
     // open type it declines to give a verdict on.
-    'data-coord': Signal<'cartesian' | 'polar'>
-    'data-domain': Signal<'value' | 'share'>
-    'data-active': Signal<'' | undefined>
+    'data-coord': ReadSignal<'cartesian' | 'polar'>
+    'data-domain': ReadSignal<'value' | 'share'>
+    'data-active': ReadSignal<'' | undefined>
     /** Per-instance forced-colors fill custom properties — see `connect()`'s
      * own doc for why these must be per-chart rather than a shared global. */
     style: string
@@ -7389,7 +7389,7 @@ export interface ChartParts {
     'data-part': 'svg'
     role: 'img'
     'aria-labelledby': string
-    viewBox: Signal<string>
+    viewBox: ReadSignal<string>
     tabindex: 0
     onKeyDown: (e: KeyboardEvent) => void
     onPointerMove: (e: PointerEvent) => void
@@ -7402,7 +7402,7 @@ export interface ChartParts {
   table: {
     'data-scope': 'chart'
     'data-part': 'table'
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
   }
   /** Tooltip ATTRIBUTES — spreadable, with its own reactive `hidden`. */
   tooltip: {
@@ -7410,8 +7410,8 @@ export interface ChartParts {
     'data-part': 'tooltip'
     role: 'status'
     'aria-live': 'polite'
-    hidden: Signal<boolean>
-    style: Signal<string>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
   /** A `<g>` stacking layer. Static — spread it on each layer group. */
   layer: { 'data-scope': 'chart'; 'data-part': 'layer' }
@@ -7434,9 +7434,9 @@ export interface ChartParts {
     'data-scope': 'chart'
     'data-part': 'legend-item'
     'data-series': string
-    'data-series-cue': Signal<ChartSeriesCue>
-    'data-dimmed': Signal<'' | undefined>
-    'aria-pressed': Signal<boolean>
+    'data-series-cue': ReadSignal<ChartSeriesCue>
+    'data-dimmed': ReadSignal<'' | undefined>
+    'aria-pressed': ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   /** The legend's colour chip. Spreadable onto its own element (a `<span>` in
@@ -7447,7 +7447,7 @@ export interface ChartParts {
   legendSwatch: (key: string) => {
     'data-scope': 'chart'
     'data-part': 'legend-swatch'
-    'data-series-cue': Signal<ChartSeriesCue>
+    'data-series-cue': ReadSignal<ChartSeriesCue>
   }
   /** Attributes for one drawn mark. Spread onto a `<path>` and pass `d`. */
   markProps: (mark: ChartMark) => {
@@ -7462,14 +7462,14 @@ export interface ChartParts {
     onPointerEnter: (e: PointerEvent) => void
   }
   // Derived geometry, as signals the view renders with `each`.
-  marks: Signal<ChartMark[]>
-  vertices: Signal<ChartVertex[]>
-  gridLines: Signal<ChartGridLine[]>
-  categoryTicks: Signal<ChartCategoryTick[]>
-  tooltipRows: Signal<ChartTooltipRow[]>
-  activeLabel: Signal<string>
-  rows: Signal<ChartRow[]>
-  series: Signal<ChartSeries[]>
+  marks: ReadSignal<ChartMark[]>
+  vertices: ReadSignal<ChartVertex[]>
+  gridLines: ReadSignal<ChartGridLine[]>
+  categoryTicks: ReadSignal<ChartCategoryTick[]>
+  tooltipRows: ReadSignal<ChartTooltipRow[]>
+  activeLabel: ReadSignal<string>
+  rows: ReadSignal<ChartRow[]>
+  series: ReadSignal<ChartSeries[]>
 }
 ```
 
@@ -7594,14 +7594,14 @@ export interface CheckboxParts {
   /** The visual box/container — `role="checkbox"` for accessibility. */
   root: {
     role: 'checkbox'
-    'aria-checked': Signal<'true' | 'false' | 'mixed'>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
-    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-checked': ReadSignal<'true' | 'false' | 'mixed'>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'checkbox'
     'data-part': 'root'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -7611,16 +7611,16 @@ export interface CheckboxParts {
     'aria-hidden': 'true'
     tabindex: -1
     style: string
-    checked: Signal<boolean>
-    indeterminate: Signal<boolean>
-    disabled: Signal<boolean>
-    required: Signal<boolean>
+    checked: ReadSignal<boolean>
+    indeterminate: ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
+    required: ReadSignal<boolean>
     'data-scope': 'checkbox'
     'data-part': 'hidden-input'
   }
   /** Optional indicator child (the checkmark). */
   indicator: {
-    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+    'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
     'data-scope': 'checkbox'
     'data-part': 'indicator'
   }
@@ -7652,22 +7652,22 @@ export interface ClipboardParts {
   root: {
     'data-scope': 'clipboard'
     'data-part': 'root'
-    'data-copied': Signal<'' | undefined>
-    'data-failed': Signal<'' | undefined>
+    'data-copied': ReadSignal<'' | undefined>
+    'data-failed': ReadSignal<'' | undefined>
   }
   trigger: {
     type: 'button'
     'aria-label': string
     'data-scope': 'clipboard'
     'data-part': 'trigger'
-    'data-copied': Signal<'' | undefined>
-    'data-failed': Signal<'' | undefined>
+    'data-copied': ReadSignal<'' | undefined>
+    'data-failed': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
   }
   input: {
     type: 'text'
     readonly: true
-    value: Signal<string>
+    value: ReadSignal<string>
     'data-scope': 'clipboard'
     'data-part': 'input'
     onFocus: (e: FocusEvent) => void
@@ -7675,8 +7675,8 @@ export interface ClipboardParts {
   indicator: {
     'data-scope': 'clipboard'
     'data-part': 'indicator'
-    'data-copied': Signal<'' | undefined>
-    'data-failed': Signal<'' | undefined>
+    'data-copied': ReadSignal<'' | undefined>
+    'data-failed': ReadSignal<'' | undefined>
     'aria-live': 'polite'
   }
 }
@@ -7740,19 +7740,19 @@ export interface CollapsibleInit {
 ```typescript
 export interface CollapsibleParts {
   root: {
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'collapsible'
     'data-part': 'root'
   }
   trigger: {
     type: 'button'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    disabled: Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'collapsible'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -7761,12 +7761,12 @@ export interface CollapsibleParts {
     role: 'region'
     id: string
     'aria-labelledby': string
-    hidden: Signal<boolean>
-    'data-state': Signal<'open' | 'closing' | 'closed'>
+    hidden: ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closing' | 'closed'>
     'data-scope': 'collapsible'
     'data-part': 'content'
-    'aria-hidden': Signal<'true' | undefined>
-    inert: Signal<boolean>
+    'aria-hidden': ReadSignal<'true' | undefined>
+    inert: ReadSignal<boolean>
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
@@ -7876,21 +7876,21 @@ export interface ColorPickerParts {
   root: {
     'data-scope': 'color-picker'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-model': Signal<ColorModel>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-model': ReadSignal<ColorModel>
     /** Bare boolean (package convention): present when the current OKLCH
      * color falls outside sRGB. Always absent in HSV mode (an HSV color is
      * an sRGB parameterization by construction). */
-    'data-out-of-gamut': Signal<'' | undefined>
+    'data-out-of-gamut': ReadSignal<'' | undefined>
   }
   /** Cycles the active model between `'hsv'` and `'oklch'`. */
   modelToggle: {
     type: 'button'
-    'aria-label': Signal<string>
-    disabled: Signal<boolean>
+    'aria-label': ReadSignal<string>
+    disabled: ReadSignal<boolean>
     'data-scope': 'color-picker'
     'data-part': 'model-toggle'
-    'data-model': Signal<ColorModel>
+    'data-model': ReadSignal<ColorModel>
     onClick: (e: MouseEvent) => void
   }
   hueSlider: {
@@ -7899,8 +7899,8 @@ export interface ColorPickerParts {
     max: 360
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'hue-slider'
     onInput: (e: Event) => void
@@ -7911,9 +7911,9 @@ export interface ColorPickerParts {
     max: 100
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'saturation-slider'
     onInput: (e: Event) => void
@@ -7924,9 +7924,9 @@ export interface ColorPickerParts {
     max: 100
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'lightness-slider'
     onInput: (e: Event) => void
@@ -7935,12 +7935,12 @@ export interface ColorPickerParts {
   chromaSlider: {
     type: 'range'
     min: 0
-    max: Signal<number>
-    step: Signal<number>
+    max: ReadSignal<number>
+    step: ReadSignal<number>
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'chroma-slider'
     onInput: (e: Event) => void
@@ -7952,9 +7952,9 @@ export interface ColorPickerParts {
     max: 1
     step: number
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'oklch-lightness-slider'
     onInput: (e: Event) => void
@@ -7963,8 +7963,8 @@ export interface ColorPickerParts {
     type: 'text'
     autocomplete: 'off'
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'hex-input'
     onInput: (e: Event) => void
@@ -7974,7 +7974,7 @@ export interface ColorPickerParts {
     'data-scope': 'color-picker'
     'data-part': 'preview'
     'aria-hidden': 'true'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /** The 2D area track. The machine owns the pointer-drag lifecycle
    * (capture on down, released on up/cancel, primary button only, ignored
@@ -7986,11 +7986,11 @@ export interface ColorPickerParts {
   area: {
     'data-scope': 'color-picker'
     'data-part': 'area'
-    'data-model': Signal<ColorModel>
+    'data-model': ReadSignal<ColorModel>
     // HSV-mode hue backdrop only; empty in OKLCH mode, where `areaCanvas`
     // paints the plane instead (the sRGB gamut boundary is not expressible
     // as a CSS gradient).
-    style: Signal<string>
+    style: ReadSignal<string>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
@@ -8015,16 +8015,16 @@ export interface ColorPickerParts {
    * not a fixed string — the axes it labels are literally different. */
   areaThumb: {
     role: 'slider'
-    'aria-label': Signal<string>
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-label': ReadSignal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'color-picker'
     'data-part': 'area-thumb'
-    style: Signal<string>
+    style: ReadSignal<string>
     onKeyDown: (e: KeyboardEvent) => void
   }
   /** Alpha (opacity) range input, 0..1. Wired to the existing alpha state. */
@@ -8034,9 +8034,9 @@ export interface ColorPickerParts {
     max: 1
     step: number
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'alpha-slider'
     onInput: (e: Event) => void
@@ -8048,10 +8048,10 @@ export interface ColorPickerParts {
   eyeDropperTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
-    hidden: Signal<boolean>
+    disabled: ReadSignal<boolean>
+    hidden: ReadSignal<boolean>
     /** Bare boolean (package convention). */
-    'data-unsupported': Signal<'' | undefined>
+    'data-unsupported': ReadSignal<'' | undefined>
     'data-scope': 'color-picker'
     'data-part': 'eyedropper-trigger'
     onClick: (e: MouseEvent) => void
@@ -8164,18 +8164,18 @@ export interface ComboboxItemParts {
   item: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-create': '' | undefined
     'data-scope': 'combobox'
     'data-part': 'item'
     'data-value': string
     /** The option's live position in the FILTERED list (reactive — reused rows
      * never report a stale index). */
-    'data-index': Signal<string>
+    'data-index': ReadSignal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -8193,7 +8193,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<ComboboxState>
+  state: ReadSignal<ComboboxState>
   send: Send<ComboboxMsg>
   parts: ComboboxParts
   content: () => Renderable
@@ -8222,20 +8222,20 @@ export interface ComboboxParts {
   root: {
     'data-scope': 'combobox'
     'data-part': 'root'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
   }
   input: {
     type: 'text'
     role: 'combobox'
     autocomplete: 'off'
     'aria-autocomplete': 'list'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-activedescendant': Signal<string | undefined>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     id: string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'combobox'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -8245,7 +8245,7 @@ export interface ComboboxParts {
   trigger: {
     type: 'button'
     'aria-label': string
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     tabindex: -1
     'data-scope': 'combobox'
@@ -8261,13 +8261,13 @@ export interface ComboboxParts {
     role: 'listbox'
     id: string
     'aria-labelledby': string
-    'aria-busy': Signal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
-    'data-status': Signal<AsyncStatus>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-status': ReadSignal<AsyncStatus>
     /** The mutually-exclusive load projection (#265 finding 11) — see
      * {@link LoadProjection}. Mirrors the top-level `loadState` signal. */
-    'data-load-state': Signal<LoadProjection>
+    'data-load-state': ReadSignal<LoadProjection>
     'data-scope': 'combobox'
     'data-part': 'content'
   }
@@ -8275,7 +8275,7 @@ export interface ComboboxParts {
    * `'loading'` | `'stale-results'` | `'success'` | `'error'`. A single
    * signal instead of independent `isLoading`/`isEmpty`/`hasError` booleans,
    * so it can never contradict itself. See {@link LoadProjection}. */
-  loadState: Signal<LoadProjection>
+  loadState: ReadSignal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — it is NOT used for identity (highlight,
    * selection and ids are all value-keyed), so a reused row is never stale. */
@@ -8301,7 +8301,7 @@ export interface ComboboxParts {
     'aria-atomic': 'true'
     'data-scope': 'combobox'
     'data-part': 'live-region'
-    text: Signal<string>
+    text: ReadSignal<string>
   }
   empty: {
     'data-scope': 'combobox'
@@ -8363,7 +8363,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<ContextMenuState>
+  state: ReadSignal<ContextMenuState>
   send: Send<ContextMenuMsg>
   parts: ContextMenuParts
   content: () => Renderable
@@ -8396,17 +8396,17 @@ export interface ContextMenuParts {
   positioner: {
     'data-scope': 'context-menu'
     'data-part': 'positioner'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   content: {
     role: 'menu'
     id: string
     /** Virtually-focused (highlighted) item id at the root level. */
-    'aria-activedescendant': Signal<string | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
     tabindex: -1
     /** Reflects the presence lifecycle: 'opening' | 'open' | 'closing' | 'closed'.
      * Stays mounted while 'closing' so the exit animation can run. */
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'context-menu'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
@@ -8481,25 +8481,25 @@ export interface DateInputParts {
   root: {
     'data-scope': 'date-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-invalid': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
   }
   input: {
     type: 'text'
     inputmode: 'numeric'
     autocomplete: 'off'
     spellcheck: false
-    value: Signal<string>
-    disabled: Signal<boolean>
-    readonly: Signal<boolean>
-    required: Signal<boolean>
-    'aria-invalid': Signal<'true' | undefined>
+    value: ReadSignal<string>
+    disabled: ReadSignal<boolean>
+    readonly: ReadSignal<boolean>
+    required: ReadSignal<boolean>
+    'aria-invalid': ReadSignal<'true' | undefined>
     /**
      * The error text's id while the value is invalid — so the field names its
      * own error rather than relying on the one-shot `role="alert"`
      * announcement (#268). Absent without a `ConnectOptions.id`.
      */
-    'aria-describedby': Signal<string | undefined>
+    'aria-describedby': ReadSignal<string | undefined>
     placeholder?: string
     'data-scope': 'date-input'
     'data-part': 'input'
@@ -8509,7 +8509,7 @@ export interface DateInputParts {
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'date-input'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -8521,7 +8521,7 @@ export interface DateInputParts {
     'aria-live': 'polite'
     'data-scope': 'date-input'
     'data-part': 'error-text'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 ```
@@ -8574,7 +8574,7 @@ export interface DatePickerParts {
   root: {
     'data-scope': 'date-picker'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   /**
    * Grid part factory. `offset` (default 0) selects which month this grid
@@ -8583,7 +8583,7 @@ export interface DatePickerParts {
    */
   grid: (offset?: number) => {
     role: 'grid'
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
     'data-scope': 'date-picker'
     'data-part': 'grid'
     'data-month-offset': number
@@ -8596,7 +8596,7 @@ export interface DatePickerParts {
   prevMonthTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'date-picker'
     'data-part': 'prev-month-trigger'
     onClick: (e: MouseEvent) => void
@@ -8604,7 +8604,7 @@ export interface DatePickerParts {
   nextMonthTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'date-picker'
     'data-part': 'next-month-trigger'
     onClick: (e: MouseEvent) => void
@@ -8690,23 +8690,23 @@ export interface DayCellParts {
     // Signals, not plain values: `view()` runs once, so a snapshot here freezes
     // every flag at build time and no selection, focus move or range preview
     // ever reaches the DOM. See `live` in `connect`.
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'date-picker'
     'data-part': 'day-cell'
     /** The cell's identity — the one genuinely static attribute. */
     'data-date': string
-    'data-in-month': Signal<'' | undefined>
-    'data-today': Signal<'' | undefined>
-    'data-selected': Signal<'' | undefined>
-    'data-focused': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
-    'data-range-start': Signal<'' | undefined>
-    'data-range-end': Signal<'' | undefined>
-    'data-in-range': Signal<'' | undefined>
+    'data-in-month': ReadSignal<'' | undefined>
+    'data-today': ReadSignal<'' | undefined>
+    'data-selected': ReadSignal<'' | undefined>
+    'data-focused': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-range-start': ReadSignal<'' | undefined>
+    'data-range-end': ReadSignal<'' | undefined>
+    'data-in-range': ReadSignal<'' | undefined>
     /** An individually unavailable date (also disabled) — distinct from out-of-bounds. */
-    'data-unavailable': Signal<'' | undefined>
+    'data-unavailable': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -8738,7 +8738,7 @@ export interface OverlayOptions {
    */
   positionerClass?: string
   /** Dialog state slice as a Signal. */
-  state: Signal<DialogState>
+  state: ReadSignal<DialogState>
   /** Send dispatcher for dialog messages. */
   send: Send<DialogMsg>
   /** Parts from `connect()` — used to locate the content element by id. */
@@ -8780,16 +8780,16 @@ export interface DialogParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'dialog'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'dialog'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
   }
   backdrop: {
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'dialog'
     'data-part': 'backdrop'
     'aria-hidden': 'true'
@@ -8806,7 +8806,7 @@ export interface DialogParts {
     /** The description part's id, or absent when `hasDescription: false`. */
     'aria-describedby': string | undefined
     tabindex: -1
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'dialog'
     'data-part': 'content'
     onAnimationEnd: (e: AnimationEvent) => void
@@ -9069,7 +9069,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<DrawerState>
+  state: ReadSignal<DrawerState>
   send: Send<DrawerMsg>
   parts: DrawerParts
   content: () => Renderable
@@ -9100,16 +9100,16 @@ export interface DrawerParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'dialog'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'drawer'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
   }
   backdrop: {
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'drawer'
     'data-part': 'backdrop'
     'aria-hidden': 'true'
@@ -9125,7 +9125,7 @@ export interface DrawerParts {
     'aria-modal': 'true'
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'drawer'
     'data-part': 'content'
     'data-side': DrawerSide
@@ -9181,15 +9181,15 @@ export interface EditableParts {
   root: {
     'data-scope': 'editable'
     'data-part': 'root'
-    'data-editing': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-editing': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   preview: {
-    tabindex: Signal<number>
-    'aria-disabled': Signal<'true' | undefined>
+    tabindex: ReadSignal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'editable'
     'data-part': 'preview'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
     onFocus: (e: FocusEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
@@ -9197,9 +9197,9 @@ export interface EditableParts {
   input: {
     'data-scope': 'editable'
     'data-part': 'input'
-    hidden: Signal<boolean>
-    value: Signal<string>
-    disabled: Signal<boolean>
+    hidden: ReadSignal<boolean>
+    value: ReadSignal<string>
+    disabled: ReadSignal<boolean>
     onInput: (e: Event) => void
     onKeyDown: (e: KeyboardEvent) => void
     onBlur: (e: FocusEvent) => void
@@ -9209,7 +9209,7 @@ export interface EditableParts {
     /** Disabled with the editable: a disabled instance ignores the message
      *  this trigger sends, so an enabled trigger would be a dead control
      *  (#268 audit). */
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'editable'
     'data-part': 'submit-trigger'
     onClick: (e: MouseEvent) => void
@@ -9219,7 +9219,7 @@ export interface EditableParts {
     /** Disabled with the editable: a disabled instance ignores the message
      *  this trigger sends, so an enabled trigger would be a dead control
      *  (#268 audit). */
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'editable'
     'data-part': 'cancel-trigger'
     onClick: (e: MouseEvent) => void
@@ -9229,7 +9229,7 @@ export interface EditableParts {
     /** Disabled with the editable: a disabled instance ignores the message
      *  this trigger sends, so an enabled trigger would be a dead control
      *  (#268 audit). */
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'editable'
     'data-part': 'edit-trigger'
     onClick: (e: MouseEvent) => void
@@ -9302,9 +9302,9 @@ export interface FieldParts {
   root: {
     'data-scope': 'field'
     'data-part': 'root'
-    'data-invalid': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
   }
   /** The `<label>`. `htmlFor` focuses the control on click. */
   label: {
@@ -9317,11 +9317,11 @@ export interface FieldParts {
   control: {
     id: string
     'aria-labelledby': string
-    'aria-describedby': Signal<string | undefined>
-    'aria-invalid': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    readOnly: Signal<boolean>
+    'aria-describedby': ReadSignal<string | undefined>
+    'aria-invalid': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    readOnly: ReadSignal<boolean>
     'data-scope': 'field'
     'data-part': 'control'
     onBlur: (e: FocusEvent) => void
@@ -9378,12 +9378,12 @@ export interface FieldsetParts {
     role: 'group'
     /** The legend's id, or absent when `hasLegend: false`. */
     'aria-labelledby': string | undefined
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'fieldset'
     'data-part': 'root'
-    'data-invalid': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   /** The `<legend>` naming the group. */
   legend: {
@@ -9524,7 +9524,7 @@ export interface FileUploadItemParts {
     'data-part': 'item'
     'data-index': string
     /** The file's upload status; absent until an upload is reported (#266). */
-    'data-upload-status': Signal<FileUploadStatus | undefined>
+    'data-upload-status': ReadSignal<FileUploadStatus | undefined>
   }
   /** A labelled progressbar, shown only while the file is uploading (#266). */
   itemProgress: {
@@ -9532,8 +9532,8 @@ export interface FileUploadItemParts {
     'aria-label': string
     'aria-valuemin': 0
     'aria-valuemax': 100
-    'aria-valuenow': Signal<number | undefined>
-    hidden: Signal<boolean>
+    'aria-valuenow': ReadSignal<number | undefined>
+    hidden: ReadSignal<boolean>
     'data-scope': 'file-upload'
     'data-part': 'item-progress'
   }
@@ -9541,7 +9541,7 @@ export interface FileUploadItemParts {
   itemProgressRange: {
     'data-scope': 'file-upload'
     'data-part': 'item-progress-range'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /**
    * Live region for the file's failure message, shown only on error. Its text
@@ -9549,7 +9549,7 @@ export interface FileUploadItemParts {
    */
   itemErrorText: {
     role: 'alert'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     'data-scope': 'file-upload'
     'data-part': 'item-error-text'
   }
@@ -9557,7 +9557,7 @@ export interface FileUploadItemParts {
   itemRetryTrigger: {
     type: 'button'
     'aria-label': string
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     'data-scope': 'file-upload'
     'data-part': 'item-retry-trigger'
     onClick: (e: MouseEvent) => void
@@ -9599,18 +9599,18 @@ export interface FileUploadParts {
   root: {
     'data-scope': 'file-upload'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-dragging': Signal<'' | undefined>
-    'data-invalid': Signal<'' | undefined>
-    'data-readonly': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-readonly': ReadSignal<'' | undefined>
     /** Present while any accepted file is uploading (#266). */
-    'data-uploading': Signal<'' | undefined>
+    'data-uploading': ReadSignal<'' | undefined>
   }
   dropzone: {
     'data-scope': 'file-upload'
     'data-part': 'dropzone'
-    'data-dragging': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onDragEnter: (e: DragEvent) => void
     onDragOver: (e: DragEvent) => void
@@ -9621,7 +9621,7 @@ export interface FileUploadParts {
     type: 'button'
     'data-scope': 'file-upload'
     'data-part': 'trigger'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   hiddenInput: {
@@ -9629,11 +9629,11 @@ export interface FileUploadParts {
     tabindex: -1
     'aria-hidden': 'true'
     style: string
-    disabled: Signal<boolean>
-    multiple: Signal<boolean>
-    accept: Signal<string>
-    required: Signal<boolean>
-    'aria-invalid': Signal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    multiple: ReadSignal<boolean>
+    accept: ReadSignal<string>
+    required: ReadSignal<boolean>
+    'aria-invalid': ReadSignal<'true' | undefined>
     capture?: string | boolean
     webkitdirectory?: '' | undefined
     'data-scope': 'file-upload'
@@ -9778,12 +9778,12 @@ export interface FloatingPanelParts {
     'aria-label': string
     'data-scope': 'floating-panel'
     'data-part': 'root'
-    'data-dragging': Signal<'' | undefined>
-    'data-resizing': Signal<'' | undefined>
-    'data-minimized': Signal<'' | undefined>
-    'data-maximized': Signal<'' | undefined>
-    hidden: Signal<boolean>
-    style: Signal<string>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-resizing': ReadSignal<'' | undefined>
+    'data-minimized': ReadSignal<'' | undefined>
+    'data-maximized': ReadSignal<'' | undefined>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
   /**
    * Pointer drag starts here, and it is also a keyboard stop (#266): arrows
@@ -9810,13 +9810,13 @@ export interface FloatingPanelParts {
   content: {
     'data-scope': 'floating-panel'
     'data-part': 'content'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   minimizeTrigger: {
     type: 'button'
     'aria-label': string
     /** A toggle: `'true'` while minimized. */
-    'aria-pressed': Signal<'true' | 'false'>
+    'aria-pressed': ReadSignal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'minimize-trigger'
     onClick: (e: MouseEvent) => void
@@ -9825,7 +9825,7 @@ export interface FloatingPanelParts {
     type: 'button'
     'aria-label': string
     /** A toggle: `'true'` while maximized. */
-    'aria-pressed': Signal<'true' | 'false'>
+    'aria-pressed': ReadSignal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'maximize-trigger'
     onClick: (e: MouseEvent) => void
@@ -10064,22 +10064,22 @@ export interface FormParts {
   root: {
     'data-scope': 'form'
     'data-part': 'root'
-    'data-state': Signal<FormStatus>
-    'aria-busy': Signal<'true' | undefined>
+    'data-state': ReadSignal<FormStatus>
+    'aria-busy': ReadSignal<'true' | undefined>
   }
   field: (name: string) => {
     'data-scope': 'form'
     'data-part': 'field'
-    'data-touched': Signal<'' | undefined>
-    touched: Signal<boolean>
+    'data-touched': ReadSignal<'' | undefined>
+    touched: ReadSignal<boolean>
     onBlur: (e: FocusEvent) => void
   }
   submit: {
     type: 'submit'
     'data-scope': 'form'
     'data-part': 'submit'
-    'data-state': Signal<FormStatus>
-    disabled: Signal<boolean>
+    'data-state': ReadSignal<FormStatus>
+    disabled: ReadSignal<boolean>
   }
 }
 ```
@@ -10198,15 +10198,15 @@ export interface GradientPickerParts {
   root: {
     'data-scope': 'gradient-picker'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-kind': Signal<GradientKind>
-    'data-repeating': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-kind': ReadSignal<GradientKind>
+    'data-repeating': ReadSignal<'' | undefined>
   }
   preview: {
     'data-scope': 'gradient-picker'
     'data-part': 'preview'
     'aria-hidden': 'true'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /** The horizontal stop ramp: a plain `in <space>` linear ramp of the SAME
    * stop list `toCss` serializes (finding #3 — one shared builder, never two
@@ -10219,7 +10219,7 @@ export interface GradientPickerParts {
   track: {
     'data-scope': 'gradient-picker'
     'data-part': 'track'
-    style: Signal<string>
+    style: ReadSignal<string>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
@@ -10230,7 +10230,7 @@ export interface GradientPickerParts {
   addStopButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'add-stop-button'
     onClick: (e: MouseEvent) => void
@@ -10238,7 +10238,7 @@ export interface GradientPickerParts {
   removeStopButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'remove-stop-button'
     onClick: (e: MouseEvent) => void
@@ -10247,11 +10247,11 @@ export interface GradientPickerParts {
   repeatingToggle: {
     type: 'button'
     'aria-label': string
-    'aria-pressed': Signal<boolean>
-    disabled: Signal<boolean>
+    'aria-pressed': ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'repeating-toggle'
-    'data-state': Signal<'on' | 'off'>
+    'data-state': ReadSignal<'on' | 'off'>
     onClick: (e: MouseEvent) => void
   }
   angleInput: {
@@ -10260,8 +10260,8 @@ export interface GradientPickerParts {
     max: 360
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'gradient-picker'
     'data-part': 'angle-input'
     onInput: (e: Event) => void
@@ -10280,21 +10280,21 @@ export interface GradientPickerParts {
     'aria-label': string
     'aria-valuemin': 0
     'aria-valuemax': 100
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'gradient-picker'
     'data-part': 'center-thumb'
-    style: Signal<string>
+    style: ReadSignal<string>
     onKeyDown: (e: KeyboardEvent) => void
   }
   shapeOption: (shape: RadialShape) => ToggleItemParts
   sizeOption: (size: RadialSize) => ToggleItemParts
   interpolationSpaceSelect: {
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<InterpolationSpace>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<InterpolationSpace>
     'data-scope': 'gradient-picker'
     'data-part': 'interpolation-space-select'
     onInput: (e: Event) => void
@@ -10303,8 +10303,8 @@ export interface GradientPickerParts {
     'aria-label': string
     /** Disabled when the whole picker is disabled, OR the current space has
      * no hue (only `hsl`/`oklch` do). */
-    disabled: Signal<boolean>
-    value: Signal<HueInterpolationMethod>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<HueInterpolationMethod>
     'data-scope': 'gradient-picker'
     'data-part': 'interpolation-hue-select'
     onInput: (e: Event) => void
@@ -10312,7 +10312,7 @@ export interface GradientPickerParts {
   reverseButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'reverse-button'
     onClick: (e: MouseEvent) => void
@@ -10320,7 +10320,7 @@ export interface GradientPickerParts {
   distributeButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'distribute-button'
     onClick: (e: MouseEvent) => void
@@ -10334,10 +10334,10 @@ export interface GradientPickerParts {
     autocomplete: 'off'
     spellcheck: 'false'
     'aria-label': string
-    'aria-invalid': Signal<'true' | undefined>
-    'aria-describedby': Signal<string | undefined>
-    disabled: Signal<boolean>
-    value: Signal<string>
+    'aria-invalid': ReadSignal<'true' | undefined>
+    'aria-describedby': ReadSignal<string | undefined>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'gradient-picker'
     'data-part': 'css-input'
     onInput: (e: Event) => void
@@ -10353,8 +10353,8 @@ export interface GradientPickerParts {
     role: 'alert'
     'data-scope': 'gradient-picker'
     'data-part': 'css-error'
-    visible: Signal<boolean>
-    message: Signal<string>
+    visible: ReadSignal<boolean>
+    message: ReadSignal<string>
   }
   /**
    * The embedded `color-picker`'s FULL part bag, connected over the DERIVED
@@ -10479,9 +10479,9 @@ export interface GradientStopParts {
   'aria-label': string
   'aria-valuemin': 0
   'aria-valuemax': 100
-  'aria-valuenow': Signal<number>
-  'aria-valuetext': Signal<string>
-  'aria-disabled': Signal<'true' | undefined>
+  'aria-valuenow': ReadSignal<number>
+  'aria-valuetext': ReadSignal<string>
+  'aria-disabled': ReadSignal<'true' | undefined>
   /** Every stop is independently tabbable (never -1 while enabled) — the
    * package's existing multi-thumb precedent (`slider.ts`'s `SliderThumbParts`)
    * rather than a roving single-tab-stop composite: APG's roving-tabindex
@@ -10491,12 +10491,12 @@ export interface GradientStopParts {
    * chose this way for. Tab therefore visits stops in DOM order, which
    * tracks position order since `each()` renders the reducer's own
    * position-sorted `stops` array. */
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   'data-scope': 'gradient-picker'
   'data-part': 'stop'
   'data-value': string
-  'data-selected': Signal<'' | undefined>
-  style: Signal<string>
+  'data-selected': ReadSignal<'' | undefined>
+  style: ReadSignal<string>
   onPointerDown: (e: PointerEvent) => void
   onPointerMove: (e: PointerEvent) => void
   onPointerUp: (e: PointerEvent) => void
@@ -10528,7 +10528,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<HoverCardState>
+  state: ReadSignal<HoverCardState>
   send: Send<HoverCardMsg>
   parts: HoverCardParts
   content: () => Renderable
@@ -10559,8 +10559,8 @@ export interface HoverCardParts {
   trigger: {
     id: string
     'aria-controls': string
-    'aria-expanded': Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
+    'aria-expanded': ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'hover-card'
     'data-part': 'trigger'
     onPointerEnter: (e: PointerEvent) => void
@@ -10575,7 +10575,7 @@ export interface HoverCardParts {
   }
   content: {
     id: string
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'hover-card'
     'data-part': 'content'
     onPointerEnter: (e: PointerEvent) => void
@@ -10661,9 +10661,9 @@ export interface ImageCropperParts {
   root: {
     'data-scope': 'image-cropper'
     'data-part': 'root'
-    'data-dragging': Signal<'' | undefined>
-    'data-resizing': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-resizing': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   image: {
     'data-scope': 'image-cropper'
@@ -10681,11 +10681,11 @@ export interface ImageCropperParts {
   cropBox: {
     role: 'group'
     tabindex: 0
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
     'aria-keyshortcuts': string
     'data-scope': 'image-cropper'
     'data-part': 'crop-box'
-    style: Signal<string>
+    style: ReadSignal<string>
     onPointerDown: (e: PointerEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -10756,7 +10756,7 @@ export interface InViewParts {
   root: {
     'data-scope': 'in-view'
     'data-part': 'root'
-    'data-state': Signal<'visible' | 'hidden'>
+    'data-state': ReadSignal<'visible' | 'hidden'>
   }
 }
 ```
@@ -10813,11 +10813,11 @@ export interface ListboxItemParts {
   root: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'listbox'
     'data-part': 'item'
     'data-value': string
@@ -10834,14 +10834,14 @@ export interface ListboxItemParts {
 export interface ListboxParts {
   root: {
     role: 'listbox'
-    'aria-multiselectable': Signal<'true' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-activedescendant': Signal<string | undefined>
-    tabindex: Signal<number>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
+    tabindex: ReadSignal<number>
     id: string
     'data-scope': 'listbox'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
   }
   item: (value: string, index: number) => ListboxItemParts
@@ -10999,12 +10999,12 @@ export interface MarqueeParts {
   root: {
     'data-scope': 'marquee'
     'data-part': 'root'
-    'data-running': Signal<'' | undefined>
-    'data-direction': Signal<MarqueeDirection>
-    'data-axis': Signal<'horizontal' | 'vertical'>
-    'data-disabled': Signal<'' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    style: Signal<string>
+    'data-running': ReadSignal<'' | undefined>
+    'data-direction': ReadSignal<MarqueeDirection>
+    'data-axis': ReadSignal<'horizontal' | 'vertical'>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    style: ReadSignal<string>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
   }
@@ -11071,7 +11071,7 @@ export interface MenubarOverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<MenubarState>
+  state: ReadSignal<MenubarState>
   send: Send<MenubarMsg>
   /** The menu id this overlay renders. */
   menuId: string
@@ -11156,14 +11156,14 @@ export interface MenubarTriggerParts {
   role: 'menuitem'
   id: string
   'aria-haspopup': 'menu'
-  'aria-expanded': Signal<boolean>
+  'aria-expanded': ReadSignal<boolean>
   'aria-controls': string
-  'aria-disabled': Signal<'true' | undefined>
+  'aria-disabled': ReadSignal<'true' | undefined>
   'data-scope': 'menubar'
   'data-part': 'trigger'
-  'data-state': Signal<'open' | 'closed'>
+  'data-state': ReadSignal<'open' | 'closed'>
   'data-value': string
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   onClick: (e: MouseEvent) => void
   onPointerEnter: (e: PointerEvent) => void
   onFocus: (e: FocusEvent) => void
@@ -11201,7 +11201,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<MenuState>
+  state: ReadSignal<MenuState>
   send: Send<MenuMsg>
   parts: MenuParts
   content: () => Renderable
@@ -11229,10 +11229,10 @@ export interface MenuParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'menu'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'menu'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -11249,11 +11249,11 @@ export interface MenuParts {
     'aria-labelledby': string
     /** The id of the virtually-focused (highlighted) item at the root level, so
      * assistive tech announces it while DOM focus stays on the container. */
-    'aria-activedescendant': Signal<string | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
     tabindex: -1
     /** Reflects the presence lifecycle: 'opening' | 'open' | 'closing' | 'closed'.
      * Stays mounted while 'closing' so the exit animation can run. */
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'menu'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
@@ -11349,47 +11349,47 @@ export interface MeterInit {
 export interface MeterParts {
   root: {
     role: 'meter'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
     'aria-label': string | undefined
     // Spelled out rather than aliased: `scripts/test/registry-attrs.test.ts`
     // reads part-bag VALUES syntactically and gives an ALIAS no verdict, which
     // is how the shipped skin came to style `data-[state=critical]` against a
     // machine emitting `low`/`high` — two rules of dead CSS, for a release.
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     /** The current band's id — absent when the reading is in no band. */
-    'data-band': Signal<string | undefined>
+    'data-band': ReadSignal<string | undefined>
     'data-scope': 'meter'
     'data-part': 'root'
   }
   track: {
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     'data-scope': 'meter'
     'data-part': 'track'
   }
   /** The filled bar of a classic gauge: `inline-size` up to the reading. */
   range: {
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     'data-scope': 'meter'
     'data-part': 'range'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /** The reading itself, for a BANDED track: positioned, not filled. */
   marker: {
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
-    'data-band': Signal<string | undefined>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-band': ReadSignal<string | undefined>
     'data-scope': 'meter'
     'data-part': 'marker'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   label: {
     'data-scope': 'meter'
     'data-part': 'label'
   }
   /** The laid-out bands, for `each` — key rows on `band.id`. */
-  bands: Signal<MeterBandGeometry[]>
+  bands: ReadSignal<MeterBandGeometry[]>
   /**
    * Attributes for one laid-out band, taking the ROW HANDLE `each` hands the
    * render function. It returns signals rather than plain values so the bag is
@@ -11399,10 +11399,10 @@ export interface MeterParts {
   bandProps: (band: Signal<MeterBandGeometry>) => {
     'data-scope': 'meter'
     'data-part': 'band'
-    'data-band': Signal<string>
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
-    'data-current': Signal<'' | undefined>
-    style: Signal<string>
+    'data-band': ReadSignal<string>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-current': ReadSignal<'' | undefined>
+    style: ReadSignal<string>
   }
   /**
    * One band by id, for a view that names its bands statically. An id no band
@@ -11414,15 +11414,15 @@ export interface MeterParts {
     'data-scope': 'meter'
     'data-part': 'band'
     'data-band': string
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
-    'data-current': Signal<'' | undefined>
-    hidden: Signal<boolean>
-    style: Signal<string>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-current': ReadSignal<'' | undefined>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
   /** The formatted reading, WITHOUT the band name. */
-  valueText: Signal<string>
+  valueText: ReadSignal<string>
   /** The current band's announced name, or `''`. */
-  bandLabel: Signal<string>
+  bandLabel: ReadSignal<string>
 }
 ```
 
@@ -11453,12 +11453,12 @@ export interface NavItemParts {
     /** For a branch item this is the disclosure button controlling its panel;
      * `undefined` for a plain link trigger. */
     'aria-controls': string | undefined
-    'aria-expanded': Signal<boolean | undefined>
+    'aria-expanded': ReadSignal<boolean | undefined>
     'data-scope': 'navigation-menu'
     'data-part': 'trigger'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onPointerEnter: (e: PointerEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -11469,8 +11469,8 @@ export interface NavItemParts {
     'aria-labelledby': string
     'data-scope': 'navigation-menu'
     'data-part': 'content'
-    'data-state': Signal<'open' | 'closed'>
-    hidden: Signal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
+    hidden: ReadSignal<boolean>
     onPointerEnter: (e: PointerEvent) => void
   }
 }
@@ -11508,7 +11508,7 @@ export interface NavMenuParts {
     'aria-label': string
     'data-scope': 'navigation-menu'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     onPointerLeave: (e: PointerEvent) => void
     onPointerEnter: (e: PointerEvent) => void
   }
@@ -11535,7 +11535,7 @@ export interface NavMenuParts {
     'aria-hidden': 'true'
     'data-scope': 'navigation-menu'
     'data-part': 'indicator'
-    'data-state': Signal<'visible' | 'hidden'>
+    'data-state': ReadSignal<'visible' | 'hidden'>
   }
   /** Place once anywhere in the same build to keep automatic direction live —
    * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
@@ -11670,20 +11670,20 @@ export interface NumberInputParts {
   root: {
     'data-scope': 'number-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   input: {
     type: 'text'
     role: 'spinbutton'
     inputmode: 'decimal'
-    'aria-valuemin': Signal<number | undefined>
-    'aria-valuemax': Signal<number | undefined>
-    'aria-valuenow': Signal<number | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-readonly': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    readonly: Signal<boolean>
-    value: Signal<string>
+    'aria-valuemin': ReadSignal<number | undefined>
+    'aria-valuemax': ReadSignal<number | undefined>
+    'aria-valuenow': ReadSignal<number | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-readonly': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    readonly: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'number-input'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -11693,8 +11693,8 @@ export interface NumberInputParts {
   increment: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'number-input'
     'data-part': 'increment'
     tabindex: -1
@@ -11703,8 +11703,8 @@ export interface NumberInputParts {
   decrement: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'number-input'
     'data-part': 'decrement'
     tabindex: -1
@@ -11809,39 +11809,39 @@ export interface PaginationParts {
     'aria-label': string
     'data-scope': 'pagination'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   prevTrigger: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'pagination'
     'data-part': 'prev-trigger'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   nextTrigger: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'pagination'
     'data-part': 'next-trigger'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   item: (page: number) => {
     type: 'button'
     'aria-label': string
-    'aria-current': Signal<'page' | undefined>
-    'data-selected': Signal<'' | undefined>
+    'aria-current': ReadSignal<'page' | undefined>
+    'data-selected': ReadSignal<'' | undefined>
     'data-scope': 'pagination'
     'data-part': 'item'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -11922,24 +11922,24 @@ export interface PasswordInputParts {
   root: {
     'data-scope': 'password-input'
     'data-part': 'root'
-    'data-visible': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   input: {
-    type: Signal<'text' | 'password'>
+    type: ReadSignal<'text' | 'password'>
     autocomplete: string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'password-input'
     'data-part': 'input'
     onInput: (e: Event) => void
   }
   visibilityTrigger: {
     type: 'button'
-    'aria-label': Signal<string>
-    'aria-pressed': Signal<boolean>
-    disabled: Signal<boolean>
-    tabindex: Signal<number>
+    'aria-label': ReadSignal<string>
+    'aria-pressed': ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
+    tabindex: ReadSignal<number>
     'data-scope': 'password-input'
     'data-part': 'visibility-trigger'
     onClick: (e: MouseEvent) => void
@@ -11982,7 +11982,7 @@ export interface PinInputParts {
     'aria-labelledby': string | undefined
     'data-scope': 'pin-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   label: {
     id: string
@@ -11991,14 +11991,14 @@ export interface PinInputParts {
   }
   /** Props for the input at a given index. */
   input: (index: number) => {
-    type: Signal<'text' | 'password'>
-    inputmode: Signal<'numeric' | 'text'>
-    pattern: Signal<string>
+    type: ReadSignal<'text' | 'password'>
+    inputmode: ReadSignal<'numeric' | 'text'>
+    pattern: ReadSignal<string>
     maxlength: 1
     autocomplete: 'off'
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'pin-input'
     'data-part': 'input'
     'data-index': string
@@ -12135,7 +12135,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<PopoverState>
+  state: ReadSignal<PopoverState>
   send: Send<PopoverMsg>
   parts: PopoverParts
   content: () => Renderable
@@ -12179,10 +12179,10 @@ export interface PopoverParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'dialog'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'popover'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -12197,7 +12197,7 @@ export interface PopoverParts {
     id: string
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'popover'
     'data-part': 'content'
     onAnimationEnd: (e: AnimationEvent) => void
@@ -12263,8 +12263,8 @@ export interface PresenceParts {
   root: {
     'data-scope': 'presence'
     'data-part': 'root'
-    'data-state': Signal<PresenceStatus>
-    hidden: Signal<boolean>
+    'data-state': ReadSignal<PresenceStatus>
+    hidden: ReadSignal<boolean>
     onAnimationEnd: (e: AnimationEvent) => void
     onTransitionEnd: (e: TransitionEvent) => void
   }
@@ -12319,33 +12319,33 @@ export interface ProgressInit {
 export interface ProgressParts {
   root: {
     role: 'progressbar'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number | undefined>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number | undefined>
     'aria-label': string | undefined
-    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
-    'data-orientation': Signal<ProgressOrientation>
+    'data-state': ReadSignal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': ReadSignal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'root'
   }
   track: {
-    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
-    'data-orientation': Signal<ProgressOrientation>
+    'data-state': ReadSignal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': ReadSignal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'track'
   }
   range: {
-    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
-    'data-orientation': Signal<ProgressOrientation>
+    'data-state': ReadSignal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': ReadSignal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'range'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   label: {
     'data-scope': 'progress'
     'data-part': 'label'
   }
-  valueText: Signal<string>
+  valueText: ReadSignal<string>
 }
 ```
 
@@ -12425,7 +12425,7 @@ export interface QrCodeParts {
     'data-part': 'root'
     'aria-label': string
     /** Present while no matrix has been supplied — the empty state hook. */
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
   }
   /**
    * The `role="img"` graphic carries its OWN accessible name. A screen-reader
@@ -12435,22 +12435,22 @@ export interface QrCodeParts {
     'data-scope': 'qr-code'
     'data-part': 'svg'
     role: 'img'
-    'aria-label': Signal<string>
-    viewBox: Signal<string>
+    'aria-label': ReadSignal<string>
+    viewBox: ReadSignal<string>
     'shape-rendering': 'crispEdges'
   }
   /** Spread onto a `<rect>`: sized to the module grid so it covers the quiet background. */
   background: {
     'data-scope': 'qr-code'
     'data-part': 'background'
-    width: Signal<string>
-    height: Signal<string>
+    width: ReadSignal<string>
+    height: ReadSignal<string>
   }
   /** Spread onto a `<path>`: one sub-path per dark module. */
   foreground: {
     'data-scope': 'qr-code'
     'data-part': 'foreground'
-    d: Signal<string>
+    d: ReadSignal<string>
   }
   downloadTrigger: {
     type: 'button'
@@ -12458,7 +12458,7 @@ export interface QrCodeParts {
     'data-scope': 'qr-code'
     'data-part': 'download-trigger'
     /** Nothing to download until a matrix exists. */
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
 }
@@ -12495,12 +12495,12 @@ export interface RadioGroupInit {
 export interface RadioGroupParts {
   root: {
     role: 'radiogroup'
-    'aria-orientation': Signal<Orientation>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-orientation': ReadSignal<Orientation>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'radio-group'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   item: (value: string) => RadioItemParts
 }
@@ -12531,14 +12531,14 @@ export interface RadioItemParts {
   root: {
     role: 'radio'
     id: string
-    'aria-checked': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'checked' | 'unchecked'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-checked': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'radio-group'
     'data-part': 'item'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -12549,7 +12549,7 @@ export interface RadioItemParts {
     for: string
   }
   indicator: {
-    'data-state': Signal<'checked' | 'unchecked'>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
     'data-scope': 'radio-group'
     'data-part': 'indicator'
   }
@@ -12576,12 +12576,12 @@ export interface RatingGroupParts {
   root: {
     role: 'radiogroup'
     'aria-label': string | undefined
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-readonly': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-readonly': ReadSignal<'true' | undefined>
     'data-scope': 'rating-group'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-readonly': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-readonly': ReadSignal<'' | undefined>
   }
   item: (index: number) => RatingItemParts
 }
@@ -12612,13 +12612,13 @@ export interface RatingGroupState {
 export interface RatingItemParts {
   root: {
     role: 'radio'
-    'aria-checked': Signal<boolean>
-    'data-fill': Signal<ItemFill>
+    'aria-checked': ReadSignal<boolean>
+    'data-fill': ReadSignal<ItemFill>
     'data-scope': 'rating-group'
     'data-part': 'item'
     'data-value': string
-    'data-disabled': Signal<'' | undefined>
-    tabindex: Signal<number>
+    'data-disabled': ReadSignal<'' | undefined>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
@@ -12701,8 +12701,8 @@ export interface ScrollAreaParts {
   root: {
     'data-scope': 'scroll-area'
     'data-part': 'root'
-    'data-scrolling': Signal<'' | undefined>
-    'data-hovered': Signal<'' | undefined>
+    'data-scrolling': ReadSignal<'' | undefined>
+    'data-hovered': ReadSignal<'' | undefined>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
   }
@@ -12720,30 +12720,30 @@ export interface ScrollAreaParts {
     'data-scope': 'scroll-area'
     'data-part': 'scrollbar'
     'data-axis': 'x'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
   scrollbarY: {
     'data-scope': 'scroll-area'
     'data-part': 'scrollbar'
     'data-axis': 'y'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
   thumbX: {
     'data-scope': 'scroll-area'
     'data-part': 'thumb'
     'data-axis': 'x'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   thumbY: {
     'data-scope': 'scroll-area'
     'data-part': 'thumb'
     'data-axis': 'y'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   corner: {
     'data-scope': 'scroll-area'
     'data-part': 'corner'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
 }
 ```
@@ -12793,7 +12793,7 @@ export interface SearchFieldParts {
     role: 'search'
     'data-scope': 'search-field'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   label: {
     'data-scope': 'search-field'
@@ -12801,8 +12801,8 @@ export interface SearchFieldParts {
   }
   input: {
     type: 'search'
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'search-field'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -12811,7 +12811,7 @@ export interface SearchFieldParts {
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     tabindex: -1
     'data-scope': 'search-field'
     'data-part': 'clear-trigger'
@@ -12902,17 +12902,17 @@ export interface SelectItemParts {
   item: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'select'
     'data-part': 'item'
     'data-value': string
     /** The option's live position in the flat item list (reactive — reused rows
      * never report a stale index). */
-    'data-index': Signal<string>
+    'data-index': ReadSignal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -12930,7 +12930,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<SelectState>
+  state: ReadSignal<SelectState>
   send: Send<SelectMsg>
   parts: SelectParts
   content: () => Renderable
@@ -12961,20 +12961,20 @@ export interface SelectParts {
     type: 'button'
     role: 'combobox'
     'aria-haspopup': 'listbox'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-activedescendant': Signal<string | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
     id: string
-    disabled: Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
     /** Present while the trigger is showing the PLACEHOLDER rather than a
      * value. `valueText` already falls back to the placeholder string, but a
      * string is not something CSS can branch on, so without this the
      * placeholder renders at full foreground weight and reads as a real
      * selection. This is the attribute every shadcn Select greys it from. */
-    'data-placeholder': Signal<'' | undefined>
+    'data-placeholder': ReadSignal<'' | undefined>
     'data-scope': 'select'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -12988,10 +12988,10 @@ export interface SelectParts {
   content: {
     role: 'listbox'
     id: string
-    'aria-multiselectable': Signal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'select'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
@@ -13002,9 +13002,9 @@ export interface SelectParts {
     style: string
     /** Native form field name, or `undefined` when `name` was not supplied. */
     name: string | undefined
-    disabled: Signal<boolean>
-    multiple: Signal<boolean>
-    required: Signal<boolean>
+    disabled: ReadSignal<boolean>
+    multiple: ReadSignal<boolean>
+    required: ReadSignal<boolean>
     'data-scope': 'select'
     'data-part': 'hidden-select'
   }
@@ -13012,7 +13012,7 @@ export interface SelectParts {
    * `hiddenSelect` so the browser submits the selection under the form `name`. */
   hiddenOption: (value: string) => {
     value: string
-    selected: Signal<boolean>
+    selected: ReadSignal<boolean>
     'data-scope': 'select'
     'data-part': 'hidden-option'
   }
@@ -13033,7 +13033,7 @@ export interface SelectParts {
    */
   group: (id: string, options?: { readonly hasLabel?: boolean }) => SelectGroupParts
   /** Selected value(s) — use for rendering the trigger label. */
-  valueText: Signal<string>
+  valueText: ReadSignal<string>
 }
 ```
 
@@ -13077,11 +13077,11 @@ export interface SignaturePadParts {
     'aria-label': string
     'data-scope': 'signature-pad'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-readonly': Signal<'' | undefined>
-    'data-drawing': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-readonly': ReadSignal<'' | undefined>
+    'data-drawing': ReadSignal<'' | undefined>
     /** Present while nothing has been drawn — the placeholder hook. */
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
   }
   control: {
     'data-scope': 'signature-pad'
@@ -13090,7 +13090,7 @@ export interface SignaturePadParts {
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'signature-pad'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -13098,7 +13098,7 @@ export interface SignaturePadParts {
   undoTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'signature-pad'
     'data-part': 'undo-trigger'
     onClick: (e: MouseEvent) => void
@@ -13110,7 +13110,7 @@ export interface SignaturePadParts {
   }
   hiddenInput: {
     type: 'hidden'
-    value: Signal<string>
+    value: ReadSignal<string>
     name?: string
     'data-scope': 'signature-pad'
     'data-part': 'hidden-input'
@@ -13187,29 +13187,29 @@ export interface SliderParts {
   root: {
     'data-scope': 'slider'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   control: {
     'data-scope': 'slider'
     'data-part': 'control'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
     onPointerDown: (e: PointerEvent) => void
   }
   track: {
     'data-scope': 'slider'
     'data-part': 'track'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
   }
   range: {
     'data-scope': 'slider'
     'data-part': 'range'
-    'data-orientation': Signal<Orientation>
-    style: Signal<string>
+    'data-orientation': ReadSignal<Orientation>
+    style: ReadSignal<string>
   }
   thumb: (index: number) => SliderThumbParts
   /** Current raw values — reactive convenience. */
-  value: Signal<number[]>
+  value: ReadSignal<number[]>
 }
 ```
 
@@ -13237,19 +13237,19 @@ export interface SliderState {
 export interface SliderThumbParts {
   thumb: {
     role: 'slider'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-orientation': Signal<Orientation>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-orientation': ReadSignal<Orientation>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'slider'
     'data-part': 'thumb'
     'data-index': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onKeyDown: (e: KeyboardEvent) => void
-    style: Signal<string>
+    style: ReadSignal<string>
   }
 }
 ```
@@ -13262,7 +13262,7 @@ export interface SortableParts {
     'data-scope': 'sortable'
     'data-part': 'root'
     'data-container-id': string
-    'data-dragging': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
     onPointerCancel: (e: PointerEvent) => void
@@ -13275,11 +13275,11 @@ export interface SortableParts {
     'data-part': 'item'
     'data-index': string
     'data-id': string
-    'data-dragging': Signal<'' | undefined>
-    'data-over': Signal<'' | undefined>
-    'data-shift': Signal<'up' | 'down' | undefined>
-    'style.transform': Signal<string | undefined>
-    'style.zIndex': Signal<string | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-over': ReadSignal<'' | undefined>
+    'data-shift': ReadSignal<'up' | 'down' | undefined>
+    'style.transform': ReadSignal<string | undefined>
+    'style.zIndex': ReadSignal<string | undefined>
   }
   handle: (
     id: string,
@@ -13290,7 +13290,7 @@ export interface SortableParts {
     role: 'button'
     tabindex: 0
     /** A toggle button: pressed while this handle's item is carried. */
-    'aria-pressed': Signal<boolean>
+    'aria-pressed': ReadSignal<boolean>
     'aria-label': string
     /** The `instructions` part's id, or absent when `hasInstructions: false`. */
     'aria-describedby': string | undefined
@@ -13310,7 +13310,7 @@ export interface SortableParts {
     'aria-atomic': 'true'
     'data-scope': 'sortable'
     'data-part': 'live-region'
-    text: Signal<string>
+    text: ReadSignal<string>
   }
   /**
    * The keyboard instructions every handle's `aria-describedby` points at.
@@ -13521,8 +13521,8 @@ export interface SparklineParts {
   root: {
     'data-scope': 'sparkline'
     'data-part': 'root'
-    'data-stale': Signal<'' | undefined>
-    'data-active': Signal<'' | undefined>
+    'data-stale': ReadSignal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
   }
   /**
    * The `<svg>`. `role="img"` named through its own `<title>`/`<desc>`; the
@@ -13535,7 +13535,7 @@ export interface SparklineParts {
     'data-part': 'svg'
     role: 'img'
     'aria-labelledby': string
-    viewBox: Signal<string>
+    viewBox: ReadSignal<string>
     tabindex: 0
     onKeyDown: (e: KeyboardEvent) => void
     onPointerMove: (e: PointerEvent) => void
@@ -13548,25 +13548,25 @@ export interface SparklineParts {
   table: {
     'data-scope': 'sparkline'
     'data-part': 'table'
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
   }
   /** The reference band. Stays MOUNTED and hides itself, so a band appearing or
    *  disappearing does not rebuild the layer. */
   band: {
     'data-scope': 'sparkline'
     'data-part': 'band'
-    'data-band': Signal<'between' | 'below' | 'above' | undefined>
-    d: Signal<string>
-    hidden: Signal<boolean>
+    'data-band': ReadSignal<'between' | 'below' | 'above' | undefined>
+    d: ReadSignal<string>
+    hidden: ReadSignal<boolean>
   }
-  line: { 'data-scope': 'sparkline'; 'data-part': 'line'; d: Signal<string> }
+  line: { 'data-scope': 'sparkline'; 'data-part': 'line'; d: ReadSignal<string> }
   /** The right edge. `data-stale` is set when it is later than the last
    *  reading. */
   now: {
     'data-scope': 'sparkline'
     'data-part': 'now'
-    'data-stale': Signal<'' | undefined>
-    d: Signal<string>
+    'data-stale': ReadSignal<'' | undefined>
+    d: ReadSignal<string>
   }
   /** A `<g>` stacking layer. Static — spread it on each layer group. */
   layer: { 'data-scope': 'sparkline'; 'data-part': 'layer' }
@@ -13584,23 +13584,23 @@ export interface SparklineParts {
   tickProps: (tick: Signal<SparklineTick>) => {
     'data-scope': 'sparkline'
     'data-part': 'grid'
-    'data-unit': Signal<'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'>
-    d: Signal<string>
+    'data-unit': ReadSignal<'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'>
+    d: ReadSignal<string>
   }
   dotProps: (dot: Signal<SparklineDot>) => {
     'data-scope': 'sparkline'
     'data-part': 'dot'
-    'data-tone': Signal<'below' | 'in' | 'above' | 'none'>
-    'data-last': Signal<'' | undefined>
-    'data-active': Signal<'' | undefined>
-    cx: Signal<number>
-    cy: Signal<number>
+    'data-tone': ReadSignal<'below' | 'in' | 'above' | 'none'>
+    'data-last': ReadSignal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
+    cx: ReadSignal<number>
+    cy: ReadSignal<number>
   }
   spanProps: (span: Signal<SparklineSpan>) => {
     'data-scope': 'sparkline'
     'data-part': 'span'
-    'data-grain': Signal<string>
-    d: Signal<string>
+    'data-grain': ReadSignal<string>
+    d: ReadSignal<string>
   }
   /** Tooltip ATTRIBUTES — spreadable, with its own reactive `hidden`. */
   tooltip: {
@@ -13608,19 +13608,19 @@ export interface SparklineParts {
     'data-part': 'tooltip'
     role: 'status'
     'aria-live': 'polite'
-    hidden: Signal<boolean>
-    style: Signal<string>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
-  ticks: Signal<SparklineTick[]>
-  dots: Signal<SparklineDot[]>
-  spans: Signal<SparklineSpan[]>
-  rows: Signal<SparklineRow[]>
+  ticks: ReadSignal<SparklineTick[]>
+  dots: ReadSignal<SparklineDot[]>
+  spans: ReadSignal<SparklineSpan[]>
+  rows: ReadSignal<SparklineRow[]>
   /** The dot under the cursor, or `null`. */
-  activeDot: Signal<SparklineDot | null>
+  activeDot: ReadSignal<SparklineDot | null>
   /** The composed accessible name — the locale's phrasing of
    *  {@link SparklineGeometry.summary}, or `opts.label` when given. */
-  label: Signal<string>
-  summary: Signal<SparklineSummary>
+  label: ReadSignal<string>
+  summary: ReadSignal<SparklineSummary>
 }
 ```
 
@@ -13851,30 +13851,30 @@ export interface SplitterParts {
   root: {
     'data-scope': 'splitter'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-dragging': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-dragging': ReadSignal<'' | undefined>
   }
   primaryPanel: {
     'data-scope': 'splitter'
     'data-part': 'primary-panel'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   secondaryPanel: {
     'data-scope': 'splitter'
     'data-part': 'secondary-panel'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   resizeTrigger: {
     role: 'separator'
-    'aria-orientation': Signal<Orientation>
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-orientation': ReadSignal<Orientation>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'splitter'
     'data-part': 'resize-trigger'
-    'data-orientation': Signal<Orientation>
-    tabindex: Signal<number>
+    'data-orientation': ReadSignal<Orientation>
+    tabindex: ReadSignal<number>
     onKeyDown: (e: KeyboardEvent) => void
     onPointerDown: (e: PointerEvent) => void
   }
@@ -13930,23 +13930,23 @@ export interface StepsItemParts {
   item: {
     'data-scope': 'steps'
     'data-part': 'item'
-    'data-status': Signal<StepStatus>
+    'data-status': ReadSignal<StepStatus>
     'data-index': string
-    'aria-current': Signal<'step' | undefined>
+    'aria-current': ReadSignal<'step' | undefined>
   }
   trigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'trigger'
-    'data-status': Signal<StepStatus>
+    'data-status': ReadSignal<StepStatus>
     onClick: (e: MouseEvent) => void
   }
   separator: {
     'data-scope': 'steps'
     'data-part': 'separator'
-    'data-status': Signal<StepStatus>
+    'data-status': ReadSignal<StepStatus>
     'aria-hidden': 'true'
   }
 }
@@ -13961,18 +13961,18 @@ export interface StepsParts {
     'aria-label': string
     'data-scope': 'steps'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   nextTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
   }
   prevTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -14001,11 +14001,11 @@ export interface StepsState {
 export interface SwatchParts {
   type: 'button'
   'aria-label': string
-  'aria-pressed': Signal<boolean>
+  'aria-pressed': ReadSignal<boolean>
   'data-scope': 'color-picker'
   'data-part': 'swatch'
   'data-value': string
-  'data-state': Signal<'selected' | undefined>
+  'data-state': ReadSignal<'selected' | undefined>
   style: string
   onClick: (e: MouseEvent) => void
 }
@@ -14026,23 +14026,23 @@ export interface SwitchInit {
 export interface SwitchParts {
   root: {
     role: 'switch'
-    'aria-checked': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'checked' | 'unchecked'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-checked': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'switch'
     'data-part': 'root'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   track: {
-    'data-state': Signal<'checked' | 'unchecked'>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
     'data-scope': 'switch'
     'data-part': 'track'
   }
   thumb: {
-    'data-state': Signal<'checked' | 'unchecked'>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
     'data-scope': 'switch'
     'data-part': 'thumb'
   }
@@ -14052,8 +14052,8 @@ export interface SwitchParts {
     'aria-hidden': 'true'
     tabindex: -1
     style: string
-    checked: Signal<boolean>
-    disabled: Signal<boolean>
+    checked: ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'switch'
     'data-part': 'hidden-input'
   }
@@ -14088,16 +14088,16 @@ export interface TableCellCoord {
 export interface TableCellParts {
   role: 'gridcell'
   'aria-colindex': number
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   'data-scope': 'table'
   'data-part': 'cell'
   /** 0-based row index — addresses the cell for roving DOM focus. Reactive
    * for the same reason `TableRowParts`'s `aria-rowindex` is. */
-  'data-row-index': Signal<number>
+  'data-row-index': ReadSignal<number>
   /** 0-based column index — addresses the cell for roving DOM focus. Columns
    * do not reorder, so this stays a plain number. */
   'data-col-index': number
-  'data-focused': Signal<'' | undefined>
+  'data-focused': ReadSignal<'' | undefined>
   onFocus: (e: FocusEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
 }
@@ -14114,10 +14114,10 @@ export interface TableCheckboxParts {
    * assistive tech announced an unnamed checkbox in every row (#268).
    */
   'aria-label': string
-  'aria-checked': Signal<'true' | 'false' | 'mixed'>
+  'aria-checked': ReadSignal<'true' | 'false' | 'mixed'>
   'data-scope': 'table'
   'data-part': 'select-all' | 'row-checkbox'
-  'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+  'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
   /** Always `-1`: a `role="grid"` has exactly ONE tab stop, the roving cell. */
   tabindex: -1
   onClick: (e: MouseEvent) => void
@@ -14142,24 +14142,24 @@ export interface TableColumn {
 export interface TableColumnHeaderParts {
   role: 'columnheader'
   id: string
-  'aria-sort': Signal<'ascending' | 'descending' | 'none' | undefined>
+  'aria-sort': ReadSignal<'ascending' | 'descending' | 'none' | undefined>
   /**
    * Roving tab stop. The header row participates in the grid's single-tab-stop
    * sequence, because it hosts controls — the sort toggle on every sortable
    * column, and the select-all checkbox — that are otherwise unreachable by
    * keyboard.
    */
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   'data-scope': 'table'
   'data-part': 'column-header'
   'data-column': string
   /** Always {@link HEADER_ROW_INDEX} — addresses the header for roving DOM focus. */
   'data-row-index': typeof HEADER_ROW_INDEX
   /** 0-based column index (`-1` for a column not in `columns`). */
-  'data-col-index': Signal<number>
-  'data-focused': Signal<'' | undefined>
-  'data-sortable': Signal<'' | undefined>
-  'data-sort': Signal<SortDirection | undefined>
+  'data-col-index': ReadSignal<number>
+  'data-focused': ReadSignal<'' | undefined>
+  'data-sortable': ReadSignal<'' | undefined>
+  'data-sort': ReadSignal<SortDirection | undefined>
   onFocus: (e: FocusEvent) => void
   onClick: (e: MouseEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
@@ -14208,18 +14208,18 @@ export interface TableParts {
   root: {
     role: 'grid'
     id: string
-    'aria-multiselectable': Signal<'true' | undefined>
-    'aria-rowcount': Signal<number>
-    'aria-colcount': Signal<number>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
+    'aria-rowcount': ReadSignal<number>
+    'aria-colcount': ReadSignal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'table'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-density': TableDensity | undefined
   }
   columnHeader: (columnId: string) => TableColumnHeaderParts
   /**
-   * `index` accepts a plain `number` OR a `Signal<number>` (the row handle
+   * `index` accepts a plain `number` OR a `ReadSignal<number>` (the row handle
    * `each`/`virtualEach` passes its render callback) — a keyed row is REUSED
    * (moved, not rebuilt) on reorder, so a plain number captured at build time
    * would freeze `aria-rowindex` and the row's own `toggleRow`/`selectRange`
@@ -14259,16 +14259,16 @@ export interface TableParts {
 ```typescript
 export interface TableRowParts {
   role: 'row'
-  'aria-selected': Signal<boolean | undefined>
+  'aria-selected': ReadSignal<boolean | undefined>
   /** Reactive: a row's DISPLAY position can change after sort/reorder without
    * this row being rebuilt (`each` reuses rows by key), so the index this
    * addresses must follow the row's live position rather than freeze at
    * whatever it was when the row was first built. */
-  'aria-rowindex': Signal<number>
+  'aria-rowindex': ReadSignal<number>
   'data-scope': 'table'
   'data-part': 'row'
   'data-row': string
-  'data-selected': Signal<'' | undefined>
+  'data-selected': ReadSignal<'' | undefined>
   onClick: (e: MouseEvent) => void
 }
 ```
@@ -14329,16 +14329,16 @@ export interface TabsItemParts {
   trigger: {
     type: 'button'
     role: 'tab'
-    'aria-selected': Signal<boolean>
+    'aria-selected': ReadSignal<boolean>
     'aria-controls': string
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     id: string
-    'data-state': Signal<'active' | 'inactive'>
-    'data-disabled': Signal<'' | undefined>
+    'data-state': ReadSignal<'active' | 'inactive'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'tabs'
     'data-part': 'trigger'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -14348,8 +14348,8 @@ export interface TabsItemParts {
     id: string
     'aria-labelledby': string
     tabindex: 0
-    hidden: Signal<boolean>
-    'data-state': Signal<'active' | 'inactive'>
+    hidden: ReadSignal<boolean>
+    'data-state': ReadSignal<'active' | 'inactive'>
     'data-scope': 'tabs'
     'data-part': 'panel'
     'data-value': string
@@ -14365,7 +14365,7 @@ export interface TabsParts {
     id: string
     'data-scope': 'tabs'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
   }
   /**
    * A movable underline/highlight element. Position tracks the active
@@ -14378,11 +14378,11 @@ export interface TabsParts {
   indicator: {
     'data-scope': 'tabs'
     'data-part': 'indicator'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
   }
   list: {
     role: 'tablist'
-    'aria-orientation': Signal<Orientation>
+    'aria-orientation': ReadSignal<Orientation>
     'data-scope': 'tabs'
     'data-part': 'list'
   }
@@ -14418,12 +14418,12 @@ export interface TabsState {
 ```typescript
 export interface TagItemParts {
   root: {
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     'data-scope': 'tags-input'
     'data-part': 'tag'
     'data-value': string
     'data-index': string
-    'data-focused': Signal<'' | undefined>
+    'data-focused': ReadSignal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
   }
@@ -14456,17 +14456,17 @@ export interface TagsInputInit {
 export interface TagsInputParts {
   root: {
     role: 'group'
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'tags-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   input: {
     type: 'text'
     autocomplete: 'off'
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'tags-input'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -14519,7 +14519,7 @@ export interface ThemeSwitchParts {
     'data-scope': 'theme-switch'
     'data-part': 'option'
     'data-theme': Theme
-    'aria-pressed': Signal<boolean>
+    'aria-pressed': ReadSignal<boolean>
     'aria-label': string
     onClick: (e: MouseEvent) => void
   }
@@ -14527,7 +14527,7 @@ export interface ThemeSwitchParts {
     type: 'button'
     'data-scope': 'theme-switch'
     'data-part': 'toggle'
-    'data-theme': Signal<Theme>
+    'data-theme': ReadSignal<Theme>
     'aria-label': string
     onClick: (e: MouseEvent) => void
   }
@@ -14579,18 +14579,18 @@ export interface TimePickerParts {
     'aria-label': string
     'data-scope': 'time-picker'
     'data-part': 'root'
-    'data-format': Signal<TimeFormat>
-    'data-disabled': Signal<'' | undefined>
+    'data-format': ReadSignal<TimeFormat>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   hoursInput: {
     type: 'number'
     role: 'spinbutton'
     'aria-label': string
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    disabled: Signal<boolean>
-    value: Signal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'time-picker'
     'data-part': 'hours-input'
     onInput: (e: Event) => void
@@ -14602,9 +14602,9 @@ export interface TimePickerParts {
     'aria-label': string
     'aria-valuemin': 0
     'aria-valuemax': 59
-    'aria-valuenow': Signal<number>
-    disabled: Signal<boolean>
-    value: Signal<string>
+    'aria-valuenow': ReadSignal<number>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'time-picker'
     'data-part': 'minutes-input'
     onInput: (e: Event) => void
@@ -14613,12 +14613,12 @@ export interface TimePickerParts {
   periodTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'time-picker'
     'data-part': 'period-trigger'
-    'data-period': Signal<'AM' | 'PM'>
+    'data-period': ReadSignal<'AM' | 'PM'>
     onClick: (e: MouseEvent) => void
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 ```
@@ -14653,10 +14653,10 @@ export interface TimerParts {
   root: {
     'data-scope': 'timer'
     'data-part': 'root'
-    'data-running': Signal<'' | undefined>
-    'data-direction': Signal<Direction>
+    'data-running': ReadSignal<'' | undefined>
+    'data-direction': ReadSignal<Direction>
     /** Present once a countdown has reached its target (see `isComplete`). */
-    'data-complete': Signal<'' | undefined>
+    'data-complete': ReadSignal<'' | undefined>
   }
   display: {
     role: 'timer'
@@ -14669,7 +14669,7 @@ export interface TimerParts {
     'aria-label': string
     'data-scope': 'timer'
     'data-part': 'start-trigger'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   pauseTrigger: {
@@ -14677,7 +14677,7 @@ export interface TimerParts {
     'aria-label': string
     'data-scope': 'timer'
     'data-part': 'pause-trigger'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   resetTrigger: {
@@ -14768,11 +14768,11 @@ export interface ToasterParts {
     tabindex: -1
     'data-scope': 'toast'
     'data-part': 'region'
-    'data-placement': Signal<ToastPlacement>
+    'data-placement': ReadSignal<ToastPlacement>
   }
   /**
    * Build the per-row part descriptors for one toast. Takes the row's
-   * `Signal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
+   * `ReadSignal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
    * consumers don't `.peek()` in a reactive slot (which the signal compiler
    * rejects). Only `id` is immutable for a toast's lifetime — created then
    * dismissed, never structurally replaced — so this reads `id` once
@@ -14780,13 +14780,13 @@ export interface ToasterParts {
    * if `id` changes); every other field (`type`, `ariaLive`, `status`, …) is
    * bound reactively so an `update` patch renders wherever it appears.
    */
-  toast: (toast: Signal<Toast>) => ToastItemParts
+  toast: (toast: ReadSignal<Toast>) => ToastItemParts
   /**
    * Reactive fraction (in [0,1]) of the countdown remaining for the toast with
    * `id` — for a countdown progress bar. Sticky toasts report 1; a dismissed /
    * missing toast reports 0.
    */
-  progress: (id: string) => Signal<number>
+  progress: (id: string) => ReadSignal<number>
   /**
    * Reactive presence: whether the toast with `id` is still in the queue (i.e.
    * should be mounted). Stays true through `'closing'` so the exit animation can
@@ -14794,7 +14794,7 @@ export interface ToasterParts {
    * `toasts` already handles the actual mount/unmount — this is for consumers
    * coordinating other elements off a single toast's lifecycle.
    */
-  isPresent: (id: string) => Signal<boolean>
+  isPresent: (id: string) => ReadSignal<boolean>
 }
 ```
 
@@ -14825,20 +14825,20 @@ export interface ToastItemParts {
      * {@link politeness}), never frozen at mount — an `update` patching
      * either is visible here.
      */
-    role: Signal<'status' | 'alert'>
+    role: ReadSignal<'status' | 'alert'>
     'aria-atomic': 'true'
     /** Reactive — see `role` above. */
-    'aria-live': Signal<ToastPoliteness>
+    'aria-live': ReadSignal<ToastPoliteness>
     id: string
     'data-scope': 'toast'
     'data-part': 'root'
     /** Reactive: an `update` patching `type` (e.g. a promise toast moving
      * loading → success) is visible here, not frozen at mount. */
-    'data-type': Signal<ToastType>
+    'data-type': ReadSignal<ToastType>
     'data-id': string
     /** Reactive presence status (closed/opening/open/closing) for CSS-driven
      * enter/exit animations. */
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
     /** Bubbling — a plain (non-bubbling) `onFocus`/`onBlur` here would never
@@ -14871,7 +14871,7 @@ export interface ToastItemParts {
      * the accessibility tree and the tab order. Hiding it while it has focus
      * is safe for the `'focus'` pause reason: the browser's focus fixup fires
      * `blur`/`focusout` on the row (verified in Chromium), which releases it. */
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     /** Dismisses the toast; ignored while it is not `dismissable`. */
     onClick: (e: MouseEvent) => void
   }
@@ -14971,15 +14971,15 @@ export interface ToggleGroupItemParts {
   root: {
     type: 'button'
     role: 'button'
-    'aria-pressed': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    'data-state': Signal<'on' | 'off'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-pressed': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'on' | 'off'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'toggle-group'
     'data-part': 'item'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -14993,11 +14993,11 @@ export interface ToggleGroupItemParts {
 export interface ToggleGroupParts {
   root: {
     role: 'group'
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'toggle-group'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   item: (value: string) => ToggleGroupItemParts
 }
@@ -15039,12 +15039,12 @@ export interface ToggleInit {
 export interface ToggleItemParts {
   type: 'button'
   'aria-label': string
-  'aria-pressed': Signal<boolean>
+  'aria-pressed': ReadSignal<boolean>
   'data-scope': 'gradient-picker'
   'data-part': ToggleItemPart
   'data-value': string
-  'data-state': Signal<'on' | 'off'>
-  disabled: Signal<boolean>
+  'data-state': ReadSignal<'on' | 'off'>
+  disabled: ReadSignal<boolean>
   onClick: (e: MouseEvent) => void
 }
 ```
@@ -15056,11 +15056,11 @@ export interface ToggleParts {
   root: {
     type: 'button'
     role: 'button'
-    'aria-pressed': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    'data-state': Signal<'on' | 'off'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-pressed': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'on' | 'off'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'toggle'
     'data-part': 'root'
     onClick: (e: MouseEvent) => void
@@ -15122,9 +15122,9 @@ export interface ToolbarItemParts {
     'data-scope': 'toolbar'
     'data-part': 'item'
     'data-value': string
-    'data-disabled': Signal<'' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: () => void
   }
@@ -15137,17 +15137,17 @@ export interface ToolbarItemParts {
 export interface ToolbarParts {
   root: {
     role: 'toolbar'
-    'aria-orientation': Signal<Orientation>
+    'aria-orientation': ReadSignal<Orientation>
     'aria-label': string | undefined
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'toolbar'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   separator: {
     role: 'separator'
-    'aria-orientation': Signal<Orientation>
+    'aria-orientation': ReadSignal<Orientation>
     'data-scope': 'toolbar'
     'data-part': 'separator'
   }
@@ -15201,7 +15201,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<TooltipState>
+  state: ReadSignal<TooltipState>
   send: Send<TooltipMsg>
   parts: TooltipParts
   content: () => Renderable
@@ -15233,8 +15233,8 @@ export interface OverlayOptions {
 export interface TooltipParts {
   trigger: {
     id: string
-    'aria-describedby': Signal<string | undefined>
-    'data-state': Signal<'open' | 'closed'>
+    'aria-describedby': ReadSignal<string | undefined>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'tooltip'
     'data-part': 'trigger'
     onPointerEnter: (e: PointerEvent) => void
@@ -15252,7 +15252,7 @@ export interface TooltipParts {
     role: 'tooltip'
     id: string
     style: string
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'tooltip'
     'data-part': 'content'
     onPointerEnter: (e: PointerEvent) => void
@@ -15324,7 +15324,7 @@ export interface TourParts {
     'aria-describedby': string | undefined
     'data-scope': 'tour'
     'data-part': 'root'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   backdrop: {
     'data-scope': 'tour'
@@ -15353,7 +15353,7 @@ export interface TourParts {
   }
   prevTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'tour'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -15362,7 +15362,7 @@ export interface TourParts {
     type: 'button'
     'data-scope': 'tour'
     'data-part': 'next-trigger'
-    'data-last': Signal<'' | undefined>
+    'data-last': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
   }
   closeTrigger: {
@@ -15435,19 +15435,19 @@ export interface TreeItemParts {
   item: {
     role: 'treeitem'
     id: string
-    'aria-expanded': Signal<boolean | undefined>
-    'aria-selected': Signal<boolean | undefined>
+    'aria-expanded': ReadSignal<boolean | undefined>
+    'aria-selected': ReadSignal<boolean | undefined>
     'aria-level': number
-    'aria-busy': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-busy': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'tree-view'
     'data-part': 'item'
     'data-value': string
     'data-depth': string
-    'data-selected': Signal<'' | undefined>
-    'data-focused': Signal<'' | undefined>
-    'data-loading': Signal<'' | undefined>
-    'data-load-failed': Signal<'' | undefined>
+    'data-selected': ReadSignal<'' | undefined>
+    'data-focused': ReadSignal<'' | undefined>
+    'data-loading': ReadSignal<'' | undefined>
+    'data-load-failed': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -15456,7 +15456,7 @@ export interface TreeItemParts {
   branchTrigger: {
     'data-scope': 'tree-view'
     'data-part': 'branch-trigger'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     onClick: (e: MouseEvent) => void
   }
   /**
@@ -15469,10 +15469,10 @@ export interface TreeItemParts {
    */
   checkbox: {
     role: 'checkbox'
-    'aria-checked': Signal<'true' | 'false' | 'mixed'>
+    'aria-checked': ReadSignal<'true' | 'false' | 'mixed'>
     'data-scope': 'tree-view'
     'data-part': 'checkbox'
-    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+    'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
   }
 }
 ```
@@ -15568,11 +15568,11 @@ export interface TreeViewInit {
 export interface TreeViewParts {
   root: {
     role: 'tree'
-    'aria-multiselectable': Signal<'true' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'tree-view'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   item: (id: string, depth: number, isBranch: boolean, parentId?: string | null) => TreeItemParts
 }
@@ -22909,7 +22909,7 @@ export interface OverlayElements {
 
 ```typescript
 export interface OverlayEngineOptions<S> {
-  state: Signal<S>
+  state: ReadSignal<S>
   /** Resolved portal host (see `resolvePortalTarget`). */
   host: Element | undefined
   /** The positioner part props spread onto the wrapping `div`. */
@@ -24718,7 +24718,7 @@ export interface FormatTimeOptions {
 ##### `connect()` from `@llui/components/toggle`
 
 ```typescript
-function connect(state: Signal<ToggleState>, send: Send<ToggleMsg>): ToggleParts
+function connect(state: ReadSignal<ToggleState>, send: Send<ToggleMsg>): ToggleParts
 ```
 
 ##### `init()` from `@llui/components/toggle`
@@ -24765,11 +24765,11 @@ export interface ToggleParts {
   root: {
     type: 'button'
     role: 'button'
-    'aria-pressed': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    'data-state': Signal<'on' | 'off'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-pressed': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'on' | 'off'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'toggle'
     'data-part': 'root'
     onClick: (e: MouseEvent) => void
@@ -24806,7 +24806,7 @@ const toggle
 ##### `connect()` from `@llui/components/checkbox`
 
 ```typescript
-function connect(state: Signal<CheckboxState>, send: Send<CheckboxMsg>): CheckboxParts
+function connect(state: ReadSignal<CheckboxState>, send: Send<CheckboxMsg>): CheckboxParts
 ```
 
 ##### `init()` from `@llui/components/checkbox`
@@ -24868,14 +24868,14 @@ export interface CheckboxParts {
   /** The visual box/container — `role="checkbox"` for accessibility. */
   root: {
     role: 'checkbox'
-    'aria-checked': Signal<'true' | 'false' | 'mixed'>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
-    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-checked': ReadSignal<'true' | 'false' | 'mixed'>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'checkbox'
     'data-part': 'root'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -24885,16 +24885,16 @@ export interface CheckboxParts {
     'aria-hidden': 'true'
     tabindex: -1
     style: string
-    checked: Signal<boolean>
-    indeterminate: Signal<boolean>
-    disabled: Signal<boolean>
-    required: Signal<boolean>
+    checked: ReadSignal<boolean>
+    indeterminate: ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
+    required: ReadSignal<boolean>
     'data-scope': 'checkbox'
     'data-part': 'hidden-input'
   }
   /** Optional indicator child (the checkmark). */
   indicator: {
-    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+    'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
     'data-scope': 'checkbox'
     'data-part': 'indicator'
   }
@@ -24927,7 +24927,7 @@ const checkbox
 
 ```typescript
 function connect(
-  state: Signal<AccordionState>,
+  state: ReadSignal<AccordionState>,
   send: Send<AccordionMsg>,
   opts: ConnectOptions,
 ): AccordionParts
@@ -25012,12 +25012,12 @@ export interface AccordionInit {
 export interface AccordionItemParts {
   trigger: {
     type: 'button'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
-    disabled: Signal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'accordion'
     'data-part': 'trigger'
     'data-value': string
@@ -25028,13 +25028,13 @@ export interface AccordionItemParts {
     role: 'region'
     id: string
     'aria-labelledby': string
-    'data-state': Signal<'open' | 'closing' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closing' | 'closed'>
     'data-scope': 'accordion'
     'data-part': 'content'
     'data-value': string
-    hidden: Signal<boolean>
-    'aria-hidden': Signal<'true' | undefined>
-    inert: Signal<boolean>
+    hidden: ReadSignal<boolean>
+    'aria-hidden': ReadSignal<'true' | undefined>
+    inert: ReadSignal<boolean>
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
@@ -25043,8 +25043,8 @@ export interface AccordionItemParts {
     onTransitionCancel: (e: TransitionEvent) => void
   }
   item: {
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'accordion'
     'data-part': 'item'
     'data-value': string
@@ -25153,7 +25153,7 @@ const accordion
 ##### `connect()` from `@llui/components/tabs`
 
 ```typescript
-function connect(state: Signal<TabsState>, send: Send<TabsMsg>, opts: ConnectOptions): TabsParts
+function connect(state: ReadSignal<TabsState>, send: Send<TabsMsg>, opts: ConnectOptions): TabsParts
 ```
 
 ##### `init()` from `@llui/components/tabs`
@@ -25281,16 +25281,16 @@ export interface TabsItemParts {
   trigger: {
     type: 'button'
     role: 'tab'
-    'aria-selected': Signal<boolean>
+    'aria-selected': ReadSignal<boolean>
     'aria-controls': string
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     id: string
-    'data-state': Signal<'active' | 'inactive'>
-    'data-disabled': Signal<'' | undefined>
+    'data-state': ReadSignal<'active' | 'inactive'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'tabs'
     'data-part': 'trigger'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -25300,8 +25300,8 @@ export interface TabsItemParts {
     id: string
     'aria-labelledby': string
     tabindex: 0
-    hidden: Signal<boolean>
-    'data-state': Signal<'active' | 'inactive'>
+    hidden: ReadSignal<boolean>
+    'data-state': ReadSignal<'active' | 'inactive'>
     'data-scope': 'tabs'
     'data-part': 'panel'
     'data-value': string
@@ -25317,7 +25317,7 @@ export interface TabsParts {
     id: string
     'data-scope': 'tabs'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
   }
   /**
    * A movable underline/highlight element. Position tracks the active
@@ -25330,11 +25330,11 @@ export interface TabsParts {
   indicator: {
     'data-scope': 'tabs'
     'data-part': 'indicator'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
   }
   list: {
     role: 'tablist'
-    'aria-orientation': Signal<Orientation>
+    'aria-orientation': ReadSignal<Orientation>
     'data-scope': 'tabs'
     'data-part': 'list'
   }
@@ -25388,7 +25388,7 @@ function closestThumbIndex(state: SliderState, raw: number): number
 ##### `connect()` from `@llui/components/slider`
 
 ```typescript
-function connect(state: Signal<SliderState>, send: Send<SliderMsg>): SliderParts
+function connect(state: ReadSignal<SliderState>, send: Send<SliderMsg>): SliderParts
 ```
 
 ##### `init()` from `@llui/components/slider`
@@ -25471,29 +25471,29 @@ export interface SliderParts {
   root: {
     'data-scope': 'slider'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   control: {
     'data-scope': 'slider'
     'data-part': 'control'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
     onPointerDown: (e: PointerEvent) => void
   }
   track: {
     'data-scope': 'slider'
     'data-part': 'track'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
   }
   range: {
     'data-scope': 'slider'
     'data-part': 'range'
-    'data-orientation': Signal<Orientation>
-    style: Signal<string>
+    'data-orientation': ReadSignal<Orientation>
+    style: ReadSignal<string>
   }
   thumb: (index: number) => SliderThumbParts
   /** Current raw values — reactive convenience. */
-  value: Signal<number[]>
+  value: ReadSignal<number[]>
 }
 ```
 
@@ -25521,19 +25521,19 @@ export interface SliderState {
 export interface SliderThumbParts {
   thumb: {
     role: 'slider'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-orientation': Signal<Orientation>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-orientation': ReadSignal<Orientation>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'slider'
     'data-part': 'thumb'
     'data-index': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onKeyDown: (e: KeyboardEvent) => void
-    style: Signal<string>
+    style: ReadSignal<string>
   }
 }
 ```
@@ -25554,7 +25554,7 @@ const slider
 
 ```typescript
 function connect(
-  state: Signal<DialogState>,
+  state: ReadSignal<DialogState>,
   send: Send<DialogMsg>,
   opts: ConnectOptions,
 ): DialogParts
@@ -25663,16 +25663,16 @@ export interface DialogParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'dialog'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'dialog'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
   }
   backdrop: {
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'dialog'
     'data-part': 'backdrop'
     'aria-hidden': 'true'
@@ -25689,7 +25689,7 @@ export interface DialogParts {
     /** The description part's id, or absent when `hasDescription: false`. */
     'aria-describedby': string | undefined
     tabindex: -1
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'dialog'
     'data-part': 'content'
     onAnimationEnd: (e: AnimationEvent) => void
@@ -25779,7 +25779,7 @@ export interface OverlayOptions {
    */
   positionerClass?: string
   /** Dialog state slice as a Signal. */
-  state: Signal<DialogState>
+  state: ReadSignal<DialogState>
   /** Send dispatcher for dialog messages. */
   send: Send<DialogMsg>
   /** Parts from `connect()` — used to locate the content element by id. */
@@ -25830,7 +25830,7 @@ const dialog
 
 ```typescript
 function connect(
-  state: Signal<PopoverState>,
+  state: ReadSignal<PopoverState>,
   send: Send<PopoverMsg>,
   opts: ConnectOptions,
 ): PopoverParts
@@ -25912,7 +25912,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<PopoverState>
+  state: ReadSignal<PopoverState>
   send: Send<PopoverMsg>
   parts: PopoverParts
   content: () => Renderable
@@ -25966,10 +25966,10 @@ export interface PopoverParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'dialog'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'popover'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -25984,7 +25984,7 @@ export interface PopoverParts {
     id: string
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'popover'
     'data-part': 'content'
     onAnimationEnd: (e: AnimationEvent) => void
@@ -26048,7 +26048,7 @@ const popover
 
 ```typescript
 function connect(
-  state: Signal<TooltipState>,
+  state: ReadSignal<TooltipState>,
   send: Send<TooltipMsg>,
   opts: ConnectOptions,
 ): TooltipParts
@@ -26125,7 +26125,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<TooltipState>
+  state: ReadSignal<TooltipState>
   send: Send<TooltipMsg>
   parts: TooltipParts
   content: () => Renderable
@@ -26171,8 +26171,8 @@ export interface TooltipInit {
 export interface TooltipParts {
   trigger: {
     id: string
-    'aria-describedby': Signal<string | undefined>
-    'data-state': Signal<'open' | 'closed'>
+    'aria-describedby': ReadSignal<string | undefined>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'tooltip'
     'data-part': 'trigger'
     onPointerEnter: (e: PointerEvent) => void
@@ -26190,7 +26190,7 @@ export interface TooltipParts {
     role: 'tooltip'
     id: string
     style: string
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'tooltip'
     'data-part': 'content'
     onPointerEnter: (e: PointerEvent) => void
@@ -26255,7 +26255,7 @@ const tooltip
 ##### `connect()` from `@llui/components/menu`
 
 ```typescript
-function connect(state: Signal<MenuState>, send: Send<MenuMsg>, opts: ConnectOptions): MenuParts
+function connect(state: ReadSignal<MenuState>, send: Send<MenuMsg>, opts: ConnectOptions): MenuParts
 ```
 
 ##### `init()` from `@llui/components/menu`
@@ -26443,10 +26443,10 @@ export interface MenuParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'menu'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'menu'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -26463,11 +26463,11 @@ export interface MenuParts {
     'aria-labelledby': string
     /** The id of the virtually-focused (highlighted) item at the root level, so
      * assistive tech announces it while DOM focus stays on the container. */
-    'aria-activedescendant': Signal<string | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
     tabindex: -1
     /** Reflects the presence lifecycle: 'opening' | 'open' | 'closing' | 'closed'.
      * Stays mounted while 'closing' so the exit animation can run. */
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'menu'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
@@ -26548,7 +26548,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<MenuState>
+  state: ReadSignal<MenuState>
   send: Send<MenuMsg>
   parts: MenuParts
   content: () => Renderable
@@ -26575,7 +26575,7 @@ export interface OverlayOptions {
 export interface SubOverlayOptions {
   /** The subTrigger value this level opens under. */
   value: string
-  state: Signal<MenuState>
+  state: ReadSignal<MenuState>
   parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
   content: () => Renderable
   target?: string | HTMLElement
@@ -26610,7 +26610,7 @@ const menu
 ##### `connect()` from `@llui/components/switch`
 
 ```typescript
-function connect(state: Signal<SwitchState>, send: Send<SwitchMsg>): SwitchParts
+function connect(state: ReadSignal<SwitchState>, send: Send<SwitchMsg>): SwitchParts
 ```
 
 ##### `init()` from `@llui/components/switch`
@@ -26656,23 +26656,23 @@ export interface SwitchInit {
 export interface SwitchParts {
   root: {
     role: 'switch'
-    'aria-checked': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'checked' | 'unchecked'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-checked': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'switch'
     'data-part': 'root'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   track: {
-    'data-state': Signal<'checked' | 'unchecked'>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
     'data-scope': 'switch'
     'data-part': 'track'
   }
   thumb: {
-    'data-state': Signal<'checked' | 'unchecked'>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
     'data-scope': 'switch'
     'data-part': 'thumb'
   }
@@ -26682,8 +26682,8 @@ export interface SwitchParts {
     'aria-hidden': 'true'
     tabindex: -1
     style: string
-    checked: Signal<boolean>
-    disabled: Signal<boolean>
+    checked: ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'switch'
     'data-part': 'hidden-input'
   }
@@ -26718,7 +26718,7 @@ const switchMachine
 
 ```typescript
 function connect(
-  state: Signal<RadioGroupState>,
+  state: ReadSignal<RadioGroupState>,
   send: Send<RadioGroupMsg>,
   opts: ConnectOptions,
 ): RadioGroupParts
@@ -26797,12 +26797,12 @@ export interface RadioGroupInit {
 export interface RadioGroupParts {
   root: {
     role: 'radiogroup'
-    'aria-orientation': Signal<Orientation>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-orientation': ReadSignal<Orientation>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'radio-group'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   item: (value: string) => RadioItemParts
 }
@@ -26833,14 +26833,14 @@ export interface RadioItemParts {
   root: {
     role: 'radio'
     id: string
-    'aria-checked': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'checked' | 'unchecked'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-checked': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'radio-group'
     'data-part': 'item'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -26851,7 +26851,7 @@ export interface RadioItemParts {
     for: string
   }
   indicator: {
-    'data-state': Signal<'checked' | 'unchecked'>
+    'data-state': ReadSignal<'checked' | 'unchecked'>
     'data-scope': 'radio-group'
     'data-part': 'indicator'
   }
@@ -26874,7 +26874,7 @@ const radioGroup
 
 ```typescript
 function connect(
-  state: Signal<CollapsibleState>,
+  state: ReadSignal<CollapsibleState>,
   send: Send<CollapsibleMsg>,
   opts: ConnectOptions,
 ): CollapsibleParts
@@ -26930,19 +26930,19 @@ export interface CollapsibleInit {
 ```typescript
 export interface CollapsibleParts {
   root: {
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'collapsible'
     'data-part': 'root'
   }
   trigger: {
     type: 'button'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    disabled: Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
-    'data-disabled': Signal<'' | undefined>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'collapsible'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -26951,12 +26951,12 @@ export interface CollapsibleParts {
     role: 'region'
     id: string
     'aria-labelledby': string
-    hidden: Signal<boolean>
-    'data-state': Signal<'open' | 'closing' | 'closed'>
+    hidden: ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closing' | 'closed'>
     'data-scope': 'collapsible'
     'data-part': 'content'
-    'aria-hidden': Signal<'true' | undefined>
-    inert: Signal<boolean>
+    'aria-hidden': ReadSignal<'true' | undefined>
+    inert: ReadSignal<boolean>
     onAnimationStart: (e: AnimationEvent) => void
     onAnimationEnd: (e: AnimationEvent) => void
     onAnimationCancel: (e: AnimationEvent) => void
@@ -27032,7 +27032,7 @@ const collapsible
 ##### `connect()` from `@llui/components/toggle-group`
 
 ```typescript
-function connect(state: Signal<ToggleGroupState>, send: Send<ToggleGroupMsg>): ToggleGroupParts
+function connect(state: ReadSignal<ToggleGroupState>, send: Send<ToggleGroupMsg>): ToggleGroupParts
 ```
 
 ##### `init()` from `@llui/components/toggle-group`
@@ -27105,15 +27105,15 @@ export interface ToggleGroupItemParts {
   root: {
     type: 'button'
     role: 'button'
-    'aria-pressed': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    'data-state': Signal<'on' | 'off'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-pressed': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'on' | 'off'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'toggle-group'
     'data-part': 'item'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -27127,11 +27127,11 @@ export interface ToggleGroupItemParts {
 export interface ToggleGroupParts {
   root: {
     role: 'group'
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'toggle-group'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   item: (value: string) => ToggleGroupItemParts
 }
@@ -27174,7 +27174,7 @@ const toggleGroup
 
 ```typescript
 function connect(
-  state: Signal<NumberInputState>,
+  state: ReadSignal<NumberInputState>,
   send: Send<NumberInputMsg>,
   opts: ConnectOptions = {},
 ): NumberInputParts
@@ -27249,20 +27249,20 @@ export interface NumberInputParts {
   root: {
     'data-scope': 'number-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   input: {
     type: 'text'
     role: 'spinbutton'
     inputmode: 'decimal'
-    'aria-valuemin': Signal<number | undefined>
-    'aria-valuemax': Signal<number | undefined>
-    'aria-valuenow': Signal<number | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-readonly': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    readonly: Signal<boolean>
-    value: Signal<string>
+    'aria-valuemin': ReadSignal<number | undefined>
+    'aria-valuemax': ReadSignal<number | undefined>
+    'aria-valuenow': ReadSignal<number | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-readonly': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    readonly: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'number-input'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -27272,8 +27272,8 @@ export interface NumberInputParts {
   increment: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'number-input'
     'data-part': 'increment'
     tabindex: -1
@@ -27282,8 +27282,8 @@ export interface NumberInputParts {
   decrement: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'number-input'
     'data-part': 'decrement'
     tabindex: -1
@@ -27355,7 +27355,7 @@ function acceptedChars(values: readonly string[], type: PinType): string[]
 
 ```typescript
 function connect(
-  state: Signal<PinInputState>,
+  state: ReadSignal<PinInputState>,
   send: Send<PinInputMsg>,
   opts: ConnectOptions,
 ): PinInputParts
@@ -27457,7 +27457,7 @@ export interface PinInputParts {
     'aria-labelledby': string | undefined
     'data-scope': 'pin-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   label: {
     id: string
@@ -27466,14 +27466,14 @@ export interface PinInputParts {
   }
   /** Props for the input at a given index. */
   input: (index: number) => {
-    type: Signal<'text' | 'password'>
-    inputmode: Signal<'numeric' | 'text'>
-    pattern: Signal<string>
+    type: ReadSignal<'text' | 'password'>
+    inputmode: ReadSignal<'numeric' | 'text'>
+    pattern: ReadSignal<string>
     maxlength: 1
     autocomplete: 'off'
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'pin-input'
     'data-part': 'input'
     'data-index': string
@@ -27514,7 +27514,7 @@ const pinInput
 
 ```typescript
 function connect(
-  state: Signal<ProgressState>,
+  state: ReadSignal<ProgressState>,
   _send: Send<ProgressMsg>,
   opts: ConnectOptions = {},
 ): ProgressParts
@@ -27594,33 +27594,33 @@ export interface ProgressInit {
 export interface ProgressParts {
   root: {
     role: 'progressbar'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number | undefined>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number | undefined>
     'aria-label': string | undefined
-    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
-    'data-orientation': Signal<ProgressOrientation>
+    'data-state': ReadSignal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': ReadSignal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'root'
   }
   track: {
-    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
-    'data-orientation': Signal<ProgressOrientation>
+    'data-state': ReadSignal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': ReadSignal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'track'
   }
   range: {
-    'data-state': Signal<'indeterminate' | 'complete' | 'loading'>
-    'data-orientation': Signal<ProgressOrientation>
+    'data-state': ReadSignal<'indeterminate' | 'complete' | 'loading'>
+    'data-orientation': ReadSignal<ProgressOrientation>
     'data-scope': 'progress'
     'data-part': 'range'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   label: {
     'data-scope': 'progress'
     'data-part': 'label'
   }
-  valueText: Signal<string>
+  valueText: ReadSignal<string>
 }
 ```
 
@@ -27651,7 +27651,7 @@ const progress
 
 ```typescript
 function connect(
-  state: Signal<RatingGroupState>,
+  state: ReadSignal<RatingGroupState>,
   send: Send<RatingGroupMsg>,
   opts: ConnectOptions = {},
 ): RatingGroupParts
@@ -27735,12 +27735,12 @@ export interface RatingGroupParts {
   root: {
     role: 'radiogroup'
     'aria-label': string | undefined
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-readonly': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-readonly': ReadSignal<'true' | undefined>
     'data-scope': 'rating-group'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-readonly': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-readonly': ReadSignal<'' | undefined>
   }
   item: (index: number) => RatingItemParts
 }
@@ -27771,13 +27771,13 @@ export interface RatingGroupState {
 export interface RatingItemParts {
   root: {
     role: 'radio'
-    'aria-checked': Signal<boolean>
-    'data-fill': Signal<ItemFill>
+    'aria-checked': ReadSignal<boolean>
+    'data-fill': ReadSignal<ItemFill>
     'data-scope': 'rating-group'
     'data-part': 'item'
     'data-value': string
-    'data-disabled': Signal<'' | undefined>
-    tabindex: Signal<number>
+    'data-disabled': ReadSignal<'' | undefined>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
@@ -27802,7 +27802,7 @@ const ratingGroup
 
 ```typescript
 function connect(
-  state: Signal<PaginationState>,
+  state: ReadSignal<PaginationState>,
   send: Send<PaginationMsg>,
   opts: ConnectOptions,
 ): PaginationParts
@@ -27921,39 +27921,39 @@ export interface PaginationParts {
     'aria-label': string
     'data-scope': 'pagination'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   prevTrigger: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'pagination'
     'data-part': 'prev-trigger'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   nextTrigger: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'pagination'
     'data-part': 'next-trigger'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   item: (page: number) => {
     type: 'button'
     'aria-label': string
-    'aria-current': Signal<'page' | undefined>
-    'data-selected': Signal<'' | undefined>
+    'aria-current': ReadSignal<'page' | undefined>
+    'data-selected': ReadSignal<'' | undefined>
     'data-scope': 'pagination'
     'data-part': 'item'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -28003,7 +28003,7 @@ const pagination
 
 ```typescript
 function connect(
-  state: Signal<DialogState>,
+  state: ReadSignal<DialogState>,
   send: Send<DialogMsg>,
   opts: AlertDialogConnectOptions,
 ): AlertDialogParts
@@ -28095,7 +28095,7 @@ export interface AlertDialogOverlayOptions {
    * below — which is exactly how this one was missed the first time.
    */
   positionerClass?: string
-  state: Signal<DialogState>
+  state: ReadSignal<DialogState>
   send: Send<DialogMsg>
   parts: AlertDialogParts
   content: () => Renderable
@@ -28188,7 +28188,7 @@ const alertDialog
 
 ```typescript
 function connect(
-  state: Signal<DrawerState>,
+  state: ReadSignal<DrawerState>,
   send: Send<DrawerMsg>,
   opts: ConnectOptions,
 ): DrawerParts
@@ -28288,16 +28288,16 @@ export interface DrawerParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'dialog'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'drawer'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
   }
   backdrop: {
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'drawer'
     'data-part': 'backdrop'
     'aria-hidden': 'true'
@@ -28313,7 +28313,7 @@ export interface DrawerParts {
     'aria-modal': 'true'
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'drawer'
     'data-part': 'content'
     'data-side': DrawerSide
@@ -28363,7 +28363,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<DrawerState>
+  state: ReadSignal<DrawerState>
   send: Send<DrawerMsg>
   parts: DrawerParts
   content: () => Renderable
@@ -28403,7 +28403,7 @@ const drawer
 
 ```typescript
 function connect(
-  state: Signal<ToasterState>,
+  state: ReadSignal<ToasterState>,
   send: Send<ToasterMsg>,
   opts: ConnectOptions = {},
 ): ToasterParts
@@ -28671,11 +28671,11 @@ export interface ToasterParts {
     tabindex: -1
     'data-scope': 'toast'
     'data-part': 'region'
-    'data-placement': Signal<ToastPlacement>
+    'data-placement': ReadSignal<ToastPlacement>
   }
   /**
    * Build the per-row part descriptors for one toast. Takes the row's
-   * `Signal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
+   * `ReadSignal<Toast>` (e.g. the `item` from `each`) rather than a snapshot, so
    * consumers don't `.peek()` in a reactive slot (which the signal compiler
    * rejects). Only `id` is immutable for a toast's lifetime — created then
    * dismissed, never structurally replaced — so this reads `id` once
@@ -28683,13 +28683,13 @@ export interface ToasterParts {
    * if `id` changes); every other field (`type`, `ariaLive`, `status`, …) is
    * bound reactively so an `update` patch renders wherever it appears.
    */
-  toast: (toast: Signal<Toast>) => ToastItemParts
+  toast: (toast: ReadSignal<Toast>) => ToastItemParts
   /**
    * Reactive fraction (in [0,1]) of the countdown remaining for the toast with
    * `id` — for a countdown progress bar. Sticky toasts report 1; a dismissed /
    * missing toast reports 0.
    */
-  progress: (id: string) => Signal<number>
+  progress: (id: string) => ReadSignal<number>
   /**
    * Reactive presence: whether the toast with `id` is still in the queue (i.e.
    * should be mounted). Stays true through `'closing'` so the exit animation can
@@ -28697,7 +28697,7 @@ export interface ToasterParts {
    * `toasts` already handles the actual mount/unmount — this is for consumers
    * coordinating other elements off a single toast's lifecycle.
    */
-  isPresent: (id: string) => Signal<boolean>
+  isPresent: (id: string) => ReadSignal<boolean>
 }
 ```
 
@@ -28728,20 +28728,20 @@ export interface ToastItemParts {
      * {@link politeness}), never frozen at mount — an `update` patching
      * either is visible here.
      */
-    role: Signal<'status' | 'alert'>
+    role: ReadSignal<'status' | 'alert'>
     'aria-atomic': 'true'
     /** Reactive — see `role` above. */
-    'aria-live': Signal<ToastPoliteness>
+    'aria-live': ReadSignal<ToastPoliteness>
     id: string
     'data-scope': 'toast'
     'data-part': 'root'
     /** Reactive: an `update` patching `type` (e.g. a promise toast moving
      * loading → success) is visible here, not frozen at mount. */
-    'data-type': Signal<ToastType>
+    'data-type': ReadSignal<ToastType>
     'data-id': string
     /** Reactive presence status (closed/opening/open/closing) for CSS-driven
      * enter/exit animations. */
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
     /** Bubbling — a plain (non-bubbling) `onFocus`/`onBlur` here would never
@@ -28774,7 +28774,7 @@ export interface ToastItemParts {
      * the accessibility tree and the tab order. Hiding it while it has focus
      * is safe for the `'focus'` pause reason: the browser's focus fixup fires
      * `blur`/`focusout` on the row (verified in Chromium), which releases it. */
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     /** Dismisses the toast; ignored while it is not `dismissable`. */
     onClick: (e: MouseEvent) => void
   }
@@ -28797,7 +28797,7 @@ const toast
 
 ```typescript
 function connect(
-  state: Signal<ListboxState>,
+  state: ReadSignal<ListboxState>,
   send: Send<ListboxMsg>,
   opts: ConnectOptions,
 ): ListboxParts
@@ -28884,11 +28884,11 @@ export interface ListboxItemParts {
   root: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'listbox'
     'data-part': 'item'
     'data-value': string
@@ -28905,14 +28905,14 @@ export interface ListboxItemParts {
 export interface ListboxParts {
   root: {
     role: 'listbox'
-    'aria-multiselectable': Signal<'true' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-activedescendant': Signal<string | undefined>
-    tabindex: Signal<number>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
+    tabindex: ReadSignal<number>
     id: string
     'data-scope': 'listbox'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
   }
   item: (value: string, index: number) => ListboxItemParts
@@ -28950,7 +28950,7 @@ const listbox
 
 ```typescript
 function connect(
-  state: Signal<SelectState>,
+  state: ReadSignal<SelectState>,
   send: Send<SelectMsg>,
   opts: ConnectOptions,
 ): SelectParts
@@ -29052,7 +29052,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<SelectState>
+  state: ReadSignal<SelectState>
   send: Send<SelectMsg>
   parts: SelectParts
   content: () => Renderable
@@ -29139,17 +29139,17 @@ export interface SelectItemParts {
   item: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'select'
     'data-part': 'item'
     'data-value': string
     /** The option's live position in the flat item list (reactive — reused rows
      * never report a stale index). */
-    'data-index': Signal<string>
+    'data-index': ReadSignal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -29164,20 +29164,20 @@ export interface SelectParts {
     type: 'button'
     role: 'combobox'
     'aria-haspopup': 'listbox'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-activedescendant': Signal<string | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
     id: string
-    disabled: Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
     /** Present while the trigger is showing the PLACEHOLDER rather than a
      * value. `valueText` already falls back to the placeholder string, but a
      * string is not something CSS can branch on, so without this the
      * placeholder renders at full foreground weight and reads as a real
      * selection. This is the attribute every shadcn Select greys it from. */
-    'data-placeholder': Signal<'' | undefined>
+    'data-placeholder': ReadSignal<'' | undefined>
     'data-scope': 'select'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
@@ -29191,10 +29191,10 @@ export interface SelectParts {
   content: {
     role: 'listbox'
     id: string
-    'aria-multiselectable': Signal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'select'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
@@ -29205,9 +29205,9 @@ export interface SelectParts {
     style: string
     /** Native form field name, or `undefined` when `name` was not supplied. */
     name: string | undefined
-    disabled: Signal<boolean>
-    multiple: Signal<boolean>
-    required: Signal<boolean>
+    disabled: ReadSignal<boolean>
+    multiple: ReadSignal<boolean>
+    required: ReadSignal<boolean>
     'data-scope': 'select'
     'data-part': 'hidden-select'
   }
@@ -29215,7 +29215,7 @@ export interface SelectParts {
    * `hiddenSelect` so the browser submits the selection under the form `name`. */
   hiddenOption: (value: string) => {
     value: string
-    selected: Signal<boolean>
+    selected: ReadSignal<boolean>
     'data-scope': 'select'
     'data-part': 'hidden-option'
   }
@@ -29236,7 +29236,7 @@ export interface SelectParts {
    */
   group: (id: string, options?: { readonly hasLabel?: boolean }) => SelectGroupParts
   /** Selected value(s) — use for rendering the trigger label. */
-  valueText: Signal<string>
+  valueText: ReadSignal<string>
 }
 ```
 
@@ -29277,7 +29277,7 @@ const select
 
 ```typescript
 function connect(
-  state: Signal<ComboboxState>,
+  state: ReadSignal<ComboboxState>,
   send: Send<ComboboxMsg>,
   opts: ConnectOptions,
 ): ComboboxParts
@@ -29537,18 +29537,18 @@ export interface ComboboxItemParts {
   item: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-create': '' | undefined
     'data-scope': 'combobox'
     'data-part': 'item'
     'data-value': string
     /** The option's live position in the FILTERED list (reactive — reused rows
      * never report a stale index). */
-    'data-index': Signal<string>
+    'data-index': ReadSignal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -29562,20 +29562,20 @@ export interface ComboboxParts {
   root: {
     'data-scope': 'combobox'
     'data-part': 'root'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
   }
   input: {
     type: 'text'
     role: 'combobox'
     autocomplete: 'off'
     'aria-autocomplete': 'list'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-activedescendant': Signal<string | undefined>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     id: string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'combobox'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -29585,7 +29585,7 @@ export interface ComboboxParts {
   trigger: {
     type: 'button'
     'aria-label': string
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     tabindex: -1
     'data-scope': 'combobox'
@@ -29601,13 +29601,13 @@ export interface ComboboxParts {
     role: 'listbox'
     id: string
     'aria-labelledby': string
-    'aria-busy': Signal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
-    'data-status': Signal<AsyncStatus>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-status': ReadSignal<AsyncStatus>
     /** The mutually-exclusive load projection (#265 finding 11) — see
      * {@link LoadProjection}. Mirrors the top-level `loadState` signal. */
-    'data-load-state': Signal<LoadProjection>
+    'data-load-state': ReadSignal<LoadProjection>
     'data-scope': 'combobox'
     'data-part': 'content'
   }
@@ -29615,7 +29615,7 @@ export interface ComboboxParts {
    * `'loading'` | `'stale-results'` | `'success'` | `'error'`. A single
    * signal instead of independent `isLoading`/`isEmpty`/`hasError` booleans,
    * so it can never contradict itself. See {@link LoadProjection}. */
-  loadState: Signal<LoadProjection>
+  loadState: ReadSignal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — it is NOT used for identity (highlight,
    * selection and ids are all value-keyed), so a reused row is never stale. */
@@ -29641,7 +29641,7 @@ export interface ComboboxParts {
     'aria-atomic': 'true'
     'data-scope': 'combobox'
     'data-part': 'live-region'
-    text: Signal<string>
+    text: ReadSignal<string>
   }
   empty: {
     'data-scope': 'combobox'
@@ -29695,7 +29695,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<ComboboxState>
+  state: ReadSignal<ComboboxState>
   send: Send<ComboboxMsg>
   parts: ComboboxParts
   content: () => Renderable
@@ -29744,7 +29744,7 @@ const CREATE_OPTION_VALUE
 
 ```typescript
 function connect(
-  state: Signal<HoverCardState>,
+  state: ReadSignal<HoverCardState>,
   send: Send<HoverCardMsg>,
   opts: ConnectOptions,
 ): HoverCardParts
@@ -29830,8 +29830,8 @@ export interface HoverCardParts {
   trigger: {
     id: string
     'aria-controls': string
-    'aria-expanded': Signal<boolean>
-    'data-state': Signal<'open' | 'closed'>
+    'aria-expanded': ReadSignal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'hover-card'
     'data-part': 'trigger'
     onPointerEnter: (e: PointerEvent) => void
@@ -29846,7 +29846,7 @@ export interface HoverCardParts {
   }
   content: {
     id: string
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'hover-card'
     'data-part': 'content'
     onPointerEnter: (e: PointerEvent) => void
@@ -29888,7 +29888,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<HoverCardState>
+  state: ReadSignal<HoverCardState>
   send: Send<HoverCardMsg>
   parts: HoverCardParts
   content: () => Renderable
@@ -29928,7 +29928,7 @@ const hoverCard
 
 ```typescript
 function connect(
-  state: Signal<AvatarState>,
+  state: ReadSignal<AvatarState>,
   send: Send<AvatarMsg>,
   opts: ConnectOptions = {},
 ): AvatarParts
@@ -29997,14 +29997,14 @@ export interface AvatarParts {
   root: {
     'data-scope': 'avatar'
     'data-part': 'root'
-    'data-status': Signal<ImageStatus>
+    'data-status': ReadSignal<ImageStatus>
     'data-density': AvatarDensity | undefined
   }
   image: {
     'data-scope': 'avatar'
     'data-part': 'image'
-    'data-status': Signal<ImageStatus>
-    hidden: Signal<boolean>
+    'data-status': ReadSignal<ImageStatus>
+    hidden: ReadSignal<boolean>
     alt: string
     onLoad: (e: Event) => void
     onError: (e: Event) => void
@@ -30013,9 +30013,9 @@ export interface AvatarParts {
   fallback: {
     'data-scope': 'avatar'
     'data-part': 'fallback'
-    'data-status': Signal<ImageStatus>
-    hidden: Signal<boolean>
-    'aria-hidden': Signal<'true' | undefined>
+    'data-status': ReadSignal<ImageStatus>
+    hidden: ReadSignal<boolean>
+    'aria-hidden': ReadSignal<'true' | undefined>
   }
 }
 ```
@@ -30054,7 +30054,7 @@ const avatar
 
 ```typescript
 function connect(
-  state: Signal<ClipboardState>,
+  state: ReadSignal<ClipboardState>,
   send: Send<ClipboardMsg>,
   opts: ConnectOptions = {},
 ): ClipboardParts
@@ -30119,22 +30119,22 @@ export interface ClipboardParts {
   root: {
     'data-scope': 'clipboard'
     'data-part': 'root'
-    'data-copied': Signal<'' | undefined>
-    'data-failed': Signal<'' | undefined>
+    'data-copied': ReadSignal<'' | undefined>
+    'data-failed': ReadSignal<'' | undefined>
   }
   trigger: {
     type: 'button'
     'aria-label': string
     'data-scope': 'clipboard'
     'data-part': 'trigger'
-    'data-copied': Signal<'' | undefined>
-    'data-failed': Signal<'' | undefined>
+    'data-copied': ReadSignal<'' | undefined>
+    'data-failed': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
   }
   input: {
     type: 'text'
     readonly: true
-    value: Signal<string>
+    value: ReadSignal<string>
     'data-scope': 'clipboard'
     'data-part': 'input'
     onFocus: (e: FocusEvent) => void
@@ -30142,8 +30142,8 @@ export interface ClipboardParts {
   indicator: {
     'data-scope': 'clipboard'
     'data-part': 'indicator'
-    'data-copied': Signal<'' | undefined>
-    'data-failed': Signal<'' | undefined>
+    'data-copied': ReadSignal<'' | undefined>
+    'data-failed': ReadSignal<'' | undefined>
     'aria-live': 'polite'
   }
 }
@@ -30222,7 +30222,7 @@ const clipboard
 
 ```typescript
 function connect(
-  state: Signal<EditableState>,
+  state: ReadSignal<EditableState>,
   send: Send<EditableMsg>,
   opts: ConnectOptions = {},
 ): EditableParts
@@ -30290,15 +30290,15 @@ export interface EditableParts {
   root: {
     'data-scope': 'editable'
     'data-part': 'root'
-    'data-editing': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-editing': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   preview: {
-    tabindex: Signal<number>
-    'aria-disabled': Signal<'true' | undefined>
+    tabindex: ReadSignal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'editable'
     'data-part': 'preview'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
     onFocus: (e: FocusEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
@@ -30306,9 +30306,9 @@ export interface EditableParts {
   input: {
     'data-scope': 'editable'
     'data-part': 'input'
-    hidden: Signal<boolean>
-    value: Signal<string>
-    disabled: Signal<boolean>
+    hidden: ReadSignal<boolean>
+    value: ReadSignal<string>
+    disabled: ReadSignal<boolean>
     onInput: (e: Event) => void
     onKeyDown: (e: KeyboardEvent) => void
     onBlur: (e: FocusEvent) => void
@@ -30318,7 +30318,7 @@ export interface EditableParts {
     /** Disabled with the editable: a disabled instance ignores the message
      *  this trigger sends, so an enabled trigger would be a dead control
      *  (#268 audit). */
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'editable'
     'data-part': 'submit-trigger'
     onClick: (e: MouseEvent) => void
@@ -30328,7 +30328,7 @@ export interface EditableParts {
     /** Disabled with the editable: a disabled instance ignores the message
      *  this trigger sends, so an enabled trigger would be a dead control
      *  (#268 audit). */
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'editable'
     'data-part': 'cancel-trigger'
     onClick: (e: MouseEvent) => void
@@ -30338,7 +30338,7 @@ export interface EditableParts {
     /** Disabled with the editable: a disabled instance ignores the message
      *  this trigger sends, so an enabled trigger would be a dead control
      *  (#268 audit). */
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'editable'
     'data-part': 'edit-trigger'
     onClick: (e: MouseEvent) => void
@@ -30376,7 +30376,7 @@ const editable
 
 ```typescript
 function connect(
-  state: Signal<TagsInputState>,
+  state: ReadSignal<TagsInputState>,
   send: Send<TagsInputMsg>,
   opts: ConnectOptions = {},
 ): TagsInputParts
@@ -30443,12 +30443,12 @@ export interface ConnectOptions {
 ```typescript
 export interface TagItemParts {
   root: {
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     'data-scope': 'tags-input'
     'data-part': 'tag'
     'data-value': string
     'data-index': string
-    'data-focused': Signal<'' | undefined>
+    'data-focused': ReadSignal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
   }
@@ -30481,17 +30481,17 @@ export interface TagsInputInit {
 export interface TagsInputParts {
   root: {
     role: 'group'
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'tags-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   input: {
     type: 'text'
     autocomplete: 'off'
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'tags-input'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -30544,7 +30544,7 @@ const tagsInput
 ##### `connect()` from `@llui/components/splitter`
 
 ```typescript
-function connect(state: Signal<SplitterState>, send: Send<SplitterMsg>): SplitterParts
+function connect(state: ReadSignal<SplitterState>, send: Send<SplitterMsg>): SplitterParts
 ```
 
 ##### `init()` from `@llui/components/splitter`
@@ -30636,30 +30636,30 @@ export interface SplitterParts {
   root: {
     'data-scope': 'splitter'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-dragging': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-dragging': ReadSignal<'' | undefined>
   }
   primaryPanel: {
     'data-scope': 'splitter'
     'data-part': 'primary-panel'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   secondaryPanel: {
     'data-scope': 'splitter'
     'data-part': 'secondary-panel'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   resizeTrigger: {
     role: 'separator'
-    'aria-orientation': Signal<Orientation>
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-orientation': ReadSignal<Orientation>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'splitter'
     'data-part': 'resize-trigger'
-    'data-orientation': Signal<Orientation>
-    tabindex: Signal<number>
+    'data-orientation': ReadSignal<Orientation>
+    tabindex: ReadSignal<number>
     onKeyDown: (e: KeyboardEvent) => void
     onPointerDown: (e: PointerEvent) => void
   }
@@ -30707,7 +30707,7 @@ function acceptToString(accept: AcceptValue): string
 
 ```typescript
 function connect(
-  state: Signal<FileUploadState>,
+  state: ReadSignal<FileUploadState>,
   send: Send<FileUploadMsg>,
   opts: ConnectOptions,
 ): FileUploadParts
@@ -31037,7 +31037,7 @@ export interface FileUploadItemParts {
     'data-part': 'item'
     'data-index': string
     /** The file's upload status; absent until an upload is reported (#266). */
-    'data-upload-status': Signal<FileUploadStatus | undefined>
+    'data-upload-status': ReadSignal<FileUploadStatus | undefined>
   }
   /** A labelled progressbar, shown only while the file is uploading (#266). */
   itemProgress: {
@@ -31045,8 +31045,8 @@ export interface FileUploadItemParts {
     'aria-label': string
     'aria-valuemin': 0
     'aria-valuemax': 100
-    'aria-valuenow': Signal<number | undefined>
-    hidden: Signal<boolean>
+    'aria-valuenow': ReadSignal<number | undefined>
+    hidden: ReadSignal<boolean>
     'data-scope': 'file-upload'
     'data-part': 'item-progress'
   }
@@ -31054,7 +31054,7 @@ export interface FileUploadItemParts {
   itemProgressRange: {
     'data-scope': 'file-upload'
     'data-part': 'item-progress-range'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /**
    * Live region for the file's failure message, shown only on error. Its text
@@ -31062,7 +31062,7 @@ export interface FileUploadItemParts {
    */
   itemErrorText: {
     role: 'alert'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     'data-scope': 'file-upload'
     'data-part': 'item-error-text'
   }
@@ -31070,7 +31070,7 @@ export interface FileUploadItemParts {
   itemRetryTrigger: {
     type: 'button'
     'aria-label': string
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     'data-scope': 'file-upload'
     'data-part': 'item-retry-trigger'
     onClick: (e: MouseEvent) => void
@@ -31112,18 +31112,18 @@ export interface FileUploadParts {
   root: {
     'data-scope': 'file-upload'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-dragging': Signal<'' | undefined>
-    'data-invalid': Signal<'' | undefined>
-    'data-readonly': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-readonly': ReadSignal<'' | undefined>
     /** Present while any accepted file is uploading (#266). */
-    'data-uploading': Signal<'' | undefined>
+    'data-uploading': ReadSignal<'' | undefined>
   }
   dropzone: {
     'data-scope': 'file-upload'
     'data-part': 'dropzone'
-    'data-dragging': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onDragEnter: (e: DragEvent) => void
     onDragOver: (e: DragEvent) => void
@@ -31134,7 +31134,7 @@ export interface FileUploadParts {
     type: 'button'
     'data-scope': 'file-upload'
     'data-part': 'trigger'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   hiddenInput: {
@@ -31142,11 +31142,11 @@ export interface FileUploadParts {
     tabindex: -1
     'aria-hidden': 'true'
     style: string
-    disabled: Signal<boolean>
-    multiple: Signal<boolean>
-    accept: Signal<string>
-    required: Signal<boolean>
-    'aria-invalid': Signal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    multiple: ReadSignal<boolean>
+    accept: ReadSignal<string>
+    required: ReadSignal<boolean>
+    'aria-invalid': ReadSignal<'true' | undefined>
     capture?: string | boolean
     webkitdirectory?: '' | undefined
     'data-scope': 'file-upload'
@@ -31245,7 +31245,7 @@ const fileUpload
 
 ```typescript
 function connect(
-  state: Signal<TreeViewState>,
+  state: ReadSignal<TreeViewState>,
   send: Send<TreeViewMsg>,
   opts: ConnectOptions,
 ): TreeViewParts
@@ -31419,19 +31419,19 @@ export interface TreeItemParts {
   item: {
     role: 'treeitem'
     id: string
-    'aria-expanded': Signal<boolean | undefined>
-    'aria-selected': Signal<boolean | undefined>
+    'aria-expanded': ReadSignal<boolean | undefined>
+    'aria-selected': ReadSignal<boolean | undefined>
     'aria-level': number
-    'aria-busy': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-busy': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'tree-view'
     'data-part': 'item'
     'data-value': string
     'data-depth': string
-    'data-selected': Signal<'' | undefined>
-    'data-focused': Signal<'' | undefined>
-    'data-loading': Signal<'' | undefined>
-    'data-load-failed': Signal<'' | undefined>
+    'data-selected': ReadSignal<'' | undefined>
+    'data-focused': ReadSignal<'' | undefined>
+    'data-loading': ReadSignal<'' | undefined>
+    'data-load-failed': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -31440,7 +31440,7 @@ export interface TreeItemParts {
   branchTrigger: {
     'data-scope': 'tree-view'
     'data-part': 'branch-trigger'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     onClick: (e: MouseEvent) => void
   }
   /**
@@ -31453,10 +31453,10 @@ export interface TreeItemParts {
    */
   checkbox: {
     role: 'checkbox'
-    'aria-checked': Signal<'true' | 'false' | 'mixed'>
+    'aria-checked': ReadSignal<'true' | 'false' | 'mixed'>
     'data-scope': 'tree-view'
     'data-part': 'checkbox'
-    'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+    'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
   }
 }
 ```
@@ -31526,11 +31526,11 @@ export interface TreeViewInit {
 export interface TreeViewParts {
   root: {
     role: 'tree'
-    'aria-multiselectable': Signal<'true' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'tree-view'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   item: (id: string, depth: number, isBranch: boolean, parentId?: string | null) => TreeItemParts
 }
@@ -31612,7 +31612,7 @@ const treeView
 
 ```typescript
 function connect(
-  state: Signal<ContextMenuState>,
+  state: ReadSignal<ContextMenuState>,
   send: Send<ContextMenuMsg>,
   opts: ConnectOptions,
 ): ContextMenuParts
@@ -31805,17 +31805,17 @@ export interface ContextMenuParts {
   positioner: {
     'data-scope': 'context-menu'
     'data-part': 'positioner'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   content: {
     role: 'menu'
     id: string
     /** Virtually-focused (highlighted) item id at the root level. */
-    'aria-activedescendant': Signal<string | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
     tabindex: -1
     /** Reflects the presence lifecycle: 'opening' | 'open' | 'closing' | 'closed'.
      * Stays mounted while 'closing' so the exit animation can run. */
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'context-menu'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
@@ -31869,7 +31869,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<ContextMenuState>
+  state: ReadSignal<ContextMenuState>
   send: Send<ContextMenuMsg>
   parts: ContextMenuParts
   content: () => Renderable
@@ -31892,7 +31892,7 @@ export interface OverlayOptions {
 export interface SubOverlayOptions {
   /** The subTrigger value this level opens under. */
   value: string
-  state: Signal<ContextMenuState>
+  state: ReadSignal<ContextMenuState>
   parts: Pick<ContextMenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
   content: () => Renderable
   target?: string | HTMLElement
@@ -31928,7 +31928,7 @@ const isMounted
 
 ```typescript
 function connect(
-  state: Signal<PasswordInputState>,
+  state: ReadSignal<PasswordInputState>,
   send: Send<PasswordInputMsg>,
   opts: ConnectOptions = {},
 ): PasswordInputParts
@@ -31989,24 +31989,24 @@ export interface PasswordInputParts {
   root: {
     'data-scope': 'password-input'
     'data-part': 'root'
-    'data-visible': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   input: {
-    type: Signal<'text' | 'password'>
+    type: ReadSignal<'text' | 'password'>
     autocomplete: string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'password-input'
     'data-part': 'input'
     onInput: (e: Event) => void
   }
   visibilityTrigger: {
     type: 'button'
-    'aria-label': Signal<string>
-    'aria-pressed': Signal<boolean>
-    disabled: Signal<boolean>
-    tabindex: Signal<number>
+    'aria-label': ReadSignal<string>
+    'aria-pressed': ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
+    tabindex: ReadSignal<number>
     'data-scope': 'password-input'
     'data-part': 'visibility-trigger'
     onClick: (e: MouseEvent) => void
@@ -32043,7 +32043,7 @@ const passwordInput
 
 ```typescript
 function connect(
-  state: Signal<StepsState>,
+  state: ReadSignal<StepsState>,
   send: Send<StepsMsg>,
   opts: ConnectOptions = {},
 ): StepsParts
@@ -32128,23 +32128,23 @@ export interface StepsItemParts {
   item: {
     'data-scope': 'steps'
     'data-part': 'item'
-    'data-status': Signal<StepStatus>
+    'data-status': ReadSignal<StepStatus>
     'data-index': string
-    'aria-current': Signal<'step' | undefined>
+    'aria-current': ReadSignal<'step' | undefined>
   }
   trigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'trigger'
-    'data-status': Signal<StepStatus>
+    'data-status': ReadSignal<StepStatus>
     onClick: (e: MouseEvent) => void
   }
   separator: {
     'data-scope': 'steps'
     'data-part': 'separator'
-    'data-status': Signal<StepStatus>
+    'data-status': ReadSignal<StepStatus>
     'aria-hidden': 'true'
   }
 }
@@ -32159,18 +32159,18 @@ export interface StepsParts {
     'aria-label': string
     'data-scope': 'steps'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   nextTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
   }
   prevTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -32209,7 +32209,7 @@ const steps
 
 ```typescript
 function connect(
-  state: Signal<TimePickerState>,
+  state: ReadSignal<TimePickerState>,
   send: Send<TimePickerMsg>,
   opts: ConnectOptions = {},
 ): TimePickerParts
@@ -32335,18 +32335,18 @@ export interface TimePickerParts {
     'aria-label': string
     'data-scope': 'time-picker'
     'data-part': 'root'
-    'data-format': Signal<TimeFormat>
-    'data-disabled': Signal<'' | undefined>
+    'data-format': ReadSignal<TimeFormat>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   hoursInput: {
     type: 'number'
     role: 'spinbutton'
     'aria-label': string
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    disabled: Signal<boolean>
-    value: Signal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'time-picker'
     'data-part': 'hours-input'
     onInput: (e: Event) => void
@@ -32358,9 +32358,9 @@ export interface TimePickerParts {
     'aria-label': string
     'aria-valuemin': 0
     'aria-valuemax': 59
-    'aria-valuenow': Signal<number>
-    disabled: Signal<boolean>
-    value: Signal<string>
+    'aria-valuenow': ReadSignal<number>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'time-picker'
     'data-part': 'minutes-input'
     onInput: (e: Event) => void
@@ -32369,12 +32369,12 @@ export interface TimePickerParts {
   periodTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'time-picker'
     'data-part': 'period-trigger'
-    'data-period': Signal<'AM' | 'PM'>
+    'data-period': ReadSignal<'AM' | 'PM'>
     onClick: (e: MouseEvent) => void
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 ```
@@ -32418,7 +32418,7 @@ const timePicker
 
 ```typescript
 function connect(
-  state: Signal<DatePickerState>,
+  state: ReadSignal<DatePickerState>,
   send: Send<DatePickerMsg>,
   opts: ConnectOptions = {},
 ): DatePickerParts
@@ -32584,7 +32584,7 @@ export interface DatePickerParts {
   root: {
     'data-scope': 'date-picker'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   /**
    * Grid part factory. `offset` (default 0) selects which month this grid
@@ -32593,7 +32593,7 @@ export interface DatePickerParts {
    */
   grid: (offset?: number) => {
     role: 'grid'
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
     'data-scope': 'date-picker'
     'data-part': 'grid'
     'data-month-offset': number
@@ -32606,7 +32606,7 @@ export interface DatePickerParts {
   prevMonthTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'date-picker'
     'data-part': 'prev-month-trigger'
     onClick: (e: MouseEvent) => void
@@ -32614,7 +32614,7 @@ export interface DatePickerParts {
   nextMonthTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'date-picker'
     'data-part': 'next-month-trigger'
     onClick: (e: MouseEvent) => void
@@ -32700,23 +32700,23 @@ export interface DayCellParts {
     // Signals, not plain values: `view()` runs once, so a snapshot here freezes
     // every flag at build time and no selection, focus move or range preview
     // ever reaches the DOM. See `live` in `connect`.
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'date-picker'
     'data-part': 'day-cell'
     /** The cell's identity — the one genuinely static attribute. */
     'data-date': string
-    'data-in-month': Signal<'' | undefined>
-    'data-today': Signal<'' | undefined>
-    'data-selected': Signal<'' | undefined>
-    'data-focused': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
-    'data-range-start': Signal<'' | undefined>
-    'data-range-end': Signal<'' | undefined>
-    'data-in-range': Signal<'' | undefined>
+    'data-in-month': ReadSignal<'' | undefined>
+    'data-today': ReadSignal<'' | undefined>
+    'data-selected': ReadSignal<'' | undefined>
+    'data-focused': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-range-start': ReadSignal<'' | undefined>
+    'data-range-end': ReadSignal<'' | undefined>
+    'data-in-range': ReadSignal<'' | undefined>
     /** An individually unavailable date (also disabled) — distinct from out-of-bounds. */
-    'data-unavailable': Signal<'' | undefined>
+    'data-unavailable': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -32776,7 +32776,7 @@ commits run before `runMounts`), so the FIRST paint happens from
 changes repaint directly through the cached reference.
 
 ```typescript
-function areaCanvasBinding(state: Signal<ColorPickerState>, canvasId: string): Renderable
+function areaCanvasBinding(state: ReadSignal<ColorPickerState>, canvasId: string): Renderable
 ```
 
 ##### `colorFromPoint()` from `@llui/components/color-picker`
@@ -32793,7 +32793,7 @@ function colorFromPoint(rect: DOMRect, x: number, y: number): { s: number; v: nu
 
 ```typescript
 function connect(
-  state: Signal<ColorPickerState>,
+  state: ReadSignal<ColorPickerState>,
   send: Send<ColorPickerMsg>,
   opts: ConnectOptions = {},
 ): ColorPickerParts
@@ -33177,21 +33177,21 @@ export interface ColorPickerParts {
   root: {
     'data-scope': 'color-picker'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-model': Signal<ColorModel>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-model': ReadSignal<ColorModel>
     /** Bare boolean (package convention): present when the current OKLCH
      * color falls outside sRGB. Always absent in HSV mode (an HSV color is
      * an sRGB parameterization by construction). */
-    'data-out-of-gamut': Signal<'' | undefined>
+    'data-out-of-gamut': ReadSignal<'' | undefined>
   }
   /** Cycles the active model between `'hsv'` and `'oklch'`. */
   modelToggle: {
     type: 'button'
-    'aria-label': Signal<string>
-    disabled: Signal<boolean>
+    'aria-label': ReadSignal<string>
+    disabled: ReadSignal<boolean>
     'data-scope': 'color-picker'
     'data-part': 'model-toggle'
-    'data-model': Signal<ColorModel>
+    'data-model': ReadSignal<ColorModel>
     onClick: (e: MouseEvent) => void
   }
   hueSlider: {
@@ -33200,8 +33200,8 @@ export interface ColorPickerParts {
     max: 360
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'hue-slider'
     onInput: (e: Event) => void
@@ -33212,9 +33212,9 @@ export interface ColorPickerParts {
     max: 100
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'saturation-slider'
     onInput: (e: Event) => void
@@ -33225,9 +33225,9 @@ export interface ColorPickerParts {
     max: 100
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'lightness-slider'
     onInput: (e: Event) => void
@@ -33236,12 +33236,12 @@ export interface ColorPickerParts {
   chromaSlider: {
     type: 'range'
     min: 0
-    max: Signal<number>
-    step: Signal<number>
+    max: ReadSignal<number>
+    step: ReadSignal<number>
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'chroma-slider'
     onInput: (e: Event) => void
@@ -33253,9 +33253,9 @@ export interface ColorPickerParts {
     max: 1
     step: number
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'oklch-lightness-slider'
     onInput: (e: Event) => void
@@ -33264,8 +33264,8 @@ export interface ColorPickerParts {
     type: 'text'
     autocomplete: 'off'
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'hex-input'
     onInput: (e: Event) => void
@@ -33275,7 +33275,7 @@ export interface ColorPickerParts {
     'data-scope': 'color-picker'
     'data-part': 'preview'
     'aria-hidden': 'true'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /** The 2D area track. The machine owns the pointer-drag lifecycle
    * (capture on down, released on up/cancel, primary button only, ignored
@@ -33287,11 +33287,11 @@ export interface ColorPickerParts {
   area: {
     'data-scope': 'color-picker'
     'data-part': 'area'
-    'data-model': Signal<ColorModel>
+    'data-model': ReadSignal<ColorModel>
     // HSV-mode hue backdrop only; empty in OKLCH mode, where `areaCanvas`
     // paints the plane instead (the sRGB gamut boundary is not expressible
     // as a CSS gradient).
-    style: Signal<string>
+    style: ReadSignal<string>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
@@ -33316,16 +33316,16 @@ export interface ColorPickerParts {
    * not a fixed string — the axes it labels are literally different. */
   areaThumb: {
     role: 'slider'
-    'aria-label': Signal<string>
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-label': ReadSignal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'color-picker'
     'data-part': 'area-thumb'
-    style: Signal<string>
+    style: ReadSignal<string>
     onKeyDown: (e: KeyboardEvent) => void
   }
   /** Alpha (opacity) range input, 0..1. Wired to the existing alpha state. */
@@ -33335,9 +33335,9 @@ export interface ColorPickerParts {
     max: 1
     step: number
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
-    style: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
+    style: ReadSignal<string>
     'data-scope': 'color-picker'
     'data-part': 'alpha-slider'
     onInput: (e: Event) => void
@@ -33349,10 +33349,10 @@ export interface ColorPickerParts {
   eyeDropperTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
-    hidden: Signal<boolean>
+    disabled: ReadSignal<boolean>
+    hidden: ReadSignal<boolean>
     /** Bare boolean (package convention). */
-    'data-unsupported': Signal<'' | undefined>
+    'data-unsupported': ReadSignal<'' | undefined>
     'data-scope': 'color-picker'
     'data-part': 'eyedropper-trigger'
     onClick: (e: MouseEvent) => void
@@ -33480,11 +33480,11 @@ export interface Oklch {
 export interface SwatchParts {
   type: 'button'
   'aria-label': string
-  'aria-pressed': Signal<boolean>
+  'aria-pressed': ReadSignal<boolean>
   'data-scope': 'color-picker'
   'data-part': 'swatch'
   'data-value': string
-  'data-state': Signal<'selected' | undefined>
+  'data-state': ReadSignal<'selected' | undefined>
   style: string
   onClick: (e: MouseEvent) => void
 }
@@ -33535,7 +33535,7 @@ function colorAt(state: GradientPickerState, position: number): string
 
 ```typescript
 function connect(
-  state: Signal<GradientPickerState>,
+  state: ReadSignal<GradientPickerState>,
   send: Send<GradientPickerMsg>,
   opts: ConnectOptions,
 ): GradientPickerParts
@@ -33836,15 +33836,15 @@ export interface GradientPickerParts {
   root: {
     'data-scope': 'gradient-picker'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-kind': Signal<GradientKind>
-    'data-repeating': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-kind': ReadSignal<GradientKind>
+    'data-repeating': ReadSignal<'' | undefined>
   }
   preview: {
     'data-scope': 'gradient-picker'
     'data-part': 'preview'
     'aria-hidden': 'true'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /** The horizontal stop ramp: a plain `in <space>` linear ramp of the SAME
    * stop list `toCss` serializes (finding #3 — one shared builder, never two
@@ -33857,7 +33857,7 @@ export interface GradientPickerParts {
   track: {
     'data-scope': 'gradient-picker'
     'data-part': 'track'
-    style: Signal<string>
+    style: ReadSignal<string>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
@@ -33868,7 +33868,7 @@ export interface GradientPickerParts {
   addStopButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'add-stop-button'
     onClick: (e: MouseEvent) => void
@@ -33876,7 +33876,7 @@ export interface GradientPickerParts {
   removeStopButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'remove-stop-button'
     onClick: (e: MouseEvent) => void
@@ -33885,11 +33885,11 @@ export interface GradientPickerParts {
   repeatingToggle: {
     type: 'button'
     'aria-label': string
-    'aria-pressed': Signal<boolean>
-    disabled: Signal<boolean>
+    'aria-pressed': ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'repeating-toggle'
-    'data-state': Signal<'on' | 'off'>
+    'data-state': ReadSignal<'on' | 'off'>
     onClick: (e: MouseEvent) => void
   }
   angleInput: {
@@ -33898,8 +33898,8 @@ export interface GradientPickerParts {
     max: 360
     step: 1
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'gradient-picker'
     'data-part': 'angle-input'
     onInput: (e: Event) => void
@@ -33918,21 +33918,21 @@ export interface GradientPickerParts {
     'aria-label': string
     'aria-valuemin': 0
     'aria-valuemax': 100
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'gradient-picker'
     'data-part': 'center-thumb'
-    style: Signal<string>
+    style: ReadSignal<string>
     onKeyDown: (e: KeyboardEvent) => void
   }
   shapeOption: (shape: RadialShape) => ToggleItemParts
   sizeOption: (size: RadialSize) => ToggleItemParts
   interpolationSpaceSelect: {
     'aria-label': string
-    disabled: Signal<boolean>
-    value: Signal<InterpolationSpace>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<InterpolationSpace>
     'data-scope': 'gradient-picker'
     'data-part': 'interpolation-space-select'
     onInput: (e: Event) => void
@@ -33941,8 +33941,8 @@ export interface GradientPickerParts {
     'aria-label': string
     /** Disabled when the whole picker is disabled, OR the current space has
      * no hue (only `hsl`/`oklch` do). */
-    disabled: Signal<boolean>
-    value: Signal<HueInterpolationMethod>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<HueInterpolationMethod>
     'data-scope': 'gradient-picker'
     'data-part': 'interpolation-hue-select'
     onInput: (e: Event) => void
@@ -33950,7 +33950,7 @@ export interface GradientPickerParts {
   reverseButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'reverse-button'
     onClick: (e: MouseEvent) => void
@@ -33958,7 +33958,7 @@ export interface GradientPickerParts {
   distributeButton: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'gradient-picker'
     'data-part': 'distribute-button'
     onClick: (e: MouseEvent) => void
@@ -33972,10 +33972,10 @@ export interface GradientPickerParts {
     autocomplete: 'off'
     spellcheck: 'false'
     'aria-label': string
-    'aria-invalid': Signal<'true' | undefined>
-    'aria-describedby': Signal<string | undefined>
-    disabled: Signal<boolean>
-    value: Signal<string>
+    'aria-invalid': ReadSignal<'true' | undefined>
+    'aria-describedby': ReadSignal<string | undefined>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'gradient-picker'
     'data-part': 'css-input'
     onInput: (e: Event) => void
@@ -33991,8 +33991,8 @@ export interface GradientPickerParts {
     role: 'alert'
     'data-scope': 'gradient-picker'
     'data-part': 'css-error'
-    visible: Signal<boolean>
-    message: Signal<string>
+    visible: ReadSignal<boolean>
+    message: ReadSignal<string>
   }
   /**
    * The embedded `color-picker`'s FULL part bag, connected over the DERIVED
@@ -34117,9 +34117,9 @@ export interface GradientStopParts {
   'aria-label': string
   'aria-valuemin': 0
   'aria-valuemax': 100
-  'aria-valuenow': Signal<number>
-  'aria-valuetext': Signal<string>
-  'aria-disabled': Signal<'true' | undefined>
+  'aria-valuenow': ReadSignal<number>
+  'aria-valuetext': ReadSignal<string>
+  'aria-disabled': ReadSignal<'true' | undefined>
   /** Every stop is independently tabbable (never -1 while enabled) — the
    * package's existing multi-thumb precedent (`slider.ts`'s `SliderThumbParts`)
    * rather than a roving single-tab-stop composite: APG's roving-tabindex
@@ -34129,12 +34129,12 @@ export interface GradientStopParts {
    * chose this way for. Tab therefore visits stops in DOM order, which
    * tracks position order since `each()` renders the reducer's own
    * position-sorted `stops` array. */
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   'data-scope': 'gradient-picker'
   'data-part': 'stop'
   'data-value': string
-  'data-selected': Signal<'' | undefined>
-  style: Signal<string>
+  'data-selected': ReadSignal<'' | undefined>
+  style: ReadSignal<string>
   onPointerDown: (e: PointerEvent) => void
   onPointerMove: (e: PointerEvent) => void
   onPointerUp: (e: PointerEvent) => void
@@ -34167,12 +34167,12 @@ export interface ParsedGradient {
 export interface ToggleItemParts {
   type: 'button'
   'aria-label': string
-  'aria-pressed': Signal<boolean>
+  'aria-pressed': ReadSignal<boolean>
   'data-scope': 'gradient-picker'
   'data-part': ToggleItemPart
   'data-value': string
-  'data-state': Signal<'on' | 'off'>
-  disabled: Signal<boolean>
+  'data-state': ReadSignal<'on' | 'off'>
+  disabled: ReadSignal<boolean>
   onClick: (e: MouseEvent) => void
 }
 ```
@@ -34193,7 +34193,7 @@ const gradientPicker
 
 ```typescript
 function connect(
-  state: Signal<TimerState>,
+  state: ReadSignal<TimerState>,
   send: Send<TimerMsg>,
   opts: ConnectOptions = {},
 ): TimerParts
@@ -34335,10 +34335,10 @@ export interface TimerParts {
   root: {
     'data-scope': 'timer'
     'data-part': 'root'
-    'data-running': Signal<'' | undefined>
-    'data-direction': Signal<Direction>
+    'data-running': ReadSignal<'' | undefined>
+    'data-direction': ReadSignal<Direction>
     /** Present once a countdown has reached its target (see `isComplete`). */
-    'data-complete': Signal<'' | undefined>
+    'data-complete': ReadSignal<'' | undefined>
   }
   display: {
     role: 'timer'
@@ -34351,7 +34351,7 @@ export interface TimerParts {
     'aria-label': string
     'data-scope': 'timer'
     'data-part': 'start-trigger'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   pauseTrigger: {
@@ -34359,7 +34359,7 @@ export interface TimerParts {
     'aria-label': string
     'data-scope': 'timer'
     'data-part': 'pause-trigger'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   resetTrigger: {
@@ -34417,7 +34417,7 @@ function angleFromPoint(rect: DOMRect, x: number, y: number): number
 
 ```typescript
 function connect(
-  state: Signal<AngleSliderState>,
+  state: ReadSignal<AngleSliderState>,
   send: Send<AngleSliderMsg>,
   opts: ConnectOptions = {},
 ): AngleSliderParts
@@ -34485,17 +34485,17 @@ export interface AngleSliderInit {
 export interface AngleSliderParts {
   root: {
     role: 'slider'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
     'aria-orientation': 'horizontal'
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-readonly': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-readonly': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'angle-slider'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
   }
   control: {
@@ -34510,7 +34510,7 @@ export interface AngleSliderParts {
   thumb: {
     'data-scope': 'angle-slider'
     'data-part': 'thumb'
-    'data-value': Signal<string>
+    'data-value': ReadSignal<string>
   }
   valueText: {
     'data-scope': 'angle-slider'
@@ -34519,7 +34519,7 @@ export interface AngleSliderParts {
   /** A hidden input for form participation. */
   hiddenInput: {
     type: 'hidden'
-    value: Signal<string>
+    value: ReadSignal<string>
     name?: string
     'data-scope': 'angle-slider'
     'data-part': 'hidden-input'
@@ -34588,7 +34588,7 @@ function axis(direction: MarqueeDirection): 'horizontal' | 'vertical'
 ##### `connect()` from `@llui/components/marquee`
 
 ```typescript
-function connect(state: Signal<MarqueeState>, send: Send<MarqueeMsg>): MarqueeParts
+function connect(state: ReadSignal<MarqueeState>, send: Send<MarqueeMsg>): MarqueeParts
 ```
 
 ##### `cssAnimationDirection()` from `@llui/components/marquee`
@@ -34678,12 +34678,12 @@ export interface MarqueeParts {
   root: {
     'data-scope': 'marquee'
     'data-part': 'root'
-    'data-running': Signal<'' | undefined>
-    'data-direction': Signal<MarqueeDirection>
-    'data-axis': Signal<'horizontal' | 'vertical'>
-    'data-disabled': Signal<'' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    style: Signal<string>
+    'data-running': ReadSignal<'' | undefined>
+    'data-direction': ReadSignal<MarqueeDirection>
+    'data-axis': ReadSignal<'horizontal' | 'vertical'>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    style: ReadSignal<string>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
   }
@@ -34729,7 +34729,7 @@ Signal-surface connect: takes the component's `presence` state slice as a
 Signal and returns reactive (handle-based) props for spreading into a view.
 
 ```typescript
-function connect(state: Signal<PresenceState>, send: Send<PresenceMsg>): PresenceParts
+function connect(state: ReadSignal<PresenceState>, send: Send<PresenceMsg>): PresenceParts
 ```
 
 ##### `init()` from `@llui/components/presence`
@@ -34891,8 +34891,8 @@ export interface PresenceParts {
   root: {
     'data-scope': 'presence'
     'data-part': 'root'
-    'data-state': Signal<PresenceStatus>
-    hidden: Signal<boolean>
+    'data-state': ReadSignal<PresenceStatus>
+    hidden: ReadSignal<boolean>
     onAnimationEnd: (e: AnimationEvent) => void
     onTransitionEnd: (e: TransitionEvent) => void
   }
@@ -34932,7 +34932,7 @@ function canUndo(state: SignaturePadState): boolean
 
 ```typescript
 function connect(
-  state: Signal<SignaturePadState>,
+  state: ReadSignal<SignaturePadState>,
   send: Send<SignaturePadMsg>,
   opts: ConnectOptions = {},
 ): SignaturePadParts
@@ -35065,11 +35065,11 @@ export interface SignaturePadParts {
     'aria-label': string
     'data-scope': 'signature-pad'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-readonly': Signal<'' | undefined>
-    'data-drawing': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-readonly': ReadSignal<'' | undefined>
+    'data-drawing': ReadSignal<'' | undefined>
     /** Present while nothing has been drawn — the placeholder hook. */
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
   }
   control: {
     'data-scope': 'signature-pad'
@@ -35078,7 +35078,7 @@ export interface SignaturePadParts {
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'signature-pad'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -35086,7 +35086,7 @@ export interface SignaturePadParts {
   undoTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'signature-pad'
     'data-part': 'undo-trigger'
     onClick: (e: MouseEvent) => void
@@ -35098,7 +35098,7 @@ export interface SignaturePadParts {
   }
   hiddenInput: {
     type: 'hidden'
-    value: Signal<string>
+    value: ReadSignal<string>
     name?: string
     'data-scope': 'signature-pad'
     'data-part': 'hidden-input'
@@ -35140,7 +35140,11 @@ const signaturePad
 ##### `connect()` from `@llui/components/toc`
 
 ```typescript
-function connect(state: Signal<TocState>, send: Send<TocMsg>, opts: ConnectOptions = {}): TocParts
+function connect(
+  state: ReadSignal<TocState>,
+  send: Send<TocMsg>,
+  opts: ConnectOptions = {},
+): TocParts
 ```
 
 ##### `init()` from `@llui/components/toc`
@@ -35262,23 +35266,23 @@ export interface TocItemParts {
     'data-scope': 'toc'
     'data-part': 'item'
     'data-level': string
-    'data-active': Signal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
     'data-value': string
   }
   link: {
     href: string
-    'aria-current': Signal<'location' | undefined>
+    'aria-current': ReadSignal<'location' | undefined>
     'data-scope': 'toc'
     'data-part': 'link'
-    'data-active': Signal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
   }
   expandTrigger: {
     type: 'button'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-label': string
     'data-scope': 'toc'
     'data-part': 'expand-trigger'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     onClick: (e: MouseEvent) => void
   }
 }
@@ -35329,7 +35333,7 @@ const toc
 ##### `connect()` from `@llui/components/tour`
 
 ```typescript
-function connect(state: Signal<TourState>, send: Send<TourMsg>, opts: ConnectOptions): TourParts
+function connect(state: ReadSignal<TourState>, send: Send<TourMsg>, opts: ConnectOptions): TourParts
 ```
 
 ##### `currentStep()` from `@llui/components/tour`
@@ -35432,7 +35436,7 @@ export interface TourParts {
     'aria-describedby': string | undefined
     'data-scope': 'tour'
     'data-part': 'root'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   backdrop: {
     'data-scope': 'tour'
@@ -35461,7 +35465,7 @@ export interface TourParts {
   }
   prevTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'tour'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -35470,7 +35474,7 @@ export interface TourParts {
     type: 'button'
     'data-scope': 'tour'
     'data-part': 'next-trigger'
-    'data-last': Signal<'' | undefined>
+    'data-last': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
   }
   closeTrigger: {
@@ -35552,7 +35556,7 @@ const tour
 
 ```typescript
 function connect(
-  state: Signal<DateInputState>,
+  state: ReadSignal<DateInputState>,
   send: Send<DateInputMsg>,
   opts: ConnectOptions = {},
 ): DateInputParts
@@ -35689,25 +35693,25 @@ export interface DateInputParts {
   root: {
     'data-scope': 'date-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-invalid': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
   }
   input: {
     type: 'text'
     inputmode: 'numeric'
     autocomplete: 'off'
     spellcheck: false
-    value: Signal<string>
-    disabled: Signal<boolean>
-    readonly: Signal<boolean>
-    required: Signal<boolean>
-    'aria-invalid': Signal<'true' | undefined>
+    value: ReadSignal<string>
+    disabled: ReadSignal<boolean>
+    readonly: ReadSignal<boolean>
+    required: ReadSignal<boolean>
+    'aria-invalid': ReadSignal<'true' | undefined>
     /**
      * The error text's id while the value is invalid — so the field names its
      * own error rather than relying on the one-shot `role="alert"`
      * announcement (#268). Absent without a `ConnectOptions.id`.
      */
-    'aria-describedby': Signal<string | undefined>
+    'aria-describedby': ReadSignal<string | undefined>
     placeholder?: string
     'data-scope': 'date-input'
     'data-part': 'input'
@@ -35717,7 +35721,7 @@ export interface DateInputParts {
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'date-input'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -35729,7 +35733,7 @@ export interface DateInputParts {
     'aria-live': 'polite'
     'data-scope': 'date-input'
     'data-part': 'error-text'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 ```
@@ -35768,7 +35772,10 @@ const dateInput
 ##### `connect()` from `@llui/components/async-list`
 
 ```typescript
-function connect<T>(state: Signal<AsyncListState<T>>, send: Send<AsyncListMsg<T>>): AsyncListParts
+function connect<T>(
+  state: ReadSignal<AsyncListState<T>>,
+  send: Send<AsyncListMsg<T>>,
+): AsyncListParts
 ```
 
 ##### `init()` from `@llui/components/async-list`
@@ -35876,13 +35883,13 @@ export interface AsyncListParts {
   root: {
     'data-scope': 'async-list'
     'data-part': 'root'
-    'data-status': Signal<AsyncStatus>
+    'data-status': ReadSignal<AsyncStatus>
     /** `'true'` while a page request is in flight — the list's content is changing. */
-    'aria-busy': Signal<'true' | 'false'>
+    'aria-busy': ReadSignal<'true' | 'false'>
     /** Present once a load has SETTLED with zero items: the empty-state hook. */
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
     /** Present when the source reports no further pages. */
-    'data-exhausted': Signal<'' | undefined>
+    'data-exhausted': ReadSignal<'' | undefined>
   }
   sentinel: {
     'data-scope': 'async-list'
@@ -35891,7 +35898,7 @@ export interface AsyncListParts {
   }
   loadMoreTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'async-list'
     'data-part': 'load-more-trigger'
     onClick: (e: MouseEvent) => void
@@ -35900,7 +35907,7 @@ export interface AsyncListParts {
     type: 'button'
     'data-scope': 'async-list'
     'data-part': 'retry-trigger'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   errorText: {
@@ -35908,7 +35915,7 @@ export interface AsyncListParts {
     'aria-live': 'polite'
     'data-scope': 'async-list'
     'data-part': 'error-text'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 ```
@@ -35947,7 +35954,7 @@ function completeValues(state: CascadeSelectState): string[] | null
 
 ```typescript
 function connect(
-  state: Signal<CascadeSelectState>,
+  state: ReadSignal<CascadeSelectState>,
   send: Send<CascadeSelectMsg>,
   opts: ConnectOptions,
 ): CascadeSelectParts
@@ -36024,12 +36031,12 @@ export interface CascadeLevelParts {
   }
   select: {
     id: string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'cascade-select'
     'data-part': 'level-select'
     'data-level': string
-    'data-ready': Signal<'' | undefined>
+    'data-ready': ReadSignal<'' | undefined>
     onChange: (e: Event) => void
   }
 }
@@ -36052,13 +36059,13 @@ export interface CascadeSelectParts {
   root: {
     'data-scope': 'cascade-select'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-complete': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-complete': ReadSignal<'' | undefined>
   }
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'cascade-select'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -36102,7 +36109,7 @@ const cascadeSelect
 ##### `connect()` from `@llui/components/scroll-area`
 
 ```typescript
-function connect(state: Signal<ScrollAreaState>, send: Send<ScrollAreaMsg>): ScrollAreaParts
+function connect(state: ReadSignal<ScrollAreaState>, send: Send<ScrollAreaMsg>): ScrollAreaParts
 ```
 
 ##### `init()` from `@llui/components/scroll-area`
@@ -36205,8 +36212,8 @@ export interface ScrollAreaParts {
   root: {
     'data-scope': 'scroll-area'
     'data-part': 'root'
-    'data-scrolling': Signal<'' | undefined>
-    'data-hovered': Signal<'' | undefined>
+    'data-scrolling': ReadSignal<'' | undefined>
+    'data-hovered': ReadSignal<'' | undefined>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
   }
@@ -36224,30 +36231,30 @@ export interface ScrollAreaParts {
     'data-scope': 'scroll-area'
     'data-part': 'scrollbar'
     'data-axis': 'x'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
   scrollbarY: {
     'data-scope': 'scroll-area'
     'data-part': 'scrollbar'
     'data-axis': 'y'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
   thumbX: {
     'data-scope': 'scroll-area'
     'data-part': 'thumb'
     'data-axis': 'x'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   thumbY: {
     'data-scope': 'scroll-area'
     'data-part': 'thumb'
     'data-axis': 'y'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   corner: {
     'data-scope': 'scroll-area'
     'data-part': 'corner'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
 }
 ```
@@ -36296,7 +36303,7 @@ const scrollArea
 
 ```typescript
 function connect(
-  state: Signal<FloatingPanelState>,
+  state: ReadSignal<FloatingPanelState>,
   send: Send<FloatingPanelMsg>,
   opts: ConnectOptions = {},
 ): FloatingPanelParts
@@ -36410,12 +36417,12 @@ export interface FloatingPanelParts {
     'aria-label': string
     'data-scope': 'floating-panel'
     'data-part': 'root'
-    'data-dragging': Signal<'' | undefined>
-    'data-resizing': Signal<'' | undefined>
-    'data-minimized': Signal<'' | undefined>
-    'data-maximized': Signal<'' | undefined>
-    hidden: Signal<boolean>
-    style: Signal<string>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-resizing': ReadSignal<'' | undefined>
+    'data-minimized': ReadSignal<'' | undefined>
+    'data-maximized': ReadSignal<'' | undefined>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
   /**
    * Pointer drag starts here, and it is also a keyboard stop (#266): arrows
@@ -36442,13 +36449,13 @@ export interface FloatingPanelParts {
   content: {
     'data-scope': 'floating-panel'
     'data-part': 'content'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   minimizeTrigger: {
     type: 'button'
     'aria-label': string
     /** A toggle: `'true'` while minimized. */
-    'aria-pressed': Signal<'true' | 'false'>
+    'aria-pressed': ReadSignal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'minimize-trigger'
     onClick: (e: MouseEvent) => void
@@ -36457,7 +36464,7 @@ export interface FloatingPanelParts {
     type: 'button'
     'aria-label': string
     /** A toggle: `'true'` while maximized. */
-    'aria-pressed': Signal<'true' | 'false'>
+    'aria-pressed': ReadSignal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'maximize-trigger'
     onClick: (e: MouseEvent) => void
@@ -36539,7 +36546,7 @@ function centerFill(image: { width: number; height: number }, aspectRatio: numbe
 
 ```typescript
 function connect(
-  state: Signal<ImageCropperState>,
+  state: ReadSignal<ImageCropperState>,
   send: Send<ImageCropperMsg>,
   opts: ConnectOptions = {},
 ): ImageCropperParts
@@ -36648,9 +36655,9 @@ export interface ImageCropperParts {
   root: {
     'data-scope': 'image-cropper'
     'data-part': 'root'
-    'data-dragging': Signal<'' | undefined>
-    'data-resizing': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-resizing': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   image: {
     'data-scope': 'image-cropper'
@@ -36668,11 +36675,11 @@ export interface ImageCropperParts {
   cropBox: {
     role: 'group'
     tabindex: 0
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
     'aria-keyshortcuts': string
     'data-scope': 'image-cropper'
     'data-part': 'crop-box'
-    style: Signal<string>
+    style: ReadSignal<string>
     onPointerDown: (e: PointerEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -36724,7 +36731,7 @@ const imageCropper
 
 ```typescript
 function connect(
-  state: Signal<NavMenuState>,
+  state: ReadSignal<NavMenuState>,
   send: Send<NavMenuMsg>,
   opts: ConnectOptions,
 ): NavMenuParts
@@ -36845,12 +36852,12 @@ export interface NavItemParts {
     /** For a branch item this is the disclosure button controlling its panel;
      * `undefined` for a plain link trigger. */
     'aria-controls': string | undefined
-    'aria-expanded': Signal<boolean | undefined>
+    'aria-expanded': ReadSignal<boolean | undefined>
     'data-scope': 'navigation-menu'
     'data-part': 'trigger'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onPointerEnter: (e: PointerEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -36861,8 +36868,8 @@ export interface NavItemParts {
     'aria-labelledby': string
     'data-scope': 'navigation-menu'
     'data-part': 'content'
-    'data-state': Signal<'open' | 'closed'>
-    hidden: Signal<boolean>
+    'data-state': ReadSignal<'open' | 'closed'>
+    hidden: ReadSignal<boolean>
     onPointerEnter: (e: PointerEvent) => void
   }
 }
@@ -36900,7 +36907,7 @@ export interface NavMenuParts {
     'aria-label': string
     'data-scope': 'navigation-menu'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     onPointerLeave: (e: PointerEvent) => void
     onPointerEnter: (e: PointerEvent) => void
   }
@@ -36927,7 +36934,7 @@ export interface NavMenuParts {
     'aria-hidden': 'true'
     'data-scope': 'navigation-menu'
     'data-part': 'indicator'
-    'data-state': Signal<'visible' | 'hidden'>
+    'data-state': ReadSignal<'visible' | 'hidden'>
   }
   /** Place once anywhere in the same build to keep automatic direction live —
    * the shared `@llui/interactions` direction-sync seam (#265 finding 6),
@@ -37027,7 +37034,7 @@ const navigationMenu
 
 ```typescript
 function connect(
-  state: Signal<QrCodeState>,
+  state: ReadSignal<QrCodeState>,
   send: Send<QrCodeMsg>,
   opts: ConnectOptions = {},
 ): QrCodeParts
@@ -37163,7 +37170,7 @@ export interface QrCodeParts {
     'data-part': 'root'
     'aria-label': string
     /** Present while no matrix has been supplied — the empty state hook. */
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
   }
   /**
    * The `role="img"` graphic carries its OWN accessible name. A screen-reader
@@ -37173,22 +37180,22 @@ export interface QrCodeParts {
     'data-scope': 'qr-code'
     'data-part': 'svg'
     role: 'img'
-    'aria-label': Signal<string>
-    viewBox: Signal<string>
+    'aria-label': ReadSignal<string>
+    viewBox: ReadSignal<string>
     'shape-rendering': 'crispEdges'
   }
   /** Spread onto a `<rect>`: sized to the module grid so it covers the quiet background. */
   background: {
     'data-scope': 'qr-code'
     'data-part': 'background'
-    width: Signal<string>
-    height: Signal<string>
+    width: ReadSignal<string>
+    height: ReadSignal<string>
   }
   /** Spread onto a `<path>`: one sub-path per dark module. */
   foreground: {
     'data-scope': 'qr-code'
     'data-part': 'foreground'
-    d: Signal<string>
+    d: ReadSignal<string>
   }
   downloadTrigger: {
     type: 'button'
@@ -37196,7 +37203,7 @@ export interface QrCodeParts {
     'data-scope': 'qr-code'
     'data-part': 'download-trigger'
     /** Nothing to download until a matrix exists. */
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
 }
@@ -37251,7 +37258,7 @@ function canGoPrev(state: CarouselState): boolean
 
 ```typescript
 function connect(
-  state: Signal<CarouselState>,
+  state: ReadSignal<CarouselState>,
   send: Send<CarouselMsg>,
   opts: ConnectOptions,
 ): CarouselParts
@@ -37400,7 +37407,7 @@ export interface CarouselParts {
     'aria-label': string
     'data-scope': 'carousel'
     'data-part': 'root'
-    'data-paused': Signal<'' | undefined>
+    'data-paused': ReadSignal<'' | undefined>
     onPointerEnter: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
     onFocusIn: (e: FocusEvent) => void
@@ -37414,11 +37421,11 @@ export interface CarouselParts {
      * transition off (`[data-dragging] { transition: none }`) so the track
      * follows the finger 1:1 instead of easing.
      */
-    'data-dragging': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
     /** Live track offset (px) to follow the finger: `translateX(var)`. */
-    'data-drag-offset': Signal<string | undefined>
+    'data-drag-offset': ReadSignal<string | undefined>
     /** Physical pointer delta consumed by either skin's track transform. */
-    'style.--carousel-drag-offset': Signal<string | undefined>
+    'style.--carousel-drag-offset': ReadSignal<string | undefined>
     onPointerDown: (e: PointerEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
@@ -37438,7 +37445,7 @@ export interface CarouselParts {
   nextTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'carousel'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
@@ -37446,7 +37453,7 @@ export interface CarouselParts {
   prevTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'carousel'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -37469,21 +37476,21 @@ export interface CarouselSlideParts {
     'data-scope': 'carousel'
     'data-part': 'slide'
     'data-index': string
-    'data-active': Signal<'' | undefined>
-    hidden: Signal<boolean>
+    'data-active': ReadSignal<'' | undefined>
+    hidden: ReadSignal<boolean>
   }
   indicator: {
     type: 'button'
     role: 'tab'
     /** APG roving tab stop: only the selected indicator participates in Tab. */
-    tabindex: Signal<0 | -1>
+    tabindex: ReadSignal<0 | -1>
     'aria-label': string
-    'aria-selected': Signal<boolean>
+    'aria-selected': ReadSignal<boolean>
     'aria-controls': string
     'data-scope': 'carousel'
     'data-part': 'indicator'
     'data-index': string
-    'data-active': Signal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -37551,7 +37558,7 @@ const carousel
 
 ```typescript
 function connect(
-  state: Signal<FieldState>,
+  state: ReadSignal<FieldState>,
   send: Send<FieldMsg>,
   opts: FieldConnectOptions = {},
 ): FieldParts
@@ -37624,9 +37631,9 @@ export interface FieldParts {
   root: {
     'data-scope': 'field'
     'data-part': 'root'
-    'data-invalid': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
   }
   /** The `<label>`. `htmlFor` focuses the control on click. */
   label: {
@@ -37639,11 +37646,11 @@ export interface FieldParts {
   control: {
     id: string
     'aria-labelledby': string
-    'aria-describedby': Signal<string | undefined>
-    'aria-invalid': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    readOnly: Signal<boolean>
+    'aria-describedby': ReadSignal<string | undefined>
+    'aria-invalid': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    readOnly: ReadSignal<boolean>
     'data-scope': 'field'
     'data-part': 'control'
     onBlur: (e: FocusEvent) => void
@@ -37720,7 +37727,7 @@ const field
 
 ```typescript
 function connect(
-  state: Signal<FieldsetState>,
+  state: ReadSignal<FieldsetState>,
   _send: Send<FieldsetMsg>,
   opts: FieldsetConnectOptions = {},
 ): FieldsetParts
@@ -37787,12 +37794,12 @@ export interface FieldsetParts {
     role: 'group'
     /** The legend's id, or absent when `hasLegend: false`. */
     'aria-labelledby': string | undefined
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'fieldset'
     'data-part': 'root'
-    'data-invalid': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   /** The `<legend>` naming the group. */
   legend: {
@@ -37858,7 +37865,7 @@ const fieldset
 
 ```typescript
 function connect(
-  state: Signal<ToolbarState>,
+  state: ReadSignal<ToolbarState>,
   send: Send<ToolbarMsg>,
   opts: ConnectOptions,
 ): ToolbarParts
@@ -37962,9 +37969,9 @@ export interface ToolbarItemParts {
     'data-scope': 'toolbar'
     'data-part': 'item'
     'data-value': string
-    'data-disabled': Signal<'' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: () => void
   }
@@ -37977,17 +37984,17 @@ export interface ToolbarItemParts {
 export interface ToolbarParts {
   root: {
     role: 'toolbar'
-    'aria-orientation': Signal<Orientation>
+    'aria-orientation': ReadSignal<Orientation>
     'aria-label': string | undefined
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'toolbar'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   separator: {
     role: 'separator'
-    'aria-orientation': Signal<Orientation>
+    'aria-orientation': ReadSignal<Orientation>
     'data-scope': 'toolbar'
     'data-part': 'separator'
   }
@@ -38040,7 +38047,7 @@ function bandAt(state: MeterState): MeterBand | null
 
 ```typescript
 function connect(
-  state: Signal<MeterState>,
+  state: ReadSignal<MeterState>,
   _send: Send<MeterMsg>,
   opts: ConnectOptions = {},
 ): MeterParts
@@ -38195,47 +38202,47 @@ export interface MeterInit {
 export interface MeterParts {
   root: {
     role: 'meter'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
     'aria-label': string | undefined
     // Spelled out rather than aliased: `scripts/test/registry-attrs.test.ts`
     // reads part-bag VALUES syntactically and gives an ALIAS no verdict, which
     // is how the shipped skin came to style `data-[state=critical]` against a
     // machine emitting `low`/`high` — two rules of dead CSS, for a release.
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     /** The current band's id — absent when the reading is in no band. */
-    'data-band': Signal<string | undefined>
+    'data-band': ReadSignal<string | undefined>
     'data-scope': 'meter'
     'data-part': 'root'
   }
   track: {
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     'data-scope': 'meter'
     'data-part': 'track'
   }
   /** The filled bar of a classic gauge: `inline-size` up to the reading. */
   range: {
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
     'data-scope': 'meter'
     'data-part': 'range'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   /** The reading itself, for a BANDED track: positioned, not filled. */
   marker: {
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
-    'data-band': Signal<string | undefined>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-band': ReadSignal<string | undefined>
     'data-scope': 'meter'
     'data-part': 'marker'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   label: {
     'data-scope': 'meter'
     'data-part': 'label'
   }
   /** The laid-out bands, for `each` — key rows on `band.id`. */
-  bands: Signal<MeterBandGeometry[]>
+  bands: ReadSignal<MeterBandGeometry[]>
   /**
    * Attributes for one laid-out band, taking the ROW HANDLE `each` hands the
    * render function. It returns signals rather than plain values so the bag is
@@ -38245,10 +38252,10 @@ export interface MeterParts {
   bandProps: (band: Signal<MeterBandGeometry>) => {
     'data-scope': 'meter'
     'data-part': 'band'
-    'data-band': Signal<string>
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
-    'data-current': Signal<'' | undefined>
-    style: Signal<string>
+    'data-band': ReadSignal<string>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-current': ReadSignal<'' | undefined>
+    style: ReadSignal<string>
   }
   /**
    * One band by id, for a view that names its bands statically. An id no band
@@ -38260,15 +38267,15 @@ export interface MeterParts {
     'data-scope': 'meter'
     'data-part': 'band'
     'data-band': string
-    'data-state': Signal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
-    'data-current': Signal<'' | undefined>
-    hidden: Signal<boolean>
-    style: Signal<string>
+    'data-state': ReadSignal<'optimal' | 'suboptimal' | 'critical' | 'neutral'>
+    'data-current': ReadSignal<'' | undefined>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
   /** The formatted reading, WITHOUT the band name. */
-  valueText: Signal<string>
+  valueText: ReadSignal<string>
   /** The current band's announced name, or `''`. */
-  bandLabel: Signal<string>
+  bandLabel: ReadSignal<string>
 }
 ```
 
@@ -38305,7 +38312,7 @@ const meter
 
 ```typescript
 function connect(
-  state: Signal<BreadcrumbsState>,
+  state: ReadSignal<BreadcrumbsState>,
   send: Send<BreadcrumbsMsg>,
   opts: ConnectOptions = {},
 ): BreadcrumbsParts
@@ -38400,11 +38407,11 @@ export interface BreadcrumbsParts {
     'data-value': string
   }
   link: (id: string) => {
-    'aria-current': Signal<'page' | undefined>
+    'aria-current': ReadSignal<'page' | undefined>
     'data-scope': 'breadcrumbs'
     'data-part': 'link'
     'data-value': string
-    'data-current': Signal<'' | undefined>
+    'data-current': ReadSignal<'' | undefined>
   }
   separator: {
     'aria-hidden': 'true'
@@ -38456,7 +38463,7 @@ const breadcrumbs
 
 ```typescript
 function connect(
-  state: Signal<SearchFieldState>,
+  state: ReadSignal<SearchFieldState>,
   send: Send<SearchFieldMsg>,
   opts: ConnectOptions = {},
 ): SearchFieldParts
@@ -38516,7 +38523,7 @@ export interface SearchFieldParts {
     role: 'search'
     'data-scope': 'search-field'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   label: {
     'data-scope': 'search-field'
@@ -38524,8 +38531,8 @@ export interface SearchFieldParts {
   }
   input: {
     type: 'search'
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'search-field'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -38534,7 +38541,7 @@ export interface SearchFieldParts {
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     tabindex: -1
     'data-scope': 'search-field'
     'data-part': 'clear-trigger'
@@ -38576,7 +38583,11 @@ const searchField
 ##### `connect()` from `@llui/components/table`
 
 ```typescript
-function connect(state: Signal<TableState>, send: Send<TableMsg>, opts: ConnectOptions): TableParts
+function connect(
+  state: ReadSignal<TableState>,
+  send: Send<TableMsg>,
+  opts: ConnectOptions,
+): TableParts
 ```
 
 ##### `init()` from `@llui/components/table`
@@ -38718,16 +38729,16 @@ export interface TableCellCoord {
 export interface TableCellParts {
   role: 'gridcell'
   'aria-colindex': number
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   'data-scope': 'table'
   'data-part': 'cell'
   /** 0-based row index — addresses the cell for roving DOM focus. Reactive
    * for the same reason `TableRowParts`'s `aria-rowindex` is. */
-  'data-row-index': Signal<number>
+  'data-row-index': ReadSignal<number>
   /** 0-based column index — addresses the cell for roving DOM focus. Columns
    * do not reorder, so this stays a plain number. */
   'data-col-index': number
-  'data-focused': Signal<'' | undefined>
+  'data-focused': ReadSignal<'' | undefined>
   onFocus: (e: FocusEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
 }
@@ -38744,10 +38755,10 @@ export interface TableCheckboxParts {
    * assistive tech announced an unnamed checkbox in every row (#268).
    */
   'aria-label': string
-  'aria-checked': Signal<'true' | 'false' | 'mixed'>
+  'aria-checked': ReadSignal<'true' | 'false' | 'mixed'>
   'data-scope': 'table'
   'data-part': 'select-all' | 'row-checkbox'
-  'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+  'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
   /** Always `-1`: a `role="grid"` has exactly ONE tab stop, the roving cell. */
   tabindex: -1
   onClick: (e: MouseEvent) => void
@@ -38772,24 +38783,24 @@ export interface TableColumn {
 export interface TableColumnHeaderParts {
   role: 'columnheader'
   id: string
-  'aria-sort': Signal<'ascending' | 'descending' | 'none' | undefined>
+  'aria-sort': ReadSignal<'ascending' | 'descending' | 'none' | undefined>
   /**
    * Roving tab stop. The header row participates in the grid's single-tab-stop
    * sequence, because it hosts controls — the sort toggle on every sortable
    * column, and the select-all checkbox — that are otherwise unreachable by
    * keyboard.
    */
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   'data-scope': 'table'
   'data-part': 'column-header'
   'data-column': string
   /** Always {@link HEADER_ROW_INDEX} — addresses the header for roving DOM focus. */
   'data-row-index': typeof HEADER_ROW_INDEX
   /** 0-based column index (`-1` for a column not in `columns`). */
-  'data-col-index': Signal<number>
-  'data-focused': Signal<'' | undefined>
-  'data-sortable': Signal<'' | undefined>
-  'data-sort': Signal<SortDirection | undefined>
+  'data-col-index': ReadSignal<number>
+  'data-focused': ReadSignal<'' | undefined>
+  'data-sortable': ReadSignal<'' | undefined>
+  'data-sort': ReadSignal<SortDirection | undefined>
   onFocus: (e: FocusEvent) => void
   onClick: (e: MouseEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
@@ -38828,18 +38839,18 @@ export interface TableParts {
   root: {
     role: 'grid'
     id: string
-    'aria-multiselectable': Signal<'true' | undefined>
-    'aria-rowcount': Signal<number>
-    'aria-colcount': Signal<number>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
+    'aria-rowcount': ReadSignal<number>
+    'aria-colcount': ReadSignal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'table'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-density': TableDensity | undefined
   }
   columnHeader: (columnId: string) => TableColumnHeaderParts
   /**
-   * `index` accepts a plain `number` OR a `Signal<number>` (the row handle
+   * `index` accepts a plain `number` OR a `ReadSignal<number>` (the row handle
    * `each`/`virtualEach` passes its render callback) — a keyed row is REUSED
    * (moved, not rebuilt) on reorder, so a plain number captured at build time
    * would freeze `aria-rowindex` and the row's own `toggleRow`/`selectRange`
@@ -38879,16 +38890,16 @@ export interface TableParts {
 ```typescript
 export interface TableRowParts {
   role: 'row'
-  'aria-selected': Signal<boolean | undefined>
+  'aria-selected': ReadSignal<boolean | undefined>
   /** Reactive: a row's DISPLAY position can change after sort/reorder without
    * this row being rebuilt (`each` reuses rows by key), so the index this
    * addresses must follow the row's live position rather than freeze at
    * whatever it was when the row was first built. */
-  'aria-rowindex': Signal<number>
+  'aria-rowindex': ReadSignal<number>
   'data-scope': 'table'
   'data-part': 'row'
   'data-row': string
-  'data-selected': Signal<'' | undefined>
+  'data-selected': ReadSignal<'' | undefined>
   onClick: (e: MouseEvent) => void
 }
 ```
@@ -38962,7 +38973,7 @@ const table
 
 ```typescript
 function connect(
-  state: Signal<MenubarState>,
+  state: ReadSignal<MenubarState>,
   send: Send<MenubarMsg>,
   opts: ConnectOptions,
 ): MenubarParts
@@ -39084,7 +39095,7 @@ export interface MenubarOverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<MenubarState>
+  state: ReadSignal<MenubarState>
   send: Send<MenubarMsg>
   /** The menu id this overlay renders. */
   menuId: string
@@ -39169,14 +39180,14 @@ export interface MenubarTriggerParts {
   role: 'menuitem'
   id: string
   'aria-haspopup': 'menu'
-  'aria-expanded': Signal<boolean>
+  'aria-expanded': ReadSignal<boolean>
   'aria-controls': string
-  'aria-disabled': Signal<'true' | undefined>
+  'aria-disabled': ReadSignal<'true' | undefined>
   'data-scope': 'menubar'
   'data-part': 'trigger'
-  'data-state': Signal<'open' | 'closed'>
+  'data-state': ReadSignal<'open' | 'closed'>
   'data-value': string
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   onClick: (e: MouseEvent) => void
   onPointerEnter: (e: PointerEvent) => void
   onFocus: (e: FocusEvent) => void
@@ -39192,8 +39203,8 @@ export interface SubOverlayOptions {
   menuId: string
   /** The subTrigger value this level opens under. */
   value: string
-  /** The ROOT `Signal<MenubarState>` — the same one passed to `connect()`. */
-  state: Signal<MenubarState>
+  /** The ROOT `ReadSignal<MenubarState>` — the same one passed to `connect()`. */
+  state: ReadSignal<MenubarState>
   parts: Pick<MenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
   content: () => Renderable
   target?: string | HTMLElement
@@ -39221,7 +39232,7 @@ const menubar
 
 ```typescript
 function connect(
-  state: Signal<InViewState>,
+  state: ReadSignal<InViewState>,
   _send: Send<InViewMsg>,
   _opts: ConnectOptions,
 ): InViewParts
@@ -39279,7 +39290,7 @@ export interface InViewParts {
   root: {
     'data-scope': 'in-view'
     'data-part': 'root'
-    'data-state': Signal<'visible' | 'hidden'>
+    'data-state': ReadSignal<'visible' | 'hidden'>
   }
 }
 ```
@@ -39417,7 +39428,7 @@ function applyTheme(theme: Theme): void
 
 ```typescript
 function connect(
-  state: Signal<ThemeSwitchState>,
+  state: ReadSignal<ThemeSwitchState>,
   send: Send<ThemeSwitchMsg>,
   opts: ConnectOptions,
 ): ThemeSwitchParts
@@ -39527,7 +39538,7 @@ export interface ThemeSwitchParts {
     'data-scope': 'theme-switch'
     'data-part': 'option'
     'data-theme': Theme
-    'aria-pressed': Signal<boolean>
+    'aria-pressed': ReadSignal<boolean>
     'aria-label': string
     onClick: (e: MouseEvent) => void
   }
@@ -39535,7 +39546,7 @@ export interface ThemeSwitchParts {
     type: 'button'
     'data-scope': 'theme-switch'
     'data-part': 'toggle'
-    'data-theme': Signal<Theme>
+    'data-theme': ReadSignal<Theme>
     'aria-label': string
     onClick: (e: MouseEvent) => void
   }
@@ -39566,7 +39577,7 @@ const themeSwitch
 
 ```typescript
 function connect(
-  state: Signal<SortableState>,
+  state: ReadSignal<SortableState>,
   send: Send<SortableMsg>,
   opts: ConnectOptions,
 ): SortableParts
@@ -39840,7 +39851,7 @@ export interface SortableParts {
     'data-scope': 'sortable'
     'data-part': 'root'
     'data-container-id': string
-    'data-dragging': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
     onPointerCancel: (e: PointerEvent) => void
@@ -39853,11 +39864,11 @@ export interface SortableParts {
     'data-part': 'item'
     'data-index': string
     'data-id': string
-    'data-dragging': Signal<'' | undefined>
-    'data-over': Signal<'' | undefined>
-    'data-shift': Signal<'up' | 'down' | undefined>
-    'style.transform': Signal<string | undefined>
-    'style.zIndex': Signal<string | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-over': ReadSignal<'' | undefined>
+    'data-shift': ReadSignal<'up' | 'down' | undefined>
+    'style.transform': ReadSignal<string | undefined>
+    'style.zIndex': ReadSignal<string | undefined>
   }
   handle: (
     id: string,
@@ -39868,7 +39879,7 @@ export interface SortableParts {
     role: 'button'
     tabindex: 0
     /** A toggle button: pressed while this handle's item is carried. */
-    'aria-pressed': Signal<boolean>
+    'aria-pressed': ReadSignal<boolean>
     'aria-label': string
     /** The `instructions` part's id, or absent when `hasInstructions: false`. */
     'aria-describedby': string | undefined
@@ -39888,7 +39899,7 @@ export interface SortableParts {
     'aria-atomic': 'true'
     'data-scope': 'sortable'
     'data-part': 'live-region'
-    text: Signal<string>
+    text: ReadSignal<string>
   }
   /**
    * The keyboard instructions every handle's `aria-describedby` points at.
@@ -39931,7 +39942,7 @@ const sortable
 
 ```typescript
 function connect(
-  state: Signal<SparklineState>,
+  state: ReadSignal<SparklineState>,
   send: Send<SparklineMsg>,
   opts: SparklineConnectOptions,
 ): SparklineParts
@@ -40252,8 +40263,8 @@ export interface SparklineParts {
   root: {
     'data-scope': 'sparkline'
     'data-part': 'root'
-    'data-stale': Signal<'' | undefined>
-    'data-active': Signal<'' | undefined>
+    'data-stale': ReadSignal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
   }
   /**
    * The `<svg>`. `role="img"` named through its own `<title>`/`<desc>`; the
@@ -40266,7 +40277,7 @@ export interface SparklineParts {
     'data-part': 'svg'
     role: 'img'
     'aria-labelledby': string
-    viewBox: Signal<string>
+    viewBox: ReadSignal<string>
     tabindex: 0
     onKeyDown: (e: KeyboardEvent) => void
     onPointerMove: (e: PointerEvent) => void
@@ -40279,25 +40290,25 @@ export interface SparklineParts {
   table: {
     'data-scope': 'sparkline'
     'data-part': 'table'
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
   }
   /** The reference band. Stays MOUNTED and hides itself, so a band appearing or
    *  disappearing does not rebuild the layer. */
   band: {
     'data-scope': 'sparkline'
     'data-part': 'band'
-    'data-band': Signal<'between' | 'below' | 'above' | undefined>
-    d: Signal<string>
-    hidden: Signal<boolean>
+    'data-band': ReadSignal<'between' | 'below' | 'above' | undefined>
+    d: ReadSignal<string>
+    hidden: ReadSignal<boolean>
   }
-  line: { 'data-scope': 'sparkline'; 'data-part': 'line'; d: Signal<string> }
+  line: { 'data-scope': 'sparkline'; 'data-part': 'line'; d: ReadSignal<string> }
   /** The right edge. `data-stale` is set when it is later than the last
    *  reading. */
   now: {
     'data-scope': 'sparkline'
     'data-part': 'now'
-    'data-stale': Signal<'' | undefined>
-    d: Signal<string>
+    'data-stale': ReadSignal<'' | undefined>
+    d: ReadSignal<string>
   }
   /** A `<g>` stacking layer. Static — spread it on each layer group. */
   layer: { 'data-scope': 'sparkline'; 'data-part': 'layer' }
@@ -40315,23 +40326,23 @@ export interface SparklineParts {
   tickProps: (tick: Signal<SparklineTick>) => {
     'data-scope': 'sparkline'
     'data-part': 'grid'
-    'data-unit': Signal<'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'>
-    d: Signal<string>
+    'data-unit': ReadSignal<'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'>
+    d: ReadSignal<string>
   }
   dotProps: (dot: Signal<SparklineDot>) => {
     'data-scope': 'sparkline'
     'data-part': 'dot'
-    'data-tone': Signal<'below' | 'in' | 'above' | 'none'>
-    'data-last': Signal<'' | undefined>
-    'data-active': Signal<'' | undefined>
-    cx: Signal<number>
-    cy: Signal<number>
+    'data-tone': ReadSignal<'below' | 'in' | 'above' | 'none'>
+    'data-last': ReadSignal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
+    cx: ReadSignal<number>
+    cy: ReadSignal<number>
   }
   spanProps: (span: Signal<SparklineSpan>) => {
     'data-scope': 'sparkline'
     'data-part': 'span'
-    'data-grain': Signal<string>
-    d: Signal<string>
+    'data-grain': ReadSignal<string>
+    d: ReadSignal<string>
   }
   /** Tooltip ATTRIBUTES — spreadable, with its own reactive `hidden`. */
   tooltip: {
@@ -40339,19 +40350,19 @@ export interface SparklineParts {
     'data-part': 'tooltip'
     role: 'status'
     'aria-live': 'polite'
-    hidden: Signal<boolean>
-    style: Signal<string>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
-  ticks: Signal<SparklineTick[]>
-  dots: Signal<SparklineDot[]>
-  spans: Signal<SparklineSpan[]>
-  rows: Signal<SparklineRow[]>
+  ticks: ReadSignal<SparklineTick[]>
+  dots: ReadSignal<SparklineDot[]>
+  spans: ReadSignal<SparklineSpan[]>
+  rows: ReadSignal<SparklineRow[]>
   /** The dot under the cursor, or `null`. */
-  activeDot: Signal<SparklineDot | null>
+  activeDot: ReadSignal<SparklineDot | null>
   /** The composed accessible name — the locale's phrasing of
    *  {@link SparklineGeometry.summary}, or `opts.label` when given. */
-  label: Signal<string>
-  summary: Signal<SparklineSummary>
+  label: ReadSignal<string>
+  summary: ReadSignal<SparklineSummary>
 }
 ```
 
@@ -40569,7 +40580,11 @@ const sparkline
 ##### `connect()` from `@llui/components/form`
 
 ```typescript
-function connect(state: Signal<FormState>, send: Send<FormMsg>, _opts: ConnectOptions): FormParts
+function connect(
+  state: ReadSignal<FormState>,
+  send: Send<FormMsg>,
+  _opts: ConnectOptions,
+): FormParts
 ```
 
 ##### `init()` from `@llui/components/form`
@@ -40685,22 +40700,22 @@ export interface FormParts {
   root: {
     'data-scope': 'form'
     'data-part': 'root'
-    'data-state': Signal<FormStatus>
-    'aria-busy': Signal<'true' | undefined>
+    'data-state': ReadSignal<FormStatus>
+    'aria-busy': ReadSignal<'true' | undefined>
   }
   field: (name: string) => {
     'data-scope': 'form'
     'data-part': 'field'
-    'data-touched': Signal<'' | undefined>
-    touched: Signal<boolean>
+    'data-touched': ReadSignal<'' | undefined>
+    touched: ReadSignal<boolean>
     onBlur: (e: FocusEvent) => void
   }
   submit: {
     type: 'submit'
     'data-scope': 'form'
     'data-part': 'submit'
-    'data-state': Signal<FormStatus>
-    disabled: Signal<boolean>
+    'data-state': ReadSignal<FormStatus>
+    disabled: ReadSignal<boolean>
   }
 }
 ```
@@ -40748,7 +40763,7 @@ elements exactly like the base components.
 
 ```typescript
 function commandMenuConnect(
-  state: Signal<CommandMenuState>,
+  state: ReadSignal<CommandMenuState>,
   send: Send<CommandMenuMsg>,
   opts: ConnectOptions,
 ): CommandMenuParts
@@ -40788,7 +40803,7 @@ function commandMenuView(opts: CommandMenuViewOptions): Mountable
 
 ```typescript
 function dataTableConnect(
-  state: Signal<DataTableState>,
+  state: ReadSignal<DataTableState>,
   send: Send<DataTableMsg>,
   opts: ConnectOptions,
 ): DataTableParts
@@ -40850,7 +40865,7 @@ function pathToFieldName(path: StandardSchemaV1.Issue['path']): string
 
 ```typescript
 function searchableSelectConnect(
-  state: Signal<SearchableSelectState>,
+  state: ReadSignal<SearchableSelectState>,
   send: Send<SearchableSelectMsg>,
   opts: ConnectOptions,
 ): SearchableSelectParts
@@ -41228,13 +41243,13 @@ export interface CommandMenuParts {
   /** Combobox parts (root/input/content/item/group/...) for the search + list. */
   combobox: ComboboxParts
   /** Accessor for a command's keybinding hint (empty string when none). */
-  shortcutHint: (commandId: string) => Signal<string>
+  shortcutHint: (commandId: string) => ReadSignal<string>
   /** Empty-state part: `data-empty` is set when the filtered list is empty. */
   empty: {
     'data-scope': 'command-menu'
     'data-part': 'empty'
     role: 'status'
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
   }
 }
 ```
@@ -41267,6 +41282,8 @@ export interface CommandMenuState {
 
 ```typescript
 export interface CommandMenuViewOptions {
+  /** A PATH signal: the view slices `filteredGroups` with `.at()` so the list is
+   * gated on that path alone. */
   state: Signal<CommandMenuState>
   send: Send<CommandMenuMsg>
   id: string
@@ -41351,7 +41368,7 @@ That path should wire the machine directly instead: `dialogConnect` +
 
 ```typescript
 export interface ConfirmDialogViewOptions {
-  state: Signal<ConfirmDialogState>
+  state: ReadSignal<ConfirmDialogState>
   send: Send<ConfirmDialogMsg>
   id: string
   /** Custom class for content root. */
@@ -41470,9 +41487,9 @@ export interface DataTableStatusParts {
   loadingOverlay: {
     'data-scope': 'data-table'
     'data-part': 'loading-overlay'
-    'aria-busy': Signal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
     'aria-live': 'polite'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   /** Empty-state region — shown when a settled request has zero rows. */
   emptyState: {
@@ -41480,7 +41497,7 @@ export interface DataTableStatusParts {
     'aria-live': 'polite'
     'data-scope': 'data-table'
     'data-part': 'empty-state'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   /** Error-state region — shown when the last request failed. */
   errorState: {
@@ -41488,7 +41505,7 @@ export interface DataTableStatusParts {
     'aria-live': 'polite'
     'data-scope': 'data-table'
     'data-part': 'error-state'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 ```
@@ -41513,8 +41530,8 @@ export interface FormFieldFieldParts {
   root: {
     'data-scope': 'form-field'
     'data-part': 'field'
-    'data-invalid': Signal<'' | undefined>
-    'data-touched': Signal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-touched': ReadSignal<'' | undefined>
   }
   label: {
     id: string
@@ -41525,12 +41542,12 @@ export interface FormFieldFieldParts {
   control: {
     id: string
     'aria-labelledby': string
-    'aria-describedby': Signal<string | undefined>
-    'aria-invalid': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
-    'aria-busy': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    readOnly: Signal<boolean>
+    'aria-describedby': ReadSignal<string | undefined>
+    'aria-invalid': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    readOnly: ReadSignal<boolean>
     'data-scope': 'form-field'
     'data-part': 'control'
     onBlur: (e: FocusEvent) => void
@@ -41559,17 +41576,17 @@ export interface FormFieldFieldParts {
     'aria-live': 'polite'
     'data-scope': 'form-field'
     'data-part': 'error'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   /** The error CONTENT, for rendering — never spread onto an element. */
   error: {
     /** First visible issue message for this field, or '' when no error is shown. */
-    message: Signal<string>
+    message: ReadSignal<string>
     /** Every issue mapped to this field (for custom rendering). */
-    issues: Signal<StandardSchemaV1.Issue[]>
+    issues: ReadSignal<StandardSchemaV1.Issue[]>
     /** True only when the field is invalid AND its error should be visible
      * (`touched || status === 'submitted'`). */
-    visible: Signal<boolean>
+    visible: ReadSignal<boolean>
   }
 }
 ```
@@ -41592,15 +41609,15 @@ export interface FormFieldParts {
   root: {
     'data-scope': 'form-field'
     'data-part': 'root'
-    'data-state': Signal<FormStatus>
-    'aria-busy': Signal<'true' | undefined>
+    'data-state': ReadSignal<FormStatus>
+    'aria-busy': ReadSignal<'true' | undefined>
   }
   submit: {
     type: 'submit'
     'data-scope': 'form-field'
     'data-part': 'submit'
-    'data-state': Signal<FormStatus>
-    disabled: Signal<boolean>
+    'data-state': ReadSignal<FormStatus>
+    disabled: ReadSignal<boolean>
   }
   /** Build the full part bag for the named field, with the form blur-to-touch
    * handler already merged into `control`. */
@@ -41736,17 +41753,17 @@ export interface SearchableSelectItemParts {
   item: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'searchable-select'
     'data-part': 'item'
     'data-value': string
     /** The option's live position in the filtered list (reactive — reused rows
      * never report a stale index). */
-    'data-index': Signal<string>
+    'data-index': ReadSignal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -41768,7 +41785,7 @@ export interface OverlayOptions {
    * this popup a stacking context at all.
    */
   positionerClass?: string
-  state: Signal<SearchableSelectState>
+  state: ReadSignal<SearchableSelectState>
   send: Send<SearchableSelectMsg>
   parts: SearchableSelectParts
   /** Renders the popup body (filter input + listbox). */
@@ -41798,7 +41815,7 @@ export interface SearchableSelectParts {
   root: {
     'data-scope': 'searchable-select'
     'data-part': 'root'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
   }
   /** The closed-state trigger button. Displays the selection (via
    * `triggerLabel`) and opens the popup. Handles closed-trigger typeahead. */
@@ -41806,33 +41823,33 @@ export interface SearchableSelectParts {
     type: 'button'
     role: 'combobox'
     'aria-haspopup': 'listbox'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     id: string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'searchable-select'
     'data-part': 'trigger'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   /** Text to render inside the trigger: placeholder, single label, or a joined
    * multi-select summary. */
-  triggerLabel: Signal<string>
+  triggerLabel: ReadSignal<string>
   /** Whether a selection exists (drive showing/hiding the clear button). */
-  hasValue: Signal<boolean>
+  hasValue: ReadSignal<boolean>
   /** The filter input rendered inside the popup, above the listbox. */
   input: {
     type: 'text'
     role: 'combobox'
     autocomplete: 'off'
     'aria-autocomplete': 'list'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-activedescendant': Signal<string | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
     id: string
-    value: Signal<string>
+    value: ReadSignal<string>
     'data-scope': 'searchable-select'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -41847,14 +41864,14 @@ export interface SearchableSelectParts {
     role: 'listbox'
     id: string
     'aria-labelledby': string
-    'aria-busy': Signal<'true' | undefined>
-    'aria-multiselectable': Signal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
-    'data-status': Signal<AsyncStatus>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-status': ReadSignal<AsyncStatus>
     /** The mutually-exclusive load projection (#265 finding 11); mirrors the
      * top-level `loadState` signal. See `combobox`'s `LoadProjection`. */
-    'data-load-state': Signal<LoadProjection>
+    'data-load-state': ReadSignal<LoadProjection>
     'data-scope': 'searchable-select'
     'data-part': 'content'
   }
@@ -41865,7 +41882,7 @@ export interface SearchableSelectParts {
    * flight while the previous items are still mounted and selectable;
    * `'error'` is reported the same whether or not stale items remain
    * mounted underneath it. */
-  loadState: Signal<LoadProjection>
+  loadState: ReadSignal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */
@@ -41897,7 +41914,7 @@ export interface SearchableSelectParts {
     'aria-atomic': 'true'
     'data-scope': 'searchable-select'
     'data-part': 'live-region'
-    text: Signal<string>
+    text: ReadSignal<string>
   }
   /** Empty-state container. `hidden` is false only when the SETTLED filtered
    * list is empty — never while loading, revalidating, or after a failed
@@ -41905,7 +41922,7 @@ export interface SearchableSelectParts {
   empty: {
     'data-scope': 'searchable-select'
     'data-part': 'empty'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 ```
@@ -41947,19 +41964,19 @@ export interface WizardParts {
     'aria-label': string
     'data-scope': 'steps'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   nextTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
-    'aria-busy': Signal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    'aria-busy': ReadSignal<'true' | undefined>
     'data-scope': 'steps'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
   }
   prevTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -42188,7 +42205,7 @@ That path should wire the machine directly instead: `dialogConnect` +
 
 ```typescript
 export interface ConfirmDialogViewOptions {
-  state: Signal<ConfirmDialogState>
+  state: ReadSignal<ConfirmDialogState>
   send: Send<ConfirmDialogMsg>
   id: string
   /** Custom class for content root. */
@@ -42214,7 +42231,7 @@ const confirmDialog
 
 ```typescript
 function connect(
-  state: Signal<FormFieldState>,
+  state: ReadSignal<FormFieldState>,
   send: Send<FormFieldMsg>,
   opts: FormFieldConnectOptions,
 ): FormFieldParts
@@ -42291,8 +42308,8 @@ export interface FormFieldFieldParts {
   root: {
     'data-scope': 'form-field'
     'data-part': 'field'
-    'data-invalid': Signal<'' | undefined>
-    'data-touched': Signal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-touched': ReadSignal<'' | undefined>
   }
   label: {
     id: string
@@ -42303,12 +42320,12 @@ export interface FormFieldFieldParts {
   control: {
     id: string
     'aria-labelledby': string
-    'aria-describedby': Signal<string | undefined>
-    'aria-invalid': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
-    'aria-busy': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    readOnly: Signal<boolean>
+    'aria-describedby': ReadSignal<string | undefined>
+    'aria-invalid': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    readOnly: ReadSignal<boolean>
     'data-scope': 'form-field'
     'data-part': 'control'
     onBlur: (e: FocusEvent) => void
@@ -42337,17 +42354,17 @@ export interface FormFieldFieldParts {
     'aria-live': 'polite'
     'data-scope': 'form-field'
     'data-part': 'error'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   /** The error CONTENT, for rendering — never spread onto an element. */
   error: {
     /** First visible issue message for this field, or '' when no error is shown. */
-    message: Signal<string>
+    message: ReadSignal<string>
     /** Every issue mapped to this field (for custom rendering). */
-    issues: Signal<StandardSchemaV1.Issue[]>
+    issues: ReadSignal<StandardSchemaV1.Issue[]>
     /** True only when the field is invalid AND its error should be visible
      * (`touched || status === 'submitted'`). */
-    visible: Signal<boolean>
+    visible: ReadSignal<boolean>
   }
 }
 ```
@@ -42370,15 +42387,15 @@ export interface FormFieldParts {
   root: {
     'data-scope': 'form-field'
     'data-part': 'root'
-    'data-state': Signal<FormStatus>
-    'aria-busy': Signal<'true' | undefined>
+    'data-state': ReadSignal<FormStatus>
+    'aria-busy': ReadSignal<'true' | undefined>
   }
   submit: {
     type: 'submit'
     'data-scope': 'form-field'
     'data-part': 'submit'
-    'data-state': Signal<FormStatus>
-    disabled: Signal<boolean>
+    'data-state': ReadSignal<FormStatus>
+    disabled: ReadSignal<boolean>
   }
   /** Build the full part bag for the named field, with the form blur-to-touch
    * handler already merged into `control`. */
@@ -42434,7 +42451,7 @@ const formField
 
 ```typescript
 function connect(
-  state: Signal<WizardState>,
+  state: ReadSignal<WizardState>,
   send: Send<WizardMsg>,
   opts: WizardConnectOptions = {},
 ): WizardParts
@@ -42531,19 +42548,19 @@ export interface WizardParts {
     'aria-label': string
     'data-scope': 'steps'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   nextTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
-    'aria-busy': Signal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    'aria-busy': ReadSignal<'true' | undefined>
     'data-scope': 'steps'
     'data-part': 'next-trigger'
     onClick: (e: MouseEvent) => void
   }
   prevTrigger: {
     type: 'button'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'steps'
     'data-part': 'prev-trigger'
     onClick: (e: MouseEvent) => void
@@ -42587,7 +42604,7 @@ elements exactly like the base components.
 
 ```typescript
 function connect(
-  state: Signal<CommandMenuState>,
+  state: ReadSignal<CommandMenuState>,
   send: Send<CommandMenuMsg>,
   opts: ConnectOptions,
 ): CommandMenuParts
@@ -42732,13 +42749,13 @@ export interface CommandMenuParts {
   /** Combobox parts (root/input/content/item/group/...) for the search + list. */
   combobox: ComboboxParts
   /** Accessor for a command's keybinding hint (empty string when none). */
-  shortcutHint: (commandId: string) => Signal<string>
+  shortcutHint: (commandId: string) => ReadSignal<string>
   /** Empty-state part: `data-empty` is set when the filtered list is empty. */
   empty: {
     'data-scope': 'command-menu'
     'data-part': 'empty'
     role: 'status'
-    'data-empty': Signal<'' | undefined>
+    'data-empty': ReadSignal<'' | undefined>
   }
 }
 ```
@@ -42771,6 +42788,8 @@ export interface CommandMenuState {
 
 ```typescript
 export interface CommandMenuViewOptions {
+  /** A PATH signal: the view slices `filteredGroups` with `.at()` so the list is
+   * gated on that path alone. */
   state: Signal<CommandMenuState>
   send: Send<CommandMenuMsg>
   id: string
@@ -42815,7 +42834,7 @@ const commandMenu
 
 ```typescript
 function connect(
-  state: Signal<DataTableState>,
+  state: ReadSignal<DataTableState>,
   send: Send<DataTableMsg>,
   opts: ConnectOptions,
 ): DataTableParts
@@ -43022,9 +43041,9 @@ export interface DataTableStatusParts {
   loadingOverlay: {
     'data-scope': 'data-table'
     'data-part': 'loading-overlay'
-    'aria-busy': Signal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
     'aria-live': 'polite'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   /** Empty-state region — shown when a settled request has zero rows. */
   emptyState: {
@@ -43032,7 +43051,7 @@ export interface DataTableStatusParts {
     'aria-live': 'polite'
     'data-scope': 'data-table'
     'data-part': 'empty-state'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   /** Error-state region — shown when the last request failed. */
   errorState: {
@@ -43040,7 +43059,7 @@ export interface DataTableStatusParts {
     'aria-live': 'polite'
     'data-scope': 'data-table'
     'data-part': 'error-state'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 ```
@@ -43075,7 +43094,7 @@ const dataTable
 
 ```typescript
 function connect(
-  state: Signal<SearchableSelectState>,
+  state: ReadSignal<SearchableSelectState>,
   send: Send<SearchableSelectMsg>,
   opts: ConnectOptions,
 ): SearchableSelectParts
@@ -43263,7 +43282,7 @@ export interface OverlayOptions {
    * this popup a stacking context at all.
    */
   positionerClass?: string
-  state: Signal<SearchableSelectState>
+  state: ReadSignal<SearchableSelectState>
   send: Send<SearchableSelectMsg>
   parts: SearchableSelectParts
   /** Renders the popup body (filter input + listbox). */
@@ -43335,17 +43354,17 @@ export interface SearchableSelectItemParts {
   item: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'searchable-select'
     'data-part': 'item'
     'data-value': string
     /** The option's live position in the filtered list (reactive — reused rows
      * never report a stale index). */
-    'data-index': Signal<string>
+    'data-index': ReadSignal<string>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
   }
@@ -43359,7 +43378,7 @@ export interface SearchableSelectParts {
   root: {
     'data-scope': 'searchable-select'
     'data-part': 'root'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
   }
   /** The closed-state trigger button. Displays the selection (via
    * `triggerLabel`) and opens the popup. Handles closed-trigger typeahead. */
@@ -43367,33 +43386,33 @@ export interface SearchableSelectParts {
     type: 'button'
     role: 'combobox'
     'aria-haspopup': 'listbox'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     id: string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'searchable-select'
     'data-part': 'trigger'
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   /** Text to render inside the trigger: placeholder, single label, or a joined
    * multi-select summary. */
-  triggerLabel: Signal<string>
+  triggerLabel: ReadSignal<string>
   /** Whether a selection exists (drive showing/hiding the clear button). */
-  hasValue: Signal<boolean>
+  hasValue: ReadSignal<boolean>
   /** The filter input rendered inside the popup, above the listbox. */
   input: {
     type: 'text'
     role: 'combobox'
     autocomplete: 'off'
     'aria-autocomplete': 'list'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
-    'aria-activedescendant': Signal<string | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
     id: string
-    value: Signal<string>
+    value: ReadSignal<string>
     'data-scope': 'searchable-select'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -43408,14 +43427,14 @@ export interface SearchableSelectParts {
     role: 'listbox'
     id: string
     'aria-labelledby': string
-    'aria-busy': Signal<'true' | undefined>
-    'aria-multiselectable': Signal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
     tabindex: -1
-    'data-state': Signal<'open' | 'closed'>
-    'data-status': Signal<AsyncStatus>
+    'data-state': ReadSignal<'open' | 'closed'>
+    'data-status': ReadSignal<AsyncStatus>
     /** The mutually-exclusive load projection (#265 finding 11); mirrors the
      * top-level `loadState` signal. See `combobox`'s `LoadProjection`. */
-    'data-load-state': Signal<LoadProjection>
+    'data-load-state': ReadSignal<LoadProjection>
     'data-scope': 'searchable-select'
     'data-part': 'content'
   }
@@ -43426,7 +43445,7 @@ export interface SearchableSelectParts {
    * flight while the previous items are still mounted and selectable;
    * `'error'` is reported the same whether or not stale items remain
    * mounted underneath it. */
-  loadState: Signal<LoadProjection>
+  loadState: ReadSignal<LoadProjection>
   /** Build the parts for an option by VALUE. The optional `index` is accepted
    * for call-site convenience only — identity is value-keyed, so a reused row is
    * never stale. */
@@ -43458,7 +43477,7 @@ export interface SearchableSelectParts {
     'aria-atomic': 'true'
     'data-scope': 'searchable-select'
     'data-part': 'live-region'
-    text: Signal<string>
+    text: ReadSignal<string>
   }
   /** Empty-state container. `hidden` is false only when the SETTLED filtered
    * list is empty — never while loading, revalidating, or after a failed
@@ -43466,7 +43485,7 @@ export interface SearchableSelectParts {
   empty: {
     'data-scope': 'searchable-select'
     'data-part': 'empty'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 ```
@@ -43710,7 +43729,7 @@ function chartForcedColorPatterns(id: string): Mountable
 
 ```typescript
 function connect(
-  state: Signal<ChartState>,
+  state: ReadSignal<ChartState>,
   send: Send<ChartMsg>,
   opts: ChartConnectOptions,
 ): ChartParts
@@ -43958,9 +43977,9 @@ export interface ChartParts {
     // Spelled out rather than aliased: `scripts/test/registry-attrs.test.ts`
     // reads part-bag VALUES syntactically, and an imported alias reads as an
     // open type it declines to give a verdict on.
-    'data-coord': Signal<'cartesian' | 'polar'>
-    'data-domain': Signal<'value' | 'share'>
-    'data-active': Signal<'' | undefined>
+    'data-coord': ReadSignal<'cartesian' | 'polar'>
+    'data-domain': ReadSignal<'value' | 'share'>
+    'data-active': ReadSignal<'' | undefined>
     /** Per-instance forced-colors fill custom properties — see `connect()`'s
      * own doc for why these must be per-chart rather than a shared global. */
     style: string
@@ -43981,7 +44000,7 @@ export interface ChartParts {
     'data-part': 'svg'
     role: 'img'
     'aria-labelledby': string
-    viewBox: Signal<string>
+    viewBox: ReadSignal<string>
     tabindex: 0
     onKeyDown: (e: KeyboardEvent) => void
     onPointerMove: (e: PointerEvent) => void
@@ -43994,7 +44013,7 @@ export interface ChartParts {
   table: {
     'data-scope': 'chart'
     'data-part': 'table'
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
   }
   /** Tooltip ATTRIBUTES — spreadable, with its own reactive `hidden`. */
   tooltip: {
@@ -44002,8 +44021,8 @@ export interface ChartParts {
     'data-part': 'tooltip'
     role: 'status'
     'aria-live': 'polite'
-    hidden: Signal<boolean>
-    style: Signal<string>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
   /** A `<g>` stacking layer. Static — spread it on each layer group. */
   layer: { 'data-scope': 'chart'; 'data-part': 'layer' }
@@ -44026,9 +44045,9 @@ export interface ChartParts {
     'data-scope': 'chart'
     'data-part': 'legend-item'
     'data-series': string
-    'data-series-cue': Signal<ChartSeriesCue>
-    'data-dimmed': Signal<'' | undefined>
-    'aria-pressed': Signal<boolean>
+    'data-series-cue': ReadSignal<ChartSeriesCue>
+    'data-dimmed': ReadSignal<'' | undefined>
+    'aria-pressed': ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   /** The legend's colour chip. Spreadable onto its own element (a `<span>` in
@@ -44039,7 +44058,7 @@ export interface ChartParts {
   legendSwatch: (key: string) => {
     'data-scope': 'chart'
     'data-part': 'legend-swatch'
-    'data-series-cue': Signal<ChartSeriesCue>
+    'data-series-cue': ReadSignal<ChartSeriesCue>
   }
   /** Attributes for one drawn mark. Spread onto a `<path>` and pass `d`. */
   markProps: (mark: ChartMark) => {
@@ -44054,14 +44073,14 @@ export interface ChartParts {
     onPointerEnter: (e: PointerEvent) => void
   }
   // Derived geometry, as signals the view renders with `each`.
-  marks: Signal<ChartMark[]>
-  vertices: Signal<ChartVertex[]>
-  gridLines: Signal<ChartGridLine[]>
-  categoryTicks: Signal<ChartCategoryTick[]>
-  tooltipRows: Signal<ChartTooltipRow[]>
-  activeLabel: Signal<string>
-  rows: Signal<ChartRow[]>
-  series: Signal<ChartSeries[]>
+  marks: ReadSignal<ChartMark[]>
+  vertices: ReadSignal<ChartVertex[]>
+  gridLines: ReadSignal<ChartGridLine[]>
+  categoryTicks: ReadSignal<ChartCategoryTick[]>
+  tooltipRows: ReadSignal<ChartTooltipRow[]>
+  activeLabel: ReadSignal<string>
+  rows: ReadSignal<ChartRow[]>
+  series: ReadSignal<ChartSeries[]>
 }
 ```
 
@@ -44186,12 +44205,12 @@ const chart
 Render one Iconify glyph as a real `<svg>`.
 
 `name` is `prefix:name` (`'lucide:star'`, `'simple-icons:github'`; a bare
-name is a Lucide glyph) or a `Signal<string>` of one, in which case the glyph
+name is a Lucide glyph) or a `ReadSignal<string>` of one, in which case the glyph
 follows the signal. `props` spread onto the `<svg>`; `class` is passed through
 as given, so a caller sizes and colours the glyph from there.
 
 ```typescript
-function icon(name: string | Signal<string>, props?: ElProps): Mountable
+function icon(name: string | ReadSignal<string>, props?: ElProps): Mountable
 ```
 
 ##### `loadIcon()` from `@llui/components/icon`
