@@ -23,6 +23,22 @@ export const REPO_ROOT = resolve(GALLERY_ROOT, '../..')
 
 export const SHELL_ROOT = resolve(GALLERY_ROOT, 'src/shell')
 
+/**
+ * One dependency-optimizer cache PER BUILD. Vite defaults `cacheDir` to the
+ * package's `node_modules/.vite`, so the three dev servers `pnpm dev` runs
+ * shared ONE `deps/_metadata.json`: each re-optimized for its own dependency
+ * set (the registry document's `clsx`/`tailwind-merge`, the baseline's
+ * `@floating-ui/dom`) and overwrote the other's browser hash, so a document's
+ * in-flight dependency requests came back `504 Outdated Optimize Dep` and it
+ * settled `error`. It surfaced as the dev-server test "timing out under load"
+ * (#268): load only widened the race.
+ */
+export const CACHE_DIRS = {
+  shell: resolve(GALLERY_ROOT, 'node_modules/.vite/shell'),
+  baseline: resolve(GALLERY_ROOT, 'node_modules/.vite/baseline'),
+  registry: resolve(GALLERY_ROOT, 'node_modules/.vite/registry'),
+} as const
+
 /** Output root; the site build points this at a staging directory. */
 export const OUT_DIR = resolve(GALLERY_ROOT, process.env['LLUI_GALLERY_OUT'] ?? 'dist')
 

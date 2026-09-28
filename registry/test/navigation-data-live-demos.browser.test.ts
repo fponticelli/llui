@@ -136,6 +136,17 @@ describe('actual navigation/data demos in Chromium', () => {
       },
     ]
     browser = await chromium.launch({ headless: true })
+    // WARM both dev servers here, in the fixture (#268). Each demo is a whole
+    // app that Vite compiles ON DEMAND on its first request — hundreds of
+    // modules through the LLui compiler — and that cold compile used to land
+    // inside whichever test navigated first: the charts test, which timed
+    // out at 30 s under a parallel `turbo test` (load ~6 on 4 CPUs) while the
+    // whole file took 18.6 s alone. Paid here, it is bounded by the hook
+    // budget (sized for fixtures) and every test measures only its own work.
+    for (const demo of demos) {
+      const page = await openDemo(browser, demo)
+      await page.close()
+    }
   }, 120_000)
 
   afterAll(async () => {
