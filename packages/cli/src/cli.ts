@@ -17,6 +17,17 @@ import { formatMismatches, formatUnverified } from './versions.js'
 
 const USAGE = `llui — add registry components to an LLui app
 
+Two surfaces, two different artifacts:
+  llui add <name>             copies styled source into your app: a skin over a
+                              machine, a pattern adapter, or a presentational item.
+                              This is the Registry skins path (Tailwind v4).
+  @llui/components/<name>     imports a headless machine (state, keyboard, ARIA) as a
+                              package dependency, styled by a copied skin or by the
+                              Baseline theme (styles/theme.css, no Tailwind).
+  Some components have only one of the two, and the names can differ (an alias
+  such as dropdown-menu installs the menu skin). Run \`llui list\` to see both
+  columns, or browse https://llui.dev/component-catalog.
+
 Usage:
   llui init [--registry <url|path>] [--ui <dir>] [--lib <dir>] [--alias <prefix>]
   llui add <item...> [--overwrite] [--force] [--dry-run] [--registry <url|path>] [--cwd <dir>]
@@ -99,8 +110,11 @@ async function cmdInit(cwd: string, flags: Argv['flags']): Promise<void> {
   // TOKENS, not `theme.css`. The baseline stylesheet's component rules are
   // unlayered and beat `@layer utilities`, so pairing it with registry
   // components makes every recipe lose silently.
-  console.log('\nAdd the tokens to your app CSS:')
+  console.log('\nAdd the tokens to your app CSS (Registry skins, Tailwind v4):')
   console.log("  @import 'tailwindcss';")
+  // Overlay and disclosure recipes animate with tw-animate-css's `animate-in` /
+  // `fade-in-0` / `zoom-in-95`, which are not Tailwind core.
+  console.log("  @import 'tw-animate-css';")
   console.log("  @import '@llui/components/styles/tokens.css';")
   console.log("  @import '@llui/components/styles/tokens-dark.css';")
   console.log('\n(Not styles/theme.css — that is the opt-in baseline stylesheet,')

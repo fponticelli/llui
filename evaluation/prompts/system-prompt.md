@@ -149,8 +149,9 @@ superseded requests.
 
 ## Headless components
 
-`@llui/components` ships 66 headless state machines. Pass a sliced signal handle to
-`connect`, never an accessor or the whole root signal:
+`@llui/components/<name>` exports headless state machines. Pass a sliced signal handle to
+`connect`, never an accessor or the whole root signal. (`llui add <name>` is a different
+artifact: it copies a styled Tailwind skin into the app; its name need not match the import.)
 
 ```typescript
 import { dialog } from '@llui/components/dialog'

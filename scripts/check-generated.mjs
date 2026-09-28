@@ -11,16 +11,27 @@
 // This regenerates, then fails if anything moved. Two modes:
 //   (default)  diff only the known generated paths — safe on a dirty working tree,
 //              so it can run in `pnpm verify` while you have edits in flight.
-//   --strict   diff ALL of `site/`. Correct only from a clean checkout (CI), where
+//   --strict   diff ALL of `site/` (plus OUTSIDE_SITE). Correct only from a clean checkout (CI), where
 //              anything that moved after regenerating is BY DEFINITION generated.
 //              This is what keeps GENERATED_PATHS below from silently going stale:
 //              a new generator output fails the build until it is listed here.
 
 import { execFileSync } from 'node:child_process'
 
+// Generated regions that live OUTSIDE `site/`. `--strict` diffs these too, because a
+// whole-`site/` diff cannot see them (#269). Keep in sync with COMPONENT_DOC_TARGETS in
+// `site/src/component-docs.ts`; `site/test/component-docs.test.ts` asserts it.
+const OUTSIDE_SITE = [
+  'README.md',
+  'packages/components/README.md',
+  'packages/cli/README.md',
+  '.claude/skills/llui-app-dev/references/components.md',
+  '.agents/skills/llui-app-dev/references/components.md',
+]
+
 // Every path the site's `generate` script writes. Keep in sync with
-// `site/src/generate-{api,llms,examples,benchmarks}.ts` and
-// `scripts/build-registry.mjs` — `--strict` enforces it.
+// `site/src/generate-{api,llms,examples,benchmarks,component-docs}.ts` and
+// `scripts/build-registry.mjs` — `--strict` enforces it for `site/`.
 const GENERATED_PATHS = [
   // The component registry llui.dev serves to `llui add`. Built from
   // `registry/registry.json` + the item sources; committed so the docs site
@@ -33,6 +44,13 @@ const GENERATED_PATHS = [
   'site/public/llms.txt',
   'site/public/llms-full.txt',
   'site/public/benchmark-data.json',
+  // Product-contract regions (#269) spliced into hand-written pages by
+  // `site/src/generate-component-docs.ts` (its COMPONENT_DOC_TARGETS).
+  'site/content/component-catalog.md',
+  'site/content/components.md',
+  'site/content/styling.md',
+  'site/content/migration.md',
+  ...OUTSIDE_SITE,
 ]
 
 const strict = process.argv.includes('--strict')
@@ -59,7 +77,7 @@ function changed(pathspecs) {
 console.log('Regenerating site content…')
 execFileSync('pnpm', ['--filter', '@llui/site', 'run', 'generate'], { stdio: 'inherit' })
 
-const drifted = changed(strict ? ['site'] : GENERATED_PATHS)
+const drifted = changed(strict ? ['site', ...OUTSIDE_SITE] : GENERATED_PATHS)
 
 if (drifted.length === 0) {
   console.log(`✓ generated site content is up to date${strict ? ' (strict: whole site/)' : ''}`)

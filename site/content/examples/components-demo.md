@@ -16,6 +16,8 @@ description: 'A curated app of @llui/components machines styled by the Baseline 
 
 A curated app over LLui's headless component library (`@llui/components`), styled by the **Baseline theme** (`@llui/components/styles/theme.css`). Each section wires up one family of accessible primitives with live controls, composed the way a real app composes them.
 
+The components are styled by `theme.css` alone. The page around them — the header, the section grid — uses Tailwind utilities for its own layout, which is the app's choice, not a requirement of the Baseline theme: [`examples/baseline-css`](https://github.com/fponticelli/llui/tree/main/examples/baseline-css) builds the same stylesheet with no Tailwind package or plugin at all.
+
 For every component once — with deterministic scenarios, on both the Baseline theme and the Registry skins path — use the [Component Gallery](https://github.com/fponticelli/llui/tree/main/examples/component-gallery) instead (`pnpm gallery`).
 
 ## What it demonstrates

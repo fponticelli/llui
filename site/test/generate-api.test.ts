@@ -812,9 +812,12 @@ describe('LLM reference metadata', () => {
     const reference = readRepo('site/public/llms-full.txt')
     expect(reference).toContain('view: ({ state, send }) =>')
     expect(reference).toContain("state.at('count')")
-    expect(reference).toContain('66 headless')
     expect(reference).not.toContain('view: ({ send, text }) =>')
-    expect(reference).not.toContain('58 headless')
+    // No hand-maintained component count (#269): the inventory is generated from the product
+    // contract, and the reference teaches the two surfaces instead.
+    expect(reference).not.toMatch(/\b\d+ headless (?:UI )?(?:components|state machines)\b/)
+    expect(reference).toContain('`@llui/components/<name>` exports headless state machines')
+    expect(reference).toMatch(/`llui add <name>` is a different\s+artifact/)
     expect(reference).not.toContain('sliceHandler')
     expect(reference).not.toContain('View<S, M> is a bundle of state-bound helpers')
   })

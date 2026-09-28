@@ -374,7 +374,7 @@
   "dependencies": {
     "@standard-schema/spec": "^1.0.0"
   },
-  "description": "66 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
+  "description": "Headless UI component machines for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more",
   "keywords": [
     "llui",
     "components",
