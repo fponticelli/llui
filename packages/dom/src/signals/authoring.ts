@@ -8,7 +8,7 @@
 //
 // `component` and `mountApp` route to the signal runtime.
 
-import type { Signal, LiveSignal } from './types.js'
+import type { Signal, LiveSignal, MappedSignal } from './types.js'
 import type { TransitionOptions } from '../types.js'
 import { isSignalHandle, rowHandle } from './handle.js'
 import { LluiFrameworkError } from './framework-error.js'
@@ -382,9 +382,30 @@ export function eachDirect<T>(
   )
 }
 
+/** Conditional render: mounts `render`'s arm while `cond` is truthy (and
+ * `orElse`'s, if given, while it is falsy). The arm receives the NARROWED signal
+ * — the condition handle itself, typed non-nullable. Over a PATH condition
+ * (`state.at('user')`) it slices with `.at()`; over a MAPPED one
+ * (`state.map(pickUser)`, `derived(…)`) it is a {@link MappedSignal} like its
+ * condition, so read its fields with `.map((u) => u.name)`. */
+export function show<T>(
+  cond: MappedSignal<T>,
+  render: (narrowed: MappedSignal<NonNullable<T>>) => Renderable,
+  orElse?: () => Renderable,
+  transition?: TransitionOptions,
+): Mountable
 export function show<T>(
   cond: Signal<T>,
   render: (narrowed: Signal<NonNullable<T>>) => Renderable,
+  orElse?: () => Renderable,
+  transition?: TransitionOptions,
+): Mountable
+export function show<T>(
+  cond: Signal<T>,
+  // Typed as the NARROWER `MappedSignal` view because that is the one type both
+  // overloads' arms accept: a path-condition arm takes a `Signal`, which a
+  // `MappedSignal` is. The value passed is the same runtime handle either way.
+  render: (narrowed: MappedSignal<NonNullable<T>>) => Renderable,
   orElse?: () => Renderable,
   // Optional element-level transition hooks (from `@llui/transitions` — e.g.
   // `fade()`, `slide()`): `enter` animates the arm in after it mounts, `leave`
@@ -394,9 +415,10 @@ export function show<T>(
   transition?: TransitionOptions,
 ): Mountable {
   if (!isSignalHandle(cond)) return compiledAway('show')
-  // the arm reads component state; the cond handle (path-rooted) IS the narrowed
-  // signal — its `.at()` resolves against the same state the arm scope receives.
-  const narrowed = cond as Signal<NonNullable<T>>
+  // the arm reads component state; the cond handle IS the narrowed signal. A
+  // path-rooted one's `.at()` resolves against the same state the arm scope
+  // receives; a mapped one has no `.at()` (its overload types the arm so).
+  const narrowed = cond as Signal<NonNullable<T>> as MappedSignal<NonNullable<T>>
   return signalShow(
     { produce: cond.produce, deps: cond.deps, componentRooted: cond.rowLocal !== true },
     () => render(narrowed),
@@ -408,7 +430,18 @@ export function show<T>(
 /** Discriminated-union render. `discriminant` selects the union's tag field
  * (`v => v.kind`, `v => v.type`, …); each arm receives the NARROWED variant
  * signal, so it can read variant-only fields with full types (`v.at('data')`).
- * Mirrors `show`'s narrowing. Rewritten by the compiler to `signalBranch`. */
+ * Mirrors `show`'s narrowing: over a MAPPED `value` (`.map(…)`/`derived(…)`)
+ * every arm's signal is a {@link MappedSignal} too, read with
+ * `v.map((x) => x.data)`. Rewritten by the compiler to `signalBranch`. */
+export function branch<U extends object, D extends keyof U>(
+  value: MappedSignal<U>,
+  discriminant: (u: U) => U[D],
+  arms: {
+    [K in U[D] & (string | number)]: (v: MappedSignal<Extract<U, Record<D, K>>>) => Renderable
+  },
+  /** Optional element-level transition hooks — animate the arm swap (see `show`). */
+  transition?: TransitionOptions,
+): Mountable
 export function branch<U extends object, D extends keyof U>(
   value: Signal<U>,
   discriminant: (u: U) => U[D],

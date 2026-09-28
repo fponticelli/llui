@@ -191,21 +191,24 @@ function makeMappedHandle<T>(
   deps: readonly string[],
   rowLocal: boolean,
 ): MappedHandle<T> {
-  // The carrier keeps a THROWING `at` as a runtime safety net for uncompiled
-  // view-helper code; the public type is `MappedSignal` (`at: never`), which
-  // can't hold that callable value — so build the object as a `SignalHandle`
-  // (callable `at`) and widen to `MappedHandle` on return. The compile error
-  // (`MappedSignal.at: never`) + the `at-after-map` lint are the real guards;
-  // this throw only fires if both are bypassed.
+  // The carrier keeps a THROWING `at` as a runtime safety net; the public type is
+  // `MappedSignal` (`at: never`), which can't hold that callable value — so build
+  // the object as a `SignalHandle` (callable `at`) and widen to `MappedHandle` on
+  // return. The compile error (`MappedSignal.at: never`, carried through the
+  // `show`/`branch` narrowed-param overloads) + the `at-after-map` lint are the
+  // guards where the mapped origin is visible; the throw covers the rest.
   const h: SignalHandle<T> = {
     [SIGNAL]: true,
     produce,
     deps,
     rowLocal,
     peek,
-    at: (() => {
+    // Reachable from WELL-TYPED code: a `MappedSignal<T>` is assignable to
+    // `Signal<T>`, so a view helper taking `Signal<T>` (or a `show`/`branch` arm
+    // param typed that way) can be handed one. Name both fixes, with the path.
+    at: ((path: string) => {
       throw new LluiFrameworkError(
-        '.at() on a mapped signal is unsupported — slice with .at() before .map()',
+        `.at('${path}') on a mapped signal is unsupported: a signal produced by .map() or derived() — including the narrowed signal show()/branch() hand an arm when their condition is mapped — has no state path to slice. Read the field from its value with .map((v) => v.${path}), or slice with .at() BEFORE mapping: sig.at('${path}').map(fn).`,
       )
     }) as Signal<T>['at'],
     map: (<U>(fn: (v: T) => U) =>

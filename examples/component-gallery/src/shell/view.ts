@@ -11,6 +11,7 @@
  */
 import {
   a,
+  branch,
   button,
   code,
   div,
@@ -679,28 +680,21 @@ function stage(entry: GalleryEntry, state: Signal<State>, send: Send<Msg>): Moun
               ]),
               div({ class: 'frame-viewport' }, [
                 documentFrame(row, `${entry.displayName} — ${pathName}`, send),
-                // The message is read from `status`, not from the arm's narrowed
-                // signal: that signal derives from a `.map`, so `.at()` on it
-                // throws at runtime (while the compiler's prefer-at-over-map
-                // lint would ask for exactly that on a `.map(s => s.message)`).
-                show(
-                  statusName.map((name) => name === 'error'),
-                  () => [
+                // `failed` is `status` narrowed to its error variant — a mapped
+                // signal like `status`, so its message is read with `.map`.
+                branch(status, (current) => current.status, {
+                  loading: () => [],
+                  ready: () => [],
+                  error: (failed) => [
                     div({ class: 'frame-error', role: 'alert' }, [
                       strong([text(`${pathName} could not render this scenario.`)]),
-                      p([
-                        text(
-                          status.map((current) =>
-                            current.status === 'error' ? current.message : '',
-                          ),
-                        ),
-                      ]),
+                      p([text(failed.map((current) => current.message))]),
                       button({ type: 'button', onClick: () => send({ type: 'retry' }) }, [
                         text('Retry'),
                       ]),
                     ]),
                   ],
-                ),
+                }),
               ]),
             ],
           ),
