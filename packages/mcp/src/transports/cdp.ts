@@ -1,6 +1,6 @@
 import type { CdpTransport, ConsoleEntry, NetworkEntry, ErrorEntry } from '../tool-registry.js'
 
-class CdpError extends Error {
+export class CdpError extends Error {
   constructor(
     public readonly code:
       | 'cdp_unavailable'
@@ -23,6 +23,39 @@ interface CdpSession {
   errorBuffer: ErrorEntry[]
 }
 
+/**
+ * How long the Playwright fallback may take to ATTACH: navigate to the dev URL
+ * and see the app expose `__lluiDebug`. One deadline covers both steps.
+ *
+ * Sized from measurement, not taste. Against `examples/virtualization` on a
+ * dev server, at load ~19 on 4 CPUs: 0.7-1.2 s cold, 0.5-1.0 s warm. The
+ * slow case this must still admit is a large app's FIRST on-demand compile,
+ * measured at 7.3-9.0 s under similar load for the components demo
+ * (`docs/agents/test-durations.md`, loose-d) — so 30 s leaves ~3x over the
+ * worst real attach and ~25x over a typical one, while a page that will
+ * never become ready (wrong URL, app without the dev runtime) still fails
+ * with a named `attach_timeout` instead of hanging the tool call.
+ *
+ * It used to be written `{ timeout: 10_000 }` in `waitForFunction`'s SECOND
+ * argument slot — the page function's argument, not its options — so the
+ * wait silently ran on Playwright's default instead, and the error claimed
+ * "within 10s".
+ */
+export const DEFAULT_ATTACH_TIMEOUT_MS = 30_000
+
+/**
+ * Launches the fallback browser. The default is Playwright's own
+ * `chromium.launch`: this is the DEVELOPER's debugging browser, pointed at
+ * their own app, which may legitimately load fonts, APIs and CDN assets —
+ * the repository's hermetic test network policy
+ * (`scripts/lib/network-policy.mjs`) must not govern it. Tests inject the
+ * hermetic launcher here so the browsers THEY cause to exist stay behind the
+ * guard.
+ */
+export type CdpBrowserLauncher = (options: {
+  headless: boolean
+}) => Promise<import('playwright').Browser>
+
 function pushBounded<T>(arr: T[], item: T, max: number): void {
   arr.push(item)
   if (arr.length > max) arr.shift()
@@ -40,10 +73,23 @@ export class CdpSessionManager implements CdpTransport {
   private inflight: Promise<CdpSession> | null = null
   private devUrl: string | null
   private headed: boolean
+  private readonly attachTimeoutMs: number
+  private readonly launchBrowser: CdpBrowserLauncher | undefined
 
-  constructor(opts: { devUrl?: string | null; headed?: boolean } = {}) {
+  constructor(
+    opts: {
+      devUrl?: string | null
+      headed?: boolean
+      /** Attach deadline for the Playwright fallback; see `DEFAULT_ATTACH_TIMEOUT_MS`. */
+      attachTimeoutMs?: number
+      /** Launches the fallback browser; see `CdpBrowserLauncher`. */
+      launchBrowser?: CdpBrowserLauncher
+    } = {},
+  ) {
     this.devUrl = opts.devUrl ?? null
     this.headed = opts.headed ?? false
+    this.attachTimeoutMs = opts.attachTimeoutMs ?? DEFAULT_ATTACH_TIMEOUT_MS
+    this.launchBrowser = opts.launchBrowser
   }
 
   /**
@@ -344,20 +390,36 @@ export class CdpSessionManager implements CdpTransport {
       )
     }
 
-    const browser = await pw.chromium.launch({ headless: !this.headed })
-    const page = await browser.newPage()
-    await page.goto(url.href)
+    const launch: CdpBrowserLauncher =
+      this.launchBrowser ?? ((options) => pw.chromium.launch(options))
+    const browser = await launch({ headless: !this.headed })
+    // Every failure from here on must close the browser it launched: a goto
+    // that throws used to escape before the try and orphan the process.
     try {
-      await page.waitForFunction(
-        () => typeof (globalThis as Record<string, unknown>).__lluiDebug !== 'undefined',
-        { timeout: 10_000 },
-      )
-    } catch {
-      await browser.close()
-      throw new CdpError('attach_timeout', `App not ready at ${url.href} within 10s`)
+      const deadline = Date.now() + this.attachTimeoutMs
+      const remaining = (): number => Math.max(1, deadline - Date.now())
+      const page = await browser.newPage()
+      try {
+        await page.goto(url.href, { timeout: remaining() })
+        await page.waitForFunction(
+          () => typeof (globalThis as Record<string, unknown>).__lluiDebug !== 'undefined',
+          undefined,
+          { timeout: remaining() },
+        )
+      } catch (err) {
+        if (err instanceof pw.errors.TimeoutError) {
+          throw new CdpError(
+            'attach_timeout',
+            `App at ${url.href} did not expose __lluiDebug within ${this.attachTimeoutMs} ms`,
+          )
+        }
+        throw err
+      }
+      this.session = await this.buildSession(page, browser, 'playwright-owned')
+      return this.session
+    } catch (err) {
+      await browser.close().catch(() => {})
+      throw err
     }
-
-    this.session = await this.buildSession(page, browser, 'playwright-owned')
-    return this.session
   }
 }

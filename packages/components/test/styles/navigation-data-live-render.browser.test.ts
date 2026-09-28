@@ -117,10 +117,16 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
     await Promise.all(builds.map((build) => build.close()))
   })
 
-  async function openMounted(fixture: Fixture): Promise<Page> {
+  /** A page on the fixture, its mount function loaded but NOT yet called. */
+  async function openUnmounted(fixture: Fixture): Promise<Page> {
     const page = await browser.newPage()
     await page.goto(fixture.url)
     await page.waitForFunction((fn) => typeof window[fn] === 'function', fixture.mountFn)
+    return page
+  }
+
+  async function openMounted(fixture: Fixture): Promise<Page> {
+    const page = await openUnmounted(fixture)
     await page.evaluate(
       ({ fn, contract }) => {
         const mount = window[fn]
@@ -238,39 +244,87 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
     expect(geometry.sidebarRoomy.height).toBeCloseTo(48, 0)
   })
 
+  // The closing case is a LIVE exit: both skins run a 0.2 s `accordion-up`
+  // animation on `[data-state="closing"]` that collapses `block-size` to 0, and
+  // the exit watcher (`exitCompletion`) settles the item to `closed` on its
+  // `animationend`. So "visibly retained" is a property of the START of the
+  // exit, and reading it in a later Playwright round trip after the mount is a
+  // race against the page's animation clock: under load (19-26) the read
+  // landed at the end of the animation (`accordion: expected 0 to be greater
+  // than 0`, 1 of 7 runs), and a later read would miss `closing` altogether.
+  // Both reads now happen IN-PAGE: the retention snapshot in the same task as
+  // the mount — no frame can pass in between, so the animation is at its
+  // first keyframe by construction — and the exit's end is recorded by a
+  // MutationObserver on the page's own clock, then awaited.
   it.each(['baseline', 'registryTailwind'] as const)(
     '%s retains the accordion/collapsible closing case visibly, driven by the real reducer',
     async (path) => {
       const fixture = fixtures.find((candidate) => candidate.path === path)!
-      const page = await openMounted(fixture)
-      const closing = await page.evaluate(() => {
-        const read = (scenarioId: string) => {
-          const root = document.querySelector<HTMLElement>(
-            `[data-scenario-id="${scenarioId}"][data-scenario-case="closing"]`,
+      const page = await openUnmounted(fixture)
+      const closing = await page.evaluate(
+        async ({ fn, contract }) => {
+          const ids = ['component:accordion', 'component:collapsible'] as const
+          const startedAt = performance.now()
+          const mount = window[fn]
+          if (mount === undefined) throw new Error(`Missing window.${fn}`)
+          mount(contract)
+          const probes = ids.map((scenarioId) => {
+            const root = document.querySelector<HTMLElement>(
+              `[data-scenario-id="${scenarioId}"][data-scenario-case="closing"]`,
+            )
+            if (root === null) throw new Error(`Missing closing case for ${scenarioId}`)
+            const content = root.querySelector<HTMLElement>('[data-state="closing"]')
+            if (content === null) {
+              throw new Error(`Missing [data-state="closing"] for ${scenarioId} right after mount`)
+            }
+            // Synchronous with the mount: the exit animation has not advanced.
+            const style = getComputedStyle(content)
+            const retained = {
+              display: style.display,
+              ariaHidden: content.getAttribute('aria-hidden'),
+              inert: content.hasAttribute('inert'),
+              height: content.getBoundingClientRect().height,
+              exitAnimationMs: Number.parseFloat(style.animationDuration) * 1000,
+            }
+            // Armed in the same task, so no transition out of `closing` is missed.
+            const exited = new Promise<{ afterMs: number; state: string | null }>((resolve) => {
+              const observer = new MutationObserver(() => {
+                const state = content.getAttribute('data-state')
+                if (state === 'closing') return
+                observer.disconnect()
+                resolve({ afterMs: performance.now() - startedAt, state })
+              })
+              observer.observe(content, { attributes: true, attributeFilter: ['data-state'] })
+            })
+            return { scenarioId, retained, exited }
+          })
+          return Promise.all(
+            probes.map(async ({ scenarioId, retained, exited }) => ({
+              scenarioId,
+              retained,
+              exit: await exited,
+            })),
           )
-          if (root === null) throw new Error(`Missing closing case for ${scenarioId}`)
-          const content = root.querySelector<HTMLElement>('[data-state="closing"]')
-          if (content === null) throw new Error(`Missing [data-state="closing"] for ${scenarioId}`)
-          const style = getComputedStyle(content)
-          return {
-            display: style.display,
-            ariaHidden: content.getAttribute('aria-hidden'),
-            inert: content.hasAttribute('inert'),
-            height: content.getBoundingClientRect().height,
-          }
-        }
-        return {
-          accordion: read('component:accordion'),
-          collapsible: read('component:collapsible'),
-        }
-      })
+        },
+        { fn: fixture.mountFn, contract },
+      )
       await page.close()
 
-      for (const [name, result] of Object.entries(closing)) {
-        expect(result.display, name).not.toBe('none')
-        expect(result.ariaHidden, name).toBe('true')
-        expect(result.inert, name).toBe(true)
-        expect(result.height, name).toBeGreaterThan(0)
+      expect(closing.map((entry) => entry.scenarioId)).toEqual([
+        'component:accordion',
+        'component:collapsible',
+      ])
+      for (const { scenarioId, retained, exit } of closing) {
+        expect(retained.display, scenarioId).not.toBe('none')
+        expect(retained.ariaHidden, scenarioId).toBe('true')
+        expect(retained.inert, scenarioId).toBe(true)
+        expect(retained.height, scenarioId).toBeGreaterThan(0)
+        // A real exit animation is what the retention is for…
+        expect(retained.exitAnimationMs, scenarioId).toBeGreaterThan(0)
+        // …and the content stays retained for all of it, then settles closed
+        // (animationend cannot fire before start + duration on the page clock).
+        expect(exit.state, scenarioId).toBe('closed')
+        expect(exit.afterMs, scenarioId).toBeGreaterThanOrEqual(retained.exitAnimationMs)
       }
     },
   )

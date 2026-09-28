@@ -131,6 +131,16 @@ what you call from the LLM client.
 **Browser** (CDP transport only). `llui_screenshot`, `llui_a11y_tree`,
 `llui_console_tail`, `llui_network_tail`, `llui_uncaught_errors`,
 `llui_browser_close`.
+These attach to a Chrome already listening on `127.0.0.1:9222` when one is
+showing your dev URL, and otherwise launch a headless Chromium through
+Playwright, navigate to the dev URL and wait for the app to expose
+`__lluiDebug`. That attach has one 30 s deadline covering navigation and
+readiness (`attachTimeoutMs` on `LluiMcpServer`, default
+`DEFAULT_ATTACH_TIMEOUT_MS`); past it the tool fails with `attach_timeout`
+and the launched browser is closed. The launched browser is your own
+debugging browser: it is not network-restricted, so your app loads its real
+assets and APIs. Embedders can supply their own launcher with the
+`launchBrowser` option.
 
 **SSR** (requires `@llui/vike`). `llui_ssr_render`, `llui_hydration_report`.
 

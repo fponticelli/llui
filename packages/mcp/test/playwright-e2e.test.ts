@@ -150,7 +150,14 @@ async function setupHarness(owned: Owned): Promise<Harness> {
   //    and `startBridge()` resolves once the port is knowable — which is
   //    also what the browser must learn, via the marker file the Vite
   //    plugin serves from `/__llui_mcp_status`.
-  const mcp = new LluiMcpServer({ bridgePort: 0 })
+  //    The CDP tools' OWN fallback browser (the one `llui_screenshot` etc.
+  //    launch) gets the hermetic launcher too: in the product it is the
+  //    developer's unpoliced debugging browser, but a browser a TEST causes to
+  //    exist stays behind the network guard.
+  const mcp = new LluiMcpServer({
+    bridgePort: 0,
+    launchBrowser: (options) => hermetic.launch(options),
+  })
   owned.push(() => mcp.stopBridge())
   await mcp.startBridge()
 

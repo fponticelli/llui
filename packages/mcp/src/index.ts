@@ -20,7 +20,10 @@ import {
   WebSocketRelayTransport,
   RelayUnavailableError,
   CdpSessionManager,
+  type CdpBrowserLauncher,
 } from './transports/index.js'
+export { CdpError, DEFAULT_ATTACH_TIMEOUT_MS } from './transports/index.js'
+export type { CdpBrowserLauncher } from './transports/index.js'
 
 /**
  * Version advertised in the MCP `initialize` handshake. Read once from
@@ -152,6 +155,17 @@ export interface LluiMcpServerOptions {
    */
   headed?: boolean
   /**
+   * Launches the Playwright fallback browser behind the CDP tools. Defaults to
+   * Playwright's `chromium.launch`; see `CdpBrowserLauncher` for why the
+   * product browser is not network-policed and tests inject one that is.
+   */
+  launchBrowser?: CdpBrowserLauncher
+  /**
+   * How long the CDP fallback may take to navigate and see `__lluiDebug`.
+   * Defaults to `DEFAULT_ATTACH_TIMEOUT_MS` (30 s, measured).
+   */
+  attachTimeoutMs?: number
+  /**
    * Filesystem root for the devmode-annotate notebook
    * (https://github.com/fponticelli/llui — docs/proposals/devmode-annotate/).
    * MCP notes tools (`llui_list_notes`, `llui_read_note`, …) read from
@@ -201,6 +215,8 @@ export class LluiMcpServer {
     this.cdp = new CdpSessionManager({
       devUrl: opts.devUrl ?? null,
       headed: opts.headed ?? false,
+      ...(opts.launchBrowser ? { launchBrowser: opts.launchBrowser } : {}),
+      ...(opts.attachTimeoutMs !== undefined ? { attachTimeoutMs: opts.attachTimeoutMs } : {}),
     })
     // Persist the constructed devUrl so `llui_capture` and other tools
     // that need to reach the Vite dev server can resolve a URL without
