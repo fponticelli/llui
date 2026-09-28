@@ -276,6 +276,25 @@ describe('attachFloating transactional state', () => {
 })
 
 describe('attachFloating re-measures after an ancestor animates (#268)', () => {
+  // The re-measure is deferred to the next animation frame, so a test drives
+  // frames by hand: `frame()` runs every callback queued so far.
+  let queued: FrameRequestCallback[] = []
+  const frame = (): void => {
+    const run = queued
+    queued = []
+    for (const callback of run) callback(0)
+  }
+  beforeEach(() => {
+    queued = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      queued.push(callback)
+      return queued.length
+    })
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      queued[id - 1] = () => {}
+    })
+  })
+
   it('recomputes when an animation or transition ends on an element containing the anchor', async () => {
     const menu = document.createElement('div')
     const anchor = document.createElement('button')
@@ -289,22 +308,65 @@ describe('attachFloating re-measures after an ancestor animates (#268)', () => {
     await flush()
     const initial = floatingUi.computePosition.mock.calls.length
 
-    // A parent's enter zoom finishing moved the anchor's rect: re-measure.
+    // A parent's enter zoom finishing moved the anchor's rect: re-measure,
+    // once per frame however many motions ended in it.
     menu.dispatchEvent(new Event('animationend', { bubbles: true }))
     anchor.dispatchEvent(new Event('transitionend', { bubbles: true }))
     await flush()
-    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 2)
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial)
+    frame()
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 1)
 
     // Something that cannot have moved the anchor does not.
     unrelated.dispatchEvent(new Event('animationend', { bubbles: true }))
+    frame()
     await flush()
-    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 2)
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 1)
 
-    cleanup()
+    // Disposal stops listening AND drops a re-measure already scheduled.
     menu.dispatchEvent(new Event('animationend', { bubbles: true }))
+    cleanup()
+    frame()
+    menu.dispatchEvent(new Event('animationend', { bubbles: true }))
+    frame()
     await flush()
-    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 2)
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 1)
     menu.remove()
     unrelated.remove()
+  })
+
+  it("measures after the ended motion's own handlers have changed the layout", async () => {
+    // The listener is a CAPTURE listener on the document, so it runs BEFORE
+    // the animating element's own `animationend` handlers (a presence machine
+    // settling its state, a class swap). Measuring from inside it read the
+    // layout those handlers were about to replace, and nothing re-measured
+    // afterwards when no size changed: the gallery's visual gate caught an
+    // arrow 1px off in 1 run of 8 in CI's Chromium.
+    const menu = document.createElement('div')
+    const anchor = document.createElement('button')
+    menu.append(anchor)
+    document.body.append(menu)
+    const floating = document.createElement('div')
+    const seen: string[] = []
+    floatingUi.computePosition.mockImplementation(() => {
+      seen.push(menu.dataset['state'] ?? 'unset')
+      return Promise.resolve(positioned('bottom'))
+    })
+    menu.addEventListener('animationend', () => {
+      menu.dataset['state'] = 'settled'
+    })
+
+    const cleanup = attachFloating({ anchor, floating })
+    await flush()
+    seen.length = 0
+
+    menu.dispatchEvent(new Event('animationend', { bubbles: true }))
+    await flush()
+    frame()
+    await flush()
+    expect(seen).toEqual(['settled'])
+    cleanup()
+    menu.remove()
   })
 })

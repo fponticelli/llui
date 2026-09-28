@@ -304,9 +304,26 @@ export function attachFloating(opts: FloatingOptions): () => void {
   // amount that depended on when it measured (the gallery's visual gate saw
   // two renders of one case differ). The events bubble from the element that
   // animated; only one that CONTAINS the anchor can have moved it.
+  //
+  // The re-measure waits for the NEXT FRAME. This is a capture listener on
+  // the document, so it runs before the animating element's own
+  // `animationend` handlers (a presence machine settling, a class swap), and
+  // floating-ui reads the layout in the microtask right after it returns —
+  // the layout those handlers are about to replace. When they change no size,
+  // nothing re-measures after them, and the arrow kept a centre computed
+  // against the old layout (1px off in 1 CI run of 8). A frame also coalesces
+  // every motion that ends together into one computation.
   const doc = anchor.ownerDocument
+  const view = doc.defaultView
+  let motionFrame: number | undefined
   const onMotionEnd = (event: Event): void => {
-    if (event.target instanceof Node && event.target.contains(anchor)) update()
+    if (!(event.target instanceof Node) || !event.target.contains(anchor)) return
+    if (view === null) return update()
+    if (motionFrame !== undefined) return
+    motionFrame = view.requestAnimationFrame(() => {
+      motionFrame = undefined
+      update()
+    })
   }
   doc.addEventListener('animationend', onMotionEnd, true)
   doc.addEventListener('transitionend', onMotionEnd, true)
@@ -316,6 +333,7 @@ export function attachFloating(opts: FloatingOptions): () => void {
     disposed = true
     doc.removeEventListener('animationend', onMotionEnd, true)
     doc.removeEventListener('transitionend', onMotionEnd, true)
+    if (motionFrame !== undefined) view?.cancelAnimationFrame(motionFrame)
     try {
       stopUpdates()
     } finally {
