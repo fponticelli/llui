@@ -1296,6 +1296,42 @@ describe('resolveScenarioSelection', () => {
     }
   })
 
+  it('keeps copied-artifact names a case TYPE omits (width subtyping), typed open', () => {
+    const withNames = {
+      id: 'default',
+      label: 'Default',
+      input: null,
+      environmentAxes: [],
+      copiedArtifactNames: ['dialog'],
+    } as const
+    // Legal with no cast: the annotated type simply does not mention the key.
+    const narrowedCase: {
+      readonly id: 'default'
+      readonly label: 'Default'
+      readonly input: null
+      readonly environmentAxes: readonly []
+    } = withNames
+    const productContract = contract()
+    const catalog = compileScenarioFamily(productContract, MENUS_OVERLAYS, {
+      'component:dialog': { defaultCaseId: 'default', cases: [narrowedCase] },
+      'component:menu': {
+        defaultCaseId: 'default',
+        cases: [{ id: 'default', label: 'Default', input: null, environmentAxes: [] }],
+      },
+    })
+    const compiledCase = catalog.scenarios[0]!.cases[0]!
+    // The value the type used to call absent (`?: never`) is there; the type now admits it.
+    const names: readonly string[] | undefined = compiledCase.copiedArtifactNames
+    expect(names).toEqual(['dialog'])
+    expectTypeOf(compiledCase.copiedArtifactNames).toEqualTypeOf<readonly string[] | undefined>()
+    const resolved = resolveScenarioSelection(productContract, catalog, {
+      productId: 'dialog',
+      path: 'registryTailwind',
+    })
+    expect(resolved.case.copiedArtifactNames).toEqual(['dialog'])
+    expect(resolved.copiedArtifact).toEqual({ name: 'dialog', scenarioId: 'component:dialog' })
+  })
+
   it('types a resolution only from a catalog this module built', () => {
     const definition = {
       defaultCaseId: 'default',

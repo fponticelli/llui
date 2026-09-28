@@ -118,6 +118,36 @@ declare const recordDefinitions: Readonly<Record<string, PresentationScenarioDef
 // @ts-expect-error `string`-keyed definitions may carry any key; they are never exact
 compileScenarioFamily(contract, MENUS_OVERLAYS, recordDefinitions)
 
+// ─── The same hole one level down: a case TYPE that omits `copiedArtifactNames` ────────────
+
+// No type can see a key width subtyping hid (the value below compiles and validates; the runtime
+// keeps its names, presentation-scenarios.test.ts). So a case type that omits the optional key
+// must not be compiled into a CLOSED claim that the field is absent: it stays the protocol's open
+// optional `readonly string[]`. It used to compile to `copiedArtifactNames?: never`.
+const caseWithNames = {
+  id: 'open',
+  label: 'Open',
+  input: null,
+  environmentAxes: [],
+  copiedArtifactNames: ['dialog'],
+} as const
+const caseWithoutNamesInType: {
+  readonly id: 'open'
+  readonly label: 'Open'
+  readonly input: null
+  readonly environmentAxes: readonly []
+} = caseWithNames
+const hidden = compileScenarioFamily(contract, DIALOG_ONLY, {
+  'component:dialog': { defaultCaseId: 'open', cases: [caseWithoutNamesInType] },
+})
+const hiddenCase = hidden.scenarios[0]!.cases[0]!
+type _HiddenNamesAreOpen = Assert<
+  Equal<(typeof hiddenCase)['copiedArtifactNames'], readonly string[] | undefined>
+>
+// @ts-expect-error the compiled case may not claim the names are absent
+const claimedAbsent: undefined = hiddenCase.copiedArtifactNames
+void claimedAbsent
+
 // The exact typed catalog is still a subtype of the erased one.
 const erased: CompiledPresentationScenarioFamily = catalog
 void [erased, resolved, dialogOnly]

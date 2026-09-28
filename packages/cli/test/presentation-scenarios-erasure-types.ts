@@ -115,12 +115,16 @@ type SingleCase = Extract<DatePickerCase, { readonly id: 'single' }>
 // Literal artifact names survive inference, exactly — not widened to `readonly string[]`,
 // not degraded to `Readonly<{}>`. A case that declares them carries them as a REQUIRED field.
 type _TwoMonthsNames = Assert<Equal<TwoMonthsCase['copiedArtifactNames'], readonly ['calendar']>>
-// A case that omits them reads as `undefined`: it declares no artifact restriction, and the
-// type says so instead of inventing an empty object type.
-type _SingleNames = Assert<Equal<SingleCase['copiedArtifactNames'], undefined>>
-// Reading through the scenario's whole case union yields the precise union.
+// A case whose TYPE omits them is OPEN, not closed: its value may still carry names through
+// width subtyping (see presentation-scenarios-exact-ids-types.ts), so the field reads as the
+// protocol's own optional `readonly string[]` — never `undefined` alone, never an empty object.
+type _SingleNames = Assert<Equal<SingleCase['copiedArtifactNames'], readonly string[] | undefined>>
+// Reading through the scenario's whole case union yields both members' fields.
 type _UnionNames = Assert<
-  Equal<DatePickerCase['copiedArtifactNames'], readonly ['calendar'] | undefined>
+  Equal<
+    DatePickerCase['copiedArtifactNames'],
+    readonly ['calendar'] | readonly string[] | undefined
+  >
 >
 // Literal ids and axes remain exact.
 type _CaseIds = Assert<Equal<DatePickerCase['id'], 'single' | 'two-months'>>
@@ -134,9 +138,13 @@ declare const single: SingleCase
 const calendarOnly: readonly ['calendar'] = twoMonths.copiedArtifactNames // passing control
 // @ts-expect-error a literal artifact name is checked, not widened to string
 const wrongArtifact: readonly ['sheet'] = twoMonths.copiedArtifactNames
-// @ts-expect-error a case that declares no copied artifacts does not claim any
+// @ts-expect-error a case that declares no copied artifacts may not be read as having none
+const absentArtifacts: undefined = single.copiedArtifactNames
+// …nor as certainly having some: the field stays optional.
+// @ts-expect-error the undeclared field is optional
 const phantomArtifacts: readonly string[] = single.copiedArtifactNames
-void [calendarOnly, wrongArtifact, phantomArtifacts]
+const openArtifacts: readonly string[] | undefined = single.copiedArtifactNames // passing control
+void [calendarOnly, wrongArtifact, absentArtifacts, phantomArtifacts, openArtifacts]
 
 // Narrowing on the case id still correlates to that case's own artifact names.
 declare const someCase: DatePickerCase

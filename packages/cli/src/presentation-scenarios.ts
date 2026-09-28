@@ -391,17 +391,27 @@ type ExactDefinitions<Definitions> = {
  * - a member that declares the key keeps it with its own optionality (a homomorphic map over
  *   `Pick`, so an `as const` literal's REQUIRED `readonly ['calendar']` stays required and
  *   literal, and the erased case's optional `readonly string[]` stays optional);
- * - a member that omits it gets `copiedArtifactNames?: never` — it restricts no artifacts, reads
- *   as `undefined`, and is assignable to the erased optional field under either setting of
- *   `exactOptionalPropertyTypes` (where `?: undefined` would not be). Runtime agrees: the
- *   compiler emits the key only when the case supplied it.
+ * - a member that omits it keeps the protocol's own OPEN field, `copiedArtifactNames?: readonly
+ *   string[]` — exactly the erased case's, so it stays assignable to it under either setting of
+ *   `exactOptionalPropertyTypes`.
+ *
+ * The second branch must be open, never a closed `?: never`. A TYPE that omits an optional key
+ * says nothing about the VALUE: width subtyping assigns a case carrying `copiedArtifactNames` to
+ * a type without it, with no cast, and no type-level check can see a key the type no longer has
+ * (`ExactCase` rejects excess keys only while the type still shows them). Runtime validation
+ * accepts such a case (its names are real artifacts of the product) and the compiler copies them,
+ * so `?: never` claimed "absent" about a field that was present — the same class of hole the
+ * family ids close for scenario keys, one level down. It cannot be closed at runtime either: the
+ * runtime never sees the erased static type, so "this case declared no names" is not a fact it
+ * can check. Open is the only sound claim, and it costs nothing a consumer relied on — every
+ * reader already handles `readonly string[] | undefined` (the erased shape).
  */
 type CompiledCopiedArtifactNames<Case extends PresentationScenarioCase> =
   'copiedArtifactNames' extends keyof Case
     ? {
         readonly [Key in keyof Pick<Case, 'copiedArtifactNames'>]: Readonly<NonNullable<Case[Key]>>
       }
-    : { readonly copiedArtifactNames?: never }
+    : { readonly copiedArtifactNames?: readonly string[] }
 
 /** Canonical renderer input copied from a validated family case. */
 export type CompiledPresentationScenarioCase<
@@ -2593,6 +2603,15 @@ function unlistedScenario(scenarioId: string): PresentationScenarioError {
  * cannot slip through. Everything AROUND the case — which scenario id it is filed under, the
  * scenario's default case, the catalog's scenario union — is constructed and checked, not
  * asserted; `test/presentation-scenarios-types.ts` and `…-erasure-types.ts` pin the case type.
+ *
+ * The claim is only as sound as the case type is honest about hidden keys, and it once was not:
+ * a case TYPE omitting `copiedArtifactNames` compiled to a closed `?: never` while the snapshot of
+ * a width-subtyped value carried names. `CompiledCopiedArtifactNames` now keeps that field open,
+ * so every field of the claimed type is either declared by `Case` (a value of type `Case` has it
+ * at that type) or open; `input`'s object types are open by construction. What remains asserted
+ * is only what TypeScript cannot model, the recursive snapshot type — so this cannot be narrowed
+ * to a construction: building `CompiledPresentationScenarioCase<Case>` field by field would need
+ * the checker to resolve that distributive conditional for a `Case` it does not yet know.
  */
 function compiledCaseOf<Case extends PresentationScenarioCase>(
   scenarioId: string,
