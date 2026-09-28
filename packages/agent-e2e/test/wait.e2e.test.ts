@@ -54,9 +54,8 @@ describe('e2e: wait_for_change', () => {
     // Dispatch inc directly from the browser to trigger a state change.
     // All access is inlined — Node helpers are not available inside page.evaluate.
     await ctx.page.evaluate(() => {
-      const h = (window as unknown as { __lluiE2eHandle: { send: (m: unknown) => void } })[
-        '__lluiE2eHandle'
-      ]
+      const h = window.__lluiE2eHandle
+      if (!h) throw new Error('__lluiE2eHandle is not installed')
       h.send({ type: 'inc' })
     })
 
@@ -83,9 +82,8 @@ describe('e2e: wait_for_change', () => {
     })
     await waitForServerFrame(ctx.page, testCtx, 'watch', watches)
     await ctx.page.evaluate(() => {
-      const h = (window as unknown as { __lluiE2eHandle: { send: (m: unknown) => void } })[
-        '__lluiE2eHandle'
-      ]
+      const h = window.__lluiE2eHandle
+      if (!h) throw new Error('__lluiE2eHandle is not installed')
       h.send({ type: 'inc' })
     })
 

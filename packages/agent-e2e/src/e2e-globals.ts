@@ -16,10 +16,12 @@
  */
 import type { SignalComponentHandle } from '@llui/dom'
 import type { AgentClient } from '@llui/agent/client'
+import type { ServerFrame } from '@llui/agent/protocol'
 import type { Msg as E2eMsg, State as E2eState } from './host.js'
 
-/** A server→client frame as recorded by the page (only its `t` is checked). */
-export type RecordedFrame = { t: string } & Record<string, unknown>
+/** A server→client LAP frame as recorded by the page — validated with the
+ * protocol's schema (`parseServerFrame`) before it is recorded. */
+export type RecordedFrame = ServerFrame
 
 declare global {
   var __lluiE2eClient: AgentClient | undefined

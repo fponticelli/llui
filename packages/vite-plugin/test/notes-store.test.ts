@@ -444,6 +444,33 @@ describe('atomic + integrity (N22/D2)', () => {
     // The broken one is reported, not swallowed.
     expect(list.errors?.some((e) => e.filename === '900-human-text-broken.md')).toBe(true)
   })
+
+  it('a note file of an unknown kind is reported, never listed, and keeps its id reserved', () => {
+    const res = createNote(notesRoot, { body: 'good', frontmatter: fmBase, noteBody: emptyBody })
+    const sessionDir = join(notesRoot, res.sessionId)
+    // A retired kind (`lasso`), with otherwise well-formed content.
+    const good = readFileSync(res.path, 'utf8').replace(/kind: text/, 'kind: lasso')
+    writeFileSync(join(sessionDir, '005-human-lasso-old.md'), good)
+    const list = listNotes(notesRoot, { sessionId: res.sessionId })
+    expect(list.notes.map((n) => n.id)).toEqual(['001'])
+    const error = list.errors?.find((e) => e.filename === '005-human-lasso-old.md')
+    expect(error?.message).toMatch(/unknown note kind "lasso"/)
+    // Id allocation still sees it: the next note is 006, not a second 005.
+    const next = createNote(notesRoot, { body: 'next', frontmatter: fmBase, noteBody: emptyBody })
+    expect(next.id).toBe('006')
+  })
+
+  it('a canonically-named note whose FRONTMATTER kind is unknown is reported', () => {
+    const res = createNote(notesRoot, { body: 'good', frontmatter: fmBase, noteBody: emptyBody })
+    const sessionDir = join(notesRoot, res.sessionId)
+    const md = readFileSync(res.path, 'utf8').replace(/kind: text/, 'kind: pin')
+    writeFileSync(join(sessionDir, '007-human-text-mismatch.md'), md)
+    const list = listNotes(notesRoot, { sessionId: res.sessionId })
+    expect(list.notes.map((n) => n.id)).toEqual(['001'])
+    expect(list.errors?.find((e) => e.filename === '007-human-text-mismatch.md')?.message).toMatch(
+      /unknown note kind "pin"/,
+    )
+  })
 })
 
 describe('sessionId path traversal', () => {

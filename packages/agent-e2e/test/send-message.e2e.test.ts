@@ -32,9 +32,8 @@ describe('e2e: send_message', () => {
       // page.evaluate runs in the browser — inline all access to avoid
       // "ReferenceError: <helper> is not defined" (Node helpers can't be
       // serialised across the evaluate boundary).
-      const h = (window as unknown as { __lluiE2eHandle: { getState: () => { count: number } } })[
-        '__lluiE2eHandle'
-      ]
+      const h = window.__lluiE2eHandle
+      if (!h) throw new Error('__lluiE2eHandle is not installed')
       return h.getState()
     })
     expect(stateVal.count).toBe(1)
@@ -67,9 +66,8 @@ describe('e2e: send_message', () => {
     await send('dec')
 
     const stateVal = await ctx.page.evaluate(() => {
-      const h = (window as unknown as { __lluiE2eHandle: { getState: () => { count: number } } })[
-        '__lluiE2eHandle'
-      ]
+      const h = window.__lluiE2eHandle
+      if (!h) throw new Error('__lluiE2eHandle is not installed')
       return h.getState()
     })
     expect(stateVal.count).toBe(1)

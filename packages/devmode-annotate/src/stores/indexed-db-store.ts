@@ -14,7 +14,7 @@ import {
   deriveFilename,
   deriveSlug,
   padId,
-  parseFilename,
+  filenameIdNum,
   preview,
 } from '../note-format.js'
 import { serializeNote } from '../note-serialize.js'
@@ -264,10 +264,7 @@ export function indexedDbStore(opts: IndexedDbStoreOptions = {}): NotesStore & E
       // Seed the per-session counter (first use) from any notes already
       // present — keeps ids consistent with imported/existing notes.
       const existing = await notesForSession(sessionId)
-      const seed = existing.reduce(
-        (max, n) => Math.max(max, parseFilename(n.filename)?.idNum ?? 0),
-        0,
-      )
+      const seed = existing.reduce((max, n) => Math.max(max, filenameIdNum(n.filename) ?? 0), 0)
       // Filename slug-collision guard (matches the server's -2/-3 suffix
       // behaviour). The primary key is `${sessionId}/${id}`, not the filename,
       // so this only disambiguates the human-readable slug.

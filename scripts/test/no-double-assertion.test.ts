@@ -24,6 +24,10 @@ import ts from 'typescript'
  * boundary, `instanceof`, or a declared global. See
  * `docs/agents/verification.md` ("Double assertions").
  *
+ * The TWO-STEP spelling is caught too: `const x = y as unknown` (or a later
+ * `x = y as any`) followed by `x as T`, with `x` resolved by symbol so a
+ * shadowing binding of the same name is not conflated with it.
+ *
  * Parsed, not grepped: prose, strings and a lone `as unknown` (widening, which
  * is always sound) are not findings. Test code is out of scope.
  */
@@ -88,25 +92,121 @@ function isAssertion(node: ts.Node): node is ts.AsExpression | ts.TypeAssertion 
   return ts.isAsExpression(node) || ts.isTypeAssertionExpression(node)
 }
 
-/** Every double assertion in `source` — an assertion whose operand (through
- * parentheses) is itself an assertion to `unknown` or `any` — as `line: text`. */
+/** The operand of an assertion, through parentheses. */
+function operandOf(node: ts.AsExpression | ts.TypeAssertion): ts.Expression {
+  let inner = node.expression
+  while (ts.isParenthesizedExpression(inner)) inner = inner.expression
+  return inner
+}
+
+/** Whether `expr` (through parentheses) is an assertion to `unknown` / `any`. */
+function isWideningAssertion(expr: ts.Expression): boolean {
+  let inner = expr
+  while (ts.isParenthesizedExpression(inner)) inner = inner.expression
+  return isAssertion(inner) && isWideningType(inner.type)
+}
+
+/**
+ * A checker over `source` alone: no lib, no module resolution. Imports stay
+ * unresolved, which is fine — the only question asked of it is which LOCAL
+ * declaration an identifier denotes (so shadowing is honoured, where a
+ * name-based match would conflate two bindings).
+ */
+function singleFileChecker(file: ts.SourceFile): ts.TypeChecker {
+  const options: ts.CompilerOptions = { noLib: true, noResolve: true, types: [], allowJs: false }
+  const host: ts.CompilerHost = {
+    getSourceFile: (name) => (name === file.fileName ? file : undefined),
+    getDefaultLibFileName: () => 'lib.d.ts',
+    writeFile: () => {},
+    getCurrentDirectory: () => '/',
+    getCanonicalFileName: (name) => name,
+    useCaseSensitiveFileNames: () => true,
+    getNewLine: () => '\n',
+    fileExists: (name) => name === file.fileName,
+    readFile: () => undefined,
+  }
+  return ts.createProgram([file.fileName], options, host).getTypeChecker()
+}
+
+/**
+ * Every double assertion in `source`, as `line: text`:
+ *
+ * - DIRECT: an assertion whose operand (through parentheses) is itself an
+ *   assertion to `unknown` or `any` — `x as unknown as T`, `<T><unknown>x`, …
+ * - TWO-STEP: an assertion (to anything but `unknown` / `any` / `const`) whose
+ *   operand is an identifier bound to a variable that RECEIVED an assertion to
+ *   `unknown` / `any` — as its initializer or by a later `=` assignment:
+ *   `const x = y as unknown` … `x as T`. Resolved by symbol, not by name.
+ */
 function doubleAssertionsIn(fileName: string, source: string): string[] {
   const kind = fileName.endsWith('.tsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS
   const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind)
-  const findings: string[] = []
-  const visit = (node: ts.Node): void => {
-    if (isAssertion(node)) {
-      let inner = node.expression
-      while (ts.isParenthesizedExpression(inner)) inner = inner.expression
-      if (isAssertion(inner) && isWideningType(inner.type)) {
-        const { line } = file.getLineAndCharacterOfPosition(node.getStart(file))
-        findings.push(`${line + 1}: ${node.getText(file).replace(/\s+/g, ' ')}`)
-      }
-    }
-    node.forEachChild(visit)
+  const findings: Array<{ pos: number; text: string }> = []
+  const record = (node: ts.Node, suffix = ''): void => {
+    findings.push({
+      pos: node.getStart(file),
+      text: node.getText(file).replace(/\s+/g, ' ') + suffix,
+    })
   }
-  visit(file)
+
+  // Pass 1: direct double assertions, plus the variables that were widened.
+  const widenedDeclarations: ts.Node[] = []
+  const widenedAssignmentTargets: ts.Identifier[] = []
+  const collect = (node: ts.Node): void => {
+    if (isAssertion(node) && isWideningAssertion(operandOf(node))) record(node)
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer &&
+      isWideningAssertion(node.initializer)
+    ) {
+      widenedDeclarations.push(node)
+    }
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken &&
+      ts.isIdentifier(node.left) &&
+      isWideningAssertion(node.right)
+    ) {
+      widenedAssignmentTargets.push(node.left)
+    }
+    node.forEachChild(collect)
+  }
+  collect(file)
+
+  // Pass 2: two-step double assertions, only when something was widened.
+  if (widenedDeclarations.length > 0 || widenedAssignmentTargets.length > 0) {
+    const checker = singleFileChecker(file)
+    const widened = new Set<ts.Symbol>()
+    for (const decl of widenedDeclarations) {
+      const name = ts.isVariableDeclaration(decl) ? decl.name : undefined
+      const symbol = name ? checker.getSymbolAtLocation(name) : undefined
+      if (symbol) widened.add(symbol)
+    }
+    for (const target of widenedAssignmentTargets) {
+      const symbol = checker.getSymbolAtLocation(target)
+      if (symbol) widened.add(symbol)
+    }
+    const visit = (node: ts.Node): void => {
+      if (isAssertion(node) && !isWideningType(node.type) && !ts.isConstTypeReference(node.type)) {
+        const operand = operandOf(node)
+        if (ts.isIdentifier(operand)) {
+          const symbol = checker.getSymbolAtLocation(operand)
+          if (symbol && widened.has(symbol)) {
+            record(
+              node,
+              ` (two-step: \`${operand.text}\` holds an \`as unknown\`/\`as any\` value)`,
+            )
+          }
+        }
+      }
+      node.forEachChild(visit)
+    }
+    visit(file)
+  }
+
   return findings
+    .sort((a, b) => a.pos - b.pos)
+    .map(({ pos, text }) => `${file.getLineAndCharacterOfPosition(pos).line + 1}: ${text}`)
 }
 
 describe('production source carries no double type assertion', () => {
@@ -139,6 +239,35 @@ describe('production source carries no double type assertion', () => {
     expect(doubleAssertionsIn('probe.tsx', 'const a = <div>{b as unknown as Foo}</div>')).toEqual([
       '1: b as unknown as Foo',
     ])
+  })
+
+  it('the instrument finds the TWO-STEP spelling, resolved by symbol', () => {
+    const TWO_STEP = ' (two-step: `x` holds an `as unknown`/`as any` value)'
+    const bad = [
+      'const x = y as unknown',
+      'const a = x as Foo',
+      'function f() {',
+      '  let x',
+      '  x = (z as any)',
+      '  return <Bar>x',
+      '}',
+    ].join('\n')
+    expect(doubleAssertionsIn('probe.ts', bad)).toEqual([
+      `2: x as Foo${TWO_STEP}`,
+      `6: <Bar>x${TWO_STEP}`,
+    ])
+    const good = [
+      'const x = y as unknown',
+      'const a = isFoo(x) ? x : null', // narrowed by a guard, not asserted
+      'const b = x as unknown', // widening again is sound
+      'const c = [x] as const',
+      'function f(x: Foo) {',
+      '  return x as Bar', // a DIFFERENT `x` (shadowing): a single assertion
+      '}',
+      'const w = v as Foo',
+      'const d = w as Bar', // `w` was never widened
+    ].join('\n')
+    expect(doubleAssertionsIn('probe.ts', good)).toEqual([])
   })
 
   it('scans exactly packages/*/src: git and the filesystem enumerate the same set', () => {

@@ -718,6 +718,17 @@ const NOTE_SCHEMA_VERSION
 
 ### `@llui/devmode-annotate/note-types`
 
+#### Functions
+
+##### `isNoteKind()` from `@llui/devmode-annotate/note-types`
+
+Whether `v` is a {@link NoteKind} — the check for any kind read from outside
+the type system (a filename, parsed frontmatter, a request).
+
+```typescript
+export declare function isNoteKind(v: unknown): v is NoteKind
+```
+
 #### Types
 
 ##### `Annotation` from `@llui/devmode-annotate/note-types`
@@ -1343,6 +1354,16 @@ export declare function deriveFilename(
 export declare function deriveSlug(prose: string): string
 ```
 
+##### `filenameIdNum()` from `@llui/devmode-annotate/note-format`
+
+The numeric id of any canonically-shaped note filename, or `null`. Id
+allocation must count EVERY note file — including one of an unknown kind,
+which still occupies its id — or the next note would reuse it.
+
+```typescript
+export declare function filenameIdNum(filename: string): number | null
+```
+
 ##### `nextId()` from `@llui/devmode-annotate/note-format`
 
 The next id given the ids already present (handles gaps): padId(max+1).
@@ -1360,6 +1381,12 @@ export declare function padId(n: number): string
 ```
 
 ##### `parseFilename()` from `@llui/devmode-annotate/note-format`
+
+Parse a note filename. Returns `null` for a name that is not
+canonically shaped (`status.jsonl`, a stray `README.md`), and THROWS
+{@link UnknownNoteKindError} for a canonical name whose kind is not a
+{@link NoteKind}. A caller that only needs the id (allocation) uses
+{@link filenameIdNum}, which does not judge the kind.
 
 ```typescript
 export declare function parseFilename(filename: string): ParsedFilename | null
@@ -1394,6 +1421,23 @@ export interface QueueEntry {
   noteId: string
   status: NoteStatus
   transitions: StatusTransition[]
+}
+```
+
+#### Classes
+
+##### `UnknownNoteKindError` from `@llui/devmode-annotate/note-format`
+
+A canonically-SHAPED note filename whose kind segment is not a
+{@link NoteKind} (e.g. `lasso`, a kind the format dropped). It is a note this
+format cannot type — not a stray non-note file — so it is reported rather
+than skipped silently or typed as a kind it is not.
+
+```typescript
+class UnknownNoteKindError extends Error {
+  filename: string
+  kind: string
+  constructor(filename: string, kind: string)
 }
 ```
 

@@ -8,6 +8,7 @@
 // docs/proposals/devmode-annotate/01-on-disk-format.md.
 
 import type { Author, NoteKind, NoteStatus, StatusTransition } from './note-types.js'
+import { isNoteKind, NOTE_KINDS } from './note-types.js'
 
 /**
  * On-disk note-format schema version. Stamped into export bundles and
@@ -107,19 +108,52 @@ export interface ParsedFilename {
   slug: string
 }
 
+/**
+ * A canonically-SHAPED note filename whose kind segment is not a
+ * {@link NoteKind} (e.g. `lasso`, a kind the format dropped). It is a note this
+ * format cannot type — not a stray non-note file — so it is reported rather
+ * than skipped silently or typed as a kind it is not.
+ */
+export class UnknownNoteKindError extends Error {
+  constructor(
+    readonly filename: string,
+    readonly kind: string,
+  ) {
+    super(`${filename}: unknown note kind "${kind}" (known kinds: ${NOTE_KINDS.join(' | ')})`)
+    this.name = 'UnknownNoteKindError'
+  }
+}
+
+/**
+ * Parse a note filename. Returns `null` for a name that is not
+ * canonically shaped (`status.jsonl`, a stray `README.md`), and THROWS
+ * {@link UnknownNoteKindError} for a canonical name whose kind is not a
+ * {@link NoteKind}. A caller that only needs the id (allocation) uses
+ * {@link filenameIdNum}, which does not judge the kind.
+ */
 export function parseFilename(filename: string): ParsedFilename | null {
   const m = NOTE_FILENAME_RE.exec(filename)
   if (!m) return null
   const idStr = m[1]!
   const idNum = parseInt(idStr, 10)
   if (Number.isNaN(idNum)) return null
-  return {
-    id: idStr,
-    idNum,
-    author: m[2] as Author,
-    kind: m[3] as NoteKind,
-    slug: m[4]!,
-  }
+  const author = m[2]
+  if (author !== 'human' && author !== 'llm') return null
+  const kind = m[3]!
+  if (!isNoteKind(kind)) throw new UnknownNoteKindError(filename, kind)
+  return { id: idStr, idNum, author, kind, slug: m[4]! }
+}
+
+/**
+ * The numeric id of any canonically-shaped note filename, or `null`. Id
+ * allocation must count EVERY note file — including one of an unknown kind,
+ * which still occupies its id — or the next note would reuse it.
+ */
+export function filenameIdNum(filename: string): number | null {
+  const m = NOTE_FILENAME_RE.exec(filename)
+  if (!m) return null
+  const idNum = parseInt(m[1]!, 10)
+  return Number.isNaN(idNum) ? null : idNum
 }
 
 /** The next id given the ids already present (handles gaps): padId(max+1). */
