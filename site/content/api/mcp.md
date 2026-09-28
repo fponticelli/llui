@@ -194,6 +194,24 @@ startup is still honored.
 function mcpStateDir(cwd: string = process.cwd()): string
 ```
 
+## Types
+
+### `CdpBrowserLauncher`
+
+Launches the fallback browser. The default is Playwright's own
+`chromium.launch`: this is the DEVELOPER's debugging browser, pointed at
+their own app, which may legitimately load fonts, APIs and CDN assets —
+the repository's hermetic test network policy
+(`scripts/lib/network-policy.mjs`) must not govern it. Tests inject the
+hermetic launcher here so the browsers THEY cause to exist stay behind the
+guard.
+
+```typescript
+export type CdpBrowserLauncher = (options: {
+  headless: boolean
+}) => Promise<import('playwright').Browser>
+```
+
 ## Interfaces
 
 ### `LluiMcpServerOptions`
@@ -230,6 +248,17 @@ export interface LluiMcpServerOptions {
    */
   headed?: boolean
   /**
+   * Launches the Playwright fallback browser behind the CDP tools. Defaults to
+   * Playwright's `chromium.launch`; see `CdpBrowserLauncher` for why the
+   * product browser is not network-policed and tests inject one that is.
+   */
+  launchBrowser?: CdpBrowserLauncher
+  /**
+   * How long the CDP fallback may take to navigate and see `__lluiDebug`.
+   * Defaults to `DEFAULT_ATTACH_TIMEOUT_MS` (30 s, measured).
+   */
+  attachTimeoutMs?: number
+  /**
    * Filesystem root for the devmode-annotate notebook
    * (https://github.com/fponticelli/llui — docs/proposals/devmode-annotate/).
    * MCP notes tools (`llui_list_notes`, `llui_read_note`, …) read from
@@ -252,6 +281,18 @@ export interface LluiMcpServerOptions {
 ```
 
 ## Classes
+
+### `CdpError`
+
+```typescript
+class CdpError extends Error {
+  constructor(public readonly code:
+      | 'cdp_unavailable'
+      | 'dev_url_unknown'
+      | 'attach_timeout'
+      | 'browser_crashed', message: string)
+}
+```
 
 ### `LluiMcpServer`
 
@@ -278,6 +319,31 @@ class LluiMcpServer {
   getTools(): ToolDefinition[]
   handleToolCall(name: string, args: Record<string, unknown>): Promise<unknown>
 }
+```
+
+## Constants
+
+### `DEFAULT_ATTACH_TIMEOUT_MS`
+
+How long the Playwright fallback may take to ATTACH: navigate to the dev URL
+and see the app expose `__lluiDebug`. One deadline covers both steps.
+
+Sized from measurement, not taste. Against `examples/virtualization` on a
+dev server, at load ~19 on 4 CPUs: 0.7-1.2 s cold, 0.5-1.0 s warm. The
+slow case this must still admit is a large app's FIRST on-demand compile,
+measured at 7.3-9.0 s under similar load for the components demo
+(`docs/agents/test-durations.md`, loose-d) — so 30 s leaves ~3x over the
+worst real attach and ~25x over a typical one, while a page that will
+never become ready (wrong URL, app without the dev runtime) still fails
+with a named `attach_timeout` instead of hanging the tool call.
+
+It used to be written `{ timeout: 10_000 }` in `waitForFunction`'s SECOND
+argument slot — the page function's argument, not its options — so the
+wait silently ran on Playwright's default instead, and the error claimed
+"within 10s".
+
+```typescript
+const DEFAULT_ATTACH_TIMEOUT_MS
 ```
 
 <!-- auto-api:end -->
