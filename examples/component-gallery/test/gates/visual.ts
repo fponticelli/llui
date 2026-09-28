@@ -9,20 +9,29 @@
  * implementations are never compared with each other — alignment between them
  * is gated by shared token/state invariants elsewhere, not by pixels.
  *
- * WHERE baselines are valid: a rendering is only reproducible on the browser
- * build and platform that produced it (font rasterisation, Skia CPU paths), so
- * the manifest records the ENVIRONMENT it was captured in and a run compares
- * only in that environment. CI's `verify` job runs inside
- * `mcr.microsoft.com/playwright:<version>-noble`; `pnpm gallery:visual:update`
- * captures in that same image (`scripts/run-visual-container.mjs`).
+ * WHERE baselines are valid: a rendering is only reproducible where the
+ * rendering is — the browser build, platform and architecture that produced
+ * it AND the same fonts and rasteriser. The first three are names; the last
+ * two are not (CI's exact Chromium build on linux/x64 with other system
+ * fonts drew ~937 cases at other sizes and pixels), so the manifest records
+ * the ENVIRONMENT it was captured in together with a RENDERING FINGERPRINT
+ * (`fingerprint.ts`: a calibration document in the documents' own font
+ * stacks and a shape sample, captured in the gate's context and hashed), and
+ * a run compares only when every component matches
+ * (`environmentDifferences`, `decideVisualMode`). CI's `verify` job runs
+ * inside `mcr.microsoft.com/playwright:<version>-noble`;
+ * `pnpm gallery:visual:update` captures in that same image
+ * (`scripts/run-visual-container.mjs`).
  *
  * HOW a run behaves:
  *   - matching environment      → compare every case against its baseline;
  *   - other environment, local  → check DETERMINISM instead (capture twice,
- *                                 require identical pixels) and say so;
+ *                                 require identical pixels) and say so,
+ *                                 naming what differs;
  *   - other environment, CI     → FAIL (`LLUI_VISUAL_REQUIRED=1`): a gate
  *                                 that silently compares nothing is not one.
- *                                 Each case is still rendered twice (and must
+ *                                 The message names each differing component
+ *                                 (browser, fonts, raster, …). Each case is still rendered twice (and must
  *                                 be deterministic) and written, with a
  *                                 manifest, to `<output>/visual-baselines/`:
  *                                 a complete candidate set recorded in CI's
@@ -49,14 +58,35 @@ export function visualOutputDir(): string {
   return resolve(REPO_ROOT, process.env['LLUI_VISUAL_OUTPUT'] ?? '.visual-output')
 }
 
+/** What one font stack draws in the calibration document (`fingerprint.ts`). */
+export interface StackFingerprint {
+  /** The platform fonts Chromium used for it, fallbacks included, sorted. */
+  readonly fonts: readonly string[]
+  /** SHA-256 of the captured pixels. */
+  readonly pixels: string
+}
+
+/** What the environment DRAWS — `fingerprint.ts` has the calibration. */
+export interface RenderingFingerprint {
+  /** SHA-256 of the calibration document that was rendered. */
+  readonly calibration: string
+  /** Keyed by the computed `font-family` stack. */
+  readonly stacks: Readonly<Record<string, StackFingerprint>>
+  /** SHA-256 of the text-free shape sample. */
+  readonly raster: string
+}
+
 export interface VisualEnvironment {
   readonly browser: string
   readonly platform: string
   readonly arch: string
+  readonly rendering: RenderingFingerprint
 }
 
+export const MANIFEST_VERSION = 2
+
 export interface VisualManifest {
-  readonly version: 1
+  readonly version: typeof MANIFEST_VERSION
   readonly environment: VisualEnvironment
   /** Keyed by `caseKey()`; the PNG lives at `<key>.png` beside this file. */
   readonly cases: Readonly<Record<string, { readonly width: number; readonly height: number }>>
@@ -81,14 +111,240 @@ export const TOLERANCE = { CHANNEL: 3, PIXELS: 12, RATIO: 0.0005 } as const
 export function readManifest(): VisualManifest | undefined {
   if (!existsSync(MANIFEST_PATH)) return undefined
   const parsed: unknown = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'))
-  return parsed as VisualManifest
+  return parseManifest(parsed)
 }
 
-export function sameEnvironment(a: VisualEnvironment, b: VisualEnvironment): boolean {
-  return a.browser === b.browser && a.platform === b.platform && a.arch === b.arch
+const RE_RECORD =
+  "run `pnpm gallery:visual:update` in CI's image or download the CI `visual-baselines` artifact"
+
+class ManifestError extends Error {
+  constructor(where: string, expected: string) {
+    super(`visual manifest: ${where} is not ${expected} (${RE_RECORD})`)
+  }
 }
 
-export function describeEnvironment(environment: VisualEnvironment): string {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function record(value: unknown, where: string): Record<string, unknown> {
+  if (!isRecord(value)) throw new ManifestError(where, 'an object')
+  return value
+}
+
+function text(value: unknown, where: string): string {
+  if (typeof value !== 'string') throw new ManifestError(where, 'a string')
+  return value
+}
+
+function count(value: unknown, where: string): number {
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
+    throw new ManifestError(where, 'a non-negative integer')
+  }
+  return value
+}
+
+function texts(value: unknown, where: string): string[] {
+  if (!Array.isArray(value)) throw new ManifestError(where, 'an array of strings')
+  return value.map((item: unknown, index) => text(item, `${where}[${index}]`))
+}
+
+/** Validate a parsed manifest, naming the first malformed field. */
+export function parseManifest(value: unknown): VisualManifest {
+  const manifest = record(value, 'the manifest')
+  if (manifest['version'] !== MANIFEST_VERSION) {
+    throw new Error(
+      `visual manifest version ${String(manifest['version'])} is not supported ` +
+        `(expected ${MANIFEST_VERSION}, which records the rendering fingerprint): ${RE_RECORD}`,
+    )
+  }
+  const environment = record(manifest['environment'], 'environment')
+  const rendering = record(environment['rendering'], 'environment.rendering')
+  const stacks: Record<string, StackFingerprint> = {}
+  for (const [stack, entry] of Object.entries(
+    record(rendering['stacks'], 'environment.rendering.stacks'),
+  )) {
+    const where = `environment.rendering.stacks[${JSON.stringify(stack)}]`
+    const fingerprint = record(entry, where)
+    stacks[stack] = {
+      fonts: texts(fingerprint['fonts'], `${where}.fonts`),
+      pixels: text(fingerprint['pixels'], `${where}.pixels`),
+    }
+  }
+  const cases: Record<string, { width: number; height: number }> = {}
+  for (const [key, entry] of Object.entries(record(manifest['cases'], 'cases'))) {
+    const where = `cases[${JSON.stringify(key)}]`
+    const size = record(entry, where)
+    cases[key] = {
+      width: count(size['width'], `${where}.width`),
+      height: count(size['height'], `${where}.height`),
+    }
+  }
+  return {
+    version: MANIFEST_VERSION,
+    environment: {
+      browser: text(environment['browser'], 'environment.browser'),
+      platform: text(environment['platform'], 'environment.platform'),
+      arch: text(environment['arch'], 'environment.arch'),
+      rendering: {
+        calibration: text(rendering['calibration'], 'environment.rendering.calibration'),
+        stacks,
+        raster: text(rendering['raster'], 'environment.rendering.raster'),
+      },
+    },
+    cases,
+  }
+}
+
+/** The component of the environment a difference is in. */
+export type EnvironmentComponent =
+  | 'browser'
+  | 'platform'
+  | 'arch'
+  | 'coverage'
+  | 'calibration'
+  | 'fonts'
+  | 'text'
+  | 'raster'
+
+export interface EnvironmentDifference {
+  readonly component: EnvironmentComponent
+  readonly detail: string
+}
+
+/** The components that ARE the rendering fingerprint, not the environment's name. */
+const FINGERPRINT_COMPONENTS: ReadonlySet<EnvironmentComponent> = new Set<EnvironmentComponent>([
+  'coverage',
+  'calibration',
+  'fonts',
+  'text',
+  'raster',
+])
+
+/**
+ * Every way `current` is not the environment that recorded the baselines;
+ * empty means the baselines are reproducible here. `current.rendering` must
+ * have been measured over the RECORDED stacks (the same calibration
+ * document), so it compares like with like; `declaredStacks` are the stacks
+ * the documents declare NOW, each of which the recording must have rendered.
+ */
+export function environmentDifferences(
+  recorded: VisualEnvironment,
+  current: VisualEnvironment,
+  declaredStacks: readonly string[],
+): EnvironmentDifference[] {
+  const differences: EnvironmentDifference[] = []
+  const identity = (component: 'browser' | 'platform' | 'arch', prefix: string): void => {
+    if (recorded[component] === current[component]) return
+    differences.push({
+      component,
+      detail: `${prefix}${current[component]} here, ${recorded[component]} when recorded`,
+    })
+  }
+  identity('browser', 'chromium ')
+  identity('platform', '')
+  identity('arch', '')
+
+  const unrecorded = declaredStacks.filter((stack) => !(stack in recorded.rendering.stacks))
+  if (unrecorded.length > 0) {
+    differences.push({
+      component: 'coverage',
+      detail: `the documents declare font stacks the fingerprint never rendered: ${unrecorded
+        .map((stack) => JSON.stringify(stack))
+        .join(', ')}`,
+    })
+  }
+  if (recorded.rendering.calibration !== current.rendering.calibration) {
+    // Different documents draw different pixels: nothing below is comparable.
+    differences.push({
+      component: 'calibration',
+      detail: 'the calibration document changed since the fingerprint was recorded',
+    })
+    return differences
+  }
+  for (const [stack, was] of Object.entries(recorded.rendering.stacks)) {
+    const now = current.rendering.stacks[stack]
+    const quoted = JSON.stringify(stack)
+    if (now === undefined) {
+      differences.push({ component: 'fonts', detail: `${quoted} was not measured here` })
+    } else if (now.fonts.join('\n') !== was.fonts.join('\n')) {
+      differences.push({
+        component: 'fonts',
+        detail: `${quoted} resolves to ${now.fonts.join(', ')} here, ${was.fonts.join(', ')} when recorded`,
+      })
+    } else if (now.pixels !== was.pixels) {
+      differences.push({
+        component: 'text',
+        detail: `${quoted} draws different pixels with the same fonts (hinting, antialiasing or font file version)`,
+      })
+    }
+  }
+  if (recorded.rendering.raster !== current.rendering.raster) {
+    differences.push({
+      component: 'raster',
+      detail:
+        'the shape calibration draws different pixels (Skia/GPU raster configuration differs)',
+    })
+  }
+  return differences
+}
+
+export type VisualMode = 'update' | 'compare' | 'determinism' | 'unavailable'
+
+export interface VisualModeInput {
+  /** `LLUI_VISUAL_UPDATE=1`. */
+  readonly update: boolean
+  /** `LLUI_VISUAL_REQUIRED=1` (CI). */
+  readonly required: boolean
+  /** The committed manifest's environment, if there is one. */
+  readonly recorded: VisualEnvironment | undefined
+  /** This run's environment, fingerprinted over the RECORDED stacks. */
+  readonly current: VisualEnvironment
+  /** The font stacks the path documents declare now. */
+  readonly declaredStacks: readonly string[]
+}
+
+/**
+ * Compare only where the baselines are reproducible — the browser build,
+ * platform, architecture AND the rendering fingerprint all match. Anywhere
+ * else check determinism, unless the gate is required (CI), where being
+ * unable to compare is a failure.
+ */
+export function decideVisualMode(input: VisualModeInput): {
+  readonly mode: VisualMode
+  readonly differences: readonly EnvironmentDifference[]
+} {
+  const differences =
+    input.recorded === undefined
+      ? []
+      : environmentDifferences(input.recorded, input.current, input.declaredStacks)
+  const mode: VisualMode = input.update
+    ? 'update'
+    : input.recorded !== undefined && differences.length === 0
+      ? 'compare'
+      : input.required
+        ? 'unavailable'
+        : 'determinism'
+  return { mode, differences }
+}
+
+/**
+ * One line naming WHICH components differ, with each detail and the fix. A
+ * fingerprint-only mismatch is the case the fingerprint exists for: CI's
+ * browser build on a host with other fonts.
+ */
+export function describeDifferences(differences: readonly EnvironmentDifference[]): string {
+  const components = [...new Set(differences.map(({ component }) => component))]
+  const headline = components.every((component) => FINGERPRINT_COMPONENTS.has(component))
+    ? `rendering fingerprint differs (${components.join(', ')}): fonts/raster differ from the recording environment`
+    : `recording environment differs (${components.join(', ')})`
+  const details = differences.map(({ detail }) => detail).join('; ')
+  return `${headline}: ${details} — ${RE_RECORD}`
+}
+
+export function describeEnvironment(
+  environment: Pick<VisualEnvironment, 'browser' | 'platform' | 'arch'>,
+): string {
   return `chromium ${environment.browser} on ${environment.platform}/${environment.arch}`
 }
 

@@ -1,9 +1,66 @@
 {
-  "version": 1,
+  "version": 2,
   "environment": {
     "browser": "147.0.7727.15",
     "platform": "linux",
-    "arch": "x64"
+    "arch": "x64",
+    "rendering": {
+      "calibration": "eef3c53c6a78609a0ad872d41f3d0ebbf088caac8cd61170de369e89cf22ae8f",
+      "stacks": {
+        "monospace": {
+          "fonts": [
+            "FreeSerif",
+            "IPAGothic",
+            "LiberationSerif",
+            "LiberationSerif-Bold",
+            "WenQuanYiZenHeiMono"
+          ],
+          "pixels": "a432a63b5da1060fb15145a44f140a88ffabe56335d7456b365aff385a70e70a"
+        },
+        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, \"Liberation Mono\", \"Courier New\", monospace": {
+          "fonts": [
+            "FreeSerif",
+            "IPAGothic",
+            "LiberationMono",
+            "LiberationMono-Bold",
+            "LiberationMono-BoldItalic",
+            "LiberationMono-Italic"
+          ],
+          "pixels": "55d0ace147bc27f595cc55a99e25b2553fa3b0bc8945404395bc93149854677d"
+        },
+        "ui-monospace, SFMono-Regular, Menlo, monospace": {
+          "fonts": [
+            "FreeSerif",
+            "IPAGothic",
+            "LiberationSerif",
+            "LiberationSerif-Bold",
+            "WenQuanYiZenHeiMono"
+          ],
+          "pixels": "a432a63b5da1060fb15145a44f140a88ffabe56335d7456b365aff385a70e70a"
+        },
+        "ui-sans-serif, system-ui, -apple-system, \"Segoe UI\", sans-serif": {
+          "fonts": [
+            "FreeSerif",
+            "IPAGothic",
+            "LiberationSans",
+            "LiberationSans-Bold",
+            "WenQuanYiZenHei"
+          ],
+          "pixels": "9e3d8ae6360f176d96bc47563a81c37d68e0fa996eb634514e0d59d4d47fb003"
+        },
+        "ui-sans-serif, system-ui, sans-serif, \"Apple Color Emoji\", \"Segoe UI Emoji\", \"Segoe UI Symbol\", \"Noto Color Emoji\"": {
+          "fonts": [
+            "FreeSerif",
+            "IPAGothic",
+            "LiberationSans",
+            "LiberationSans-Bold",
+            "WenQuanYiZenHei"
+          ],
+          "pixels": "9e3d8ae6360f176d96bc47563a81c37d68e0fa996eb634514e0d59d4d47fb003"
+        }
+      },
+      "raster": "3dc631ba3382976f4d954685ead71e2f66a5eed3daf259c09901b333977ec9d8"
+    }
   },
   "cases": {
     "baseline/accordion/closed/default": {

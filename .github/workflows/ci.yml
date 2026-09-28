@@ -233,7 +233,8 @@ jobs:
         run: pnpm -r --workspace-concurrency=2 run test
         # LLUI_VISUAL_REQUIRED makes the Component Gallery's visual gate (#268)
         # FAIL when its baselines cannot be compared in this environment (none
-        # recorded yet, or recorded on another browser build) instead of falling
+        # recorded yet, recorded on another browser build, or a rendering
+        # fingerprint — fonts, rasteriser — that differs) instead of falling
         # back to its local determinism check — a gate that compares nothing is
         # not a gate. Every capture is also written under LLUI_VISUAL_OUTPUT as a
         # complete candidate baseline set, which the next step uploads.

@@ -221,7 +221,7 @@ Hard constraints. Several are not enforced by types or CI. **Before touching a s
 - CSS probes: verify by RENDERING. Hidden tabs freeze transitions; CSS Color 4 values need paint-and-read; assert the instrument on a mid-tone known pair first.
 - The components demo serves `dist/styles/` — rebuild `@llui/components` after a style source edit.
 - **The Component Gallery (`examples/component-gallery`) renders Baseline theme and Registry skins as SEPARATE builds/documents.** Never load both systems in one document; renderers stay per path; its inventory is derived from the contract and family catalogs, never listed.
-- **Every gallery case is gated (#268):** renders `ready`, no serious/critical axe finding, intact markup/idrefs, no runtime fault, per-path visual baseline (`test/cases.browser.test.ts`), plus keyboard/pointer flows per family. Fix findings at the source; a11y exemptions are per case, closed at both ends. Baselines are recorded ONLY in CI's Playwright image (`pnpm gallery:visual:update`, or commit CI's `visual-baselines` artifact).
+- **Every gallery case is gated (#268):** renders `ready`, no serious/critical axe finding, intact markup/idrefs, no runtime fault, per-path visual baseline (`test/cases.browser.test.ts`), plus keyboard/pointer flows per family. Fix findings at the source; a11y exemptions are per case, closed at both ends. Baselines are recorded ONLY in CI's Playwright image (`pnpm gallery:visual:update`, or commit CI's `visual-baselines` artifact). Compare mode needs browser, platform, arch AND the manifest's rendering fingerprint (fonts + raster, `test/gates/fingerprint.ts`) to match; elsewhere a local run checks determinism.
 
 ### Packaging — `docs/agents/packaging.md`
 
