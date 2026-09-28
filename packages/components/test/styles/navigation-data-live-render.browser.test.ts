@@ -247,24 +247,27 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
   // The closing case is a LIVE exit: both skins run a 0.2 s `accordion-up`
   // animation on `[data-state="closing"]` that collapses `block-size` to 0, and
   // the exit watcher (`exitCompletion`) settles the item to `closed` on its
-  // `animationend`. So "visibly retained" is a property of the START of the
-  // exit, and reading it in a later Playwright round trip after the mount is a
-  // race against the page's animation clock: under load (19-26) the read
-  // landed at the end of the animation (`accordion: expected 0 to be greater
-  // than 0`, 1 of 7 runs), and a later read would miss `closing` altogether.
-  // Both reads now happen IN-PAGE: the retention snapshot in the same task as
-  // the mount — no frame can pass in between, so the animation is at its
-  // first keyframe by construction — and the exit's end is recorded by a
-  // MutationObserver on the page's own clock, then awaited.
+  // `animationend`. Racing that animation against the wall clock (reading the
+  // retention a round trip after the mount, or bounding the exit's end by its
+  // own duration on `performance.now()`) is a probability, not a proof: under
+  // load a 50 ms settle timer can itself slip past 200 ms. So the test takes
+  // the animation's clock away from the browser instead. In the same task as
+  // the mount — before any frame can advance it — each exit's own CSS
+  // animation is taken through the Web Animations API and PAUSED: the item
+  // must then stay `closing` (retained, armed by its `animationstart`, and
+  // settled by nothing) across frames and a generous real wait, which no
+  // timer-driven or immediate settle survives. Then it is FINISHED, and the
+  // item must already read `closed` when that `animationend` reaches `window`
+  // — i.e. inside the very dispatch the exit completes on, which no later
+  // timer can satisfy and a missing completion cannot either.
   it.each(['baseline', 'registryTailwind'] as const)(
     '%s retains the accordion/collapsible closing case visibly, driven by the real reducer',
     async (path) => {
       const fixture = fixtures.find((candidate) => candidate.path === path)!
       const page = await openUnmounted(fixture)
       const closing = await page.evaluate(
-        async ({ fn, contract }) => {
+        async ({ fn, contract, pausedFrames, pausedWaitMs }) => {
           const ids = ['component:accordion', 'component:collapsible'] as const
-          const startedAt = performance.now()
           const mount = window[fn]
           if (mount === undefined) throw new Error(`Missing window.${fn}`)
           mount(contract)
@@ -279,34 +282,78 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
             }
             // Synchronous with the mount: the exit animation has not advanced.
             const style = getComputedStyle(content)
+            const exitName = style.animationName
+            const exits = content
+              .getAnimations()
+              .filter(
+                (animation) =>
+                  animation instanceof CSSAnimation && animation.animationName === exitName,
+              )
+            const exit = exits[0]
+            if (exits.length !== 1 || exit === undefined) {
+              throw new Error(
+                `${scenarioId}: expected one "${exitName}" exit, found ${exits.length}`,
+              )
+            }
+            exit.pause()
+            const duration = exit.effect?.getComputedTiming().duration
             const retained = {
               display: style.display,
               ariaHidden: content.getAttribute('aria-hidden'),
               inert: content.hasAttribute('inert'),
               height: content.getBoundingClientRect().height,
-              exitAnimationMs: Number.parseFloat(style.animationDuration) * 1000,
+              exitDurationMs: typeof duration === 'number' ? duration : 0,
             }
-            // Armed in the same task, so no transition out of `closing` is missed.
-            const exited = new Promise<{ afterMs: number; state: string | null }>((resolve) => {
-              const observer = new MutationObserver(() => {
-                const state = content.getAttribute('data-state')
-                if (state === 'closing') return
-                observer.disconnect()
-                resolve({ afterMs: performance.now() - startedAt, state })
+            // Every `data-state` change, armed in the same task so none is missed.
+            const transitions: string[] = []
+            new MutationObserver(() => {
+              transitions.push(content.getAttribute('data-state') ?? '(none)')
+            }).observe(content, { attributes: true, attributeFilter: ['data-state'] })
+            const events: string[] = []
+            for (const type of ['animationstart', 'animationend'] as const) {
+              content.addEventListener(type, (event) => {
+                if (event.animationName === exitName) events.push(type)
               })
-              observer.observe(content, { attributes: true, attributeFilter: ['data-state'] })
-            })
-            return { scenarioId, retained, exited }
+            }
+            return { scenarioId, content, exit, exitName, retained, transitions, events }
           })
-          return Promise.all(
-            probes.map(async ({ scenarioId, retained, exited }) => ({
-              scenarioId,
-              retained,
-              exit: await exited,
-            })),
+
+          // Held: nothing may settle a paused exit, however long it is held.
+          for (let frame = 0; frame < pausedFrames; frame += 1) {
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+          }
+          await new Promise<void>((resolve) => setTimeout(resolve, pausedWaitMs))
+          const held = probes.map(({ content, exit, transitions, events }) => ({
+            state: content.getAttribute('data-state'),
+            playState: exit.playState,
+            transitions: [...transitions],
+            events: [...events],
+          }))
+
+          // Released: the exit's own `animationend` settles it, in that dispatch.
+          const released = await Promise.all(
+            probes.map(
+              ({ content, exit, exitName }) =>
+                new Promise<string | null>((resolve) => {
+                  const onEnd = (event: AnimationEvent): void => {
+                    if (event.target !== content || event.animationName !== exitName) return
+                    window.removeEventListener('animationend', onEnd)
+                    resolve(content.getAttribute('data-state'))
+                  }
+                  window.addEventListener('animationend', onEnd)
+                  exit.finish()
+                }),
+            ),
           )
+          return probes.map(({ scenarioId, retained, transitions }, index) => ({
+            scenarioId,
+            retained,
+            held: held[index],
+            stateAtAnimationEnd: released[index],
+            transitions: [...transitions],
+          }))
         },
-        { fn: fixture.mountFn, contract },
+        { fn: fixture.mountFn, contract, pausedFrames: 10, pausedWaitMs: 1_000 },
       )
       await page.close()
 
@@ -314,17 +361,23 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
         'component:accordion',
         'component:collapsible',
       ])
-      for (const { scenarioId, retained, exit } of closing) {
+      for (const { scenarioId, retained, held, stateAtAnimationEnd, transitions } of closing) {
         expect(retained.display, scenarioId).not.toBe('none')
         expect(retained.ariaHidden, scenarioId).toBe('true')
         expect(retained.inert, scenarioId).toBe(true)
         expect(retained.height, scenarioId).toBeGreaterThan(0)
         // A real exit animation is what the retention is for…
-        expect(retained.exitAnimationMs, scenarioId).toBeGreaterThan(0)
-        // …and the content stays retained for all of it, then settles closed
-        // (animationend cannot fire before start + duration on the page clock).
-        expect(exit.state, scenarioId).toBe('closed')
-        expect(exit.afterMs, scenarioId).toBeGreaterThanOrEqual(retained.exitAnimationMs)
+        expect(retained.exitDurationMs, scenarioId).toBeGreaterThan(0)
+        // …it started (and so was armed) while held, and nothing settled it…
+        expect(held, scenarioId).toEqual({
+          state: 'closing',
+          playState: 'paused',
+          transitions: [],
+          events: ['animationstart'],
+        })
+        // …and its own end settled it, and only that.
+        expect(stateAtAnimationEnd, scenarioId).toBe('closed')
+        expect(transitions, scenarioId).toEqual(['closed'])
       }
     },
   )
