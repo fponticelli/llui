@@ -35,10 +35,14 @@ export interface GalleryDocumentMessage {
 
 const STATUSES: ReadonlySet<string> = new Set<GalleryDocumentStatus>(['loading', 'ready', 'error'])
 
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
 /** Narrow an untrusted `MessageEvent.data` to a document status message. */
 export function isGalleryDocumentMessage(value: unknown): value is GalleryDocumentMessage {
-  if (value === null || typeof value !== 'object') return false
-  const record = value as Record<string, unknown>
+  if (!isRecord(value)) return false
+  const record = value
   return (
     record['type'] === GALLERY_DOCUMENT_MESSAGE_TYPE &&
     (record['path'] === 'baseline' || record['path'] === 'registryTailwind') &&
