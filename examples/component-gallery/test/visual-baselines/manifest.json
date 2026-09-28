@@ -203,23 +203,23 @@
       "height": 136
     },
     "baseline/chart/active/default": {
-      "width": 1249,
+      "width": 1248,
       "height": 709
     },
     "baseline/chart/default/default": {
-      "width": 1249,
+      "width": 1248,
       "height": 709
     },
     "baseline/chart/default/theme-dark": {
-      "width": 1249,
+      "width": 1248,
       "height": 709
     },
     "baseline/chart/dimmed/default": {
-      "width": 1249,
+      "width": 1248,
       "height": 709
     },
     "baseline/chart/empty/default": {
-      "width": 1249,
+      "width": 1248,
       "height": 709
     },
     "baseline/checkbox/checked/default": {
@@ -259,19 +259,19 @@
       "height": 40
     },
     "baseline/clipboard/copied/default": {
-      "width": 401,
+      "width": 400,
       "height": 52
     },
     "baseline/clipboard/idle/default": {
-      "width": 401,
+      "width": 400,
       "height": 52
     },
     "baseline/clipboard/idle/direction-rtl": {
-      "width": 401,
+      "width": 400,
       "height": 52
     },
     "baseline/clipboard/idle/theme-dark": {
-      "width": 401,
+      "width": 400,
       "height": 52
     },
     "baseline/clipboard/permission-denied/default": {
@@ -1067,31 +1067,31 @@
       "height": 52
     },
     "baseline/pin-input/default/default": {
-      "width": 233,
+      "width": 232,
       "height": 52
     },
     "baseline/pin-input/default/direction-rtl": {
-      "width": 233,
+      "width": 232,
       "height": 52
     },
     "baseline/pin-input/disabled/default": {
-      "width": 233,
+      "width": 232,
       "height": 52
     },
     "baseline/pin-input/invalid/default": {
-      "width": 233,
+      "width": 232,
       "height": 52
     },
     "baseline/pin-input/placeholder/default": {
-      "width": 233,
+      "width": 232,
       "height": 52
     },
     "baseline/pin-input/read-only/default": {
-      "width": 233,
+      "width": 232,
       "height": 52
     },
     "baseline/pin-input/required/default": {
-      "width": 233,
+      "width": 232,
       "height": 52
     },
     "baseline/popover/closing/default": {
@@ -1386,17 +1386,21 @@
       "width": 1248,
       "height": 145
     },
+    "baseline/sortable/own-instructions/default": {
+      "width": 1248,
+      "height": 185
+    },
     "baseline/sparkline/default/default": {
-      "width": 137,
-      "height": 69
+      "width": 136,
+      "height": 48
     },
     "baseline/sparkline/default/theme-dark": {
-      "width": 137,
-      "height": 69
+      "width": 136,
+      "height": 48
     },
     "baseline/sparkline/stale/default": {
-      "width": 137,
-      "height": 69
+      "width": 136,
+      "height": 48
     },
     "baseline/splitter/at-minimum/default": {
       "width": 1248,
@@ -2139,23 +2143,23 @@
       "height": 136
     },
     "registry/chart/active/default": {
-      "width": 1249,
+      "width": 1248,
       "height": 709
     },
     "registry/chart/default/default": {
-      "width": 1249,
+      "width": 1248,
       "height": 709
     },
     "registry/chart/default/theme-dark": {
-      "width": 1249,
+      "width": 1248,
       "height": 709
     },
     "registry/chart/dimmed/default": {
-      "width": 1249,
+      "width": 1248,
       "height": 709
     },
     "registry/chart/empty/default": {
-      "width": 1249,
+      "width": 1248,
       "height": 709
     },
     "registry/checkbox/checked/default": {
@@ -2195,19 +2199,19 @@
       "height": 38
     },
     "registry/clipboard/copied/default": {
-      "width": 401,
+      "width": 400,
       "height": 52
     },
     "registry/clipboard/idle/default": {
-      "width": 401,
+      "width": 400,
       "height": 52
     },
     "registry/clipboard/idle/direction-rtl": {
-      "width": 401,
+      "width": 400,
       "height": 52
     },
     "registry/clipboard/idle/theme-dark": {
-      "width": 401,
+      "width": 400,
       "height": 52
     },
     "registry/clipboard/permission-denied/default": {
@@ -2255,31 +2259,31 @@
       "height": 276
     },
     "registry/combobox/closed/default": {
-      "width": 337,
+      "width": 336,
       "height": 52
     },
     "registry/combobox/error/default": {
-      "width": 337,
+      "width": 336,
       "height": 114
     },
     "registry/combobox/loading/default": {
-      "width": 337,
+      "width": 336,
       "height": 52
     },
     "registry/combobox/open/default": {
-      "width": 337,
+      "width": 336,
       "height": 142
     },
     "registry/combobox/open/direction-rtl": {
-      "width": 337,
+      "width": 336,
       "height": 142
     },
     "registry/combobox/open/theme-dark": {
-      "width": 337,
+      "width": 336,
       "height": 142
     },
     "registry/combobox/stale-results/default": {
-      "width": 337,
+      "width": 336,
       "height": 110
     },
     "registry/command-menu/closed/default": {
@@ -3319,36 +3323,36 @@
       "height": 689
     },
     "registry/search-field/default/default": {
-      "width": 1249,
-      "height": 53
+      "width": 1248,
+      "height": 52
     },
     "registry/search-field/default/direction-rtl": {
-      "width": 1249,
-      "height": 53
+      "width": 1248,
+      "height": 52
     },
     "registry/search-field/disabled/default": {
-      "width": 1249,
-      "height": 53
+      "width": 1248,
+      "height": 52
     },
     "registry/search-field/invalid/default": {
-      "width": 1249,
-      "height": 53
+      "width": 1248,
+      "height": 52
     },
     "registry/search-field/loading/default": {
-      "width": 1249,
-      "height": 53
+      "width": 1248,
+      "height": 52
     },
     "registry/search-field/placeholder/default": {
-      "width": 1249,
-      "height": 53
+      "width": 1248,
+      "height": 52
     },
     "registry/search-field/read-only/default": {
-      "width": 1249,
-      "height": 53
+      "width": 1248,
+      "height": 52
     },
     "registry/search-field/required/default": {
-      "width": 1249,
-      "height": 53
+      "width": 1248,
+      "height": 52
     },
     "registry/searchable-select/closed/default": {
       "width": 100,
@@ -3526,17 +3530,21 @@
       "width": 1248,
       "height": 142
     },
+    "registry/sortable/own-instructions/default": {
+      "width": 1248,
+      "height": 162
+    },
     "registry/sparkline/default/default": {
-      "width": 137,
-      "height": 63
+      "width": 136,
+      "height": 48
     },
     "registry/sparkline/default/theme-dark": {
-      "width": 137,
-      "height": 63
+      "width": 136,
+      "height": 48
     },
     "registry/sparkline/stale/default": {
-      "width": 137,
-      "height": 63
+      "width": 136,
+      "height": 48
     },
     "registry/spinner/loading/default": {
       "width": 32,
