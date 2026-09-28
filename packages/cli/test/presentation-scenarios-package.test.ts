@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url'
 import ts from 'typescript'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PRESENTATION_SCENARIO_COMPLEXITY_LIMITS } from '../src/presentation-scenarios.js'
+import { ownPath } from './untyped-access.js'
 
 // @test-needs-own-build — this suite imports and packages this package's emitted dist/ graph.
 
@@ -191,11 +192,11 @@ function formattedDiagnostics(program: ts.Program): string {
 
 describe('@llui/cli/presentation-scenarios package boundary', () => {
   it('publishes only a direct browser-safe subpath', () => {
-    const packageJson = JSON.parse(readFileSync(resolve(PACKAGE_ROOT, 'package.json'), 'utf8')) as {
-      exports: Record<string, unknown>
-    }
+    const packageJson: unknown = JSON.parse(
+      readFileSync(resolve(PACKAGE_ROOT, 'package.json'), 'utf8'),
+    )
 
-    expect(packageJson.exports['./presentation-scenarios']).toEqual({
+    expect(ownPath(packageJson, 'exports', './presentation-scenarios')).toEqual({
       types: './dist/presentation-scenarios.d.ts',
       import: './dist/presentation-scenarios.js',
     })
@@ -270,14 +271,8 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
 
   it('keeps the built runtime export set disjoint from the package root', async () => {
     const nonce = `${Date.now()}-${Math.random()}`
-    const direct = (await import(`${pathToFileURL(DIST_PATH).href}?${nonce}`)) as Record<
-      string,
-      unknown
-    >
-    const root = (await import(`${pathToFileURL(DIST_ROOT_PATH).href}?${nonce}`)) as Record<
-      string,
-      unknown
-    >
+    const direct: object = await import(`${pathToFileURL(DIST_PATH).href}?${nonce}`)
+    const root: object = await import(`${pathToFileURL(DIST_ROOT_PATH).href}?${nonce}`)
 
     expect(Object.keys(direct).sort()).toEqual(
       [
@@ -437,10 +432,14 @@ describe('@llui/cli/presentation-scenarios package boundary', () => {
       casesPerProduct: (n) => `${n} cases per product`,
       identifierLength: (n) => `${n} characters`,
     }
+    const isLimitName = (
+      name: string,
+    ): name is keyof typeof PRESENTATION_SCENARIO_COMPLEXITY_LIMITS =>
+      Object.hasOwn(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS, name)
     for (const [name, value] of Object.entries(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS)) {
+      if (!isLimitName(name)) throw new Error(`${name} is not an own limit`)
       const formatted = value.toLocaleString('en-US')
-      const phrase =
-        phraseFor[name as keyof typeof PRESENTATION_SCENARIO_COMPLEXITY_LIMITS](formatted)
+      const phrase = phraseFor[name](formatted)
       expect(readme.includes(phrase), `README.md must document ${name} as "${phrase}"`).toBe(true)
     }
     // Every key in the limits object has its own phrase above — if a new dimension is added and

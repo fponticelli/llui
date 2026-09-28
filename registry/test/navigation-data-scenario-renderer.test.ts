@@ -13,12 +13,26 @@ import {
   DENSITY_APPLICABLE_PRODUCT_IDS,
   densityRationale,
   joinNavigationDataScenarios,
+  NAVIGATION_DATA_CASES,
   NAVIGATION_DATA_DEFINITIONS,
+  type NavigationDataInputs,
   type NavigationDataJoinedScenario,
+  type NavigationDataScenarioId,
 } from '../../packages/components/test/styles/navigation-data-scenarios'
+import {
+  NAVIGATION_DATA_FIELD_MUTATORS,
+  NAVIGATION_DATA_TARGETED_CHECKS,
+} from '../../packages/components/test/styles/navigation-data-field-mutations'
+import {
+  isDeclaredField,
+  mutateField,
+  UNCHANGED,
+  type ScenarioCaseOf,
+} from '../../packages/components/test/styles/scenario-field-mutations'
 import {
   REGISTRY_ADAPTERS,
   mountRegistryNavigationDataScenarios,
+  type Adapter,
   type Disposable,
   type RenderContext,
 } from './navigation-data-scenario-renderer'
@@ -28,6 +42,13 @@ const catalog = compileNavigationDataCatalog(contract)
 const joined = joinNavigationDataScenarios(catalog, contract)
 const scenarios = applicableNavigationDataScenarios(joined, 'registryTailwind')
 const entryByProduct = new Map(contract.entries.map((entry) => [entry.name, entry]))
+const scenarioIds = catalog.scenarios.map(({ scenarioId }) => scenarioId)
+
+/** The adapter map viewed per scenario id at that id's input type; the
+ * assignment checks every adapter against its scenario's declared input. */
+const ADAPTERS: {
+  readonly [Id in NavigationDataScenarioId]: Adapter<NavigationDataInputs[Id]>
+} = REGISTRY_ADAPTERS
 
 function publicParts(productId: string): string[] {
   const files =
@@ -220,9 +241,9 @@ describe('registry navigation/data scenario renderer', () => {
     return `env:${envFacts}||${facts.join(';')}`
   }
 
-  function mountFor(
-    adapter: (h: HTMLElement, input: unknown, ctx: RenderContext) => Disposable,
-    input: unknown,
+  function mountFor<Input>(
+    adapter: Adapter<Input>,
+    input: Input,
     ctx: RenderContext,
   ): { host: HTMLElement; projection: string } {
     const host = document.createElement('div')
@@ -232,24 +253,33 @@ describe('registry navigation/data scenario renderer', () => {
     return { host, projection }
   }
 
+  /** One scenario's own adapter and cases, at that scenario's input type — see
+   * the baseline renderer test's identical helper. */
+  function eachCase<Id extends NavigationDataScenarioId>(
+    scenarioId: Id,
+    visit: (
+      adapter: Adapter<NavigationDataInputs[Id]>,
+      scenarioCase: ScenarioCaseOf<NavigationDataInputs[Id]>,
+      ctx: RenderContext,
+    ) => void,
+  ): void {
+    const adapter = ADAPTERS[scenarioId]
+    for (const scenarioCase of NAVIGATION_DATA_CASES[scenarioId].cases) {
+      visit(adapter, scenarioCase, {
+        scenarioId,
+        caseId: scenarioCase.id,
+        environment: DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
+      })
+    }
+  }
+
   it('projectPublishedState is deterministic: two identical mounts of the same case project identically (#264 item 2b)', () => {
-    for (const [scenarioId, definition] of Object.entries(NAVIGATION_DATA_DEFINITIONS)) {
-      const adapter = REGISTRY_ADAPTERS[scenarioId as keyof typeof REGISTRY_ADAPTERS]
-      for (const scenarioCase of definition.cases) {
-        const ctx: RenderContext = {
-          scenarioId: scenarioId as RenderContext['scenarioId'],
-          caseId: scenarioCase.id,
-          environment: DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
-        }
-        const typedAdapter = adapter as (
-          h: HTMLElement,
-          input: unknown,
-          ctx: RenderContext,
-        ) => Disposable
-        const first = mountFor(typedAdapter, scenarioCase.input, ctx)
-        const second = mountFor(typedAdapter, scenarioCase.input, ctx)
+    for (const scenarioId of scenarioIds) {
+      eachCase(scenarioId, (adapter, scenarioCase, ctx) => {
+        const first = mountFor(adapter, scenarioCase.input, ctx)
+        const second = mountFor(adapter, scenarioCase.input, ctx)
         expect(second.projection, `${scenarioId}/${scenarioCase.id}`).toBe(first.projection)
-      }
+      })
     }
   })
 
@@ -277,79 +307,64 @@ describe('registry navigation/data scenario renderer', () => {
     expect(decoyProjection).toBe(plainProjection)
   })
 
+  function checkDimensions<Id extends NavigationDataScenarioId>(
+    scenarioId: Id,
+    hitAllowances: Set<string>,
+  ): void {
+    const mutators = NAVIGATION_DATA_FIELD_MUTATORS[scenarioId]
+    const targetedChecks = NAVIGATION_DATA_TARGETED_CHECKS[scenarioId]
+    eachCase(scenarioId, (adapter, scenarioCase, baseCtx) => {
+      const baseline = mountFor(adapter, scenarioCase.input, baseCtx).projection
+
+      for (const field of Object.keys(scenarioCase.input)) {
+        const key = `${scenarioId}/${scenarioCase.id}.${field}`
+        if (!isDeclaredField(mutators, field)) throw new Error(`${key} has no declared mutator`)
+        const mutation = mutateField(mutators, scenarioCase.input, field)
+        if (mutation === UNCHANGED) continue
+        // See the baseline renderer test: a generic projection diff can be
+        // masked by a renderer-added echo, so a known machine-published
+        // attribute is asserted directly as well.
+        const targetedCheck = targetedChecks?.[field]
+        if (targetedCheck !== undefined) {
+          const targetHost = document.createElement('div')
+          const targetHandle = adapter(targetHost, mutation.input, baseCtx)
+          targetedCheck(targetHost, mutation.input)
+          targetHandle.dispose()
+        }
+        const mutated = mountFor(adapter, mutation.input, baseCtx).projection
+        if (mutated === baseline) {
+          const reason = INSENSITIVE_DIMENSIONS[key]
+          expect(reason, key).toBeDefined()
+          hitAllowances.add(key)
+          continue
+        }
+        expect(mutated, key).not.toBe(baseline)
+      }
+
+      for (const axis of scenarioCase.environmentAxes) {
+        const mutatedEnvironment: PresentationScenarioEnvironment = {
+          ...DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
+          [axis]: ENV_AXIS_ALTERNATE[axis],
+        }
+        const mutated = mountFor(adapter, scenarioCase.input, {
+          ...baseCtx,
+          environment: mutatedEnvironment,
+        }).projection
+        const key = `${scenarioId}/${scenarioCase.id}.env:${axis}`
+        if (mutated === baseline) {
+          const reason = INSENSITIVE_ENVIRONMENT_DIMENSIONS[key]
+          expect(reason, key).toBeDefined()
+          hitAllowances.add(key)
+          continue
+        }
+        expect(mutated, key).not.toBe(baseline)
+      }
+    })
+  }
+
   it('every case field and environment axis a case declares materially changes this renderer real output (#264 item D)', () => {
     const hitAllowances = new Set<string>()
-    for (const [scenarioId, definition] of Object.entries(NAVIGATION_DATA_DEFINITIONS)) {
-      const adapter = REGISTRY_ADAPTERS[scenarioId as keyof typeof REGISTRY_ADAPTERS]
-      const typedAdapter = adapter as (
-        h: HTMLElement,
-        input: unknown,
-        ctx: RenderContext,
-      ) => Disposable
-      for (const scenarioCase of definition.cases) {
-        const baseCtx: RenderContext = {
-          scenarioId: scenarioId as RenderContext['scenarioId'],
-          caseId: scenarioCase.id,
-          environment: DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
-        }
-        const baseline = mountFor(typedAdapter, scenarioCase.input, baseCtx).projection
-
-        for (const field of Object.keys(scenarioCase.input as Record<string, unknown>)) {
-          const originalValue = (scenarioCase.input as Record<string, unknown>)[field]
-          const mutatedValue = mutateFieldValue(
-            scenarioId,
-            field,
-            originalValue,
-            scenarioCase.input as Record<string, unknown>,
-          )
-          if (mutatedValue === UNCHANGED) continue
-          const mutatedInput = { ...scenarioCase.input, [field]: mutatedValue }
-          // A generic "did the whole projection change" diff can be MASKED by
-          // an unrelated renderer-added echo of the very field being mutated
-          // — a `data-*` attribute mirroring the mutated value, placed on a
-          // REAL `[data-part]` root, still registers as a projection
-          // difference even when the actual machine wiring is broken (#264
-          // review item 3). For dimensions with a known specific
-          // machine-published attribute, assert THAT directly rather than
-          // trusting the diff alone.
-          const targetedCheck = TARGETED_ATTRIBUTE_CHECKS[`${scenarioId}.${field}`]
-          if (targetedCheck !== undefined) {
-            const targetHost = document.createElement('div')
-            const targetHandle = typedAdapter(targetHost, mutatedInput, baseCtx)
-            targetedCheck(targetHost, mutatedInput as Record<string, unknown>)
-            targetHandle.dispose()
-          }
-          const mutated = mountFor(typedAdapter, mutatedInput, baseCtx).projection
-          const key = `${scenarioId}/${scenarioCase.id}.${field}`
-          if (mutated === baseline) {
-            const reason = INSENSITIVE_DIMENSIONS[key]
-            expect(reason, key).toBeDefined()
-            hitAllowances.add(key)
-            continue
-          }
-          expect(mutated, key).not.toBe(baseline)
-        }
-
-        for (const axis of scenarioCase.environmentAxes) {
-          const mutatedEnvironment: PresentationScenarioEnvironment = {
-            ...DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
-            [axis]: ENV_AXIS_ALTERNATE[axis],
-          }
-          const mutated = mountFor(typedAdapter, scenarioCase.input, {
-            ...baseCtx,
-            environment: mutatedEnvironment,
-          }).projection
-          const key = `${scenarioId}/${scenarioCase.id}.env:${axis}`
-          if (mutated === baseline) {
-            const reason = INSENSITIVE_ENVIRONMENT_DIMENSIONS[key]
-            expect(reason, key).toBeDefined()
-            hitAllowances.add(key)
-            continue
-          }
-          expect(mutated, key).not.toBe(baseline)
-        }
-      }
-    }
+    for (const scenarioId of scenarioIds) checkDimensions(scenarioId, hitAllowances)
     expect(
       [
         ...Object.keys(INSENSITIVE_DIMENSIONS),
@@ -370,29 +385,6 @@ const ENV_AXIS_ALTERNATE: Readonly<
   motion: 'reduced',
   viewport: 'narrow',
   forcedColors: 'active',
-}
-
-/** See the baseline renderer test's identical table for the full reasoning
- * (#264 review item 3): a generic projection diff is fooled by a
- * renderer-added echo of the mutated field on a real `[data-part]` element,
- * so these dimensions are additionally checked against the SPECIFIC
- * machine-published attribute the mutation actually drives. */
-const TARGETED_ATTRIBUTE_CHECKS: Readonly<
-  Record<string, (host: HTMLElement, mutatedInput: Record<string, unknown>) => void>
-> = {
-  'component:chart.label': (host, mutatedInput) => {
-    const table = host.querySelector('[data-part="table"]')
-    expect(table?.getAttribute('aria-label'), 'component:chart.label aria-label').toBe(
-      mutatedInput.label,
-    )
-  },
-  'component:tabs.value': (host, mutatedInput) => {
-    const value = mutatedInput.value as string
-    const trigger = host.querySelector(`[data-part="trigger"][data-value="${value}"]`)
-    const panel = host.querySelector(`[data-part="panel"][data-value="${value}"]`)
-    expect(trigger?.getAttribute('aria-selected'), 'component:tabs.value trigger').toBe('true')
-    expect(panel?.hasAttribute('hidden'), 'component:tabs.value panel').toBe(false)
-  },
 }
 
 /** See the baseline renderer test's identical table for the full reasoning.
@@ -434,88 +426,4 @@ const INSENSITIVE_DIMENSIONS: Readonly<Record<string, string>> = {
     'steps.ts:statusOf checks `current` before `completed`, and this case already has completed=[0,1] with current=2 over a 3-step fixture — the only index left to add IS current, whose status always wins.',
   'component:tree-view/disabled.busy':
     'tree-view.ts:update() early-returns on `loadingStart` whenever `state.disabled` is true — a disabled tree can never actually enter the loading state.',
-}
-
-const UNCHANGED = Symbol('unchanged')
-
-const KNOWN_ENUM_CYCLES: Readonly<Record<string, readonly string[]>> = {
-  state: ['closed', 'open', 'closing'],
-  status: ['loading', 'loaded', 'error'],
-  density: ['comfortable', 'compact'],
-  orientation: ['horizontal', 'vertical'],
-  direction: ['left', 'right', 'up', 'down'],
-  variant: ['default', 'outline', 'muted', 'secondary', 'destructive'],
-  value: ['summary', 'details'],
-  phase: ['loading', 'error', 'populated'],
-}
-
-const KNOWN_NUMERIC_OVERRIDES: Readonly<Record<string, (original: number) => number>> = {
-  maxVisible: (original) => (original <= 1 ? original + 5 : 1),
-}
-
-const KNOWN_CONTEXTUAL_ARRAY_OVERRIDES: Readonly<
-  Record<string, (input: Record<string, unknown>) => readonly string[] | typeof UNCHANGED>
-> = {
-  'component:table.selection': (input) => {
-    const rows = input['rows'] as readonly string[]
-    const selection = input['selection'] as readonly string[]
-    const additional = rows.find((row) => !selection.includes(row))
-    return additional === undefined ? UNCHANGED : [...selection, additional]
-  },
-  'component:tabs.disabledItems': (input) =>
-    addAbsentFrom(['summary', 'details'], input['disabledItems'] as readonly string[]),
-  'component:toc.expanded': (input) =>
-    addAbsentFrom(['overview', 'api'], input['expanded'] as readonly string[]),
-  'component:tree-view.expanded': (input) =>
-    addAbsentFrom(['src'], input['expanded'] as readonly string[]),
-  'component:tree-view.selected': (input) =>
-    addAbsentFrom(['src', 'index'], input['selected'] as readonly string[]),
-}
-
-function addAbsentFrom(
-  domain: readonly string[],
-  current: readonly string[],
-): readonly string[] | typeof UNCHANGED {
-  const additional = domain.find((id) => !current.includes(id))
-  return additional === undefined ? UNCHANGED : [...current, additional]
-}
-
-function mutateFieldValue(
-  scenarioId: string,
-  field: string,
-  value: unknown,
-  input: Record<string, unknown>,
-): unknown {
-  const contextual = KNOWN_CONTEXTUAL_ARRAY_OVERRIDES[`${scenarioId}.${field}`]
-  if (contextual !== undefined) return contextual(input)
-  if (typeof value === 'string') {
-    const cycle = KNOWN_ENUM_CYCLES[field]
-    if (cycle !== undefined) {
-      const next = cycle[(cycle.indexOf(value) + 1) % cycle.length]!
-      return next === value ? UNCHANGED : next
-    }
-    return value.length === 0 ? 'mutated' : `${value}-mutated`
-  }
-  if (typeof value === 'boolean') return !value
-  if (typeof value === 'number') {
-    const override = KNOWN_NUMERIC_OVERRIDES[field]
-    const mutated = override === undefined ? value + 7 : override(value)
-    return mutated === value ? UNCHANGED : mutated
-  }
-  if (value === null) return UNCHANGED
-  if (Array.isArray(value)) {
-    if (value.length === 0) return UNCHANGED
-    if (typeof value[0] === 'number') {
-      const numbers = value as number[]
-      return [...numbers, Math.max(...numbers) + 1]
-    }
-    if (typeof value[0] === 'string') {
-      const strings = value as string[]
-      let candidate = `${strings[strings.length - 1]}-extra`
-      while (strings.includes(candidate)) candidate += '-extra'
-      return [...strings, candidate]
-    }
-    return [...value, value[value.length - 1]]
-  }
-  return UNCHANGED
 }

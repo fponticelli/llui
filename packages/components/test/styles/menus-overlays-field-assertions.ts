@@ -36,8 +36,21 @@ export interface FieldAssertionContext {
   readonly caseId: string
   /** The full, pre-mutation case input (for fields whose expected fact
    * depends on a SIBLING field, e.g. `skipAnimations` depends on the case's
-   * own `presence`). */
-  readonly input: Readonly<Record<string, unknown>>
+   * own `presence`). Every scenario shares these assertions, so the input is
+   * known only to be an object; `inputField` reads the sibling it needs. */
+  readonly input: object
+}
+
+/** The case input's own sibling field, or `undefined` when it has none. */
+function inputField(input: object, field: 'presence' | 'skipAnimations' | 'animated'): unknown {
+  switch (field) {
+    case 'presence':
+      return 'presence' in input ? input.presence : undefined
+    case 'skipAnimations':
+      return 'skipAnimations' in input ? input.skipAnimations : undefined
+    case 'animated':
+      return 'animated' in input ? input.animated : undefined
+  }
 }
 
 export interface FieldAssertion {
@@ -70,9 +83,7 @@ function resolvedStatus(presence: string, skipAnimations: boolean): string {
 /** `presence` on the five direct-path products above: `data-state` resolves
  * via `resolvedStatus`, reading the CASE's own `skipAnimations`/`animated`
  * (unaffected by mutating `presence` alone, since that field stays fixed). */
-function presenceAssertionFor(
-  getSkipAnimations: (input: Record<string, unknown>) => boolean,
-): FieldAssertion {
+function presenceAssertionFor(getSkipAnimations: (input: object) => boolean): FieldAssertion {
   return {
     attrNames: ['data-state'],
     expectedFacts: (value, ctx) => {
@@ -101,7 +112,7 @@ function skipAnimationsAssertion(invert: boolean): FieldAssertion {
   return {
     attrNames: ['data-state'],
     expectedFacts: (value, ctx) => {
-      const presence = String(ctx.input.presence)
+      const presence = String(inputField(ctx.input, 'presence'))
       if (presence !== 'opening' && presence !== 'closing') return []
       const skips = invert ? !value : Boolean(value)
       return [`data-state=${resolvedStatus(presence, skips)}`]
@@ -110,9 +121,9 @@ function skipAnimationsAssertion(invert: boolean): FieldAssertion {
 }
 
 const presenceAssertionSkipAnimations = presenceAssertionFor((input) =>
-  Boolean(input.skipAnimations),
+  Boolean(inputField(input, 'skipAnimations')),
 )
-const presenceAssertionAnimated = presenceAssertionFor((input) => !input.animated)
+const presenceAssertionAnimated = presenceAssertionFor((input) => !inputField(input, 'animated'))
 
 /** `component:context-menu` is NOT like the other presence-bearing
  * products: its adapter has no direct "resting open/closed" path at all —
@@ -140,7 +151,10 @@ function contextMenuResolvedState(presence: string, skipAnimations: boolean): st
 const contextMenuPresenceAssertion: FieldAssertion = {
   attrNames: ['data-state'],
   expectedFacts: (value, ctx) => {
-    const status = contextMenuResolvedState(String(value), Boolean(ctx.input.skipAnimations))
+    const status = contextMenuResolvedState(
+      String(value),
+      Boolean(inputField(ctx.input, 'skipAnimations')),
+    )
     return status === 'closed' ? [] : [`data-state=${status}`]
   },
 }
@@ -148,7 +162,10 @@ const contextMenuPresenceAssertion: FieldAssertion = {
 const contextMenuSkipAnimationsAssertion: FieldAssertion = {
   attrNames: ['data-state'],
   expectedFacts: (value, ctx) => {
-    const status = contextMenuResolvedState(String(ctx.input.presence), Boolean(value))
+    const status = contextMenuResolvedState(
+      String(inputField(ctx.input, 'presence')),
+      Boolean(value),
+    )
     return status === 'closed' ? [] : [`data-state=${status}`]
   },
 }

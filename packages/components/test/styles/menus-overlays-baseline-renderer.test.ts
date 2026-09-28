@@ -14,18 +14,20 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { ProductContractSchema } from '@llui/cli'
+import { loadProductContract } from './navigation-data-contract-source.js'
 import {
   compileMenusOverlaysCatalog,
   joinMenusOverlaysScenarios,
+  MENUS_OVERLAYS_CASES,
   MENUS_OVERLAYS_DEFINITIONS,
   FLOATING_PLACEMENT_PROBES,
   type MenusOverlaysDefinitionScenarioId,
+  type MenusOverlaysInputs,
 } from './menus-overlays-scenarios.js'
 import {
   BASELINE_ADAPTERS,
   mountBaselineMenusOverlaysScenarios,
-  type Disposable,
+  type Adapter,
   type RenderContext,
 } from './menus-overlays-baseline-renderer.js'
 import { DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT } from '@llui/cli/presentation-scenarios'
@@ -39,14 +41,32 @@ import {
   type FieldAssertion,
   type FieldAssertionContext,
 } from './menus-overlays-field-assertions.js'
+import {
+  CONTEXT_MENU_ITEMS,
+  MENUBAR_FIRST_MENU_ITEMS,
+  MENUBAR_MENUS,
+  MENUS_OVERLAYS_FIELD_MUTATORS,
+  MENU_ITEMS,
+  type NestedElements,
+} from './menus-overlays-field-mutations.js'
+import {
+  isDeclaredField,
+  mutateField,
+  UNCHANGED,
+  type ScenarioCaseOf,
+} from './scenario-field-mutations.js'
 
 const ROOT = resolve(import.meta.dirname, '../../../..')
-const registry = JSON.parse(readFileSync(resolve(ROOT, 'registry/registry.json'), 'utf8')) as {
-  productContract?: unknown
-}
-const contract = ProductContractSchema.parse(registry.productContract)
+const contract = loadProductContract()
 const catalog = compileMenusOverlaysCatalog(contract)
 const joined = joinMenusOverlaysScenarios(catalog, contract)
+const scenarioIds = catalog.scenarios.map(({ scenarioId }) => scenarioId)
+
+/** The adapter map viewed per scenario id at that id's input type; the
+ * assignment checks every adapter against its scenario's declared input. */
+const ADAPTERS: {
+  readonly [Id in MenusOverlaysDefinitionScenarioId]: Adapter<MenusOverlaysInputs[Id]>
+} = BASELINE_ADAPTERS
 
 describe('baseline menus-overlays scenario renderer', () => {
   beforeEach(() => {
@@ -112,9 +132,9 @@ describe('baseline menus-overlays scenario renderer', () => {
     return `env:${envFacts}||${facts.join(';')}`
   }
 
-  function mountFor(
-    adapter: (h: HTMLElement, input: unknown, ctx: RenderContext) => Disposable,
-    input: unknown,
+  function mountFor<Input>(
+    adapter: Adapter<Input>,
+    input: Input,
     ctx: RenderContext,
   ): { host: HTMLElement; projection: string } {
     const host = document.createElement('div')
@@ -124,24 +144,34 @@ describe('baseline menus-overlays scenario renderer', () => {
     return { host, projection }
   }
 
+  /** One scenario's own adapter and cases, at that scenario's input type — the
+   * correlation a plain `Object.entries` loop loses (see
+   * `scenario-field-mutations.ts`). */
+  function eachCase<Id extends MenusOverlaysDefinitionScenarioId>(
+    scenarioId: Id,
+    visit: (
+      adapter: Adapter<MenusOverlaysInputs[Id]>,
+      scenarioCase: ScenarioCaseOf<MenusOverlaysInputs[Id]>,
+      ctx: RenderContext,
+    ) => void,
+  ): void {
+    const adapter = ADAPTERS[scenarioId]
+    for (const scenarioCase of MENUS_OVERLAYS_CASES[scenarioId].cases) {
+      visit(adapter, scenarioCase, {
+        scenarioId,
+        caseId: scenarioCase.id,
+        environment: DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
+      })
+    }
+  }
+
   it('projectPublishedState is deterministic: two identical mounts of the same case project identically', () => {
-    for (const [scenarioId, definition] of Object.entries(MENUS_OVERLAYS_DEFINITIONS)) {
-      const adapter = BASELINE_ADAPTERS[scenarioId as keyof typeof BASELINE_ADAPTERS]
-      for (const scenarioCase of definition.cases) {
-        const ctx: RenderContext = {
-          scenarioId: scenarioId as MenusOverlaysDefinitionScenarioId,
-          caseId: scenarioCase.id,
-          environment: DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
-        }
-        const typedAdapter = adapter as (
-          h: HTMLElement,
-          input: unknown,
-          ctx: RenderContext,
-        ) => Disposable
-        const first = mountFor(typedAdapter, scenarioCase.input, ctx)
-        const second = mountFor(typedAdapter, scenarioCase.input, ctx)
+    for (const scenarioId of scenarioIds) {
+      eachCase(scenarioId, (adapter, scenarioCase, ctx) => {
+        const first = mountFor(adapter, scenarioCase.input, ctx)
+        const second = mountFor(adapter, scenarioCase.input, ctx)
         expect(second.projection, `${scenarioId}/${scenarioCase.id}`).toBe(first.projection)
-      }
+      })
     }
   })
 
@@ -313,53 +343,6 @@ describe('baseline menus-overlays scenario renderer', () => {
     'component:toast': new Set(['animated']),
   }
 
-  function mutateFieldValue(field: string, value: unknown): unknown | typeof UNCHANGED {
-    if (typeof value === 'string') {
-      const cycle = ENUM_CYCLES[field]
-      if (cycle !== undefined) {
-        const next = cycle[(cycle.indexOf(value) + 1) % cycle.length]!
-        return next === value ? UNCHANGED : next
-      }
-      return value.length === 0 ? 'mutated' : `${value}-mutated`
-    }
-    if (typeof value === 'boolean') return !value
-    if (typeof value === 'number') return value + 7
-    if (value === null) return UNCHANGED // nullable fields are covered by their own sibling cases
-    if (Array.isArray(value)) {
-      if (value.length === 0) return UNCHANGED
-      if (typeof value[0] === 'string') return value.slice(0, -1)
-      return UNCHANGED // arrays of objects (menu items, menubar menus, …): structural, not scalar
-    }
-    return UNCHANGED
-  }
-
-  const UNCHANGED = Symbol('unchanged')
-
-  const ENUM_CYCLES: Record<string, readonly string[]> = {
-    presence: ['opening', 'open', 'closing', 'closed'],
-    side: ['top', 'right', 'bottom', 'left'],
-    edge: ['top', 'right', 'bottom', 'left'],
-    placement: [
-      'top',
-      'top-start',
-      'top-end',
-      'bottom',
-      'bottom-start',
-      'bottom-end',
-      'left',
-      'left-start',
-      'left-end',
-      'right',
-      'right-start',
-      'right-end',
-    ],
-    toastType: ['info', 'success', 'warning', 'error', 'loading', 'custom'],
-    orientation: ['horizontal', 'vertical'],
-    selectionMode: ['single', 'multiple'],
-    status: ['idle', 'loading', 'loaded', 'error'],
-    kind: ['action', 'checkbox'],
-  }
-
   /** Stable per-node identifier used to NAMESPACE its facts: `data-value` (menu
    * items, menubar/nav-menu triggers, select/combobox options all carry one),
    * else `id`, else `data-part` (unique for a single-instance part), else the
@@ -444,9 +427,11 @@ describe('baseline menus-overlays scenario renderer', () => {
     return true
   }
 
-  type TypedAdapter = (h: HTMLElement, input: unknown, ctx: RenderContext) => Disposable
-
-  function mountFacts(adapter: TypedAdapter, input: unknown, ctx: RenderContext): Set<string> {
+  function mountFacts<Input>(
+    adapter: Adapter<Input>,
+    input: Input,
+    ctx: RenderContext,
+  ): Set<string> {
     const host = document.createElement('div')
     const handle = adapter(host, input, ctx)
     const facts = factSet(host)
@@ -483,9 +468,9 @@ describe('baseline menus-overlays scenario renderer', () => {
     return facts
   }
 
-  function mountFactsForDataValue(
-    adapter: TypedAdapter,
-    input: unknown,
+  function mountFactsForDataValue<Input>(
+    adapter: Adapter<Input>,
+    input: Input,
     ctx: RenderContext,
     dataValue: string,
   ): Set<string> {
@@ -504,9 +489,9 @@ describe('baseline menus-overlays scenario renderer', () => {
     mutatedValue: unknown,
     baseFacts: ReadonlySet<string>,
     mutatedFacts: ReadonlySet<string>,
-    ctxFor: (input: Record<string, unknown>) => FieldAssertionContext,
-    baseInput: Record<string, unknown>,
-    mutatedInput: Record<string, unknown>,
+    ctxFor: (input: object) => FieldAssertionContext,
+    baseInput: object,
+    mutatedInput: object,
   ): void {
     const changedNames = changedAttrNames(baseFacts, mutatedFacts)
     expect(
@@ -527,194 +512,175 @@ describe('baseline menus-overlays scenario renderer', () => {
   }
 
   /** Checks the FIRST element of an array-of-objects field (`items`,
-   * `menus[0].items`) against `NESTED_ITEM_FIELD_ASSERTIONS` — the fields
-   * the top-level loop below structurally cannot reach, since
-   * `mutateFieldValue` declines every array of objects as "structural, not
-   * scalar" (deliberately: a whole-array mutation is ambiguous about WHICH
+   * `menus`, `menus[0].items`) against its assertion table — the fields the
+   * top-level loop below structurally cannot reach, since an array of objects
+   * is never mutated whole (a whole-array mutation is ambiguous about WHICH
    * element changed). */
-  function checkNestedItemFields(
-    scenarioId: string,
+  function checkNestedFields<Input extends object, Element extends object>(
+    scenarioId: MenusOverlaysDefinitionScenarioId,
     caseId: string,
-    arrayLabel: string,
-    items: readonly Record<string, unknown>[] | undefined,
-    buildMutatedInput: (mutatedFirst: Record<string, unknown>) => Record<string, unknown>,
-    baseInput: Record<string, unknown>,
-    dataValueKey: string,
-    adapter: TypedAdapter,
+    nested: NestedElements<Input, Element>,
+    assertions: Readonly<Record<string, FieldAssertion>>,
+    input: Input,
+    adapter: Adapter<Input>,
     ctx: RenderContext,
   ): void {
-    if (!Array.isArray(items) || items.length === 0) return
-    const first = items[0]!
-    // `select`/`combobox`/`toolbar`'s `items` is `readonly string[]` — a
-    // plain scalar array, not array-of-objects. Nothing here applies to it.
-    if (typeof first !== 'object' || first === null) return
-    const dataValue = String(first[dataValueKey])
-    for (const [field, assertion] of Object.entries(NESTED_ITEM_FIELD_ASSERTIONS)) {
-      if (!(field in first)) continue
-      const originalValue = first[field]
-      const mutatedValue = mutateFieldValue(field, originalValue)
-      if (mutatedValue === UNCHANGED) continue
-      const mutatedInput = buildMutatedInput({ ...first, [field]: mutatedValue })
-      const baseNodeFacts = mountFactsForDataValue(adapter, baseInput, ctx, dataValue)
+    const first = nested.elements(input)[0]
+    if (first === undefined) return
+    const dataValue = nested.dataValue(first)
+    for (const [field, assertion] of Object.entries(assertions)) {
+      if (!Object.hasOwn(first, field)) continue
+      const key = `${scenarioId}/${caseId}.${nested.label}[0].${field}`
+      if (!isDeclaredField(nested.mutators, field))
+        throw new Error(`${key} has no declared mutator`)
+      const mutation = mutateField(nested.mutators, first, field)
+      if (mutation === UNCHANGED) continue
+      const mutatedInput = nested.withFirst(input, mutation.input)
+      const baseNodeFacts = mountFactsForDataValue(adapter, input, ctx, dataValue)
       const mutatedNodeFacts = mountFactsForDataValue(adapter, mutatedInput, ctx, dataValue)
-      const key = `${scenarioId}/${caseId}.${arrayLabel}[0].${field}`
       assertExact(
         key,
         assertion,
-        originalValue,
-        mutatedValue,
+        mutation.original,
+        mutation.value,
         baseNodeFacts,
         mutatedNodeFacts,
-        (input) => ({ scenarioId, caseId, input }),
-        baseInput,
+        (i) => ({ scenarioId, caseId, input: i }),
+        input,
         mutatedInput,
       )
     }
   }
 
+  /** The nested array-of-objects fields each scenario reaches into. An `items`
+   * or `menus` field holding objects on a scenario with no entry here fails
+   * the test below, so a new such scenario cannot silently go unchecked. */
+  const NESTED_CHECKS: {
+    readonly [Id in MenusOverlaysDefinitionScenarioId]?: (
+      input: MenusOverlaysInputs[Id],
+      adapter: Adapter<MenusOverlaysInputs[Id]>,
+      ctx: RenderContext,
+    ) => void
+  } = {
+    'component:menu': (input, adapter, ctx) =>
+      checkNestedFields(
+        'component:menu',
+        ctx.caseId,
+        MENU_ITEMS,
+        NESTED_ITEM_FIELD_ASSERTIONS,
+        input,
+        adapter,
+        ctx,
+      ),
+    'component:context-menu': (input, adapter, ctx) =>
+      checkNestedFields(
+        'component:context-menu',
+        ctx.caseId,
+        CONTEXT_MENU_ITEMS,
+        NESTED_ITEM_FIELD_ASSERTIONS,
+        input,
+        adapter,
+        ctx,
+      ),
+    'component:menubar': (input, adapter, ctx) => {
+      checkNestedFields(
+        'component:menubar',
+        ctx.caseId,
+        MENUBAR_MENUS,
+        NESTED_MENUBAR_MENU_FIELD_ASSERTIONS,
+        input,
+        adapter,
+        ctx,
+      )
+      // A menu's own item nodes are only MOUNTED while that specific
+      // menu is the currently open one (`menubar.ts`'s `data-state`-gated
+      // content) — the 'closed' case's `open: null` unmounts every
+      // menu's content entirely, so an item field mutation here has no
+      // node to observe at all. Skip rather than fail: this is a
+      // structural precondition, not the field being insensitive.
+      const firstMenu = input.menus[0]
+      if (firstMenu !== undefined && input.open === firstMenu.id) {
+        checkNestedFields(
+          'component:menubar',
+          ctx.caseId,
+          MENUBAR_FIRST_MENU_ITEMS,
+          NESTED_ITEM_FIELD_ASSERTIONS,
+          input,
+          adapter,
+          ctx,
+        )
+      }
+    },
+  }
+
+  const NESTED_FIELD_NAMES = new Set(['items', 'menus'])
+
+  function isObjectList(value: unknown): boolean {
+    return Array.isArray(value) && value.some((element) => typeof element === 'object')
+  }
+
+  function checkFieldDimensions<Id extends MenusOverlaysDefinitionScenarioId>(
+    scenarioId: Id,
+    hitAllowances: Set<string>,
+    usedGeometryAllowances: Set<string>,
+  ): void {
+    const mutators = MENUS_OVERLAYS_FIELD_MUTATORS[scenarioId]
+    const nestedCheck = NESTED_CHECKS[scenarioId]
+    eachCase(scenarioId, (adapter, scenarioCase, ctx) => {
+      const input = scenarioCase.input
+      const baseFacts = mountFacts(adapter, input, ctx)
+
+      for (const field of Object.keys(input)) {
+        const key = `${scenarioId}/${scenarioCase.id}.${field}`
+        if (!isDeclaredField(mutators, field)) throw new Error(`${key} has no declared mutator`)
+        if (NESTED_FIELD_NAMES.has(field) && isObjectList(input[field])) {
+          expect(nestedCheck, `${key} holds objects but has no nested check`).toBeDefined()
+        }
+        const skippedGlobally = SKIPPED_FIELDS.has(field)
+        const skippedPerScenario = SKIPPED_FIELDS_PER_SCENARIO[scenarioId]?.has(field) ?? false
+        if (skippedGlobally || skippedPerScenario) {
+          if (skippedGlobally) {
+            const reason = GEOMETRY_ALLOWLIST[field]
+            expect(reason, `${field} is globally skipped with no geometry allowance`).toBeDefined()
+            usedGeometryAllowances.add(field)
+          }
+          continue
+        }
+        const mutation = mutateField(mutators, input, field)
+        if (mutation === UNCHANGED) continue
+        const mutatedFacts = mountFacts(adapter, mutation.input, ctx)
+
+        if (setsEqual(baseFacts, mutatedFacts)) {
+          const reason = INSENSITIVE_DIMENSIONS[key]
+          expect(reason, key).toBeDefined()
+          hitAllowances.add(key)
+          continue
+        }
+
+        const assertion = fieldAssertionFor(scenarioId, scenarioCase.id, field)
+        if (assertion === undefined) throw new Error(`no FIELD_ASSERTION registered for ${key}`)
+        assertExact(
+          key,
+          assertion,
+          mutation.original,
+          mutation.value,
+          baseFacts,
+          mutatedFacts,
+          (i) => ({ scenarioId, caseId: scenarioCase.id, input: i }),
+          input,
+          mutation.input,
+        )
+      }
+
+      nestedCheck?.(input, adapter, ctx)
+    })
+  }
+
   it('every declared case field materially changes the specific machine-published fact FIELD_ASSERTIONS names for it, or is documented as insensitive/geometry-only', () => {
     const hitAllowances = new Set<string>()
     const usedGeometryAllowances = new Set<string>()
-    for (const [scenarioId, definition] of Object.entries(MENUS_OVERLAYS_DEFINITIONS)) {
-      const adapter = BASELINE_ADAPTERS[scenarioId as keyof typeof BASELINE_ADAPTERS]
-      const typedAdapter = adapter as TypedAdapter
-      for (const scenarioCase of definition.cases) {
-        const ctx: RenderContext = {
-          scenarioId: scenarioId as MenusOverlaysDefinitionScenarioId,
-          caseId: scenarioCase.id,
-          environment: DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
-        }
-        const input = scenarioCase.input as Record<string, unknown>
-        const baseFacts = mountFacts(typedAdapter, input, ctx)
-
-        for (const field of Object.keys(input)) {
-          const key = `${scenarioId}/${scenarioCase.id}.${field}`
-          const skippedGlobally = SKIPPED_FIELDS.has(field)
-          const skippedPerScenario =
-            SKIPPED_FIELDS_PER_SCENARIO[scenarioId as MenusOverlaysDefinitionScenarioId]?.has(
-              field,
-            ) ?? false
-          if (skippedGlobally || skippedPerScenario) {
-            if (skippedGlobally) {
-              const reason = GEOMETRY_ALLOWLIST[field]
-              expect(
-                reason,
-                `${field} is globally skipped with no geometry allowance`,
-              ).toBeDefined()
-              usedGeometryAllowances.add(field)
-            }
-            continue
-          }
-          const originalValue = input[field]
-          const mutatedValue = mutateFieldValue(field, originalValue)
-          if (mutatedValue === UNCHANGED) continue
-          const mutatedInput = { ...input, [field]: mutatedValue }
-          const mutatedFacts = mountFacts(typedAdapter, mutatedInput, ctx)
-
-          if (setsEqual(baseFacts, mutatedFacts)) {
-            const reason = INSENSITIVE_DIMENSIONS[key]
-            expect(reason, key).toBeDefined()
-            hitAllowances.add(key)
-            continue
-          }
-
-          const assertion = fieldAssertionFor(scenarioId, scenarioCase.id, field)
-          expect(assertion, `no FIELD_ASSERTION registered for ${key}`).toBeDefined()
-          assertExact(
-            key,
-            assertion!,
-            originalValue,
-            mutatedValue,
-            baseFacts,
-            mutatedFacts,
-            (i) => ({ scenarioId, caseId: scenarioCase.id, input: i }),
-            input,
-            mutatedInput,
-          )
-        }
-
-        checkNestedItemFields(
-          scenarioId,
-          scenarioCase.id,
-          'items',
-          input.items as readonly Record<string, unknown>[] | undefined,
-          (mutatedFirst) => ({
-            ...input,
-            items: [mutatedFirst, ...(input.items as readonly Record<string, unknown>[]).slice(1)],
-          }),
-          input,
-          'value',
-          typedAdapter,
-          ctx,
-        )
-
-        const menus = input.menus as readonly Record<string, unknown>[] | undefined
-        if (Array.isArray(menus) && menus.length > 0) {
-          const firstMenu = menus[0]!
-          const menuDataValue = String(firstMenu.id)
-          for (const [field, assertion] of Object.entries(NESTED_MENUBAR_MENU_FIELD_ASSERTIONS)) {
-            if (!(field in firstMenu)) continue
-            const originalValue = firstMenu[field]
-            const mutatedValue = mutateFieldValue(field, originalValue)
-            if (mutatedValue === UNCHANGED) continue
-            const mutatedInput = {
-              ...input,
-              menus: [{ ...firstMenu, [field]: mutatedValue }, ...menus.slice(1)],
-            }
-            const baseNodeFacts = mountFactsForDataValue(typedAdapter, input, ctx, menuDataValue)
-            const mutatedNodeFacts = mountFactsForDataValue(
-              typedAdapter,
-              mutatedInput,
-              ctx,
-              menuDataValue,
-            )
-            const key = `${scenarioId}/${scenarioCase.id}.menus[0].${field}`
-            assertExact(
-              key,
-              assertion,
-              originalValue,
-              mutatedValue,
-              baseNodeFacts,
-              mutatedNodeFacts,
-              (i) => ({ scenarioId, caseId: scenarioCase.id, input: i }),
-              input,
-              mutatedInput,
-            )
-          }
-
-          // A menu's own item nodes are only MOUNTED while that specific
-          // menu is the currently open one (`menubar.ts`'s `data-state`-gated
-          // content) — the 'closed' case's `open: null` unmounts every
-          // menu's content entirely, so an item field mutation here has no
-          // node to observe at all. Skip rather than fail: this is a
-          // structural precondition, not the field being insensitive.
-          if (input.open === firstMenu.id) {
-            checkNestedItemFields(
-              scenarioId,
-              scenarioCase.id,
-              'menus[0].items',
-              firstMenu.items as readonly Record<string, unknown>[] | undefined,
-              (mutatedFirstItem) => ({
-                ...input,
-                menus: [
-                  {
-                    ...firstMenu,
-                    items: [
-                      mutatedFirstItem,
-                      ...(firstMenu.items as readonly Record<string, unknown>[]).slice(1),
-                    ],
-                  },
-                  ...menus.slice(1),
-                ],
-              }),
-              input,
-              'value',
-              typedAdapter,
-              ctx,
-            )
-          }
-        }
-      }
+    for (const scenarioId of scenarioIds) {
+      checkFieldDimensions(scenarioId, hitAllowances, usedGeometryAllowances)
     }
     for (const key of Object.keys(INSENSITIVE_DIMENSIONS)) {
       expect(hitAllowances.has(key), `unused allowance: ${key}`).toBe(true)
@@ -769,10 +735,8 @@ describe('baseline menus-overlays scenario renderer', () => {
    * applies. */
   it('a case declaring an environment axis materially changes the exact mount host attribute for that axis, or is documented as unobservable in jsdom', () => {
     const usedAxisAllowances = new Set<string>()
-    for (const [scenarioId, definition] of Object.entries(MENUS_OVERLAYS_DEFINITIONS)) {
-      const adapter = BASELINE_ADAPTERS[scenarioId as keyof typeof BASELINE_ADAPTERS]
-      const typedAdapter = adapter as TypedAdapter
-      for (const scenarioCase of definition.cases) {
+    for (const scenarioId of scenarioIds) {
+      eachCase(scenarioId, (adapter, scenarioCase, baseCtx) => {
         for (const axis of scenarioCase.environmentAxes) {
           expect(ENV_AXIS_PROOFS[axis].proofs.length, axis).toBeGreaterThan(0)
           usedAxisAllowances.add(axis)
@@ -784,20 +748,18 @@ describe('baseline menus-overlays scenario renderer', () => {
             ...(axis === 'viewport' ? { viewport: 'narrow' } : {}),
             ...(axis === 'forcedColors' ? { forcedColors: 'active' } : {}),
           }
-          const ctx: RenderContext = {
-            scenarioId: scenarioId as MenusOverlaysDefinitionScenarioId,
-            caseId: scenarioCase.id,
-            environment: mutatedEnvironment,
-          }
           const host = document.createElement('div')
-          const handle = typedAdapter(host, scenarioCase.input, ctx)
+          const handle = adapter(host, scenarioCase.input, {
+            ...baseCtx,
+            environment: mutatedEnvironment,
+          })
           if (axis === 'direction') expect(host.getAttribute('dir')).toBe('rtl')
           if (axis === 'theme') expect(host.dataset.theme).toBe('dark')
           if (axis === 'viewport') expect(host.dataset.viewport).toBe('narrow')
           if (axis === 'forcedColors') expect(host.dataset.forcedColors).toBe('active')
           handle.dispose()
         }
-      }
+      })
     }
     expect([...usedAxisAllowances].sort()).toEqual(Object.keys(ENV_AXIS_PROOFS).sort())
   })

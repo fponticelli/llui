@@ -81,9 +81,16 @@ describe('forms-controls baseline renderer (#267)', () => {
 
     const fieldControl = root('field', 'invalid', 'field', 'control')
     expect(fieldControl?.getAttribute('aria-invalid')).toBe('true')
-    expect((root('field', 'disabled', 'field', 'control') as HTMLInputElement).disabled).toBe(true)
-    expect((root('field', 'read-only', 'field', 'control') as HTMLInputElement).readOnly).toBe(true)
-    expect((root('field', 'placeholder', 'field', 'control') as HTMLInputElement).value).toBe('')
+    const fieldInput = (caseId: string): HTMLInputElement => {
+      const node = root('field', caseId, 'field', 'control')
+      if (!(node instanceof HTMLInputElement)) {
+        throw new Error(`field/${caseId}: the control part is not an <input>`)
+      }
+      return node
+    }
+    expect(fieldInput('disabled').disabled).toBe(true)
+    expect(fieldInput('read-only').readOnly).toBe(true)
+    expect(fieldInput('placeholder').value).toBe('')
 
     expect(
       at(container, 'form-field', 'invalid').querySelector('[role="alert"]')?.textContent,

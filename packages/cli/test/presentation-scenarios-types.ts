@@ -245,11 +245,12 @@ compileScenarioFamily(contract, 'menus-overlays', { 'component:dialog': unionDef
 // for the user-facing statement of this gap, and
 // `test/presentation-scenarios-boundaries.test.ts`'s "rejects extra source-case fields" tests for
 // the runtime rejection that still applies.
+const noAxes: readonly PresentationScenarioEnvironmentAxis[] = []
 const rawWidenedCase = {
   id: 'open',
   label: 'Open',
   input: null,
-  environmentAxes: [] as readonly PresentationScenarioEnvironmentAxis[],
+  environmentAxes: noAxes,
   render: () => 'x',
 }
 const widenedCase: PresentationScenarioCase = rawWidenedCase

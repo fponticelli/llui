@@ -94,7 +94,10 @@ describe('the composed dev server (#267)', () => {
       expect(status, path).toEqual(['ready', null, expect.any(String)])
       cascades.push(await frame!.evaluate(collectCascade))
     }
-    const [baseline, registry] = cascades as [CascadeInventory, CascadeInventory]
+    const [baseline, registry] = cascades
+    if (baseline === undefined || registry === undefined) {
+      throw new Error(`expected one cascade per path document, got ${cascades.length}`)
+    }
     const tailwind = (rules: CascadeInventory['rules']) =>
       rules.filter(({ properties }) => properties.some((name) => name.startsWith('--tw-')))
     const parts = (rules: CascadeInventory['rules']) =>

@@ -12,6 +12,7 @@ import {
   type PresentationScenarioAdapterBinding,
   type PresentationScenarioDefinitions,
 } from '../src/presentation-scenarios'
+import { ownObject, ownPath } from './untyped-access'
 
 const styled = { mode: 'styled' as const }
 const registryStyling = {
@@ -401,10 +402,8 @@ describe('compileScenarioFamily', () => {
     } as const satisfies PresentationScenarioDefinitions
 
     const compiled = compileScenarioFamily(contract(), 'menus-overlays', definitions)
-    const input = compiled.scenarios[0]!.cases[0]!.input as {
-      readonly title: string
-      readonly nested: { readonly count: number }
-    }
+    const dialog = compiled.scenarios.find(({ scenarioId }) => scenarioId === 'component:dialog')
+    const input = ownObject(dialog, 'cases', 0, 'input')
 
     // A null-prototype snapshot throws on both of these; an ordinary one does not.
     expect(() => `${input}`).not.toThrow()
@@ -412,12 +411,12 @@ describe('compileScenarioFamily', () => {
     expect(() => Object.prototype.hasOwnProperty.call(input, 'title')).not.toThrow()
     expect(Object.prototype.hasOwnProperty.call(input, 'title')).toBe(true)
     expect(Object.getPrototypeOf(input)).toBe(Object.prototype)
-    expect(Object.getPrototypeOf(input.nested)).toBe(Object.prototype)
+    expect(Object.getPrototypeOf(ownObject(input, 'nested'))).toBe(Object.prototype)
     expect(Object.isFrozen(input)).toBe(true)
   })
 
   it('handles a `__proto__` data key via defineProperty, never assignment, and preserves it as an own property (#270 finding 5)', () => {
-    const proto = Object.create(null) as Record<string, unknown>
+    const proto: Record<string, unknown> = Object.create(null)
     proto['visible'] = true
     proto['__proto__'] = 'a plain string value, not a prototype'
     const definitions = {
@@ -432,7 +431,7 @@ describe('compileScenarioFamily', () => {
     }
 
     const compiled = decodeScenarioFamily(contract(), 'menus-overlays', definitions)
-    const input = compiled.scenarios[0]!.cases[0]!.input as Record<string, unknown>
+    const input = ownObject(compiled, 'scenarios', 0, 'cases', 0, 'input')
 
     // The object's ACTUAL prototype is untouched (still ordinary Object.prototype) — a plain
     // assignment of a `__proto__`-named key would instead have reassigned it, most likely to
@@ -444,8 +443,8 @@ describe('compileScenarioFamily', () => {
       value: 'a plain string value, not a prototype',
       enumerable: true,
     })
-    expect(input['__proto__']).toBe('a plain string value, not a prototype')
-    expect(input['visible']).toBe(true)
+    expect(ownPath(input, '__proto__')).toBe('a plain string value, not a prototype')
+    expect(ownPath(input, 'visible')).toBe(true)
     // A computed key here (never the literal `__proto__:` syntax, which sets the prototype
     // instead of creating a data property — precisely the footgun this test exists to catch).
     expect(JSON.parse(JSON.stringify(input))).toEqual({
@@ -819,13 +818,11 @@ describe('resolveScenarioSelection', () => {
       },
     ]
 
+    // `path: 'gallery'` is not a `PresentationScenarioPath`, so these selections go through the
+    // untyped entry point — the one that exists for a selection from a serialized boundary.
     for (const { selection, issue } of selections) {
       try {
-        resolveScenarioSelection(
-          unavailableContract,
-          catalog,
-          selection as Parameters<typeof resolveScenarioSelection>[2],
-        )
+        decodeScenarioSelection(unavailableContract, catalog, selection)
         expect.unreachable('an invalid presentation path must throw')
       } catch (error) {
         expect(error).toBeInstanceOf(PresentationScenarioError)
@@ -1124,12 +1121,12 @@ describe('resolveScenarioSelection', () => {
     // A byte-identical but DIFFERENT object (never produced by this module) is a different
     // reference, so it is decoded and integrity-checked in full: its resolved case is a freshly
     // rebuilt object, not the serialized copy's own.
-    const serializedCatalog = JSON.parse(JSON.stringify(catalog)) as typeof catalog
-    const untrustedResolved = resolveScenarioSelection(productContract, serializedCatalog, {
+    const serializedCatalog: unknown = JSON.parse(JSON.stringify(catalog))
+    const untrustedResolved = decodeScenarioSelection(productContract, serializedCatalog, {
       productId: 'dialog',
       path: 'baseline',
     })
-    expect(untrustedResolved.case).not.toBe(serializedCatalog.scenarios[0]!.cases[0])
+    expect(untrustedResolved.case).not.toBe(ownPath(serializedCatalog, 'scenarios', 0, 'cases', 0))
     expect(untrustedResolved.case).toEqual(trustedCase)
     expect(untrustedResolved.case.input).toEqual(trustedCase.input)
 

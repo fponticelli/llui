@@ -12,6 +12,13 @@ import { createRequire } from 'node:module'
 import type { AxeResults, ImpactValue, RunOptions } from 'axe-core'
 import type { Page } from 'playwright'
 
+declare global {
+  interface Window {
+    /** axe-core's global, present only in a document `runAxe` injected `AXE_SOURCE` into. */
+    axe?: { run: (context: Document, options: RunOptions) => Promise<AxeResults> }
+  }
+}
+
 const require = createRequire(import.meta.url)
 const AXE_SOURCE = readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8')
 
@@ -53,9 +60,8 @@ export async function runAxe(page: Page): Promise<AxeReport> {
   }
   return page.evaluate(
     async ({ options, gated }) => {
-      const { axe } = globalThis as unknown as {
-        axe: { run: (context: Document, options: RunOptions) => Promise<AxeResults> }
-      }
+      const axe = window.axe
+      if (axe === undefined) throw new Error('axe-core is not injected into this document')
       const results = await axe.run(document, options)
       const findings = results.violations
         .filter(({ impact }) => impact !== undefined && impact !== null && gated.includes(impact))

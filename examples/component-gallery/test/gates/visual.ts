@@ -76,8 +76,41 @@ export const TOLERANCE = { CHANNEL: 3, PIXELS: 12, RATIO: 0.0005 } as const
 
 export function readManifest(): VisualManifest | undefined {
   if (!existsSync(MANIFEST_PATH)) return undefined
-  const parsed: unknown = JSON.parse(readFileSync(MANIFEST_PATH, 'utf8'))
-  return parsed as VisualManifest
+  return decodeManifest(JSON.parse(readFileSync(MANIFEST_PATH, 'utf8')))
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** The committed manifest, checked field by field: a malformed one fails by name here rather
+ * than as an `undefined` read deep inside a visual comparison. */
+function decodeManifest(parsed: unknown): VisualManifest {
+  const fail = (why: string): never => {
+    throw new Error(`${MANIFEST_PATH}: ${why}`)
+  }
+  if (!isRecord(parsed)) return fail('not an object')
+  if (parsed['version'] !== 1) return fail(`unsupported version ${String(parsed['version'])}`)
+  const environment = parsed['environment']
+  if (!isRecord(environment)) return fail('environment is not an object')
+  const { browser, platform, arch } = environment
+  if (typeof browser !== 'string' || typeof platform !== 'string' || typeof arch !== 'string') {
+    return fail('environment needs string browser, platform and arch')
+  }
+  const rawCases = parsed['cases']
+  if (!isRecord(rawCases)) return fail('cases is not an object')
+  const cases: Record<string, { readonly width: number; readonly height: number }> = {}
+  for (const [key, size] of Object.entries(rawCases)) {
+    if (
+      !isRecord(size) ||
+      typeof size['width'] !== 'number' ||
+      typeof size['height'] !== 'number'
+    ) {
+      return fail(`case ${key} needs a numeric width and height`)
+    }
+    cases[key] = { width: size['width'], height: size['height'] }
+  }
+  return { version: 1, environment: { browser, platform, arch }, cases }
 }
 
 export function sameEnvironment(a: VisualEnvironment, b: VisualEnvironment): boolean {

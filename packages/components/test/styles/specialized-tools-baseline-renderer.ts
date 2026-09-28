@@ -958,7 +958,7 @@ export function mountBaselineSpecializedToolsScenarios(
     for (const scenarioCase of scenario.cases) {
       const environment = Object.fromEntries(
         Object.entries(options.environment ?? {}).filter(([axis]) =>
-          (scenarioCase.environmentAxes as readonly string[]).includes(axis),
+          scenarioCase.environmentAxes.some((declared) => declared === axis),
         ),
       )
       const resolved = resolveScenarioSelection<SpecializedToolsDefinitions>(contract, catalog, {
