@@ -305,6 +305,14 @@ export function attachFloating(opts: FloatingOptions): () => void {
   // two renders of one case differ). The events bubble from the element that
   // animated; only one that CONTAINS the anchor can have moved it.
   //
+  // The same holds on the other side. The arrow's offsets are measured from
+  // its CONTAINING BLOCK, and a transformed element is one: while the content
+  // runs its enter zoom the arrow is placed inside the content's border box,
+  // once the transform is gone it sits in the positioner's, and without a
+  // re-measure it stayed 1px off after every enter animation of a bordered
+  // content. So a motion that ends on anything containing the arrow (or the
+  // floating element, when there is no arrow) re-measures too.
+  //
   // The re-measure waits for the NEXT FRAME. This is a capture listener on
   // the document, so it runs before the animating element's own
   // `animationend` handlers (a presence machine settling, a class swap), and
@@ -316,8 +324,11 @@ export function attachFloating(opts: FloatingOptions): () => void {
   const doc = anchor.ownerDocument
   const view = doc.defaultView
   let motionFrame: number | undefined
+  const positioned = arrow ?? floating
   const onMotionEnd = (event: Event): void => {
-    if (!(event.target instanceof Node) || !event.target.contains(anchor)) return
+    const target = event.target
+    if (!(target instanceof Node)) return
+    if (!target.contains(anchor) && !target.contains(positioned)) return
     if (view === null) return update()
     if (motionFrame !== undefined) return
     motionFrame = view.requestAnimationFrame(() => {
