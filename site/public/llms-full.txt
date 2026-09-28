@@ -57530,16 +57530,39 @@ Redirect targets are normalized route locations and chain until accepted, blocke
 
 ## History integrity
 
-All browser reads and mutations go through `RouterEnv`. `browserRouterEnv()` is the default; inject an adapter for tests, SSR hosts, or embedded frames. The connector stamps entries it creates with an index and run identifier, preserving other `history.state` keys. A blocked browser traversal is restored only when both positions belong to the same known run; the router never guesses across foreign, hand-edited, legacy, or otherwise unstamped entries. This deliberately prefers a visible URL/state disagreement over traversing to the wrong entry.
+All browser reads and mutations go through `RouterEnv`. `browserRouterEnv()` is the default; inject an adapter for tests, SSR hosts, or embedded frames. A guard-blocked browser traversal (back, forward, a history menu) has already moved the URL by the time the guard runs, so the router undoes it with a traversal of its own, back to the entry the application is showing. The stack, its length and every forward entry survive exactly as they were. The router's own traversals are never navigations: their landings are not guarded or dispatched, and one that lands anywhere but the entry the application shows is undone in turn. So a user traversal the guard accepts while a restore is still queued is where the user stays, even after the stale restore runs. How the undo is done depends on whether the browser has the Navigation API.
 
-The restore is a `history.go(delta)`, and it shares one first-in-first-out queue with the browser's own back and forward buttons, so the user can traverse again before it runs. The router's own traversals are never navigations: their landings are not guarded or dispatched, and one that lands anywhere but the entry the application shows is undone in turn. So a user traversal the guard accepts while a restore is still queued is where the user stays, even after the stale restore runs. The router recognises its landing by the movement from the entry it last saw, since the History API does not say whose traversal an event is. Two shapes cannot be told apart this way. One is a user traversal of the same size as the router's, queued ahead of it. The other is a restore that might have been dropped because it pointed outside the stack. In both, the router judges the landing with the guards like any browser navigation. It never keeps a restore it cannot account for, because a stale restore would swallow a later genuine traversal. In every order the events can arrive in, nothing the guard refused is dispatched, and the URL and the application agree once the queue drains.
+### With the Navigation API
+
+`browserRouterEnv()` detects `window.navigation` and hands it to the router as `RouterEnv.navigation`. The undo is then `navigation.traverseTo(key)` to the entry the application shows, named by its key rather than by a distance. The router passes its own `info` and recognises its landing by that `info` on the `navigate` event, which fires before every same-document traversal commits. Both are exact:
+
+- A `history.pushState` the router never saw (analytics, an embedded widget, another framework), a fragment typed into the address bar, or an older build's history entries between the two do not change which entry the key names. A traversal blocked across or onto any of them is undone.
+- A user traversal is told apart from the router's by its `info`, whatever its size or timing. That covers a user traversal the same size as the router's, queued ahead of it, and a restore that looked as if it might be dropped.
+- An application showing an unmatched URL is restored to that URL's entry.
+
+If the entry the application shows no longer exists when the undo runs (a later push removed it), the traversal is dropped and fires nothing. The router keeps no record of it, so nothing is left to swallow a later traversal.
+
+The router does not cancel the traversal in the `navigate` event, although the Navigation API sometimes allows it. A traversal's `navigate` event is cancelable only in the top-level window, for a same-document traversal, and only when the traversal was not user-initiated or the page holds a consumable user activation. The cancel itself consumes that activation, so the user can always escape by pressing back twice ([WICG explainer](https://github.com/WICG/navigation-api#navigation-monitoring-and-interception)). Cancelling could therefore only be a fast path that sometimes skips the undo, depending on activation state the user cannot see. The router takes one path everywhere: the traversal commits, the guard judges the landing, and a refused landing is undone. Because of this, the refused URL can show for a moment before the undo.
+
+Browser support, from [MDN browser-compat-data](https://github.com/mdn/browser-compat-data/blob/main/api/Navigation.json) (`Navigation`, `currentEntry`, `traverseTo`, the `navigate` event and `NavigateEvent.info`): Chrome and Edge 102, Firefox 147, Safari 26.2 (macOS and iOS). Apps can opt out with `browserRouterEnv({ navigation: false })`.
+
+### Without it (the History API fallback)
+
+Every other browser, and any env without `navigation`, uses the History API. The connector stamps the entries it creates with an index and a run identifier, keeping the other `history.state` keys, and undoes a blocked traversal with `history.go(delta)` between two stamps. A delta is used only when both positions belong to the same known run. The router never guesses across foreign, hand-edited, legacy, or otherwise unstamped entries, and deliberately prefers a visible URL/state disagreement over traversing to the wrong entry. So on this path:
+
+- A traversal blocked onto or across an entry the router did not stamp is not undone. This covers a foreign `pushState`, a hand-typed fragment, and an entry from a build that predates run stamps. The URL keeps the refused route until the next navigation; nothing is dispatched, and the application keeps the route it showed. An iframe navigation can add an entry that no stamp sees.
+- The router recognises its own landing by how far the browser moved from the entry it last saw, because `popstate` does not say whose traversal it is. Two shapes cannot be told apart. One is a user traversal the same size as the router's, queued ahead of it. The other is a restore that might have been dropped because it pointed outside the stack. In both, the router judges the landing with the guards like any browser navigation. It never keeps a restore it cannot account for, because a stale restore would swallow a later genuine traversal.
+
+On both paths, in every order the events can arrive in, nothing the guard refused is dispatched. On the Navigation API path, the URL and the application also always agree once the queue drains. On the fallback they agree except in the cases listed above.
 
 Hash mode listens to both `popstate` and `hashchange` and suppresses only echoes from its own writes. Every `popstate` is handled — one fires per applied history step, same-fragment traversals included. A `hashchange` is handled only when the URL showing differs from the one the router last reconciled, because the browser queues it behind its step's `popstate` and may apply another step first: a guard-blocked traversal's restore, or a second queued traversal, can run before the first step's `hashchange` is delivered. Either delivery order dispatches once per accepted traversal and nothing for a blocked one. History mode keeps one `popstate` subscription. Modifier clicks, non-`_self` targets, downloads, and already-prevented clicks remain native browser behavior.
 
 Custom environments must keep their location reads live. The `onUrlChange`
 handler is a notification that takes no argument: the router reads the URL
 from the environment, never from the event, because a late event describes a
-URL that is no longer showing.
+URL that is no longer showing. `navigation` is optional; leave it out and the
+router uses the History API fallback. A frame's own `navigation` can be adapted
+the same way `browserRouterEnv()` adapts the window's.
 
 ```ts
 const frame = document.querySelector('iframe')!.contentWindow!
@@ -57825,8 +57848,12 @@ actually used, and the read members fall back rather than throwing (the
 connector seeds its starting route at construction time, which happens at
 module scope in most apps).
 
+`navigation` is FEATURE-DETECTED on each read: it is present exactly when
+`window.navigation` exists and has a current entry (an opaque-origin or
+not-fully-active document has none), unless `options.navigation` is `false`.
+
 ```typescript
-function browserRouterEnv(): RouterEnv
+function browserRouterEnv(options?: BrowserRouterEnvOptions): RouterEnv
 ```
 
 ##### `connectRouter()` from `@llui/router/connect`
@@ -57835,7 +57862,17 @@ Bind a {@link Router} to a History/Location surface: the effect handler, the
 browser-driven URL listener, and the `link()` helper, all running the same
 guard pipeline.
 
-POSITION MODEL (what a blocked navigation is undone with). The browser
+TWO WAYS TO UNDO A BLOCKED TRAVERSAL. Where the env provides the Navigation
+API (`RouterEnv.navigation` — every browser `browserRouterEnv` finds it in),
+a refused landing is undone with `navigation.traverseTo(key)` back to the
+entry the application shows, and the router recognises its own landing by the
+`info` on its `navigate` event (see `nav` below). That is exact across every
+shape described next as a limit. Everywhere else — and wherever an app forces
+it with `browserRouterEnv({ navigation: false })` — the History API path
+below is what runs, limits included. Both write the same stamps.
+
+POSITION MODEL (what a blocked navigation is undone with on the History API
+path). The browser
 exposes no counter for "where in the stack am I", so every entry this
 connector creates is stamped with a monotonic index in `history.state` (under
 `__llui_idx`, merged into whatever the host already owns there), starting with
@@ -57882,6 +57919,21 @@ export type RouterMessage<Registry extends RouteRegistry> =
 ```
 
 #### Interfaces
+
+##### `BrowserRouterEnvOptions` from `@llui/router/connect`
+
+Options for {@link browserRouterEnv}.
+
+```typescript
+export interface BrowserRouterEnvOptions {
+  /**
+   * Use the Navigation API where the browser has one (default `true`). `false`
+   * forces the History API path everywhere — what a browser without the
+   * Navigation API runs.
+   */
+  navigation?: boolean
+}
+```
 
 ##### `ConnectedRouter` from `@llui/router/connect`
 
@@ -58164,6 +58216,34 @@ export interface RouterEnv {
    * any argument it is called with is ignored.
    */
   onUrlChange(event: 'popstate' | 'hashchange', handler: () => void): () => void
+
+  /**
+   * The Navigation API, when the host has one — OPTIONAL, and read ONCE, when
+   * `connectRouter` is constructed. Present, it is what a guard-blocked
+   * browser traversal is undone with: `traverseTo` names the entry to return to
+   * by its KEY, and the `navigate` event says whose traversal is landing. Absent,
+   * the router falls back to `history.go(delta)` measured between the index
+   * stamps it writes into `history.state` (see `connectRouter`'s POSITION
+   * MODEL), which cannot see a `pushState` it did not make.
+   *
+   * {@link browserRouterEnv} provides it exactly where `window.navigation` exists
+   * and has a current entry; a custom env may omit it.
+   */
+  readonly navigation?: RouterNavigation
+}
+```
+
+##### `RouterNavigateEvent` from `@llui/router/connect`
+
+What the router reads off a `NavigateEvent`.
+
+```typescript
+export interface RouterNavigateEvent {
+  readonly navigationType: 'push' | 'replace' | 'reload' | 'traverse'
+  /** `destination.key` for a `'traverse'`, `null` for every other type. */
+  readonly destinationKey: string | null
+  /** `NavigateEvent.info` — what the initiator passed, `undefined` for a user's. */
+  readonly info: unknown
 }
 ```
 
@@ -58173,6 +58253,39 @@ export interface RouterEnv {
 export interface RouterNavigateMessage<Registry extends RouteRegistry> {
   readonly type: 'navigate'
   readonly location: RouteLocation<Registry>
+}
+```
+
+##### `RouterNavigation` from `@llui/router/connect`
+
+The slice of the Navigation API (`window.navigation`) the router uses to
+undo a guard-blocked traversal. Deliberately narrow, like {@link RouterEnv}:
+exactly what the connector touches, so a test or a host can supply it.
+
+```typescript
+export interface RouterNavigation {
+  /**
+   * `navigation.currentEntry.key` — the identity of the session-history entry
+   * the document is showing, `null` when there is none. A key is stable for the
+   * entry's lifetime (a `replaceState` keeps it) and is never reused by another
+   * entry, which is what makes it an address rather than a position.
+   */
+  readonly currentKey: string | null
+  /**
+   * `navigation.traverseTo(key, { info })`. Fire-and-forget: a traversal that
+   * cannot happen — its entry was removed by a later push, or the key is
+   * unknown — must be absorbed here (the platform rejects its promises), never
+   * surfaced as an unhandled rejection. The router waits on nothing it returns:
+   * it recognises its landing by `info` on the `navigate` event.
+   */
+  traverseTo(key: string, info: string): void
+  /**
+   * Subscribe to the `navigate` event. Returns the unsubscribe. Unlike
+   * {@link RouterEnv.onUrlChange} this handler DOES read its event: `navigate`
+   * is dispatched synchronously before the navigation it announces commits, so
+   * its payload cannot describe a URL that has already moved on.
+   */
+  onNavigate(handler: (event: RouterNavigateEvent) => void): () => void
 }
 ```
 

@@ -1,5 +1,5 @@
 import { component, mountApp, text } from '@llui/dom'
-import { connectRouter } from '../../src/connect.js'
+import { browserRouterEnv, connectRouter } from '../../src/connect.js'
 import { createRouter, route, type RouteLocation } from '../../src/index.js'
 
 /**
@@ -14,6 +14,10 @@ import { createRouter, route, type RouteLocation } from '../../src/index.js'
  * order — measured in Chromium, where registering this one with `capture: true`
  * after the router's did NOT make it run first) and queues the "user's"
  * traversal there.
+ *
+ * `?nav=off` forces the History API path (`browserRouterEnv({ navigation:
+ * false })`); by default Chromium's Navigation API is used, and the restore is
+ * a `navigation.traverseTo` instead of a `history.go`.
  */
 
 interface RaceResult {
@@ -32,7 +36,9 @@ declare global {
   }
 }
 
-const mode = new URLSearchParams(location.search).get('mode') === 'history' ? 'history' : 'hash'
+const params = new URLSearchParams(location.search)
+const mode = params.get('mode') === 'history' ? 'history' : 'hash'
+const env = browserRouterEnv({ navigation: params.get('nav') !== 'off' })
 const registry = {
   home: route('/'),
   a: route('/a'),
@@ -43,9 +49,14 @@ type Name = keyof typeof registry
 type Location = RouteLocation<typeof registry>
 const router = createRouter(registry, { mode })
 
-function showing(): string {
-  const url = mode === 'hash' ? location.hash : location.pathname
+function routeOf(href: string): string {
+  const parsed = new URL(href)
+  const url = mode === 'hash' ? parsed.hash : parsed.pathname
   return router.match(url)?.name ?? `unmatched ${url}`
+}
+
+function showing(): string {
+  return routeOf(location.href)
 }
 
 const log: string[] = []
@@ -53,6 +64,12 @@ const originalGo = history.go.bind(history)
 history.go = (delta?: number) => {
   log.push(`go(${delta})`)
   originalGo(delta)
+}
+const originalTraverseTo = navigation.traverseTo.bind(navigation)
+navigation.traverseTo = (key, options) => {
+  const entry = navigation.entries().find((candidate) => candidate.key === key)
+  log.push(`traverseTo(${entry?.url == null ? 'missing' : routeOf(entry.url)})`)
+  return originalTraverseTo(key, options)
 }
 
 // The "user". Registered before the router mounts, so it runs first.
@@ -67,6 +84,7 @@ addEventListener('popstate', () => {
 
 const blocked = new Set<Name>()
 const routing = connectRouter(router, {
+  env,
   beforeEnter: (to) => (blocked.has(to.name) ? false : undefined),
 })
 const dispatches: string[] = []

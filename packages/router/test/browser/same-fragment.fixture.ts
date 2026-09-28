@@ -1,5 +1,5 @@
 import { component, mountApp, text } from '@llui/dom'
-import { connectRouter } from '../../src/connect.js'
+import { browserRouterEnv, connectRouter } from '../../src/connect.js'
 import { createRouter, route, type RouteLocation } from '../../src/index.js'
 
 interface TraversalResult {
@@ -32,7 +32,13 @@ type Location = RouteLocation<typeof registry>
 const router = createRouter(registry)
 
 let blockHome = false
+// `?nav=off` forces the History API path; by default Chromium's Navigation API
+// undoes the blocked back (`traverseTo` instead of `history.go`).
+const env = browserRouterEnv({
+  navigation: new URLSearchParams(location.search).get('nav') !== 'off',
+})
 const routing = connectRouter(router, {
+  env,
   beforeEnter: (to) => (blockHome && to.name === 'home' ? false : undefined),
 })
 const dispatches: string[] = []
@@ -207,7 +213,8 @@ window.__runSameFragmentTraversal = async (stallMs = 0) => {
   if (stallMs > 0) {
     // Hold the main thread right after the BLOCKED traversal's `popstate` —
     // registered after the router's own listener, so the router has already
-    // issued its restoring `history.go(1)`. The blocked step's `hashchange`
+    // issued its restoring traversal (`history.go(1)`, or `traverseTo` with
+    // the Navigation API). The blocked step's `hashchange`
     // is queued as a DOM-manipulation task; the restore arrives as a
     // traversal task. With both waiting when the thread frees up, Chromium
     // runs the traversal first and delivers
