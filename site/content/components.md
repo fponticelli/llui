@@ -136,7 +136,9 @@ pnpm llui init
 
 `tw-animate-css` is not optional polish. `animate-in`, `fade-in-0`, `zoom-in-95` and
 `slide-in-from-*` are the entire enter/exit vocabulary of every overlay recipe, and they are
-not Tailwind core.
+not Tailwind core. The registry items that use them declare `tw-animate-css` as a dependency,
+so `llui add` names it in its Install line whenever an item you add (or one of its registry
+dependencies) animates; the `@import` above is still yours to write.
 
 ### On the baseline path
 

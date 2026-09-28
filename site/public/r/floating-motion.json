@@ -3,7 +3,7 @@
   "type": "registry:lib",
   "title": "Overlay motion",
   "description": "Shared presence, physical-side, and nonzero reduced-motion policy for overlay and transient skins.",
-  "dependencies": [],
+  "dependencies": ["tw-animate-css"],
   "registryDependencies": [],
   "files": [
     {

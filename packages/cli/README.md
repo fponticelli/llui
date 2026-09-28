@@ -26,7 +26,10 @@ in your app CSS — not `styles/theme.css`:
 ```
 
 `tw-animate-css` supplies the `animate-in` / `fade-in-0` / `zoom-in-95` enter and exit
-utilities every overlay recipe uses; they are not Tailwind core.
+utilities every overlay recipe uses; they are not Tailwind core. Every registry item whose
+recipes use them declares `tw-animate-css` as a dependency, so `llui add dialog` (or any item
+that reaches one through its `registryDependencies`) lists it in the Install line; the
+`@import` above is still yours to add, since no CLI edits your stylesheet.
 
 `theme.css` is the opt-in baseline stylesheet. Its `[data-scope][data-part]` rules are
 unlayered, and unlayered CSS beats `@layer utilities` — importing it alongside registry

@@ -43,6 +43,28 @@ describe('add', () => {
     expect(names).toContain('tailwind-merge')
   })
 
+  it('lists tw-animate-css for an animated skin — directly and through a registry dependency — and never pins it', async () => {
+    const dialog = await add({ cwd, config: config(), names: ['dialog'], dryRun: true })
+    expect(dialog.dependencies.find((d) => d.name === 'tw-animate-css')).toEqual({
+      name: 'tw-animate-css',
+      spec: 'tw-animate-css',
+      minimum: null,
+      // `floating-motion` (dialog's registryDependency) needs it too.
+      requiredBy: ['floating-motion', 'dialog'],
+    })
+    expect(dialog.install.dependencies).toContain('tw-animate-css')
+
+    // `popover` animates only through `floating-motion`.
+    const popover = await add({ cwd, config: config(), names: ['popover'], dryRun: true })
+    expect(popover.dependencies.find((d) => d.name === 'tw-animate-css')?.requiredBy).toEqual([
+      'floating-motion',
+    ])
+
+    // A skin with no enter/exit motion does not ask for it.
+    const button = await add({ cwd, config: config(), names: ['button'], dryRun: true })
+    expect(button.dependencies.map((d) => d.name)).not.toContain('tw-animate-css')
+  })
+
   it('resolves a workspace:^ source spec to the workspace version, as the build does', async () => {
     const dom = JSON.parse(
       await readFile(path.resolve(__dirname, '../../dom/package.json'), 'utf8'),
