@@ -8,7 +8,8 @@
  *
  * The flows cover the foundational interaction patterns: focus restoration,
  * focus trapping, roving focus, selection, dismissal (Escape and outside
- * pointer), drag and resize (pointer and keyboard), and live validation.
+ * pointer), drag and resize (pointer and keyboard), reordering a live list
+ * (pointer and keyboard), and live validation.
  * `the flow set` below pins that every family and every pattern is covered on
  * both paths, so the matrix cannot quietly thin out.
  *
@@ -49,6 +50,7 @@ type Pattern =
   | 'resize'
   | 'validation'
   | 'keyboard-activation'
+  | 'reorder'
 
 interface Flow {
   readonly entry: string
@@ -90,6 +92,12 @@ async function drag(page: Page, from: { x: number; y: number }, dx: number, dy: 
   await page.mouse.move(from.x + dx, from.y + dy, { steps: 8 })
   await page.mouse.up()
 }
+
+/** The sortable's item labels, in DOM order. */
+const sortableOrder = (page: Page): Promise<string[]> =>
+  page
+    .locator('[data-scope="sortable"][data-part="item"]')
+    .evaluateAll((elements) => elements.map((element) => element.textContent?.trim() ?? ''))
 
 const FLOWS: readonly Flow[] = [
   // ── forms-controls ────────────────────────────────────────────────────
@@ -314,6 +322,42 @@ const FLOWS: readonly Flow[] = [
     },
   },
   {
+    entry: 'command-menu',
+    caseId: 'open',
+    name: 'typing filters the listbox, arrows move the active option, Escape clears then closes',
+    patterns: ['selection', 'keyboard-activation', 'dismissal'],
+    async run(page) {
+      const search = page.locator('input[role="combobox"]').first()
+      await search.waitFor()
+      const listbox = page.locator(`[id="${await search.getAttribute('aria-controls')}"]`)
+      expect(await listbox.getAttribute('role')).toBe('listbox')
+      const options = listbox.locator('[role="option"]')
+      const labels = await options.allTextContents()
+      expect(labels.length).toBeGreaterThan(1)
+      // The palette highlights its first command, and the input names it.
+      const first = await search.getAttribute('aria-activedescendant')
+      expect(first).toBe(await options.nth(0).getAttribute('id'))
+      await focus(search)
+      await page.keyboard.press('ArrowDown')
+      const next = await search.getAttribute('aria-activedescendant')
+      expect(next).toBe(await options.nth(1).getAttribute('id'))
+      expect(await page.locator(`[id="${next}"]`).getAttribute('data-highlighted')).toBe('')
+
+      // Filtering keeps only the matching commands as options.
+      const target = labels[1] ?? ''
+      await page.keyboard.type(target)
+      expect(await options.allTextContents()).toEqual([target])
+      expect(await search.getAttribute('aria-activedescendant')).toBe(
+        await options.nth(0).getAttribute('id'),
+      )
+      await page.keyboard.press('Escape')
+      expect(await search.inputValue()).toBe('')
+      expect(await options.allTextContents()).toEqual(labels)
+      await page.keyboard.press('Escape')
+      await listbox.waitFor({ state: 'detached' })
+    },
+  },
+  {
     entry: 'select',
     caseId: 'closed',
     name: 'the keyboard opens the list and commits a selection',
@@ -375,6 +419,76 @@ const FLOWS: readonly Flow[] = [
     },
   },
   {
+    entry: 'sortable',
+    caseId: 'idle',
+    name: 'Space grabs, arrows move the drop target, Space drops and the list reorders',
+    patterns: ['reorder', 'keyboard-activation', 'focus-restoration'],
+    async run(page) {
+      const items = part(page, 'sortable', 'item')
+      const before = await sortableOrder(page)
+      expect(before).toHaveLength(3)
+      const handle = items.nth(0).locator('[data-part="handle"]')
+      expect(await handle.getAttribute('role')).toBe('button')
+      expect(await handle.getAttribute('aria-grabbed')).toBe('false')
+
+      // Escape puts a grabbed item back where it was.
+      await focus(handle)
+      await page.keyboard.press('Space')
+      expect(await handle.getAttribute('aria-grabbed')).toBe('true')
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('Escape')
+      expect(await sortableOrder(page)).toEqual(before)
+      expect(await page.locator('[aria-grabbed="true"]').count()).toBe(0)
+
+      await page.keyboard.press('Space')
+      expect(await items.nth(0).getAttribute('data-dragging')).toBe('')
+      await page.keyboard.press('ArrowDown')
+      await page.keyboard.press('ArrowDown')
+      // Past the end is not a slot: the target stays on the last item.
+      await page.keyboard.press('ArrowDown')
+      const over = page.locator('[data-scope="sortable"][data-part="item"][data-over]')
+      expect(await over.count()).toBe(1)
+      expect(await over.getAttribute('data-id')).toBe(await items.nth(2).getAttribute('data-id'))
+      await page.keyboard.press('Space')
+
+      expect(await sortableOrder(page)).toEqual([before[1], before[2], before[0]])
+      expect(await page.locator('[aria-grabbed="true"]').count()).toBe(0)
+      // Focus stays on the handle of the item just placed, now last.
+      expect(
+        await items
+          .nth(2)
+          .locator('[data-part="handle"]')
+          .evaluate((element) => element === document.activeElement),
+      ).toBe(true)
+
+      // The moved item is grabbed from where it NOW is, not where it rendered.
+      await page.keyboard.press('Space')
+      await page.keyboard.press('ArrowUp')
+      await page.keyboard.press('Space')
+      expect(await sortableOrder(page)).toEqual([before[1], before[0], before[2]])
+    },
+  },
+  {
+    entry: 'sortable',
+    caseId: 'idle',
+    name: 'a pointer drag on a handle reorders the list',
+    patterns: ['reorder', 'drag'],
+    async run(page) {
+      const items = part(page, 'sortable', 'item')
+      const before = await sortableOrder(page)
+      const from = await center(items.nth(0).locator('[data-part="handle"]'))
+      const to = await center(items.nth(2))
+      await drag(page, from, 0, to.y - from.y)
+      expect(await sortableOrder(page)).toEqual([before[1], before[2], before[0]])
+      expect(
+        await page
+          .locator('[data-scope="sortable"][data-part="root"]')
+          .getAttribute('data-dragging'),
+      ).toBeNull()
+      expect(await page.locator('[aria-grabbed="true"]').count()).toBe(0)
+    },
+  },
+  {
     entry: 'date-input',
     caseId: 'empty',
     name: 'an invalid entry is flagged and described on commit',
@@ -412,6 +526,7 @@ const PATTERNS: readonly Pattern[] = [
   'resize',
   'validation',
   'keyboard-activation',
+  'reorder',
 ]
 
 function flowCases(flow: Flow): GalleryCase[] {

@@ -112,6 +112,63 @@ describe('registry/ type-check coverage (#272)', () => {
   })
 
   /**
+   * The shipped source runs in a consumer's BROWSER, so it must not compile
+   * against Node's globals. `@types/node` sits in the root `node_modules`, and
+   * whether an unset `types` pulls it in is a property of the COMPILER, not of
+   * this repo: TypeScript 5 auto-included every visible `@types/*`, 6.0
+   * changed the default to `[]`. The source config therefore states `[]`
+   * itself rather than inheriting whichever default the installed compiler
+   * has, and the test config — which does need Node — opts back in above.
+   */
+  it('checks the shipped source without Node globals', () => {
+    expect(configRootFiles(SOURCE_CONFIG).options.types).toEqual([])
+  })
+
+  /**
+   * The option above is only the mechanism; this is the property. A probe
+   * reaching for `process` and `Buffer` is compiled with the source config's
+   * RESOLVED options, as if it were a file under `llui/`, and must fail with
+   * the "install type definitions for node" diagnostics. The known-good arm
+   * compiles the SAME probe with `types: ['node']` and requires it clean, so a
+   * probe that failed for any other reason (a bad path, a syntax error, a
+   * missing lib) cannot pass as proof.
+   */
+  it('rejects `process` and `Buffer` in registry source, and only because Node types are absent', () => {
+    const { options } = configRootFiles(SOURCE_CONFIG)
+    const probePath = path.join(REGISTRY, 'llui', 'lib', '__node-globals-probe__.ts')
+    const probe = [
+      'export const mode: string | undefined = process.env.NODE_ENV',
+      "export const bytes: number = Buffer.byteLength('x')",
+      '',
+    ].join('\n')
+
+    const diagnose = (types: string[]): ts.Diagnostic[] => {
+      const compilerOptions: ts.CompilerOptions = { ...options, types }
+      const host = ts.createCompilerHost(compilerOptions)
+      const getSourceFile = host.getSourceFile.bind(host)
+      host.getSourceFile = (fileName, languageVersion, onError, shouldCreate) =>
+        path.resolve(fileName) === probePath
+          ? ts.createSourceFile(fileName, probe, languageVersion, true)
+          : getSourceFile(fileName, languageVersion, onError, shouldCreate)
+      const fileExists = host.fileExists.bind(host)
+      host.fileExists = (fileName) => path.resolve(fileName) === probePath || fileExists(fileName)
+      const program = ts.createProgram({ rootNames: [probePath], options: compilerOptions, host })
+      const source = program.getSourceFile(probePath)
+      expect(source, 'the probe must be part of its own program').toBeDefined()
+      return [...program.getSyntacticDiagnostics(source), ...program.getSemanticDiagnostics(source)]
+    }
+
+    const withoutNode = diagnose(options.types ?? [])
+    const messages = withoutNode.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n'))
+    expect(messages).toEqual([
+      expect.stringMatching(/Cannot find name 'process'.*type definitions for node/),
+      expect.stringMatching(/Cannot find name 'Buffer'.*type definitions for node/),
+    ])
+
+    expect(diagnose(['node'])).toEqual([])
+  })
+
+  /**
    * The tests above pin the CONFIGS; nothing in them runs one. A config is
    * green precisely when nothing invokes it, so the invocation chain is pinned
    * too: the package `check` script (what `turbo check` runs), the root

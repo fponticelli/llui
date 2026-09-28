@@ -276,11 +276,15 @@ function sectionUpdate(state: State, msg: Msg): [State, Effect[]] | null {
   if (msg.type === 'reorder') {
     return [{ ...state, order: sortable.reorder(state.order, msg.from, msg.to) }, []]
   }
-  if (msg.type === 'sortable' && msg.msg.type === 'drop') {
-    const d = state.sortable.dragging
-    const reordered = d ? sortable.reorder(state.order, d.startIndex, d.currentIndex) : state.order
+  // A pointer `drop` AND a keyboard drop (`toggleGrab` while grabbed) both
+  // complete a move; `droppedMove` names it for either.
+  const moved = msg.type === 'sortable' ? sortable.droppedMove(state.sortable, msg.msg) : null
+  if (msg.type === 'sortable' && moved !== null) {
     const [next] = sortable.update(state.sortable, msg.msg)
-    return [{ ...state, sortable: next, order: reordered }, []]
+    return [
+      { ...state, sortable: next, order: sortable.reorder(state.order, moved.from, moved.to) },
+      [],
+    ]
   }
   if (msg.type === 'table' && (msg.msg.type === 'toggleSort' || msg.msg.type === 'setSort')) {
     const [next] = table.update(state.table, msg.msg)

@@ -21,6 +21,7 @@ import {
   mountApp,
   button,
   div,
+  each,
   h2,
   input,
   p,
@@ -1028,7 +1029,9 @@ const commandMenuAdapter: Adapter<CommandMenuCaseInput> = (host, caseInput, ctx)
           target: host,
           state: state.map((s) => ({ open: s.open })),
           send: (m) => {
-            if (m.type === 'close') send({ type: 'close' })
+            // The dialog's Escape (it claims the key before the input sees it)
+            // follows the palette's cmdk rule: clear a query, then close.
+            if (m.type === 'close') send({ type: 'escape' })
           },
           parts: parts.dialog,
           content: () => [
@@ -1037,12 +1040,18 @@ const commandMenuAdapter: Adapter<CommandMenuCaseInput> = (host, caseInput, ctx)
               div({ ...parts.combobox.root }, [
                 input({ ...parts.combobox.input, 'aria-labelledby': parts.dialog.title.id }),
               ]),
-              div(
-                { ...parts.combobox.content },
-                caseInput.commands.map((c) =>
-                  div({ ...parts.combobox.item(c.id).item }, [text(c.label)]),
-                ),
-              ),
+              // It owns the machine's FILTERED commands, not the case's seed
+              // list: a filtered-out command is not an option.
+              div({ ...parts.combobox.content }, [
+                each(state.at('filtered'), {
+                  key: (c) => c.id,
+                  render: (c) => {
+                    // Keyed by id: the id is the row's identity for life.
+                    const id = c.peek().id
+                    return [div({ ...parts.combobox.item(id).item }, [text(c.at('label'))])]
+                  },
+                }),
+              ]),
               div({ ...parts.empty }, [text('No commands match')]),
             ]),
           ],

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { init, update, connect, reorder } from '../../src/components/sortable'
 import type { SortableState } from '../../src/components/sortable'
-import { rootSignal, read } from '../_signal'
+import { rootSignal, read, signalOf } from '../_signal'
 
 describe('reorder utility', () => {
   it('moves item forward', () => {
@@ -250,7 +250,7 @@ describe('sortable keyboard events', () => {
 
   it('Space sends toggleGrab', () => {
     const send = vi.fn()
-    const parts = connect(rootSignal(), send, { id: 'list1' })
+    const parts = connect(signalOf(init()), send, { id: 'list1' })
     const e = makeKey(' ')
     parts.handle('apple', 1).onKeyDown(e)
     expect(send).toHaveBeenCalledWith({
@@ -264,7 +264,7 @@ describe('sortable keyboard events', () => {
 
   it('Enter sends toggleGrab', () => {
     const send = vi.fn()
-    const parts = connect(rootSignal(), send, { id: 'list1' })
+    const parts = connect(signalOf(init()), send, { id: 'list1' })
     parts.handle('apple', 1).onKeyDown(makeKey('Enter'))
     expect(send).toHaveBeenCalledWith({
       type: 'toggleGrab',
@@ -276,14 +276,14 @@ describe('sortable keyboard events', () => {
 
   it('Escape sends cancel', () => {
     const send = vi.fn()
-    const parts = connect(rootSignal(), send, { id: 'list1' })
+    const parts = connect(signalOf(init()), send, { id: 'list1' })
     parts.handle('apple', 1).onKeyDown(makeKey('Escape'))
     expect(send).toHaveBeenCalledWith({ type: 'cancel' })
   })
 
   it('ArrowDown sends moveBy +1', () => {
     const send = vi.fn()
-    const parts = connect(rootSignal(), send, { id: 'list1' })
+    const parts = connect(signalOf(init()), send, { id: 'list1' })
     const e = makeKey('ArrowDown')
     parts.handle('apple', 0).onKeyDown(e)
     expect(send).toHaveBeenCalledWith({ type: 'moveBy', delta: 1 })
@@ -292,14 +292,14 @@ describe('sortable keyboard events', () => {
 
   it('ArrowUp sends moveBy -1', () => {
     const send = vi.fn()
-    const parts = connect(rootSignal(), send, { id: 'list1' })
+    const parts = connect(signalOf(init()), send, { id: 'list1' })
     parts.handle('apple', 2).onKeyDown(makeKey('ArrowUp'))
     expect(send).toHaveBeenCalledWith({ type: 'moveBy', delta: -1 })
   })
 
   it('unrelated keys are ignored', () => {
     const send = vi.fn()
-    const parts = connect(rootSignal(), send, { id: 'list1' })
+    const parts = connect(signalOf(init()), send, { id: 'list1' })
     parts.handle('apple', 0).onKeyDown(makeKey('a'))
     expect(send).not.toHaveBeenCalled()
   })

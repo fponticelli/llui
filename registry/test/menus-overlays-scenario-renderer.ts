@@ -19,6 +19,7 @@
 import {
   component,
   div,
+  each,
   input,
   li,
   mountApp,
@@ -1221,7 +1222,9 @@ const commandMenuAdapter: Adapter<CommandMenuCaseInput> = (host, caseInput, ctx)
           target: host,
           state: state.map((s) => ({ open: s.open })),
           send: (m) => {
-            if (m.type === 'close') send({ type: 'close' })
+            // The dialog's Escape (it claims the key before the input sees it)
+            // follows the palette's cmdk rule: clear a query, then close.
+            if (m.type === 'close') send({ type: 'escape' })
           },
           parts: parts.dialog,
           positionerClass: 'contents',
@@ -1242,12 +1245,21 @@ const commandMenuAdapter: Adapter<CommandMenuCaseInput> = (host, caseInput, ctx)
                 }),
                 // The machine's listbox owns only options (#268 audit): the
                 // empty-state `status` sits beside it, not inside it.
+                // It owns the machine's FILTERED commands, not the case's
+                // seed list: a filtered-out command is not an option.
                 CommandList({ ...parts.combobox.content }, [
-                  CommandGroup(
-                    caseInput.commands.map((c) =>
-                      CommandItem({ ...parts.combobox.item(c.id).item }, [text(c.label)]),
-                    ),
-                  ),
+                  CommandGroup([
+                    each(state.at('filtered'), {
+                      key: (c) => c.id,
+                      render: (c) => {
+                        // Keyed by id: the id is the row's identity for life.
+                        const id = c.peek().id
+                        return [
+                          CommandItem({ ...parts.combobox.item(id).item }, [text(c.at('label'))]),
+                        ]
+                      },
+                    }),
+                  ]),
                 ]),
                 CommandEmpty({ ...parts.empty, class: 'hidden data-empty:block' }, [
                   text('No commands match'),
