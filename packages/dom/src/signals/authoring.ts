@@ -10,7 +10,8 @@
 
 import type { Signal, LiveSignal, MappedSignal, ReadSignal } from './types.js'
 import type { TransitionOptions } from '../types.js'
-import { isSignalHandle, rowHandle, type SignalHandle, type MappedHandle } from './handle.js'
+import { isSignalHandle, rowHandle } from './handle.js'
+import { NON_NULL_VIEW } from './non-null-view.js'
 import { LluiFrameworkError } from './framework-error.js'
 import { react, type Mountable } from './build-context.js'
 import {
@@ -383,33 +384,27 @@ export function eachDirect<T>(
   )
 }
 
+/** What {@link show} accepts as its condition: any signal — a {@link Signal}, a
+ * {@link MappedSignal} or a {@link ReadSignal}. `View` is the signal the arm
+ * receives, the condition's own non-null view, inferred from the condition. */
+export type ShowCondition<View> = { [NON_NULL_VIEW](): View } & ReadSignal<unknown>
+
 /** Conditional render: mounts `render`'s arm while `cond` is truthy (and
  * `orElse`'s, if given, while it is falsy). The arm receives the NARROWED signal
- * — the condition handle itself, typed non-nullable. Over a PATH condition
- * (`state.at('user')`, a {@link Signal}) it is a `Signal` and slices with
- * `.at()`; over any other {@link ReadSignal} — a MAPPED one (`state.map(pickUser)`,
- * `derived(…)`), or a helper's `ReadSignal` parameter — it is a
+ * — the condition's value typed non-nullable, of the condition's own kind. Over a
+ * PATH condition (`state.at('user')`, a {@link Signal}) it is a `Signal` and slices
+ * with `.at()`; over a MAPPED one (`state.map(pickUser)`, `derived(…)`) it is a
  * {@link MappedSignal} (no path to slice), so read its fields with
- * `.map((u) => u.name)`. */
-export function show<T>(
-  cond: Signal<T>,
-  render: (narrowed: Signal<NonNullable<T>>) => Renderable,
-  orElse?: () => Renderable,
-  transition?: TransitionOptions,
-): Mountable
-export function show<T>(
-  cond: ReadSignal<T>,
-  render: (narrowed: MappedSignal<NonNullable<T>>) => Renderable,
-  orElse?: () => Renderable,
-  transition?: TransitionOptions,
-): Mountable
-export function show<T>(
-  cond: ReadSignal<T>,
-  // The implementation serves BOTH overloads, so its arm accepts a handle that
-  // satisfies either one's narrowed type. The handle passed is the condition
-  // itself, which IS of the kind its overload promised (a path condition's arm
-  // gets the path handle, a mapped condition's arm the mapped handle).
-  render: (narrowed: Signal<NonNullable<T>> & MappedSignal<NonNullable<T>>) => Renderable,
+ * `.map((u) => u.name)`; over a helper's {@link ReadSignal} parameter (either kind
+ * at runtime) it is a `ReadSignal`, read the same way.
+ *
+ * The narrowed signal only exists while the arm is mounted. Reading it after the
+ * condition clears — a handler whose own `send()` closed the arm, a timer that
+ * fires later — throws a `LluiFrameworkError`; read the condition itself there
+ * (`cond.peek()`) and handle `null`. */
+export function show<View>(
+  cond: ShowCondition<View>,
+  render: (narrowed: View) => Renderable,
   orElse?: () => Renderable,
   // Optional element-level transition hooks (from `@llui/transitions` — e.g.
   // `fade()`, `slide()`): `enter` animates the arm in after it mounts, `leave`
@@ -419,16 +414,17 @@ export function show<T>(
   transition?: TransitionOptions,
 ): Mountable {
   if (!isSignalHandle(cond)) return compiledAway('show')
-  // the arm reads component state; the cond handle IS the narrowed signal. A
-  // path-rooted one's `.at()` resolves against the same state the arm scope
-  // receives; a mapped one has no `.at()` (its overload types the arm so). The
-  // cast states what the type system cannot see through a runtime handle: the
-  // arm only runs while `cond` is truthy (the `NonNullable` narrowing), and the
-  // handle is of whichever kind the selected overload promised its arm.
-  const narrowed = cond as SignalHandle<NonNullable<T>> & MappedHandle<NonNullable<T>>
+  // No overloads and no assertion: `View` is inferred from the condition's own
+  // `[NON_NULL_VIEW]()`, which every handle constructor implements for its kind
+  // (path → path view, mapped → mapped view) and which checks non-nullness on
+  // every read — see `non-null-view.ts` for why an overloaded `show` could not
+  // prove either fact. The view is made once, on the first arm mount (a condition
+  // that never holds never makes one), and shared by later mounts like the
+  // condition handle itself.
+  let view: { readonly signal: View } | undefined
   return signalShow(
     { produce: cond.produce, deps: cond.deps, componentRooted: cond.rowLocal !== true },
-    () => render(narrowed),
+    () => render((view ??= { signal: cond[NON_NULL_VIEW]() }).signal),
     orElse,
     transition,
   )

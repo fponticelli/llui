@@ -3,6 +3,7 @@ import { derived, constant } from '../../src/signals/handle'
 import type { Signal, LiveSignal, MappedSignal, ReadSignal } from '../../src/signals/types'
 import { show, branch, text, each, div, span, unsafeHtml } from '../../src/signals/authoring'
 import type { Renderable } from '../../src/signals/element'
+import { NON_NULL_VIEW } from '../../src/signals/non-null-view'
 
 // Type-level surface guards, mirroring the repo convention (scope-types.test.ts):
 // declarations live in never-called functions; `pnpm check` is the real
@@ -12,6 +13,11 @@ import type { Renderable } from '../../src/signals/element'
 // (e.g. that `| undefined` is genuinely present).
 
 const expectType = <T>(_v: T): void => {}
+// EXACT type equality (both directions, invariant in the arguments), for the pins
+// where assignability would hide a widened or narrowed kind.
+type Equal<A, B> =
+  (<V>() => V extends A ? 1 : 2) extends <V>() => V extends B ? 1 : 2 ? true : false
+const exactly = <A>(_v: A) => ({ is: <B>(_ok: Equal<A, B>): void => {} })
 
 interface Profile {
   name: string
@@ -448,6 +454,9 @@ describe('show/branch narrowed params keep a mapped condition mapped', () => {
     const _ = () => {
       const helper = (session: ReadSignal<{ token: string } | null>): Renderable => [
         show(session, (live) => {
+          // A ReadSignal may be a path OR a mapped handle at runtime, so its arm is
+          // typed by what both kinds truly are: a read-only signal, non-null.
+          exactly(live).is<ReadSignal<{ token: string }>>(true)
           // @ts-expect-error — the condition may be mapped, so the arm may not slice
           live.at('token')
           return [text(live.map((x) => x.token))]
@@ -465,6 +474,76 @@ describe('show/branch narrowed params keep a mapped condition mapped', () => {
         branch(k, { a: () => [text('A')], b: () => [text('B')] }),
       ]
       void keyed
+    }
+    void _
+  })
+})
+
+// `show` has no overloads and no cast: its arm parameter IS whatever the condition's
+// own `[NON_NULL_VIEW]()` returns, so the correlation "path condition ⇒ path arm,
+// mapped condition ⇒ mapped arm" is checked by the compiler at every construction
+// site of a signal instead of being asserted once inside `show`. These pin the
+// view's type on each public kind EXACTLY (not merely assignably), and that `show`
+// hands the arm that view.
+describe('non-null view: each signal kind narrows to its own kind', () => {
+  it('Signal / MappedSignal / ReadSignal each expose a view of their own kind', () => {
+    const _ = (
+      path: Signal<{ token: string } | null>,
+      mapped: MappedSignal<{ token: string } | undefined>,
+      read: ReadSignal<{ token: string } | null | undefined>,
+    ) => {
+      exactly(path[NON_NULL_VIEW]()).is<Signal<{ token: string }>>(true)
+      exactly(mapped[NON_NULL_VIEW]()).is<MappedSignal<{ token: string }>>(true)
+      exactly(read[NON_NULL_VIEW]()).is<ReadSignal<{ token: string }>>(true)
+    }
+    void _
+  })
+
+  it('show hands its arm exactly the condition view, for every kind', () => {
+    const _ = (
+      path: Signal<{ token: string } | null>,
+      mapped: MappedSignal<{ token: string } | undefined>,
+      read: ReadSignal<{ token: string } | null>,
+    ) => {
+      show(path, (v) => {
+        exactly(v).is<Signal<{ token: string }>>(true)
+        return []
+      })
+      show(mapped, (v) => {
+        exactly(v).is<MappedSignal<{ token: string }>>(true)
+        return []
+      })
+      show(read, (v) => {
+        exactly(v).is<ReadSignal<{ token: string }>>(true)
+        return []
+      })
+      // a condition that is already non-nullable narrows to itself
+      show(s.at('count'), (v) => {
+        exactly(v).is<Signal<number>>(true)
+        return []
+      })
+    }
+    void _
+  })
+
+  it('the view never widens a kind: a path view is not a mapped one and vice versa', () => {
+    const _ = (path: Signal<{ t: string } | null>, mapped: MappedSignal<{ t: string } | null>) => {
+      // @ts-expect-error — a path signal's view carries `.at()`, which a MappedSignal forbids
+      const a: MappedSignal<{ t: string }> = path[NON_NULL_VIEW]()
+      // @ts-expect-error — a mapped signal's view has no path to slice
+      const b: Signal<{ t: string }> = mapped[NON_NULL_VIEW]()
+      void a
+      void b
+    }
+    void _
+  })
+
+  it('show rejects a non-signal condition', () => {
+    const _ = () => {
+      // @ts-expect-error — a plain value is not a signal
+      show(true, () => [])
+      // @ts-expect-error — nor is a nullable object
+      show({ token: 'x' } as { token: string } | null, () => [])
     }
     void _
   })

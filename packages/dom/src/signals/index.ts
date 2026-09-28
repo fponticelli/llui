@@ -303,6 +303,7 @@ export {
   virtualEach,
   mapSend,
   noSend,
+  type ShowCondition,
   type Send,
   type Reactive,
   type AttrValue,

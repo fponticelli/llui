@@ -19,6 +19,13 @@ import { resolveSegments } from './mask.js'
 import { __inRowBuild } from './build-context.js'
 import { isRowLocalDep, rebaseComponentDep } from './row-rebase.js'
 import { LluiFrameworkError } from './framework-error.js'
+import {
+  NON_NULL_VIEW,
+  nonNullRead,
+  pathCondition,
+  MAPPED_CONDITION,
+  CONSTANT_CONDITION,
+} from './non-null-view.js'
 import type { Signal, MappedSignal, ReadSignal } from './types.js'
 
 const SIGNAL = Symbol.for('llui.signal.handle')
@@ -39,16 +46,22 @@ export interface ReadHandle<T> extends ReadSignal<T> {
    * so locality never depends on string-inferring a `state`/`item`/`index` field
    * name (which collides with a component field literally named that). */
   readonly rowLocal?: boolean
+  /** The non-null view (see {@link ReadSignal}) is itself a runtime handle. */
+  [NON_NULL_VIEW](): ReadHandle<NonNullable<T>>
 }
 
 /** A runtime PATH signal ({@link Signal}): a {@link ReadHandle} that can also be
  * sliced with `.at()`. Built by `pathHandle`, `rowHandle` and `constant`. */
-export interface SignalHandle<T> extends ReadHandle<T>, Signal<T> {}
+export interface SignalHandle<T> extends ReadHandle<T>, Signal<T> {
+  [NON_NULL_VIEW](): SignalHandle<NonNullable<T>>
+}
 
 /** A runtime handle produced by `.map()` / `derived()` — the same carrier as
  * {@link ReadHandle}, typed {@link MappedSignal} (a mapped signal has no static
  * path to slice, so it is NOT a {@link SignalHandle}). */
-export interface MappedHandle<T> extends ReadHandle<T>, MappedSignal<T> {}
+export interface MappedHandle<T> extends ReadHandle<T>, MappedSignal<T> {
+  [NON_NULL_VIEW](): MappedHandle<NonNullable<T>>
+}
 
 /** Is `v` a runtime signal handle (either kind)? The guard is typed with the
  * READ carrier: a handle of unknown origin may be a mapped one, which has no
@@ -63,30 +76,148 @@ export function isSignalHandle(v: unknown): v is ReadHandle<unknown> {
  * `item`/`index`); it propagates through `.at`/`.map` so row locality is carried,
  * never string-inferred. Component-state handles default to `false`. */
 export function pathHandle<T>(get: () => unknown, base: string, rowLocal = false): SignalHandle<T> {
-  // Pre-split the base path ONCE at handle creation; `produce`/`peek` run on
-  // every binding evaluation (and re-evaluation on update), so they must not
-  // re-`String.split` the path each time. This keeps `.at(x)` as cheap per-read
-  // as a direct `.map(s => s.x)` access — important because the
-  // `prefer-at-over-map` lint steers all authors toward `.at`.
-  const segs = base === '' ? EMPTY_SEGS : base.split('.')
-  const produce = (state: unknown): T => resolveSegments(state, segs) as T
-  const h: SignalHandle<T> = {
-    [SIGNAL]: true,
-    produce,
-    deps: [base],
-    rowLocal,
-    peek: () => resolveSegments(get(), segs) as T,
-    at: ((path: string) =>
-      pathHandle(get, base === '' ? path : `${base}.${path}`, rowLocal)) as Signal<T>['at'],
-    map: (<U>(fn: (v: T) => U) =>
-      mapHandle<T, U>(
-        { peek: () => resolveSegments(get(), segs) as T, produce },
-        fn,
-        [base],
-        rowLocal,
-      )) as Signal<T>['map'],
+  return guardedPathHandle<T>(get, base, rowLocal, NO_GUARD)
+}
+
+/** No prefix of the path must be non-null — every path handle outside a non-null
+ * view. */
+const NO_GUARD = -1
+
+const joinPath = (base: string, path: string): string => (base === '' ? path : `${base}.${path}`)
+
+/**
+ * {@link pathHandle} with an optional non-null GUARD: when `guard` is not
+ * `NO_GUARD`, the value at the first `guard` segments of the path must be
+ * non-null on every read, or the read throws (see `non-null-view.ts`). That is how
+ * a slice of a non-null view keeps the view's guarantee — `view.at('name')` is
+ * typed from `NonNullable<T>`, so it must not resolve through a cleared condition
+ * to `undefined` — while staying a plain path handle: same path, same deps, same
+ * `.at()`, no mapped layer. One guard suffices however deep views nest: a non-null
+ * value at a deeper prefix implies every shallower prefix is non-null.
+ */
+function guardedPathHandle<T>(
+  get: () => unknown,
+  base: string,
+  rowLocal: boolean,
+  guard: number,
+): SignalHandle<T> {
+  return new PathSignalHandle<T>(get, base, rowLocal, guard)
+}
+
+// Why the handle carriers are CLASSES and not object literals. Every signal kind
+// carries a `[NON_NULL_VIEW]()` member, and a symbol-keyed member whose value is a
+// closure takes V8 off its fast object-literal path: building a handle literal
+// with one became ~5x slower (1000 × `pathHandle(...).at(...).at(...)`: 0.30 ms →
+// 1.71 ms). A class puts that member on the PROTOTYPE instead (0.29 → 0.35 ms on
+// the built output). `produce`/`peek`/`at`/`map` stay own arrow properties —
+// callers pass `produce` around unbound, and spread handles — and they are
+// `declare`d, then assigned once in the constructor: a plain field declaration
+// would first define each as `undefined` (ES2022 `useDefineForClassFields`).
+
+/** The runtime carrier of a path signal (see {@link pathHandle} and
+ * `guardedPathHandle`). */
+class PathSignalHandle<T> implements SignalHandle<T> {
+  declare readonly [SIGNAL]: true
+  declare readonly produce: (state: unknown) => T
+  declare readonly peek: () => T
+  declare readonly deps: readonly string[]
+  declare readonly rowLocal: boolean
+  declare readonly at: Signal<T>['at']
+  declare readonly map: <U>(fn: (v: T) => U) => MappedHandle<U>
+  readonly #get: () => unknown
+  readonly #base: string
+
+  constructor(get: () => unknown, base: string, rowLocal: boolean, guard: number) {
+    // Pre-split the base path ONCE at handle creation; `produce`/`peek` run on
+    // every binding evaluation (and re-evaluation on update), so they must not
+    // re-`String.split` the path each time. This keeps `.at(x)` as cheap per-read
+    // as a direct `.map(s => s.x)` access — important because the
+    // `prefer-at-over-map` lint steers all authors toward `.at`.
+    const segs = base === '' ? EMPTY_SEGS : base.split('.')
+    // The unguarded case (every handle outside a non-null view) reads through
+    // `resolveSegments` directly — no extra closure hop on the hot per-binding read.
+    let produce: (state: unknown) => T
+    let peek: () => T
+    if (guard === NO_GUARD) {
+      produce = (state) => resolveSegments(state, segs) as T
+      peek = () => resolveSegments(get(), segs) as T
+    } else {
+      const read = guardedReader(segs, guard)
+      produce = (state) => read(state) as T
+      peek = () => read(get()) as T
+    }
+    const deps = [base]
+    this[SIGNAL] = true
+    this.produce = produce
+    this.peek = peek
+    this.deps = deps
+    this.rowLocal = rowLocal
+    this.at = ((path: string) =>
+      guardedPathHandle(get, joinPath(base, path), rowLocal, guard)) as Signal<T>['at']
+    this.map = (fn) => mapHandle({ peek, produce }, fn, deps, rowLocal)
+    this.#get = get
+    this.#base = base
   }
-  return h
+
+  [NON_NULL_VIEW](): SignalHandle<NonNullable<T>> {
+    return new NonNullPathView<T>(this.#get, this.#base, this.rowLocal, this)
+  }
+}
+
+function guardedReader(segs: readonly string[], guard: number): (root: unknown) => unknown {
+  const head = segs.slice(0, guard)
+  const tail = segs.slice(guard)
+  const where = pathCondition(head.join('.'))
+  return (root) => {
+    const guarded = resolveSegments(root, head)
+    // the check inline, the throw out of line: this runs on every binding read
+    return guarded === null || guarded === undefined
+      ? nonNullRead(guarded, where)
+      : resolveSegments(guarded, tail)
+  }
+}
+
+/**
+ * The non-null view of a path handle over `base`: every read goes through
+ * `nonNullRead`, which is what makes the `NonNullable<T>` in its type a checked
+ * fact instead of an assertion. `.at()` stays a PATH slice of the same state path
+ * (guarded at this view's depth), so an arm's `view.at('x')` has exactly the deps
+ * `cond.at('x')` would.
+ */
+class NonNullPathView<T> implements SignalHandle<NonNullable<T>> {
+  declare readonly [SIGNAL]: true
+  declare readonly produce: (state: unknown) => NonNullable<T>
+  declare readonly peek: () => NonNullable<T>
+  declare readonly deps: readonly string[]
+  declare readonly rowLocal: boolean
+  declare readonly at: Signal<NonNullable<T>>['at']
+  declare readonly map: <U>(fn: (v: NonNullable<T>) => U) => MappedHandle<U>
+
+  constructor(
+    get: () => unknown,
+    base: string,
+    rowLocal: boolean,
+    source: { readonly peek: () => T; readonly produce: (state: unknown) => T },
+  ) {
+    const where = pathCondition(base)
+    // Slices of this view guard the view's own path prefix (every segment of `base`).
+    const depth = base === '' ? 0 : base.split('.').length
+    const produce = (state: unknown): NonNullable<T> => nonNullRead(source.produce(state), where)
+    const peek = (): NonNullable<T> => nonNullRead(source.peek(), where)
+    const deps = [base]
+    this[SIGNAL] = true
+    this.produce = produce
+    this.peek = peek
+    this.deps = deps
+    this.rowLocal = rowLocal
+    this.at = ((path: string) =>
+      guardedPathHandle(get, joinPath(base, path), rowLocal, depth)) as Signal<NonNullable<T>>['at']
+    this.map = (fn) => mapHandle({ peek, produce }, fn, deps, rowLocal)
+  }
+
+  [NON_NULL_VIEW](): SignalHandle<NonNullable<T>> {
+    return this
+  }
 }
 
 /** A ROW-rooted path handle (`item`/`index` inside an `each`/`virtualEach` row).
@@ -159,63 +290,107 @@ const NO_DEPS: readonly string[] = []
  * For a widget whose state CHANGES this is the wrong tool — give it a reducer.
  */
 export function constant<T>(value: T): Signal<T> {
-  const produce = (): T => value
-  const peek = (): T => value
-  const h: SignalHandle<T> = {
-    [SIGNAL]: true,
-    produce,
-    deps: NO_DEPS,
-    rowLocal: false,
-    peek,
+  return constantHandle(value)
+}
+
+function constantHandle<T>(value: T): SignalHandle<T> {
+  return new ConstantSignalHandle<T>(() => value)
+}
+
+/** The runtime carrier of a constant (see {@link constant}). `read` yields the
+ * captured value; its non-null view is the same carrier over a CHECKED read —
+ * checked when read, not when the view is made, because `show` makes the view
+ * for a condition that may be `constant(null)`, whose arm never mounts and so
+ * never reads it. */
+class ConstantSignalHandle<T> implements SignalHandle<T> {
+  declare readonly [SIGNAL]: true
+  declare readonly produce: () => T
+  declare readonly peek: () => T
+  declare readonly deps: readonly string[]
+  declare readonly rowLocal: boolean
+  declare readonly at: Signal<T>['at']
+  declare readonly map: <U>(fn: (v: T) => U) => MappedHandle<U>
+  readonly #read: () => T
+
+  constructor(read: () => T) {
+    this[SIGNAL] = true
+    this.produce = read
+    this.peek = read
+    this.deps = NO_DEPS
+    this.rowLocal = false
     // A slice of a constant is a constant: resolve the path against the captured
     // value now, and hand back a handle that ignores the binding state just the
     // same. Segments are split per `.at()` call (once per handle, not per read),
     // mirroring `pathHandle`'s pre-split.
-    at: ((path: string) => constant(resolveSegments(value, path.split('.')))) as Signal<T>['at'],
+    this.at = ((path: string) =>
+      constant(resolveSegments(read(), path.split('.')))) as Signal<T>['at']
     // Reuse the shared derived carrier so a mapped constant gets the identical
     // input-identity memo, `.map()` chaining and throwing `.at()` every other
     // derived handle has. The input is reference-stable, so `fn` runs once for
     // `produce` however many bindings read it.
-    map: (<U>(fn: (v: T) => U) =>
-      mapHandle<T, U>({ peek, produce }, fn, NO_DEPS, false)) as Signal<T>['map'],
+    this.map = (fn) => mapHandle({ peek: read, produce: read }, fn, NO_DEPS, false)
+    this.#read = read
   }
-  return h
+
+  [NON_NULL_VIEW](): SignalHandle<NonNullable<T>> {
+    const read = this.#read
+    return new ConstantSignalHandle(() => nonNullRead(read(), CONSTANT_CONDITION))
+  }
 }
 
-/** Assemble a derived (mapped/combined) handle object from a peek/produce pair.
- * Pure carrier construction — the input-identity memo lives in the `produce`
- * passed in (built by {@link mapHandle} / {@link combineSignals}), so this just
- * wires the object and its `.map` chaining (which memoizes at the next level). */
-function makeMappedHandle<T>(
-  peek: () => T,
-  produce: (state: unknown) => T,
-  deps: readonly string[],
-  rowLocal: boolean,
-): MappedHandle<T> {
-  const h: MappedHandle<T> = {
-    [SIGNAL]: true,
-    produce,
-    deps,
-    rowLocal,
-    peek,
-    map: <U>(fn: (v: T) => U) => mapHandle<T, U>({ peek, produce }, fn, deps, rowLocal),
+/** The runtime carrier of a derived (mapped/combined) signal, from a peek/produce
+ * pair. Pure carrier construction — the input-identity memo lives in the
+ * `produce` passed in (built by {@link mapHandle} / {@link combineSignals}), so
+ * this just wires the object and its `.map` chaining (which memoizes at the next
+ * level). */
+class MappedSignalHandle<T> implements MappedHandle<T> {
+  declare readonly [SIGNAL]: true
+  declare readonly produce: (state: unknown) => T
+  declare readonly peek: () => T
+  declare readonly deps: readonly string[]
+  declare readonly rowLocal: boolean
+  declare readonly map: <U>(fn: (v: T) => U) => MappedHandle<U>
+
+  constructor(
+    peek: () => T,
+    produce: (state: unknown) => T,
+    deps: readonly string[],
+    rowLocal: boolean,
+  ) {
+    this[SIGNAL] = true
+    this.produce = produce
+    this.peek = peek
+    this.deps = deps
+    this.rowLocal = rowLocal
+    this.map = (fn) => mapHandle({ peek, produce }, fn, deps, rowLocal)
+    // A THROWING `at` as a runtime safety net, deliberately outside the type: the
+    // public type is `MappedSignal`, whose `at` is optional and non-callable, which
+    // is what makes a mapped signal NOT assignable to a sliceable `Signal`. So a
+    // `.at()` here is a compile error everywhere the types are honoured — a `.at()`
+    // call, a `Signal<T>` parameter handed a `.map()`, a `show`/`branch` arm over a
+    // mapped condition — and the `at-after-map` lint reports it in a direct view.
+    // This throw covers what escapes the checker (plain JS, `any`, a cast). Name
+    // every fix, with the path.
+    Object.defineProperty(this, 'at', {
+      value: (path: string): never => {
+        throw new LluiFrameworkError(
+          `.at('${path}') on a mapped signal is unsupported: a signal produced by .map() or derived() — including the narrowed signal show()/branch() hand an arm when their condition is mapped — has no state path to slice. Read the field from its value with .map((v) => v.${path}), or slice with .at() BEFORE mapping: sig.at('${path}').map(fn). A view helper that only reads its signal should type the parameter ReadSignal<T> (accepts .map() results); Signal<T> is for parameters that call .at().`,
+        )
+      },
+    })
   }
-  // A THROWING `at` as a runtime safety net, deliberately outside the type: the
-  // public type is `MappedSignal`, whose `at` is optional and non-callable, which
-  // is what makes a mapped signal NOT assignable to a sliceable `Signal`. So a
-  // `.at()` here is a compile error everywhere the types are honoured — a `.at()`
-  // call, a `Signal<T>` parameter handed a `.map()`, a `show`/`branch` arm over a
-  // mapped condition — and the `at-after-map` lint reports it in a direct view.
-  // This throw covers what escapes the checker (plain JS, `any`, a cast). Name
-  // every fix, with the path.
-  Object.defineProperty(h, 'at', {
-    value: (path: string): never => {
-      throw new LluiFrameworkError(
-        `.at('${path}') on a mapped signal is unsupported: a signal produced by .map() or derived() — including the narrowed signal show()/branch() hand an arm when their condition is mapped — has no state path to slice. Read the field from its value with .map((v) => v.${path}), or slice with .at() BEFORE mapping: sig.at('${path}').map(fn). A view helper that only reads its signal should type the parameter ReadSignal<T> (accepts .map() results); Signal<T> is for parameters that call .at().`,
-      )
-    },
-  })
-  return h
+
+  /** A mapped signal's non-null view: the same carrier over checked reads, so a
+   * `.map(fn)` on it never hands `fn` the null the type rules out. */
+  [NON_NULL_VIEW](): MappedHandle<NonNullable<T>> {
+    const { peek, produce } = this
+    return new MappedSignalHandle<NonNullable<T>>(
+      () => nonNullRead(peek(), MAPPED_CONDITION),
+      (state) => nonNullRead(produce(state), MAPPED_CONDITION),
+      this.deps,
+      this.rowLocal,
+    )
+  }
 }
 
 /**
@@ -254,7 +429,7 @@ function mapHandle<S, T>(
     has = true
     return lastValue
   }
-  return makeMappedHandle<T>(() => fn(source.peek()), produce, deps, rowLocal)
+  return new MappedSignalHandle<T>(() => fn(source.peek()), produce, deps, rowLocal)
 }
 
 /**
@@ -373,7 +548,7 @@ function combineSignals(
     lastValue = fn(...vals)
     return lastValue
   }
-  return makeMappedHandle<unknown>(
+  return new MappedSignalHandle<unknown>(
     () => fn(...handles.map((h) => h.peek())),
     memoProduce,
     [...new Set(inputs.flatMap((i) => i.deps))],

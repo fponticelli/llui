@@ -914,23 +914,22 @@ function serializeNodes(nodes: readonly Node[]): string
 
 Conditional render: mounts `render`'s arm while `cond` is truthy (and
 `orElse`'s, if given, while it is falsy). The arm receives the NARROWED signal
-— the condition handle itself, typed non-nullable. Over a PATH condition
-(`state.at('user')`, a {@link Signal}) it is a `Signal` and slices with
-`.at()`; over any other {@link ReadSignal} — a MAPPED one (`state.map(pickUser)`,
-`derived(…)`), or a helper's `ReadSignal` parameter — it is a
+— the condition's value typed non-nullable, of the condition's own kind. Over a
+PATH condition (`state.at('user')`, a {@link Signal}) it is a `Signal` and slices
+with `.at()`; over a MAPPED one (`state.map(pickUser)`, `derived(…)`) it is a
 {@link MappedSignal} (no path to slice), so read its fields with
-`.map((u) => u.name)`.
+`.map((u) => u.name)`; over a helper's {@link ReadSignal} parameter (either kind
+at runtime) it is a `ReadSignal`, read the same way.
+
+The narrowed signal only exists while the arm is mounted. Reading it after the
+condition clears — a handler whose own `send()` closed the arm, a timer that
+fires later — throws a `LluiFrameworkError`; read the condition itself there
+(`cond.peek()`) and handle `null`.
 
 ```typescript
-export function show<T>(
-  cond: Signal<T>,
-  render: (narrowed: Signal<NonNullable<T>>) => Renderable,
-  orElse?: () => Renderable,
-  transition?: TransitionOptions,
-): Mountable
-export function show<T>(
-  cond: ReadSignal<T>,
-  render: (narrowed: MappedSignal<NonNullable<T>>) => Renderable,
+function show<View>(
+  cond: ShowCondition<View>,
+  render: (narrowed: View) => Renderable,
   orElse?: () => Renderable,
   transition?: TransitionOptions,
 ): Mountable
@@ -1501,6 +1500,16 @@ from `@llui/dom/ssr/jsdom` or `@llui/dom/ssr/linkedom` satisfies it.
 
 ```typescript
 export type ServerDoc = SignalDoc
+```
+
+### `ShowCondition`
+
+What {@link show} accepts as its condition: any signal — a {@link Signal}, a
+{@link MappedSignal} or a {@link ReadSignal}. `View` is the signal the arm
+receives, the condition's own non-null view, inferred from the condition.
+
+```typescript
+export type ShowCondition<View> = { [NON_NULL_VIEW](): View } & ReadSignal<unknown>
 ```
 
 ### `StateHandle`
@@ -2360,7 +2369,9 @@ A runtime handle produced by `.map()` / `derived()` — the same carrier as
 path to slice, so it is NOT a {@link SignalHandle}).
 
 ```typescript
-export interface MappedHandle<T> extends ReadHandle<T>, MappedSignal<T> {}
+export interface MappedHandle<T> extends ReadHandle<T>, MappedSignal<T> {
+  [NON_NULL_VIEW](): MappedHandle<NonNullable<T>>
+}
 ```
 
 ### `MappedSignal`
@@ -2397,6 +2408,8 @@ export interface MappedSignal<T> extends ReadSignal<T> {
   at?: {
     readonly 'mapped signals have no state path: slice with .at() BEFORE .map(), or read with .map((v) => v.field); a parameter that only reads should be typed ReadSignal<T>': never
   }
+  /** A mapped signal's non-null view is a mapped signal (see {@link ReadSignal}). */
+  [NON_NULL_VIEW](): MappedSignal<NonNullable<T>>
 }
 ```
 
@@ -2542,6 +2555,8 @@ export interface ReadHandle<T> extends ReadSignal<T> {
    * so locality never depends on string-inferring a `state`/`item`/`index` field
    * name (which collides with a component field literally named that). */
   readonly rowLocal?: boolean
+  /** The non-null view (see {@link ReadSignal}) is itself a runtime handle. */
+  [NON_NULL_VIEW](): ReadHandle<NonNullable<T>>
 }
 ```
 
@@ -2569,6 +2584,15 @@ Only a parameter that calls `.at()` needs the narrower {@link Signal}.
 export interface ReadSignal<T> {
   map<U>(fn: (value: T) => U): MappedSignal<U>
   peek(): T
+  /**
+   * The signal `show()` hands its arm: this same signal typed `NonNullable<T>`.
+   * Every kind returns its OWN kind (a {@link Signal}'s view is a `Signal`, a
+   * {@link MappedSignal}'s a `MappedSignal`), which is how `show` types its arm
+   * without an assertion. A read of the view while the value is `null` or
+   * `undefined` throws — the arm's signal only exists while its condition holds.
+   * Framework plumbing: the key is not exported, so authors never call it.
+   */
+  [NON_NULL_VIEW](): ReadSignal<NonNullable<T>>
 }
 ```
 
@@ -2660,6 +2684,9 @@ export interface Signal<T> extends ReadSignal<T> {
    * is the supported escape hatch for very deep paths.
    */
   at<P extends ValidPath<T>>(path: P): Signal<PathValue<T, P>>
+  /** A path signal's non-null view is a path signal over the SAME path (see
+   * {@link ReadSignal}): `.at()` on it slices exactly as on this signal. */
+  [NON_NULL_VIEW](): Signal<NonNullable<T>>
 }
 ```
 
@@ -2790,7 +2817,9 @@ A runtime PATH signal ({@link Signal}): a {@link ReadHandle} that can also be
 sliced with `.at()`. Built by `pathHandle`, `rowHandle` and `constant`.
 
 ```typescript
-export interface SignalHandle<T> extends ReadHandle<T>, Signal<T> {}
+export interface SignalHandle<T> extends ReadHandle<T>, Signal<T> {
+  [NON_NULL_VIEW](): SignalHandle<NonNullable<T>>
+}
 ```
 
 ### `SignalLazyOptions`

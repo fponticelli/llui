@@ -11,6 +11,8 @@
 // declarative→imperative boundary (`foreign`, and `subApp` only when a reactive
 // slice must cross in). It is DCE'd when unused.
 
+import type { NON_NULL_VIEW } from './non-null-view.js'
+
 /**
  * Resolve the value type at a single path segment `K` of `T`.
  *
@@ -105,6 +107,15 @@ export type ValidPath<T, D extends number = PathDepthBudget> = T extends null | 
 export interface ReadSignal<T> {
   map<U>(fn: (value: T) => U): MappedSignal<U>
   peek(): T
+  /**
+   * The signal `show()` hands its arm: this same signal typed `NonNullable<T>`.
+   * Every kind returns its OWN kind (a {@link Signal}'s view is a `Signal`, a
+   * {@link MappedSignal}'s a `MappedSignal`), which is how `show` types its arm
+   * without an assertion. A read of the view while the value is `null` or
+   * `undefined` throws — the arm's signal only exists while its condition holds.
+   * Framework plumbing: the key is not exported, so authors never call it.
+   */
+  [NON_NULL_VIEW](): ReadSignal<NonNullable<T>>
 }
 
 /**
@@ -138,6 +149,9 @@ export interface Signal<T> extends ReadSignal<T> {
    * is the supported escape hatch for very deep paths.
    */
   at<P extends ValidPath<T>>(path: P): Signal<PathValue<T, P>>
+  /** A path signal's non-null view is a path signal over the SAME path (see
+   * {@link ReadSignal}): `.at()` on it slices exactly as on this signal. */
+  [NON_NULL_VIEW](): Signal<NonNullable<T>>
 }
 
 /**
@@ -172,6 +186,8 @@ export interface MappedSignal<T> extends ReadSignal<T> {
   at?: {
     readonly 'mapped signals have no state path: slice with .at() BEFORE .map(), or read with .map((v) => v.field); a parameter that only reads should be typed ReadSignal<T>': never
   }
+  /** A mapped signal's non-null view is a mapped signal (see {@link ReadSignal}). */
+  [NON_NULL_VIEW](): MappedSignal<NonNullable<T>>
 }
 
 /**
