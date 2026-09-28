@@ -18,7 +18,7 @@ interface TraversalResult {
 
 declare global {
   interface Window {
-    __runSameFragmentTraversal(): Promise<TraversalResult>
+    __runSameFragmentTraversal(stallMs?: number): Promise<TraversalResult>
     __sameFragmentReady: boolean
   }
 }
@@ -100,6 +100,18 @@ function waitFor(label: string, predicate: () => boolean): Promise<void> {
  * `dispatches: ["login", "login"]` against an expected `[]` while `events`,
  * `marker` and `hash` all matched.
  *
+ * THAT DIAGNOSIS WAS INCOMPLETE. The two `login`s were REAL dispatches, not
+ * late ones: `send` runs synchronously inside the router's listener, which is
+ * registered before this file's recorders, so a dispatch lands before the event
+ * that caused it is even recorded. Under load the browser applied the restore
+ * before delivering the blocked step's `hashchange`
+ * (`popstate, popstate, hashchange, hashchange`), and the router of the time
+ * dispatched the restored route once per late `hashchange`. The router now
+ * judges a `hashchange` by the URL it finds (`settledHash` in `connect.ts`);
+ * the `stallMs` argument below forces that order on every run, and
+ * `test/traversal-event-order.test.ts` sweeps every legal order in a model.
+ * Quiescence stays as the honest wait for a claim of the form "never".
+ *
  * The shape of that assertion is what makes it fragile: `dispatches: []` claims
  * something will NEVER happen, so a moment chosen by an unrelated signal can
  * always be too early. Quiescence is the honest wait — the snapshot has to hold
@@ -159,7 +171,12 @@ async function settled<T>(label: string, snapshot: () => T, quietFrames = 10): P
   }
 }
 
-window.__runSameFragmentTraversal = async () => {
+/**
+ * `stallMs` > 0 busy-waits that long after the blocked traversal's `popstate`
+ * to force the restore to be applied before that traversal's `hashchange` is
+ * delivered (see below). `0` leaves the order to the browser.
+ */
+window.__runSameFragmentTraversal = async (stallMs = 0) => {
   const events: string[] = []
   addEventListener('popstate', () => events.push('popstate'))
   addEventListener('hashchange', () => events.push('hashchange'))
@@ -187,12 +204,36 @@ window.__runSameFragmentTraversal = async () => {
   blockHome = true
   events.length = 0
   dispatches.length = 0
+  if (stallMs > 0) {
+    // Hold the main thread right after the BLOCKED traversal's `popstate` —
+    // registered after the router's own listener, so the router has already
+    // issued its restoring `history.go(1)`. The blocked step's `hashchange`
+    // is queued as a DOM-manipulation task; the restore arrives as a
+    // traversal task. With both waiting when the thread frees up, Chromium
+    // runs the traversal first and delivers
+    // `popstate, popstate, hashchange, hashchange` — the order a loaded
+    // machine produced by accident, and the one that made the router dispatch
+    // the restored route once per late `hashchange`.
+    const stall = () => {
+      removeEventListener('popstate', stall)
+      const until = performance.now() + stallMs
+      while (performance.now() < until) {
+        // Busy: a timer would yield the thread, which is the opposite of the point.
+      }
+    }
+    addEventListener('popstate', stall)
+  }
   history.back()
-  // The precondition: the traversal AND the restore have both been seen. Only
-  // then is quiescence meaningful.
+  // The precondition, exact rather than a proxy: both steps change the
+  // fragment, so each fires one `popstate` and one `hashchange` — in whichever
+  // order the event loop picks. Counting only popstates (the earlier proxy)
+  // let the snapshot be taken before either `hashchange` had been delivered
+  // when they arrive last. Only once all four are in is quiescence meaningful.
   await waitFor(
     'blocked traversal and restore',
-    () => events.filter((event) => event === 'popstate').length === 2,
+    () =>
+      events.filter((event) => event === 'popstate').length === 2 &&
+      events.filter((event) => event === 'hashchange').length === 2,
   )
   const blockedRestore = await settled('blocked restore', () => ({
     events: [...events],

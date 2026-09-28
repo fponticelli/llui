@@ -56619,11 +56619,12 @@ Redirect targets are normalized route locations and chain until accepted, blocke
 
 All browser reads and mutations go through `RouterEnv`. `browserRouterEnv()` is the default; inject an adapter for tests, SSR hosts, or embedded frames. The connector stamps entries it creates with an index and run identifier, preserving other `history.state` keys. A blocked browser traversal is restored only when both positions belong to the same known run; the router never guesses across foreign, hand-edited, legacy, or otherwise unstamped entries. This deliberately prefers a visible URL/state disagreement over traversing to the wrong entry.
 
-Hash mode listens to both `popstate` and `hashchange`, pairs the events for one physical traversal, and suppresses only echoes from its own writes. History mode keeps one `popstate` subscription. Modifier clicks, non-`_self` targets, downloads, and already-prevented clicks remain native browser behavior.
+Hash mode listens to both `popstate` and `hashchange` and suppresses only echoes from its own writes. Every `popstate` is handled — one fires per applied history step, same-fragment traversals included. A `hashchange` is handled only when the URL showing differs from the one the router last reconciled, because the browser queues it behind its step's `popstate` and may apply another step first: a guard-blocked traversal's restore, or a second queued traversal, can run before the first step's `hashchange` is delivered. Either delivery order dispatches once per accepted traversal and nothing for a blocked one. History mode keeps one `popstate` subscription. Modifier clicks, non-`_self` targets, downloads, and already-prevented clicks remain native browser behavior.
 
-Custom environments must keep their location reads live and must forward the
-destination from `HashChangeEvent.newURL`. A preceding `popstate` guard can
-rewrite the live hash before the matching `hashchange` arrives:
+Custom environments must keep their location reads live. The `onUrlChange`
+handler is a notification that takes no argument: the router reads the URL
+from the environment, never from the event, because a late event describes a
+URL that is no longer showing.
 
 ```ts
 const frame = document.querySelector('iframe')!.contentWindow!
@@ -56653,13 +56654,7 @@ const frameEnv: RouterEnv = {
   go: (delta) => frame.history.go(delta),
   scrollTo: (x, y) => frame.scrollTo(x, y),
   onUrlChange: (event, handler) => {
-    const listener = (change: Event) => {
-      if (event === 'hashchange') {
-        handler(new URL((change as HashChangeEvent).newURL).hash)
-      } else {
-        handler()
-      }
-    }
+    const listener = () => handler()
     frame.addEventListener(event, listener)
     return () => frame.removeEventListener(event, listener)
   },
@@ -57242,14 +57237,18 @@ export interface RouterEnv {
 
   /**
    * Subscribe to a browser-driven URL change. Returns the unsubscribe, so the
-   * caller never has to hold the handler identity to detach it. A hashchange
-   * supplies the fragment from the event's `newURL`; this remains the traversal
-   * destination even when a guard synchronously rewrites `location.hash` while
-   * handling the preceding popstate. Call the handler without an argument for
-   * popstate. Custom adapters must derive the hash argument from
-   * `HashChangeEvent.newURL`, not from the live location.
+   * caller never has to hold the handler identity to detach it.
+   *
+   * The handler is a NOTIFICATION and takes nothing: the router reads where the
+   * browser is through the live members above, never from the event. An event
+   * can be delivered after the URL has moved on — a `hashchange` is queued
+   * behind the `popstate` of the same step, and a traversal applied in between
+   * (a guard-blocked navigation's restore, a second queued traversal) runs
+   * first — so its payload describes a URL that is no longer showing. An
+   * adapter may therefore register the handler directly as the DOM listener;
+   * any argument it is called with is ignored.
    */
-  onUrlChange(event: 'popstate' | 'hashchange', handler: (newHash?: string) => void): () => void
+  onUrlChange(event: 'popstate' | 'hashchange', handler: () => void): () => void
 }
 ```
 
