@@ -318,7 +318,15 @@ function prioritiesSection(
   send: Send<Msg>,
 ): Mountable {
   const sortSend = (m: SortableMsg): void => send({ type: 'sort', msg: m })
-  const parts = sortable.connect(sort, sortSend, { id: 'priorities' })
+  const parts = sortable.connect(sort, sortSend, {
+    id: 'priorities',
+    itemLabel: (id) => priorities.peek().find((p) => p.id === id)?.title ?? id,
+  })
+  // Keyboard users HEAR the drag through the live region; every handle's
+  // `aria-describedby` names the instructions. Both bags carry `text` for the
+  // element's child, not as an attribute.
+  const { text: live, ...liveAttrs } = parts.liveRegion
+  const { text: howTo, ...howToAttrs } = parts.instructions
 
   return div({ class: 'priorities-card' }, [
     h2([text('Priorities')]),
@@ -335,6 +343,8 @@ function prioritiesSection(
         }),
       ],
     ),
+    div({ ...liveAttrs, class: 'visually-hidden' }, [text(live)]),
+    div({ ...howToAttrs }, [text(howTo)]),
   ])
 }
 

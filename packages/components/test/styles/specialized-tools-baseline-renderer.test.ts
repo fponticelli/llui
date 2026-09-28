@@ -248,7 +248,11 @@ describe('baseline specialized-tools scenario renderer (#266)', () => {
     ).toBe(false)
     expect(at('signature-pad', 'signed', '[data-signature-ink] path')).not.toBeNull()
     expect(at('sortable', 'dragging', '[data-over]')?.dataset.id).toBe('task-2')
-    expect(at('sortable', 'keyboard-grab', '[aria-grabbed="true"]')).not.toBeNull()
+    expect(at('sortable', 'keyboard-grab', '[aria-pressed="true"]')).not.toBeNull()
+    // The grab is ANNOUNCED, by row label and position, not just styled.
+    expect(at('sortable', 'keyboard-grab', '[data-part="live-region"]')?.textContent).toBe(
+      'Picked up Write tests, item 2 of 3.',
+    )
     expect(at('timer', 'complete', '[data-part="root"]')?.hasAttribute('data-complete')).toBe(true)
     expect(at('timer', 'complete', '[data-part="display"]')?.textContent).toBe('00:00')
     expect(at('tour', 'last-step', '[data-part="next-trigger"]')?.hasAttribute('data-last')).toBe(

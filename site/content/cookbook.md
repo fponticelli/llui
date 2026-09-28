@@ -731,8 +731,12 @@ view: ({ state, send }) => {
   const parts = sortable.connect(
     state.at('sort'),
     (m) => send({ type: 'sort', msg: m }),
-    { id: 'list' },
+    // `itemLabel` names the item in what a screen reader hears.
+    { id: 'list', itemLabel: (id) => id },
   )
+  // Both bags carry `text` for the element's CHILD — spread the rest.
+  const { text: live, ...liveAttrs } = parts.liveRegion
+  const { text: howTo, ...howToAttrs } = parts.instructions
   return [
     ul({ ...parts.root, class: 'list' }, [
       each(state.at('items'), {
@@ -747,6 +751,9 @@ view: ({ state, send }) => {
         ],
       }),
     ]),
+    // Visually hidden but rendered: a `display: none` live region is silent.
+    div({ ...liveAttrs, class: 'sr-only' }, [text(live)]),
+    div({ ...howToAttrs }, [text(howTo)]),
   ]
 }
 ```
@@ -754,6 +761,16 @@ view: ({ state, send }) => {
 `parts.item` provides `data-dragging`, `data-shift`, and `data-over`
 attributes for CSS-driven visual feedback. `parts.handle` captures
 pointer events and computes the live DOM index on each drag start.
+
+A keyboard user cannot see where the item is, so they must HEAR it. The
+machine owns a polite live region (`parts.liveRegion`) that announces the
+grab ("Picked up Apple, item 2 of 5."), every move ("Apple moved to
+position 3 of 5."), the drop and a cancel, and hidden instructions
+(`parts.instructions`) that every handle names in `aria-describedby`. The
+handle is a toggle button whose `aria-pressed` is the grab — the old
+`aria-grabbed` was deprecated in ARIA 1.1 and never broadly supported by
+screen readers. All the text comes from `LocaleContext` (`Locale['sortable']`),
+so a provided locale translates the announcements too.
 
 ## Routing
 

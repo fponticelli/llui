@@ -1482,24 +1482,26 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **State** (`SortableState`):
 
-| Field           | Type                |
-| --------------- | ------------------- |
-| `id`            | `string`            |
-| `startIndex`    | `number`            |
-| `currentIndex`  | `number`            |
-| `fromContainer` | `string`            |
-| `toContainer`   | `string`            |
-| `startX`        | `number`            |
-| `startY`        | `number`            |
-| `currentX`      | `number`            |
-| `currentY`      | `number`            |
-| `dragging`      | `DragState \| null` |
+| Field           | Type                           |
+| --------------- | ------------------------------ |
+| `id`            | `string`                       |
+| `startIndex`    | `number`                       |
+| `currentIndex`  | `number`                       |
+| `fromContainer` | `string`                       |
+| `toContainer`   | `string`                       |
+| `startX`        | `number`                       |
+| `startY`        | `number`                       |
+| `currentX`      | `number`                       |
+| `currentY`      | `number`                       |
+| `count`         | `number`                       |
+| `dragging`      | `DragState \| null`            |
+| `announcement`  | `SortableAnnouncement \| null` |
 
 **Messages:** `start`, `move`, `drop`, `cancel`, `toggleGrab`, `moveBy`
 
 **Connect options:** `ConnectOptions`
 
-**Parts:** `root`, `item`, `handle`
+**Parts:** `liveRegion`, `instructions`, `root`, `item`, `handle`
 
 **Utilities:** `reorder()`, `droppedMove()`
 
@@ -5668,7 +5670,16 @@ export type SliderMsg =
 ```typescript
 export type SortableMsg =
   /** @humanOnly */
-  | { type: 'start'; id: string; index: number; container: string; x: number; y: number }
+  | {
+      type: 'start'
+      id: string
+      index: number
+      /** Items in the origin container (for "item X of N"). */
+      count: number
+      container: string
+      x: number
+      y: number
+    }
   /** @humanOnly */
   | { type: 'move'; index: number; container: string; x: number; y: number }
   /** @humanOnly */
@@ -5676,7 +5687,7 @@ export type SortableMsg =
   /** @humanOnly */
   | { type: 'cancel' }
   /** @humanOnly */
-  | { type: 'toggleGrab'; id: string; index: number; container: string }
+  | { type: 'toggleGrab'; id: string; index: number; count: number; container: string }
   /** @humanOnly */
   | { type: 'moveBy'; delta: number }
 ```
@@ -8940,6 +8951,35 @@ view: ({ state, send }) => {
 Hook up pointermove/pointerup at the root (attachPointerHandlers) — or
 wire them directly via `onPointerMove` / `onPointerUp` on the root part.
 
+**Screen readers.** A keyboard user who grabs, moves, drops or cancels needs
+to HEAR it — nothing on screen tells them where the item is. The machine
+therefore owns two more parts, and both must be rendered:
+
+- `liveRegion` — a polite, atomic `role="status"` region whose `text` (a
+  Signal, rendered as the region's CHILD, never spread as an attribute)
+  announces "Picked up Apple, item 2 of 5.", "Apple moved to position 3 of
+  5.", the drop and a cancel. Render it visually hidden (`sr-only`), never
+  `display: none` — a hidden live region is never announced. Pass
+  `itemLabel` to name the item; without it the announcements say "item".
+- `instructions` — the how-to text, `hidden`, which every handle references
+  through `aria-describedby` (a directly referenced hidden element still
+  provides a description, and stays out of the reading order).
+
+```ts
+const { text: live, ...liveAttrs } = s.liveRegion
+const { text: howTo, ...howToAttrs } = s.instructions
+div({ ...liveAttrs, class: 'sr-only' }, [text(live)])
+div({ ...howToAttrs }, [text(howTo)])
+```
+
+The grab is `aria-pressed` on the handle (a toggle button: pressed while
+the item is carried). `aria-grabbed` is NOT used: ARIA 1.1 deprecated it and
+`aria-dropeffect` with no replacement, and screen readers never broadly
+exposed either — the live region is how every mature implementation (dnd-kit,
+React Aria) conveys a drag. `aria-roledescription` is deliberately not set:
+it would replace "toggle button", the one cue that Space operates the handle.
+All text comes from `LocaleContext` (`Locale['sortable']`).
+
 ```typescript
 export interface DragState {
   id: string
@@ -8975,6 +9015,11 @@ export interface DragState {
    * Current pointer Y (viewport coordinates). `deltaY = currentY - startY`.
    */
   currentY: number
+  /**
+   * How many items the origin container held when the drag started — the "N"
+   * in "item 2 of N", and the last slot a keyboard `moveBy` may reach.
+   */
+  count: number
 }
 ```
 
@@ -10873,7 +10918,20 @@ export interface Locale {
   progress: { loading: string }
   qrCode: { label: string; download: string }
   signaturePad: { label: string; clear: string; undo: string }
-  sortable: { handle: string }
+  /**
+   * The sortable's accessible text. `item` is the consumer's `itemLabel(id)` (or `undefined`
+   * without one); positions and counts are 1-based, as a listener counts them. The four
+   * announcements are read by the machine's polite live region; `instructions` is the hidden
+   * description every handle references through `aria-describedby`.
+   */
+  sortable: {
+    handle: (item: string | undefined) => string
+    instructions: string
+    grabbed: (item: string | undefined, position: number, count: number) => string
+    moved: (item: string | undefined, position: number, count: number) => string
+    dropped: (item: string | undefined, from: number, to: number, count: number) => string
+    cancelled: (item: string | undefined, position: number, count: number) => string
+  }
   /** The composed accessible name of a sparkline. `from`/`to` arrive as
    *  `YYYY-MM-DD` in the sparkline's own calendar offset. */
   sparkline: { empty: string; range: (count: number, from: string, to: string) => string }
@@ -13182,10 +13240,40 @@ export interface SortableParts {
     'data-part': 'handle'
     role: 'button'
     tabindex: 0
-    'aria-grabbed': Signal<boolean>
+    /** A toggle button: pressed while this handle's item is carried. */
+    'aria-pressed': Signal<boolean>
     'aria-label': string
+    /** The `instructions` part's id. */
+    'aria-describedby': string
     onPointerDown: (e: PointerEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
+  }
+  /**
+   * The polite live region announcing grab / move / drop / cancel. `text` is
+   * the region's CHILD (a Signal), not an attribute: spread the rest and render
+   * `text(text)` inside. Keep it visually hidden but rendered (`sr-only`) — a
+   * `display: none` region is never announced. Only the ORIGIN container's
+   * region speaks, so connects that share one state never announce twice.
+   */
+  liveRegion: {
+    role: 'status'
+    'aria-live': 'polite'
+    'aria-atomic': 'true'
+    'data-scope': 'sortable'
+    'data-part': 'live-region'
+    text: Signal<string>
+  }
+  /**
+   * The keyboard instructions every handle's `aria-describedby` points at.
+   * `hidden`: a directly referenced hidden element still supplies the
+   * description, and stays out of the reading order. `text` is its CHILD.
+   */
+  instructions: {
+    id: string
+    hidden: true
+    'data-scope': 'sortable'
+    'data-part': 'instructions'
+    text: string
   }
 }
 ```
@@ -13195,6 +13283,8 @@ export interface SortableParts {
 ```typescript
 export interface SortableState {
   dragging: DragState | null
+  /** The latest announcement; `null` before any drag and after a cross-container drop. */
+  announcement: SortableAnnouncement | null
 }
 ```
 
@@ -39391,12 +39481,35 @@ function update(state: SortableState, msg: SortableMsg): [SortableState, never[]
 
 #### Types
 
+##### `SortableAnnouncement` from `@llui/components/sortable`
+
+What the live region says about the latest drag event, as DATA (the text is
+rendered by `connect` through the locale). Positions are 0-based here;
+`container` is the origin container, the only one whose region speaks.
+
+```typescript
+export type SortableAnnouncement =
+  | { kind: 'grabbed'; container: string; id: string; position: number; count: number }
+  | { kind: 'moved'; container: string; id: string; position: number; count: number }
+  | { kind: 'dropped'; container: string; id: string; from: number; to: number; count: number }
+  | { kind: 'cancelled'; container: string; id: string; position: number; count: number }
+```
+
 ##### `SortableMsg` from `@llui/components/sortable`
 
 ```typescript
 export type SortableMsg =
   /** @humanOnly */
-  | { type: 'start'; id: string; index: number; container: string; x: number; y: number }
+  | {
+      type: 'start'
+      id: string
+      index: number
+      /** Items in the origin container (for "item X of N"). */
+      count: number
+      container: string
+      x: number
+      y: number
+    }
   /** @humanOnly */
   | { type: 'move'; index: number; container: string; x: number; y: number }
   /** @humanOnly */
@@ -39404,7 +39517,7 @@ export type SortableMsg =
   /** @humanOnly */
   | { type: 'cancel' }
   /** @humanOnly */
-  | { type: 'toggleGrab'; id: string; index: number; container: string }
+  | { type: 'toggleGrab'; id: string; index: number; count: number; container: string }
   /** @humanOnly */
   | { type: 'moveBy'; delta: number }
 ```
@@ -39442,6 +39555,12 @@ export interface ConnectOptions {
    * underlying data order actually is.
    */
   layout?: '1d' | '2d'
+  /**
+   * The name a listener hears for an item, from its `id` ("Picked up Apple,
+   * item 2 of 5."; "Drag handle for Apple"). Without it the announcements say
+   * "item" and every handle has the same label.
+   */
+  itemLabel?: (id: string) => string
 }
 ```
 
@@ -39498,6 +39617,35 @@ view: ({ state, send }) => {
 Hook up pointermove/pointerup at the root (attachPointerHandlers) — or
 wire them directly via `onPointerMove` / `onPointerUp` on the root part.
 
+**Screen readers.** A keyboard user who grabs, moves, drops or cancels needs
+to HEAR it — nothing on screen tells them where the item is. The machine
+therefore owns two more parts, and both must be rendered:
+
+- `liveRegion` — a polite, atomic `role="status"` region whose `text` (a
+  Signal, rendered as the region's CHILD, never spread as an attribute)
+  announces "Picked up Apple, item 2 of 5.", "Apple moved to position 3 of
+  5.", the drop and a cancel. Render it visually hidden (`sr-only`), never
+  `display: none` — a hidden live region is never announced. Pass
+  `itemLabel` to name the item; without it the announcements say "item".
+- `instructions` — the how-to text, `hidden`, which every handle references
+  through `aria-describedby` (a directly referenced hidden element still
+  provides a description, and stays out of the reading order).
+
+```ts
+const { text: live, ...liveAttrs } = s.liveRegion
+const { text: howTo, ...howToAttrs } = s.instructions
+div({ ...liveAttrs, class: 'sr-only' }, [text(live)])
+div({ ...howToAttrs }, [text(howTo)])
+```
+
+The grab is `aria-pressed` on the handle (a toggle button: pressed while
+the item is carried). `aria-grabbed` is NOT used: ARIA 1.1 deprecated it and
+`aria-dropeffect` with no replacement, and screen readers never broadly
+exposed either — the live region is how every mature implementation (dnd-kit,
+React Aria) conveys a drag. `aria-roledescription` is deliberately not set:
+it would replace "toggle button", the one cue that Space operates the handle.
+All text comes from `LocaleContext` (`Locale['sortable']`).
+
 ```typescript
 export interface DragState {
   id: string
@@ -39533,6 +39681,11 @@ export interface DragState {
    * Current pointer Y (viewport coordinates). `deltaY = currentY - startY`.
    */
   currentY: number
+  /**
+   * How many items the origin container held when the drag started — the "N"
+   * in "item 2 of N", and the last slot a keyboard `moveBy` may reach.
+   */
+  count: number
 }
 ```
 
@@ -39571,10 +39724,40 @@ export interface SortableParts {
     'data-part': 'handle'
     role: 'button'
     tabindex: 0
-    'aria-grabbed': Signal<boolean>
+    /** A toggle button: pressed while this handle's item is carried. */
+    'aria-pressed': Signal<boolean>
     'aria-label': string
+    /** The `instructions` part's id. */
+    'aria-describedby': string
     onPointerDown: (e: PointerEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
+  }
+  /**
+   * The polite live region announcing grab / move / drop / cancel. `text` is
+   * the region's CHILD (a Signal), not an attribute: spread the rest and render
+   * `text(text)` inside. Keep it visually hidden but rendered (`sr-only`) — a
+   * `display: none` region is never announced. Only the ORIGIN container's
+   * region speaks, so connects that share one state never announce twice.
+   */
+  liveRegion: {
+    role: 'status'
+    'aria-live': 'polite'
+    'aria-atomic': 'true'
+    'data-scope': 'sortable'
+    'data-part': 'live-region'
+    text: Signal<string>
+  }
+  /**
+   * The keyboard instructions every handle's `aria-describedby` points at.
+   * `hidden`: a directly referenced hidden element still supplies the
+   * description, and stays out of the reading order. `text` is its CHILD.
+   */
+  instructions: {
+    id: string
+    hidden: true
+    'data-scope': 'sortable'
+    'data-part': 'instructions'
+    text: string
   }
 }
 ```
@@ -39584,6 +39767,8 @@ export interface SortableParts {
 ```typescript
 export interface SortableState {
   dragging: DragState | null
+  /** The latest announcement; `null` before any drag and after a cross-container drop. */
+  announcement: SortableAnnouncement | null
 }
 ```
 

@@ -110,6 +110,7 @@ import {
   scrollAreaInit,
   signaturePadInit,
   SORTABLE_CONTAINER,
+  sortableItemLabel,
   sortableScenarioInit,
   sortableScenarioUpdate,
   splitterInit,
@@ -726,23 +727,34 @@ const sortableAdapter: Adapter<SortableCaseInput> = (host, data, ctx) =>
     () => sortableScenarioInit(data),
     sortableScenarioUpdate,
     (state, send) => {
-      const parts = sortable.connect(state.at('sort'), send, { id: SORTABLE_CONTAINER })
-      return div({ ...parts.root }, [
-        each(state.at('items'), {
-          key: (item) => item.id,
-          render: (item, index) => {
-            // Keyed by id: the id is the row's identity for its whole life.
-            const id = item.peek().id
-            const at = index.peek()
-            return [
-              div({ ...parts.item(id, at) }, [
-                div({ ...parts.handle(id, at) }, [glyph('grip')]),
-                span([text(item.at('label'))]),
-              ]),
-            ]
-          },
-        }),
-      ])
+      const parts = sortable.connect(state.at('sort'), send, {
+        id: SORTABLE_CONTAINER,
+        itemLabel: sortableItemLabel(data),
+      })
+      // `text` is each bag's CHILD, not an attribute; the baseline sheet hides
+      // the live region visually and the instructions part carries `hidden`.
+      const { text: live, ...liveAttrs } = parts.liveRegion
+      const { text: howTo, ...howToAttrs } = parts.instructions
+      return [
+        div({ ...parts.root }, [
+          each(state.at('items'), {
+            key: (item) => item.id,
+            render: (item, index) => {
+              // Keyed by id: the id is the row's identity for its whole life.
+              const id = item.peek().id
+              const at = index.peek()
+              return [
+                div({ ...parts.item(id, at) }, [
+                  div({ ...parts.handle(id, at) }, [glyph('grip')]),
+                  span([text(item.at('label'))]),
+                ]),
+              ]
+            },
+          }),
+        ]),
+        div({ ...liveAttrs }, [text(live)]),
+        div({ ...howToAttrs }, [text(howTo)]),
+      ]
     },
   )
 

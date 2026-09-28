@@ -20,6 +20,7 @@ import {
 
 describe('droppedMove', () => {
   const grabbed = (from: number, to: number): SortableState => ({
+    announcement: null,
     dragging: {
       id: 'a',
       startIndex: from,
@@ -30,13 +31,20 @@ describe('droppedMove', () => {
       startY: 0,
       currentX: 0,
       currentY: 0,
+      count: 10,
     },
   })
 
   it('reports the move a pointer drop or a keyboard drop completes', () => {
     expect(droppedMove(grabbed(0, 2), { type: 'drop' })).toEqual({ from: 0, to: 2 })
     expect(
-      droppedMove(grabbed(3, 1), { type: 'toggleGrab', id: 'a', index: 3, container: 'list' }),
+      droppedMove(grabbed(3, 1), {
+        type: 'toggleGrab',
+        id: 'a',
+        index: 3,
+        count: 10,
+        container: 'list',
+      }),
     ).toEqual({ from: 3, to: 1 })
   })
 
@@ -44,10 +52,11 @@ describe('droppedMove', () => {
     expect(droppedMove(grabbed(0, 2), { type: 'cancel' })).toBeNull()
     expect(droppedMove(grabbed(0, 2), { type: 'moveBy', delta: 1 })).toBeNull()
     expect(
-      droppedMove(init(), { type: 'toggleGrab', id: 'a', index: 0, container: 'list' }),
+      droppedMove(init(), { type: 'toggleGrab', id: 'a', index: 0, count: 10, container: 'list' }),
     ).toBeNull()
     expect(droppedMove(init(), { type: 'drop' })).toBeNull()
     const across: SortableState = {
+      announcement: null,
       dragging: { ...grabbed(0, 2).dragging!, toContainer: 'other' },
     }
     expect(droppedMove(across, { type: 'drop' })).toBeNull()
