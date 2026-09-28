@@ -7,20 +7,21 @@ import { allFiniteNumbers } from '../utils/number.js'
  * Sortable — pointer-based reorderable list.
  *
  * State machine tracks the currently-dragged item and where it's hovering.
- * The app owns the actual array; listen for `drop` and use `reorder(arr, from, to)`
- * to compute the new order, or watch `currentIndex` during drag for live preview.
+ * The app owns the actual array: `droppedMove(prev, msg)` names the move a
+ * message COMPLETES — a pointer `drop`, or a keyboard `toggleGrab` while an item
+ * is grabbed — and `reorder(arr, from, to)` applies it. Watch `currentIndex`
+ * during a drag for a live preview.
  *
  * ```ts
  * type State = { items: string[]; sort: SortableState }
  *
  * update: (state, msg) => {
  *   switch (msg.type) {
- *     case 'sort':
- *       return [{ ...state, sort: sortable.update(state.sort, msg.msg)[0] }, []]
- *     case 'drop': {
- *       const d = state.sort.dragging
- *       if (!d) return [state, []]
- *       return [{ ...state, items: reorder(state.items, d.startIndex, d.currentIndex) }, []]
+ *     case 'sort': {
+ *       const moved = sortable.droppedMove(state.sort, msg.msg)
+ *       const [sort] = sortable.update(state.sort, msg.msg)
+ *       const items = moved ? reorder(state.items, moved.from, moved.to) : state.items
+ *       return [{ items, sort }, []]
  *     }
  *   }
  * }
@@ -190,6 +191,26 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
       return [{ dragging: { ...state.dragging, currentIndex: next } }, []]
     }
   }
+}
+
+/**
+ * The reorder a message COMPLETES, or `null`. A pointer `drop` and a keyboard
+ * `toggleGrab` while an item is grabbed both end a drag at `currentIndex`;
+ * `cancel` (Escape, pointercancel) ends one WITHOUT a move. Only a drop inside
+ * the container the drag started from is a reorder of that list — a drop onto
+ * another container is the consumer's transfer to handle.
+ *
+ * Call it with the state BEFORE `update` runs.
+ */
+export function droppedMove(
+  prev: SortableState,
+  msg: SortableMsg,
+): { from: number; to: number } | null {
+  const d = prev.dragging
+  if (d === null) return null
+  if (msg.type !== 'drop' && msg.type !== 'toggleGrab') return null
+  if (d.fromContainer !== d.toContainer) return null
+  return { from: d.startIndex, to: d.currentIndex }
 }
 
 export interface SortableParts {
@@ -362,6 +383,19 @@ export function connect(
     return null
   }
 
+  // The CURRENT position of a handle's item among its container's items. The
+  // `index` a handle closes over is frozen at render: a keyed `each()` moves
+  // the row nodes on a reorder without re-running their render, so after the
+  // first drop it names the wrong slot. The DOM is the live order.
+  function liveItems(handle: Element): { index: number | null; count: number } {
+    const itemEl = handle.closest('[data-scope="sortable"][data-part="item"]')
+    const rootEl = handle.closest('[data-scope="sortable"][data-part="root"]')
+    if (itemEl === null || rootEl === null) return { index: null, count: 0 }
+    const items = Array.from(rootEl.querySelectorAll('[data-scope="sortable"][data-part="item"]'))
+    const at = items.indexOf(itemEl)
+    return { index: at === -1 ? null : at, count: items.length }
+  }
+
   return {
     root: {
       'data-scope': 'sortable',
@@ -513,31 +547,8 @@ export function connect(
             // Ignore — not all elements support pointer capture
           }
         }
-        // Compute the CURRENT DOM index of this handle's item — the captured
-        // `index` param is stale after a reorder (each() moves keyed nodes
-        // without re-running render, so the closure's index is frozen at
-        // initial mount). Walk up to find the containing item, then count its
-        // position among sibling items.
-        let currentIndex = index
-        if (target) {
-          const itemEl = (target as Element).closest<HTMLElement>(
-            '[data-scope="sortable"][data-part="item"]',
-          )
-          const rootEl = (target as Element).closest<HTMLElement>(
-            '[data-scope="sortable"][data-part="root"]',
-          )
-          if (itemEl && rootEl) {
-            const items = rootEl.querySelectorAll<HTMLElement>(
-              '[data-scope="sortable"][data-part="item"]',
-            )
-            for (let i = 0; i < items.length; i++) {
-              if (items[i] === itemEl) {
-                currentIndex = i
-                break
-              }
-            }
-          }
-        }
+        // The CURRENT DOM index of this handle's item (see `liveItems`).
+        const currentIndex = (target ? liveItems(target).index : null) ?? index
         // Snapshot positions BEFORE the drag starts, so subsequent pointermove
         // events can resolve the target index against stable (pre-transform)
         // positions. Otherwise items shifting via CSS would cause the target
@@ -553,21 +564,43 @@ export function connect(
         })
       }),
       onKeyDown: tagSend(send, ['toggleGrab', 'cancel', 'moveBy'], (e) => {
+        const target = e.currentTarget instanceof HTMLElement ? e.currentTarget : null
+        const live = target ? liveItems(target) : { index: null, count: 0 }
         switch (e.key) {
           case ' ':
-          case 'Enter':
+          case 'Enter': {
             e.preventDefault()
-            send({ type: 'toggleGrab', id, index, container: containerId })
+            const dropping = state.peek().dragging !== null
+            send({ type: 'toggleGrab', id, index: live.index ?? index, container: containerId })
+            // A drop the consumer applies MOVES this row, and moving a
+            // focused node drops its focus to <body>: the keyboard user
+            // would lose their place on the very item they just placed.
+            // Put focus back on the handle once the reorder has landed —
+            // now for a synchronous commit, next frame for a deferred one.
+            if (dropping && target !== null) {
+              const restore = (): void => {
+                const active = target.ownerDocument.activeElement
+                if (target.isConnected && (active === null || active === target.ownerDocument.body))
+                  target.focus()
+              }
+              restore()
+              if (typeof requestAnimationFrame === 'function') requestAnimationFrame(restore)
+            }
             return
+          }
           case 'Escape':
             e.preventDefault()
             send({ type: 'cancel' })
             return
           case 'ArrowDown':
-          case 'ArrowRight':
+          case 'ArrowRight': {
             e.preventDefault()
+            // The drop target is always a real slot: never past the last item.
+            const d = state.peek().dragging
+            if (d !== null && live.count > 0 && d.currentIndex >= live.count - 1) return
             send({ type: 'moveBy', delta: 1 })
             return
+          }
           case 'ArrowUp':
           case 'ArrowLeft':
             e.preventDefault()
@@ -598,4 +631,4 @@ export function reorder<T>(arr: readonly T[], from: number, to: number): T[] {
   return result
 }
 
-export const sortable = { init, update, connect, reorder }
+export const sortable = { init, update, connect, reorder, droppedMove }

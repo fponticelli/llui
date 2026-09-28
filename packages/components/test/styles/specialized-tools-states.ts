@@ -270,6 +270,35 @@ export function sortableInit(data: SortableCaseInput): sortable.SortableState {
   return sortable.init()
 }
 
+/**
+ * The sortable scenario reorders LIVE (#268 follow-up): the app owns the list
+ * and the machine owns the drag, exactly as a consumer composes them, so a
+ * completed drop — pointer or keyboard — really moves the row. Items keep the
+ * id they were seeded with (`task-<seed index>`), so identity follows the item,
+ * not the slot, and the seed order is the case's deterministic `items`.
+ */
+export interface SortableScenarioState {
+  readonly items: readonly { readonly id: string; readonly label: string }[]
+  readonly sort: sortable.SortableState
+}
+
+export function sortableScenarioInit(data: SortableCaseInput): SortableScenarioState {
+  return {
+    items: data.items.map((label, index) => ({ id: sortableItemId(index), label })),
+    sort: sortableInit(data),
+  }
+}
+
+export function sortableScenarioUpdate(
+  state: SortableScenarioState,
+  msg: sortable.SortableMsg,
+): [SortableScenarioState, never[]] {
+  const moved = sortable.droppedMove(state.sort, msg)
+  const [sort] = sortable.update(state.sort, msg)
+  const items = moved === null ? state.items : sortable.reorder(state.items, moved.from, moved.to)
+  return [{ items, sort }, []]
+}
+
 export function splitterInit(data: SplitterCaseInput, dir: 'ltr' | 'rtl'): splitter.SplitterState {
   return splitter.init({
     orientation: data.orientation,

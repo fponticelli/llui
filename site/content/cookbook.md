@@ -718,12 +718,12 @@ type Msg = { type: 'sort'; msg: SortableMsg }
 
 // In update:
 case 'sort': {
+  // A pointer `drop` and a keyboard drop (Space/Enter while grabbed) both
+  // complete a move; `droppedMove` reads it off the state BEFORE the update.
+  const moved = sortable.droppedMove(state.sort, msg.msg)
   const [s, fx] = sortable.update(state.sort, msg.msg)
-  if (msg.msg.type === 'drop' && state.sort.dragging) {
-    const { startIndex, currentIndex } = state.sort.dragging
-    return [{ ...state, items: sortable.reorder(state.items, startIndex, currentIndex), sort: s }, fx]
-  }
-  return [{ ...state, sort: s }, fx]
+  const items = moved ? sortable.reorder(state.items, moved.from, moved.to) : state.items
+  return [{ ...state, items, sort: s }, fx]
 }
 
 // In view — connect() takes a Signal<SortableState>:

@@ -1501,7 +1501,7 @@ const parts = componentName.connect(state.at('component'), send, { id: '...' })
 
 **Parts:** `root`, `item`, `handle`
 
-**Utilities:** `reorder()`
+**Utilities:** `reorder()`, `droppedMove()`
 
 ---
 
@@ -8892,20 +8892,21 @@ export interface Domain {
 Sortable — pointer-based reorderable list.
 
 State machine tracks the currently-dragged item and where it's hovering.
-The app owns the actual array; listen for `drop` and use `reorder(arr, from, to)`
-to compute the new order, or watch `currentIndex` during drag for live preview.
+The app owns the actual array: `droppedMove(prev, msg)` names the move a
+message COMPLETES — a pointer `drop`, or a keyboard `toggleGrab` while an item
+is grabbed — and `reorder(arr, from, to)` applies it. Watch `currentIndex`
+during a drag for a live preview.
 
 ```ts
 type State = { items: string[]; sort: SortableState }
 
 update: (state, msg) => {
   switch (msg.type) {
-    case 'sort':
-      return [{ ...state, sort: sortable.update(state.sort, msg.msg)[0] }, []]
-    case 'drop': {
-      const d = state.sort.dragging
-      if (!d) return [state, []]
-      return [{ ...state, items: reorder(state.items, d.startIndex, d.currentIndex) }, []]
+    case 'sort': {
+      const moved = sortable.droppedMove(state.sort, msg.msg)
+      const [sort] = sortable.update(state.sort, msg.msg)
+      const items = moved ? reorder(state.items, moved.from, moved.to) : state.items
+      return [{ items, sort }, []]
     }
   }
 }
@@ -39353,6 +39354,20 @@ function connect(
 ): SortableParts
 ```
 
+##### `droppedMove()` from `@llui/components/sortable`
+
+The reorder a message COMPLETES, or `null`. A pointer `drop` and a keyboard
+`toggleGrab` while an item is grabbed both end a drag at `currentIndex`;
+`cancel` (Escape, pointercancel) ends one WITHOUT a move. Only a drop inside
+the container the drag started from is a reorder of that list — a drop onto
+another container is the consumer's transfer to handle.
+
+Call it with the state BEFORE `update` runs.
+
+```typescript
+function droppedMove(prev: SortableState, msg: SortableMsg): { from: number; to: number } | null
+```
+
 ##### `init()` from `@llui/components/sortable`
 
 ```typescript
@@ -39435,20 +39450,21 @@ export interface ConnectOptions {
 Sortable — pointer-based reorderable list.
 
 State machine tracks the currently-dragged item and where it's hovering.
-The app owns the actual array; listen for `drop` and use `reorder(arr, from, to)`
-to compute the new order, or watch `currentIndex` during drag for live preview.
+The app owns the actual array: `droppedMove(prev, msg)` names the move a
+message COMPLETES — a pointer `drop`, or a keyboard `toggleGrab` while an item
+is grabbed — and `reorder(arr, from, to)` applies it. Watch `currentIndex`
+during a drag for a live preview.
 
 ```ts
 type State = { items: string[]; sort: SortableState }
 
 update: (state, msg) => {
   switch (msg.type) {
-    case 'sort':
-      return [{ ...state, sort: sortable.update(state.sort, msg.msg)[0] }, []]
-    case 'drop': {
-      const d = state.sort.dragging
-      if (!d) return [state, []]
-      return [{ ...state, items: reorder(state.items, d.startIndex, d.currentIndex) }, []]
+    case 'sort': {
+      const moved = sortable.droppedMove(state.sort, msg.msg)
+      const [sort] = sortable.update(state.sort, msg.msg)
+      const items = moved ? reorder(state.items, moved.from, moved.to) : state.items
+      return [{ items, sort }, []]
     }
   }
 }

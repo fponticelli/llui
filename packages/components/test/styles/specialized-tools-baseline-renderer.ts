@@ -109,8 +109,8 @@ import {
   scrollAreaInit,
   signaturePadInit,
   SORTABLE_CONTAINER,
-  sortableInit,
-  sortableItemId,
+  sortableScenarioInit,
+  sortableScenarioUpdate,
   splitterInit,
   timePickerInit,
   timerInit,
@@ -722,19 +722,26 @@ const sortableAdapter: Adapter<SortableCaseInput> = (host, data, ctx) =>
     host,
     ctx,
     'BaselineSortableScenario',
-    () => sortableInit(data),
-    sortable.update,
+    () => sortableScenarioInit(data),
+    sortableScenarioUpdate,
     (state, send) => {
-      const parts = sortable.connect(state, send, { id: SORTABLE_CONTAINER })
-      return div(
-        { ...parts.root },
-        data.items.map((item, index) =>
-          div({ ...parts.item(sortableItemId(index), index) }, [
-            div({ ...parts.handle(sortableItemId(index), index) }, [glyph('grip')]),
-            span([text(item)]),
-          ]),
-        ),
-      )
+      const parts = sortable.connect(state.at('sort'), send, { id: SORTABLE_CONTAINER })
+      return div({ ...parts.root }, [
+        each(state.at('items'), {
+          key: (item) => item.id,
+          render: (item, index) => {
+            // Keyed by id: the id is the row's identity for its whole life.
+            const id = item.peek().id
+            const at = index.peek()
+            return [
+              div({ ...parts.item(id, at) }, [
+                div({ ...parts.handle(id, at) }, [glyph('grip')]),
+                span([text(item.at('label'))]),
+              ]),
+            ]
+          },
+        }),
+      ])
     },
   )
 
