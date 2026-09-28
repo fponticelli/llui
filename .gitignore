@@ -16,6 +16,11 @@ benchmarks/bundle-composition.json
 # file per package per run and are rewritten every time.
 .test-durations/
 
+# Component Gallery visual-gate output (#268): diffs, failing captures and, in
+# CI, a complete candidate baseline set. Uploaded as an artifact, never committed
+# from here — baselines live in examples/component-gallery/test/visual-baselines.
+.visual-output/
+
 # Editor workspace settings (peacock, etc.)
 .vscode/
 

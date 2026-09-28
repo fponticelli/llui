@@ -7,50 +7,22 @@
  * missing entries, a failing document, declared-only environment controls,
  * narrow layouts and the keyboard.
  */
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, inject, it } from 'vitest'
 import { chromium, type Browser, type Frame, type Page } from 'playwright'
-import { build, preview, type PreviewServer } from 'vite'
 import { collectCascade, type CascadeInventory } from './cascade-probe'
 
-const GALLERY = resolve(import.meta.dirname, '..')
-const CONFIGS = ['vite.config.ts', 'vite.baseline.config.ts', 'vite.registry.config.ts']
-
-let outDir: string
-let server: PreviewServer
+// The production build and its preview server are the browser project's
+// shared fixture (`test/gates/global-setup.ts`, #268): built once for every
+// browser suite instead of once per file.
+const base = inject('galleryBase')
 let browser: Browser
-let base: string
 
 beforeAll(async () => {
-  outDir = mkdtempSync(join(tmpdir(), 'llui-gallery-'))
-  process.env['LLUI_GALLERY_OUT'] = outDir
-  try {
-    // Sequential: the shell owns (and empties) the output root first.
-    for (const config of CONFIGS) {
-      await build({ configFile: resolve(GALLERY, config), logLevel: 'error' })
-    }
-  } finally {
-    delete process.env['LLUI_GALLERY_OUT']
-  }
-  server = await preview({
-    root: outDir,
-    configFile: false,
-    build: { outDir },
-    preview: { host: '127.0.0.1', port: 0 },
-    logLevel: 'error',
-  })
-  const address = server.httpServer.address()
-  if (address === null || typeof address === 'string') throw new Error('preview bound no port')
-  base = `http://127.0.0.1:${address.port}/`
   browser = await chromium.launch({ headless: true })
-}, 120_000)
+})
 
 afterAll(async () => {
   await browser?.close()
-  await new Promise<void>((done) => server?.httpServer.close(() => done()))
-  rmSync(outDir, { recursive: true, force: true })
 })
 
 async function open(query: string, viewport = { width: 1400, height: 1000 }): Promise<Page> {

@@ -48,19 +48,33 @@ describe.each(['baseline', 'registryTailwind'] as const)('%s rendered coverage',
     expect(expected.length).toBeGreaterThan(40)
   })
 
-  it('binds an adapter to each of them, and to nothing outside the contract', async () => {
+  it('binds an adapter to every entry this path draws, and to nothing it cannot', async () => {
     const maps: GalleryAdapterMap[] = await Promise.all(
       Object.values(LOADERS[path]).map((load) => load()),
     )
-    const bound = new Set(maps.flatMap((map) => Object.keys(map)))
+    const bound = maps.flatMap((map) => Object.keys(map))
     const scenarioIds = new Map(
       GALLERY_CONTRACT.entries.map((entry) => [entry.name, entry.scenarioId]),
     )
-    for (const name of expected) {
-      expect(bound.has(scenarioIds.get(name)!), `${name} on ${path}`).toBe(true)
-    }
-    const known = new Set(scenarioIds.values())
-    expect([...bound].filter((id) => !known.has(id))).toEqual([])
+    // Both directions (#268). Every drawn entry has an adapter; and an adapter
+    // may exist ONLY for a drawn entry or a `styleless` one (a family
+    // renderer drives the headless machine for its own behaviour suites; the
+    // document refuses to frame it). An adapter for a `not-applicable` entry,
+    // or for no entry at all, is drift — it is how a reclassification would
+    // otherwise pass while the path kept rendering the old way.
+    const allowed = new Set(
+      GALLERY_CONTRACT.entries
+        .filter(({ presentation }) => {
+          const mode = presentation[path].mode
+          return visual(mode) || mode === 'styleless'
+        })
+        .map(({ scenarioId }) => scenarioId),
+    )
+    expect(new Set(bound).size).toBe(bound.length)
+    expect(
+      expected.map((name) => scenarioIds.get(name)!).filter((id) => !bound.includes(id)),
+    ).toEqual([])
+    expect(bound.filter((id) => !allowed.has(id))).toEqual([])
   })
 
   it('renders every case of every framed entry to ready through the document', async () => {

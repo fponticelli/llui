@@ -38,9 +38,15 @@
         "$TURBO_ROOT$/examples/registry-demo/src/lib/**",
         "$TURBO_ROOT$/packages/components/src/**",
         "$TURBO_ROOT$/packages/components/test/styles/**",
-        "$TURBO_ROOT$/scripts/lib/vite-source-aliases.mjs"
+        "$TURBO_ROOT$/scripts/lib/vite-source-aliases.mjs",
+        "$TURBO_ROOT$/packages/interactions/src/**"
       ],
-      "env": ["LLUI_TEST_DURATIONS"]
+      "env": [
+        "LLUI_TEST_DURATIONS",
+        "LLUI_VISUAL_OUTPUT",
+        "LLUI_VISUAL_REQUIRED",
+        "LLUI_VISUAL_UPDATE"
+      ]
     }
   }
 }
