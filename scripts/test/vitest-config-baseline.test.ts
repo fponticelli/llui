@@ -91,6 +91,7 @@ const configPaths = repoConfigPaths()
 interface ResolvedTest {
   readonly testTimeout?: number
   readonly hookTimeout?: number
+  readonly retry?: unknown
   readonly include?: readonly string[]
   readonly name?: string
   readonly projects?: readonly unknown[]
@@ -228,6 +229,29 @@ describe('the vitest configuration set', () => {
     expect(diverged).toEqual([])
     // Vacuity: the project walk found the gallery's two projects.
     expect(projects).toBeGreaterThanOrEqual(2)
+  })
+
+  it('retries nothing, in any config or inline project (loose-h)', () => {
+    // The RESOLVED half of `no-test-retry.test.ts`: that file parses source,
+    // this one reads what each config actually evaluates to, so a retry that
+    // arrives computed, imported or merged in is caught too. No allowlist —
+    // see that file for why every retry this repo had came off.
+    const retrying: string[] = []
+    for (const path of configPaths) {
+      const config = loaded.get(path) ?? {}
+      for (const { label, test } of [
+        { label: path, test: config.test },
+        ...inlineProjects(config).map(({ name, test }) => ({
+          label: `${path} [project ${name}]`,
+          test,
+        })),
+      ]) {
+        const retry = test?.retry
+        if (retry !== undefined && retry !== 0) retrying.push(`${label}: ${JSON.stringify(retry)}`)
+      }
+    }
+    expect(retrying).toEqual([])
+    expect(shared.test?.retry).toBeUndefined()
   })
 
   it('discovers only the root scripts suite from the scripts config', () => {

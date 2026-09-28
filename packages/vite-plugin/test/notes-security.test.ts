@@ -12,7 +12,7 @@ import { createTrustedTaskRegistry } from '../src/notes/trusted-tasks.js'
 import { startRouter } from '../src/notes/router.js'
 import { createNote } from '../src/notes/store.js'
 import type { CreateNoteRequest, NoteFrontmatter } from '../src/notes/types.js'
-import { waitUntil } from './wait-until.js'
+import { waitUntil } from '../../../scripts/lib/wait-until.mjs'
 
 const fmBase: Omit<NoteFrontmatter, 'id' | 'ts'> = {
   author: 'human',

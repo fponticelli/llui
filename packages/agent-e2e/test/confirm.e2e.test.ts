@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setup, type E2EContext } from '../src/harness.js'
-import { mintAndBind, parseToolResult } from '../src/test-utils.js'
+import { mintAndBind, parseToolResult, remainingBudget } from '../src/test-utils.js'
+import type { WaitContext } from '../../../scripts/lib/wait-until.mjs'
 import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
 
 const hermetic = useHermeticBrowser()
@@ -41,7 +42,10 @@ type AppState = {
 // Playwright serialises the function body as a string and evaluates it in the
 // browser context where nothing from this file is in scope.
 
-async function waitForPending(page: E2EContext['page']): Promise<ConfirmEntry[]> {
+async function waitForPending(
+  page: E2EContext['page'],
+  testCtx: WaitContext,
+): Promise<ConfirmEntry[]> {
   await page.waitForFunction(
     () => {
       const h = (window as unknown as { __lluiE2eHandle: { getState: () => AppState } })[
@@ -50,7 +54,7 @@ async function waitForPending(page: E2EContext['page']): Promise<ConfirmEntry[]>
       return h.getState().agent.confirm.pending.length > 0
     },
     undefined,
-    { timeout: 10_000 },
+    { timeout: remainingBudget(testCtx) },
   )
   return page.evaluate(() => {
     const h = (window as unknown as { __lluiE2eHandle: { getState: () => AppState } })[
@@ -61,8 +65,8 @@ async function waitForPending(page: E2EContext['page']): Promise<ConfirmEntry[]>
 }
 
 describe('e2e: confirm flow', () => {
-  it('delete proposes a pending-confirmation entry that resolves on reject', async () => {
-    await mintAndBind(ctx)
+  it('delete proposes a pending-confirmation entry that resolves on reject', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     // Start the long-polling send_message call — it will park at the server
     // until the user approves or rejects.
@@ -71,7 +75,7 @@ describe('e2e: confirm flow', () => {
       arguments: { msg: { type: 'delete', id: '42' }, reason: 'e2e test' },
     })
 
-    const pending = await waitForPending(ctx.page)
+    const pending = await waitForPending(ctx.page, testCtx)
 
     expect(pending).toHaveLength(1)
     const first = pending[0]
@@ -100,15 +104,15 @@ describe('e2e: confirm flow', () => {
     expect(['user-cancelled', 'rejected']).toContain(body.status)
   })
 
-  it('delete approved by the user resolves with confirmed and re-dispatches the Msg', async () => {
-    await mintAndBind(ctx)
+  it('delete approved by the user resolves with confirmed and re-dispatches the Msg', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const sendPromise = ctx.mcpClient.callTool({
       name: 'send_message',
       arguments: { msg: { type: 'delete', id: '99' }, reason: 'e2e approve test' },
     })
 
-    const pending = await waitForPending(ctx.page)
+    const pending = await waitForPending(ctx.page, testCtx)
     const first = pending[0]
     expect(first).toBeDefined()
     const pendingId = first!.id
@@ -142,7 +146,7 @@ describe('e2e: confirm flow', () => {
         return h.getState().lastDelete === '99'
       },
       undefined,
-      { timeout: 10_000 },
+      { timeout: remainingBudget(testCtx) },
     )
     const lastDelete = await ctx.page.evaluate(() => {
       const h = (

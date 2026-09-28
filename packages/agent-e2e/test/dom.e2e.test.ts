@@ -14,8 +14,8 @@ afterEach(async () => {
 })
 
 describe('e2e: DOM inspection', () => {
-  it('query_dom({name: "inc"}) returns an element with text "+"', async () => {
-    await mintAndBind(ctx)
+  it('query_dom({name: "inc"}) returns an element with text "+"', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const result = await ctx.mcpClient.callTool({
       name: 'query_dom',
@@ -32,8 +32,8 @@ describe('e2e: DOM inspection', () => {
     expect(body.elements[0]!.attrs['data-agent']).toBe('inc')
   })
 
-  it('describe_visible_content returns an outline with a button for "inc"', async () => {
-    await mintAndBind(ctx)
+  it('describe_visible_content returns an outline with a button for "inc"', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const result = await ctx.mcpClient.callTool({
       name: 'describe_visible_content',

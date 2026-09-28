@@ -1,7 +1,9 @@
 /// <reference lib="dom" />
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountAnnotateHud, type AnnotateHudHandle } from '../src/index.js'
 import type { EventSubscription, NotesStore } from '../src/notes-store.js'
+import { settle } from '../../../scripts/lib/wait-until.mjs'
+import { destroyMountedHud } from './support/hud-teardown.js'
 
 // Issue #115 — `mountAnnotateHud` read its in-progress guard (the mounted
 // element's `_lluiHandle`) at the top but only SET it on the last line, after
@@ -232,5 +234,57 @@ describe('a partial mount orphans no global listener', () => {
     // `AutoCapture` to dispose — the half-installed pair has to unwind itself.
     expect(ledger.outstanding()).toEqual([])
     expect(document.getElementById(HUD_ID)).toBeNull()
+  })
+})
+
+// A HUD whose element a host removed WITHOUT calling `destroy()` (a framework
+// re-render clearing `document.body`, a test's `innerHTML = ''`) used to stay
+// fully live: its document `keydown`, its console patch, its debounced persist.
+// The singleton guard looks the HUD up BY ELEMENT, so the next mount found
+// nothing and built a SECOND HUD beside the orphan — and both mirror their
+// state into ONE localStorage key. Escape then closed the orphan's invisible
+// modal and persisted ITS state over the live HUD's. That was the
+// `auto-capture-and-escape.test.ts` "does not close/persist" failure (5 of 5
+// runs without retry, and deterministic even alone — it depends on test ORDER,
+// not load), which `retry: 2` masked because the first attempt's Escape had
+// already closed the orphan's modal.
+describe('an orphaned HUD is reclaimed by the next mount', () => {
+  const HUD_STATE_KEY = 'llui-devmode-annotate.hud-state'
+
+  afterEach(() => {
+    destroyMountedHud()
+    document.body.innerHTML = ''
+    localStorage.clear()
+  })
+
+  it('a detached HUD stops handling Escape and never persists over its successor', async () => {
+    const orphan = mountAnnotateHud({ store: fakeStore(), subscribeEvents: false })
+    orphan.open()
+    // Detach without destroy — what a host re-render does.
+    document.body.innerHTML = ''
+
+    const live = mountAnnotateHud({ store: fakeStore(), subscribeEvents: false })
+    expect(live).not.toBe(orphan)
+    const writes: string[] = []
+    const setItem = vi.spyOn(Storage.prototype, 'setItem')
+    setItem.mockImplementation(function (this: Storage, key: string, value: string) {
+      if (key === HUD_STATE_KEY) writes.push(value)
+    })
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    // The orphan's open() scheduled a debounced persist before it was detached;
+    // reclaiming it must cancel that too. Wait out the debounce window — a
+    // NEGATIVE assertion, so a longer wait can only catch more.
+    await settle(300)
+    setItem.mockRestore()
+    expect(writes).toEqual([])
+    // Exactly one HUD element in the document: the live one.
+    expect(document.querySelectorAll(`#${HUD_ID}`)).toHaveLength(1)
+  })
+
+  it('a still-attached HUD is returned, not reclaimed', () => {
+    const first = mountAnnotateHud({ store: fakeStore(), subscribeEvents: false })
+    const second = mountAnnotateHud({ store: fakeStore(), subscribeEvents: false })
+    expect(second).toBe(first)
+    expect(document.getElementById(HUD_ID)).not.toBeNull()
   })
 })

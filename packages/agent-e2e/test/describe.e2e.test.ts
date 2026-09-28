@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setup, type E2EContext } from '../src/harness.js'
-import { mintAndBind, parseToolResult } from '../src/test-utils.js'
+import { mintAndBind, mintAndPair, parseToolResult } from '../src/test-utils.js'
 import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
 
 const hermetic = useHermeticBrowser()
@@ -14,44 +14,26 @@ afterEach(async () => {
 })
 
 describe('e2e: describe_app', () => {
-  it('connect_session succeeds and reports connected', async () => {
-    // mintAndBind retries until the WS hello frame is ready, then returns the
-    // MintResult. bindClaude (called internally) also validates via /describe.
-    // After mintAndBind, /describe is already confirmed to return 200, so a
-    // second connect_session call will also succeed — but we can just
-    // verify the return value from mintAndBind's internal connect call by
-    // calling bindClaude one more time on a fresh mint.
-    const mint = await ctx.mintToken()
+  it('connect_session succeeds and reports connected', async (testCtx) => {
+    // Wait for the server to pair the WS (its `hello-ack`), then call
+    // connect_session ONCE and read what it reports. It used to be retried on
+    // `paused` against a private 10 s deadline.
+    const mint = await mintAndPair(ctx, testCtx)
 
-    // Retry connect_session until the WS hello frame arrives.
-    let connected = false
-    const deadline = Date.now() + 10_000
-    let lastBody: { status?: string; appName?: string } = {}
-    while (Date.now() < deadline) {
-      const result = await ctx.mcpClient.callTool({
-        name: 'connect_session',
-        arguments: { url: mint.lapUrl, token: mint.token },
-      })
-      if (!result.isError) {
-        lastBody = parseToolResult<{ status: string; appName: string }>(
-          result as { content: Array<{ type: string; text?: string }> },
-        )
-        connected = true
-        break
-      }
-      // 'paused' means the WS hello hasn't arrived yet — retry
-      const msg = (result.content as Array<{ text?: string }>).map((c) => c.text ?? '').join('')
-      if (!msg.includes('paused')) break
-      await new Promise<void>((r) => setTimeout(r, 150))
-    }
-
-    expect(connected).toBe(true)
-    expect(lastBody.status).toBe('connected')
-    expect(lastBody.appName).toBe('TestApp')
+    const result = await ctx.mcpClient.callTool({
+      name: 'connect_session',
+      arguments: { url: mint.lapUrl, token: mint.token },
+    })
+    expect(result.isError).toBeFalsy()
+    const body = parseToolResult<{ status: string; appName: string }>(
+      result as { content: Array<{ type: string; text?: string }> },
+    )
+    expect(body.status).toBe('connected')
+    expect(body.appName).toBe('TestApp')
   })
 
-  it('describe_app returns app name and docs.purpose', async () => {
-    await mintAndBind(ctx)
+  it('describe_app returns app name and docs.purpose', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const result = await ctx.mcpClient.callTool({
       name: 'describe_app',

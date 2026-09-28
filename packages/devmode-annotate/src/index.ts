@@ -499,6 +499,12 @@ function lineageText(tasks: TaskState): string {
  *  a partial mount. Non-null for exactly the duration of `buildHud`. */
 let activeMount: { handle: AnnotateHudHandle | null } | null = null
 
+/** The HUD this module mounted and has not yet torn down: the element that
+ *  carries its id, and the registry `destroy()` folds over. Kept beside the
+ *  element lookup because the element can leave the document without the HUD
+ *  leaving the page (see `mountAnnotateHud`). */
+let liveHud: { idEl: HTMLElement; disposers: DisposerRegistry } | null = null
+
 /**
  * The handle a RE-ENTRANT `mountAnnotateHud` gets. There is only ever one HUD;
  * the outer mount is still building it, so every call forwards to that one
@@ -537,6 +543,13 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // leave the inner one running. The sentinel is claimed synchronously here —
   // before any DOM is appended and before anything the mount calls out to.
   if (activeMount) return deferredHandle(activeMount)
+  // The guard above finds the HUD BY ELEMENT, so a HUD whose element the host
+  // removed without `destroy()` is invisible to it while still fully live —
+  // document keydown, console patch, debounced persist into the SAME
+  // localStorage key the new HUD mirrors into. Reclaim it before building its
+  // successor, so "there is only ever one HUD" holds for listeners and storage
+  // too, not just for the element id.
+  if (liveHud && !liveHud.idEl.isConnected) liveHud.disposers.dispose()
 
   const inFlight: { handle: AnnotateHudHandle | null } = { handle: null }
   activeMount = inFlight
@@ -544,7 +557,12 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   // already registered (the component + its DOM) instead of orphaning it.
   const disposers = createDisposerRegistry()
   try {
-    const handle = buildHud(opts, disposers)
+    const { handle, idEl } = buildHud(opts, disposers)
+    const record = { idEl, disposers }
+    liveHud = record
+    disposers.add(() => {
+      if (liveHud === record) liveHud = null
+    })
     inFlight.handle = handle
     return handle
   } catch (err) {
@@ -555,7 +573,10 @@ export function mountAnnotateHud(opts: MountAnnotateOptions = {}): AnnotateHudHa
   }
 }
 
-function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): AnnotateHudHandle {
+function buildHud(
+  opts: MountAnnotateOptions,
+  disposers: DisposerRegistry,
+): { handle: AnnotateHudHandle; idEl: HTMLElement } {
   const origin = opts.origin ?? (typeof location !== 'undefined' ? location.origin : '')
   const store = opts.store ?? devServerStore(origin, opts.taskCapabilityToken)
   const llui = opts.llui ?? {
@@ -1901,7 +1922,7 @@ function buildHud(opts: MountAnnotateOptions, disposers: DisposerRegistry): Anno
     exportBundle: exportNotesBundle,
   }
   ;(idEl as HTMLElement & { _lluiHandle?: AnnotateHudHandle })._lluiHandle = publicHandle
-  return publicHandle
+  return { handle: publicHandle, idEl }
 }
 
 function noopHandle(): AnnotateHudHandle {

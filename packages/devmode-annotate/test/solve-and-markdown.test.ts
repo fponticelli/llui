@@ -3,6 +3,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mountAnnotateHud } from '../src/index.js'
+import { waitUntil } from '../../../scripts/lib/wait-until.mjs'
 
 const HUD_STATE_KEY = 'llui-devmode-annotate.hud-state'
 
@@ -46,7 +47,7 @@ describe('Save / Solve action buttons', () => {
     expect(root.querySelector('[data-llui-solve]')).not.toBeNull()
   })
 
-  it('mounts a textarea that submits the text typed into it', async () => {
+  it('mounts a textarea that submits the text typed into it', async (ctx) => {
     const calls = mockFetch()
     mountAnnotateHud({ subscribeEvents: false })
     const root = document.getElementById('llui-devmode-annotate-root')!
@@ -60,27 +61,27 @@ describe('Save / Solve action buttons', () => {
       (button) => button.textContent === 'Save note',
     )!
     saveBtn.click()
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await waitUntil(ctx, 'the submit POST', () => calls.length > 0)
 
     const body = JSON.parse(calls[0]![1].body as string) as { body: string }
     expect(body.body).toBe('typed in the standalone HUD')
   })
 
-  it("Solve submits with intent='task'", async () => {
+  it("Solve submits with intent='task'", async (ctx) => {
     const calls = mockFetch()
     seedProse('fix it')
     mountAnnotateHud({ subscribeEvents: false })
     const root = document.getElementById('llui-devmode-annotate-root')!
     const solveBtn = root.querySelector('[data-llui-solve]') as HTMLButtonElement
     solveBtn.click()
-    await new Promise((r) => setTimeout(r, 5))
+    await waitUntil(ctx, 'the submit POST', () => calls.length > 0)
     const body = JSON.parse(calls[0]![1].body as string) as {
       frontmatter: { intent: string }
     }
     expect(body.frontmatter.intent).toBe('task')
   })
 
-  it("Save note submits with intent='note'", async () => {
+  it("Save note submits with intent='note'", async (ctx) => {
     const calls = mockFetch()
     seedProse('just fyi')
     mountAnnotateHud({ subscribeEvents: false })
@@ -89,7 +90,7 @@ describe('Save / Solve action buttons', () => {
       (b) => b.textContent === 'Save note',
     )!
     saveBtn.click()
-    await new Promise((r) => setTimeout(r, 5))
+    await waitUntil(ctx, 'the submit POST', () => calls.length > 0)
     const body = JSON.parse(calls[0]![1].body as string) as {
       frontmatter: { intent: string }
     }

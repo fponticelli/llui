@@ -14,8 +14,8 @@ afterEach(async () => {
 })
 
 describe('e2e: revoke', () => {
-  it('after revoke, get_state tool call fails with an error result', async () => {
-    const mint = await mintAndBind(ctx)
+  it('after revoke, get_state tool call fails with an error result', async (testCtx) => {
+    const mint = await mintAndBind(ctx, testCtx)
 
     // Confirm the session works before revoking.
     const before = await ctx.mcpClient.callTool({

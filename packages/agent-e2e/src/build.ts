@@ -16,8 +16,22 @@ const here = dirname(fileURLToPath(import.meta.url))
  *
  * The bundle is returned as a string so the test harness can serve it from
  * an in-process Node http server without touching the filesystem.
+ *
+ * Built ONCE per worker and shared: every test's `setup()` used to re-run
+ * esbuild over the whole agent client + runtime for a byte-identical bundle —
+ * a fixture cost billed to every test's hook under load. A failed build is not
+ * cached, so the next caller retries it and sees its own error.
  */
-export async function bundleHost(): Promise<string> {
+let bundled: Promise<string> | null = null
+export function bundleHost(): Promise<string> {
+  bundled ??= buildHost().catch((err: unknown) => {
+    bundled = null
+    throw err
+  })
+  return bundled
+}
+
+async function buildHost(): Promise<string> {
   const result = await build({
     entryPoints: [resolve(here, 'host.ts')],
     bundle: true,
