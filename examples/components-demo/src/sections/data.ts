@@ -25,7 +25,7 @@ import {
   svgDesc,
   svgTitle,
 } from '@llui/dom'
-import type { Send, Signal, Reactive, Mountable, Renderable } from '@llui/dom'
+import type { Send, ReadSignal, Signal, Reactive, Mountable, Renderable } from '@llui/dom'
 import { tabs } from '@llui/components/tabs'
 import { accordion } from '@llui/components/accordion'
 import { collapsible } from '@llui/components/collapsible'
@@ -556,7 +556,9 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   // stylesheet's `[data-state=checked|indeterminate]` rule only toggles
   // COLOR (transparent → visible); it does not pick between glyphs, so the
   // view is what has to answer "checked (✓), indeterminate (−), or neither".
-  const checkboxGlyph = (dataState: Signal<'checked' | 'unchecked' | 'indeterminate'>): Mountable =>
+  const checkboxGlyph = (
+    dataState: ReadSignal<'checked' | 'unchecked' | 'indeterminate'>,
+  ): Mountable =>
     text(dataState.map((s) => (s === 'checked' ? '✓' : s === 'indeterminate' ? '−' : '')))
 
   const tableHeaderCell = (colId: string, label: string, sortableCol: boolean): Mountable => {

@@ -36,7 +36,7 @@ import {
   thead,
   tr,
 } from '@llui/dom'
-import type { Mountable, Renderable, Send, Signal } from '@llui/dom'
+import type { Mountable, Renderable, ReadSignal, Send, Signal } from '@llui/dom'
 import * as chartC from '@llui/components/chart'
 import { chartForcedColorPatterns } from '@llui/components/chart'
 import { sectionGroup, card } from '../shared/ui'
@@ -230,7 +230,7 @@ interface PlotOptions {
 function plot(
   state: Signal<chartC.ChartState>,
   send: Send<chartC.ChartMsg>,
-  showTable: Signal<boolean>,
+  showTable: ReadSignal<boolean>,
   opts: PlotOptions,
 ): Mountable {
   const parts = chartC.connect(state, send, { id: opts.id })
@@ -583,7 +583,7 @@ function controlRow(label: string, children: Renderable): Mountable {
  * utility on top: the baseline stylesheet's `.btn-*` rules are UNLAYERED, so a
  * `@layer utilities` background would lose to them with nothing to show for it.
  */
-function toggle(label: string, on: Signal<boolean>, onClick: () => void): Mountable {
+function toggle(label: string, on: ReadSignal<boolean>, onClick: () => void): Mountable {
   return button(
     {
       type: 'button',
