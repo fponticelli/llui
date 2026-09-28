@@ -1,5 +1,6 @@
 import type { Signal, Mountable, Renderable, ElProps, TransitionOptions } from '@llui/dom'
 import { show, portal, onMount, div, LluiFrameworkError } from '@llui/dom'
+import { followActiveDescendant } from './follow-active-descendant.js'
 import { pushDismissable } from './dismissable.js'
 import { pushFocusTrap } from './focus-trap.js'
 import { setAriaHiddenOutside } from './aria-hidden.js'
@@ -526,6 +527,8 @@ export function createOverlay<S>(opts: OverlayEngineOptions<S>): Mountable {
       if (opts.floating && !opts.floating.persistent) {
         cleanups.push(attachFloatingWithReattach(els))
       }
+      // An active-descendant list scrolls its highlight into view (#268).
+      cleanups.push(followActiveDescendant(els.content))
       if (opts.lockScroll) cleanups.push(lockBodyScroll())
       // Apply modal isolation before activating the trap, but register its
       // cleanup after the trap's cleanup. The cleanup list runs LIFO, so this

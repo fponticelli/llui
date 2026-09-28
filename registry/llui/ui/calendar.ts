@@ -1,4 +1,4 @@
-import { button, div, td, th, tr } from '@llui/dom'
+import { button, div, table, td, th, tr } from '@llui/dom'
 import { classPart } from '@/lib/utils'
 import { buttonVariants } from '@/ui/button'
 
@@ -69,7 +69,10 @@ export const CalendarDropdownRoot = classPart(
   'relative rounded-md border border-input shadow-xs has-focus:border-ring has-focus:ring-[3px] has-focus:ring-ring/50',
 )
 export const CalendarDropdown = classPart(div, 'absolute inset-0 bg-popover opacity-0')
-export const CalendarGrid = classPart(div, 'w-full border-collapse')
+/** A `table`, as react-day-picker's `month_grid` is: its rows are `tr`s in
+ * `thead`/`tbody`, which a `div` cannot own (#268 audit: the day grid was a
+ * `div` holding table sections). The machine's `role="grid"` lands on it. */
+export const CalendarGrid = classPart(table, 'w-full border-collapse')
 export const CalendarWeekdays = classPart(tr, 'flex')
 export const CalendarWeekday = classPart(
   th,
@@ -78,10 +81,14 @@ export const CalendarWeekday = classPart(
 export const CalendarRow = classPart(tr, 'mt-2 flex w-full')
 
 /** The cell. `group/day` is read by the day button's focus ring, and the
- * `first-child` / `last-child` rules are what round the ends of a range. */
+ * `first-child` / `last-child` rules are what round the ends of a range.
+ *
+ * Outside-month days are live, selectable buttons, so they are muted but never
+ * faded: upstream's current `outside` modifier (below) carries no opacity, and
+ * the `opacity-50` this recipe had took them to 1.96:1 (#268 audit). */
 export const CalendarDay = classPart(
   td,
-  'group/day relative aspect-square h-full w-full p-0 text-center select-none [&:first-child[data-selected=true]_button]:rounded-l-md [&:last-child[data-selected=true]_button]:rounded-r-md data-[state=today]:rounded-md data-[state=today]:bg-accent data-[state=today]:text-accent-foreground data-[state=outside]:text-muted-foreground data-[state=outside]:opacity-50 data-[disabled]:text-muted-foreground data-[disabled]:opacity-50 data-[hidden]:invisible data-today:rounded-md data-today:bg-accent data-today:text-accent-foreground not-data-in-month:text-muted-foreground not-data-in-month:opacity-50 [&:first-child[data-selected]_button]:rounded-l-md [&:last-child[data-selected]_button]:rounded-r-md forced-colors:data-today:outline-1 forced-colors:data-today:-outline-offset-1 forced-colors:data-today:outline-[CanvasText]',
+  'group/day relative aspect-square h-full w-full p-0 text-center select-none [&:first-child[data-selected=true]_button]:rounded-l-md [&:last-child[data-selected=true]_button]:rounded-r-md data-[state=today]:rounded-md data-[state=today]:bg-accent data-[state=today]:text-accent-foreground data-[state=outside]:text-muted-foreground data-[disabled]:text-muted-foreground data-[disabled]:opacity-50 data-[hidden]:invisible data-today:rounded-md data-today:bg-accent data-today:text-accent-foreground not-data-in-month:text-muted-foreground [&:first-child[data-selected]_button]:rounded-l-md [&:last-child[data-selected]_button]:rounded-r-md forced-colors:data-today:outline-1 forced-colors:data-today:-outline-offset-1 forced-colors:data-today:outline-[CanvasText]',
 )
 
 /** Upstream's day button is `<Button variant="ghost" size="icon">`. The size

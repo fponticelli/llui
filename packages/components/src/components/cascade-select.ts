@@ -163,7 +163,10 @@ export function connect(
     clearTrigger: {
       type: 'button',
       'aria-label': opts.clearLabel ?? locale.clear,
-      disabled: state.map((s) => s.values.every((v) => v === null)),
+      // A disabled instance ignores `clear` (see `update`), so its trigger is
+      // disabled too — it used to stay enabled, dimmed only by the root's
+      // opacity, announcing a working button that did nothing (#268 audit).
+      disabled: state.map((s) => s.disabled || s.values.every((v) => v === null)),
       'data-scope': 'cascade-select',
       'data-part': 'clear-trigger',
       onClick: tagSend(send, ['clear'], () => send({ type: 'clear' })),

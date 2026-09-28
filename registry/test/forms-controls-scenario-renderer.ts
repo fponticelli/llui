@@ -33,6 +33,7 @@ import * as pinInput from '@llui/components/pin-input'
 import * as radioGroup from '@llui/components/radio-group'
 import * as ratingGroup from '@llui/components/rating-group'
 import * as searchField from '@llui/components/search-field'
+import { sliderPointerWiring } from '../../packages/components/test/styles/pointer-wiring'
 import * as slider from '@llui/components/slider'
 import * as switchMachine from '@llui/components/switch'
 import * as tagsInput from '@llui/components/tags-input'
@@ -184,6 +185,24 @@ function stateAria(state: FormsControlsCaseInput['state']): Record<string, strin
   if (state === 'invalid') return { 'aria-invalid': 'true' }
   if (state === 'required') return { 'aria-required': 'true' }
   if (state === 'read-only') return { 'aria-readonly': 'true' }
+  return {}
+}
+
+/**
+ * The same state ARIA split by where ARIA ALLOWS it (#268 audit): the global
+ * `aria-invalid` stays on the role-less root the skins style, while
+ * `aria-required`/`aria-readonly` go on the element whose role models them
+ * (spinbutton, slider, textbox). `slider` has no `aria-required` at all.
+ */
+function rootStateAria(state: FormsControlsCaseInput['state']): Record<string, string> {
+  return state === 'invalid' ? stateAria(state) : {}
+}
+function controlStateAria(
+  state: FormsControlsCaseInput['state'],
+  { required = true, readOnly = true }: { required?: boolean; readOnly?: boolean } = {},
+): Record<string, string> {
+  if (state === 'required' && required) return stateAria(state)
+  if (state === 'read-only' && readOnly) return stateAria(state)
   return {}
 }
 
@@ -499,14 +518,16 @@ const numberInputAdapter: Adapter = (host, data, ctx) =>
     numberInput.update,
     (state, send) => {
       const parts = numberInput.connect(state, send)
-      return NumberInput(
-        { ...parts.root, ...stateAria(data.state === 'read-only' ? 'default' : data.state) },
-        [
-          NumberInputDecrement({ ...parts.decrement }, [text('−')]),
-          NumberInputControl({ ...parts.input, 'aria-label': str(data, 'label') }),
-          NumberInputIncrement({ ...parts.increment }, [text('+')]),
-        ],
-      )
+      return NumberInput({ ...parts.root, ...rootStateAria(data.state) }, [
+        NumberInputDecrement({ ...parts.decrement }, [text('−')]),
+        NumberInputControl({
+          ...parts.input,
+          // read-only: the machine already publishes `aria-readonly` here.
+          ...controlStateAria(data.state, { readOnly: false }),
+          'aria-label': str(data, 'label'),
+        }),
+        NumberInputIncrement({ ...parts.increment }, [text('+')]),
+      ])
     },
   )
 
@@ -557,17 +578,22 @@ const pinInputAdapter: Adapter = (host, data, ctx) => {
     pinInput.update,
     (state, send) => {
       const parts = pinInput.connect(state, send, { id: `registry-pin-${ctx.caseId}` })
-      return InputOTP({ ...parts.root, 'aria-label': str(data, 'label') }, [
-        InputOTPGroup(
-          Array.from({ length }, (_, index) =>
-            InputOTPSlot({
-              ...parts.input(index),
-              ...stateAria(data.state === 'read-only' ? 'default' : data.state),
-              ...(data.state === 'placeholder' ? { placeholder: '○' } : {}),
-              ...(data.state === 'read-only' ? { readOnly: true } : {}),
-            }),
+      // The root is `aria-labelledby` its label part, so the label is rendered
+      // (an `aria-label` beside it lost to the broken reference, #268 audit).
+      return div({ class: 'flex flex-col gap-2' }, [
+        Label({ ...parts.label }, [text(str(data, 'label'))]),
+        InputOTP({ ...parts.root }, [
+          InputOTPGroup(
+            Array.from({ length }, (_, index) =>
+              InputOTPSlot({
+                ...parts.input(index),
+                ...stateAria(data.state === 'read-only' ? 'default' : data.state),
+                ...(data.state === 'placeholder' ? { placeholder: '○' } : {}),
+                ...(data.state === 'read-only' ? { readOnly: true } : {}),
+              }),
+            ),
           ),
-        ),
+        ]),
       ])
     },
   )
@@ -679,12 +705,19 @@ const sliderAdapter: Adapter = (host, data, ctx) =>
     slider.update,
     (state, send) => {
       const parts = slider.connect(state, send)
-      return Slider({ ...parts.root, ...stateAria(data.state), class: 'w-64' }, [
-        SliderControl({ ...parts.control }, [
-          SliderTrack({ ...parts.track }, [SliderRange({ ...parts.range })]),
-          SliderThumb({ ...parts.thumb(0).thumb, 'aria-label': str(data, 'label') }),
+      return [
+        sliderPointerWiring(state, send),
+        Slider({ ...parts.root, ...rootStateAria(data.state), class: 'w-64' }, [
+          SliderControl({ ...parts.control }, [
+            SliderTrack({ ...parts.track }, [SliderRange({ ...parts.range })]),
+            SliderThumb({
+              ...parts.thumb(0).thumb,
+              ...controlStateAria(data.state, { required: false }),
+              'aria-label': str(data, 'label'),
+            }),
+          ]),
         ]),
-      ])
+      ]
     },
   )
 
@@ -725,7 +758,7 @@ const tagsInputAdapter: Adapter = (host, data, ctx) => {
     tagsInput.update,
     (state, send) => {
       const parts = tagsInput.connect(state, send, { inputLabel: str(data, 'label') })
-      return TagsInput({ ...parts.root, ...stateAria(data.state), class: 'max-w-80' }, [
+      return TagsInput({ ...parts.root, ...rootStateAria(data.state), class: 'max-w-80' }, [
         ...values.map((value, index) => {
           const tag = parts.tag(value, index)
           return TagsInputTag({ ...tag.root }, [
@@ -735,6 +768,7 @@ const tagsInputAdapter: Adapter = (host, data, ctx) => {
         }),
         TagsInputControl({
           ...parts.input,
+          ...controlStateAria(data.state),
           placeholder: 'Add a skill',
           ...(data.state === 'read-only' ? { readOnly: true } : {}),
         }),

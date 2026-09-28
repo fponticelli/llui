@@ -274,3 +274,37 @@ describe('attachFloating transactional state', () => {
     cleanup()
   })
 })
+
+describe('attachFloating re-measures after an ancestor animates (#268)', () => {
+  it('recomputes when an animation or transition ends on an element containing the anchor', async () => {
+    const menu = document.createElement('div')
+    const anchor = document.createElement('button')
+    const unrelated = document.createElement('div')
+    menu.append(anchor)
+    document.body.append(menu, unrelated)
+    const floating = document.createElement('div')
+    floatingUi.computePosition.mockResolvedValue(positioned('right-start'))
+
+    const cleanup = attachFloating({ anchor, floating })
+    await flush()
+    const initial = floatingUi.computePosition.mock.calls.length
+
+    // A parent's enter zoom finishing moved the anchor's rect: re-measure.
+    menu.dispatchEvent(new Event('animationend', { bubbles: true }))
+    anchor.dispatchEvent(new Event('transitionend', { bubbles: true }))
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 2)
+
+    // Something that cannot have moved the anchor does not.
+    unrelated.dispatchEvent(new Event('animationend', { bubbles: true }))
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 2)
+
+    cleanup()
+    menu.dispatchEvent(new Event('animationend', { bubbles: true }))
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 2)
+    menu.remove()
+    unrelated.remove()
+  })
+})

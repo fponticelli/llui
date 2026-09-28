@@ -296,9 +296,26 @@ export function attachFloating(opts: FloatingOptions): () => void {
     throw error
   }
 
+  // Re-measure when an ANCESTOR of the anchor finishes animating (#268).
+  // `autoUpdate` watches scroll, resize and layout shifts, but not a
+  // transform: the anchor's rect is read through its ancestors' transforms, so
+  // a submenu opened while its parent menu was still in its enter zoom was
+  // placed against the mid-animation rect and stayed a pixel off — by an
+  // amount that depended on when it measured (the gallery's visual gate saw
+  // two renders of one case differ). The events bubble from the element that
+  // animated; only one that CONTAINS the anchor can have moved it.
+  const doc = anchor.ownerDocument
+  const onMotionEnd = (event: Event): void => {
+    if (event.target instanceof Node && event.target.contains(anchor)) update()
+  }
+  doc.addEventListener('animationend', onMotionEnd, true)
+  doc.addEventListener('transitionend', onMotionEnd, true)
+
   return () => {
     if (disposed) return
     disposed = true
+    doc.removeEventListener('animationend', onMotionEnd, true)
+    doc.removeEventListener('transitionend', onMotionEnd, true)
     try {
       stopUpdates()
     } finally {

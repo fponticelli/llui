@@ -46,6 +46,7 @@ import * as passwordInput from '../../src/components/password-input'
 import * as pinInput from '../../src/components/pin-input'
 import * as radioGroup from '../../src/components/radio-group'
 import * as ratingGroup from '../../src/components/rating-group'
+import { sliderPointerWiring } from './pointer-wiring'
 import * as slider from '../../src/components/slider'
 import * as switchMachine from '../../src/components/switch'
 import * as tagsInput from '../../src/components/tags-input'
@@ -129,6 +130,24 @@ function stateAria(state: FormsControlsCaseInput['state']): Record<string, strin
   if (state === 'invalid') return { 'aria-invalid': 'true' }
   if (state === 'required') return { 'aria-required': 'true' }
   if (state === 'read-only') return { 'aria-readonly': 'true' }
+  return {}
+}
+
+/**
+ * The same state ARIA split by where ARIA ALLOWS it (#268 audit): the global
+ * `aria-invalid` stays on the role-less root the skins style, while
+ * `aria-required`/`aria-readonly` go on the element whose role models them
+ * (spinbutton, slider, textbox). `slider` has no `aria-required` at all.
+ */
+function rootStateAria(state: FormsControlsCaseInput['state']): Record<string, string> {
+  return state === 'invalid' ? stateAria(state) : {}
+}
+function controlStateAria(
+  state: FormsControlsCaseInput['state'],
+  { required = true, readOnly = true }: { required?: boolean; readOnly?: boolean } = {},
+): Record<string, string> {
+  if (state === 'required' && required) return stateAria(state)
+  if (state === 'read-only' && readOnly) return stateAria(state)
   return {}
 }
 
@@ -250,18 +269,20 @@ const fieldsetAdapter: Adapter = (host, data, ctx) => {
     fieldset.update,
     (state, send) => {
       const parts = fieldset.connect(state, send)
-      return fieldsetElement(
-        { ...parts.root, ...(data.state === 'required' ? { 'aria-required': 'true' } : {}) },
-        [
-          legend({ ...parts.legend }, [text(str(data, 'legend'))]),
-          label([input({ type: 'checkbox', name: `${id}-email`, checked: true }), text(' Email')]),
-          label([input({ type: 'checkbox', name: `${id}-sms` }), text(' SMS')]),
-          p([text(str(data, 'help'))]),
-          p({ ...parts.errorText, hidden: state.at('invalid').map((invalid) => !invalid) }, [
-            text('Choose at least one option.'),
-          ]),
-        ],
-      )
+      // ARIA gives a fieldset's `group` role no `aria-required` (#268 audit):
+      // a required GROUP says so in its legend, as the registry path does.
+      return fieldsetElement({ ...parts.root }, [
+        legend({ ...parts.legend }, [
+          text(str(data, 'legend')),
+          ...(data.state === 'required' ? [span({ 'aria-hidden': 'true' }, [text(' *')])] : []),
+        ]),
+        label([input({ type: 'checkbox', name: `${id}-email`, checked: true }), text(' Email')]),
+        label([input({ type: 'checkbox', name: `${id}-sms` }), text(' SMS')]),
+        p([text(str(data, 'help'))]),
+        p({ ...parts.errorText, hidden: state.at('invalid').map((invalid) => !invalid) }, [
+          text('Choose at least one option.'),
+        ]),
+      ])
     },
   )
 }
@@ -353,14 +374,16 @@ const numberInputAdapter: Adapter = (host, data, ctx) =>
     numberInput.update,
     (state, send) => {
       const parts = numberInput.connect(state, send)
-      return div(
-        { ...parts.root, ...stateAria(data.state === 'read-only' ? 'default' : data.state) },
-        [
-          button({ ...parts.decrement }, [text('−')]),
-          input({ ...parts.input, 'aria-label': str(data, 'label') }),
-          button({ ...parts.increment }, [text('+')]),
-        ],
-      )
+      return div({ ...parts.root, ...rootStateAria(data.state) }, [
+        button({ ...parts.decrement }, [text('−')]),
+        input({
+          ...parts.input,
+          // read-only: the machine already publishes `aria-readonly` here.
+          ...controlStateAria(data.state, { readOnly: false }),
+          'aria-label': str(data, 'label'),
+        }),
+        button({ ...parts.increment }, [text('+')]),
+      ])
     },
   )
 
@@ -500,12 +523,19 @@ const sliderAdapter: Adapter = (host, data, ctx) =>
     slider.update,
     (state, send) => {
       const parts = slider.connect(state, send)
-      return div({ ...parts.root, ...stateAria(data.state) }, [
-        div({ ...parts.control }, [
-          div({ ...parts.track }, [div({ ...parts.range })]),
-          div({ ...parts.thumb(0).thumb, 'aria-label': str(data, 'label') }),
+      return [
+        sliderPointerWiring(state, send),
+        div({ ...parts.root, ...rootStateAria(data.state) }, [
+          div({ ...parts.control }, [
+            div({ ...parts.track }, [div({ ...parts.range })]),
+            div({
+              ...parts.thumb(0).thumb,
+              ...controlStateAria(data.state, { required: false }),
+              'aria-label': str(data, 'label'),
+            }),
+          ]),
         ]),
-      ])
+      ]
     },
   )
 
@@ -546,13 +576,14 @@ const tagsInputAdapter: Adapter = (host, data, ctx) => {
     tagsInput.update,
     (state, send) => {
       const parts = tagsInput.connect(state, send, { inputLabel: str(data, 'label') })
-      return div({ ...parts.root, ...stateAria(data.state) }, [
+      return div({ ...parts.root, ...rootStateAria(data.state) }, [
         ...values.map((value, index) => {
           const tag = parts.tag(value, index)
           return span({ ...tag.root }, [text(value), button({ ...tag.remove }, [text('×')])])
         }),
         input({
           ...parts.input,
+          ...controlStateAria(data.state),
           placeholder: 'Add a skill',
           ...(data.state === 'read-only' ? { readOnly: true } : {}),
         }),

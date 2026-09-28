@@ -633,6 +633,21 @@
   color: var(--foreground);
 }
 
+/* On a TINTED toast the secondary ink moves halfway to the foreground: plain
+ * `--muted-foreground` is tuned for the neutral popover surface and measured
+ * 3.61-4.05:1 on the status tints (#268 audit). The mix keeps the secondary
+ * hierarchy and clears AA on every tint, light and dark. */
+[data-scope='toast'][data-part='root']:is(
+    [data-type='info'],
+    [data-type='success'],
+    [data-type='warning'],
+    [data-type='error'],
+    [data-type='custom']
+  )
+  :is([data-part='description'], [data-part='close-trigger']:not(:hover)) {
+  color: color-mix(in oklab, var(--muted-foreground) 50%, var(--popover-foreground));
+}
+
 @media (forced-colors: active) {
   /* The positioner is a plain layout wrapper with no visual role (the
      `backdrop` rule above owns the scrim, including its forced-colors

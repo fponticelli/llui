@@ -90,6 +90,7 @@ export interface FieldParts {
     'data-part': 'root'
     'data-invalid': Signal<'' | undefined>
     'data-disabled': Signal<'' | undefined>
+    'aria-disabled': Signal<'true' | undefined>
   }
   /** The `<label>`. `htmlFor` focuses the control on click. */
   label: {
@@ -155,6 +156,11 @@ export function connect(
       'data-part': 'root',
       'data-invalid': state.map((s) => (s.invalid ? '' : undefined)),
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      // The whole field is inactive, not just its control: the dimmed label,
+      // description and error are announced as such (#268 audit — only the
+      // control said so, so its dimmed description read as a live, 1.96:1
+      // text failure).
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
     },
     label: {
       id: labelId,

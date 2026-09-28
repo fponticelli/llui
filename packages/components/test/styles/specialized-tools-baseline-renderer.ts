@@ -52,6 +52,7 @@ import * as dateInput from '../../src/components/date-input'
 import * as datePicker from '../../src/components/date-picker'
 import * as editable from '../../src/components/editable'
 import * as fileUpload from '../../src/components/file-upload'
+import { floatingPanelPointerWiring, splitterPointerWiring } from './pointer-wiring'
 import * as floatingPanel from '../../src/components/floating-panel'
 import * as gradientPicker from '../../src/components/gradient-picker'
 import * as imageCropper from '../../src/components/image-cropper'
@@ -282,7 +283,8 @@ const clipboardAdapter: Adapter<ClipboardCaseInput> = (host, data, ctx) =>
     (state, send) => {
       const parts = clipboard.connect(state, send)
       return div({ ...parts.root }, [
-        input({ ...parts.input }),
+        // The machine publishes no label part: the consumer names the field.
+        input({ ...parts.input, 'aria-label': 'Value to copy' }),
         button({ ...parts.trigger }, [glyph('copy')]),
         span({ ...parts.indicator }, [
           text(
@@ -349,9 +351,14 @@ const dateInputAdapter: Adapter<DateInputCaseInput> = (host, data, ctx) =>
     () => dateInputInit(data),
     dateInput.update,
     (state, send) => {
-      const parts = dateInput.connect(state, send, { placeholder: 'YYYY-MM-DD' })
+      const parts = dateInput.connect(state, send, {
+        placeholder: 'YYYY-MM-DD',
+        id: `baseline-date-input-${ctx.caseId}`,
+      })
       return div({ ...parts.root }, [
-        input({ ...parts.input }),
+        // The machine publishes no label part: the consumer names the field (a
+        // placeholder is a hint, and the error it describes is not a name).
+        input({ ...parts.input, 'aria-label': 'Date' }),
         button({ ...parts.clearTrigger }, [glyph('x')]),
         p({ ...parts.errorText }, [
           text(state.map((s) => (s.error === null ? '' : (DATE_INPUT_ERRORS[s.error] ?? '')))),
@@ -505,18 +512,21 @@ const floatingPanelAdapter: Adapter<FloatingPanelCaseInput> = (host, data, ctx) 
     floatingPanel.update,
     (state, send) => {
       const parts = floatingPanel.connect(state, send, { label: data.title })
-      return div({ ...parts.root }, [
-        div({ ...parts.dragHandle }, [
-          span({ style: 'flex: 1' }, [text(data.title)]),
-          button({ ...parts.minimizeTrigger }, [glyph('minimize')]),
-          button({ ...parts.maximizeTrigger }, [glyph('maximize')]),
-          button({ ...parts.closeTrigger }, [glyph('x')]),
+      return [
+        floatingPanelPointerWiring(send),
+        div({ ...parts.root }, [
+          div({ ...parts.dragHandle }, [
+            span({ style: 'flex: 1' }, [text(data.title)]),
+            button({ ...parts.minimizeTrigger }, [glyph('minimize')]),
+            button({ ...parts.maximizeTrigger }, [glyph('maximize')]),
+            button({ ...parts.closeTrigger }, [glyph('x')]),
+          ]),
+          div({ ...parts.content }, [text(data.body)]),
+          ...(['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'] as const).map((handle) =>
+            div({ ...parts.resizeHandle(handle) }),
+          ),
         ]),
-        div({ ...parts.content }, [text(data.body)]),
-        ...(['n', 'e', 's', 'w', 'ne', 'nw', 'se', 'sw'] as const).map((handle) =>
-          div({ ...parts.resizeHandle(handle) }),
-        ),
-      ])
+      ]
     },
   )
 }
@@ -739,11 +749,14 @@ const splitterAdapter: Adapter<SplitterCaseInput> = (host, data, ctx) => {
     splitter.update,
     (state, send) => {
       const parts = splitter.connect(state, send)
-      return div({ ...parts.root }, [
-        div({ ...parts.primaryPanel }, [div({ style: 'padding: 0.75rem' }, [text('Outline')])]),
-        div({ ...parts.resizeTrigger }),
-        div({ ...parts.secondaryPanel }, [div({ style: 'padding: 0.75rem' }, [text('Editor')])]),
-      ])
+      return [
+        splitterPointerWiring(state, send),
+        div({ ...parts.root }, [
+          div({ ...parts.primaryPanel }, [div({ style: 'padding: 0.75rem' }, [text('Outline')])]),
+          div({ ...parts.resizeTrigger }),
+          div({ ...parts.secondaryPanel }, [div({ style: 'padding: 0.75rem' }, [text('Editor')])]),
+        ]),
+      ]
     },
   )
 }

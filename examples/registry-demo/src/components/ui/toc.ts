@@ -20,7 +20,10 @@ export const TocLink = classPart(
   a,
   '-ms-px block border-s border-transparent py-1 ps-3 text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-active:border-primary data-active:font-medium data-active:text-foreground motion-reduce:transition-none forced-colors:data-active:underline',
 )
+/** A 24px pointer target (WCAG 2.5.8, #268 audit): `-my-1` gives back the
+ * height `size-6` adds; the width is real, because the link beside it is a
+ * target too and may not overlap it. */
 export const TocExpandTrigger = classPart(
   button,
-  'inline-flex size-4 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-transform outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:rotate-90 motion-reduce:transition-none rtl:data-[state=open]:-rotate-90',
+  '-my-1 inline-flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-transform outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:rotate-90 motion-reduce:transition-none rtl:data-[state=open]:-rotate-90',
 )

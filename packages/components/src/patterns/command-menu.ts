@@ -254,6 +254,12 @@ export interface CommandMenuParts {
 export interface ConnectOptions {
   /** Unique id per palette instance (used for ARIA wiring). */
   id: string
+  /**
+   * Whether the consumer renders `dialog.description` (default: false — the
+   * palette's own `view()` renders a title and no description). Forwarded to
+   * the dialog so `aria-describedby` never names a missing element (#268).
+   */
+  hasDescription?: boolean
 }
 
 /**
@@ -275,7 +281,7 @@ export function connect(
       else if (m.type === 'toggle') send({ type: state.peek().open ? 'close' : 'open' })
       else if (m.type === 'setOpen') send({ type: m.open ? 'open' : 'close' })
     },
-    { id: opts.id, role: 'dialog' },
+    { id: opts.id, role: 'dialog', hasDescription: opts.hasDescription ?? false },
   )
 
   const combobox = comboboxConnect(
@@ -374,6 +380,9 @@ export function view(opts: CommandMenuViewOptions): Mountable {
         div({ ...parts.combobox.root, class: 'command-menu__search' }, [
           input({
             ...parts.combobox.input,
+            // The search field is named by the palette's title (#268 audit):
+            // a placeholder is a hint, not a label.
+            'aria-labelledby': parts.dialog.title.id,
             class: 'command-menu__input',
             placeholder: opts.inputLabel ?? 'Type a command…',
             onKeyDown: (e: KeyboardEvent) => {
@@ -390,9 +399,10 @@ export function view(opts: CommandMenuViewOptions): Mountable {
             },
           }),
         ]),
-        div({ ...parts.combobox.content, class: 'command-menu__list' }, [
-          div({ ...parts.empty, class: 'command-menu__empty' }, [text(emptyText)]),
-        ]),
+        // The empty-state `status` sits BESIDE the listbox: a listbox may own
+        // only options and groups (#268 audit).
+        div({ ...parts.combobox.content, class: 'command-menu__list' }),
+        div({ ...parts.empty, class: 'command-menu__empty' }, [text(emptyText)]),
       ]),
     ],
     closeOnOutsideClick: true,

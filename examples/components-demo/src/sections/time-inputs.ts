@@ -64,6 +64,7 @@ export function view(state: Signal<State>, send: Send<Msg>): Renderable {
   }
   const di = dateInput.connect(state.at('date'), (m) => send({ type: 'date', msg: m }), {
     placeholder: 'YYYY-MM-DD',
+    id: 'demo-date-input',
   })
   const mq = marquee.connect(state.at('marquee'), (m) => send({ type: 'marquee', msg: m }))
 

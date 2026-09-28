@@ -604,6 +604,7 @@ export interface FileUploadParts {
     'data-scope': 'file-upload'
     'data-part': 'root'
     'data-disabled': Signal<'' | undefined>
+    'aria-disabled': Signal<'true' | undefined>
     'data-dragging': Signal<'' | undefined>
     'data-invalid': Signal<'' | undefined>
     'data-readonly': Signal<'' | undefined>
@@ -784,6 +785,8 @@ export function connect(
       'data-scope': 'file-upload',
       'data-part': 'root',
       'data-disabled': state.map((st) => (st.disabled ? '' : undefined)),
+      // Inactive as a whole — the dimmed drop-zone copy included (#268 audit).
+      'aria-disabled': state.map((st) => (st.disabled ? 'true' : undefined)),
       'data-dragging': state.map((st) => (st.dragging ? '' : undefined)),
       'data-invalid': state.map((st) => (st.invalid ? '' : undefined)),
       'data-readonly': state.map((st) => (st.readonly ? '' : undefined)),

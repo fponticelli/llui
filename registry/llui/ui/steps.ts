@@ -1,13 +1,18 @@
-import { button, div, li, ol } from '@llui/dom'
+import { button, div } from '@llui/dom'
 import { classPart } from '@/lib/utils'
 
 /** Steps — skin for `@llui/components/steps`. A stepper/wizard indicator;
- * `data-state` is `complete` / `current` / `incomplete`. */
+ * `data-state` is `complete` / `current` / `incomplete`.
+ *
+ * The root and items are `div`s, not `ol`/`li`: the machine's root is a
+ * labelled `role="group"`, which replaces a list's semantics — an `ol` there
+ * left every `li` a list item with no list, and put the prev/next triggers
+ * inside a list as non-items (#268 audit). */
 export const Steps = classPart(
-  ol,
+  div,
   'group/steps flex w-full items-center gap-2 data-[orientation=vertical]:flex-col data-[orientation=vertical]:items-start data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
 )
-export const StepsItem = classPart(li, 'flex flex-1 items-center gap-2')
+export const StepsItem = classPart(div, 'flex flex-1 items-center gap-2')
 export const StepsTrigger = classPart(
   button,
   'inline-flex items-center gap-2 rounded-md text-sm font-medium transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 data-[status=current]:text-foreground data-[status=pending]:text-muted-foreground data-[status=completed]:text-foreground data-[status=error]:text-destructive data-[disabled]:pointer-events-none data-[disabled]:opacity-50 group-data-[disabled]/steps:opacity-100! forced-colors:data-[status=current]:underline forced-colors:data-[status=current]:decoration-2 forced-colors:data-[status=error]:border forced-colors:data-[status=error]:border-[Mark] forced-colors:data-[status=error]:text-[Mark]',

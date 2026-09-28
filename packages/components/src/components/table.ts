@@ -1,6 +1,7 @@
 import { constant, derived, tagSend } from '@llui/dom'
 import type { Reactive, Send, Signal } from '@llui/dom'
 import { allFiniteNumbers, finiteBound } from '../utils/number.js'
+import { tableLocale } from '../locale/table.js'
 
 /**
  * Table / data grid — a headless machine for sortable columns, row
@@ -417,6 +418,12 @@ export interface TableCellParts {
 
 export interface TableCheckboxParts {
   role: 'checkbox'
+  /**
+   * The checkbox's accessible name (localized; `Locale['table']`). A
+   * `role="checkbox"` span has no content to be named by, so without it
+   * assistive tech announced an unnamed checkbox in every row (#268).
+   */
+  'aria-label': string
   'aria-checked': Signal<'true' | 'false' | 'mixed'>
   'data-scope': 'table'
   'data-part': 'select-all' | 'row-checkbox'
@@ -497,6 +504,7 @@ export function connect(
   opts: ConnectOptions,
 ): TableParts {
   const rootId = `${opts.id}:root`
+  const locale = tableLocale()
   const headerId = (columnId: string): string => `${opts.id}:colheader:${columnId}`
   const colIndexOf = (s: TableState, columnId: string): number =>
     s.columns.findIndex((c) => c.id === columnId)
@@ -764,6 +772,7 @@ export function connect(
       selectAllColumns.add(columnId)
       return {
         role: 'checkbox',
+        'aria-label': locale.selectAll,
         'aria-checked': state.map((s) => {
           if (isAllSelected(s)) return 'true'
           if (isSomeSelected(s)) return 'mixed'
@@ -804,6 +813,7 @@ export function connect(
       const indexSignal = toIndexSignal(index)
       return {
         role: 'checkbox',
+        'aria-label': locale.selectRow,
         'aria-checked': state.map((s) => (isRowSelected(s, id) ? 'true' : 'false')),
         'data-scope': 'table',
         'data-part': 'row-checkbox',
