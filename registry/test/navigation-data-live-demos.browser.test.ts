@@ -460,7 +460,14 @@ describe('actual navigation/data demos in Chromium', () => {
       const demo = demos.find((candidate) => candidate.path === path)!
       const disclosure = demo.disclosures.find((candidate) => candidate.product === product)!
       const page = await openDemo(browser, demo)
-      await page.evaluate(async ({ triggerId, contentId }) => {
+      // The exit is RECORDED in-page, from the interrupting click to `closed`,
+      // and timed with the page's own clock. This used to sleep 40 ms in the
+      // test process and then read `data-state` over a round trip, which under
+      // load outlived the whole exit animation and read `closed` where the
+      // property held (seen at 8 busy loops on 4 CPUs): the same race #268
+      // fixed for the dialog's presence test. An exit that snaps shut instead
+      // of running still fails, on `closedAfterMs`.
+      const exit = await page.evaluate(async ({ triggerId, contentId }) => {
         const trigger = document.getElementById(triggerId) as HTMLButtonElement
         const content = document.getElementById(contentId) as HTMLElement
         trigger.click()
@@ -469,16 +476,27 @@ describe('actual navigation/data demos in Chromium', () => {
         if (content.dataset['state'] !== 'closing' || content.hidden) {
           throw new Error('Exit was not retained after interrupting enter')
         }
+        const interruptedAt = performance.now()
+        const states = ['closing']
+        return new Promise<{ states: string[]; closedAfterMs: number }>((resolve, reject) => {
+          const observer = new MutationObserver(() => {
+            const state = content.dataset['state'] ?? '(none)'
+            if (states.at(-1) !== state) states.push(state)
+            if (state !== 'closed') return
+            observer.disconnect()
+            clearTimeout(bound)
+            resolve({ states, closedAfterMs: performance.now() - interruptedAt })
+          })
+          observer.observe(content, { attributes: true, attributeFilter: ['data-state'] })
+          // A bound with a message, not a silent wait for the test budget.
+          const bound = setTimeout(() => {
+            observer.disconnect()
+            reject(new Error(`exit never completed: ${states.join(' -> ')}`))
+          }, 10_000)
+        })
       }, disclosure)
-      await page.waitForTimeout(40)
-      expect(await page.locator(`[id="${disclosure.contentId}"]`).getAttribute('data-state')).toBe(
-        'closing',
-      )
-      await page.waitForFunction(
-        (contentId) => document.getElementById(contentId)?.dataset['state'] === 'closed',
-        disclosure.contentId,
-        { timeout: 1500 },
-      )
+      expect(exit.states).toEqual(['closing', 'closed'])
+      expect(exit.closedAfterMs).toBeGreaterThanOrEqual(40)
       expect(
         await page.locator(`[id="${disclosure.contentId}"]`).getAttribute('hidden'),
       ).not.toBeNull()
