@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Input Group",
   "description": "An input fused with icons, prefixes, suffixes or a button.",
-  "dependencies": ["@llui/dom@^0.14.0"],
+  "dependencies": ["@llui/dom@^0.15.0"],
   "registryDependencies": ["utils"],
   "files": [
     {

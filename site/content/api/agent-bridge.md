@@ -7,7 +7,7 @@ description: 'MCP server CLI (llui-agent) that translates Claude Desktop tool ca
 
 <!-- package-version:start -->
 
-**Current package version:** `0.11.2`
+**Current package version:** `0.11.3`
 
 <!-- package-version:end -->
 

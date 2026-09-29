@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Empty",
   "description": "The \"nothing here yet\" state, with media, title, description and actions.",
-  "dependencies": ["@llui/dom@^0.14.0"],
+  "dependencies": ["@llui/dom@^0.15.0"],
   "registryDependencies": ["utils"],
   "files": [
     {

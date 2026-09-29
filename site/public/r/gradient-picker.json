@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Gradient Picker",
   "description": "Skin for @llui/components/gradient-picker — linear/radial/conic gradient authoring with a stop ramp, per-kind controls, and an embedded color-picker for the selected stop.",
-  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
+  "dependencies": ["@llui/dom@^0.15.0", "@llui/components@^0.21.0"],
   "registryDependencies": ["color-picker", "input", "utils"],
   "files": [
     {

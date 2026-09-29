@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Spinner",
   "description": "Loading ring, aria-hidden so the state lives on the region it describes.",
-  "dependencies": ["@llui/dom@^0.14.0"],
+  "dependencies": ["@llui/dom@^0.15.0"],
   "registryDependencies": ["icons", "utils"],
   "files": [
     {

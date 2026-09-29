@@ -7,7 +7,7 @@ description: 'Standalone focus, dismissal, floating-positioning, modal-isolation
 
 <!-- package-version:start -->
 
-**Current package version:** `0.1.2`
+**Current package version:** `0.1.3`
 
 <!-- package-version:end -->
 

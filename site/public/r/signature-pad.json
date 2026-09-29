@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Signature Pad",
   "description": "Skin for @llui/components/signature-pad — drawing surface with clear and undo.",
-  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
+  "dependencies": ["@llui/dom@^0.15.0", "@llui/components@^0.21.0"],
   "registryDependencies": ["button", "utils"],
   "files": [
     {

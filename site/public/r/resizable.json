@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Resizable",
   "description": "Skin for @llui/components/splitter, with a hit area wider than the rule.",
-  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
+  "dependencies": ["@llui/dom@^0.15.0", "@llui/components@^0.21.0"],
   "registryDependencies": ["icons", "utils"],
   "files": [
     {

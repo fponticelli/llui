@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Table",
   "description": "Data table parts, wrapped so a wide table scrolls inside its own box.",
-  "dependencies": ["@llui/dom@^0.14.0"],
+  "dependencies": ["@llui/dom@^0.15.0"],
   "registryDependencies": ["utils"],
   "files": [
     {

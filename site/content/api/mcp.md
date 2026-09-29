@@ -7,7 +7,7 @@ description: 'MCP server exposing LLM debug tools via Model Context Protocol'
 
 <!-- package-version:start -->
 
-**Current package version:** `0.15.1`
+**Current package version:** `0.15.2`
 
 <!-- package-version:end -->
 

@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Card",
   "description": "Card surface and its header/title/description/content/footer parts.",
-  "dependencies": ["@llui/dom@^0.14.0"],
+  "dependencies": ["@llui/dom@^0.15.0"],
   "registryDependencies": ["utils"],
   "files": [
     {

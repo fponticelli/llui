@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Drawer",
   "description": "vaul-style edge panel — rounded entering edge, 80vh cap, grab handle.",
-  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1", "tw-animate-css"],
+  "dependencies": ["@llui/dom@^0.15.0", "@llui/components@^0.21.0", "tw-animate-css"],
   "registryDependencies": ["floating-motion", "icons", "utils"],
   "files": [
     {

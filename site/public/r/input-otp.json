@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Input OTP",
   "description": "Skin for @llui/components/pin-input — paste-splitting and auto-advance.",
-  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
+  "dependencies": ["@llui/dom@^0.15.0", "@llui/components@^0.21.0"],
   "registryDependencies": ["utils"],
   "files": [
     {

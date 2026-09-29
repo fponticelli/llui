@@ -7,7 +7,7 @@ description: '`llui add …` — copy registry components into your LLui app'
 
 <!-- package-version:start -->
 
-**Current package version:** `0.2.1`
+**Current package version:** `0.3.0`
 
 <!-- package-version:end -->
 

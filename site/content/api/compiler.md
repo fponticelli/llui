@@ -7,7 +7,7 @@ description: 'Engine: the signal TypeScript transform (view lowering + introspec
 
 <!-- package-version:start -->
 
-**Current package version:** `0.14.0`
+**Current package version:** `0.14.1`
 
 <!-- package-version:end -->
 

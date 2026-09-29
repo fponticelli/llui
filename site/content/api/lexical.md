@@ -7,7 +7,7 @@ description: 'Low-level binding between Lexical and the LLui signal runtime — 
 
 <!-- package-version:start -->
 
-**Current package version:** `0.5.1`
+**Current package version:** `0.5.2`
 
 <!-- package-version:end -->
 

@@ -7,6 +7,142 @@ description: Release history for LLui packages
 
 All notable changes to LLui packages are documented here. LLui is a pre-1.0 project — every release may include breaking changes, though we try to call them out explicitly.
 
+## 2026-09-29 — @llui/dom@0.15.0, @llui/components@0.21.0, @llui/cli@0.3.0
+
+**Released:** `@llui/dom@0.15.0`; `@llui/components@0.21.0`; `@llui/cli@0.3.0`; `@llui/compiler@0.14.1`; `@llui/vite-plugin@0.12.3`; `@llui/interactions@0.1.3`; `@llui/router@0.12.2`; `@llui/agent@0.13.2`; `llui-agent@0.11.3`; `@llui/{a2ui@0.3.7,markdown@0.13.2,markdown-editor@0.8.8,lexical@0.5.2,lexical-collab@0.4.2,lexical-loro@0.1.4}`; `@llui/{devmode-annotate@0.4.7,devmode-annotate-editor@0.1.8,mcp@0.15.2,notes-format@0.2.2}`; `@llui/{test@0.13.2,transitions@0.12.2,vike@0.13.2}`
+
+A read-only `ReadSignal` supertype so a mapped signal can no longer pose as a sliceable one, a component pass that aligns every family across the Baseline theme and the Registry skins (RTL, forced colors, reduced motion, accessibility), a new `gradient-picker` and an OKLCH `color-picker`, and `llui add` checking the `@llui/*` versions a registry item needs before it writes anything.
+
+### Breaking
+
+- **`@llui/dom@0.15.0`** — a `.map()` / `derived()` result is no longer assignable to `Signal<T>`. `MappedSignal<T>` used to extend `Signal<T>` with `at: never`, and `never` is assignable to everything, so a helper typed `(job: Signal<Job>) => job.at('status')` type-checked when handed `state.map(...)` and threw at mount. The hierarchy is now `ReadSignal<T>` (`map`, `peek`) with two kinds beneath it: `Signal<T>` (a path, adds `.at()`) and `MappedSignal<T>` (no path). A parameter that only reads a signal and is typed `Signal<T>` now rejects a mapped argument at compile time.
+- **`@llui/dom@0.15.0`** — reading a `show()` arm's narrowed signal after its condition has gone null (a handler whose own `send()` closed the arm, a timer) now throws a branded `LluiFrameworkError`. It used to return the `null` the arm's type ruled out.
+- **`@llui/components@0.21.0`** — every reactive part-bag prop is typed `ReadSignal<T>` instead of `Signal<T>`. Spreading a part is unaffected; passing a part prop to a `Signal<T>` parameter, or calling `.at()` on one (always a runtime throw), no longer compiles.
+- **`@llui/components@0.21.0`** — `color-picker` stores its colour as a tagged union: `ColorPickerState.hsv` is replaced by `color: { model: 'hsv', h, s, v } | { model: 'oklch', l, c, h }`, `toHex`/`toHex8` take the whole state, and `colorPicker.hexToHsl`, `hslToRgb` and `parseColor` are removed (use `parseCssColor` and friends from `@llui/components/utils`). `maxChroma` moves from `ConnectOptions` into state as an `init` option.
+- **`@llui/components@0.21.0`** — toast: `Toast.paused: boolean` is replaced by `pausedBy: ToastPauseReason[]` (`'focus' | 'hover' | 'manual'`, read with `isPaused(toast)`); `update`'s patch is narrowed to `ToastPatch` (presentation fields only — `remainingMs`, `status` and `pausedBy` are reducer-owned); `role`, `aria-live` and `data-type` on a toast row are signals, not strings.
+- **`@llui/components@0.21.0`** — `menu` / `context-menu` / `menubar`: `dir` is always `'ltr' | 'rtl'` (never `null`) with a new `dirSource`, `setDir` no longer accepts `null`, and `menu.floatingDir` is removed.
+- **`@llui/components@0.21.0`** — `pagination.connect` requires `{ id }` (its new `directionSync` part finds the root by it). `table`'s `row` / `cell` / `rowCheckbox` return `aria-rowindex` / `data-row-index` as signals even when given a plain number.
+- **`@llui/components@0.21.0`** — `sortable`'s `start` and `toggleGrab` messages carry a required `count`, and the handle publishes `aria-pressed` instead of the deprecated `aria-grabbed`. Only code that dispatches these itself or styles on `aria-grabbed` is affected.
+- **`@llui/components@0.21.0`** — `Locale` gains `table` and `gradientPicker` sections and new keys under `fileUpload`, `imageCropper`, `colorPicker` and `floatingPanel`; `sortable.handle` is now a function of the item label. A full custom locale must supply them.
+- **`@llui/components@0.21.0`** — `createOverlay` (`@llui/components/utils/overlay-engine`) throws a `LluiFrameworkError` when `floating` and `visibleWhen` are combined without `floating.persistent: true`. Such a two-phase overlay used to tear down and re-attach its floating element mid exit animation.
+- **`@llui/components@0.21.0`** — `@llui/components/styles/layout.css` is removed. Its splitter rules, and the pickers/editing/upload/canvas rules from `form-controls.css`, move to the new `styles/specialized-tools.css`. `theme.css` already imports it; only a hand-assembled modular bundle breaks.
+- **`@llui/cli@0.3.0`** — `collectDependencies` returns `DependencyRequirement` objects (`{ name, spec, minimum, requiredBy }`) instead of strings, and so do `AddResult.dependencies` / `devDependencies`; the printable install specs moved to `AddResult.install`. A registry whose items list an `@llui/*` dependency without a `^<version>` is rejected at load.
+- **Registry (llui.dev)** — the `Sonner` / `Toast` recipe drops its `variant` prop (the colour follows the machine's `data-type`); `Accordion` / `Collapsible` roots take a required third argument, `{ exitCompletion }`; `Table` takes the machine's viewport as `Table(props, children, { viewport })` and no longer accepts the children-only `Table([...])` call.
+
+### Migration
+
+- Retype every view-helper parameter or field that only READS a signal from `Signal<T>` to `ReadSignal<T>`; keep `Signal<T>` only where the code calls `.at()`. The compile error names the fix.
+- Upgrade `@llui/dom` and `@llui/components` together: `0.21.0`'s peer range is `^0.15.0`.
+- `color-picker`: read `state.color` (switch on `model`) instead of `state.hsv`, pass the state to `toHex`/`toHex8`, and move `maxChroma` from `connect()` options to `init()`.
+- Toasts: `toast.paused` → `isPaused(toast)`; drop `variant` from `Sonner`/`Toast` call sites; patch lifecycle fields through messages, not `update`.
+- Pass `{ id }` to `pagination.connect`, and place `parts.directionSync` for `tabs`, `carousel`, `pagination`, `navigation-menu`, `menu`, `context-menu` and `menubar` if the component should follow the page's `dir` (unplaced, it stays `'ltr'` with no warning).
+- Custom locale: build it as `{ ...en, … }` so new sections arrive with their English defaults.
+- Custom `createOverlay` call with both `floating` and `visibleWhen`: add `persistent: true` to `floating`.
+- Modular stylesheet bundle: replace `@import '@llui/components/styles/layout.css'` with `specialized-tools.css`.
+- Re-pull copied registry items you have not edited (`llui add <name> --overwrite`); for edited ones, compare with `--dry-run`. `Accordion({ ...parts.root }, items, { exitCompletion: parts.exitCompletion })` is the new root call.
+- The [migration guide](/migration) has before/after code for each item.
+
+### `@llui/dom@0.15.0`
+
+- **Added** `ReadSignal`, `MappedSignal`, `ReadHandle` and `MappedHandle` exports. Every read-only authoring API accepts `ReadSignal`: `Reactive<T>` slots, `each` / `virtualEach` items, `show` / `branch` conditions, `derived` inputs, `foreign` state, `island` props and head values. Row handles and the view's `state` stay `Signal`.
+- **Improved** `show` is one generic signature over the new exported `ShowCondition<View>`: a path condition gives its arm a `Signal`, a mapped one a `MappedSignal`, and a `ReadSignal` a `ReadSignal`, so `.at()` in an arm over a non-path condition is a type error that prints the remedy.
+- **Added** `callDebugApiMethod` in `@llui/dom/debug-collect`, the one checked dispatch both debug relays use. `constructor`, `toString` and other `Object.prototype` names now answer `unknown method` instead of being invoked.
+- **Fixed** SSR read form-control `value` / `checked` / `selected` through an assertion; a server DOM reporting a non-string `value` no longer reaches attribute escaping.
+- **Breaking** mapped signals are no longer `Signal`s; `show` arm reads after the condition clears throw. See top of release block.
+
+### `@llui/compiler@0.14.1`
+
+- **Fixed** `prefer-at-over-map` demanded `.at()` on receivers that have none — `state.map(f).map((p) => p.x)` and a `show` / `branch` arm's `v.map((s) => s.message)` over a mapped condition were build errors whose only accepted fix threw at runtime ([#267](https://github.com/fponticelli/llui/issues/267)). It now fires only on a provable path receiver, and `at-after-map` also reports `.at()` on a narrowed arm over a mapped condition, naming `MappedSignal`.
+
+### `@llui/vite-plugin@0.12.3`
+
+- **Fixed** a devmode note file whose name or frontmatter carries an unknown kind is reported in `listNotes`' `errors` and never listed, and still occupies its id when the next note is allocated.
+
+### `@llui/components@0.21.0`
+
+- **Added** `@llui/components/gradient-picker` — linear / radial / conic and repeating gradients, CSS Color 4 interpolation spaces, a stop ramp with pointer and keyboard editing, and an embedded colour picker for the selected stop, with `toCss` / `parseGradient` / `colorAt`.
+- **Added** `color-picker` OKLCH model (`setModel`, `setOklch`, `setChroma`, `setLc`, …), an OKLCH area (`areaCanvasBinding`, `paintOklchPlane`), an EyeDropper trigger (`eyeDropperSupportMount`; refusals surface as `eyeDropperFailed`), out-of-gamut reporting (`data-out-of-gamut`) and machine-owned area drag. `setColor` / `setHex` accept any CSS Color 4 string.
+- **Added** shared colour math in `@llui/components/utils`: HSV / HSL / OKLab / OKLCH conversions, a CSS Color 4 parser (`parseCssColor`, including `hwb()`, `lab()`, `lch()` and `color()` spaces), gamut mapping and `interpolateColor`, checked against colorjs.io.
+- **Added** `menu.subOverlay` / `contextMenu.subOverlay` / `menubar.subOverlay` — each open submenu level is its own floating overlay anchored on its `subTrigger`, with flip / shift and per-level nested-layer ownership. Submenus previously had no positioning and rendered pinned to their container's top-left corner.
+- **Added** automatic direction for `tabs`, `carousel`, `pagination`, `navigation-menu`, `menu`, `context-menu` and `menubar`: place `parts.directionSync` and the component follows its ancestors' `dir` until an explicit `setDir`. A portaled overlay now takes its direction from its trigger rather than `<body>`, so `<div dir="rtl">` around one region works.
+- **Added** opt-in animated exits for `accordion` / `collapsible` (`init({ animated: true })`): content stays mounted as `data-state="closing"` until its own animation or transition ends. Place `parts.exitCompletion`; use `parts.close()` for an animated programmatic close. A skin with no exit motion, or a forgotten `exitCompletion`, closes instantly rather than hanging `inert`.
+- **Added** `sortable` screen-reader announcements (`liveRegion`, `instructions`, `itemLabel`, `Locale['sortable']`) and `droppedMove(prev, msg)`, which names the move a pointer or keyboard drop completes. Keyboard drop now reorders, the grab reads the live index after a reorder, and the handle keeps focus.
+- **Added** specialized-tools states: `date-picker` pinned `today`, `todayInTimeZone`, `unavailable` dates and PageUp / PageDown month moves; `file-upload` per-file lifecycle (`uploadProgress`, `uploadSucceeded`, `uploadFailed`, `retryUpload`); `image-cropper` keyboard `nudge` / `zoom`; `floating-panel` keyboard `moveBy` / `resizeBy`; `clipboard` `copyFailed` with `data-failed`; `signature-pad` undoable clear; `timer`, `qr-code` and `async-list` empty / complete / exhausted / busy attributes.
+- **Added** `command-menu` owns a real highlight (`highlight*`, `executeHighlighted`) and its `view()` renders the filtered commands as options. It previously opened an empty listbox, and Enter ran the first command regardless of what was announced.
+- **Added** `combobox` `loadSuccess` takes `groups` / `disabled` and prunes selection and highlight in the same step; `loadProjection` / `parts.loadState` give one exclusive async state (`initial-empty | loading | stale-results | success | error`), which `searchableSelect`'s live region and empty part now follow. No highlight is manufactured while the list is closed.
+- **Added** toast `setPlacement`, a visible loading glyph, and pause reasons; `dismissable: false` hides the close trigger; patching `duration` re-seeds the countdown (a sticky loading toast patched to success used to dismiss on the next tick). Pause-on-focus never fired — the row bound non-bubbling `onFocus` / `onBlur`.
+- **Added** `table` / `avatar` / `dataTable` `density`, a `table` `viewport` part, and `row` / `cell` / `rowCheckbox` accepting the row's index signal so `aria-rowindex` and dispatch stay correct after a keyed reorder. Selection checkboxes are named through `Locale['table']`.
+- **Added** `carousel` `track` part and `--carousel-drag-offset`; hover and focus pause autoplay independently of an explicit `pause`; indicators are a roving tab stop and keyboard focus stays in its own carousel.
+- **Added** `chart` forced-colors series cues (`data-series-cue`, seven distinct patterns, `legendSwatch`, `chartForcedColorPatterns`), keyed per row for pie and donut wedges and per instance so a hidden chart cannot blank another's fills.
+- **Added** optional-part flags so no idref names an element that is not rendered: `dialog`, `chart`, `sparkline` and `tour` `hasDescription`; `pin-input` `hasLabel`; `fieldset` `hasLegend`; `sortable` `hasInstructions`; and `group(id, { hasLabel })` on `toolbar`, `select`, `combobox`, `searchableSelect` and the menus. All default to today's wiring.
+- **Fixed** accessibility defects from the gallery audit: `editable` and `cascade-select` triggers disable with the instance, `field` / `file-upload` / `marquee` roots announce `aria-disabled`, the `splitter` root no longer dims the consumer's panels, `date-input` associates its error text (optional `id`), `qr-code` names its image, and every list-like overlay scrolls its active descendant into view.
+- **Fixed** RTL geometry: `splitter` drags from the right edge and the `scroll-area` horizontal thumb stays in its track under `dir="rtl"`.
+- **Fixed** baseline `dialog` / `drawer` content sat below its own backdrop once a view rendered the backdrop; floating surfaces cap their height at the space actually available (`--llui-floating-available-height`) instead of `100dvh - 2rem`.
+- **Added** `--info`, `--success` and `--warning` status tokens beside `--destructive` (light and dark, plus Tailwind `info` / `success` / `warning` colours); both toast skins and `color-picker`'s out-of-gamut ring draw from them.
+- **Improved** baseline styling for every family on both paths: logical (RTL) properties, forced-colors cues where a fill or shadow carried meaning, reduced-motion handling, AA contrast fixes, 24px targets on small controls, and unreachable closed-state exit animations removed. `foundation.css` no longer sets `direction: inherit` on parts.
+- **Added** `icon()` publishes `data-glyph="<prefix:name>"`.
+- **Breaking** `ReadSignal` part props, `color-picker` state, toast pause / patch / reactive ARIA, menu `dir`, `pagination` `id`, `sortable` messages, `Locale` additions, `createOverlay` two-phase guard, `layout.css` removed. See top of release block.
+
+### `@llui/interactions@0.1.3`
+
+- **Added** `attachFloating` publishes `--llui-floating-available-height` / `-width` (a `size` pass, one measurement per computation), `data-side` beside `data-placement`, and a `stateTarget` option; it restores every inline style and attribute it wrote on dispose. `snapshotInlineStyle`, `restoreInlineStyles` and `FLOATING_AVAILABLE_HEIGHT` / `_WIDTH` are exported.
+- **Fixed** `attachFloating` re-measures on the next frame after an animation or transition ends on an anchor ancestor or on whatever holds the arrow, so a submenu is no longer placed against a mid-zoom rect and an arrow no longer ends 1px off.
+- **Fixed** `pushFocusTrap` focuses the container (with a temporary `tabindex="-1"`) when nothing inside is focusable, instead of leaving focus on `<body>`.
+- **Fixed** `resolveDir` crosses shadow roots and falls back to the element's own document; `focusRovingItem` no longer searches the whole document when no scoped root is found.
+
+### `@llui/cli@0.3.0`
+
+- **Added** `llui add` checks the minimum `@llui/*` version every item needs (including through `registryDependencies`) before writing anything ([#273](https://github.com/fponticelli/llui/issues/273)). An older installed version fails with the upgrade command for your package manager; `--force` copies anyway and warns; a missing package appears on the Install line as `@llui/<pkg>@^<min>`. New exports: `checkVersions`, `VersionMismatchError`, `parseDependencySpec`, `compareVersions`, `minimumOfRange` and related types.
+- **Added** `llui add --help`; `llui --help` explains that `llui add <name>` copies styled source while `@llui/components/<name>` imports a headless machine; `llui init` prints the `@import 'tw-animate-css'` line.
+- **Added** browser-safe subpaths: `@llui/cli/product-contract` (`parseProductContract`, `ProductContractError`), `@llui/cli/presentation-scenarios` (the scenario protocol, with `dispatchScenarioSelection` / `bindScenarioAdapters`) and `@llui/cli/gallery` (`galleryHref`, `galleryDocumentHref`, `parseGalleryQuery`).
+- **Breaking** `collectDependencies` / `AddResult` shapes; unpinned `@llui/*` registry dependencies rejected. See top of release block.
+
+### `@llui/router@0.12.2`
+
+- **Added** where the Navigation API exists, a guard-blocked back / forward is undone with `navigation.traverseTo(key)` and the router recognises its own traversal by key, exact where the History API has to infer. `RouterEnv` gains an optional `navigation` capability; `browserRouterEnv({ navigation: false })` forces the History API path.
+- **Fixed** hash mode dispatched a blocked route twice when the browser delivered the restore's `popstate` before the blocked step's `hashchange`; a `hashchange` is now judged by the URL it finds. `RouterEnv.onUrlChange`'s handler takes no argument (adapters that pass one still work).
+- **Fixed** a user traversal queued between a guard-blocked restore being issued and applied could leave the app on one route and the URL on another, or dispatch where the stale restore landed. The router's own traversals are never guarded or dispatched.
+
+### `@llui/agent@0.13.2`
+
+- **Fixed** the WHATWG WebSocket adapter (Cloudflare Workers, Deno, Bun) dispatched unvalidated frames; it now runs `parseClientFrame` like the Node adapter and drops non-frames. A Cloudflare / Deno global of an unexpected shape answers 501 instead of throwing. `WhatwgSocket` is exported from `server/web` and `server/cloudflare`.
+- **Improved** client `connect` inputs and part bags take `ReadSignal`.
+
+### `@llui/a2ui@0.3.7`
+
+- **Fixed** a component id re-typed by `updateComponents` read the previous type's UI state — a Tabs replacing a Modal crashed on the first ArrowRight. The UI-state store is now read through per-component shape guards. Render-context signals are typed `ReadSignal`.
+
+### `@llui/markdown-editor@0.8.8`
+
+- **Fixed** duplicating a block cloned it through its constructor and skipped Lexical's slot re-attachment; it now goes through `$parseSerializedNode` and the editor's node registry. Props, toolbar and overlay inputs take `ReadSignal`.
+
+### `@llui/devmode-annotate@0.4.7`
+
+- **Fixed** mounting the HUD again after its element was removed without `destroy()` built a second HUD beside the orphan, and Escape then closed the invisible one; a detached HUD is now disposed first. The console capture's `dispose()` restores the original methods rather than bound copies.
+
+### `@llui/mcp@0.15.2`
+
+- **Fixed** the CDP fallback ignored its attach deadline and could orphan its browser; it now fails with `CdpError('attach_timeout')` after `attachTimeoutMs` (default `DEFAULT_ATTACH_TIMEOUT_MS`, 30 s) and closes the browser on any failure. `launchBrowser` is injectable.
+- **Fixed** `llui_list_notes` advertised removed kinds (`lasso`, `pin`, `arrow`) and omitted `reply`; `kind` is now validated against `NOTE_KINDS`, and an unknown kind is an `Invalid args` error rather than an empty list.
+
+### `@llui/notes-format@0.2.2`
+
+- **Added** `NOTE_KINDS`, `isNoteKind`, `filenameIdNum` and `UnknownNoteKindError`. `parseFilename` throws `UnknownNoteKindError` for a canonically shaped name with an unknown kind, instead of typing it as a `NoteKind`.
+
+### `@llui/lexical@0.5.2`, `@llui/markdown@0.13.2`
+
+- **Improved** `lexicalForeign` inputs and `markdown`'s reactive source accept `ReadSignal`, so a mapped signal type-checks against `@llui/dom@0.15.0`.
+
+### Cascade only
+
+- **`@llui/lexical-collab@0.4.2`**, **`@llui/lexical-loro@0.1.4`**, **`@llui/devmode-annotate-editor@0.1.8`**, **`@llui/test@0.13.2`**, **`@llui/transitions@0.12.2`**, **`@llui/vike@0.13.2`**, **`llui-agent@0.11.3`** — republished so their peer ranges admit the new `@llui/dom` / `@llui/components` / dependency versions. No source changes.
+
+### Docs
+
+- **Added** the [Component Gallery](https://llui.dev/apps/component-gallery/): every component, with deterministic scenarios, rendered on the Baseline theme and the Registry skins as separate documents. It replaces the Components Demo and Registry Demo showcases.
+- **Added** [/component-catalog](/component-catalog) and [/migration](/migration). Component counts, inventories, add / import names, aliases and stylesheet entry points across the site and READMEs are now generated from the product contract.
+- **Improved** the architecture, cookbook, composition-patterns and getting-started guides teach `ReadSignal` / `Signal` / `MappedSignal` and the parameter rule.
+
 ## 2026-09-18 — @llui/components@0.20.1
 
 **Released:** `@llui/components@0.20.1`

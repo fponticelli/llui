@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Checkbox",
   "description": "Skin for @llui/components/checkbox, including the indeterminate state.",
-  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
+  "dependencies": ["@llui/dom@^0.15.0", "@llui/components@^0.21.0"],
   "registryDependencies": ["icons", "utils"],
   "files": [
     {

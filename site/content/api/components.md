@@ -7,7 +7,7 @@ description: 'Headless component machines, composed patterns, and the Baseline t
 
 <!-- package-version:start -->
 
-**Current package version:** `0.20.1`
+**Current package version:** `0.21.0`
 
 <!-- package-version:end -->
 
@@ -26285,8 +26285,7 @@ function overlay(opts: OverlayOptions): Mountable
 
 ##### `subOverlay()` from `@llui/components/menu`
 
-Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
-consumer-wired `watchSubmenuPositioning` (removed). Call once per
+Engine-owned floating overlay for one submenu level (#265 A4). Call once per
 `children`-bearing item, alongside its `subTrigger`, in place of the old
 hand-rolled `show(isOpen, () => [div(subPositioner, [div(subContent, …)])])`:
 `subOverlay` builds both wrapper divs itself and owns mount/floating/
@@ -31648,8 +31647,8 @@ function overlay(opts: OverlayOptions): Mountable
 
 ##### `subOverlay()` from `@llui/components/context-menu`
 
-Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
-consumer-wired `watchSubmenuPositioning` (removed). See
+Engine-owned floating overlay for one submenu level (#265 A4), positioned
+beside its `subTrigger`. See
 `menu-machine.ts:subOverlay`'s doc comment for the full contract.
 
 ```typescript
@@ -39003,8 +39002,7 @@ function overlay(opts: MenubarOverlayOptions): Mountable
 ##### `subOverlay()` from `@llui/components/menubar`
 
 Engine-owned floating overlay for one submenu level of an embedded menu
-(#265 A4) — replaces the consumer-wired `watchSubmenuPositioning` (removed).
-Unlike `menu`/`context-menu`'s own `subOverlay`, this one reads the ROOT
+(#265 A4). Unlike `menu`/`context-menu`'s own `subOverlay`, this one reads the ROOT
 `MenubarState` and reaches into the one open menu's embedded `MenuState`
 (`s.menuStates[menuId]`) for both open-membership and direction, because a
 menubar's `overlay()` is likewise keyed on root state (`s.open === menuId`)

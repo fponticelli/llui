@@ -7,7 +7,7 @@ description: 'Wires the @llui/compiler signal transform into Vite — view lower
 
 <!-- package-version:start -->
 
-**Current package version:** `0.12.2`
+**Current package version:** `0.12.3`
 
 <!-- package-version:end -->
 

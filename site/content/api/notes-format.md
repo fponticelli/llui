@@ -7,7 +7,7 @@ description: 'Devmode notebook on-disk format: note types, filename/slug/session
 
 <!-- package-version:start -->
 
-**Current package version:** `0.2.1`
+**Current package version:** `0.2.2`
 
 <!-- package-version:end -->
 
