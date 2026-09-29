@@ -20,6 +20,7 @@ export {
   PresentationCoverageSchema,
   PresentationFamilySchema,
   ProductAliasSchema,
+  ProductContractError,
   ProductCategorySchema,
   ProductContractSchema,
   ProductEntrySchema,
@@ -28,6 +29,7 @@ export {
   StyledPresentationCoverageSchema,
   StylelessPresentationCoverageSchema,
   StylingSupportSchema,
+  parseProductContract,
   resolveCopiedArtifact,
   resolveProductIdentity,
   type CopiedArtifact,
@@ -50,16 +52,32 @@ export {
   type StylingSupport,
 } from './product-contract.js'
 export {
+  LLUI_SCOPE,
   RegistryFileSchema,
   RegistryItemSchema,
   RegistrySchema,
+  WORKSPACE_SPEC,
+  assertDependencySpecs,
   assertSafeTarget,
   collectDependencies,
   isRemote,
   loadRegistry,
   loadRemoteItem,
+  parseDependencySpec,
   resolveItems,
+  type DependencyRequirement,
   type Registry,
   type RegistryFile,
   type RegistryItem,
 } from './registry.js'
+export { compareVersions, minimumOfRange, parseVersion, type Version } from './semver.js'
+export {
+  VersionMismatchError,
+  checkVersions,
+  findInstalled,
+  projectVersion,
+  type ProjectVersion,
+  type VersionCheck,
+  type VersionMismatch,
+  type VersionStatus,
+} from './versions.js'

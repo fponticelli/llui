@@ -63,6 +63,9 @@ ${packageList}
 - Architecture: https://llui.dev/architecture
 - Debugging: https://llui.dev/debugging
 - Agents: https://llui.dev/agents
+- Component Catalog (headless imports vs \`llui add\` names, generated): https://llui.dev/component-catalog
+- Styling (Baseline theme vs Registry skins): https://llui.dev/styling
+- Migration Guide: https://llui.dev/migration
 - Full API Reference: https://llui.dev/llms-full.txt
 
 ## Example
@@ -116,10 +119,14 @@ const apiRef = PACKAGES.map(({ slug }) => {
   // hard error rather than a silently-omitted section.
   const md = readLocal(`content/api/${slug}.md`)
   // Drop frontmatter and the auto-api injection markers (HTML comments).
-  return stripFrontmatter(md)
-    .replace(/<!-- auto-api:(?:start|end) -->\n?/g, '')
-    .replace(/\n*<!-- package-version:(?:start|end) -->\n*/g, '\n\n')
-    .trim()
+  return (
+    stripFrontmatter(md)
+      .replace(/<!-- auto-api:(?:start|end) -->\n?/g, '')
+      // Product-contract regions (#269) are generated content like the API block.
+      .replace(/<!-- product-contract:[a-z-]+:(?:start|end)\b[^>]*-->\n?/g, '')
+      .replace(/\n*<!-- package-version:(?:start|end) -->\n*/g, '\n\n')
+      .trim()
+  )
 }).join('\n\n---\n\n')
 
 const llmsFullTxt = `# LLui — Complete LLM Reference

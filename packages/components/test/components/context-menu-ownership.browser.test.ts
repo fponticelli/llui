@@ -1,40 +1,37 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type ViteDevServer } from 'vite'
+import type { Browser, Page } from 'playwright'
+import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../browser')
 
 describe('#215 — context-menu ownership in Chromium', () => {
   let browser: Browser
   let page: Page
-  let server: ViteDevServer
+  let fixture: PrebuiltFixture
   let fixtureUrl: string
 
   beforeAll(async () => {
-    server = await createServer({
+    fixture = await prebuildFixture({
       root: fixtureRoot,
-      logLevel: 'error',
-      resolve: {
-        alias: {
-          '@llui/dom': resolve(fixtureRoot, '../../../dom/src/index.ts'),
-          '@llui/interactions': resolve(fixtureRoot, '../../../interactions/src/index.ts'),
-        },
+      inputs: ['context-menu-ownership.fixture.html'],
+      alias: {
+        '@llui/dom': resolve(fixtureRoot, '../../../dom/src/index.ts'),
+        '@llui/interactions': resolve(fixtureRoot, '../../../interactions/src/index.ts'),
       },
-      server: { host: '127.0.0.1', port: 0 },
       define: {
         __LLUI_AGENT__: 'true',
         __LLUI_TRANSITIONS__: 'true',
       },
     })
-    await server.listen()
-    const address = server.httpServer?.address()
-    if (!address || typeof address === 'string') throw new Error('Vite did not bind a TCP port')
-    fixtureUrl = `http://127.0.0.1:${address.port}/context-menu-ownership.fixture.html`
-    browser = await chromium.launch({ headless: true })
+    fixtureUrl = fixture.url('context-menu-ownership.fixture.html')
+    browser = await hermetic.launch({ headless: true })
     page = await browser.newPage()
   })
 
@@ -46,7 +43,7 @@ describe('#215 — context-menu ownership in Chromium', () => {
   afterAll(async () => {
     await page?.close()
     await browser?.close()
-    await server?.close()
+    await fixture?.close()
   })
 
   it('isolates an outside-owned menu from a later modal, including focus traversal', async () => {

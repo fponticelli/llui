@@ -1,6 +1,7 @@
 import { constant, derived, tagSend } from '@llui/dom'
-import type { Reactive, Send, Signal } from '@llui/dom'
+import type { Reactive, Send, ReadSignal } from '@llui/dom'
 import { allFiniteNumbers, finiteBound } from '../utils/number.js'
+import { tableLocale } from '../locale/table.js'
 
 /**
  * Table / data grid — a headless machine for sortable columns, row
@@ -360,24 +361,24 @@ export function sortDirectionFor(state: TableState, columnId: string): SortDirec
 export interface TableColumnHeaderParts {
   role: 'columnheader'
   id: string
-  'aria-sort': Signal<'ascending' | 'descending' | 'none' | undefined>
+  'aria-sort': ReadSignal<'ascending' | 'descending' | 'none' | undefined>
   /**
    * Roving tab stop. The header row participates in the grid's single-tab-stop
    * sequence, because it hosts controls — the sort toggle on every sortable
    * column, and the select-all checkbox — that are otherwise unreachable by
    * keyboard.
    */
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   'data-scope': 'table'
   'data-part': 'column-header'
   'data-column': string
   /** Always {@link HEADER_ROW_INDEX} — addresses the header for roving DOM focus. */
   'data-row-index': typeof HEADER_ROW_INDEX
   /** 0-based column index (`-1` for a column not in `columns`). */
-  'data-col-index': Signal<number>
-  'data-focused': Signal<'' | undefined>
-  'data-sortable': Signal<'' | undefined>
-  'data-sort': Signal<SortDirection | undefined>
+  'data-col-index': ReadSignal<number>
+  'data-focused': ReadSignal<'' | undefined>
+  'data-sortable': ReadSignal<'' | undefined>
+  'data-sort': ReadSignal<SortDirection | undefined>
   onFocus: (e: FocusEvent) => void
   onClick: (e: MouseEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
@@ -385,42 +386,48 @@ export interface TableColumnHeaderParts {
 
 export interface TableRowParts {
   role: 'row'
-  'aria-selected': Signal<boolean | undefined>
+  'aria-selected': ReadSignal<boolean | undefined>
   /** Reactive: a row's DISPLAY position can change after sort/reorder without
    * this row being rebuilt (`each` reuses rows by key), so the index this
    * addresses must follow the row's live position rather than freeze at
    * whatever it was when the row was first built. */
-  'aria-rowindex': Signal<number>
+  'aria-rowindex': ReadSignal<number>
   'data-scope': 'table'
   'data-part': 'row'
   'data-row': string
-  'data-selected': Signal<'' | undefined>
+  'data-selected': ReadSignal<'' | undefined>
   onClick: (e: MouseEvent) => void
 }
 
 export interface TableCellParts {
   role: 'gridcell'
   'aria-colindex': number
-  tabindex: Signal<number>
+  tabindex: ReadSignal<number>
   'data-scope': 'table'
   'data-part': 'cell'
   /** 0-based row index — addresses the cell for roving DOM focus. Reactive
    * for the same reason `TableRowParts`'s `aria-rowindex` is. */
-  'data-row-index': Signal<number>
+  'data-row-index': ReadSignal<number>
   /** 0-based column index — addresses the cell for roving DOM focus. Columns
    * do not reorder, so this stays a plain number. */
   'data-col-index': number
-  'data-focused': Signal<'' | undefined>
+  'data-focused': ReadSignal<'' | undefined>
   onFocus: (e: FocusEvent) => void
   onKeyDown: (e: KeyboardEvent) => void
 }
 
 export interface TableCheckboxParts {
   role: 'checkbox'
-  'aria-checked': Signal<'true' | 'false' | 'mixed'>
+  /**
+   * The checkbox's accessible name (localized; `Locale['table']`). A
+   * `role="checkbox"` span has no content to be named by, so without it
+   * assistive tech announced an unnamed checkbox in every row (#268).
+   */
+  'aria-label': string
+  'aria-checked': ReadSignal<'true' | 'false' | 'mixed'>
   'data-scope': 'table'
   'data-part': 'select-all' | 'row-checkbox'
-  'data-state': Signal<'checked' | 'unchecked' | 'indeterminate'>
+  'data-state': ReadSignal<'checked' | 'unchecked' | 'indeterminate'>
   /** Always `-1`: a `role="grid"` has exactly ONE tab stop, the roving cell. */
   tabindex: -1
   onClick: (e: MouseEvent) => void
@@ -440,18 +447,18 @@ export interface TableParts {
   root: {
     role: 'grid'
     id: string
-    'aria-multiselectable': Signal<'true' | undefined>
-    'aria-rowcount': Signal<number>
-    'aria-colcount': Signal<number>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
+    'aria-rowcount': ReadSignal<number>
+    'aria-colcount': ReadSignal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'table'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-density': TableDensity | undefined
   }
   columnHeader: (columnId: string) => TableColumnHeaderParts
   /**
-   * `index` accepts a plain `number` OR a `Signal<number>` (the row handle
+   * `index` accepts a plain `number` OR a `ReadSignal<number>` (the row handle
    * `each`/`virtualEach` passes its render callback) — a keyed row is REUSED
    * (moved, not rebuilt) on reorder, so a plain number captured at build time
    * would freeze `aria-rowindex` and the row's own `toggleRow`/`selectRange`
@@ -492,11 +499,12 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<TableState>,
+  state: ReadSignal<TableState>,
   send: Send<TableMsg>,
   opts: ConnectOptions,
 ): TableParts {
   const rootId = `${opts.id}:root`
+  const locale = tableLocale()
   const headerId = (columnId: string): string => `${opts.id}:colheader:${columnId}`
   const colIndexOf = (s: TableState, columnId: string): number =>
     s.columns.findIndex((c) => c.id === columnId)
@@ -516,7 +524,7 @@ export function connect(
   const selectAllColumns = new Set<string>()
 
   /** Normalize `row`/`cell`/`rowCheckbox`'s `Reactive<number>` index to a
-   * live `Signal<number>` — a plain number becomes a constant handle so
+   * live `ReadSignal<number>` — a plain number becomes a constant handle so
    * every call site can `.map()`/`.peek()` it uniformly.
    *
    * Narrowed with `typeof`, not `isSignalHandle`: the latter is declared
@@ -524,7 +532,7 @@ export function connect(
    * branch. `Reactive<T>` is a union with `T`, so `typeof` splits it
    * correctly in both directions (the same reason `chip.ts`'s `hueAttr`
    * does the same). */
-  const toIndexSignal = (index: Reactive<number>): Signal<number> =>
+  const toIndexSignal = (index: Reactive<number>): ReadSignal<number> =>
     typeof index === 'number' ? constant(index) : index
 
   /** The messages every roving part may send. */
@@ -591,7 +599,7 @@ export function connect(
     }
   }
 
-  const cellOnKeyDown = (rowIndex: Signal<number>): ((e: KeyboardEvent) => void) =>
+  const cellOnKeyDown = (rowIndex: ReadSignal<number>): ((e: KeyboardEvent) => void) =>
     tagSend(send, [...NAV_MSGS, 'toggleRow', 'activateRow'], (e) => {
       if (handleNavKey(e)) return
       const index = rowIndex.peek()
@@ -764,6 +772,7 @@ export function connect(
       selectAllColumns.add(columnId)
       return {
         role: 'checkbox',
+        'aria-label': locale.selectAll,
         'aria-checked': state.map((s) => {
           if (isAllSelected(s)) return 'true'
           if (isSomeSelected(s)) return 'mixed'
@@ -804,6 +813,7 @@ export function connect(
       const indexSignal = toIndexSignal(index)
       return {
         role: 'checkbox',
+        'aria-label': locale.selectRow,
         'aria-checked': state.map((s) => (isRowSelected(s, id) ? 'true' : 'false')),
         'data-scope': 'table',
         'data-part': 'row-checkbox',

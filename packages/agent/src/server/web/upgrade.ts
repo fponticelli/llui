@@ -1,5 +1,5 @@
 import type { AgentCoreHandle } from '../core.js'
-import { createWHATWGPairingConnection } from './adapter.js'
+import { createWHATWGPairingConnection, type WhatwgSocket } from './adapter.js'
 import { checkWsOrigin, composeSelfOrigin } from '../ws/origin.js'
 
 /**
@@ -33,6 +33,78 @@ export function extractToken(req: Request): string | null {
   const auth = req.headers.get('authorization')
   if (auth?.startsWith('Bearer ')) return auth.slice('Bearer '.length)
   return null
+}
+
+// ── Platform globals ─────────────────────────────────────────────────────────
+//
+// `WebSocketPair` (Cloudflare Workers) and `Deno.upgradeWebSocket` (Deno) are
+// globals of runtimes this package is not type-checked against, so they are
+// read off `globalThis` as `unknown` and CHECKED here. A missing global or one
+// of an unexpected shape becomes a 501, never a TypeError out of the handler.
+// A function's parameter types are not observable at runtime, so a socket is
+// checked for every member the adapter calls being a function — the most any
+// runtime check of a callable can establish.
+
+function isObject(v: unknown): v is object {
+  return (typeof v === 'object' && v !== null) || typeof v === 'function'
+}
+
+function isWhatwgSocket(v: unknown): v is WhatwgSocket {
+  return (
+    isObject(v) &&
+    'send' in v &&
+    typeof v.send === 'function' &&
+    'close' in v &&
+    typeof v.close === 'function' &&
+    'addEventListener' in v &&
+    typeof v.addEventListener === 'function'
+  )
+}
+
+/** Cloudflare's server half: a WHATWG socket plus the Workers-only `accept()`,
+ * which tells the runtime the Worker will handle the WebSocket itself. */
+interface CloudflareServerSocket extends WhatwgSocket {
+  accept(): void
+}
+
+function isCloudflareServerSocket(v: unknown): v is CloudflareServerSocket {
+  return isWhatwgSocket(v) && 'accept' in v && typeof v.accept === 'function'
+}
+
+/** A fresh Cloudflare `WebSocketPair` as `[client, server]`, `'absent'` when the
+ * runtime has no such global, or `'malformed'` when it yields something else. */
+function newCloudflarePair():
+  | { readonly client: object; readonly server: CloudflareServerSocket }
+  | 'absent'
+  | 'malformed' {
+  const g: object = globalThis
+  if (!('WebSocketPair' in g)) return 'absent'
+  const Pair = g.WebSocketPair
+  if (typeof Pair !== 'function') return 'malformed'
+  const pair: unknown = Reflect.construct(Pair, [])
+  if (!isObject(pair) || !('0' in pair) || !('1' in pair)) return 'malformed'
+  const client = pair[0]
+  const server = pair[1]
+  if (!isObject(client) || !isCloudflareServerSocket(server)) return 'malformed'
+  return { client, server }
+}
+
+/** `Deno.upgradeWebSocket(req)` as `{ socket, response }`, `'absent'` when the
+ * runtime has no such global, or `'malformed'` when it yields something else. */
+function denoUpgrade(
+  req: Request,
+): { readonly socket: WhatwgSocket; readonly response: Response } | 'absent' | 'malformed' {
+  const g: object = globalThis
+  if (!('Deno' in g)) return 'absent'
+  const deno = g.Deno
+  if (!isObject(deno) || !('upgradeWebSocket' in deno)) return 'absent'
+  const upgrade = deno.upgradeWebSocket
+  if (typeof upgrade !== 'function') return 'malformed'
+  const result: unknown = Reflect.apply(upgrade, deno, [req])
+  if (!isObject(result) || !('socket' in result) || !('response' in result)) return 'malformed'
+  const { socket, response } = result
+  if (!isWhatwgSocket(socket) || !(response instanceof Response)) return 'malformed'
+  return { socket, response }
 }
 
 /**
@@ -70,21 +142,17 @@ export async function handleCloudflareUpgrade(
   const token = extractToken(req)
   if (!token) return new Response('Unauthorized', { status: 401 })
 
-  // `WebSocketPair` is a Cloudflare Workers global. We reference it
-  // through `globalThis` so importing this module in non-CF runtimes
-  // (e.g. during type-checking on Node) doesn't crash.
-  const Pair = (
-    globalThis as unknown as { WebSocketPair?: new () => { 0: WebSocket; 1: WebSocket } }
-  ).WebSocketPair
-  if (!Pair) {
+  // `WebSocketPair` is a Cloudflare Workers global, read through `globalThis`
+  // so importing this module in non-CF runtimes (e.g. Node) doesn't crash.
+  const pair = newCloudflarePair()
+  if (pair === 'absent') {
     return new Response('WebSocketPair unavailable in this runtime', { status: 501 })
   }
-  const pair = new Pair()
-  const client = pair[0]
-  const server = pair[1]!
-  // `accept()` on the server half is Cloudflare-specific — it tells
-  // the runtime the Worker will handle the WebSocket itself.
-  ;(server as unknown as { accept: () => void }).accept()
+  if (pair === 'malformed') {
+    return new Response('WebSocketPair returned an unexpected shape', { status: 501 })
+  }
+  const { client, server } = pair
+  server.accept()
 
   const conn = createWHATWGPairingConnection(server)
   const result = await agent.acceptConnection(token, conn)
@@ -93,11 +161,10 @@ export async function handleCloudflareUpgrade(
     return new Response(result.code, { status: result.status })
   }
 
-  // `webSocket` on ResponseInit is Cloudflare-specific; cast to satisfy
-  // the standard lib types.
-  return new Response(null, { status: 101, webSocket: client } as ResponseInit & {
-    webSocket: WebSocket
-  })
+  // `webSocket` on ResponseInit is Cloudflare-specific; the standard lib's
+  // `ResponseInit` does not declare it, so the init is typed as the widening.
+  const init: ResponseInit & { readonly webSocket: object } = { status: 101, webSocket: client }
+  return new Response(null, init)
 }
 
 /**
@@ -124,18 +191,14 @@ export async function handleDenoUpgrade(req: Request, agent: AgentCoreHandle): P
   const token = extractToken(req)
   if (!token) return new Response('Unauthorized', { status: 401 })
 
-  const Deno_ = (
-    globalThis as unknown as {
-      Deno?: {
-        upgradeWebSocket: (req: Request) => { socket: WebSocket; response: Response }
-      }
-    }
-  ).Deno
-  if (!Deno_) {
+  const upgraded = denoUpgrade(req)
+  if (upgraded === 'absent') {
     return new Response('Deno.upgradeWebSocket unavailable in this runtime', { status: 501 })
   }
-
-  const { socket, response } = Deno_.upgradeWebSocket(req)
+  if (upgraded === 'malformed') {
+    return new Response('Deno.upgradeWebSocket returned an unexpected shape', { status: 501 })
+  }
+  const { socket, response } = upgraded
   const conn = createWHATWGPairingConnection(socket)
 
   // Deno opens the socket asynchronously; validate the token first,

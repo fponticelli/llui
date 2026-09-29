@@ -449,6 +449,55 @@ function validatePresentationCycles(
   }
 }
 
+const IDENTIFIER_KEY = /^[A-Za-z_$][A-Za-z0-9_$]*$/
+
+function renderIssuePath(path: readonly PropertyKey[]): string {
+  let rendered = '$'
+  for (const key of path) {
+    if (typeof key === 'number') rendered += `[${key}]`
+    else if (typeof key === 'string' && IDENTIFIER_KEY.test(key)) rendered += `.${key}`
+    else rendered += `[${JSON.stringify(String(key))}]`
+  }
+  return rendered
+}
+
+/**
+ * A value that is not a valid `ProductContract`: `source` names where it came from, and `issues`
+ * lists every violation as `<JSON path>: <reason>` in the schema's own traversal order.
+ */
+export class ProductContractError extends Error {
+  override readonly name = 'ProductContractError'
+  readonly source: string
+  readonly issues: readonly string[]
+
+  constructor(source: string, issues: readonly string[]) {
+    const count = `${issues.length} issue${issues.length === 1 ? '' : 's'}`
+    super(
+      `Invalid ProductContract in ${source} (${count}):\n${issues.map((issue) => `  - ${issue}`).join('\n')}`,
+    )
+    this.source = source
+    this.issues = Object.freeze([...issues])
+  }
+}
+
+/**
+ * Validate a value received from an untyped boundary (a JSON import, a fetched `registry.json`)
+ * as a `ProductContract`, through the ONE authoritative schema `llui` itself reads a registry's
+ * `productContract` with (`RegistrySchema`). There is no second validator: this only turns the
+ * schema's failure into a `ProductContractError` that names `source` and the exact path of every
+ * violation. Browser-safe — this module imports nothing but `zod` and the structural types — so
+ * an app validates a bundled contract through the `@llui/cli/product-contract` subpath instead of
+ * narrowing the JSON with a cast.
+ */
+export function parseProductContract(value: unknown, source: string): ProductContract {
+  const result = ProductContractSchema.safeParse(value)
+  if (result.success) return result.data
+  throw new ProductContractError(
+    source,
+    result.error.issues.map((issue) => `${renderIssuePath(issue.path)}: ${issue.message}`),
+  )
+}
+
 function addIssue(context: z.RefinementCtx, message: string, path: readonly PropertyKey[]): void {
   context.addIssue({ code: 'custom', message, path: [...path] })
 }

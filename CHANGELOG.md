@@ -463,7 +463,7 @@ replaces was shipped, untested against a real Tailwind build, and broken —
 - **Added** [Styling & the component registry](https://llui.dev/styling) — the
   token contract, the two mutually exclusive styling paths, the Tailwind
   namespace traps, and what `overlay()` does and does not give you.
-- **Added** the [Registry Demo](https://llui.dev/examples/registry-demo) example:
+- **Added** the [Registry Demo](https://github.com/fponticelli/llui/tree/main/examples/registry-demo) example:
   every registry component on one page, rendered from source `llui add` copied
   into the app. Its `src/components/ui/` is checked in, so CI compiles and
   browser-boots the CLI's actual output.
@@ -2988,7 +2988,7 @@ Follow-up to 0.5.3 + 0.4.0 unblocking a real consumer's migration. Six distinct 
 A few things worth knowing if you're bumping from 0.5.3 (or earlier):
 
 - **Vite optimized-deps cache wedge.** Every plugin bump invalidates Vite's `node_modules/.vite/deps_*` cache asymmetrically — dev may throw `file does not exist in .vite/deps` after the upgrade. Workaround: `rm -rf node_modules/.vite` after `pnpm install`. Unfixable from our side (it's Vite's cache invalidation); the call-out exists so you don't lose 20 minutes diagnosing it.
-- **Non-iterating helper composition.** The `llui/opaque-state-flow` diagnostic's "use `each` items-bag" hint is the right answer when the helper iterates. For non-iterating helpers (single-value renderers, form rows, layout chrome), the answer is: pass reactive accessors as direct function references (`{value: props.value}`, not `{value: (s) => props.value(s)}` — though that form was already tracked since 0.5.3's method-callee fix and isn't flagged either). The full pattern catalogue with worked examples lives in [`docs/composition-patterns.md`](./docs/composition-patterns.md) — four shapes (items-bag lift, accessor passthrough, pre-built Nodes, Node[] slots) covering both iterating and non-iterating cases. If you're hitting `function-parameter callee` diagnostics on a non-iterating helper, the migration is to remove the `getX: (s) => X` callback parameter and accept the value or a `Node` at the call site instead.
+- **Non-iterating helper composition.** The `llui/opaque-state-flow` diagnostic's "use `each` items-bag" hint is the right answer when the helper iterates. For non-iterating helpers (single-value renderers, form rows, layout chrome), the answer is: pass reactive accessors as direct function references (`{value: props.value}`, not `{value: (s) => props.value(s)}` — though that form was already tracked since 0.5.3's method-callee fix and isn't flagged either). The full pattern catalogue with worked examples lives in [Composition Patterns](https://llui.dev/composition-patterns) — four shapes (items-bag lift, accessor passthrough, pre-built Nodes, Node[] slots) covering both iterating and non-iterating cases. If you're hitting `function-parameter callee` diagnostics on a non-iterating helper, the migration is to remove the `getX: (s) => X` callback parameter and accept the value or a `Node` at the call site instead.
 - **`track({deps})` does not silence opaque flow in its own body.** If you tried `track({deps: (s) => [opaque(s)]})` on 0.5.3 as a workaround for a flagged accessor and saw the diagnostic move into `track` without going away — that was correct behavior on 0.5.3 and is now suppressed in 0.5.4. But the suppression doesn't mean `track` does anything useful in that case: an opaque deps body collapses to FULL_MASK + sentinel just like no track at all. The primitive only helps when the deps body itself is statically extractable (literal property-access chains). See `track.ts`'s updated docstring.
 
 ## 2026-05-22 — 0.5.3
@@ -3297,7 +3297,7 @@ Cleanup pass over what 0.1.0's unified composition model rendered redundant: the
 
 First minor bump of the 0.0.x line. Removes the two-tier `component()`/`child()` composition model in favor of a single primitive: view functions, with `combine()` for reducer composition and `subApp` as a lint-enforced escape hatch. Path-keyed reactivity (`__prefixes`) replaces the per-top-level-field `__dirty` bitmask and now supports up to 62 reactive paths per component (was 31). Every package re-lockstepped to `0.1.0` so the boundary between the old and new model is unambiguous.
 
-See [Migration from v0.0.x](/api/dom#migration) (`docs/designs/13 Migration from v0.0.x.md`) for the full migration recipe.
+The full migration recipe (`docs/designs/13 Migration from v0.0.x.md`) was retired with the pre-signal design docs; the [`@llui/dom` API reference](https://llui.dev/api/dom) documents the model that replaced it.
 
 ### Breaking
 

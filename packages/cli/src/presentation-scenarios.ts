@@ -320,7 +320,10 @@ export type PresentationScenarioDefinitions = Readonly<
  * type parameter's constraint the way it excess-property-checks against a concrete parameter
  * type (`f<const T extends Shape>(x: T)` accepts a `{ ...Shape, extra: 1 }` literal silently,
  * measured), so `Definitions extends PresentationScenarioDefinitions` alone is not enough — the
- * PARAMETER's declared type itself must be this exactness-checked shape for the check to fire.
+ * PARAMETER's declared type must carry this exactness-checked shape for the check to fire. It is
+ * carried as `Definitions & NoInfer<ExactFamilyDefinitions<…>>` (which includes this type): the
+ * naked `Definitions` is the inference site, and the check constrains the argument without
+ * competing with it.
  */
 /**
  * `keyof` a UNION type is the INTERSECTION of each member's keys (only keys guaranteed present on
@@ -366,10 +369,49 @@ type ExactDefinition<Definition> = [Definition] extends [
     : never
   : Definition
 
-/** Applied to `compileScenarioFamily`'s `definitions` parameter type; see `ExactCase` above. */
+/** Part of `compileScenarioFamily`'s `definitions` parameter type; see `ExactCase` above. */
 type ExactDefinitions<Definitions> = {
   readonly [ScenarioId in keyof Definitions]: ExactDefinition<Definitions[ScenarioId]>
 }
+
+/**
+ * The compiled `copiedArtifactNames` field for ONE (already-distributed) case member, keyed on
+ * whether that member DECLARES the key — never on an indexed access that assumes it does.
+ *
+ * `copiedArtifactNames` is the protocol's one OPTIONAL case field, and a statically-known
+ * definitions literal routinely has cases that omit it. Indexing such a member,
+ * `Case['copiedArtifactNames']`, is legal inside a conditional true-branch only because the
+ * CONSTRAINT (`PresentationScenarioCase`) declares the key; once instantiated with a concrete
+ * literal member that lacks it, the access resolves to `unknown`, `NonNullable<unknown>` is `{}`,
+ * and the field became `Readonly<{}>` — which is not assignable to the erased catalog's
+ * `readonly string[]`, so NO typed family catalog was assignable to
+ * `CompiledPresentationScenarioFamily` (the gallery had to re-decode every family to get an
+ * erased one). Branching on key PRESENCE fixes the cause rather than the symptom:
+ *
+ * - a member that declares the key keeps it with its own optionality (a homomorphic map over
+ *   `Pick`, so an `as const` literal's REQUIRED `readonly ['calendar']` stays required and
+ *   literal, and the erased case's optional `readonly string[]` stays optional);
+ * - a member that omits it keeps the protocol's own OPEN field, `copiedArtifactNames?: readonly
+ *   string[]` — exactly the erased case's, so it stays assignable to it under either setting of
+ *   `exactOptionalPropertyTypes`.
+ *
+ * The second branch must be open, never a closed `?: never`. A TYPE that omits an optional key
+ * says nothing about the VALUE: width subtyping assigns a case carrying `copiedArtifactNames` to
+ * a type without it, with no cast, and no type-level check can see a key the type no longer has
+ * (`ExactCase` rejects excess keys only while the type still shows them). Runtime validation
+ * accepts such a case (its names are real artifacts of the product) and the compiler copies them,
+ * so `?: never` claimed "absent" about a field that was present — the same class of hole the
+ * family ids close for scenario keys, one level down. It cannot be closed at runtime either: the
+ * runtime never sees the erased static type, so "this case declared no names" is not a fact it
+ * can check. Open is the only sound claim, and it costs nothing a consumer relied on — every
+ * reader already handles `readonly string[] | undefined` (the erased shape).
+ */
+type CompiledCopiedArtifactNames<Case extends PresentationScenarioCase> =
+  'copiedArtifactNames' extends keyof Case
+    ? {
+        readonly [Key in keyof Pick<Case, 'copiedArtifactNames'>]: Readonly<NonNullable<Case[Key]>>
+      }
+    : { readonly copiedArtifactNames?: readonly string[] }
 
 /** Canonical renderer input copied from a validated family case. */
 export type CompiledPresentationScenarioCase<
@@ -380,8 +422,7 @@ export type CompiledPresentationScenarioCase<
       readonly label: Case['label']
       readonly input: PresentationScenarioJsonSnapshot<Case['input']>
       readonly environmentAxes: Readonly<Case['environmentAxes']>
-      readonly copiedArtifactNames?: Readonly<NonNullable<Case['copiedArtifactNames']>>
-    }
+    } & CompiledCopiedArtifactNames<Case>
   : never
 
 type ScenarioId<Definitions extends PresentationScenarioDefinitions> = keyof Definitions & string
@@ -397,31 +438,89 @@ type ErasedCompiledPresentationScenario = {
   readonly cases: readonly CompiledPresentationScenarioCase[]
 }
 
+/**
+ * One compiled scenario per scenario id of a definitions literal, keyed by that id. Indexing it
+ * with a GENERIC id `K` substitutes `K` for `Id` (TypeScript's correlated-union pattern,
+ * microsoft/TypeScript#47109), which is what lets the compile and resolve paths BUILD a scenario
+ * (or a resolution) for one id and have the checker verify it, instead of asserting it.
+ */
+type TypedCompiledScenarios<Definitions extends PresentationScenarioDefinitions> = {
+  readonly [Id in ScenarioId<Definitions>]: {
+    readonly productId: string
+    readonly scenarioId: Id
+    readonly defaultCaseId: Definitions[Id]['defaultCaseId']
+    readonly cases: readonly CompiledPresentationScenarioCase<DefinitionCase<Definitions, Id>>[]
+  }
+}
+
 /** A definition-keyed discriminated union of compiled ProductContract joins. */
 export type CompiledPresentationScenario<
   Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
 > =
   string extends ScenarioId<Definitions>
     ? ErasedCompiledPresentationScenario
-    : {
-        readonly [Id in ScenarioId<Definitions>]: {
-          readonly productId: string
-          readonly scenarioId: Id
-          readonly defaultCaseId: Definitions[Id]['defaultCaseId']
-          readonly cases: readonly CompiledPresentationScenarioCase<
-            DefinitionCase<Definitions, Id>
-          >[]
-        }
-      }[ScenarioId<Definitions>]
+    : TypedCompiledScenarios<Definitions>[ScenarioId<Definitions>]
 
-/** Deterministic, JSON-safe catalog for one presentation family. */
-export type CompiledPresentationScenarioFamily<
-  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
-> = {
+/**
+ * The erased, family-agnostic catalog — what `CompiledPresentationScenarioFamily` (no type
+ * argument) and `decodeScenarioFamily` denote. Every typed catalog is assignable to it.
+ */
+type ErasedCompiledPresentationScenarioFamily = {
   readonly version: 1
   readonly family: PresentationFamily
-  readonly scenarios: readonly CompiledPresentationScenario<Definitions>[]
+  readonly scenarios: readonly ErasedCompiledPresentationScenario[]
 }
+
+/**
+ * A catalog typed by one statically-known definitions literal. Deliberately free of the
+ * erased/typed conditional at EVERY level (its scenarios are the plain indexed access, not
+ * `CompiledPresentationScenario<Definitions>`): the typed entry points take and return this form,
+ * because inside a generic body TypeScript cannot see through a conditional type that is still
+ * waiting on its type argument, so a value could never be checked against it — only asserted.
+ * For a literal definitions type, `CompiledPresentationScenarioFamily<Definitions>` evaluates to
+ * exactly this alias.
+ */
+type TypedCompiledPresentationScenarioFamily<Definitions extends PresentationScenarioDefinitions> =
+  {
+    readonly version: 1
+    readonly family: PresentationFamily
+    readonly scenarios: readonly TypedCompiledScenarios<Definitions>[ScenarioId<Definitions>][]
+  }
+
+// Deliberately a CONDITIONAL over two distinct aliases, not one object type generic in
+// `Definitions`, because the erased catalog must be a SUPERTYPE of every typed one (the gallery
+// holds all families as one `readonly CompiledPresentationScenarioFamily[]`). When TypeScript
+// compares two instantiations of the SAME generic alias it does not compare their structure: it
+// relates their type ARGUMENTS under the alias's measured variance. `Definitions` reaches the
+// scenario union through `keyof Definitions` (the `scenarioId` discriminant — contravariant) and
+// through `Definitions[Id]` (the cases — covariant), so the measurement comes back INVARIANT, and
+// it is a reliable measurement (no mapped/template marker flags it "unreliable"), so no
+// structural fallback runs: `Family<{ 'component:x': … }>` against `Family<Record<string, …>>`
+// was rejected as "`Record<string, …>` is not assignable to `{ 'component:x': … }`" even with
+// every property structurally compatible. An `out` annotation would silence that and be UNSOUND:
+// a definitions type with MORE keys is a subtype of one with fewer, but its catalog carries
+// scenario ids the smaller catalog's discriminant union does not contain.
+//
+// Resolving the erased and typed cases to DIFFERENT aliases makes typed→erased a STRUCTURAL
+// relation, which is exactly the sound check: literal ids/defaults/cases are subtypes of their
+// erased `string`/`readonly …[]` forms. Typed→typed keeps the conservative invariant check,
+// erased→typed stays rejected (a `string` scenario id is not a literal). The typed entry points
+// themselves take and return the conditional-free `TypedCompiledPresentationScenarioFamily` (see
+// its doc), which is what this alias evaluates to for any literal definitions type; an erased
+// catalog still passes to them, `Definitions` falling back to its constraint.
+// `test/presentation-scenarios-erasure-types.ts` pins all of it.
+/**
+ * Deterministic, JSON-safe catalog for one presentation family. With no type argument this is
+ * the ERASED, family-agnostic catalog; every typed catalog (a `compileScenarioFamily` result) is
+ * assignable to it without a cast, while keeping its own literal scenario ids, case ids, axes
+ * and copied-artifact names.
+ */
+export type CompiledPresentationScenarioFamily<
+  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
+> =
+  string extends ScenarioId<Definitions>
+    ? ErasedCompiledPresentationScenarioFamily
+    : TypedCompiledPresentationScenarioFamily<Definitions>
 
 /** Route-like request for one scenario case, renderer path, and environment. */
 export interface PresentationScenarioSelection {
@@ -432,27 +531,88 @@ export interface PresentationScenarioSelection {
   readonly copiedArtifact?: string
 }
 
-type ResolvedScenario<Scenario> = Scenario extends {
-  readonly scenarioId: infer Id extends string
-  readonly cases: readonly (infer Case)[]
+/** The copied artifact a registry-path resolution draws, and the scenario it renders. */
+interface ResolvedCopiedArtifact {
+  readonly name: string
+  readonly scenarioId: string
 }
-  ? {
-      readonly productId: string
-      readonly scenarioId: Id
-      readonly case: Case
-      readonly path: PresentationScenarioPath
-      readonly environment: PresentationScenarioEnvironment
-      readonly copiedArtifact?: {
-        readonly name: string
-        readonly scenarioId: string
-      }
-    }
-  : never
+
+/**
+ * One resolution per scenario id, keyed by it — the same correlated-union shape as
+ * `TypedCompiledScenarios`, for the same reason: the typed resolver builds `[K]` for the one id it
+ * found and the checker verifies it.
+ */
+type TypedResolvedSelections<Definitions extends PresentationScenarioDefinitions> = {
+  readonly [Id in ScenarioId<Definitions>]: {
+    readonly productId: string
+    readonly scenarioId: Id
+    readonly case: CompiledPresentationScenarioCase<DefinitionCase<Definitions, Id>>
+    readonly path: PresentationScenarioPath
+    readonly environment: PresentationScenarioEnvironment
+    readonly copiedArtifact?: ResolvedCopiedArtifact
+  }
+}
+
+/** Conditional-free twin of `ResolvedPresentationScenarioSelection`; see the typed catalog's. */
+type TypedResolvedPresentationScenarioSelection<
+  Definitions extends PresentationScenarioDefinitions,
+> = TypedResolvedSelections<Definitions>[ScenarioId<Definitions>]
+
+type ErasedResolvedPresentationScenarioSelection = {
+  readonly productId: string
+  readonly scenarioId: string
+  readonly case: CompiledPresentationScenarioCase
+  readonly path: PresentationScenarioPath
+  readonly environment: PresentationScenarioEnvironment
+  readonly copiedArtifact?: ResolvedCopiedArtifact
+}
 
 /** Definition-correlated renderer input returned for a presentation selection. */
 export type ResolvedPresentationScenarioSelection<
   Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
-> = ResolvedScenario<CompiledPresentationScenario<Definitions>>
+> =
+  string extends ScenarioId<Definitions>
+    ? ErasedResolvedPresentationScenarioSelection
+    : TypedResolvedPresentationScenarioSelection<Definitions>
+
+/**
+ * The literal scenario-id set one presentation family declares in ProductContract — the typed
+ * compile path's source of exactness. `compileScenarioFamily` requires its definitions' keys to
+ * EQUAL `scenarioIds` (a missing or an extra key is a compile error), and cross-checks
+ * `scenarioIds` against the contract at runtime, so a compiled catalog's `scenarioId` union is
+ * provably the set of scenarios it carries. A literal (`as const`) value is required: `string`
+ * ids prove nothing, and definitions with them decode through `decodeScenarioFamily` instead.
+ */
+export interface PresentationScenarioFamilyIds<
+  Family extends PresentationFamily = PresentationFamily,
+  Id extends string = string,
+> {
+  readonly family: Family
+  readonly scenarioIds: readonly Id[]
+}
+
+/** Definitions with (at least) one definition per id of `Id`; exactness is added at the call. */
+type PresentationScenarioDefinitionsFor<Id extends string> = {
+  readonly [ScenarioId in Id]: PresentationScenarioDefinition
+}
+
+/** The compile-error message a non-literal id set produces, as a property that cannot exist. */
+interface LiteralScenarioIdsRequired {
+  readonly 'compileScenarioFamily requires literal scenario ids; decode with decodeScenarioFamily': never
+}
+
+/**
+ * The exactness a typed compile call is checked against, INTERSECTED with the inferred
+ * definitions (under `NoInfer`, so it constrains the argument without becoming an inference site
+ * of its own). Missing ids are rejected by the `PresentationScenarioDefinitionsFor<Id>`
+ * constraint; each extra key is mapped to `never` here; every case and definition must be
+ * `ExactDefinitions`-exact; and `string` ids reject the call outright.
+ */
+type ExactFamilyDefinitions<Definitions, Id extends string> = string extends Id
+  ? LiteralScenarioIdsRequired
+  : ExactDefinitions<Definitions> & {
+      readonly [Stale in Exclude<keyof Definitions, Id>]: never
+    }
 
 /** Stable failure categories exposed to gallery routing and build tooling. */
 export type PresentationScenarioErrorCode =
@@ -464,6 +624,8 @@ export type PresentationScenarioErrorCode =
   | 'invalid-catalog'
   | 'invalid-selection'
   | 'invalid-path'
+  | 'missing-adapter'
+  | 'invalid-adapters'
 
 /** A stable, machine-readable protocol or selection failure. */
 export class PresentationScenarioError extends Error {
@@ -498,8 +660,9 @@ interface DecodedCase {
   // are reported by `collectCaseIssues` (which runs after every `DecodedCase` in a family exists
   // to cross-reference against). Widened deliberately: narrowing this to
   // `PresentationScenarioEnvironmentAxis[]` at construction would need a cast BEFORE that
-  // validation ever runs. The public surface only ever sees a compiled catalog
-  // AFTER `diagnostics.throwIfAny` has confirmed every axis is valid.
+  // validation ever runs. The narrowing happens IN that validation instead: `collectCaseIssues`
+  // rebuilds each case's axes through `isPresentationScenarioEnvironmentAxis` for the compiled
+  // catalog, which the public surface only sees after `diagnostics.throwIfAny`.
   readonly environmentAxes: readonly string[]
   readonly copiedArtifactNames?: readonly string[]
 }
@@ -1983,11 +2146,21 @@ function decodeSelection(value: unknown, diagnostics: DiagnosticCollector): Deco
   )
 }
 
+/**
+ * Report every case-level issue of one definition (or catalog scenario) against its contract
+ * entry. When `validated` is given, also append each case REBUILT from what the checks proved —
+ * its environment axes narrowed by `isPresentationScenarioEnvironmentAxis` itself, never
+ * asserted — so a caller that throws on any reported issue holds cases typed by the protocol's
+ * unions without a cast (an axis that fails the guard is reported and left out, which is only
+ * observable on a path that then throws). `compiledCatalog` passes it; the integrity re-check of
+ * an already-built catalog does not, and pays for no copies.
+ */
 function collectCaseIssues(
   diagnostics: DiagnosticCollector,
   entry: ProductContract['entries'][number],
   definition: DecodedDefinition | DecodedScenario,
   path: DiagnosticPath,
+  validated?: CompiledPresentationScenarioCase[],
 ): void {
   const casesPath = propertyPath(path, 'cases')
   const defaultPath = propertyPath(path, 'defaultCaseId')
@@ -2018,10 +2191,13 @@ function collectCaseIssues(
 
     const seenAxes = new Set<string>()
     const axesPath = propertyPath(casePath, 'environmentAxes')
+    const knownAxes: PresentationScenarioEnvironmentAxis[] = []
     for (let axisIndex = 0; axisIndex < scenarioCase.environmentAxes.length; axisIndex += 1) {
       const axis = scenarioCase.environmentAxes[axisIndex]!
       const axisPath = indexPath(axesPath, axisIndex)
-      if (!isPresentationScenarioEnvironmentAxis(axis)) {
+      if (isPresentationScenarioEnvironmentAxis(axis)) {
+        knownAxes.push(axis)
+      } else {
         diagnostics.add(axisPath, 'unknown environment axis ', quoted(axis))
       }
       if (seenAxes.has(axis)) {
@@ -2044,16 +2220,38 @@ function collectCaseIssues(
       }
       seenTargets.add(target)
     }
+
+    // `input` and `copiedArtifactNames` are the decoder's own frozen snapshots already (never
+    // the caller's objects); the axes array is new, so it is frozen here.
+    validated?.push(
+      Object.freeze({
+        id: scenarioCase.id,
+        label: scenarioCase.label,
+        input: scenarioCase.input,
+        environmentAxes: Object.freeze(knownAxes),
+        ...(scenarioCase.copiedArtifactNames === undefined
+          ? {}
+          : { copiedArtifactNames: scenarioCase.copiedArtifactNames }),
+      }),
+    )
   }
   if (!caseIds.has(definition.defaultCaseId)) {
     diagnostics.add(defaultPath, 'case ', quoted(definition.defaultCaseId), ' does not exist')
   }
 }
 
+/**
+ * Cross-check a catalog against `contract`. With `validated`, also REBUILD each scenario from what
+ * the check proved (`collectCaseIssues` narrows every case's axes through the membership guard),
+ * in catalog order — how an untrusted, merely decoded catalog becomes a
+ * `CompiledPresentationScenarioFamily` without an assertion. Complete exactly when no issue was
+ * reported.
+ */
 function collectCatalogIntegrityIssues(
   diagnostics: DiagnosticCollector,
   contract: ProductContract,
   catalog: DecodedCatalog,
+  validated?: ErasedCompiledPresentationScenario[],
 ): void {
   const entries = contract.entries.filter((entry) => entry.presentation.family === catalog.family)
   if (entries.length === 0) {
@@ -2118,7 +2316,22 @@ function collectCatalogIntegrityIssues(
     if (canonicalIndex !== index) {
       diagnostics.add(path, 'expected canonical ProductContract index ', canonicalIndex)
     }
-    collectCaseIssues(diagnostics, entry, scenario, path)
+    const cases: CompiledPresentationScenarioCase[] = []
+    collectCaseIssues(
+      diagnostics,
+      entry,
+      scenario,
+      path,
+      validated === undefined ? undefined : cases,
+    )
+    validated?.push(
+      Object.freeze({
+        productId: scenario.productId,
+        scenarioId: scenario.scenarioId,
+        defaultCaseId: scenario.defaultCaseId,
+        cases: Object.freeze(cases),
+      }),
+    )
   }
 
   for (const entry of entries) {
@@ -2135,25 +2348,55 @@ function collectCatalogIntegrityIssues(
 }
 
 /**
- * Catalog objects THIS MODULE produced and validated in full (`compiledCatalog`, below) — a
+ * Catalog objects THIS MODULE produced and validated in full (`trustedCatalog`, below) — a
  * frozen `CompiledPresentationScenarioFamily` a caller holds a live reference to, never restored
  * from serialization. Membership is by REFERENCE, never by structural shape: a byte-identical
  * `JSON.parse(JSON.stringify(catalog))` copy is a different object and is NOT a member, so it is
  * decoded and integrity-checked in full — the fast path below trusts a specific object this
  * module built, not "any catalog that happens to look right".
  */
-const TRUSTED_CATALOGS = new WeakSet<object>()
+//
+// A map from each trusted object to ITSELF, not a set: the lookup hands the object back TYPED as
+// the erased catalog it was registered as, so recognizing one needs no type predicate.
+const TRUSTED_CATALOGS = new WeakMap<object, CompiledPresentationScenarioFamily>()
 
-function isTrustedCatalog(value: unknown): value is DecodedCatalog {
-  return typeof value === 'object' && value !== null && TRUSTED_CATALOGS.has(value)
+function trustedCatalogOf(value: unknown): CompiledPresentationScenarioFamily | undefined {
+  return typeof value === 'object' && value !== null ? TRUSTED_CATALOGS.get(value) : undefined
 }
 
+/**
+ * An untrusted catalog: decode it, cross-check it against `contract`, and rebuild it from what
+ * both proved. Its `family` matched a ProductContract entry's (else the check reported it), so
+ * the membership guard below cannot fail once `throwIfAny` has passed.
+ */
+function validatedCatalog(
+  diagnostics: DiagnosticCollector,
+  contract: ProductContract,
+  catalog: unknown,
+): CompiledPresentationScenarioFamily {
+  const decoded = decodeCatalog(catalog, diagnostics)
+  const scenarios: ErasedCompiledPresentationScenario[] = []
+  collectCatalogIntegrityIssues(diagnostics, contract, decoded, scenarios)
+  diagnostics.throwIfAny('invalid-catalog')
+  const family = decoded.family
+  if (!isPresentationFamily(family)) throw diagnostics.error('invalid-catalog')
+  return Object.freeze({ version: 1, family, scenarios: Object.freeze(scenarios) })
+}
+
+/**
+ * Validate decoded definitions against `contract` and assemble the ERASED catalog from what the
+ * validation proved — every field is either already-trusted contract data, a decoder snapshot, or
+ * narrowed by the membership guards inside `collectCaseIssues` — so the result is typed
+ * `CompiledPresentationScenarioFamily` without an assertion. It is neither integrity-checked nor
+ * trusted yet: each entry point finishes it through `trustedCatalog`, the typed one after
+ * re-typing its scenarios by construction (see `compileScenarioFamily`).
+ */
 function compiledCatalog(
   contract: ProductContract,
   family: PresentationFamily,
   decoded: DecodedDefinitions,
   diagnostics: DiagnosticCollector,
-): DecodedCatalog {
+): CompiledPresentationScenarioFamily {
   const entries = contract.entries.filter((entry) => entry.presentation.family === family)
   if (entries.length === 0) {
     diagnostics.add(
@@ -2164,6 +2407,10 @@ function compiledCatalog(
   }
   const expectedScenarioIds = new Set<string>()
   for (const entry of entries) expectedScenarioIds.add(entry.scenarioId)
+  // Assembled DURING validation, in canonical contract order: an entry without a definition
+  // contributes no scenario, and is reported, so the array is complete exactly when
+  // `throwIfAny` below lets it through.
+  const scenarios: ErasedCompiledPresentationScenario[] = []
   for (const entry of entries) {
     const definition = decoded.definitions.get(entry.scenarioId)
     // Protected for the same reason as `decodeDefinitions`'s scenario key — see
@@ -2190,7 +2437,16 @@ function compiledCatalog(
     if (definition === undefined) {
       diagnostics.add(path, 'missing definition for product ', quoted(entry.name))
     } else {
-      collectCaseIssues(diagnostics, entry, definition, path)
+      const cases: CompiledPresentationScenarioCase[] = []
+      collectCaseIssues(diagnostics, entry, definition, path, cases)
+      scenarios.push(
+        Object.freeze({
+          productId: entry.name,
+          scenarioId: entry.scenarioId,
+          defaultCaseId: definition.defaultCaseId,
+          cases: Object.freeze(cases),
+        }),
+      )
     }
   }
   for (const scenarioId of decoded.scenarioIds) {
@@ -2224,69 +2480,242 @@ function compiledCatalog(
   // or `structuredClone` through `resolveScenarioSelection`), at any family size — by
   // construction, not by an estimate sized to match it. See the
   // "one cost model" tests for the worked boundary proof, one budget dimension at a time.
-  const catalog: DecodedCatalog = Object.freeze({
+  const catalog: CompiledPresentationScenarioFamily = Object.freeze({
     version: 1,
     family,
-    scenarios: Object.freeze(
-      entries.map((entry) => {
-        const definition = decoded.definitions.get(entry.scenarioId)!
-        return Object.freeze({
-          productId: entry.name,
-          scenarioId: entry.scenarioId,
-          defaultCaseId: definition.defaultCaseId,
-          cases: definition.cases,
-        })
-      }),
-    ),
+    scenarios: Object.freeze(scenarios),
   })
-  collectCatalogIntegrityIssues(diagnostics, contract, catalog)
-  diagnostics.throwIfAny('invalid-definitions')
-  TRUSTED_CATALOGS.add(catalog)
   return catalog
 }
 
 /**
- * Generic over `Definitions` purely so its TWO callers each get their own return type without
- * casting a second time on top of this function's own — `compileScenarioFamily` instantiates it
- * at its caller's literal `Definitions`, `decodeScenarioFamily` leaves it at the default (erased)
- * shape. The cast below is the ONE unavoidable narrowing in this file's whole compile path: the
- * function's OWN body operates on a structurally-decoded, `Definitions`-erased `DecodedCatalog` —
- * there is no runtime information here that could prove it matches an arbitrary caller-chosen
- * `Definitions`, because that guarantee comes from `ExactDefinitions<Definitions>` at the CALLER's
- * own static call site, before erasure, not from anything this function could check.
+ * The last step of BOTH compile entry points: cross-check the finished catalog against
+ * `contract`, then mark it trusted. Generic so the typed path registers (and returns) its typed
+ * catalog object itself — the reference `resolveScenarioSelection` later recognizes — rather than
+ * an erased twin of it.
  */
-function compileScenarioFamilyUnknown<
-  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
->(
+function trustedCatalog<Catalog extends CompiledPresentationScenarioFamily>(
+  contract: ProductContract,
+  catalog: Catalog,
+  diagnostics: DiagnosticCollector,
+): Catalog {
+  collectCatalogIntegrityIssues(diagnostics, contract, catalog)
+  diagnostics.throwIfAny('invalid-definitions')
+  TRUSTED_CATALOGS.set(catalog, catalog)
+  return catalog
+}
+
+/** Decode + validate + assemble, for both entry points; the result is the erased catalog. */
+function compileDefinitions(
   contract: ProductContract,
   family: PresentationFamily,
   definitions: unknown,
-): CompiledPresentationScenarioFamily<Definitions> {
-  const diagnostics = new DiagnosticCollector()
+  diagnostics: DiagnosticCollector,
+): CompiledPresentationScenarioFamily {
   const decoded = decodeDefinitions(definitions, diagnostics)
-  return compiledCatalog(
-    contract,
-    family,
-    decoded,
-    diagnostics,
-  ) as CompiledPresentationScenarioFamily<Definitions>
+  return compiledCatalog(contract, family, decoded, diagnostics)
 }
 
 /**
- * Join family-owned semantic cases to ProductContract's canonical inventory. `definitions` must
- * be statically known here — there is no `unknown` fallthrough, so a `Definitions` literal that
- * fails to satisfy `PresentationScenarioDefinitions` (an extra field on a case, an unknown
- * `environmentAxes` value, a function in `input`, …) is a COMPILE error, not a value silently
- * degraded to `CompiledPresentationScenarioFamily`'s erased, `string`-keyed shape. For a
- * definitions value received from an untyped/serialized boundary, decode it with
- * `decodeScenarioFamily` instead.
+ * The RUNTIME half of the typed path's exactness: a `PresentationScenarioFamilyIds` must name
+ * exactly the family's ProductContract scenario ids. The compile-time half (definitions' keys
+ * equal `scenarioIds`) is only as good as `scenarioIds` itself, so a descriptor that omits a
+ * contract scenario is rejected here — otherwise definitions carrying that scenario under a key
+ * their TYPE does not declare (width subtyping) would compile into a catalog whose `scenarioId`
+ * union omits a scenario it carries. Order is free: the catalog is in contract order either way.
  */
-export function compileScenarioFamily<const Definitions extends PresentationScenarioDefinitions>(
+function collectScenarioIdIssues(
+  diagnostics: DiagnosticCollector,
   contract: ProductContract,
-  family: PresentationFamily,
-  definitions: ExactDefinitions<Definitions>,
-): CompiledPresentationScenarioFamily<Definitions> {
-  return compileScenarioFamilyUnknown<Definitions>(contract, family, definitions)
+  familyIds: PresentationScenarioFamilyIds,
+): void {
+  const path = propertyPath(ROOT_DIAGNOSTIC_PATH, 'scenarioIds')
+  const expected = new Set<string>()
+  for (const entry of contract.entries) {
+    if (entry.presentation.family === familyIds.family) expected.add(entry.scenarioId)
+  }
+  const declared = new Set<string>()
+  for (const scenarioId of familyIds.scenarioIds) {
+    if (declared.has(scenarioId)) {
+      diagnostics.add(path, 'duplicate scenario id ', quoted(scenarioId))
+    } else if (!expected.has(scenarioId)) {
+      diagnostics.add(
+        path,
+        'scenario id ',
+        quoted(scenarioId),
+        ' is not a ProductContract scenario of presentation family ',
+        quoted(familyIds.family),
+      )
+    }
+    declared.add(scenarioId)
+  }
+  for (const scenarioId of expected) {
+    if (!declared.has(scenarioId)) {
+      diagnostics.add(
+        path,
+        'omits ProductContract scenario ',
+        quoted(scenarioId),
+        ' of presentation family ',
+        quoted(familyIds.family),
+      )
+    }
+  }
+}
+
+/**
+ * Thrown only if a definitions value reads differently on a second look than it did when it was
+ * validated — impossible for plain data (the decoder rejects accessors), reachable only through
+ * an exotic object such as a `Proxy`. The typed catalog is never built from such a value.
+ */
+function unstableDefinitions(scenarioId: string): PresentationScenarioError {
+  const diagnostics = new DiagnosticCollector()
+  diagnostics.add(
+    protectedPath(propertyPath(ROOT_DIAGNOSTIC_PATH, scenarioId)),
+    'definition changed after it was validated',
+  )
+  return diagnostics.error('invalid-definitions')
+}
+
+/** Unreachable after `collectScenarioIdIssues` passed; kept so no `!` stands in for the proof. */
+function unlistedScenario(scenarioId: string): PresentationScenarioError {
+  const diagnostics = new DiagnosticCollector()
+  diagnostics.add(
+    propertyPath(ROOT_DIAGNOSTIC_PATH, 'scenarioIds'),
+    'omits ProductContract scenario ',
+    quoted(scenarioId),
+  )
+  return diagnostics.error('invalid-definitions')
+}
+
+/**
+ * The typed compile path's ONE type assertion, isolated to the one claim no checked construction
+ * can express: the decoder's snapshot of a case VALUE of type `Case` has type
+ * `CompiledPresentationScenarioCase<Case>`. That type maps `input` through
+ * `PresentationScenarioJsonSnapshot`, a recursive conditional type; a deep copy typed by it would
+ * need a generic function whose body the checker verifies against a conditional type that is
+ * still waiting on its argument, which TypeScript cannot do. The alternatives are worse: freezing
+ * the CALLER's objects in place, or returning them undetached (the catalog must be detached and
+ * deep-frozen — the trusted-catalog fast path relies on it).
+ *
+ * The claim holds because `validated` IS that snapshot: `decodeCase` copies `id`, `label`,
+ * `environmentAxes`, the optional `copiedArtifactNames` (only when present) and a deep, frozen
+ * copy of `input`, and rejects every other field. The ids are compared so a mispaired call
+ * cannot slip through. Everything AROUND the case — which scenario id it is filed under, the
+ * scenario's default case, the catalog's scenario union — is constructed and checked, not
+ * asserted; `test/presentation-scenarios-types.ts` and `…-erasure-types.ts` pin the case type.
+ *
+ * The claim is only as sound as the case type is honest about hidden keys, and it once was not:
+ * a case TYPE omitting `copiedArtifactNames` compiled to a closed `?: never` while the snapshot of
+ * a width-subtyped value carried names. `CompiledCopiedArtifactNames` now keeps that field open,
+ * so every field of the claimed type is either declared by `Case` (a value of type `Case` has it
+ * at that type) or open; `input`'s object types are open by construction. What remains asserted
+ * is only what TypeScript cannot model, the recursive snapshot type — so this cannot be narrowed
+ * to a construction: building `CompiledPresentationScenarioCase<Case>` field by field would need
+ * the checker to resolve that distributive conditional for a `Case` it does not yet know.
+ */
+function compiledCaseOf<Case extends PresentationScenarioCase>(
+  scenarioId: string,
+  source: Case,
+  validated: CompiledPresentationScenarioCase,
+): CompiledPresentationScenarioCase<Case> {
+  if (source.id !== validated.id) throw unstableDefinitions(scenarioId)
+  return validated as CompiledPresentationScenarioCase<Case>
+}
+
+/**
+ * Build ONE typed scenario for the generic id `Id` from its validated erased twin. The checker
+ * verifies the result against `TypedCompiledScenarios<Definitions>[Id]` — `scenarioId` is `Id`,
+ * `defaultCaseId` is `Definitions[Id]['defaultCaseId']` and every case is typed by
+ * `Definitions[Id]`'s own cases — because indexing that mapped type with a generic key
+ * substitutes the key. Values come from the validated scenario; the typed `source` only witnesses
+ * the types, and every value read from it is compared against its validated counterpart first.
+ */
+function typedScenario<
+  Definitions extends PresentationScenarioDefinitions,
+  Id extends ScenarioId<Definitions>,
+>(
+  validated: ErasedCompiledPresentationScenario,
+  scenarioId: Id,
+  source: Definitions[Id],
+): TypedCompiledScenarios<Definitions>[Id] {
+  const sourceCases: Definitions[Id]['cases'] = source.cases
+  const defaultCaseId: Definitions[Id]['defaultCaseId'] = source.defaultCaseId
+  if (defaultCaseId !== validated.defaultCaseId || sourceCases.length !== validated.cases.length) {
+    throw unstableDefinitions(scenarioId)
+  }
+  const cases: CompiledPresentationScenarioCase<DefinitionCase<Definitions, Id>>[] = []
+  for (let index = 0; index < validated.cases.length; index += 1) {
+    const sourceCase: DefinitionCase<Definitions, Id> | undefined = sourceCases[index]
+    const validatedCase = validated.cases[index]
+    if (sourceCase === undefined || validatedCase === undefined) {
+      throw unstableDefinitions(scenarioId)
+    }
+    cases.push(compiledCaseOf(scenarioId, sourceCase, validatedCase))
+  }
+  return Object.freeze({
+    productId: validated.productId,
+    scenarioId,
+    defaultCaseId,
+    cases: Object.freeze(cases),
+  })
+}
+
+/**
+ * Join family-owned semantic cases to ProductContract's canonical inventory, EXACTLY: the
+ * definitions' keys must equal `family.scenarioIds` — the family's ProductContract scenario ids
+ * as a literal `PresentationScenarioFamilyIds` — so a missing key and an extra key are both
+ * compile errors, and the returned catalog's `scenarioId` union is provably the set of scenarios
+ * it carries. Width subtyping cannot hide a scenario: a definitions type narrowed below the
+ * family's ids is MISSING an id (compile error), and `family.scenarioIds` is itself cross-checked
+ * against `contract` at runtime, so ids that omit a contract scenario (or name one it lacks)
+ * throw `invalid-definitions` instead of typing it away.
+ *
+ * `definitions` must be statically known — there is no `unknown` fallthrough, so a literal that
+ * fails `PresentationScenarioDefinitions` (an extra field on a case, an unknown `environmentAxes`
+ * value, a function in `input`, …) is a COMPILE error. For definitions (or ids) received from an
+ * untyped/serialized boundary, decode them with `decodeScenarioFamily` instead.
+ *
+ * The typed catalog is CONSTRUCTED, not asserted: each scenario is built for its own literal id
+ * (`typedScenario`) from the validated erased catalog, in contract order. The one residual
+ * assertion is the per-case snapshot typing (`compiledCaseOf`), documented at its definition.
+ */
+export function compileScenarioFamily<
+  const Id extends string,
+  const Definitions extends PresentationScenarioDefinitions &
+    PresentationScenarioDefinitionsFor<Id>,
+>(
+  contract: ProductContract,
+  family: PresentationScenarioFamilyIds<PresentationFamily, Id>,
+  definitions: Definitions & NoInfer<ExactFamilyDefinitions<Definitions, Id>>,
+): TypedCompiledPresentationScenarioFamily<Definitions> {
+  const source: Definitions = definitions
+  // Read ONCE: the ids checked against the contract are the ids the scenarios are keyed by.
+  const familyIds: PresentationScenarioFamilyIds<PresentationFamily, Id> = {
+    family: family.family,
+    scenarioIds: [...family.scenarioIds],
+  }
+  const diagnostics = new DiagnosticCollector()
+  // Structural decoding first (it stops at its own issues); the id cross-check is then reported
+  // TOGETHER with the contract join's missing/stale findings, which it usually explains.
+  const decoded = decodeDefinitions(source, diagnostics)
+  collectScenarioIdIssues(diagnostics, contract, familyIds)
+  const erased = compiledCatalog(contract, familyIds.family, decoded, diagnostics)
+  const scenarios: TypedCompiledScenarios<Definitions>[Id][] = []
+  for (const validated of erased.scenarios) {
+    // `find` hands back the descriptor's own element, typed `Id`: the validated scenario's id,
+    // recovered as the literal the definitions are keyed by. `collectScenarioIdIssues` already
+    // proved every contract scenario of the family is in `scenarioIds`, and `compiledCatalog`
+    // threw on that finding, so this lookup cannot miss.
+    const scenarioId = familyIds.scenarioIds.find((candidate) => candidate === validated.scenarioId)
+    if (scenarioId === undefined) throw unlistedScenario(validated.scenarioId)
+    scenarios.push(typedScenario<Definitions, Id>(validated, scenarioId, source[scenarioId]))
+  }
+  const catalog: TypedCompiledPresentationScenarioFamily<Definitions> = Object.freeze({
+    version: 1,
+    family: erased.family,
+    scenarios: Object.freeze(scenarios),
+  })
+  return trustedCatalog(contract, catalog, diagnostics)
 }
 
 /**
@@ -2300,17 +2729,25 @@ export function decodeScenarioFamily(
   family: PresentationFamily,
   definitions: unknown,
 ): CompiledPresentationScenarioFamily {
-  return compileScenarioFamilyUnknown(contract, family, definitions)
+  const diagnostics = new DiagnosticCollector()
+  return trustedCatalog(
+    contract,
+    compileDefinitions(contract, family, definitions, diagnostics),
+    diagnostics,
+  )
 }
 
-/** Generic for the same reason `compileScenarioFamilyUnknown` is — see its doc. */
-function resolveScenarioSelectionUnknown<
-  Definitions extends PresentationScenarioDefinitions = PresentationScenarioDefinitions,
->(
+/**
+ * The ONE resolver both entry points share. It validates and resolves against the erased
+ * catalog and returns the erased resolution — every value in it validated (or, for a trusted
+ * catalog, the catalog's own frozen objects). `resolveScenarioSelection` re-types the result by
+ * CONSTRUCTION (`typedResolution`), never by asserting this function's return type.
+ */
+function resolveScenarioSelectionUnknown(
   contract: ProductContract,
   catalog: unknown,
   selection: unknown,
-): ResolvedPresentationScenarioSelection<Definitions> {
+): ResolvedPresentationScenarioSelection {
   const diagnostics = new DiagnosticCollector()
   // A catalog THIS MODULE produced and the caller still holds a live reference to has already
   // passed the untrusted-boundary structural decode once, in full, at compile time — re-running
@@ -2319,9 +2756,12 @@ function resolveScenarioSelectionUnknown<
   // below still always runs, because a compiled-then-cached catalog can legitimately be resolved
   // against a DIFFERENT (e.g. stale) contract than the one it was compiled against — trusting the
   // catalog's own shape is not the same as trusting it still matches `contract`.
-  const decodedCatalog = isTrustedCatalog(catalog) ? catalog : decodeCatalog(catalog, diagnostics)
-  collectCatalogIntegrityIssues(diagnostics, contract, decodedCatalog)
-  diagnostics.throwIfAny('invalid-catalog')
+  const trusted = trustedCatalogOf(catalog)
+  if (trusted !== undefined) {
+    collectCatalogIntegrityIssues(diagnostics, contract, trusted)
+    diagnostics.throwIfAny('invalid-catalog')
+  }
+  const decodedCatalog = trusted ?? validatedCatalog(diagnostics, contract, catalog)
 
   const decodedSelection = decodeSelection(selection, diagnostics)
   const productPath = propertyPath(ROOT_DIAGNOSTIC_PATH, 'productId')
@@ -2474,7 +2914,7 @@ function resolveScenarioSelectionUnknown<
     ...DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
     ...validatedEnvironment,
   })
-  const result = Object.freeze({
+  return Object.freeze({
     productId: scenario.productId,
     scenarioId: scenario.scenarioId,
     case: scenarioCase,
@@ -2489,7 +2929,59 @@ function resolveScenarioSelectionUnknown<
           }),
         }),
   })
-  return result as ResolvedPresentationScenarioSelection<Definitions>
+}
+
+/**
+ * The typed resolver's precondition: a TYPED catalog's types are established by exactly one
+ * thing, `compileScenarioFamily` having built it, so the typed path accepts only a catalog this
+ * module produced. A structurally identical copy (`structuredClone`, a JSON round trip, a hand
+ * literal) carries a type it never earned — decode it with `decodeScenarioSelection`.
+ */
+function untrustedTypedCatalog(): PresentationScenarioError {
+  const diagnostics = new DiagnosticCollector()
+  diagnostics.add(
+    ROOT_DIAGNOSTIC_PATH,
+    'a typed catalog must be the one compileScenarioFamily or decodeScenarioFamily returned; ',
+    'decode a copied or serialized catalog with decodeScenarioSelection',
+  )
+  return diagnostics.error('invalid-catalog')
+}
+
+/** Thrown only if the resolved scenario or case is not the catalog's own — an internal fault. */
+function unresolvedInCatalog(scenarioId: string): PresentationScenarioError {
+  const diagnostics = new DiagnosticCollector()
+  diagnostics.add(
+    propertyPath(ROOT_DIAGNOSTIC_PATH, 'scenarioId'),
+    'resolution of scenario ',
+    quoted(scenarioId),
+    ' is not an object of the catalog it was resolved from',
+  )
+  return diagnostics.error('invalid-catalog')
+}
+
+/**
+ * Re-type an erased resolution for the generic scenario id `Id`, by construction: the scenario is
+ * the typed catalog's own `TypedCompiledScenarios<Definitions>[Id]`, the case is found among ITS
+ * cases (by identity — a trusted catalog resolves to its own frozen case objects), and the
+ * checker verifies the object literal against `TypedResolvedSelections<Definitions>[Id]`.
+ */
+function typedResolution<
+  Definitions extends PresentationScenarioDefinitions,
+  Id extends ScenarioId<Definitions>,
+>(
+  scenario: TypedCompiledScenarios<Definitions>[Id],
+  resolved: ResolvedPresentationScenarioSelection,
+): TypedResolvedSelections<Definitions>[Id] {
+  const scenarioCase = scenario.cases.find((candidate) => candidate === resolved.case)
+  if (scenarioCase === undefined) throw unresolvedInCatalog(scenario.scenarioId)
+  return Object.freeze({
+    productId: resolved.productId,
+    scenarioId: scenario.scenarioId,
+    case: scenarioCase,
+    path: resolved.path,
+    environment: resolved.environment,
+    ...(resolved.copiedArtifact === undefined ? {} : { copiedArtifact: resolved.copiedArtifact }),
+  })
 }
 
 /**
@@ -2498,13 +2990,22 @@ function resolveScenarioSelectionUnknown<
  * that fails to satisfy its typed shape is a COMPILE error rather than a value silently accepted
  * and narrowed away to `string`. For a catalog or selection received from an
  * untyped/serialized boundary, decode it with `decodeScenarioSelection` instead.
+ *
+ * `catalog` must be the very object `compileScenarioFamily` (or `decodeScenarioFamily`) returned
+ * — its types were earned by being compiled against the contract, so a copy of it (even a
+ * `structuredClone`, which keeps the static type) throws `invalid-catalog`. The result is built
+ * from that catalog's own typed scenario and case, never asserted.
  */
 export function resolveScenarioSelection<Definitions extends PresentationScenarioDefinitions>(
   contract: ProductContract,
-  catalog: CompiledPresentationScenarioFamily<Definitions>,
+  catalog: TypedCompiledPresentationScenarioFamily<Definitions>,
   selection: PresentationScenarioSelection,
-): ResolvedPresentationScenarioSelection<Definitions> {
-  return resolveScenarioSelectionUnknown<Definitions>(contract, catalog, selection)
+): TypedResolvedPresentationScenarioSelection<Definitions> {
+  if (!TRUSTED_CATALOGS.has(catalog)) throw untrustedTypedCatalog()
+  const resolved = resolveScenarioSelectionUnknown(contract, catalog, selection)
+  const scenario = catalog.scenarios.find(({ productId }) => productId === resolved.productId)
+  if (scenario === undefined) throw unresolvedInCatalog(resolved.scenarioId)
+  return typedResolution<Definitions, ScenarioId<Definitions>>(scenario, resolved)
 }
 
 /**
@@ -2519,4 +3020,326 @@ export function decodeScenarioSelection(
   selection: unknown,
 ): ResolvedPresentationScenarioSelection {
   return resolveScenarioSelectionUnknown(contract, catalog, selection)
+}
+
+// ─── Adapter dispatch ─────────────────────────────────────────────────────────────────────────
+//
+// Renderer adapters live in each app as separate maps keyed by scenario id (the protocol never
+// owns a renderer). Handing a resolved case to "the adapter for its scenario id" is the one step
+// every renderer shares, and it is exactly where a map lookup loses the correlation between the
+// id and the input: `adapters[selection.scenarioId]` over a union of ids is a union of adapters,
+// which TypeScript can only call with the INTERSECTION of their inputs. Every family renderer
+// papered over that with two casts (`adapter as Adapter<unknown>`, `scenarioId as XScenarioId`),
+// and a cast checks nothing — a map whose menu adapter took a select input compiled.
+//
+// The fix is TypeScript's correlated-union pattern (TS 4.6, microsoft/TypeScript#47109): ONE
+// mapped type of per-id inputs (`Inputs`), an adapter map mapped over the same keys, and a
+// selection written as `{ [P in Id]: … Inputs[P] … }[Id]` for a GENERIC `Id`. Indexing the
+// adapter map with the selection's `scenarioId` then yields `(input: Inputs[Id]) => …` and the
+// selection's input IS `Inputs[Id]`, so the call type-checks for the one id it is made for and
+// for no other. The generic body is deliberately written over a bare `Inputs` type parameter
+// rather than over `Definitions`: measured, relating `Inputs<Definitions>[Id2]` to
+// `Inputs<Definitions>[Id]` through the compiled-case conditional types is permissive (a probe
+// feeding one id's input to another id's adapter compiled), while over a plain `Inputs[K]` it is
+// rejected. The public signatures below instantiate `Inputs` from the catalog's definitions, so
+// the MAP is still checked against the real case inputs, per id, at every call site.
+
+/** Per-scenario renderer inputs: each id's own compiled case inputs, as a union. */
+type PresentationScenarioInputs<Definitions extends PresentationScenarioDefinitions> = {
+  readonly [Id in ScenarioId<Definitions>]: CompiledPresentationScenarioCase<
+    DefinitionCase<Definitions, Id>
+  >['input']
+}
+
+/**
+ * The renderer input for one scenario id of a definitions literal: the union of that scenario's
+ * own compiled case inputs. An adapter for `Id` must accept every one of them.
+ */
+export type PresentationScenarioCaseInput<
+  Definitions extends PresentationScenarioDefinitions,
+  Id extends ScenarioId<Definitions>,
+> = PresentationScenarioInputs<Definitions>[Id]
+
+/** What the protocol tells every adapter besides its input. */
+export interface PresentationScenarioAdapterContext<Id extends string = string> {
+  readonly scenarioId: Id
+  readonly caseId: string
+  readonly environment: PresentationScenarioEnvironment
+}
+
+/**
+ * The constraint on caller-supplied extra context (for example the copied artifacts a registry
+ * render is narrowed to): any object, except that a protocol-owned key is `never`. It is
+ * F-bounded (`Extra extends PresentationScenarioAdapterExtra<Extra>`) rather than a fixed type
+ * with optional `never` keys, because such a type is WEAK (all-optional) and TypeScript rejects
+ * assigning an object that shares none of its keys to a weak type — i.e. every legitimate extra.
+ * The protocol's values always win at runtime too, so an untyped caller cannot forge them either.
+ */
+export type PresentationScenarioAdapterExtra<Extra> = {
+  readonly [Key in keyof Extra]: Key extends keyof PresentationScenarioAdapterContext
+    ? never
+    : Extra[Key]
+}
+
+/** No extra context. */
+export type NoPresentationScenarioAdapterExtra = Readonly<Record<never, never>>
+
+type AdapterFor<
+  Inputs,
+  Id extends keyof Inputs & string,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra>,
+> = (
+  host: Host,
+  input: Inputs[Id],
+  context: PresentationScenarioAdapterContext<Id> & Extra,
+) => Result
+
+type AdaptersFor<Inputs, Host, Result, Extra extends PresentationScenarioAdapterExtra<Extra>> = {
+  readonly [Id in keyof Inputs & string]?: AdapterFor<Inputs, Id, Host, Result, Extra>
+}
+
+/** One scenario's renderer adapter, typed by that scenario's own case inputs. */
+export type PresentationScenarioAdapter<
+  Definitions extends PresentationScenarioDefinitions,
+  Id extends ScenarioId<Definitions>,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> = AdapterFor<PresentationScenarioInputs<Definitions>, Id, Host, Result, Extra>
+
+/**
+ * A family's adapter map for one renderer path, keyed by scenario id. Each adapter must accept
+ * every case input of the scenario it is registered under; a path that does not draw a scenario
+ * simply omits it (dispatching one then fails with `missing-adapter`).
+ */
+export type PresentationScenarioAdapters<
+  Definitions extends PresentationScenarioDefinitions,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> = AdaptersFor<PresentationScenarioInputs<Definitions>, Host, Result, Extra>
+
+/**
+ * A second, NON-mapped view of the same map, intersected into the public parameters purely as an
+ * inference site for `Host` and `Result`. The per-id map is keyed by `keyof` a definitions type
+ * that is itself still being inferred in the same call, and TypeScript infers nothing into a
+ * mapped type whose key set is still generic — measured, `const handle = dispatch…(…)` came back
+ * `unknown` and every caller had to annotate. An index signature is inferred from property by
+ * property, so the adapters' own host and return types flow out. It adds no constraint the mapped
+ * type does not already impose (every adapter must take the host and return the result).
+ */
+type AdapterResultWitness<Host, Result> = {
+  readonly [scenarioId: string]: ((host: Host, ...rest: never[]) => Result) | undefined
+}
+
+type CorrelatedSelection<Inputs, Id extends keyof Inputs & string> = {
+  readonly [P in Id]: {
+    readonly scenarioId: P
+    readonly case: { readonly id: string; readonly input: Inputs[P] }
+    readonly environment: PresentationScenarioEnvironment
+  }
+}[Id]
+
+function missingAdapter(scenarioId: string): PresentationScenarioError {
+  const diagnostics = new DiagnosticCollector()
+  diagnostics.add(
+    propertyPath(ROOT_DIAGNOSTIC_PATH, 'scenarioId'),
+    'no adapter is registered for scenario ',
+    quoted(scenarioId),
+  )
+  return diagnostics.error('missing-adapter')
+}
+
+function hasOwnAdapter(adapters: object, scenarioId: string): boolean {
+  return Object.prototype.hasOwnProperty.call(adapters, scenarioId)
+}
+
+/** The one correlated call. No cast: `adapters[selection.scenarioId]` is `AdaptersFor[Id]`. */
+function dispatchCorrelated<
+  Inputs,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra>,
+  Id extends keyof Inputs & string,
+>(
+  adapters: AdaptersFor<Inputs, Host, Result, Extra>,
+  selection: CorrelatedSelection<Inputs, Id>,
+  host: Host,
+  extra: Extra,
+): Result {
+  const scenarioId = selection.scenarioId
+  // An OWN property only: a map is a plain object literal, and `toString` is not an adapter.
+  const adapter = hasOwnAdapter(adapters, scenarioId) ? adapters[scenarioId] : undefined
+  if (adapter === undefined) throw missingAdapter(scenarioId)
+  // Protocol keys are spread LAST so they win over an untyped extra that carries one.
+  const context: PresentationScenarioAdapterContext<Id> & Extra = {
+    ...extra,
+    scenarioId,
+    caseId: selection.case.id,
+    environment: selection.environment,
+  }
+  return adapter(host, selection.case.input, context)
+}
+
+/** Fails unless `selection` names a scenario, product and case this catalog actually carries. */
+function assertSelectionInCatalog(
+  catalog: CompiledPresentationScenarioFamily,
+  selection: ResolvedPresentationScenarioSelection,
+): void {
+  const diagnostics = new DiagnosticCollector()
+  const scenario = catalog.scenarios.find(
+    ({ scenarioId, productId }) =>
+      scenarioId === selection.scenarioId && productId === selection.productId,
+  )
+  if (scenario === undefined) {
+    diagnostics.add(
+      propertyPath(ROOT_DIAGNOSTIC_PATH, 'scenarioId'),
+      'scenario ',
+      quoted(selection.scenarioId),
+      ' of product ',
+      quoted(selection.productId),
+      ' is not in compiled family ',
+      quoted(catalog.family),
+    )
+    throw diagnostics.error('invalid-selection')
+  }
+  if (!scenario.cases.some(({ id }) => id === selection.case.id)) {
+    diagnostics.add(
+      propertyPath(propertyPath(ROOT_DIAGNOSTIC_PATH, 'case'), 'id'),
+      'case ',
+      quoted(selection.case.id),
+      ' is not a case of scenario ',
+      quoted(selection.scenarioId),
+    )
+    throw diagnostics.error('invalid-selection')
+  }
+}
+
+/**
+ * Hand a resolved selection to the adapter registered for its scenario id — the typed, cast-free
+ * dispatch every family renderer shares. `catalog` is the family catalog the selection was
+ * resolved from: it is what types the adapter map (each adapter must accept its own scenario's
+ * case inputs, a compile error otherwise), and it is checked at runtime to actually carry the
+ * selection's scenario and case. Fails with `missing-adapter` when the map has no adapter for the
+ * scenario, and with `invalid-selection` when the selection is not from `catalog`.
+ */
+export function dispatchScenarioSelection<
+  Definitions extends PresentationScenarioDefinitions,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+>(
+  catalog: TypedCompiledPresentationScenarioFamily<Definitions>,
+  adapters: PresentationScenarioAdapters<Definitions, Host, Result, Extra> &
+    AdapterResultWitness<Host, Result>,
+  selection: TypedResolvedPresentationScenarioSelection<Definitions>,
+  host: Host,
+  extra: Extra,
+): Result {
+  const erasedCatalog: CompiledPresentationScenarioFamily = catalog
+  const erasedSelection: ResolvedPresentationScenarioSelection = selection
+  assertSelectionInCatalog(erasedCatalog, erasedSelection)
+  return dispatchCorrelated<
+    PresentationScenarioInputs<Definitions>,
+    Host,
+    Result,
+    Extra,
+    ScenarioId<Definitions>
+  >(adapters, selection, host, extra)
+}
+
+/** A resolved selection with its renderer bound, ready to draw into a host. */
+export interface PreparedPresentationScenario<
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> {
+  /** The protocol's resolution of the requested selection (erased: any family). */
+  readonly selection: ResolvedPresentationScenarioSelection
+  /** Dispatch the case to its adapter. Every call renders a fresh instance. */
+  render(host: Host, extra: Extra): Result
+}
+
+/**
+ * One family's typed adapter map bound to that family's typed catalog, exposed through a
+ * family-AGNOSTIC surface. This is how a consumer that handles every family generically (the
+ * component gallery) holds heterogeneous typed maps as one type without erasing an adapter's
+ * input type by cast: the binding keeps the typed catalog, so it resolves a plain selection
+ * itself and dispatches with the typed input the adapter was checked against.
+ */
+export interface PresentationScenarioAdapterBinding<
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+> {
+  readonly family: PresentationFamily
+  /** The scenario ids this binding has an adapter for, sorted. */
+  readonly scenarioIds: readonly string[]
+  /**
+   * Resolve `selection` against the bound catalog (every `resolveScenarioSelection` failure
+   * applies), then require an adapter for its scenario (`missing-adapter`). Nothing is rendered.
+   */
+  prepare(
+    contract: ProductContract,
+    selection: PresentationScenarioSelection,
+  ): PreparedPresentationScenario<Host, Result, Extra>
+}
+
+/**
+ * Bind a family's typed adapter map to its typed catalog, returning the erased
+ * {@link PresentationScenarioAdapterBinding}. The map is checked against the catalog's
+ * definitions exactly as `dispatchScenarioSelection` checks it, and at runtime every key must
+ * name one of the catalog's scenarios and every value must be a function (`invalid-adapters`).
+ */
+export function bindScenarioAdapters<
+  Definitions extends PresentationScenarioDefinitions,
+  Host,
+  Result,
+  Extra extends PresentationScenarioAdapterExtra<Extra> = NoPresentationScenarioAdapterExtra,
+>(
+  catalog: TypedCompiledPresentationScenarioFamily<Definitions>,
+  adapters: PresentationScenarioAdapters<Definitions, Host, Result, Extra> &
+    AdapterResultWitness<Host, Result>,
+): PresentationScenarioAdapterBinding<Host, Result, Extra> {
+  const erasedCatalog: CompiledPresentationScenarioFamily = catalog
+  const known = new Set(erasedCatalog.scenarios.map(({ scenarioId }) => scenarioId))
+  const diagnostics = new DiagnosticCollector()
+  const entries: readonly (readonly [string, unknown])[] = Object.entries(adapters)
+  for (const [scenarioId, adapter] of entries) {
+    const path = propertyPath(ROOT_DIAGNOSTIC_PATH, scenarioId)
+    if (!known.has(scenarioId)) {
+      diagnostics.add(
+        path,
+        'no scenario ',
+        quoted(scenarioId),
+        ' in compiled family ',
+        quoted(erasedCatalog.family),
+      )
+    } else if (typeof adapter !== 'function') {
+      diagnostics.add(path, 'adapter is not a function')
+    }
+  }
+  diagnostics.throwIfAny('invalid-adapters')
+  const scenarioIds = Object.freeze(entries.map(([scenarioId]) => scenarioId).sort())
+  return Object.freeze({
+    family: erasedCatalog.family,
+    scenarioIds,
+    prepare(
+      contract: ProductContract,
+      selection: PresentationScenarioSelection,
+    ): PreparedPresentationScenario<Host, Result, Extra> {
+      const resolved = resolveScenarioSelection(contract, catalog, selection)
+      const erasedSelection: ResolvedPresentationScenarioSelection = resolved
+      if (!hasOwnAdapter(adapters, erasedSelection.scenarioId)) {
+        throw missingAdapter(erasedSelection.scenarioId)
+      }
+      return Object.freeze({
+        selection: erasedSelection,
+        render: (host: Host, extra: Extra): Result =>
+          dispatchScenarioSelection(catalog, adapters, resolved, host, extra),
+      })
+    },
+  })
 }

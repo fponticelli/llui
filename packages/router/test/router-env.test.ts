@@ -27,13 +27,13 @@ function makeRouter(mode: 'hash' | 'history') {
 interface Recorded {
   env: RouterEnv
   calls: string[]
-  handlers: Array<{ event: string; handler: (newHash?: string) => void }>
+  handlers: Array<{ event: string; handler: () => void }>
 }
 
 /** A fully synthetic env — nothing here touches a browser global. */
 function recordingEnv(initial?: { hash?: string; pathname?: string; search?: string }): Recorded {
   const calls: string[] = []
-  const handlers: Array<{ event: string; handler: (newHash?: string) => void }> = []
+  const handlers: Array<{ event: string; handler: () => void }> = []
   let hash = initial?.hash ?? ''
   let pathname = initial?.pathname ?? '/'
   const search = initial?.search ?? ''
@@ -689,10 +689,14 @@ describe('connect.ts names a browser global in exactly one place', () => {
   // the very edit this gate exists to stop. Naming the container catches it
   // whatever is read off it, and `globalThis` has no non-global meaning to
   // over-match.
+  //
+  // `navigation` is the Navigation API's global (`window.navigation`), read
+  // only by `browserRouterEnv`'s `navigation` adapter; everything else reaches
+  // it as `env.navigation`, which the lookbehind excludes.
   const GLOBAL_USE =
-    /(?<![\w$.'"`])(?:(?:globalThis|history|window)\s*[.[]|location\s*(?:\[|\.(?:hash|pathname|search|href|replace|assign|reload)\b))/
+    /(?<![\w$.'"`])(?:(?:globalThis|history|window|navigation)\s*[.[]|location\s*(?:\[|\.(?:hash|pathname|search|href|replace|assign|reload)\b))/
 
-  it('every location/history/window dereference is inside browserRouterEnv', () => {
+  it('every location/history/window/navigation dereference is inside browserRouterEnv', () => {
     const lines = codeLines(connectSource)
     const [from, to] = adapterRange(lines)
     const outside = lines
@@ -717,9 +721,12 @@ describe('connect.ts names a browser global in exactly one place', () => {
     expect(GLOBAL_USE.test("globalThis['location'].hash")).toBe(true)
     expect(GLOBAL_USE.test('window.location.hash')).toBe(true)
     expect(GLOBAL_USE.test('location.hash')).toBe(true)
+    expect(GLOBAL_USE.test('navigation.traverseTo(key, { info })')).toBe(true)
+    expect(GLOBAL_USE.test('globalThis.navigation.currentEntry')).toBe(true)
 
     // …and still reads a DEREFERENCE of the global, not a mention of the word.
     expect(GLOBAL_USE.test('env.historyState')).toBe(false)
+    expect(GLOBAL_USE.test('const nav = env.navigation ?? null')).toBe(false)
     expect(GLOBAL_USE.test("router.mode === 'history'")).toBe(false)
     expect(GLOBAL_USE.test('const globalThisIsNotIt = 1')).toBe(false)
   })
@@ -759,14 +766,18 @@ describe('browserRouterEnv()', () => {
 })
 
 describe('RouterEnv custom-adapter documentation', () => {
-  it('forwards the hashchange destination instead of passing the router callback as a listener', () => {
+  it('notifies without an event payload — the router reads the live URL, never the event', () => {
+    // A `hashchange` can be delivered after another history step has already
+    // been applied (see `settledHash` in connect.ts), so its `newURL` names a URL
+    // that is no longer showing. The contract therefore carries nothing, and the
+    // documented adapter must not teach one.
     const start = routerDocs.indexOf('const frameEnv: RouterEnv = {')
     const end = routerDocs.indexOf('const framed =', start)
     expect(start).toBeGreaterThanOrEqual(0)
     expect(end).toBeGreaterThan(start)
     const example = routerDocs.slice(start, end)
 
-    expect(example).toContain('handler(new URL((change as HashChangeEvent).newURL).hash)')
-    expect(example).not.toContain('addEventListener(event, handler)')
+    expect(example).toContain('const listener = () => handler()')
+    expect(example).not.toContain('newURL')
   })
 })

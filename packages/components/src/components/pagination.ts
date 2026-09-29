@@ -1,4 +1,4 @@
-import type { Mountable, Send, Signal } from '@llui/dom'
+import type { Mountable, Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { paginationLocale } from '../locale/pagination.js'
 import {
@@ -250,39 +250,39 @@ export interface PaginationParts {
     'aria-label': string
     'data-scope': 'pagination'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   prevTrigger: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'pagination'
     'data-part': 'prev-trigger'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   nextTrigger: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'pagination'
     'data-part': 'next-trigger'
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
   item: (page: number) => {
     type: 'button'
     'aria-label': string
-    'aria-current': Signal<'page' | undefined>
-    'data-selected': Signal<'' | undefined>
+    'aria-current': ReadSignal<'page' | undefined>
+    'data-selected': ReadSignal<'' | undefined>
     'data-scope': 'pagination'
     'data-part': 'item'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
   }
@@ -305,7 +305,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<PaginationState>,
+  state: ReadSignal<PaginationState>,
   send: Send<PaginationMsg>,
   opts: ConnectOptions,
 ): PaginationParts {

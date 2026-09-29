@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { component, div, mountApp, path, svg, text } from '@llui/dom'
-import { chromium, type Browser } from 'playwright'
+import type { Browser } from 'playwright'
 import * as accordionMachine from '../../packages/components/src/components/accordion'
 import * as carouselMachine from '../../packages/components/src/components/carousel'
 import * as collapsibleMachine from '../../packages/components/src/components/collapsible'
@@ -116,6 +116,9 @@ import {
   joinNavigationDataScenarios,
   scenarioEnvironmentProductIds,
 } from '../../packages/components/test/styles/navigation-data-scenarios'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const contract = loadProductContract()
 const catalog = compileNavigationDataCatalog(contract)
@@ -794,7 +797,7 @@ describe('registry navigation/data presentation in Chromium', () => {
     const compiled = await compileCandidates(candidates(html))
     expect(compiled.dead).toEqual([])
     tailwind = `${compiled.css}\n@keyframes registry-marquee { from { transform: translateX(0) } to { transform: translateX(-50%) } }`
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
   }, 120_000)
 
   afterAll(async () => {
@@ -936,7 +939,7 @@ describe('registry navigation/data presentation in Chromium', () => {
             'carousel-next',
             'carousel-dot-active',
             'carousel-dot',
-          ].map((id) => {
+          ].map((id): [number, number] => {
             const rect = document.getElementById(id)!.getBoundingClientRect()
             return [rect.width, rect.height]
           }),

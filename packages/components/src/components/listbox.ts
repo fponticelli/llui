@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import {
   typeaheadAccumulate,
   typeaheadMatchByItems,
@@ -195,11 +195,11 @@ export interface ListboxItemParts {
   root: {
     role: 'option'
     id: string
-    'aria-selected': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    'data-state': Signal<'selected' | undefined>
-    'data-highlighted': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'aria-selected': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'data-state': ReadSignal<'selected' | undefined>
+    'data-highlighted': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'listbox'
     'data-part': 'item'
     'data-value': string
@@ -212,14 +212,14 @@ export interface ListboxItemParts {
 export interface ListboxParts {
   root: {
     role: 'listbox'
-    'aria-multiselectable': Signal<'true' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-activedescendant': Signal<string | undefined>
-    tabindex: Signal<number>
+    'aria-multiselectable': ReadSignal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
+    tabindex: ReadSignal<number>
     id: string
     'data-scope': 'listbox'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
   }
   item: (value: string, index: number) => ListboxItemParts
@@ -230,7 +230,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<ListboxState>,
+  state: ReadSignal<ListboxState>,
   send: Send<ListboxMsg>,
   opts: ConnectOptions,
 ): ListboxParts {

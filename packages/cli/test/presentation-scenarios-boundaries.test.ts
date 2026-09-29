@@ -1,5 +1,5 @@
 import { runInNewContext } from 'node:vm'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { ProductContractSchema, type ProductContract } from '../src/product-contract'
 import {
   DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT,
@@ -10,9 +10,9 @@ import {
   PresentationScenarioError,
   decodeScenarioFamily,
   decodeScenarioSelection,
-  type CompiledPresentationScenarioFamily,
   type PresentationScenarioDefinitions,
 } from '../src/presentation-scenarios'
+import { ownObject, ownPath, pushInto } from './untyped-access'
 
 const styled = { mode: 'styled' as const }
 function expectBoundedDiagnostics(
@@ -61,7 +61,9 @@ function productContract(): ProductContract {
   })
 }
 
-function definitions(input: unknown = { open: true }): PresentationScenarioDefinitions {
+/** An UNTYPED definitions value around an arbitrary (possibly ill-typed) `input` — only ever
+ * handed to the `decode…` entry points, which take `unknown` by design. */
+function definitions(input: unknown = { open: true }) {
   return {
     'component:dialog': {
       defaultCaseId: 'open',
@@ -74,7 +76,7 @@ function definitions(input: unknown = { open: true }): PresentationScenarioDefin
         },
       ],
     },
-  } as PresentationScenarioDefinitions
+  }
 }
 
 function errorFrom(action: () => unknown): PresentationScenarioError {
@@ -83,13 +85,14 @@ function errorFrom(action: () => unknown): PresentationScenarioError {
     throw new Error('expected PresentationScenarioError')
   } catch (error) {
     expect(error).toBeInstanceOf(PresentationScenarioError)
-    return error as PresentationScenarioError
+    if (!(error instanceof PresentationScenarioError)) throw error
+    return error
   }
 }
 
 describe('presentation scenario boundary decoding', () => {
   it('rejects mutated inherited hooks without invoking iterator or toJSON behavior', () => {
-    const crossRealmInput = runInNewContext(`
+    const crossRealmInput: unknown = runInNewContext(`
       Object.defineProperty(Object.prototype, 'toJSON', {
         configurable: true,
         get() { throw new Error('inherited toJSON executed') }
@@ -103,7 +106,7 @@ describe('presentation scenario boundary decoding', () => {
         value() { throw new Error('inherited iterator executed') }
       })
       ;({ message: 'cross-realm', rows: ['Ada', 'Grace'] })
-    `) as unknown
+    `)
     const prototypeLessAxes = ['theme']
     Object.setPrototypeOf(prototypeLessAxes, null)
     const cases = [
@@ -198,7 +201,7 @@ describe('presentation scenario boundary decoding', () => {
   })
 
   it('rejects mutated inherited array hooks without invoking them', () => {
-    const rows = runInNewContext(`
+    const rows: unknown = runInNewContext(`
       Object.defineProperty(Array.prototype, 'entries', {
         configurable: true,
         value() { throw new Error('entries executed') }
@@ -208,7 +211,7 @@ describe('presentation scenario boundary decoding', () => {
         value() { throw new Error('iterator executed') }
       })
       ;['Ada', 'Grace']
-    `) as unknown
+    `)
     const error = errorFrom(() =>
       decodeScenarioFamily(productContract(), 'menus-overlays', definitions({ rows })),
     )
@@ -220,7 +223,7 @@ describe('presentation scenario boundary decoding', () => {
       'delete Array.prototype.entries',
       'delete Array.prototype[Symbol.iterator]',
     ]) {
-      const missingHookRows = runInNewContext(`${mutation}; ['Ada', 'Grace']`) as unknown
+      const missingHookRows: unknown = runInNewContext(`${mutation}; ['Ada', 'Grace']`)
       const missingHookError = errorFrom(() =>
         decodeScenarioFamily(
           productContract(),
@@ -235,7 +238,7 @@ describe('presentation scenario boundary decoding', () => {
   })
 
   it('accepts cross-realm and null-prototype records but rejects custom prototypes', () => {
-    const crossRealmDefinitions = runInNewContext(`({
+    const crossRealmDefinitions: unknown = runInNewContext(`({
       'component:dialog': {
         defaultCaseId: 'open',
         cases: [{
@@ -245,13 +248,13 @@ describe('presentation scenario boundary decoding', () => {
           environmentAxes: []
         }]
       }
-    })`) as PresentationScenarioDefinitions
+    })`)
     expect(
       decodeScenarioFamily(productContract(), 'menus-overlays', crossRealmDefinitions).scenarios[0]!
         .cases[0]!.input,
     ).toEqual({ open: true })
 
-    const custom = Object.create({ inherited: true }) as Record<string, unknown>
+    const custom: Record<string, unknown> = Object.create({ inherited: true })
     custom['open'] = true
     const error = errorFrom(() =>
       decodeScenarioFamily(productContract(), 'menus-overlays', definitions(custom)),
@@ -268,7 +271,7 @@ describe('presentation scenario boundary decoding', () => {
 
   it('rejects hidden, symbol, and decorated JSON state without reading hooks', () => {
     let reads = 0
-    const input = { visible: true }
+    const input: Record<string, unknown> = { visible: true }
     Object.defineProperties(input, {
       hidden: { value: 'ignored', enumerable: false },
       dynamic: {
@@ -291,7 +294,7 @@ describe('presentation scenario boundary decoding', () => {
         return 'ignored'
       },
     })
-    ;(input as Record<string, unknown>)['rows'] = rows
+    input['rows'] = rows
 
     const dataError = errorFrom(() =>
       decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
@@ -444,12 +447,14 @@ describe('presentation scenario boundary decoding', () => {
       '$["component:dialog"].defaultCaseId: must be a string.',
     ])
 
-    const catalog = JSON.parse(
+    const catalog: unknown = JSON.parse(
       JSON.stringify(decodeScenarioFamily(productContract(), 'menus-overlays', definitions())),
-    ) as Record<string, unknown>
-    const scenarios = catalog['scenarios'] as Record<string, unknown>[]
-    scenarios[0]!['metadata'] = []
-    scenarios[0]!['cases'] = [{ id: 'open', label: 1, input: null, environmentAxes: null }]
+    )
+    const firstScenario = ownObject(catalog, 'scenarios', 0)
+    Reflect.set(firstScenario, 'metadata', [])
+    Reflect.set(firstScenario, 'cases', [
+      { id: 'open', label: 1, input: null, environmentAxes: null },
+    ])
     const catalogError = errorFrom(() =>
       decodeScenarioSelection(productContract(), catalog, {
         productId: 'dialog',
@@ -646,7 +651,7 @@ describe('presentation scenario boundary decoding', () => {
       ),
     ).toBe(true)
 
-    const overlongKeyInput = Object.create(null) as Record<string, null>
+    const overlongKeyInput: Record<string, null> = Object.create(null)
     overlongKeyInput['x'.repeat(100_001)] = null
     const propertyNameError = errorFrom(() =>
       decodeScenarioFamily(productContract(), 'menus-overlays', definitions(overlongKeyInput)),
@@ -976,9 +981,10 @@ describe('presentation scenario boundary decoding', () => {
     // reported directly AT the scenario key, with nothing past it, so the key IS the leaf.
     const idA = `component:${'x'.repeat(239)}A` // 250 chars
     const idB = `component:${'x'.repeat(239)}B` // 250 chars, differs only in the last character
+    const noAxes: string[] = []
     const good = {
       defaultCaseId: 'a',
-      cases: [{ id: 'a', label: 'A', input: 0, environmentAxes: [] as string[] }],
+      cases: [{ id: 'a', label: 'A', input: 0, environmentAxes: noAxes }],
     }
 
     function twoLongIdContract(): ProductContract {
@@ -1098,11 +1104,10 @@ describe('presentation scenario boundary decoding', () => {
       issues: ['$: value could not be inspected safely.'],
     })
 
-    const mutatingTarget = definitions() as Record<string, unknown>
-    const mutating = new Proxy(mutatingTarget, {
+    const mutating = new Proxy(definitions(), {
       ownKeys(target) {
         const keys = Reflect.ownKeys(target)
-        delete target['component:dialog']
+        Reflect.deleteProperty(target, 'component:dialog')
         return keys
       },
     })
@@ -1176,15 +1181,13 @@ describe('presentation scenario boundary decoding', () => {
       messageUnits: 16_384,
     })
     expect(Object.isFrozen(PRESENTATION_SCENARIO_DIAGNOSTIC_LIMITS)).toBe(true)
-    expect(() =>
-      (PRESENTATION_SCENARIO_ENVIRONMENT_VALUES.theme as unknown as string[]).push('sepia'),
-    ).toThrow(TypeError)
-    expect(() => {
-      ;(DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT as { theme: string }).theme = 'dark'
-    }).toThrow(TypeError)
-    expect(() => {
-      ;(PRESENTATION_SCENARIO_PATHS as unknown as string[])[0] = 'mutation'
-    }).toThrow(TypeError)
+    // Each write the types forbid is attempted anyway, untyped: a strict-mode assignment throws
+    // exactly when [[Set]] returns false, which `Reflect.set` reports directly.
+    expect(() => pushInto(PRESENTATION_SCENARIO_ENVIRONMENT_VALUES.theme, 'sepia')).toThrow(
+      TypeError,
+    )
+    expect(Reflect.set(DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT, 'theme', 'dark')).toBe(false)
+    expect(Reflect.set(PRESENTATION_SCENARIO_PATHS, 0, 'mutation')).toBe(false)
     expect(PRESENTATION_SCENARIO_ENVIRONMENT_VALUES.theme).toEqual(['light', 'dark'])
     expect(DEFAULT_PRESENTATION_SCENARIO_ENVIRONMENT.theme).toBe('light')
     expect(PRESENTATION_SCENARIO_PATHS).toEqual(['baseline', 'registryTailwind'])
@@ -1194,17 +1197,14 @@ describe('presentation scenario boundary decoding', () => {
     expect(Object.isFrozen(scenarioCase.environmentAxes)).toBe(true)
     expect(Object.isFrozen(scenarioCase.copiedArtifactNames)).toBe(true)
     expect(Object.isFrozen(scenarioCase.input)).toBe(true)
-    expect(Object.isFrozen((scenarioCase.input as { nested: object }).nested)).toBe(true)
-    expect(() =>
-      (scenarioCase.input as { nested: { labels: string[] } }).nested.labels.push('mutation'),
-    ).toThrow(TypeError)
-    expect(() => (catalog.scenarios as unknown as object[]).push({})).toThrow(TypeError)
-    expect((scenarioCase.input as { nested: { labels: string[] } }).nested.labels).toEqual([
-      'Ada',
-      'Grace',
-    ])
+    expect(Object.isFrozen(ownObject(scenarioCase.input, 'nested'))).toBe(true)
+    expect(() => pushInto(ownPath(scenarioCase.input, 'nested', 'labels'), 'mutation')).toThrow(
+      TypeError,
+    )
+    expect(() => pushInto(catalog.scenarios, {})).toThrow(TypeError)
+    expect(ownPath(scenarioCase.input, 'nested', 'labels')).toEqual(['Ada', 'Grace'])
 
-    const serialized = JSON.parse(JSON.stringify(catalog)) as CompiledPresentationScenarioFamily
+    const serialized: unknown = JSON.parse(JSON.stringify(catalog))
     const baseline = decodeScenarioSelection(productContract(), serialized, {
       productId: 'dialog',
       path: 'baseline',
@@ -1218,40 +1218,30 @@ describe('presentation scenario boundary decoding', () => {
     expect(Object.isFrozen(baseline)).toBe(true)
     expect(Object.isFrozen(baseline.environment)).toBe(true)
     expect(Object.isFrozen(registry.copiedArtifact)).toBe(true)
-    expect(() =>
-      (baseline.case.input as { nested: { labels: string[] } }).nested.labels.push('leak'),
-    ).toThrow(TypeError)
-    expect((registry.case.input as { nested: { labels: string[] } }).nested.labels).toEqual([
-      'Ada',
-      'Grace',
-    ])
-    expect(() => (registry.case.environmentAxes as unknown as string[]).push('motion')).toThrow(
+    expect(() => pushInto(ownPath(baseline.case.input, 'nested', 'labels'), 'leak')).toThrow(
       TypeError,
     )
+    expect(ownPath(registry.case.input, 'nested', 'labels')).toEqual(['Ada', 'Grace'])
+    expect(() => pushInto(registry.case.environmentAxes, 'motion')).toThrow(TypeError)
     expect(baseline.case.environmentAxes).toEqual(['theme'])
-    expect(() => {
-      ;(registry.environment as { theme: string }).theme = 'dark'
-    }).toThrow(TypeError)
+    expect(Reflect.set(registry.environment, 'theme', 'dark')).toBe(false)
     expect(baseline.environment.theme).toBe('light')
-    expect(() => {
-      ;(registry.copiedArtifact as { name: string }).name = 'mutation'
-    }).toThrow(TypeError)
+    expect(Reflect.set(ownObject(registry, 'copiedArtifact'), 'name', 'mutation')).toBe(false)
     expect(registry.copiedArtifact?.name).toBe('dialog')
-    ;(
-      serialized.scenarios[0]!.cases[0]!.input as { nested: { labels: string[] } }
-    ).nested.labels.push('serialized mutation')
-    expect((baseline.case.input as { nested: { labels: string[] } }).nested.labels).toEqual([
-      'Ada',
-      'Grace',
-    ])
+    pushInto(
+      ownPath(serialized, 'scenarios', 0, 'cases', 0, 'input', 'nested', 'labels'),
+      'serialized mutation',
+    )
+    expect(ownPath(baseline.case.input, 'nested', 'labels')).toEqual(['Ada', 'Grace'])
 
+    const mutableEnvironment: { theme: string } = { theme: 'dark' }
     const mutableSelection = {
       productId: 'dialog',
       path: 'baseline' as const,
-      environment: { theme: 'dark' as const },
+      environment: mutableEnvironment,
     }
     const selected = decodeScenarioSelection(productContract(), catalog, mutableSelection)
-    ;(mutableSelection.environment as { theme: string }).theme = 'light'
+    mutableEnvironment.theme = 'light'
     expect(selected.environment.theme).toBe('dark')
 
     const issues = ['$.z: last.', '$.a: first.']
@@ -1259,7 +1249,7 @@ describe('presentation scenario boundary decoding', () => {
     issues.push('$.mutation: leak.')
     expect(protocolError.issues).toEqual(['$.a: first.', '$.z: last.'])
     expect(Object.isFrozen(protocolError.issues)).toBe(true)
-    expect(() => (protocolError.issues as string[]).push('mutation')).toThrow(TypeError)
+    expect(() => pushInto(protocolError.issues, 'mutation')).toThrow(TypeError)
   })
 
   it('rejects a requested family with no ProductContract entries', () => {
@@ -1280,7 +1270,7 @@ describe('presentation scenario boundary decoding', () => {
         labels: Array.from({ length: index % 5 }, (_, labelIndex) => `label-${labelIndex}`),
       }
       const catalog = decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input))
-      const serialized = JSON.parse(JSON.stringify(catalog)) as typeof catalog
+      const serialized: unknown = JSON.parse(JSON.stringify(catalog))
       expect(serialized).toEqual(catalog)
       expect(
         decodeScenarioSelection(productContract(), serialized, {
@@ -1299,6 +1289,12 @@ describe('presentation scenario boundary decoding', () => {
  * of the budget being probed) — measures the actual boundary empirically rather than
  * hand-deriving a fixed per-shape overhead constant, which is exactly the class of arithmetic
  * mistake the earlier `reserveScaffolding` design made three times over. `hi` must already fail.
+ *
+ * It GALLOPS DOWN from `hi` before bisecting (#268). The budgets' boundaries sit a few units
+ * under `hi` (the scaffolding a payload carries is small), and every probe near the top decodes
+ * a ~288k-node family (~0.9 s quiet); bisecting from 0 spent 18 probes getting there, galloping
+ * spends a handful. Still exact, still monotone-only: the bracket it hands the bisection is a
+ * measured fit and a measured failure.
  */
 function maxFittingN(build: (n: number) => unknown, lo: number, hi: number): number {
   const fits = (n: number): boolean => {
@@ -1312,12 +1308,71 @@ function maxFittingN(build: (n: number) => unknown, lo: number, hi: number): num
   if (fits(hi)) throw new Error('maxFittingN: hi must already fail to fit')
   let low = lo
   let high = hi
+  for (let step = 1; hi - step > lo; step *= 2) {
+    if (fits(hi - step)) {
+      low = hi - step
+      break
+    }
+    high = hi - step
+  }
   while (high - low > 1) {
     const mid = low + Math.floor((high - low) / 2)
     if (fits(mid)) low = mid
     else high = mid
   }
   return low
+}
+
+/**
+ * The at-the-budget round trip, as a FIXTURE plus three tests (#268).
+ *
+ * Each budget used to find its boundary in the `describe` BODY — collection
+ * time, which no timeout bounds (16 s of this file's 28 s, measured
+ * quiet) — and then compile, JSON-round-trip
+ * AND clone-round-trip a ~288k-node payload in ONE test, which measured 3.6 s
+ * quiet and ran past the 30 s budget under a full parallel `turbo test`. The
+ * boundary search and the one compile are a fixture, so they live in
+ * `beforeAll` (the 60 s hook budget, sized for exactly this); the three
+ * independent properties are three tests (the #197 lesson: a test whose
+ * duration is a sum of independent work is the shape that runs out of
+ * budget). What is asserted is unchanged.
+ */
+function describeBudgetRoundTrip(
+  budget: string,
+  build: (n: number) => unknown,
+  hi: number,
+): { boundary(): number } {
+  let boundary = -1
+  let input: unknown
+  let catalog: ReturnType<typeof decodeScenarioFamily>
+  const contract = productContract()
+  const selection = { productId: 'dialog', path: 'baseline' as const }
+  beforeAll(() => {
+    boundary = maxFittingN(build, 0, hi)
+    input = build(boundary)
+    catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
+  })
+  it(`compiles exactly at the ${budget} budget`, () => {
+    expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
+  })
+  it(`round-trips the ${budget}-budget catalog through JSON`, () => {
+    const viaJson = decodeScenarioSelection(
+      contract,
+      JSON.parse(JSON.stringify(catalog)),
+      selection,
+    )
+    expect(viaJson.case.input).toEqual(input)
+  })
+  it(`round-trips the ${budget}-budget catalog through structuredClone`, () => {
+    const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
+    expect(viaClone.case.input).toEqual(input)
+  })
+  return {
+    boundary: () => {
+      if (boundary < 0) throw new Error(`${budget} boundary read before its fixture ran`)
+      return boundary
+    },
+  }
 }
 
 describe('one cost model governs compileScenarioFamily and every catalog derived from it', () => {
@@ -1337,31 +1392,14 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
   }
 
   describe('NODES', () => {
-    const boundary = maxFittingN(
+    const nodes = describeBudgetRoundTrip(
+      'node',
       flatNullInput,
-      0,
       PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyNodes,
     )
 
-    it('compiles and round-trips exactly at the node budget', () => {
-      const input = flatNullInput(boundary)
-      const contract = productContract()
-      const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
-      expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
-
-      const selection = { productId: 'dialog', path: 'baseline' as const }
-      const viaJson = decodeScenarioSelection(
-        contract,
-        JSON.parse(JSON.stringify(catalog)) as unknown,
-        selection,
-      )
-      expect(viaJson.case.input).toEqual(input)
-      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
-      expect(viaClone.case.input).toEqual(input)
-    })
-
     it('rejects one past the node budget, citing the caller-written path', () => {
-      const input = flatNullInput(boundary + 1)
+      const input = flatNullInput(nodes.boundary() + 1)
       const error = errorFrom(() =>
         decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
       )
@@ -1376,28 +1414,11 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
   })
 
   describe('FIELDS', () => {
-    const boundary = maxFittingN(
+    describeBudgetRoundTrip(
+      'field',
       nestedPairsInput,
-      0,
       PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyFields,
     )
-
-    it('compiles and round-trips exactly at the field budget', () => {
-      const input = nestedPairsInput(boundary)
-      const contract = productContract()
-      const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
-      expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
-
-      const selection = { productId: 'dialog', path: 'baseline' as const }
-      const viaJson = decodeScenarioSelection(
-        contract,
-        JSON.parse(JSON.stringify(catalog)) as unknown,
-        selection,
-      )
-      expect(viaJson.case.input).toEqual(input)
-      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
-      expect(viaClone.case.input).toEqual(input)
-    })
 
     it('rejects one past the field budget, citing the caller-written path', () => {
       // A single flat object wide enough to exceed `MAX_FIELDS` outright reports the field limit
@@ -1425,31 +1446,14 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
       for (let index = 0; index < fieldCount; index += 1) input[`f${index}`] = 'x'.repeat(unitSize)
       return input
     }
-    const boundaryFields = maxFittingN(
+    const stringUnits = describeBudgetRoundTrip(
+      'string-unit',
       stringUnitsInput,
-      0,
       Math.ceil(PRESENTATION_SCENARIO_COMPLEXITY_LIMITS.familyStringUnits / unitSize) + 1,
     )
 
-    it('compiles and round-trips exactly at the string-unit budget', () => {
-      const input = stringUnitsInput(boundaryFields)
-      const contract = productContract()
-      const catalog = decodeScenarioFamily(contract, 'menus-overlays', definitions(input))
-      expect(catalog.scenarios[0]!.cases[0]!.input).toEqual(input)
-
-      const selection = { productId: 'dialog', path: 'baseline' as const }
-      const viaJson = decodeScenarioSelection(
-        contract,
-        JSON.parse(JSON.stringify(catalog)) as unknown,
-        selection,
-      )
-      expect(viaJson.case.input).toEqual(input)
-      const viaClone = decodeScenarioSelection(contract, structuredClone(catalog), selection)
-      expect(viaClone.case.input).toEqual(input)
-    })
-
     it('rejects one field past the string-unit budget, citing the caller-written path', () => {
-      const input = stringUnitsInput(boundaryFields + 1)
+      const input = stringUnitsInput(stringUnits.boundary() + 1)
       const error = errorFrom(() =>
         decodeScenarioFamily(productContract(), 'menus-overlays', definitions(input)),
       )
@@ -1477,7 +1481,7 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
       const selection = { productId: 'dialog', path: 'baseline' as const }
       const viaJson = decodeScenarioSelection(
         contract,
-        JSON.parse(JSON.stringify(catalog)) as unknown,
+        JSON.parse(JSON.stringify(catalog)),
         selection,
       )
       expect(viaJson.case.input).toEqual(input)
@@ -1517,7 +1521,7 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
       const selection = { productId: 'dialog', path: 'baseline' as const }
       const viaJson = decodeScenarioSelection(
         contract,
-        JSON.parse(JSON.stringify(catalog)) as unknown,
+        JSON.parse(JSON.stringify(catalog)),
         selection,
       )
       expect(viaJson.case.input).toEqual(input)
@@ -1559,7 +1563,7 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
       const selection = { productId: 'product-0', path: 'baseline' as const }
       const viaJson = decodeScenarioSelection(
         contract,
-        JSON.parse(JSON.stringify(catalog)) as unknown,
+        JSON.parse(JSON.stringify(catalog)),
         selection,
       )
       expect(viaJson.case.input).toEqual(rowInput(1))
@@ -1679,7 +1683,7 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
       const selection = { productId: okName, path: 'baseline' as const }
       const viaJson = decodeScenarioSelection(
         contract,
-        JSON.parse(JSON.stringify(catalog)) as unknown,
+        JSON.parse(JSON.stringify(catalog)),
         selection,
       )
       expect(viaJson.productId).toBe(okName)
@@ -1717,7 +1721,7 @@ describe('one cost model governs compileScenarioFamily and every catalog derived
       const selection = { productId: 'dialog', path: 'baseline' as const }
       const viaJson = decodeScenarioSelection(
         contract,
-        JSON.parse(JSON.stringify(catalog)) as unknown,
+        JSON.parse(JSON.stringify(catalog)),
         selection,
       )
       expect(viaJson.scenarioId).toBe(okId)
@@ -1852,7 +1856,7 @@ describe('array decoding cost is bounded by real own-key count, never by a claim
     let descriptorCalls = 0
     const target: unknown[] = [0]
     const keyCount = 1_000_000
-    for (let index = 0; index < keyCount; index += 1) target[`k${index}` as unknown as number] = 0
+    for (let index = 0; index < keyCount; index += 1) Reflect.set(target, `k${index}`, 0)
     const wideArray = new Proxy(target, {
       getOwnPropertyDescriptor(t, key) {
         descriptorCalls += 1
@@ -1880,7 +1884,7 @@ describe('array decoding cost is bounded by real own-key count, never by a claim
     let descriptorCalls = 0
     const target: unknown[] = [{ id: 'a', label: 'A', input: 0, environmentAxes: [] }]
     const keyCount = 1_000_000
-    for (let index = 0; index < keyCount; index += 1) target[`k${index}` as unknown as number] = 0
+    for (let index = 0; index < keyCount; index += 1) Reflect.set(target, `k${index}`, 0)
     const wideCases = new Proxy(target, {
       getOwnPropertyDescriptor(t, key) {
         descriptorCalls += 1
@@ -1907,7 +1911,8 @@ describe('array decoding cost is bounded by real own-key count, never by a claim
     // (rather than timing a real 10-million-element array) is both faster to run and a more
     // direct proof that the length check now runs first.
     let ownKeysCalls = 0
-    const overLong = new Proxy([] as unknown[], {
+    const overLongTarget: unknown[] = []
+    const overLong = new Proxy(overLongTarget, {
       ownKeys(target) {
         ownKeysCalls += 1
         return Reflect.ownKeys(target)

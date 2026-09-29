@@ -26,7 +26,7 @@ export function formatFileSize(value: number | bigint, opts: FormatFileSizeOptio
     minimumFractionDigits: fractionDigits,
     maximumFractionDigits: fractionDigits,
   }
-  const key = cacheKey('fs', locale, intlOpts as Record<string, unknown>)
+  const key = cacheKey('fs', locale, intlOpts)
   const fmt = cached(key, () => new Intl.NumberFormat(locale, intlOpts))
   const formatted = fmt.format(num)
 

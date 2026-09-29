@@ -7,7 +7,7 @@ import { $isRangeSelection, BLUR_COMMAND, COMMAND_PRIORITY_LOW } from 'lexical'
 import { mergeRegister } from '@lexical/utils'
 import { $isLinkNode } from '@lexical/link'
 import type { CommitFacts } from '@llui/lexical'
-import { button, each, span, text, unsafeHtml, type Signal } from '@llui/dom'
+import { button, each, span, text, unsafeHtml, type ReadSignal, type Signal } from '@llui/dom'
 import { definePluginUI } from './ui.js'
 import { OVERLAY_Z, hideOverlay, onViewportChange, overlayRoot } from './overlay.js'
 import { DEFAULT_GLYPHS } from '../surfaces/toolbar.js'
@@ -187,7 +187,7 @@ export function floatingToolbarPlugin(): MarkdownPlugin {
 }
 
 /** Render an item's glyph (SVG markup → unsafeHtml, otherwise text). */
-function renderGlyph(item: Signal<BarItem>): import('@llui/dom').Mountable {
+function renderGlyph(item: ReadSignal<BarItem>): import('@llui/dom').Mountable {
   // The glyph value is stable per row; reading once is fine.
   const glyph = item.peek().glyph
   return glyph.trimStart().startsWith('<svg') ? unsafeHtml(glyph) : text(item.map((it) => it.glyph))

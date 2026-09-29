@@ -13,10 +13,15 @@
 //                              soundness depends on these bans)
 //   prefer-at-over-map       — a plain single-field projection `sig.map(p => p.x)`
 //                              should be `sig.at('x')` — a path signal that depends
-//                              only on `x`, not the whole source
-//   at-after-map             — `sig.map(fn).at('x')` / `derived(…).at('x')`: a mapped
-//                              signal has no static path to slice (runtime throw +
-//                              type error) — slice with `.at()` BEFORE `.map()`
+//                              only on `x`, not the whole source. Only where `sig`
+//                              provably carries a PATH (see `RootShape`): `.at()`
+//                              does not exist on a mapped signal (#267)
+//   at-after-map             — `sig.map(fn).at('x')` / `derived(…).at('x')`, or
+//                              `.at()` on a show/branch narrowed param over a mapped
+//                              condition: a mapped signal (`MappedSignal`, not a
+//                              `Signal`) has no static path to slice (runtime
+//                              throw + type error) — slice with
+//                              `.at()` BEFORE `.map()`, or read with `.map`
 //
 // (There is deliberately no whole-`state`-coarseness rule: rendering a whole-state
 // object is already a TYPE error via `text`/`AttrValue` = `Reactive<string|number>`,
@@ -84,7 +89,14 @@
 // for the rename-style rules above — a `fix` (see {@link LintFix}/{@link applyLintFixes}).
 
 import ts from 'typescript'
-import { isSignalExpr, singleRoot, unwrapCasts, STATE_ROOTS, type Roots } from './extract-deps.js'
+import {
+  isSignalExpr,
+  singleRoot,
+  unwrapCasts,
+  STATE_ROOTS,
+  type RootInfo,
+  type Roots,
+} from './extract-deps.js'
 import { applyTextEdits, mergeNonOverlapping, type TextEdit } from './apply-edits.js'
 import { ELEMENT_HELPERS as ELEMENT_TAGS, ALL_ELEMENT_HELPERS } from './element-helpers.js'
 
@@ -493,12 +505,48 @@ function viewStateAlias(fn: ts.Node): string | null {
   return null
 }
 
-/** Augment a roots map with row-scoped signal params (item/index/narrowed/arm).
- * Only presence + a non-null `dep` matters for the lint checks. */
-function withParams(base: Roots, params: readonly string[]): Roots {
+/** Whether a signal root can be sliced with `.at()`.
+ *
+ *   - `'path'`    — it carries a state path (`state`, an `each` row's `item`/
+ *                   `index`, or a `show`/`branch` narrowed param over a PATH
+ *                   condition): `.at()` is valid on it.
+ *   - `'mapped'`  — a `show`/`branch` narrowed param over a condition that is
+ *                   PROVABLY mapped (`.map(…)`, `derived(…)`, or another mapped
+ *                   param). The runtime hands the arm the condition handle itself,
+ *                   so the param is mapped too and `.at()` on it throws.
+ *   - `'unknown'` — a narrowed param over a condition the walk cannot see through
+ *                   (a local alias, a helper call). Still a signal, but neither
+ *                   "use `.at()`" nor "`.at()` is invalid" can be said about it.
+ *
+ * `prefer-at-over-map` may only recommend `.at()` on a `'path'` receiver, and
+ * `at-after-map` reports `.at()` on a `'mapped'` one. */
+type RootShape = 'path' | 'mapped' | 'unknown'
+
+/** A lint root: a {@link RootInfo} plus its {@link RootShape}. Roots seeded by
+ * the shared `extract-deps` helpers (`STATE_ROOTS`, `singleRoot`) carry no shape
+ * and are component-state paths. */
+interface LintRootInfo extends RootInfo {
+  readonly shape: RootShape
+}
+
+function rootShape(roots: Roots, name: string): RootShape | null {
+  const info = roots.get(name)
+  if (info === undefined) return null
+  return 'shape' in info && (info.shape === 'mapped' || info.shape === 'unknown')
+    ? info.shape
+    : 'path'
+}
+
+/** Augment a roots map with row-scoped signal params (item/index/narrowed/arm),
+ * all of the given {@link RootShape}. Only presence, a non-null `dep` and the
+ * shape matter for the lint checks. */
+function withParams(base: Roots, params: readonly string[], shape: RootShape): Roots {
   if (params.length === 0) return base
   const m = new Map(base)
-  for (const p of params) m.set(p, { value: 's', dep: p })
+  for (const p of params) {
+    const info: LintRootInfo = { value: 's', dep: p, shape }
+    m.set(p, info)
+  }
   return m
 }
 
@@ -570,8 +618,10 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
   // These carry no statically-known path, so `.at()` on them is unsupported
   // (it throws at runtime and is a compile error in the types). Used to flag the
   // `sig.map(fn).at('x')` foot-gun (`at-after-map`).
+  // Also a `'mapped'` ROOT: a `show`/`branch` narrowed param over such a signal.
   const isMappedSignalExpr = (expr: ts.Expression, roots: Roots): boolean => {
-    const e = ts.isParenthesizedExpression(expr) ? expr.expression : expr
+    const e = unwrapCasts(expr)
+    if (ts.isIdentifier(e)) return rootShape(roots, e.text) === 'mapped'
     if (!ts.isCallExpression(e)) return false
     if (
       ts.isPropertyAccessExpression(e.expression) &&
@@ -581,6 +631,29 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       return true
     }
     return bindings.resolveCall(e) === 'derived'
+  }
+
+  // A PATH signal expression — one `.at()` is valid on: a `'path'` root followed
+  // only by `.at(…)` slices. Anything else (a `.map`/`derived` result, a mapped or
+  // unknown-shape root, a call the walk cannot see into) is not provably one.
+  const isSliceableSignalExpr = (expr: ts.Expression, roots: Roots): boolean => {
+    const e = unwrapCasts(expr)
+    if (ts.isIdentifier(e)) return rootShape(roots, e.text) === 'path'
+    return (
+      ts.isCallExpression(e) &&
+      ts.isPropertyAccessExpression(e.expression) &&
+      e.expression.name.text === 'at' &&
+      isSliceableSignalExpr(e.expression.expression, roots)
+    )
+  }
+
+  // The shape a `show` condition / `branch` value hands its arms' narrowed param
+  // (the runtime passes the condition handle itself — see `RootShape`).
+  const conditionShape = (cond: ts.Expression | undefined, roots: Roots): RootShape => {
+    if (cond === undefined) return 'unknown'
+    if (isSliceableSignalExpr(cond, roots)) return 'path'
+    if (isMappedSignalExpr(cond, roots)) return 'mapped'
+    return 'unknown'
   }
 
   // ---- inside a .map/derived body: pure-derive + no-node-construction ----
@@ -638,6 +711,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     fn: ts.Node,
     roots: Roots,
     params: readonly string[],
+    shape: RootShape,
     ctx: SlotContext,
   ): void => {
     const body = fnBody(fn)
@@ -645,7 +719,7 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
       visit(fn, roots, ctx)
       return
     }
-    const augmented = withParams(roots, params)
+    const augmented = withParams(roots, params, shape)
     if (ts.isBlock(body)) {
       // A block-body render `const` is the sanctioned render-once row idiom, and
       // `main` exempted it outright — so it is `'exempt'`, not `'outside'`: a
@@ -675,7 +749,8 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     if (opts && ts.isObjectLiteralExpression(opts)) {
       for (const p of opts.properties) {
         if (ts.isPropertyAssignment(p) && p.name.getText(sf) === 'render') {
-          visitRender(p.initializer, roots, fnParamNames(p.initializer), slot) // item, index
+          // item, index: row handles — always paths, whatever the items signal is
+          visitRender(p.initializer, roots, fnParamNames(p.initializer), 'path', slot)
         } else {
           // key fn & friends: plain params -> base roots
           visit(p, roots, slot)
@@ -689,7 +764,8 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
     const cond = node.arguments[0]
     const render = node.arguments[1]
     if (cond) visit(cond, roots, slot)
-    if (render) visitRender(render, roots, fnParamNames(render), slot) // narrowed
+    // narrowed: the cond handle itself, so it has the cond's shape
+    if (render) visitRender(render, roots, fnParamNames(render), conditionShape(cond, roots), slot)
   }
 
   const visitBranch = (node: ts.CallExpression, roots: Roots, ctx: SlotContext): void => {
@@ -708,9 +784,11 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
           ? a1
           : undefined
     if (arms) {
+      // narrowed variant: the value handle itself, so it has the value's shape
+      const shape = conditionShape(value, roots)
       for (const p of arms.properties) {
         if (ts.isPropertyAssignment(p)) {
-          visitRender(p.initializer, roots, fnParamNames(p.initializer), slot) // narrowed variant
+          visitRender(p.initializer, roots, fnParamNames(p.initializer), shape, slot)
         } else visit(p, roots, slot)
       }
     }
@@ -1180,11 +1258,24 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
         node.expression.name.text === 'at' &&
         isMappedSignalExpr(node.expression.expression, roots)
       ) {
-        push(
-          'at-after-map',
-          `.at() after .map()/derived() has no statically-known path to slice — slice with .at() BEFORE mapping: \`sig.at('field').map(fn)\`, not \`sig.map(fn).at('field')\`.`,
-          node.expression.name,
-        )
+        const recv = unwrapCasts(node.expression.expression)
+        if (ts.isIdentifier(recv)) {
+          // a narrowed param over a mapped condition: there is nothing to
+          // reorder in THIS expression — read the field from the value instead.
+          const arg = node.arguments[0]
+          const field = arg && ts.isStringLiteralLike(arg) ? arg.text : 'field'
+          push(
+            'at-after-map',
+            `\`${recv.text}\` is the narrowed signal of a show()/branch() whose condition is mapped (.map()/derived()), so it is a MappedSignal — it has no statically-known path to slice and .at() on it throws at runtime. Read the field from its value: \`${recv.text}.map((v) => v.${field})\` — or narrow on a path signal instead (slice with .at() BEFORE mapping).`,
+            node.expression.name,
+          )
+        } else {
+          push(
+            'at-after-map',
+            `.at() after .map()/derived() has no statically-known path to slice (the result is a MappedSignal, not a Signal) — slice with .at() BEFORE mapping: \`sig.at('field').map(fn)\`, not \`sig.map(fn).at('field')\`.`,
+            node.expression.name,
+          )
+        }
       }
       if (
         ts.isPropertyAccessExpression(node.expression) &&
@@ -1194,8 +1285,14 @@ export function lintSignals(sf: ts.SourceFile): SignalDiagnostic[] {
         const fn = node.arguments[0]
         if (fn && (ts.isArrowFunction(fn) || ts.isFunctionExpression(fn))) {
           lintDeriveBody(fn, roots)
-          // A plain single-field projection should narrow with `.at`, not `.map`.
-          const proj = singleFieldProjection(fn)
+          // A plain single-field projection should narrow with `.at`, not `.map` —
+          // but only where `.at` EXISTS: on a PATH receiver. A mapped receiver
+          // (`sig.map(f).map((p) => p.x)`, a narrowed param over a mapped
+          // condition) has no `.at` to recommend, and demanding one turned a
+          // valid build into a runtime throw (the component-gallery shell, #267).
+          const proj = isSliceableSignalExpr(node.expression.expression, roots)
+            ? singleFieldProjection(fn)
+            : null
           if (proj) {
             push(
               'prefer-at-over-map',

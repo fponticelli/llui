@@ -88,12 +88,46 @@ function repoConfigPaths(): string[] {
 
 const configPaths = repoConfigPaths()
 
+interface ResolvedTest {
+  readonly testTimeout?: number
+  readonly hookTimeout?: number
+  readonly retry?: unknown
+  readonly include?: readonly string[]
+  readonly name?: string
+  readonly projects?: readonly unknown[]
+}
+
 interface ResolvedConfig {
-  readonly test?: {
-    readonly testTimeout?: number
-    readonly hookTimeout?: number
-    readonly include?: readonly string[]
+  readonly test?: ResolvedTest
+}
+
+/**
+ * The INLINE projects a config declares (#268: the Component Gallery runs a
+ * `unit` and a `browser` project in one vitest run). A project is its own
+ * config: one that does not `extends: true` and does not spread the shared
+ * `test` block runs on vitest's stock 5 s budget — the #249 defect, one level
+ * down — so each is checked like a top-level config. A project with
+ * `extends: true` inherits the root's already-checked budgets unless it states
+ * its own, which is then checked too.
+ */
+function inlineProjects(config: ResolvedConfig): { name: string; test: ResolvedTest }[] {
+  const out: { name: string; test: ResolvedTest }[] = []
+  for (const [index, project] of (config.test?.projects ?? []).entries()) {
+    if (typeof project !== 'object' || project === null) continue
+    const record = project as { extends?: unknown; test?: ResolvedTest }
+    const test = record.test ?? {}
+    const name = test.name ?? `#${index}`
+    const inherited = record.extends === true ? config.test : undefined
+    out.push({
+      name,
+      test: {
+        ...test,
+        testTimeout: test.testTimeout ?? inherited?.testTimeout,
+        hookTimeout: test.hookTimeout ?? inherited?.hookTimeout,
+      },
+    })
   }
+  return out
 }
 
 const loaded = new Map<string, ResolvedConfig>(
@@ -130,6 +164,7 @@ describe('the vitest configuration set', () => {
   // an exact count, and it is one line.
   it('sweeps exactly the configs this repository owns', () => {
     expect(configPaths).toEqual([
+      'examples/component-gallery/vitest.config.ts',
       'packages/a2ui/vitest.config.ts',
       'packages/agent-bridge/vitest.config.ts',
       'packages/agent-e2e/vitest.config.ts',
@@ -170,15 +205,53 @@ describe('the vitest configuration set', () => {
     expect(base?.hookTimeout).toBeTypeOf('number')
 
     const diverged: string[] = []
+    let projects = 0
     for (const path of configPaths) {
-      const test = loaded.get(path)?.test
-      for (const field of ['testTimeout', 'hookTimeout'] as const) {
-        if (test?.[field] === base?.[field]) continue
-        if (BUDGET_ALLOWED[`${path}: ${field}`]) continue
-        diverged.push(`${path}: ${field} is ${String(test?.[field])}, shared is ${base?.[field]}`)
+      const config = loaded.get(path) ?? {}
+      const scopes = [
+        { label: path, test: config.test },
+        ...inlineProjects(config).map(({ name, test }) => ({
+          label: `${path} [project ${name}]`,
+          test,
+        })),
+      ]
+      projects += scopes.length - 1
+      for (const { label, test } of scopes) {
+        for (const field of ['testTimeout', 'hookTimeout'] as const) {
+          if (test?.[field] === base?.[field]) continue
+          if (BUDGET_ALLOWED[`${label}: ${field}`]) continue
+          diverged.push(
+            `${label}: ${field} is ${String(test?.[field])}, shared is ${base?.[field]}`,
+          )
+        }
       }
     }
     expect(diverged).toEqual([])
+    // Vacuity: the project walk found the gallery's two projects.
+    expect(projects).toBeGreaterThanOrEqual(2)
+  })
+
+  it('retries nothing, in any config or inline project (loose-h)', () => {
+    // The RESOLVED half of `no-test-retry.test.ts`: that file parses source,
+    // this one reads what each config actually evaluates to, so a retry that
+    // arrives computed, imported or merged in is caught too. No allowlist —
+    // see that file for why every retry this repo had came off.
+    const retrying: string[] = []
+    for (const path of configPaths) {
+      const config = loaded.get(path) ?? {}
+      for (const { label, test } of [
+        { label: path, test: config.test },
+        ...inlineProjects(config).map(({ name, test }) => ({
+          label: `${path} [project ${name}]`,
+          test,
+        })),
+      ]) {
+        const retry = test?.retry
+        if (retry !== undefined && retry !== 0) retrying.push(`${label}: ${JSON.stringify(retry)}`)
+      }
+    }
+    expect(retrying).toEqual([])
+    expect(shared.test?.retry).toBeUndefined()
   })
 
   it('discovers only the root scripts suite from the scripts config', () => {

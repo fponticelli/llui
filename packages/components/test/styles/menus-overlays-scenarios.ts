@@ -48,15 +48,22 @@
  */
 import {
   compileScenarioFamily,
+  dispatchScenarioSelection,
   resolveScenarioSelection,
   type CompiledPresentationScenarioFamily,
-  type PresentationScenarioEnvironmentAxis,
   type PresentationScenarioEnvironment,
   type ResolvedPresentationScenarioSelection,
 } from '@llui/cli/presentation-scenarios'
+import { PRESENTATION_SCENARIO_IDS } from './presentation-scenario-ids'
 import type { ProductContract, ProductEntry } from '@llui/cli'
 import type { ToastType, ToastPlacement } from '../../src/components/toast.js'
 import type { SelectionMode } from '../../src/components/select.js'
+import {
+  axes,
+  type Assert,
+  type Equal,
+  type ScenarioDefinitionsOf,
+} from './scenario-field-mutations.js'
 import type { AsyncStatus } from '../../src/components/combobox.js'
 
 // Individual named consts, never a `Record`-typed lookup object — see
@@ -64,31 +71,17 @@ import type { AsyncStatus } from '../../src/components/combobox.js'
 // with an index signature widens every property read to `T | undefined`
 // under `noUncheckedIndexedAccess`, silently poisoning `environmentAxes`.
 const AX = {
-  theme: ['theme'] as readonly PresentationScenarioEnvironmentAxis[],
-  dir: ['direction'] as readonly PresentationScenarioEnvironmentAxis[],
-  motion: ['motion'] as readonly PresentationScenarioEnvironmentAxis[],
-  narrow: ['viewport'] as readonly PresentationScenarioEnvironmentAxis[],
-  forced: ['forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
-  surface: ['theme', 'forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
-  dirSurface: [
-    'theme',
-    'direction',
-    'forcedColors',
-  ] as readonly PresentationScenarioEnvironmentAxis[],
-  floating: ['theme', 'motion', 'forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
-  dirFloating: [
-    'theme',
-    'direction',
-    'motion',
-    'forcedColors',
-  ] as readonly PresentationScenarioEnvironmentAxis[],
-  modal: [
-    'theme',
-    'direction',
-    'motion',
-    'forcedColors',
-  ] as readonly PresentationScenarioEnvironmentAxis[],
-  none: [] as readonly PresentationScenarioEnvironmentAxis[],
+  theme: axes('theme'),
+  dir: axes('direction'),
+  motion: axes('motion'),
+  narrow: axes('viewport'),
+  forced: axes('forcedColors'),
+  surface: axes('theme', 'forcedColors'),
+  dirSurface: axes('theme', 'direction', 'forcedColors'),
+  floating: axes('theme', 'motion', 'forcedColors'),
+  dirFloating: axes('theme', 'direction', 'motion', 'forcedColors'),
+  modal: axes('theme', 'direction', 'motion', 'forcedColors'),
+  none: axes(),
 }
 
 export type MenusOverlaysPresence = 'opening' | 'open' | 'closing' | 'closed'
@@ -1287,14 +1280,55 @@ export type MenusOverlaysCompiledCase = MenusOverlaysCompiledScenario['cases'][n
 export type MenusOverlaysResolved = ResolvedPresentationScenarioSelection<MenusOverlaysDefinitions>
 export type MenusOverlaysDefinitionScenarioId = keyof MenusOverlaysDefinitions & string
 
+/** Every scenario's case-input TYPE — what its renderer adapters accept, on
+ * both paths. Keyed exactly by the definitions' scenario ids. */
+export interface MenusOverlaysInputs {
+  readonly 'component:alert-dialog': DialogLikeCaseInput
+  readonly 'component:dialog': DialogLikeCaseInput
+  readonly 'component:drawer': DrawerCaseInput
+  readonly 'component:hover-card': FloatingPresenceCaseInput
+  readonly 'component:popover': FloatingPresenceCaseInput
+  readonly 'component:tooltip': TooltipCaseInput
+  readonly 'component:menu': MenuCaseInput
+  readonly 'component:context-menu': ContextMenuCaseInput
+  readonly 'component:menubar': MenubarCaseInput
+  readonly 'component:navigation-menu': NavigationMenuCaseInput
+  readonly 'component:select': SelectCaseInput
+  readonly 'component:combobox': ComboboxCaseInput
+  readonly 'component:toast': ToastCaseInput
+  readonly 'component:toolbar': ToolbarCaseInput
+  readonly 'pattern:command-menu': CommandMenuCaseInput
+  readonly 'pattern:confirm-dialog': ConfirmDialogCaseInput
+  readonly 'pattern:searchable-select': ComboboxCaseInput
+}
+
+type _MenusOverlaysInputsCoverDefinitions = Assert<
+  Equal<keyof MenusOverlaysInputs, MenusOverlaysDefinitionScenarioId>
+>
+
+/** The definitions viewed at each scenario's case-input type — the
+ * compile-time proof that every declared case input IS its scenario's input
+ * type (see `navigation-data-scenarios.ts`'s `NAVIGATION_DATA_CASES`). */
+export const MENUS_OVERLAYS_CASES: ScenarioDefinitionsOf<MenusOverlaysInputs> =
+  MENUS_OVERLAYS_DEFINITIONS
+
+/** A scenario id this family defines — an own key of the definitions. */
+export function isMenusOverlaysScenarioId(id: string): id is MenusOverlaysDefinitionScenarioId {
+  return Object.hasOwn(MENUS_OVERLAYS_DEFINITIONS, id)
+}
+
 /** Compile the family catalog against a real ProductContract. Throws a
  * `PresentationScenarioError` if the contract's menus-overlays products and
  * this module's keys are not in exact agreement (missing or stale). */
 export function compileMenusOverlaysCatalog(contract: ProductContract): MenusOverlaysCatalog {
-  return compileScenarioFamily(contract, 'menus-overlays', MENUS_OVERLAYS_DEFINITIONS)
+  return compileScenarioFamily(
+    contract,
+    PRESENTATION_SCENARIO_IDS['menus-overlays'],
+    MENUS_OVERLAYS_DEFINITIONS,
+  )
 }
 
-export { resolveScenarioSelection }
+export { dispatchScenarioSelection, resolveScenarioSelection }
 export type { PresentationScenarioEnvironment }
 
 /** One menus-overlays scenario joined with its ProductContract entry — the
@@ -1323,7 +1357,7 @@ export function joinMenusOverlaysScenarios(
     return {
       productId: scenario.productId,
       displayName: entry.displayName,
-      scenarioId: scenario.scenarioId as MenusOverlaysDefinitionScenarioId,
+      scenarioId: scenario.scenarioId,
       defaultCaseId: scenario.defaultCaseId,
       cases: scenario.cases,
       presentation: entry.presentation,

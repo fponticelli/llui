@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 
 /**
  * Fieldset — group wiring for a set of related controls (e.g. an address block).
@@ -60,13 +60,14 @@ export interface FieldsetParts {
   /** Spread onto a native `<fieldset>` element (role `group`). */
   root: {
     role: 'group'
-    'aria-labelledby': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    /** The legend's id, or absent when `hasLegend: false`. */
+    'aria-labelledby': string | undefined
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'fieldset'
     'data-part': 'root'
-    'data-invalid': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   /** The `<legend>` naming the group. */
   legend: {
@@ -87,10 +88,17 @@ export interface FieldsetParts {
 export interface FieldsetConnectOptions {
   /** Base id; if omitted, falls back to the id stored in state. */
   id?: string
+  /**
+   * Whether the consumer renders the `legend` part (default: true). When
+   * false the group omits `aria-labelledby` rather than naming an element
+   * that does not exist (the `dialog` `hasDescription` rule, #268). A
+   * `<fieldset>` without a legend is valid HTML; a broken idref is not.
+   */
+  hasLegend?: boolean
 }
 
 export function connect(
-  state: Signal<FieldsetState>,
+  state: ReadSignal<FieldsetState>,
   _send: Send<FieldsetMsg>,
   opts: FieldsetConnectOptions = {},
 ): FieldsetParts {
@@ -101,7 +109,7 @@ export function connect(
   return {
     root: {
       role: 'group',
-      'aria-labelledby': legendId,
+      'aria-labelledby': opts.hasLegend === false ? undefined : legendId,
       'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       disabled: state.map((s) => s.disabled),
       'data-scope': 'fieldset',

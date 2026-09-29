@@ -11,7 +11,7 @@ import type {
   MessageSchemaEntry,
 } from '../protocol.js'
 import { LAP_VERSION } from '../protocol.js'
-import { attachWsClient, type WsLike, type RpcHosts } from './ws-client.js'
+import { attachWsClient, type RpcHosts } from './ws-client.js'
 import { createEffectHandler } from './effect-handler.js'
 import { makeDefaultCodecs, encodeForWire, decodeFromWire, type CodecRegistry } from '../codecs.js'
 import { resolvePath } from './rpc/query-state.js'
@@ -483,7 +483,7 @@ export function createAgentClient<State, Msg>(
       // /wait re-arms cleanly.
       watches.clear()
       ws = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`)
-      wsClient = attachWsClient(ws as unknown as WsLike, rpcHost, helloBuilder, {
+      wsClient = attachWsClient(ws, rpcHost, helloBuilder, {
         encodeWire: (v) => encodeForWire(v, codecs),
         onWatch: (id, path) => {
           // Baseline against the RAW state, in wire-encoded form so the

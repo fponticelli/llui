@@ -1,18 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setup, type E2EContext } from '../src/harness.js'
 import { mintAndBind } from '../src/test-utils.js'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 let ctx: E2EContext
 beforeEach(async () => {
-  ctx = await setup()
+  ctx = await setup(hermetic)
 })
 afterEach(async () => {
   await ctx.close()
 })
 
 describe('e2e: revoke', () => {
-  it('after revoke, get_state tool call fails with an error result', async () => {
-    const mint = await mintAndBind(ctx)
+  it('after revoke, get_state tool call fails with an error result', async (testCtx) => {
+    const mint = await mintAndBind(ctx, testCtx)
 
     // Confirm the session works before revoking.
     const before = await ctx.mcpClient.callTool({

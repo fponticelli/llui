@@ -9,7 +9,7 @@
 - @llui/vite-plugin@0.12.2 — LLui compiler — Vite plugin for compile-time bitmask optimization, template cloning, and source maps
 - @llui/compiler-ssr@0.13.1 — LLui compiler — SSR support (opt-in). 'use client' directive handling and SSR-specific emission paths consumed by @llui/vike.
 - @llui/effects@0.3.0 — LLui effect builders — http, cancel, debounce, sequence, race, storage, broadcast
-- @llui/components@0.20.1 — 66 headless UI components for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more
+- @llui/components@0.20.1 — Headless UI component machines for LLui — accordion, dialog, tabs, select, tree-view, timer, tour, and more
 - @llui/cli@0.2.1 — LLui CLI — add registry components (`llui add button`) to an LLui app, shadcn-style
 - @llui/interactions@0.1.2 — Standalone DOM interaction primitives for focus, dismissal, positioning, modal isolation, and roving navigation
 - @llui/router@0.12.1 — LLui router — named type-safe routes, Standard Schema codecs, history/hash mode
@@ -37,6 +37,9 @@
 - Architecture: https://llui.dev/architecture
 - Debugging: https://llui.dev/debugging
 - Agents: https://llui.dev/agents
+- Component Catalog (headless imports vs `llui add` names, generated): https://llui.dev/component-catalog
+- Styling (Baseline theme vs Registry skins): https://llui.dev/styling
+- Migration Guide: https://llui.dev/migration
 - Full API Reference: https://llui.dev/llms-full.txt
 
 ## Example

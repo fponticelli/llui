@@ -132,6 +132,34 @@ describe('async-list.connect', () => {
     expect(read(p.root['data-status'], init<Item>())).toBe('idle')
   })
 
+  it('root is aria-busy exactly while a page is loading (#266)', () => {
+    const p = connect(rootSignal<AsyncListState<Item>>(), vi.fn())
+    expect(read(p.root['aria-busy'], init<Item>())).toBe('false')
+    const loading: AsyncListState<Item> = { ...init<Item>(), status: 'loading' }
+    expect(read(p.root['aria-busy'], loading)).toBe('true')
+  })
+
+  it('root marks a settled EMPTY list, not an idle or loading one (#266)', () => {
+    const p = connect(rootSignal<AsyncListState<Item>>(), vi.fn())
+    const emptyLoaded: AsyncListState<Item> = {
+      ...init<Item>(),
+      status: 'loaded',
+      hasMore: false,
+    }
+    expect(read(p.root['data-empty'], emptyLoaded)).toBe('')
+    expect(read(p.root['data-empty'], init<Item>())).toBeUndefined()
+    expect(read(p.root['data-empty'], { ...emptyLoaded, status: 'loading' })).toBeUndefined()
+    expect(
+      read(p.root['data-empty'], { ...emptyLoaded, items: [{ id: 1, name: 'one' }] }),
+    ).toBeUndefined()
+  })
+
+  it('root marks an exhausted source so the load-more affordance can step back (#266)', () => {
+    const p = connect(rootSignal<AsyncListState<Item>>(), vi.fn())
+    expect(read(p.root['data-exhausted'], { ...init<Item>(), hasMore: false })).toBe('')
+    expect(read(p.root['data-exhausted'], init<Item>())).toBeUndefined()
+  })
+
   it('retryTrigger hidden unless error', () => {
     const p = connect(rootSignal<AsyncListState<Item>>(), vi.fn())
     expect(read(p.retryTrigger.hidden, init<Item>())).toBe(true)

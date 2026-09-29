@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { timerLocale } from '../locale/timer.js'
 import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
@@ -81,6 +81,9 @@ export function update(state: TimerState, msg: TimerMsg): [TimerState, never[]] 
   switch (msg.type) {
     case 'start':
       if (state.running) return [state, []]
+      // A finished countdown has no time left to run: starting it would flip
+      // `running` on for one tick and straight back off. `reset` re-arms it.
+      if (isComplete(state)) return [state, []]
       if (!allFiniteNumbers(msg.now)) return [state, []]
       return [{ ...state, running: true, startedAt: msg.now }, []]
     case 'pause': {
@@ -159,8 +162,10 @@ export interface TimerParts {
   root: {
     'data-scope': 'timer'
     'data-part': 'root'
-    'data-running': Signal<'' | undefined>
-    'data-direction': Signal<Direction>
+    'data-running': ReadSignal<'' | undefined>
+    'data-direction': ReadSignal<Direction>
+    /** Present once a countdown has reached its target (see `isComplete`). */
+    'data-complete': ReadSignal<'' | undefined>
   }
   display: {
     role: 'timer'
@@ -173,7 +178,7 @@ export interface TimerParts {
     'aria-label': string
     'data-scope': 'timer'
     'data-part': 'start-trigger'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   pauseTrigger: {
@@ -181,7 +186,7 @@ export interface TimerParts {
     'aria-label': string
     'data-scope': 'timer'
     'data-part': 'pause-trigger'
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
   }
   resetTrigger: {
@@ -207,7 +212,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<TimerState>,
+  state: ReadSignal<TimerState>,
   send: Send<TimerMsg>,
   opts: ConnectOptions = {},
 ): TimerParts {
@@ -218,6 +223,7 @@ export function connect(
       'data-part': 'root',
       'data-running': state.map((s) => (s.running ? '' : undefined)),
       'data-direction': state.map((s) => s.direction),
+      'data-complete': state.map((s) => (isComplete(s) ? '' : undefined)),
     },
     display: {
       role: 'timer',
@@ -230,7 +236,7 @@ export function connect(
       'aria-label': opts.startLabel ?? locale.start,
       'data-scope': 'timer',
       'data-part': 'start-trigger',
-      disabled: state.map((s) => s.running),
+      disabled: state.map((s) => s.running || isComplete(s)),
       onClick: tagSend(send, ['start'], () => send({ type: 'start', now: Date.now() })),
     },
     pauseTrigger: {

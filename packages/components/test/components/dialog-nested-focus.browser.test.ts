@@ -1,41 +1,38 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type ViteDevServer } from 'vite'
+import type { Browser, Page } from 'playwright'
+import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../browser')
 
 describe('#209 — nested dialog focus restoration in Chromium', () => {
   let browser: Browser
   let page: Page
-  let server: ViteDevServer
+  let fixture: PrebuiltFixture
   let fixtureUrl: string
 
   beforeAll(async () => {
-    server = await createServer({
+    fixture = await prebuildFixture({
       root: fixtureRoot,
-      logLevel: 'error',
-      resolve: {
-        alias: {
-          '@llui/dom': resolve(fixtureRoot, '../../../dom/src/index.ts'),
-          '@llui/interactions': resolve(fixtureRoot, '../../../interactions/src/index.ts'),
-        },
+      inputs: ['nested-dialog.fixture.html'],
+      alias: {
+        '@llui/dom': resolve(fixtureRoot, '../../../dom/src/index.ts'),
+        '@llui/interactions': resolve(fixtureRoot, '../../../interactions/src/index.ts'),
       },
-      server: { host: '127.0.0.1', port: 0 },
       define: {
         __LLUI_AGENT__: 'true',
         __LLUI_TRANSITIONS__: 'true',
       },
     })
-    await server.listen()
-    const address = server.httpServer?.address()
-    if (!address || typeof address === 'string') throw new Error('Vite did not bind a TCP port')
-    fixtureUrl = `http://127.0.0.1:${address.port}/nested-dialog.fixture.html`
+    fixtureUrl = fixture.url('nested-dialog.fixture.html')
 
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
     page = await browser.newPage()
   })
 
@@ -47,7 +44,7 @@ describe('#209 — nested dialog focus restoration in Chromium', () => {
   afterAll(async () => {
     await page?.close()
     await browser?.close()
-    await server?.close()
+    await fixture?.close()
   })
 
   it('releases inner isolation before restoring into the outer dialog, then restores the outer trigger', async () => {

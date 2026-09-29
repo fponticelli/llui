@@ -30,7 +30,7 @@ export function formatDisplayName(
   if (opts.languageDisplay !== undefined && type === 'language') {
     intlOpts.languageDisplay = opts.languageDisplay
   }
-  const key = cacheKey('dn', locale, { ...intlOpts } as Record<string, unknown>)
+  const key = cacheKey('dn', locale, intlOpts)
   const dn = cached(key, () => new Intl.DisplayNames(locale, intlOpts))
   try {
     return dn.of(value)

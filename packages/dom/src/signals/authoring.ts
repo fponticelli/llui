@@ -8,9 +8,10 @@
 //
 // `component` and `mountApp` route to the signal runtime.
 
-import type { Signal, LiveSignal } from './types.js'
+import type { Signal, LiveSignal, MappedSignal, ReadSignal } from './types.js'
 import type { TransitionOptions } from '../types.js'
 import { isSignalHandle, rowHandle } from './handle.js'
+import { NON_NULL_VIEW } from './non-null-view.js'
 import { LluiFrameworkError } from './framework-error.js'
 import { react, type Mountable } from './build-context.js'
 import {
@@ -64,8 +65,9 @@ export function mapSend<Outer, Inner>(
  */
 export const noSend: Send<unknown> = () => {}
 
-/** A reactive value in a slot: a signal of T, or a plain T. */
-export type Reactive<T> = Signal<T> | T
+/** A reactive value in a slot: a signal of T (either kind — a slot only reads
+ * it), or a plain T. */
+export type Reactive<T> = ReadSignal<T> | T
 
 const compiledAway = (name: string): never => {
   // A FRAMEWORK authoring/wiring invariant, and branded as one: this is reachable
@@ -91,7 +93,7 @@ export function text(value: Reactive<string | number>): Mountable {
 }
 
 /** Render a raw HTML string as live DOM nodes (escape hatch for pre-rendered
- * markup — markdown, syntax highlighting). Reactive on a `Signal<string>`; a
+ * markup — markdown, syntax highlighting). Reactive on a `ReadSignal<string>`; a
  * plain string renders once. The HTML is inserted as-is — the caller owns
  * trust/sanitization. */
 export function unsafeHtml(value: Reactive<string>): Mountable {
@@ -298,7 +300,7 @@ export const svgDesc = svgHelper('desc')
 const WHOLE_STATE_DEPS: readonly string[] = ['']
 
 export function each<T>(
-  items: Signal<readonly T[]>,
+  items: ReadSignal<readonly T[]>,
   opts: {
     key: (item: T) => string | number
     render: (item: Signal<T>, index: Signal<number>) => Renderable
@@ -339,7 +341,7 @@ export function each<T>(
  * compiler's pass-2 helper-each lowering when the row factory bails on a
  * structural child. */
 export function eachArm<T>(
-  items: Signal<readonly T[]>,
+  items: ReadSignal<readonly T[]>,
   key: (item: T) => string | number,
   // The compiled arm. Binding producers read the ctx passed to them; `getCtx`
   // exposes the LIVE row ctx for event handlers (`getCtx().item.id` at event
@@ -367,7 +369,7 @@ export function eachArm<T>(
  * compiler passes the collected set, often empty); omitted (legacy emissions),
  * it falls back to whole-state so `ctx.state` reads stay live. */
 export function eachDirect<T>(
-  items: Signal<readonly T[]>,
+  items: ReadSignal<readonly T[]>,
   key: (item: T) => string | number,
   row: RowFactory,
   stateDeps?: readonly string[],
@@ -382,9 +384,27 @@ export function eachDirect<T>(
   )
 }
 
-export function show<T>(
-  cond: Signal<T>,
-  render: (narrowed: Signal<NonNullable<T>>) => Renderable,
+/** What {@link show} accepts as its condition: any signal — a {@link Signal}, a
+ * {@link MappedSignal} or a {@link ReadSignal}. `View` is the signal the arm
+ * receives, the condition's own non-null view, inferred from the condition. */
+export type ShowCondition<View> = { [NON_NULL_VIEW](): View } & ReadSignal<unknown>
+
+/** Conditional render: mounts `render`'s arm while `cond` is truthy (and
+ * `orElse`'s, if given, while it is falsy). The arm receives the NARROWED signal
+ * — the condition's value typed non-nullable, of the condition's own kind. Over a
+ * PATH condition (`state.at('user')`, a {@link Signal}) it is a `Signal` and slices
+ * with `.at()`; over a MAPPED one (`state.map(pickUser)`, `derived(…)`) it is a
+ * {@link MappedSignal} (no path to slice), so read its fields with
+ * `.map((u) => u.name)`; over a helper's {@link ReadSignal} parameter (either kind
+ * at runtime) it is a `ReadSignal`, read the same way.
+ *
+ * The narrowed signal only exists while the arm is mounted. Reading it after the
+ * condition clears — a handler whose own `send()` closed the arm, a timer that
+ * fires later — throws a `LluiFrameworkError`; read the condition itself there
+ * (`cond.peek()`) and handle `null`. */
+export function show<View>(
+  cond: ShowCondition<View>,
+  render: (narrowed: View) => Renderable,
   orElse?: () => Renderable,
   // Optional element-level transition hooks (from `@llui/transitions` — e.g.
   // `fade()`, `slide()`): `enter` animates the arm in after it mounts, `leave`
@@ -394,12 +414,17 @@ export function show<T>(
   transition?: TransitionOptions,
 ): Mountable {
   if (!isSignalHandle(cond)) return compiledAway('show')
-  // the arm reads component state; the cond handle (path-rooted) IS the narrowed
-  // signal — its `.at()` resolves against the same state the arm scope receives.
-  const narrowed = cond as Signal<NonNullable<T>>
+  // No overloads and no assertion: `View` is inferred from the condition's own
+  // `[NON_NULL_VIEW]()`, which every handle constructor implements for its kind
+  // (path → path view, mapped → mapped view) and which checks non-nullness on
+  // every read — see `non-null-view.ts` for why an overloaded `show` could not
+  // prove either fact. The view is made once, on the first arm mount (a condition
+  // that never holds never makes one), and shared by later mounts like the
+  // condition handle itself.
+  let view: { readonly signal: View } | undefined
   return signalShow(
     { produce: cond.produce, deps: cond.deps, componentRooted: cond.rowLocal !== true },
-    () => render(narrowed),
+    () => render((view ??= { signal: cond[NON_NULL_VIEW]() }).signal),
     orElse,
     transition,
   )
@@ -408,7 +433,11 @@ export function show<T>(
 /** Discriminated-union render. `discriminant` selects the union's tag field
  * (`v => v.kind`, `v => v.type`, …); each arm receives the NARROWED variant
  * signal, so it can read variant-only fields with full types (`v.at('data')`).
- * Mirrors `show`'s narrowing. Rewritten by the compiler to `signalBranch`. */
+ * Mirrors `show`'s narrowing: over a PATH `value` ({@link Signal}) each arm gets a
+ * `Signal`; over any other {@link ReadSignal} — a MAPPED `value`
+ * (`.map(…)`/`derived(…)`) or a helper's `ReadSignal` parameter — every arm's
+ * signal is a {@link MappedSignal}, read with `v.map((x) => x.data)`. Rewritten
+ * by the compiler to `signalBranch`. */
 export function branch<U extends object, D extends keyof U>(
   value: Signal<U>,
   discriminant: (u: U) => U[D],
@@ -418,15 +447,24 @@ export function branch<U extends object, D extends keyof U>(
   /** Optional element-level transition hooks — animate the arm swap (see `show`). */
   transition?: TransitionOptions,
 ): Mountable
+export function branch<U extends object, D extends keyof U>(
+  value: ReadSignal<U>,
+  discriminant: (u: U) => U[D],
+  arms: {
+    [K in U[D] & (string | number)]: (v: MappedSignal<Extract<U, Record<D, K>>>) => Renderable
+  },
+  /** Optional element-level transition hooks — animate the arm swap (see `show`). */
+  transition?: TransitionOptions,
+): Mountable
 /** Render keyed by a plain string/number signal's value (no narrowing). */
 export function branch<K extends string | number>(
-  value: Signal<K>,
+  value: ReadSignal<K>,
   arms: Partial<Record<K, () => Renderable>>,
   /** Optional element-level transition hooks — animate the arm swap (see `show`). */
   transition?: TransitionOptions,
 ): Mountable
 export function branch(
-  value: Signal<unknown>,
+  value: ReadSignal<unknown>,
   arg1: unknown,
   arg2?: unknown,
   arg3?: unknown,
@@ -435,7 +473,7 @@ export function branch(
   if (typeof arg1 === 'function') {
     // 3-arg: discriminant fn + narrowed arms; `arg3` is the optional transition.
     const discFn = arg1 as (u: unknown) => string | number
-    const armMap = arg2 as Record<string, (v: Signal<unknown>) => Renderable>
+    const armMap = arg2 as Record<string, (v: ReadSignal<unknown>) => Renderable>
     const transition = arg3 as TransitionOptions | undefined
     const lowered: Record<string, () => Renderable> = {}
     for (const k of Object.keys(armMap)) lowered[k] = () => armMap[k]!(value)
@@ -480,7 +518,7 @@ export function lazy<LS = unknown, LM = unknown, LE = unknown>(
  * variable-height rows (cumulative offsets via a prefix sum, rebuilt when `items`
  * changes). Heights come from the data — measured/auto heights are not supported. */
 export function virtualEach<T>(opts: {
-  items: Signal<readonly T[]>
+  items: ReadSignal<readonly T[]>
   key: (item: T) => string | number
   itemHeight: number | ((item: T, index: number) => number)
   containerHeight: number
@@ -522,12 +560,12 @@ export function virtualEach<T>(opts: {
  * the compiler lowers a direct-view `foreign()` to `signalForeign`, but in
  * view-helper functions / uncompiled code it runs here — converting each declared
  * state HANDLE to its `{produce, deps}` spec and delegating to `signalForeign`. */
-export function foreign<Inst, State extends Record<string, Signal<unknown>>>(spec: {
+export function foreign<Inst, State extends Record<string, ReadSignal<unknown>>>(spec: {
   tag?: string
   state?: State
   mount: (args: {
     el: Element
-    state: { [K in keyof State]: LiveSignal<State[K] extends Signal<infer T> ? T : unknown> }
+    state: { [K in keyof State]: LiveSignal<State[K] extends ReadSignal<infer T> ? T : unknown> }
   }) => Inst
   unmount?: (instance: Inst) => void
 }): Mountable {

@@ -6,9 +6,23 @@
 // file's content INLINED. `@llui/cli` reads either shape: inlined content for a
 // remote registry, on-disk `path` for a local checkout — which is how the CLI's
 // own tests run with no build step and no network.
+//
+// Both outputs pin every `@llui/*` dependency: the source's
+// `@llui/<pkg>@workspace:^` becomes `@llui/<pkg>@^<version>`, the workspace
+// package's version, which `llui add` enforces as a minimum (see
+// `scripts/lib/registry-dependencies.mjs`).
+//
+// It also emits the ProductContract's per-family scenario ids as a literal-typed
+// TypeScript module (`scripts/lib/presentation-scenario-ids.mjs`), which the
+// typed presentation-scenario compile path is exact against.
 import { mkdir, readFile, writeFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  PRESENTATION_SCENARIO_IDS_PATH,
+  renderPresentationScenarioIds,
+} from './lib/presentation-scenario-ids.mjs'
+import { pinItemDependencies, workspaceVersions } from './lib/registry-dependencies.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SOURCE = path.join(ROOT, 'registry', 'registry.json')
@@ -23,7 +37,7 @@ const OUT = path.join(ROOT, 'site', 'public', 'r')
 
 /**
  * One registry item (a component and the files `llui add` copies for it).
- * @typedef {{ name: string, files: RegistryFile[] } & Record<string, unknown>} RegistryItem
+ * @typedef {{ name: string, files: RegistryFile[], dependencies?: string[], devDependencies?: string[] } & Record<string, unknown>} RegistryItem
  */
 
 /**
@@ -42,7 +56,12 @@ await mkdir(OUT, { recursive: true })
 const indexItems = []
 const index = { ...registry, items: indexItems }
 
-for (const item of registry.items) {
+// Every `@llui/*` dependency is written `workspace:^` in the source and pinned
+// here to `^<workspace version>` — the minimum `llui add` enforces (#273).
+const versions = await workspaceVersions(ROOT)
+
+for (const sourceItem of registry.items) {
+  const item = pinItemDependencies(sourceItem, versions)
   /** @type {RegistryFile[]} */
   const files = []
   for (const file of item.files) {
@@ -61,3 +80,10 @@ for (const item of registry.items) {
 
 await writeFile(path.join(OUT, 'registry.json'), JSON.stringify(index, null, 2) + '\n', 'utf8')
 console.log(`registry: wrote ${registry.items.length + 1} files to site/public/r`)
+
+await writeFile(
+  path.join(ROOT, PRESENTATION_SCENARIO_IDS_PATH),
+  await renderPresentationScenarioIds(registry.productContract, ROOT),
+  'utf8',
+)
+console.log(`registry: wrote ${PRESENTATION_SCENARIO_IDS_PATH}`)

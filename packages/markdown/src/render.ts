@@ -6,7 +6,7 @@
 // path never pulls the GFM extensions into a consumer's bundle.
 
 import { div, each, isSignalHandle } from '@llui/dom'
-import type { Mountable, Renderable, Reactive, Signal } from '@llui/dom'
+import type { Mountable, Renderable, Reactive, ReadSignal } from '@llui/dom'
 import type { Root } from 'mdast'
 import type { MarkdownOptions } from './types.js'
 import { resolveOptions } from './options.js'
@@ -49,14 +49,14 @@ interface RenderUnit {
 }
 
 /** Narrow a `Reactive<string>` to its `Signal` arm (vs a plain string). */
-function isSignal(value: Reactive<string>): value is Signal<string> {
+function isSignal(value: Reactive<string>): value is ReadSignal<string> {
   return isSignalHandle(value)
 }
 
 /** Build a reactive Markdown view bound to a specific parser.
  *
  * - Plain `string` source → parsed once, rendered statically.
- * - `Signal<string>` source → re-parsed on change; top-level blocks are keyed by a
+ * - `ReadSignal<string>` source → re-parsed on change; top-level blocks are keyed by a
  *   content hash (folding in the reference definitions each block resolves) and
  *   rendered through `each`, so unchanged earlier blocks keep their DOM and only the
  *   changing tail (and appended / newly-resolved blocks) rebuild. This makes

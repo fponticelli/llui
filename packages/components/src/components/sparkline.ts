@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal, Signal } from '@llui/dom'
 import { enSparkline, sparklineLocale } from '../locale/sparkline.js'
 import { deriveOnce } from '../utils/derive.js'
 import { finiteBound } from '../utils/number.js'
@@ -218,15 +218,22 @@ const DEFAULT_CALENDAR: SparklineCalendar = { offsetMinutes: 0, weekStartsOn: 1,
 
 /** Write a bound only when it is finite, so an absent one stays ABSENT rather
  *  than becoming a `undefined`-valued key that JSON turns into `null`. */
-function writeBound(into: Record<string, unknown>, key: string, value: number | undefined): void {
+/** Set the optional numeric field `key` of `into` to `value` when it is a finite
+ * bound, and leave it ABSENT otherwise (an explicit `undefined` would still be
+ * an own key — visible to `in`, spreads and serialization). */
+function writeBound<K extends string>(
+  into: { [P in K]?: number },
+  key: K,
+  value: number | undefined,
+): void {
   const bound = finiteBound(value)
   if (bound !== undefined) into[key] = bound
 }
 
 function normalizeBand(band: SparklineBand | undefined): SparklineBand {
   const out: SparklineBand = {}
-  writeBound(out as Record<string, unknown>, 'low', band?.low)
-  writeBound(out as Record<string, unknown>, 'high', band?.high)
+  writeBound(out, 'low', band?.low)
+  writeBound(out, 'high', band?.high)
   return out
 }
 
@@ -257,9 +264,9 @@ export function init(opts: SparklineInit = {}): SparklineState {
     calendar,
     activeIndex: null,
   }
-  writeBound(state as unknown as Record<string, unknown>, 'now', opts.now)
-  writeBound(state as unknown as Record<string, unknown>, 'min', opts.min)
-  writeBound(state as unknown as Record<string, unknown>, 'max', opts.max)
+  writeBound(state, 'now', opts.now)
+  writeBound(state, 'min', opts.min)
+  writeBound(state, 'max', opts.max)
   return state
 }
 
@@ -293,13 +300,13 @@ export function update(state: SparklineState, msg: SparklineMsg): [SparklineStat
     case 'setNow': {
       const next = { ...state }
       if (msg.at === null) delete next.now
-      else writeBound(next as unknown as Record<string, unknown>, 'now', msg.at)
+      else writeBound(next, 'now', msg.at)
       return [next, []]
     }
     case 'setBand': {
       const band: SparklineBand = {}
-      writeBound(band as Record<string, unknown>, 'low', msg.low ?? undefined)
-      writeBound(band as Record<string, unknown>, 'high', msg.high ?? undefined)
+      writeBound(band, 'low', msg.low ?? undefined)
+      writeBound(band, 'high', msg.high ?? undefined)
       return [{ ...state, band }, []]
     }
     case 'setSize':
@@ -814,8 +821,8 @@ export interface SparklineParts {
   root: {
     'data-scope': 'sparkline'
     'data-part': 'root'
-    'data-stale': Signal<'' | undefined>
-    'data-active': Signal<'' | undefined>
+    'data-stale': ReadSignal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
   }
   /**
    * The `<svg>`. `role="img"` named through its own `<title>`/`<desc>`; the
@@ -828,7 +835,7 @@ export interface SparklineParts {
     'data-part': 'svg'
     role: 'img'
     'aria-labelledby': string
-    viewBox: Signal<string>
+    viewBox: ReadSignal<string>
     tabindex: 0
     onKeyDown: (e: KeyboardEvent) => void
     onPointerMove: (e: PointerEvent) => void
@@ -841,25 +848,25 @@ export interface SparklineParts {
   table: {
     'data-scope': 'sparkline'
     'data-part': 'table'
-    'aria-label': Signal<string>
+    'aria-label': ReadSignal<string>
   }
   /** The reference band. Stays MOUNTED and hides itself, so a band appearing or
    *  disappearing does not rebuild the layer. */
   band: {
     'data-scope': 'sparkline'
     'data-part': 'band'
-    'data-band': Signal<'between' | 'below' | 'above' | undefined>
-    d: Signal<string>
-    hidden: Signal<boolean>
+    'data-band': ReadSignal<'between' | 'below' | 'above' | undefined>
+    d: ReadSignal<string>
+    hidden: ReadSignal<boolean>
   }
-  line: { 'data-scope': 'sparkline'; 'data-part': 'line'; d: Signal<string> }
+  line: { 'data-scope': 'sparkline'; 'data-part': 'line'; d: ReadSignal<string> }
   /** The right edge. `data-stale` is set when it is later than the last
    *  reading. */
   now: {
     'data-scope': 'sparkline'
     'data-part': 'now'
-    'data-stale': Signal<'' | undefined>
-    d: Signal<string>
+    'data-stale': ReadSignal<'' | undefined>
+    d: ReadSignal<string>
   }
   /** A `<g>` stacking layer. Static — spread it on each layer group. */
   layer: { 'data-scope': 'sparkline'; 'data-part': 'layer' }
@@ -877,23 +884,23 @@ export interface SparklineParts {
   tickProps: (tick: Signal<SparklineTick>) => {
     'data-scope': 'sparkline'
     'data-part': 'grid'
-    'data-unit': Signal<'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'>
-    d: Signal<string>
+    'data-unit': ReadSignal<'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year'>
+    d: ReadSignal<string>
   }
   dotProps: (dot: Signal<SparklineDot>) => {
     'data-scope': 'sparkline'
     'data-part': 'dot'
-    'data-tone': Signal<'below' | 'in' | 'above' | 'none'>
-    'data-last': Signal<'' | undefined>
-    'data-active': Signal<'' | undefined>
-    cx: Signal<number>
-    cy: Signal<number>
+    'data-tone': ReadSignal<'below' | 'in' | 'above' | 'none'>
+    'data-last': ReadSignal<'' | undefined>
+    'data-active': ReadSignal<'' | undefined>
+    cx: ReadSignal<number>
+    cy: ReadSignal<number>
   }
   spanProps: (span: Signal<SparklineSpan>) => {
     'data-scope': 'sparkline'
     'data-part': 'span'
-    'data-grain': Signal<string>
-    d: Signal<string>
+    'data-grain': ReadSignal<string>
+    d: ReadSignal<string>
   }
   /** Tooltip ATTRIBUTES — spreadable, with its own reactive `hidden`. */
   tooltip: {
@@ -901,19 +908,19 @@ export interface SparklineParts {
     'data-part': 'tooltip'
     role: 'status'
     'aria-live': 'polite'
-    hidden: Signal<boolean>
-    style: Signal<string>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
-  ticks: Signal<SparklineTick[]>
-  dots: Signal<SparklineDot[]>
-  spans: Signal<SparklineSpan[]>
-  rows: Signal<SparklineRow[]>
+  ticks: ReadSignal<SparklineTick[]>
+  dots: ReadSignal<SparklineDot[]>
+  spans: ReadSignal<SparklineSpan[]>
+  rows: ReadSignal<SparklineRow[]>
   /** The dot under the cursor, or `null`. */
-  activeDot: Signal<SparklineDot | null>
+  activeDot: ReadSignal<SparklineDot | null>
   /** The composed accessible name — the locale's phrasing of
    *  {@link SparklineGeometry.summary}, or `opts.label` when given. */
-  label: Signal<string>
-  summary: Signal<SparklineSummary>
+  label: ReadSignal<string>
+  summary: ReadSignal<SparklineSummary>
 }
 
 export interface SparklineConnectOptions {
@@ -923,10 +930,17 @@ export interface SparklineConnectOptions {
   label?: string
   /** Longer description, announced with the name. Defaults to empty. */
   description?: string
+  /**
+   * Whether the consumer renders the `desc` part (default: true). When false,
+   * the svg's `aria-labelledby` names only the title, never an element that
+   * does not exist (the `dialog` `hasDescription` rule, #268). The TITLE is
+   * the image's name — required for `role="img"` — and is always referenced.
+   */
+  hasDescription?: boolean
 }
 
 export function connect(
-  state: Signal<SparklineState>,
+  state: ReadSignal<SparklineState>,
   send: Send<SparklineMsg>,
   opts: SparklineConnectOptions,
 ): SparklineParts {
@@ -996,7 +1010,7 @@ export function connect(
       'data-scope': 'sparkline',
       'data-part': 'svg',
       role: 'img',
-      'aria-labelledby': `${titleId} ${descId}`,
+      'aria-labelledby': opts.hasDescription === false ? titleId : `${titleId} ${descId}`,
       viewBox: state.map((s) => `0 0 ${s.width} ${s.height}`),
       tabindex: 0,
       onKeyDown: tagSend(send, ['moveActive', 'firstActive', 'lastActive', 'setActive'], onKeyDown),

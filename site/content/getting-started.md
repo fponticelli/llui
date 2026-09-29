@@ -233,6 +233,12 @@ function todoItem(item: Signal<Todo>, send: Send<Msg>): Renderable {
 }
 ```
 
+`todoItem` takes a `Signal<Todo>` because it slices with `.at()`. A helper that only READS
+its signal (`.map`, `.peek`, or passing it straight into a slot) takes `ReadSignal<T>`
+instead, which accepts both a `.at()` slice and a `.map()`/`derived()` result — a mapped
+signal has no path, so it is not a `Signal`, and handing one to a `Signal` parameter is a
+compile error.
+
 Library components from `@llui/components` use a state-machine + `connect` convention: the
 parent owns the slice, delegates to the component's pure `update`, and routes its messages
 through the parent's own `Msg` union (`send({ type: 'dialog', msg })`). See the

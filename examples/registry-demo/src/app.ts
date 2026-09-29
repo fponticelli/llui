@@ -1,10 +1,9 @@
 /**
- * Root component for the LLui registry demo.
+ * Root component for the Registry skins sync fixture (see this app's README).
  *
  * One signal component, one update loop; each section owns a slice of the root
- * state and the reducer routes `{ type: <section>, msg }` into it — the same
- * composition `examples/components-demo` uses. No section emits effects, so
- * there is no `onEffect` here.
+ * state and the reducer routes `{ type: <section>, msg }` into it. No section
+ * emits effects, so there is no `onEffect` here.
  *
  * `overlays.view` returns an ARRAY: its three overlays portal to <body> on open
  * and are placed as siblings of the section card, because placement decides

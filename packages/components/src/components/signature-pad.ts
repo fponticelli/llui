@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { allFiniteNumbers } from '../utils/number.js'
 import { signaturePadLocale } from '../locale/signature-pad.js'
@@ -38,6 +38,12 @@ export interface SignaturePadState {
   drawing: boolean
   disabled: boolean
   readonly: boolean
+  /**
+   * The strokes the last `clear` removed, until the next edit — what makes a
+   * destructive clear undoable (`undo` right after `clear` restores them).
+   * `null` when there is nothing to restore (#266).
+   */
+  cleared: Stroke[] | null
 }
 
 export type SignaturePadMsg =
@@ -71,6 +77,7 @@ export function init(opts: SignaturePadInit = {}): SignaturePadState {
     drawing: false,
     disabled: opts.disabled ?? false,
     readonly: opts.readonly ?? false,
+    cleared: null,
   }
 }
 
@@ -102,22 +109,47 @@ export function update(
     case 'strokeEnd': {
       if (!state.drawing || state.current === null) return [state, []]
       // Drop 1-point strokes (accidental taps).
-      const strokes = state.current.length > 1 ? [...state.strokes, state.current] : state.strokes
-      return [{ ...state, strokes, current: null, drawing: false }, []]
+      if (state.current.length <= 1) {
+        return [{ ...state, current: null, drawing: false }, []]
+      }
+      // A real new stroke is an edit: the cleared strokes are no longer what
+      // "undo" should bring back.
+      const strokes = [...state.strokes, state.current]
+      return [{ ...state, strokes, current: null, drawing: false, cleared: null }, []]
     }
     case 'strokeCancel':
       return [{ ...state, current: null, drawing: false }, []]
     case 'undo': {
-      if (state.strokes.length === 0) return [state, []]
+      if (state.strokes.length === 0) {
+        // Undo of a destructive clear: restore everything it removed (#266).
+        if (state.cleared === null) return [state, []]
+        return [{ ...state, strokes: state.cleared, cleared: null }, []]
+      }
       return [{ ...state, strokes: state.strokes.slice(0, -1) }, []]
     }
     case 'redo':
-      return [{ ...state, strokes: [...state.strokes, msg.stroke] }, []]
+      return [{ ...state, strokes: [...state.strokes, msg.stroke], cleared: null }, []]
     case 'clear':
-      return [{ ...state, strokes: [], current: null, drawing: false }, []]
+      return [
+        {
+          ...state,
+          strokes: [],
+          current: null,
+          drawing: false,
+          // Keep what was erased so `undo` can restore it; clearing an empty
+          // pad has nothing to keep.
+          cleared: state.strokes.length > 0 ? state.strokes : state.cleared,
+        },
+        [],
+      ]
     case 'setStrokes':
-      return [{ ...state, strokes: msg.strokes }, []]
+      return [{ ...state, strokes: msg.strokes, cleared: null }, []]
   }
+}
+
+/** True when `undo` would change something: a stroke to remove or a clear to restore. */
+export function canUndo(state: SignaturePadState): boolean {
+  return state.strokes.length > 0 || state.cleared !== null
 }
 
 export function isEmpty(state: SignaturePadState): boolean {
@@ -161,9 +193,11 @@ export interface SignaturePadParts {
     'aria-label': string
     'data-scope': 'signature-pad'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-readonly': Signal<'' | undefined>
-    'data-drawing': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-readonly': ReadSignal<'' | undefined>
+    'data-drawing': ReadSignal<'' | undefined>
+    /** Present while nothing has been drawn — the placeholder hook. */
+    'data-empty': ReadSignal<'' | undefined>
   }
   control: {
     'data-scope': 'signature-pad'
@@ -172,7 +206,7 @@ export interface SignaturePadParts {
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'signature-pad'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -180,7 +214,7 @@ export interface SignaturePadParts {
   undoTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'signature-pad'
     'data-part': 'undo-trigger'
     onClick: (e: MouseEvent) => void
@@ -192,7 +226,7 @@ export interface SignaturePadParts {
   }
   hiddenInput: {
     type: 'hidden'
-    value: Signal<string>
+    value: ReadSignal<string>
     name?: string
     'data-scope': 'signature-pad'
     'data-part': 'hidden-input'
@@ -207,7 +241,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<SignaturePadState>,
+  state: ReadSignal<SignaturePadState>,
   send: Send<SignaturePadMsg>,
   opts: ConnectOptions = {},
 ): SignaturePadParts {
@@ -221,6 +255,7 @@ export function connect(
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       'data-readonly': state.map((s) => (s.readonly ? '' : undefined)),
       'data-drawing': state.map((s) => (s.drawing ? '' : undefined)),
+      'data-empty': state.map((s) => (isEmpty(s) ? '' : undefined)),
     },
     control: {
       'data-scope': 'signature-pad',
@@ -237,7 +272,7 @@ export function connect(
     undoTrigger: {
       type: 'button',
       'aria-label': opts.undoLabel ?? locale.undo,
-      disabled: state.map((s) => s.strokes.length === 0),
+      disabled: state.map((s) => !canUndo(s)),
       'data-scope': 'signature-pad',
       'data-part': 'undo-trigger',
       onClick: tagSend(send, ['undo'], () => send({ type: 'undo' })),
@@ -265,4 +300,5 @@ export const signaturePad = {
   isEmpty,
   pointCount,
   getBounds,
+  canUndo,
 }

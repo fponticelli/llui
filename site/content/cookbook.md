@@ -374,10 +374,10 @@ a **signal handle** for its slice plus the parent's `send`.
 
 ```typescript
 import { nav, button, text } from '@llui/dom'
-import type { Signal, Send, Renderable } from '@llui/dom'
+import type { ReadSignal, Send, Renderable } from '@llui/dom'
 
-// views/header.ts
-export function header(user: Signal<{ name: string } | null>, send: Send<Msg>): Renderable {
+// views/header.ts — only READS `user`, so it takes a ReadSignal (either kind)
+export function header(user: ReadSignal<{ name: string } | null>, send: Send<Msg>): Renderable {
   return [
     nav([
       text(user.map((u) => u?.name ?? 'Guest')),
@@ -391,7 +391,11 @@ view: ({ state, send }) => [header(state.at('user'), send), mainContent(state, s
 ```
 
 A child view function receives whatever signal granularity it needs — `state.at('user')`
-for a narrow slice, or `state.map((s) => …)` for a derived view. Reactivity has no nesting
+for a narrow slice, or `state.map((s) => …)` for a derived view. Type the parameter
+`ReadSignal<T>` when the helper only reads it (it then accepts both), and `Signal<T>` only
+when the helper slices it with `.at()` — a `.map()`/`derived()` result is a
+`MappedSignal`, which has no path, so passing it to a `Signal` parameter is a compile
+error rather than a mount-time throw. Reactivity has no nesting
 tax: `state.at('dashboard').at('toolbar').at('menuOpen')` gets its own dependency path, and
 unchanged subtrees gate out under a structural-sharing reducer.
 
@@ -399,7 +403,8 @@ unchanged subtrees gate out under a structural-sharing reducer.
 
 A reusable view function takes a `Signal<Slice>` and reads via the signal's own
 `.at`/`.map` — no `(s) => …` callbacks cross the boundary, and the helper's type stays
-decoupled from the parent's full state shape.
+decoupled from the parent's full state shape. It takes `Signal` (not `ReadSignal`)
+because it slices with `.at()`, so callers must hand it a path signal.
 
 ```typescript
 import { div, text, span } from '@llui/dom'
@@ -420,7 +425,7 @@ function userCard(user: Signal<UserSlice>): Renderable {
 view: ({ state }) => [userCard(state.at('currentUser'))]
 ```
 
-See [composition-patterns.md](./composition-patterns.md) for the full set of patterns
+See [Composition Patterns](/composition-patterns) for the full set of patterns
 (sliced signal, `each` over a sliced list, derived signal, `Node[]` slots, and library
 `connect()`).
 
@@ -532,7 +537,7 @@ case 'selectItem': {
 ### Library components: `connect()` + delegated update
 
 `@llui/components` use a state-machine + `connect` convention. The component exports pure
-`init` / `update` functions plus `connect(state: Signal<Slice>, send, opts?)` returning
+`init` / `update` functions plus `connect(state: ReadSignal<Slice>, send, opts?)` returning
 reactive props to spread onto elements. The parent owns the slice, delegates to the
 component's `update`, and routes its messages through its own `Msg` union.
 
@@ -586,10 +591,10 @@ through every view function:
 
 ```typescript
 import { createContext, provide, useContext, div, text } from '@llui/dom'
-import type { Signal, Renderable } from '@llui/dom'
+import type { ReadSignal, Renderable } from '@llui/dom'
 
 // Declare a typed context with a default value:
-const ThemeContext = createContext<Signal<'light' | 'dark'>>(/* default */ undefined!)
+const ThemeContext = createContext<ReadSignal<'light' | 'dark'>>(/* default */ undefined!)
 
 // Provide a value to every descendant built inside the render callback:
 view: ({ state, send }) =>
@@ -718,21 +723,25 @@ type Msg = { type: 'sort'; msg: SortableMsg }
 
 // In update:
 case 'sort': {
+  // A pointer `drop` and a keyboard drop (Space/Enter while grabbed) both
+  // complete a move; `droppedMove` reads it off the state BEFORE the update.
+  const moved = sortable.droppedMove(state.sort, msg.msg)
   const [s, fx] = sortable.update(state.sort, msg.msg)
-  if (msg.msg.type === 'drop' && state.sort.dragging) {
-    const { startIndex, currentIndex } = state.sort.dragging
-    return [{ ...state, items: sortable.reorder(state.items, startIndex, currentIndex), sort: s }, fx]
-  }
-  return [{ ...state, sort: s }, fx]
+  const items = moved ? sortable.reorder(state.items, moved.from, moved.to) : state.items
+  return [{ ...state, items, sort: s }, fx]
 }
 
-// In view — connect() takes a Signal<SortableState>:
+// In view — connect() takes a ReadSignal<SortableState> (a slice or a .map):
 view: ({ state, send }) => {
   const parts = sortable.connect(
     state.at('sort'),
     (m) => send({ type: 'sort', msg: m }),
-    { id: 'list' },
+    // `itemLabel` names the item in what a screen reader hears.
+    { id: 'list', itemLabel: (id) => id },
   )
+  // Both bags carry `text` for the element's CHILD — spread the rest.
+  const { text: live, ...liveAttrs } = parts.liveRegion
+  const { text: howTo, ...howToAttrs } = parts.instructions
   return [
     ul({ ...parts.root, class: 'list' }, [
       each(state.at('items'), {
@@ -747,6 +756,9 @@ view: ({ state, send }) => {
         ],
       }),
     ]),
+    // Visually hidden but rendered: a `display: none` live region is silent.
+    div({ ...liveAttrs, class: 'sr-only' }, [text(live)]),
+    div({ ...howToAttrs }, [text(howTo)]),
   ]
 }
 ```
@@ -754,6 +766,18 @@ view: ({ state, send }) => {
 `parts.item` provides `data-dragging`, `data-shift`, and `data-over`
 attributes for CSS-driven visual feedback. `parts.handle` captures
 pointer events and computes the live DOM index on each drag start.
+
+A keyboard user cannot see where the item is, so they must HEAR it. The
+machine owns a polite live region (`parts.liveRegion`) that announces the
+grab ("Picked up Apple, item 2 of 5."), every move ("Apple moved to
+position 3 of 5."), the drop and a cancel, and hidden instructions
+(`parts.instructions`) that every handle names in `aria-describedby` — if
+you supply your own keyboard help instead and do not render that part, pass
+`hasInstructions: false` so no handle names a missing element. The
+handle is a toggle button whose `aria-pressed` is the grab — the old
+`aria-grabbed` was deprecated in ARIA 1.1 and never broadly supported by
+screen readers. All the text comes from `LocaleContext` (`Locale['sortable']`),
+so a provided locale translates the announcements too.
 
 ## Routing
 
@@ -1027,9 +1051,9 @@ immediately and on every change.
 
 ```typescript
 import { foreign } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { ReadSignal } from '@llui/dom'
 
-foreign<{ root: ShadowRoot }, { html: Signal<string> }>({
+foreign<{ root: ShadowRoot }, { html: ReadSignal<string> }>({
   state: { html: state.at('readmeHtml') },
   mount: ({ el, state: sig }) => {
     const root = el.attachShadow({ mode: 'open' })
@@ -1047,9 +1071,9 @@ foreign<{ root: ShadowRoot }, { html: Signal<string> }>({
 
 ```typescript
 import { foreign } from '@llui/dom'
-import type { Signal } from '@llui/dom'
+import type { ReadSignal } from '@llui/dom'
 
-foreign<{ el: HTMLElement }, { content: Signal<string> }>({
+foreign<{ el: HTMLElement }, { content: ReadSignal<string> }>({
   state: { content: state.at('fileContent') },
   mount: ({ el, state: sig }) => {
     sig.content.bind((content) => {
@@ -1359,14 +1383,14 @@ function panel(state: Signal<State>) {
 
 ### Visual attention layer
 
-`agentAttention.connect(state, send).flashClass(path)` returns a `Signal<string | undefined>` that resolves to `'agent-flash'` when the path is in the most recent dispatch's affected set. Drop the handle straight onto a reactive `class` slot:
+`agentAttention.connect(state, send).flashClass(path)` returns a `ReadSignal<string | undefined>` that resolves to `'agent-flash'` when the path is in the most recent dispatch's affected set. Drop the handle straight onto a reactive `class` slot:
 
 ```ts
 const att = agentAttention.connect(state.at('agent').at('attention'), (m) =>
   send({ type: 'agent', sub: 'attention', msg: m }),
 )
 
-// In your view layout — flashClass('cart') is a Signal, so the class is reactive:
+// In your view layout — flashClass('cart') is a signal, so the class is reactive:
 div({ class: att.flashClass('cart') }, [
   // cart contents — flashes when an agent dispatch touches /cart/*
 ])

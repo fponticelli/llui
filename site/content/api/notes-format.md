@@ -82,6 +82,25 @@ function deriveFilename(id: string, author: Author, kind: NoteKind, slug: string
 function deriveSlug(prose: string): string
 ```
 
+### `filenameIdNum()`
+
+The numeric id of any canonically-shaped note filename, or `null`. Id
+allocation must count EVERY note file — including one of an unknown kind,
+which still occupies its id — or the next note would reuse it.
+
+```typescript
+function filenameIdNum(filename: string): number | null
+```
+
+### `isNoteKind()`
+
+Whether `v` is a {@link NoteKind} — the check for any kind read from outside
+the type system (a filename, parsed frontmatter, a request).
+
+```typescript
+function isNoteKind(v: unknown): v is NoteKind
+```
+
 ### `nextId()`
 
 The next id given the ids already present (handles gaps): padId(max+1).
@@ -99,6 +118,12 @@ function padId(n: number): string
 ```
 
 ### `parseFilename()`
+
+Parse a note filename. Returns `null` for a name that is not
+canonically shaped (`status.jsonl`, a stray `README.md`), and THROWS
+{@link UnknownNoteKindError} for a canonical name whose kind is not a
+{@link NoteKind}. A caller that only needs the id (allocation) uses
+{@link filenameIdNum}, which does not judge the kind.
 
 ```typescript
 function parseFilename(filename: string): ParsedFilename | null
@@ -649,12 +674,36 @@ export interface VerboseNoteBody {
 }
 ```
 
+## Classes
+
+### `UnknownNoteKindError`
+
+A canonically-SHAPED note filename whose kind segment is not a
+{@link NoteKind} (e.g. `lasso`, a kind the format dropped). It is a note this
+format cannot type — not a stray non-note file — so it is reported rather
+than skipped silently or typed as a kind it is not.
+
+```typescript
+class UnknownNoteKindError extends Error {
+  constructor(readonly filename: string, readonly kind: string)
+}
+```
+
 ## Constants
 
 ### `NOTE_FILENAME_RE`
 
 ```typescript
 const NOTE_FILENAME_RE
+```
+
+### `NOTE_KINDS`
+
+Every {@link NoteKind}, as a runtime list — so a validator (e.g. the MCP
+`llui_list_notes` input schema) enumerates exactly the kinds the type admits.
+
+```typescript
+const NOTE_KINDS
 ```
 
 ### `NOTE_SCHEMA_VERSION`
@@ -671,6 +720,17 @@ const NOTE_SCHEMA_VERSION
 ## Public Entry Points
 
 ### `@llui/notes-format/note-types`
+
+#### Functions
+
+##### `isNoteKind()` from `@llui/notes-format/note-types`
+
+Whether `v` is a {@link NoteKind} — the check for any kind read from outside
+the type system (a filename, parsed frontmatter, a request).
+
+```typescript
+function isNoteKind(v: unknown): v is NoteKind
+```
 
 #### Types
 
@@ -1165,6 +1225,17 @@ export interface VerboseNoteBody {
 }
 ```
 
+#### Constants
+
+##### `NOTE_KINDS` from `@llui/notes-format/note-types`
+
+Every {@link NoteKind}, as a runtime list — so a validator (e.g. the MCP
+`llui_list_notes` input schema) enumerates exactly the kinds the type admits.
+
+```typescript
+const NOTE_KINDS
+```
+
 ### `@llui/notes-format/note-format`
 
 #### Functions
@@ -1210,6 +1281,16 @@ function deriveFilename(id: string, author: Author, kind: NoteKind, slug: string
 function deriveSlug(prose: string): string
 ```
 
+##### `filenameIdNum()` from `@llui/notes-format/note-format`
+
+The numeric id of any canonically-shaped note filename, or `null`. Id
+allocation must count EVERY note file — including one of an unknown kind,
+which still occupies its id — or the next note would reuse it.
+
+```typescript
+function filenameIdNum(filename: string): number | null
+```
+
 ##### `nextId()` from `@llui/notes-format/note-format`
 
 The next id given the ids already present (handles gaps): padId(max+1).
@@ -1227,6 +1308,12 @@ function padId(n: number): string
 ```
 
 ##### `parseFilename()` from `@llui/notes-format/note-format`
+
+Parse a note filename. Returns `null` for a name that is not
+canonically shaped (`status.jsonl`, a stray `README.md`), and THROWS
+{@link UnknownNoteKindError} for a canonical name whose kind is not a
+{@link NoteKind}. A caller that only needs the id (allocation) uses
+{@link filenameIdNum}, which does not judge the kind.
 
 ```typescript
 function parseFilename(filename: string): ParsedFilename | null
@@ -1261,6 +1348,21 @@ export interface QueueEntry {
   noteId: string
   status: NoteStatus
   transitions: StatusTransition[]
+}
+```
+
+#### Classes
+
+##### `UnknownNoteKindError` from `@llui/notes-format/note-format`
+
+A canonically-SHAPED note filename whose kind segment is not a
+{@link NoteKind} (e.g. `lasso`, a kind the format dropped). It is a note this
+format cannot type — not a stray non-note file — so it is reported rather
+than skipped silently or typed as a kind it is not.
+
+```typescript
+class UnknownNoteKindError extends Error {
+  constructor(readonly filename: string, readonly kind: string)
 }
 ```
 

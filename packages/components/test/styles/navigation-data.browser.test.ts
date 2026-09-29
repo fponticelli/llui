@@ -3,7 +3,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
+import type { Browser, BrowserContext, Page } from 'playwright'
 import * as accordionMachine from '../../src/components/accordion'
 import * as carouselMachine from '../../src/components/carousel'
 import * as chartMachine from '../../src/components/chart'
@@ -26,6 +26,9 @@ import {
   joinNavigationDataScenarios,
   scenarioEnvironmentProductIds,
 } from './navigation-data-scenarios'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const STYLES = resolve(import.meta.dirname, '../../src/styles')
 const contract = loadProductContract()
@@ -233,7 +236,7 @@ const dataFixture = `
     </svg>
     <span data-forced-label="revenue">Revenue, bar series</span>
     <span data-forced-label="cost">Cost, dashed line series</span>
-    <button id="chart-legend" data-scope="chart" data-part="legend-item" data-dimmed>Forecast</button>
+    <button id="chart-legend" data-scope="chart" data-part="legend-item" data-dimmed><span id="chart-legend-swatch" data-scope="chart" data-part="legend-swatch"></span>Forecast</button>
     <div id="chart-tooltip" data-scope="chart" data-part="tooltip" role="status">Q1 · 120</div>
     <table id="chart-table" data-scope="chart" data-part="table"><caption>Chart data</caption></table>
   </div>
@@ -294,7 +297,7 @@ describe('navigation/data baseline presentation in Chromium', () => {
   let browser: Browser
 
   beforeAll(async () => {
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
   })
 
   afterAll(async () => {
@@ -541,6 +544,8 @@ describe('navigation/data baseline presentation in Chromium', () => {
           dimmedOpacity: style('chart-dimmed').opacity,
           axisFill: style('chart-axis').fill,
           legendOpacity: style('chart-legend').opacity,
+          legendDecoration: style('chart-legend').textDecorationLine,
+          legendSwatchOpacity: style('chart-legend-swatch').opacity,
           tooltipPosition: style('chart-tooltip').position,
           fallbackClip: style('chart-table').clipPath,
         },
@@ -606,7 +611,12 @@ describe('navigation/data baseline presentation in Chromium', () => {
     expect(got.chart.lineFill).toBe('none')
     expect(Number(got.chart.dimmedOpacity)).toBeLessThan(0.5)
     expect(got.chart.axisFill).not.toBe('rgb(0, 0, 0)')
-    expect(Number(got.chart.legendOpacity)).toBeLessThan(0.5)
+    // A dimmed series fades its SWATCH and strikes its label; the label is a
+    // live toggle's text and keeps full opacity (#268 audit: an item-wide
+    // opacity took it to 1.7:1).
+    expect(Number(got.chart.legendOpacity)).toBe(1)
+    expect(got.chart.legendDecoration).toBe('line-through')
+    expect(Number(got.chart.legendSwatchOpacity)).toBeLessThan(0.5)
     expect(got.chart.tooltipPosition).toBe('absolute')
     expect(got.chart.fallbackClip).toBe('inset(50%)')
     expect(got.sparkline.aboveFill).not.toBe(got.sparkline.belowFill)

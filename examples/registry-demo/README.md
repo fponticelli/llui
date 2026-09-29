@@ -1,20 +1,34 @@
-# Registry Demo
+# Registry skins sync fixture
 
-All 58 components in the [LLui registry](../../registry), rendered from source that
-`llui add` copied into this app. Nothing on the page is imported from a styling
-package — `src/components/ui/` is ordinary project source, and editing it changes what
-you see.
+**A test fixture, not a showcase.** This app holds the source `llui add` copies into a
+consumer project — every item in the [LLui registry](../../registry), checked in under
+`src/components/ui/` and `src/lib/` — so the repository can prove that copy compiles, boots
+and stays in sync with the registry. It is not published on the site.
 
-Coverage is shadcn/ui parity minus Chart and Sidebar, plus the components LLui has and
-shadcn does not (rating group, tags input, tree view, steps, meter, number input,
-toolbar).
+To browse the components, use the [Component Gallery](../component-gallery) (`pnpm gallery`):
+its Registry skins document renders these same copied files, with each component's
+deterministic scenarios side by side with the Baseline theme. The
+[component catalog](https://llui.dev/component-catalog) lists every item, with the machine
+each skin spreads and the items that deliberately have none.
 
-## What it demonstrates
+What depends on it:
 
-- **The two kinds of registry item.** Presentational element helpers (`Button`, `Card`,
-  `Input`, `Textarea`, `Label`, `Badge`, `Separator`, `Skeleton`, `Alert`, `Table`) and
-  skins over `@llui/components` (`Switch`, `Tabs`, `Accordion`, `Dialog`, `Popover`,
-  `Tooltip`) where the state machine, keyboard handling and ARIA stay in the package.
+- `scripts/test/registry-demo-sync.test.ts` — the copied files match what `llui add`
+  produces from the current registry.
+- The Component Gallery's Registry skins document — it renders the copies here, never the
+  registry source (`examples/component-gallery/gallery.config.ts`).
+- The Registry-path arms of the live browser suites in `registry/test/` and
+  `packages/components/test/styles/` — they build this app and its `src/test-fixtures/`.
+- `pnpm smoke:examples`, `turbo check` and the class, attribute and motion guards under
+  `scripts/test/`.
+
+## What it pins
+
+- **What `llui add` copies.** Presentational element helpers (`Button`, `Card`, `Input`,
+  `Badge`, …) with no machine at all; skins over `@llui/components` machines (`Switch`,
+  `Tabs`, `Dialog`, `Table`, …) where the state machine, keyboard handling and ARIA stay in
+  the package; and the adapters of composed patterns (`form`, `data-table`). The copied file
+  and the machine import are different artifacts, and their names can differ.
 - **Tokens without the baseline stylesheet.** `src/main.css` imports
   `@llui/components/styles/tokens.css`, not `theme.css`. The baseline's
   `[data-scope][data-part]` rules are unlayered, and unlayered CSS beats
@@ -32,14 +46,15 @@ toolbar).
 
 ## UI
 
-One page in five groups — Presentational, Forms, Data display, Navigation & disclosure,
-Overlays. The overlay triggers sit at the bottom; every overlay portals to `<body>`.
+One page of groups — presentational items, icons, forms, data display, navigation and
+disclosure, layout, menus, media, composed patterns, pickers and overlays. The overlay
+triggers sit at the bottom; every overlay portals to `<body>`.
 
-## Type-checked, unlike the other examples
+## Type-checked copied source
 
-This example has a `tsconfig.json` and a `check` script, so `turbo check` compiles it in
-CI. That is deliberate: `src/components/ui/` is the CLI's real output, so if `llui add`
-ever emits something that does not compile, this is where it surfaces. It caught four
+`turbo check` compiles this example in CI, like every example. Here it matters more:
+`src/components/ui/` is the CLI's real output, so if `llui add` ever emits something that
+does not compile, this is where it surfaces. It caught four
 defects the day it was added, three of them the same one — a `connect()` accessor
 returning a BAG OF BAGS (`item(value)` → `{ trigger, content, item }`), where spreading
 the wrapper emits `trigger="[object Object]"` and silently drops every real attribute.

@@ -57,6 +57,21 @@ describe('positionFromPoint', () => {
   it('vertical computes percent from y', () => {
     expect(positionFromPoint(init({ orientation: 'vertical' }), rect, 0, 75)).toBe(75)
   })
+
+  // #266: under dir="rtl" a horizontal split lays the PRIMARY panel on the
+  // right, so its share is measured from the right edge. Measuring from the
+  // left made a pointer drag move the divider away from the pointer.
+  it('horizontal RTL measures the primary share from the right edge (#266)', () => {
+    const wide = { left: 100, right: 300, top: 0, width: 200, height: 100 } as DOMRect
+    expect(positionFromPoint(init({ orientation: 'horizontal', dir: 'rtl' }), wide, 250, 0)).toBe(
+      25,
+    )
+    expect(positionFromPoint(init({ orientation: 'horizontal', dir: 'ltr' }), wide, 250, 0)).toBe(
+      75,
+    )
+    // Vertical splits are not mirrored by direction.
+    expect(positionFromPoint(init({ orientation: 'vertical', dir: 'rtl' }), rect, 0, 75)).toBe(75)
+  })
 })
 
 describe('splitter.connect', () => {

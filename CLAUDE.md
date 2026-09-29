@@ -8,7 +8,7 @@ This file holds the RULES. The measurements, incident history and reasoning behi
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | [`docs/agents/workflow.md`](docs/agents/workflow.md)             | worktrees, pre-commit lock, stash ban, symlinks + prettier, `llui-mcp` watchdog   |
 | [`docs/agents/ci.md`](docs/agents/ci.md)                         | CI vs local, `check:scripts` / `lint:scripts` / `check:docs` gates, step order    |
-| [`docs/agents/test-durations.md`](docs/agents/test-durations.md) | duration baseline, timeouts, load vs load-transient, perf-ratio tests             |
+| [`docs/agents/tests-and-load.md`](docs/agents/tests-and-load.md) | timeouts, load vs load-transient, perf-ratio tests, fixtures, no-retry rule       |
 | [`docs/agents/verification.md`](docs/agents/verification.md)     | faithful mutation testing, focus/overlay probes, NUL bytes in source              |
 | [`docs/agents/runtime.md`](docs/agents/runtime.md)               | `@llui/dom` concepts and invariants in full                                       |
 | [`docs/agents/compiler.md`](docs/agents/compiler.md)             | `@llui/compiler` invariants in full (signal recognition, rows, lint rules)        |
@@ -37,8 +37,7 @@ pnpm turbo test           # Run tests (vitest) across all packages
 pnpm test:scripts         # Root scripts/test suite
 pnpm format               # Prettier format everything
 pnpm format:check         # Check formatting without writing
-pnpm test:durations       # Record the per-file test-duration baseline
-pnpm check:test-durations # Diff against that baseline (report-only, load-normalized)
+pnpm gallery              # Component Gallery dev server (shell + both path documents)
 
 # Single package — run each script SEPARATELY (see Committing)
 pnpm --filter @llui/dom build
@@ -80,28 +79,33 @@ Full reasoning: `docs/agents/workflow.md`.
 Mirror `.github/workflows/ci.yml` **step for step, filters included**. Full detail: `docs/agents/ci.md`.
 
 - **`--filter=!@llui/site` applies to the BUILD step only.** `turbo check` and `turbo lint` run unfiltered, so the site is type-checked and linted.
-- `@llui/site` is the only package whose tsconfig type-checks a file importing `vitest.shared.ts`; `pnpm check:scripts` is the other gate. Type root config against vitest's own config type, not `as const`.
+- `@llui/site` and `@llui/registry` are the only packages whose tsconfigs type-check a file importing `vitest.shared.ts`; `pnpm check:scripts` is the other gate. Type root config against vitest's own config type, not `as const`.
+- Vitest's esbuild transpile never type-checks. `registry/test/` is compiled by `registry/tsconfig.test.json` (#272): the registry `check` script runs both registry configs and `pnpm check:registry` delegates to it.
 - `scripts/` is covered by `pnpm check:scripts` (`tsconfig.scripts.json`, `checkJs` on — not redundant) and `pnpm lint:scripts` (type-aware, `recommendedTypeChecked`). Keep the lint globs QUOTED (`sh` has no globstar). A new file under `scripts/` must be `.ts` or `.mjs` or the coverage tests fail.
 - In `.mjs`, the JSDoc cast `/** @type {X} */ (JSON.parse(raw))` still trips `no-unsafe-*`. Write `/** @type {unknown} */ const parsed = JSON.parse(raw)` first, then cast.
 - `pnpm check:docs` type-checks README examples. `@doc-skip`, `@doc-setup` and `DOC_ONLY_MODULES` can all hide real staleness — review them like an allowlist.
 - A test must not depend on a directory an earlier CI step created. Fix the assumption (`mkdirSync(dir, { recursive: true })`), never the step order.
 - `verify` fails fast: red at `Type check` tells you nothing about the tests. Run later steps locally too.
-- `LLUI_TEST_DURATIONS` stays RELATIVE in `ci.yml` (container path ≠ host path); both writer and reader resolve it against the repo root.
+- Output-path env vars in `ci.yml` (e.g. `LLUI_VISUAL_OUTPUT`) stay RELATIVE (container path ≠ host path) and are resolved against the repo root.
 
-## Test durations and timeouts
+## Tests, load and timeouts
 
-Full detail: `docs/agents/test-durations.md`.
+Full detail: `docs/agents/tests-and-load.md`.
 
 - Workspace `testTimeout` is 30 s. Every vitest config must reach `vitest.shared.ts` (gated by `scripts/test/vitest-config-baseline.test.ts`). `mergeConfig` CONCATENATES `test.include` — override by spreading instead.
-- `check:test-durations` is REPORT-ONLY via `continue-on-error` in `ci.yml`. Thresholds (`4x / +400 ms`, quartile spread) are calibrated against measured noise; re-run the sweep in `scripts/lib/test-durations.mjs` before changing them.
-- Expensive fixtures belong in `beforeAll` (60 s `hookTimeout`), but hook time is invisible to the duration report.
+- No gate watches per-file test duration (the 30 s budget ended the old 5 s canary; a duration baseline was tried and removed). A test nearing its budget wants to be CHEAPER, never a bigger budget.
+- Expensive fixtures belong in `beforeAll` (60 s `hookTimeout`), never in a `describe` body (collection time is unbudgeted).
+- Browser suites BUILD their fixture once and serve it static (`scripts/lib/prebuilt-fixture.mjs`), never a per-file Vite dev server: on-demand compiles, per-page module fan-out and a shared dependency-optimizer cache all land on the tests under load. Record fast in-page state in-page, never sleep-then-read across a round trip.
+- `pnpm smoke:examples` AND every test browser are hermetic, through ONE policy and Iconify fixture (`scripts/lib/network-policy.mjs`): tests launch only via `useHermeticBrowser()` (`scripts/lib/hermetic-browser.mjs`, called at collection time; `scripts/test/hermetic-browser-coverage.test.ts` gates it), and an undeclared off-origin request FAILS the smoke or the test, naming the URL.
 - Perf-RATIO tests break on load transients in BOTH directions. Never add `retry` to one; fix the sizes, and measure a faithful slow mutant, not just the healthy arm. Measure through the shipped test, never a replica.
+- **No test retries, anywhere** (`scripts/test/no-test-retry.test.ts`, allowlist empty and closed at both ends). Wait on the observable event or condition (`scripts/lib/wait-until.mjs`), never a sleep or a private deadline; a test's teardown must `destroy()`/close what it started.
 
 ## Development approach
 
 - **TDD:** define the type/shape, write failing tests, then implement.
 - Tests live in each package's `test/` folder, not beside sources.
 - **No `any`** unless unavoidable. `as unknown as X` is a smell.
+- **No double assertion (`as unknown as T`, `<T><unknown>x`, `as any as T`) in `packages/*/src`** — use a real type, a checked guard/decoder, or `instanceof` (`scripts/test/no-double-assertion.test.ts`, allowlist empty and closed at both ends).
 - **Nothing is sacred.** No legacy/back-compat concerns. When assumptions change, update `site/content/` (published to [llui.dev](https://llui.dev)).
 - **No shortcuts.** Correctness and developer experience decide, not expedience.
 
@@ -185,6 +189,7 @@ Hard constraints. Several are not enforced by types or CI. **Before touching a s
 - Disposing a container mount removes the nodes it inserted. `provide()` context is snapshotted at each primitive's placement.
 - **Output-equality belongs only to `ValueBinding`.** Every structural reconcile is side-effect-free when nothing changed.
 - `state.at('x')` rows are gatable; `state.map(...)`/whole-state rows re-run on every change (O(n) cliff).
+- **A mapped signal is NOT a `Signal`.** `ReadSignal<T>` (`map`/`peek`) is the supertype of `Signal<T>` (path, has `.at()`) and `MappedSignal<T>` (`.map`/`derived`). Anything that only reads takes `ReadSignal`; `Signal` only where `.at()` is called. Never restore `MappedSignal.at: never` (it re-enables the widening).
 - Stateless widgets use `constant(v)` + `noSend`; never fake them with `pathHandle`, never type a no-op sender as `Send<never>`.
 
 ### Compiler (`@llui/compiler`) — `docs/agents/compiler.md`
@@ -196,6 +201,7 @@ Hard constraints. Several are not enforced by types or CI. **Before touching a s
 - **`peek-in-slot` is scoped to slots and an exemption is sticky** (#245). A change may only REMOVE reports versus main.
 - **An `each` row rebases onto component state only for a name that provably denotes it** (#247). Pruned rows must widen the each's dep mask, or the row goes stale.
 - **`tagSend` variants must match what the handler dispatches** (`tag-send-drift`). Under-declaration is reported when attributable; over-declaration only when the dispatch set is provably complete. When the two directions disagree, BAIL.
+- **`prefer-at-over-map` recommends `.at()` only on a provable PATH receiver** (`RootShape`). A `show`/`branch` narrowed param IS its condition handle: over a `.map`/`derived` condition it is mapped, and `.at()` on it is `at-after-map` (#267).
 - **`imperative-dom-mutation`:** DOM writes from a view's own element-helper event handler are build errors; `foreign()`/`island()`/`subApp()` are exempt.
 - **Named function expressions are never lowered** — lowering relocates the body and drops the self-binding (#181).
 - **Parse via the ONE `ts.createSourceFile` in `src/parse.ts`** with the real filename's ScriptKind; share one `ParsedModule`; never mutate the tree.
@@ -207,7 +213,7 @@ Hard constraints. Several are not enforced by types or CI. **Before touching a s
 ### Styling & registry — `docs/agents/styling.md`
 
 - **Every registry class must compile under real Tailwind** (`scripts/test/tailwind-classes.test.ts`). No untested class-string layers.
-- **Recipes are shadcn/ui ported VERBATIM.** Only four translations: `focus:` → `data-[highlighted]:` on menu-like surfaces, `data-slot=` → `data-part=`, physical → exact logical utilities, and `--radix-…-available-height` → `--llui-floating-available-height`.
+- **Recipes are shadcn/ui ported VERBATIM.** Only four translations: `focus:` → `data-[highlighted]:` on menu-like surfaces, `data-slot=` → `data-part=`, physical → exact logical utilities, and `--radix-…-available-height` → `--llui-floating-available-height`. The one sanctioned ADDITION is a `forced-colors:` variant (inert outside forced-colors mode, so normal rendering stays upstream's); spell `outline-solid` beside any `outline-none` it overrides (`scripts/test/forced-colors-outline.test.ts` gates it, through `buttonVariants` composition).
 - **`scripts/test/registry-attrs.test.ts` checks recipe attributes and VALUES against what machines publish.** Allowlists are keyed `file.ts: attr`, never a bare name. Boolean `data-*` are published BARE.
 - **`scripts/test/token-contrast.test.ts`** asserts AA contrast for all token pairs in all six theme cells. Its allowlist is closed at both ends.
 - `theme.css` (plain CSS baseline) and `tokens.css` (Tailwind v4 registry) are independent; never style the same parts from both. Tailwind namespaces (`--transition-duration-*`, `--z-index-*`) matter only in `tailwind.css`.
@@ -215,7 +221,10 @@ Hard constraints. Several are not enforced by types or CI. **Before touching a s
 - Route `class` through `mergeClass` (a raw `cn()` stringifies signals). Style state through `data-*`, never a computed class.
 - Icons come from Iconify as rebuilt `<svg>` elements (allowlisted, never `innerHTML`). Failures are not cached.
 - CSS probes: verify by RENDERING. Hidden tabs freeze transitions; CSS Color 4 values need paint-and-read; assert the instrument on a mid-tone known pair first.
-- The components demo serves `dist/styles/` — rebuild `@llui/components` after a style source edit.
+- Example apps (`baseline-css`, `registry-demo`) serve `dist/styles/` — rebuild `@llui/components` after a style source edit. The Component Gallery aliases to source.
+- **The Component Gallery is the component inventory.** The hand-written Baseline showcase (`examples/components-demo`) is retired; `examples/registry-demo` is the copied-source SYNC FIXTURE, not a showcase. Baseline-path live compositions the browser suites drive live in `examples/baseline-css/src/test-fixtures/` (no Tailwind, no Vite plugin — linted by `packages/components/test/styles/baseline-css-lint.test.ts`).
+- **The Component Gallery (`examples/component-gallery`) renders Baseline theme and Registry skins as SEPARATE builds/documents.** Never load both systems in one document; renderers stay per path; its inventory is derived from the contract and family catalogs, never listed.
+- **Every gallery case is gated (#268):** renders `ready`, no serious/critical axe finding, intact markup/idrefs, no runtime fault, per-path visual baseline (`test/cases.browser.test.ts`), plus keyboard/pointer flows per family. Fix findings at the source; a11y exemptions are per case, closed at both ends. Baselines are recorded ONLY in CI's Playwright image (`pnpm gallery:visual:update`, or commit CI's `visual-baselines` artifact). Compare mode needs browser, platform, arch AND the manifest's rendering fingerprint (fonts + raster, `test/gates/fingerprint.ts`) to match; elsewhere a local run checks determinism.
 
 ### Packaging — `docs/agents/packaging.md`
 
@@ -237,6 +246,8 @@ Skills in `.claude/skills/` cover adding a structural primitive, a lint rule, a 
 ## Docs
 
 Authoritative docs: `site/content/`, published to **[llui.dev](https://llui.dev)** (Vike; some pages symlink to `docs/*.md`; `api/<pkg>.md` is generated by `site/src/generate-api.ts`). Key pages: [Architecture](https://llui.dev/architecture), [Getting Started](https://llui.dev/getting-started), [Cookbook](https://llui.dev/cookbook), [Composition Patterns](https://llui.dev/composition-patterns), [API Reference](https://llui.dev/api/dom), [Agents](https://llui.dev/agents), [Debugging](https://llui.dev/debugging), [Benchmarks](https://llui.dev/benchmarks), [Publishing a precompiled library](https://llui.dev/publishing-a-precompiled-library).
+
+**Component facts in docs are generated, never typed (#269).** Counts, inventories, add/import names, aliases, stylesheet entry points and gallery links live in `<!-- product-contract:<id>:start/end -->` regions rendered from `registry/registry.json` by `site/src/generate-component-docs.ts` (targets: `COMPONENT_DOC_TARGETS`, including READMEs and the `llui-app-dev` skill outside `site/`). Edit the renderer, then `pnpm --filter @llui/site run generate`. `site/test/docs-integrity.test.ts` fails on a broken internal link/anchor or a hand-written component count outside a region; never document `llui add <name>` and `@llui/components/<name>` as one artifact.
 
 `docs/designs/` no longer exists — don't reference it. In-flight design work lives in `docs/proposals/`.
 

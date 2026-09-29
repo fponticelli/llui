@@ -73,7 +73,7 @@ export function update(
 }
 
 // Connect bag:
-import { tagSend, type Send, type Signal } from '@llui/dom'
+import { tagSend, type Send, type ReadSignal } from '@llui/dom'
 
 /**
  * Static prop bag with reactive (Signal-handle) values. See
@@ -95,19 +95,22 @@ export type ConnectBag = {
   entry: (id: string) => {
     card: {
       'data-part': 'entry'
-      'data-status': Signal<'pending' | 'approved' | 'rejected' | 'missing'>
+      'data-status': ReadSignal<'pending' | 'approved' | 'rejected' | 'missing'>
       'data-id': string
     }
-    approveButton: { onClick: () => void; disabled: Signal<boolean> }
-    rejectButton: { onClick: () => void; disabled: Signal<boolean> }
-    intentText: Signal<string>
-    reasonText: Signal<string | null>
-    payloadText: Signal<string>
+    approveButton: { onClick: () => void; disabled: ReadSignal<boolean> }
+    rejectButton: { onClick: () => void; disabled: ReadSignal<boolean> }
+    intentText: ReadSignal<string>
+    reasonText: ReadSignal<string | null>
+    payloadText: ReadSignal<string>
   }
-  empty: { 'data-part': 'empty'; 'data-visible': Signal<boolean> }
+  empty: { 'data-part': 'empty'; 'data-visible': ReadSignal<boolean> }
 }
 
-export function connect(state: Signal<AgentConfirmState>, send: Send<AgentConfirmMsg>): ConnectBag {
+export function connect(
+  state: ReadSignal<AgentConfirmState>,
+  send: Send<AgentConfirmMsg>,
+): ConnectBag {
   const findEntry = (s: AgentConfirmState, id: string): ConfirmEntry | undefined =>
     s.pending.find((e) => e.id === id)
 

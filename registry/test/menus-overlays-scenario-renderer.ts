@@ -19,9 +19,12 @@
 import {
   component,
   div,
+  each,
   input,
+  li,
   mountApp,
   show,
+  span,
   text,
   type Mountable,
   type Send,
@@ -29,6 +32,7 @@ import {
 } from '@llui/dom'
 import type { ProductContract } from '@llui/cli'
 import {
+  dispatchScenarioSelection,
   resolveScenarioSelection,
   type PresentationScenarioEnvironment,
 } from '@llui/cli/presentation-scenarios'
@@ -68,6 +72,7 @@ import {
   DialogContent,
   DialogDescription,
   DialogFooter,
+  DialogHeader,
   DialogTitle,
 } from '../llui/ui/dialog'
 import {
@@ -390,6 +395,8 @@ function nestedDialogAdapter(
       const inner = dialog.connect(state.at('inner'), sendTo('inner'), {
         id: 'rd-nested',
         modal: true,
+        // The confirmation renders a title and no description (#268 audit).
+        hasDescription: false,
       })
       return [
         Button({ ...outer.trigger, variant: 'outline' }, [text('Open')]),
@@ -571,7 +578,9 @@ const popoverAdapter: Adapter<FloatingPresenceCaseInput> = (host, input, ctx) =>
           arrowSelector: "[data-part='arrow']",
           content: () => [
             PopoverContent({ ...parts.content }, [
-              text(input.label),
+              // The content is a named dialog: `aria-labelledby` names the
+              // title part, so the title must be rendered (#268 audit).
+              div({ ...parts.title }, [text(input.label)]),
               PopoverArrow({ ...parts.arrow }),
             ]),
           ],
@@ -877,7 +886,10 @@ const navigationMenuAdapter: Adapter<NavigationMenuCaseInput> = (host, input, ct
           NavigationMenuList(
             input.branches.map((branch) => {
               const item = parts.item(branch.id, { isBranch: true })
-              return div([
+              // A list item, as upstream's NavigationMenuItem and the registry
+              // demo render it — a `div` here made the `ul` own non-items
+              // (#268 audit).
+              return li({ class: 'relative' }, [
                 NavigationMenuTrigger({ ...item.trigger }, [
                   text(branch.label),
                   NavigationMenuIndicator([ChevronDownIcon({ class: 'size-3' })]),
@@ -917,7 +929,10 @@ const selectAdapter: Adapter<SelectCaseInput> = (host, input, ctx) =>
     (state, send) => {
       const parts = select.connect(state, send, { id: 'rs' })
       return [
-        SelectTrigger({ ...parts.trigger }, [SelectValue([text(parts.valueText)])]),
+        // role="combobox" takes no name from its content (#268 audit).
+        SelectTrigger({ ...parts.trigger, 'aria-label': 'Fruit' }, [
+          SelectValue([text(parts.valueText)]),
+        ]),
         select.overlay({
           target: host,
           state,
@@ -962,9 +977,23 @@ const comboboxAdapter: Adapter<ComboboxCaseInput> = (host, caseInput, ctx) =>
     (state, send) => {
       const parts = combobox.connect(state, send, { id: 'rcb' })
       const { text: liveText, ...liveAttrs } = parts.liveRegion
+      // Hidden only when SETTLED empty: a loading listbox stays exposed, since
+      // `aria-busy` is how it announces the load (and permits it no options).
+      const empty = caseInput.items.length === 0 && caseInput.status !== 'loading'
+      // The popup box carries the presence attributes; the LISTBOX inside it
+      // owns only options, and with nothing to list it is hidden and the
+      // empty state is its sibling (#268 audit).
+      const {
+        role,
+        id,
+        'aria-labelledby': labelledBy,
+        'aria-busy': busy,
+        tabindex,
+        ...popup
+      } = parts.content
       return [
         div({ class: 'relative max-w-xs' }, [
-          input({ ...parts.input, class: 'pr-9' }),
+          input({ ...parts.input, 'aria-label': 'Fruit', class: 'pr-9' }),
           ComboboxTrigger({ ...parts.trigger }, [ChevronDownIcon({ class: 'size-4' })]),
         ]),
         ComboboxLiveRegion({ ...liveAttrs }, [text(liveText)]),
@@ -975,15 +1004,23 @@ const comboboxAdapter: Adapter<ComboboxCaseInput> = (host, caseInput, ctx) =>
           parts,
           positionerClass: 'z-popover',
           content: () => [
-            ComboboxContent({ ...parts.content }, [
-              caseInput.items.length === 0
-                ? CommandEmpty({ ...parts.empty }, [text('No results')])
-                : div(
-                    {},
-                    caseInput.items.map((value) =>
-                      ComboboxItem({ ...parts.item(value).item }, [text(value)]),
-                    ),
-                  ),
+            ComboboxContent({ ...popup }, [
+              div(
+                {
+                  role,
+                  id,
+                  'aria-labelledby': labelledBy,
+                  'aria-busy': busy,
+                  tabindex,
+                  hidden: empty,
+                  'data-scope': 'combobox',
+                  'data-part': 'list',
+                },
+                caseInput.items.map((value) =>
+                  ComboboxItem({ ...parts.item(value).item }, [text(value)]),
+                ),
+              ),
+              ...(empty ? [CommandEmpty({ ...parts.empty }, [text('No results')])] : []),
             ]),
           ],
         }),
@@ -1018,8 +1055,26 @@ const searchableSelectAdapter: Adapter<ComboboxCaseInput> = (host, caseInput, ct
     searchableSelect.update,
     (state, send) => {
       const parts = searchableSelect.connect(state, send, { id: 'rss' })
+      // Hidden only when SETTLED empty: a loading listbox stays exposed, since
+      // `aria-busy` is how it announces the load (and permits it no options).
+      const empty = caseInput.items.length === 0 && caseInput.status !== 'loading'
+      // The popup box carries the presence attributes; the LISTBOX inside it
+      // owns only options — the filter field sits above it, the empty state
+      // beside it (#268 audit: the field used to sit inside the listbox).
+      const {
+        role,
+        id,
+        'aria-labelledby': labelledBy,
+        'aria-busy': busy,
+        'aria-multiselectable': multiselectable,
+        tabindex,
+        ...popup
+      } = parts.content
       return [
-        SelectTrigger({ ...parts.trigger }, [SelectValue([text(parts.triggerLabel)])]),
+        // role="combobox" takes no name from its content.
+        SelectTrigger({ ...parts.trigger, 'aria-label': 'Fruit' }, [
+          SelectValue([text(parts.triggerLabel)]),
+        ]),
         searchableSelect.overlay({
           target: host,
           state,
@@ -1027,18 +1082,29 @@ const searchableSelectAdapter: Adapter<ComboboxCaseInput> = (host, caseInput, ct
           parts,
           positionerClass: 'z-popover',
           content: () => [
-            SelectContent({ ...parts.content }, [
-              CommandInput({ ...parts.input, placeholder: 'Filter…' }),
-              CommandList([
-                caseInput.items.length === 0
-                  ? CommandEmpty([text('No results')])
-                  : div(
-                      {},
-                      caseInput.items.map((value) =>
-                        SelectItem({ ...parts.item(value).item }, [text(value)]),
-                      ),
-                    ),
-              ]),
+            SelectContent({ ...popup }, [
+              CommandInput({
+                ...parts.input,
+                'aria-label': 'Filter fruit',
+                placeholder: 'Filter…',
+              }),
+              CommandList(
+                {
+                  role,
+                  id,
+                  'aria-labelledby': labelledBy,
+                  'aria-busy': busy,
+                  'aria-multiselectable': multiselectable,
+                  tabindex,
+                  hidden: empty,
+                  'data-scope': 'searchable-select',
+                  'data-part': 'list',
+                },
+                caseInput.items.map((value) =>
+                  SelectItem({ ...parts.item(value).item }, [text(value)]),
+                ),
+              ),
+              ...(empty ? [CommandEmpty({ ...parts.empty }, [text('No results')])] : []),
             ]),
           ],
         }),
@@ -1114,14 +1180,17 @@ const toolbarAdapter: Adapter<ToolbarCaseInput> = (host, input, ctx) =>
     toolbar.update,
     (state, send) => {
       const parts = toolbar.connect(state, send, { id: 'rtb' })
+      // A group is `aria-labelledby` its label part, so the label is rendered
+      // (visually hidden — the group is a grouping, not a heading; #268 audit).
+      const group = parts.group('Formatting')
       return Toolbar({ ...parts.root }, [
-        ToolbarGroup(
-          { ...parts.group('all').root },
-          input.items.flatMap((value, index) => [
+        ToolbarGroup({ ...group.root }, [
+          span({ ...group.label, class: 'sr-only' }, [text('Formatting')]),
+          ...input.items.flatMap((value, index) => [
             ...(index > 0 ? [ToolbarSeparator({ ...parts.separator })] : []),
             Button({ ...parts.item(value).root, variant: 'ghost', size: 'sm' }, [text(value)]),
           ]),
-        ),
+        ]),
       ])
     },
   )
@@ -1145,31 +1214,56 @@ const commandMenuAdapter: Adapter<CommandMenuCaseInput> = (host, caseInput, ctx)
     },
     commandMenu.update,
     (state, send) => {
-      const parts = commandMenu.connect(state, send, { id: 'rcmd' })
+      // shadcn's CommandDialog names itself with an sr-only title AND
+      // description, so this palette renders both (#268 audit).
+      const parts = commandMenu.connect(state, send, { id: 'rcmd', hasDescription: true })
       return [
         Button({ ...parts.dialog.trigger, variant: 'outline' }, [text('Open command menu')]),
         dialog.overlay({
           target: host,
           state: state.map((s) => ({ open: s.open })),
           send: (m) => {
-            if (m.type === 'close') send({ type: 'close' })
+            // The dialog's Escape (it claims the key before the input sees it)
+            // follows the palette's cmdk rule: clear a query, then close.
+            if (m.type === 'close') send({ type: 'escape' })
           },
           parts: parts.dialog,
           positionerClass: 'contents',
           content: () => [
             DialogBackdrop({ ...parts.dialog.backdrop }),
             DialogContent({ ...parts.dialog.content }, [
+              DialogHeader({ class: 'sr-only' }, [
+                DialogTitle({ ...parts.dialog.title }, [text('Command palette')]),
+                DialogDescription({ ...parts.dialog.description }, [
+                  text('Search for a command to run'),
+                ]),
+              ]),
               Command({}, [
-                CommandInput({ ...parts.combobox.input, placeholder: 'Type a command…' }),
-                CommandList([
-                  CommandEmpty({ ...parts.empty, class: 'hidden data-empty:block' }, [
-                    text('No commands match'),
+                CommandInput({
+                  ...parts.combobox.input,
+                  'aria-labelledby': parts.dialog.title.id,
+                  placeholder: 'Type a command…',
+                }),
+                // The machine's listbox owns only options (#268 audit): the
+                // empty-state `status` sits beside it, not inside it.
+                // It owns the machine's FILTERED commands, not the case's
+                // seed list: a filtered-out command is not an option.
+                CommandList({ ...parts.combobox.content }, [
+                  CommandGroup([
+                    each(state.at('filtered'), {
+                      key: (c) => c.id,
+                      render: (c) => {
+                        // Keyed by id: the id is the row's identity for life.
+                        const id = c.peek().id
+                        return [
+                          CommandItem({ ...parts.combobox.item(id).item }, [text(c.at('label'))]),
+                        ]
+                      },
+                    }),
                   ]),
-                  CommandGroup(
-                    caseInput.commands.map((c) =>
-                      CommandItem({ ...parts.combobox.item(c.id).item }, [text(c.label)]),
-                    ),
-                  ),
+                ]),
+                CommandEmpty({ ...parts.empty, class: 'hidden data-empty:block' }, [
+                  text('No commands match'),
                 ]),
               ]),
             ]),
@@ -1272,24 +1366,6 @@ export const REGISTRY_ADAPTERS = {
   'pattern:searchable-select': searchableSelectAdapter,
 } as const satisfies Record<MenusOverlaysDefinitionScenarioId, Adapter<never>>
 
-function renderResolvedRegistry(
-  host: HTMLElement,
-  scenarioId: string,
-  caseId: string,
-  input: unknown,
-  environment: PresentationScenarioEnvironment,
-): Disposable {
-  const adapter = REGISTRY_ADAPTERS[scenarioId as keyof typeof REGISTRY_ADAPTERS]
-  if (adapter === undefined) {
-    throw new Error(`No registry adapter registered for menus-overlays scenario ${scenarioId}`)
-  }
-  return (adapter as Adapter<unknown>)(host, input, {
-    scenarioId: scenarioId as MenusOverlaysDefinitionScenarioId,
-    caseId,
-    environment,
-  })
-}
-
 function assertBindings(scenarios: readonly MenusOverlaysJoinedScenario[]): void {
   const scenarioIds = scenarios.map(({ scenarioId }) => scenarioId).sort()
   const bindingIds = Object.keys(REGISTRY_ADAPTERS).sort()
@@ -1324,15 +1400,7 @@ export function mountRegistryMenusOverlaysScenarios(
       host.dataset.scenarioId = scenario.scenarioId
       host.dataset.scenarioCase = scenarioCase.id
       container.append(host)
-      handles.push(
-        renderResolvedRegistry(
-          host,
-          resolved.scenarioId,
-          resolved.case.id,
-          resolved.case.input,
-          resolved.environment,
-        ),
-      )
+      handles.push(dispatchScenarioSelection(catalog, REGISTRY_ADAPTERS, resolved, host, {}))
     }
   }
   return {

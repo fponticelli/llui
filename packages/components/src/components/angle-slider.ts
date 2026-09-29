@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { allFiniteNumbers, clamp, clampToStep, finiteBound, stepBy } from '../utils/number.js'
 
@@ -142,17 +142,17 @@ export function pointFromAngle(angleDeg: number): { x: number; y: number } {
 export interface AngleSliderParts {
   root: {
     role: 'slider'
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-valuetext': Signal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-valuetext': ReadSignal<string>
     'aria-orientation': 'horizontal'
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-readonly': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-readonly': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     'data-scope': 'angle-slider'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
     onKeyDown: (e: KeyboardEvent) => void
   }
   control: {
@@ -167,7 +167,7 @@ export interface AngleSliderParts {
   thumb: {
     'data-scope': 'angle-slider'
     'data-part': 'thumb'
-    'data-value': Signal<string>
+    'data-value': ReadSignal<string>
   }
   valueText: {
     'data-scope': 'angle-slider'
@@ -176,7 +176,7 @@ export interface AngleSliderParts {
   /** A hidden input for form participation. */
   hiddenInput: {
     type: 'hidden'
-    value: Signal<string>
+    value: ReadSignal<string>
     name?: string
     'data-scope': 'angle-slider'
     'data-part': 'hidden-input'
@@ -191,7 +191,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<AngleSliderState>,
+  state: ReadSignal<AngleSliderState>,
   send: Send<AngleSliderMsg>,
   opts: ConnectOptions = {},
 ): AngleSliderParts {

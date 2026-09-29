@@ -1,36 +1,75 @@
+import type { Page } from '@playwright/test'
 import type { E2EContext, MintResult } from './harness.js'
+import { reportingDeadline, type WaitContext } from '../../../scripts/lib/wait-until.mjs'
 
 /**
- * Mint a token, open the WS in the browser, then bind the in-process MCP
- * bridge to the app — retrying until the server's /describe is ready (i.e.
- * until the WS hello frame has been received by the pairing registry).
+ * How long a Playwright wait inside the running test may take: the rest of the
+ * TEST's own budget, less the reporting margin `scripts/lib/wait-until.mjs`
+ * derives. A named Playwright timeout (naming the predicate) then beats
+ * vitest's anonymous `Test timed out`, and no private deadline shadows the
+ * workspace budget. `0` (no Playwright deadline) when the context carries no
+ * budget, so vitest's own timeout still bounds it.
+ */
+export function remainingBudget(test: WaitContext): number {
+  const deadline = reportingDeadline(test)
+  return deadline === null ? 0 : Math.max(1, deadline - Date.now())
+}
+
+/** How many frames of type `t` the agent server has sent this page so far. */
+export function serverFrameCount(page: Page, t: string): Promise<number> {
+  return page.evaluate(
+    (type: string) => (window.__lluiE2eFrames ?? []).filter((f) => f.t === type).length,
+    t,
+  )
+}
+
+/**
+ * Wait until the agent server has sent this page MORE than `seen` frames of
+ * type `t` — i.e. the next one after a count taken with `serverFrameCount`.
+ * Counting (rather than "any frame of this type") keeps a frame from an
+ * earlier step in the same test from satisfying the wait.
+ */
+export async function waitForServerFrame(
+  page: Page,
+  test: WaitContext,
+  t: string,
+  seen: number,
+): Promise<void> {
+  await page.waitForFunction(
+    ([type, n]: [string, number]) =>
+      (window.__lluiE2eFrames ?? []).filter((f) => f.t === type).length > n,
+    [t, seen] as [string, number],
+    { timeout: remainingBudget(test) },
+  )
+}
+
+/**
+ * Mint a token, open the WS in the browser, and wait until the server has
+ * PAIRED it — observed as the `hello-ack` frame, which the pairing registry
+ * sends in the same synchronous step that records the client's `hello`
+ * (`PairingRegistry.dispatch`). After it, `/describe` and every other LAP call
+ * are served on the first request.
  *
- * The WS open is async: effectHandler resolves after the WebSocket object is
- * created, but the hello frame travels over the network and arrives some ms
- * later. bindClaude calls /describe which returns 503 'paused' until the
- * hello frame arrives. We poll rather than adding a fixed sleep.
+ * This used to poll `connect_session` every 150 ms against a private 10 s
+ * deadline, retrying on `paused`, under a package-wide `retry: 2`.
+ */
+export async function mintAndPair(ctx: E2EContext, test: WaitContext): Promise<MintResult> {
+  const acks = await serverFrameCount(ctx.page, 'hello-ack')
+  const mint = await ctx.mintToken()
+  await waitForServerFrame(ctx.page, test, 'hello-ack', acks)
+  return mint
+}
+
+/**
+ * `mintAndPair`, then bind the in-process MCP bridge to the app — once: the
+ * pairing is already known to be ready, so any failure here is real.
  *
  * Returns the MintResult so tests can access tid, token, lapUrl, wsUrl.
  */
-export async function mintAndBind(ctx: E2EContext): Promise<MintResult> {
-  const mint = await ctx.mintToken()
-
-  // Poll until bindClaude succeeds (WS hello received) or we time out. Generous
-  // cap: under full-repo parallel test load the WS hello round-trip can be slow.
-  const deadline = Date.now() + 10_000
-  let lastErr: Error | null = null
-  while (Date.now() < deadline) {
-    try {
-      await ctx.bindClaude(mint.lapUrl, mint.token)
-      return mint
-    } catch (e) {
-      lastErr = e instanceof Error ? e : new Error(String(e))
-      // Only retry on 'paused' — other errors should surface immediately.
-      if (!lastErr.message.includes('paused')) throw lastErr
-      await new Promise<void>((r) => setTimeout(r, 150))
-    }
-  }
-  throw lastErr ?? new Error('mintAndBind timed out waiting for WS hello')
+export async function mintAndBind(ctx: E2EContext, test: WaitContext): Promise<MintResult> {
+  const mint = await mintAndPair(ctx, test)
+  await ctx.bindClaude(mint.lapUrl, mint.token)
+  return mint
 }
 
 /**

@@ -59,7 +59,7 @@ function fmt(
   locale: string,
   intlOpts: Intl.DateTimeFormatOptions,
 ): Intl.DateTimeFormat {
-  const key = cacheKey(prefix, locale, intlOpts as unknown as Record<string, unknown>)
+  const key = cacheKey(prefix, locale, intlOpts)
   return cached(key, () => new Intl.DateTimeFormat(locale, intlOpts))
 }
 

@@ -1,12 +1,15 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import { component, mountApp, path as svgPath, svg, text, type Mountable } from '@llui/dom'
-import { chromium, type Browser } from 'playwright'
+import type { Browser } from 'playwright'
 import * as avatarMachine from '@llui/components/avatar'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { compileCandidates } from '../../scripts/lib/tailwind-compile.mjs'
 import { extractClassCandidates } from '../../scripts/lib/registry-classes.mjs'
 import { Avatar, AvatarBadge, AvatarFallback } from '../llui/ui/avatar'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 /**
  * #264 review BLOCK 1: `AvatarBadge`'s default rung used to be a
@@ -165,7 +168,7 @@ describe('avatar geometry across data-size x data-density (#264 review BLOCK 1)'
     html = CASES.map((c) =>
       avatarHtml(c.name.replace(/[^a-z0-9]/gi, '-'), c.dataSize, c.density),
     ).join('\n')
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
   }, 60_000)
 
   afterAll(async () => {

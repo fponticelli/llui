@@ -439,3 +439,19 @@ export function callRegistryMethod(
   const key = typeof args[0] === 'string' ? args[0] : ''
   return selectComponent(access, key)
 }
+
+/**
+ * Dispatch a relay call to a method of one component's debug API. The method
+ * NAME and the ARGS are wire data, so this is the untyped boundary and the one
+ * place both relays cross it: the name is resolved at runtime, must denote a
+ * function the API object carries, and may not be an `Object.prototype` member
+ * (`constructor`, `toString`, … are reachable by name on every object but are
+ * not debug-API methods). Throws `unknown method: <name>` otherwise — the error
+ * both relays already surface.
+ */
+export function callDebugApiMethod(api: object, method: string, args: readonly unknown[]): unknown {
+  const fn: unknown = method in Object.prototype ? undefined : Reflect.get(api, method)
+  if (typeof fn !== 'function') throw new Error(`unknown method: ${method}`)
+  const result: unknown = Reflect.apply(fn, api, args)
+  return result
+}

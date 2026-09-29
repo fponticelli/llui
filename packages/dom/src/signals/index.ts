@@ -9,7 +9,10 @@
 //    plus mountSignalComponent. The transform replaces authoring calls with these.
 // Runtime internals (mask, runtime driver) stay private.
 
-export type { Signal, LiveSignal, ValidPath, PathValue } from './types.js'
+// `ReadSignal` is the read-only supertype of both signal kinds — the type to
+// accept for a signal you only read; `Signal` (path, sliceable with `.at()`) and
+// `MappedSignal` (from `.map()`/`derived()`, no `.at()`) are its two kinds.
+export type { ReadSignal, Signal, MappedSignal, LiveSignal, ValidPath, PathValue } from './types.js'
 // Construct a runtime signal handle from a live value getter — for tests and
 // advanced foreign/composition cases that build signals outside a component bag.
 // `derived` (combine N signals) is a handle constructor, so it lives here too.
@@ -19,7 +22,15 @@ export type { Signal, LiveSignal, ValidPath, PathValue } from './types.js'
 // `connect(state, send, opts)` contract without hoisting a state slice into an
 // ancestor's State. See #235's "Note on the state model"; #231 is the general
 // ladder this sits at the bottom of, and is answered by `island()`, not by this.
-export { derived, constant, pathHandle, isSignalHandle, type SignalHandle } from './handle.js'
+export {
+  derived,
+  constant,
+  pathHandle,
+  isSignalHandle,
+  type ReadHandle,
+  type SignalHandle,
+  type MappedHandle,
+} from './handle.js'
 // `rowHandle` — the compiled each-arm prelude helper: when a row param leaks into
 // a verbatim helper call inside an otherwise-compiled arm, the emission binds it
 // to a REAL runtime handle (`const item = rowHandle(getCtx, 'item')`) reading the
@@ -292,6 +303,7 @@ export {
   virtualEach,
   mapSend,
   noSend,
+  type ShowCondition,
   type Send,
   type Reactive,
   type AttrValue,

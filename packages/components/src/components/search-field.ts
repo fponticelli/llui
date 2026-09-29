@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 
 /**
@@ -54,7 +54,7 @@ export interface SearchFieldParts {
     role: 'search'
     'data-scope': 'search-field'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   label: {
     'data-scope': 'search-field'
@@ -62,8 +62,8 @@ export interface SearchFieldParts {
   }
   input: {
     type: 'search'
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'search-field'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -72,7 +72,7 @@ export interface SearchFieldParts {
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     tabindex: -1
     'data-scope': 'search-field'
     'data-part': 'clear-trigger'
@@ -86,7 +86,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<SearchFieldState>,
+  state: ReadSignal<SearchFieldState>,
   send: Send<SearchFieldMsg>,
   opts: ConnectOptions = {},
 ): SearchFieldParts {

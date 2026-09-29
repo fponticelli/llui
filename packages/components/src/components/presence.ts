@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { presenceEndProps } from '../utils/presence-end.js'
 
 /**
@@ -152,8 +152,8 @@ export interface PresenceParts {
   root: {
     'data-scope': 'presence'
     'data-part': 'root'
-    'data-state': Signal<PresenceStatus>
-    hidden: Signal<boolean>
+    'data-state': ReadSignal<PresenceStatus>
+    hidden: ReadSignal<boolean>
     onAnimationEnd: (e: AnimationEvent) => void
     onTransitionEnd: (e: TransitionEvent) => void
   }
@@ -161,7 +161,7 @@ export interface PresenceParts {
 
 /** Signal-surface connect: takes the component's `presence` state slice as a
  * Signal and returns reactive (handle-based) props for spreading into a view. */
-export function connect(state: Signal<PresenceState>, send: Send<PresenceMsg>): PresenceParts {
+export function connect(state: ReadSignal<PresenceState>, send: Send<PresenceMsg>): PresenceParts {
   return {
     root: {
       'data-scope': 'presence',

@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setup, type E2EContext } from '../src/harness.js'
-import { mintAndBind, parseToolResult } from '../src/test-utils.js'
+import { mintAndBind, parseToolResult, remainingBudget } from '../src/test-utils.js'
+import type { WaitContext } from '../../../scripts/lib/wait-until.mjs'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+import type { State } from '../src/host.js'
+
+const hermetic = useHermeticBrowser()
 
 /**
  * Confirm-flow tests.
@@ -16,50 +21,42 @@ import { mintAndBind, parseToolResult } from '../src/test-utils.js'
 
 let ctx: E2EContext
 beforeEach(async () => {
-  ctx = await setup()
+  ctx = await setup(hermetic)
 })
 afterEach(async () => {
   await ctx.close()
 })
 
-type ConfirmEntry = {
-  id: string
-  variant: string
-  payload: unknown
-  status: 'pending' | 'approved' | 'rejected'
-}
-
-type AppState = {
-  agent: { confirm: { pending: ConfirmEntry[] } }
-  lastDelete: string | null
-}
+/** A pending-confirmation entry, typed from the page's real state. */
+type ConfirmEntry = State['agent']['confirm']['pending'][number]
 
 // All page.evaluate callbacks must be self-contained (no Node-side helpers).
 // Playwright serialises the function body as a string and evaluates it in the
 // browser context where nothing from this file is in scope.
 
-async function waitForPending(page: E2EContext['page']): Promise<ConfirmEntry[]> {
+async function waitForPending(
+  page: E2EContext['page'],
+  testCtx: WaitContext,
+): Promise<ConfirmEntry[]> {
   await page.waitForFunction(
     () => {
-      const h = (window as unknown as { __lluiE2eHandle: { getState: () => AppState } })[
-        '__lluiE2eHandle'
-      ]
+      const h = window.__lluiE2eHandle
+      if (!h) throw new Error('__lluiE2eHandle is not installed')
       return h.getState().agent.confirm.pending.length > 0
     },
     undefined,
-    { timeout: 10_000 },
+    { timeout: remainingBudget(testCtx) },
   )
   return page.evaluate(() => {
-    const h = (window as unknown as { __lluiE2eHandle: { getState: () => AppState } })[
-      '__lluiE2eHandle'
-    ]
+    const h = window.__lluiE2eHandle
+    if (!h) throw new Error('__lluiE2eHandle is not installed')
     return h.getState().agent.confirm.pending
   })
 }
 
 describe('e2e: confirm flow', () => {
-  it('delete proposes a pending-confirmation entry that resolves on reject', async () => {
-    await mintAndBind(ctx)
+  it('delete proposes a pending-confirmation entry that resolves on reject', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     // Start the long-polling send_message call — it will park at the server
     // until the user approves or rejects.
@@ -68,7 +65,7 @@ describe('e2e: confirm flow', () => {
       arguments: { msg: { type: 'delete', id: '42' }, reason: 'e2e test' },
     })
 
-    const pending = await waitForPending(ctx.page)
+    const pending = await waitForPending(ctx.page, testCtx)
 
     expect(pending).toHaveLength(1)
     const first = pending[0]
@@ -81,9 +78,8 @@ describe('e2e: confirm flow', () => {
 
     // Reject the confirm to close the long-poll cleanly.
     await ctx.page.evaluate((id: string) => {
-      const h = (window as unknown as { __lluiE2eHandle: { send: (m: unknown) => void } })[
-        '__lluiE2eHandle'
-      ]
+      const h = window.__lluiE2eHandle
+      if (!h) throw new Error('__lluiE2eHandle is not installed')
       h.send({ type: 'agent', sub: 'confirm', msg: { type: 'Reject', id } })
     }, pendingId)
 
@@ -97,24 +93,23 @@ describe('e2e: confirm flow', () => {
     expect(['user-cancelled', 'rejected']).toContain(body.status)
   })
 
-  it('delete approved by the user resolves with confirmed and re-dispatches the Msg', async () => {
-    await mintAndBind(ctx)
+  it('delete approved by the user resolves with confirmed and re-dispatches the Msg', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const sendPromise = ctx.mcpClient.callTool({
       name: 'send_message',
       arguments: { msg: { type: 'delete', id: '99' }, reason: 'e2e approve test' },
     })
 
-    const pending = await waitForPending(ctx.page)
+    const pending = await waitForPending(ctx.page, testCtx)
     const first = pending[0]
     expect(first).toBeDefined()
     const pendingId = first!.id
 
     // Approve
     await ctx.page.evaluate((id: string) => {
-      const h = (window as unknown as { __lluiE2eHandle: { send: (m: unknown) => void } })[
-        '__lluiE2eHandle'
-      ]
+      const h = window.__lluiE2eHandle
+      if (!h) throw new Error('__lluiE2eHandle is not installed')
       h.send({ type: 'agent', sub: 'confirm', msg: { type: 'Approve', id } })
     }, pendingId)
 
@@ -131,22 +126,16 @@ describe('e2e: confirm flow', () => {
     // to the root update() which sets lastDelete = '99'.
     await ctx.page.waitForFunction(
       () => {
-        const h = (
-          window as unknown as {
-            __lluiE2eHandle: { getState: () => { lastDelete: string | null } }
-          }
-        )['__lluiE2eHandle']
+        const h = window.__lluiE2eHandle
+        if (!h) throw new Error('__lluiE2eHandle is not installed')
         return h.getState().lastDelete === '99'
       },
       undefined,
-      { timeout: 10_000 },
+      { timeout: remainingBudget(testCtx) },
     )
     const lastDelete = await ctx.page.evaluate(() => {
-      const h = (
-        window as unknown as {
-          __lluiE2eHandle: { getState: () => { lastDelete: string | null } }
-        }
-      )['__lluiE2eHandle']
+      const h = window.__lluiE2eHandle
+      if (!h) throw new Error('__lluiE2eHandle is not installed')
       return h.getState().lastDelete
     })
     expect(lastDelete).toBe('99')

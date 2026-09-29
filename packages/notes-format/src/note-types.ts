@@ -10,6 +10,27 @@ export type Author = 'human' | 'llm'
 
 export type NoteKind = 'rect' | 'element' | 'text' | 'capture' | 'reply'
 
+/** Every {@link NoteKind}, as a runtime list — so a validator (e.g. the MCP
+ * `llui_list_notes` input schema) enumerates exactly the kinds the type admits. */
+export const NOTE_KINDS = [
+  'rect',
+  'element',
+  'text',
+  'capture',
+  'reply',
+] as const satisfies readonly NoteKind[]
+
+// `satisfies` above rejects a listed kind the type lacks; this rejects a list
+// that misses one of the type's kinds (a compile error naming it).
+type UnlistedNoteKind = Exclude<NoteKind, (typeof NOTE_KINDS)[number]>
+const _everyNoteKindListed: [UnlistedNoteKind] extends [never] ? true : UnlistedNoteKind = true
+
+/** Whether `v` is a {@link NoteKind} — the check for any kind read from outside
+ * the type system (a filename, parsed frontmatter, a request). */
+export function isNoteKind(v: unknown): v is NoteKind {
+  return NOTE_KINDS.some((kind) => kind === v)
+}
+
 export type NoteIntent = 'task' | 'note'
 
 export type NoteStatus =

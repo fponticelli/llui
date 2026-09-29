@@ -1,0 +1,12 @@
+/*
+ * TEST-ONLY. The app's own stylesheet, plus the sources Tailwind would not
+ * otherwise scan because they live outside this app's root: the scenario
+ * renderer's layout classes in `registry/test/`, and the canonical skins in
+ * `registry/llui/ui/` that the browser test aliases `@/ui` to. (The demo's own
+ * copies are byte-identical — `registry-demo-sync.test.ts` — so this adds no
+ * class the app does not already compile; it only stops the fixture relying on
+ * that coincidence.)
+ */
+@import '../main.css';
+@source '../../../../registry/test/specialized-tools-scenario-renderer.ts';
+@source '../../../../registry/llui/ui';

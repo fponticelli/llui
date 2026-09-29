@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { numberInputLocale } from '../locale/number-input.js'
 import { allFiniteNumbers, clampToStep, finiteBound, stepBy } from '../utils/number.js'
@@ -171,20 +171,20 @@ export interface NumberInputParts {
   root: {
     'data-scope': 'number-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   input: {
     type: 'text'
     role: 'spinbutton'
     inputmode: 'decimal'
-    'aria-valuemin': Signal<number | undefined>
-    'aria-valuemax': Signal<number | undefined>
-    'aria-valuenow': Signal<number | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-readonly': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    readonly: Signal<boolean>
-    value: Signal<string>
+    'aria-valuemin': ReadSignal<number | undefined>
+    'aria-valuemax': ReadSignal<number | undefined>
+    'aria-valuenow': ReadSignal<number | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-readonly': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    readonly: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'number-input'
     'data-part': 'input'
     onInput: (e: Event) => void
@@ -194,8 +194,8 @@ export interface NumberInputParts {
   increment: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'number-input'
     'data-part': 'increment'
     tabindex: -1
@@ -204,8 +204,8 @@ export interface NumberInputParts {
   decrement: {
     type: 'button'
     'aria-label': string
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
     'data-scope': 'number-input'
     'data-part': 'decrement'
     tabindex: -1
@@ -221,7 +221,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<NumberInputState>,
+  state: ReadSignal<NumberInputState>,
   send: Send<NumberInputMsg>,
   opts: ConnectOptions = {},
 ): NumberInputParts {

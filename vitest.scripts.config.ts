@@ -25,8 +25,8 @@ import shared from './vitest.shared'
 // discover a root `test/` directory that does not exist today but would be
 // picked up silently the day someone adds one. `packages/lexical-loro/
 // vitest.stress.config.ts` spreads for the same reason — copy that idiom, and
-// keep `...shared.test` ahead of the override so the defines, the duration
-// reporters (#193) and both budgets still come from one place.
+// keep `...shared.test` ahead of the override so the defines and both budgets
+// still come from one place.
 export default defineConfig({
   ...shared,
   test: {

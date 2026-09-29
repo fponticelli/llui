@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Button Group",
   "description": "Fuses adjacent buttons into one segmented control.",
-  "dependencies": ["@llui/dom"],
+  "dependencies": ["@llui/dom@^0.14.0"],
   "registryDependencies": ["utils"],
   "files": [
     {

@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { allFiniteNumbers } from '../utils/number.js'
 import { tagSend } from '@llui/dom'
 import { cascadeSelectLocale } from '../locale/cascade-select.js'
@@ -112,12 +112,12 @@ export interface CascadeLevelParts {
   }
   select: {
     id: string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'cascade-select'
     'data-part': 'level-select'
     'data-level': string
-    'data-ready': Signal<'' | undefined>
+    'data-ready': ReadSignal<'' | undefined>
     onChange: (e: Event) => void
   }
 }
@@ -126,13 +126,13 @@ export interface CascadeSelectParts {
   root: {
     'data-scope': 'cascade-select'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-complete': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-complete': ReadSignal<'' | undefined>
   }
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'cascade-select'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
@@ -146,7 +146,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<CascadeSelectState>,
+  state: ReadSignal<CascadeSelectState>,
   send: Send<CascadeSelectMsg>,
   opts: ConnectOptions,
 ): CascadeSelectParts {
@@ -163,7 +163,10 @@ export function connect(
     clearTrigger: {
       type: 'button',
       'aria-label': opts.clearLabel ?? locale.clear,
-      disabled: state.map((s) => s.values.every((v) => v === null)),
+      // A disabled instance ignores `clear` (see `update`), so its trigger is
+      // disabled too — it used to stay enabled, dimmed only by the root's
+      // opacity, announcing a working button that did nothing (#268 audit).
+      disabled: state.map((s) => s.disabled || s.values.every((v) => v === null)),
       'data-scope': 'cascade-select',
       'data-part': 'clear-trigger',
       onClick: tagSend(send, ['clear'], () => send({ type: 'clear' })),

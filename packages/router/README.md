@@ -116,12 +116,14 @@ Redirect targets are normalized route locations and chain until accepted, blocke
 
 ## History / Location adapter
 
-All browser reads and mutations go through `RouterEnv`. `browserRouterEnv()` is the default; inject your own adapter for tests, SSR hosts, or embedded frames. The connector stamps entries it creates so a guard-blocked browser traversal can be restored without destroying forward history. It never guesses a position for foreign or otherwise unstamped entries.
+All browser reads and mutations go through `RouterEnv`. `browserRouterEnv()` is the default; inject your own adapter for tests, SSR hosts, or embedded frames. A guard-blocked browser traversal is undone with a traversal back to the entry the application shows, so forward history survives. Where the browser has the Navigation API (Chrome/Edge 102+, Firefox 147+, Safari 26.2+), `browserRouterEnv()` passes it on as `env.navigation`. The undo is then `navigation.traverseTo(key)`, and the router recognises its own traversal by the `navigate` event's `info`. This is exact even across a foreign `pushState` or a hand-typed fragment. Elsewhere, or with `browserRouterEnv({ navigation: false })`, the connector stamps the entries it creates and undoes a block with `history.go(delta)`. On that path it never guesses a position for foreign or otherwise unstamped entries. See [History integrity](https://llui.dev/api/router#history-integrity).
 
 ```ts
 import { browserRouterEnv, connectRouter } from '@llui/router/connect'
 
 const routing = connectRouter(router, { env: browserRouterEnv() })
+// Force the History API path, e.g. to compare behaviour:
+const historyOnly = connectRouter(router, { env: browserRouterEnv({ navigation: false }) })
 ```
 
 <!-- @doc-setup

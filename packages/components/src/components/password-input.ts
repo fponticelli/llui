@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { passwordInputLocale } from '../locale/password-input.js'
 
@@ -53,24 +53,24 @@ export interface PasswordInputParts {
   root: {
     'data-scope': 'password-input'
     'data-part': 'root'
-    'data-visible': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   input: {
-    type: Signal<'text' | 'password'>
+    type: ReadSignal<'text' | 'password'>
     autocomplete: string
-    disabled: Signal<boolean>
-    value: Signal<string>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'password-input'
     'data-part': 'input'
     onInput: (e: Event) => void
   }
   visibilityTrigger: {
     type: 'button'
-    'aria-label': Signal<string>
-    'aria-pressed': Signal<boolean>
-    disabled: Signal<boolean>
-    tabindex: Signal<number>
+    'aria-label': ReadSignal<string>
+    'aria-pressed': ReadSignal<boolean>
+    disabled: ReadSignal<boolean>
+    tabindex: ReadSignal<number>
     'data-scope': 'password-input'
     'data-part': 'visibility-trigger'
     onClick: (e: MouseEvent) => void
@@ -85,7 +85,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<PasswordInputState>,
+  state: ReadSignal<PasswordInputState>,
   send: Send<PasswordInputMsg>,
   opts: ConnectOptions = {},
 ): PasswordInputParts {

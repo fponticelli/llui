@@ -2,13 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { mountSignalComponent } from '../../src/signals/component'
 import { div, span, ul, li, text, each, noSend } from '../../src/signals/authoring'
 import { constant, pathHandle, isSignalHandle, derived } from '../../src/signals/handle'
-import type { Signal, MappedSignal } from '../../src/signals/types'
+import type { Signal, ReadSignal } from '../../src/signals/types'
 
 // `constant(v)` — a signal handle whose value never changes (#235's "Note on the
 // state model"; NOT #231, whose widget's state changes — that is `island()`).
 //
 // The motivating shape: all 72 `connect(state, send, opts)` entry points in
-// `@llui/components` demand `Signal<S>` + `Send<M>`, so a widget whose values are
+// `@llui/components` demand a signal + `Send<M>`, so a widget whose values are
 // FIXED FOR THE LIFE OF THE NODE has no way to call one without hoisting a state
 // slice per widget into an ancestor's `State`. `constant` + `noSend` is that
 // missing input pair.
@@ -17,7 +17,7 @@ import type { Signal, MappedSignal } from '../../src/signals/types'
 // below, which pins the SILENT failure that motivates a real primitive.
 
 /** Read a handle's private carrier (the same escape the other handle tests use). */
-function carrier<T>(sig: Signal<T> | MappedSignal<T>): {
+function carrier<T>(sig: ReadSignal<T>): {
   produce: (state: unknown) => T
   deps: readonly string[]
   rowLocal?: boolean
@@ -137,12 +137,12 @@ describe('constant — .at() / .map() composition', () => {
 
   it('.map() keeps the MappedSignal contract — .at() after .map() throws', () => {
     const mapped = constant({ a: 1 }).map((v) => v)
-    // The public type is `at: never` (so `mapped.at('a')` is a COMPILE error, and
-    // the `at-after-map` lint rule is the other half); the runtime carrier keeps
-    // the throwing safety net every other derived handle has, for uncompiled JS
-    // callers that get past both.
-    const escape = mapped as unknown as { at: (p: string) => unknown }
-    expect(() => escape.at('a')).toThrow(/\.at\(\) on a mapped/)
+    // The public type has no callable `.at` (so `mapped.at('a')` is a COMPILE
+    // error, and the `at-after-map` lint rule is the other half); the runtime
+    // carrier keeps the throwing safety net every other derived handle has, for
+    // callers that get past both (and it names the path it was asked for).
+    // @ts-expect-error — `.at()` on a MappedSignal
+    expect(() => mapped.at('a')).toThrow(/\.at\('a'\) on a mapped signal is unsupported/)
   })
 
   it('.at().map() is the supported order and works', () => {

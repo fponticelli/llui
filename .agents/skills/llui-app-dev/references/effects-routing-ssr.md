@@ -159,7 +159,10 @@ export const routing = connectRouter(router, {
   message. After accepting a noncanonical browser URL, the connector replaces it with the
   canonical URL without a second dispatch.
 - All history/location access goes through injectable `RouterEnv`; do not reach for browser
-  globals from router logic. Foreign/unstamped history positions are intentionally unknown.
+  globals from router logic. A guard-blocked back/forward is undone with
+  `navigation.traverseTo(key)` where the browser has the Navigation API (exact, even across a
+  foreign `pushState`); elsewhere (or `browserRouterEnv({ navigation: false })`) it is a
+  stamped `history.go(delta)`, and foreign/unstamped positions are intentionally unknown.
 
 ## SSR + hydration (@llui/vike)
 

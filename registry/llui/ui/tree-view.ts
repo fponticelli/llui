@@ -9,9 +9,11 @@ export const TreeViewItem = classPart(
   div,
   'flex cursor-pointer items-center gap-1.5 rounded-sm px-2 py-1 outline-none select-none hover:bg-accent focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[selected]:bg-accent data-[selected]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 forced-colors:data-[selected]:outline-solid forced-colors:data-[selected]:outline-2 forced-colors:data-[selected]:outline-[Highlight] forced-colors:data-[selected]:-outline-offset-2 forced-colors:aria-selected:outline-solid forced-colors:aria-selected:outline-2 forced-colors:aria-selected:outline-[Highlight] forced-colors:aria-selected:-outline-offset-2',
 )
+/** A 24px pointer target (WCAG 2.5.8, #268 audit) in the 16px glyph slot:
+ * `-m-1` gives back what `size-6` adds. */
 export const TreeViewBranchTrigger = classPart(
   button,
-  'inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground transition-transform data-[state=open]:rotate-90 motion-reduce:transition-none rtl:data-[state=open]:-rotate-90',
+  '-m-1 inline-flex size-6 shrink-0 items-center justify-center text-muted-foreground transition-transform data-[state=open]:rotate-90 motion-reduce:transition-none rtl:data-[state=open]:-rotate-90',
 )
 export const TreeViewCheckbox = classPart(
   div,

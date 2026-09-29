@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Label",
   "description": "Form label. Associate with `for`; `htmlFor` is a compile error.",
-  "dependencies": ["@llui/dom"],
+  "dependencies": ["@llui/dom@^0.14.0"],
   "registryDependencies": ["utils"],
   "files": [
     {

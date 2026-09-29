@@ -35,6 +35,7 @@ import {
   $getSelection,
   $isElementNode,
   $isRangeSelection,
+  $parseSerializedNode,
   COMMAND_PRIORITY_LOW,
   KEY_DOWN_COMMAND,
   type LexicalEditor,
@@ -251,20 +252,14 @@ function $shiftBlock(key: NodeKey, direction: -1 | 1): MoveOutcome | null {
   return $moveBlock(key, neighbour.getKey(), direction === 1 ? 'after' : 'before')
 }
 
-/** A node class as seen through its own `importJSON` static — the single typed
- * boundary for the serialize→deserialize clone below (every registered Lexical
- * node ships this static). */
-interface NodeKlass {
-  importJSON: (json: ReturnType<LexicalNode['exportJSON']>) => LexicalNode
-}
-
 /** Deep-clone a node with FRESH keys via serialize→deserialize. `constructor.clone`
  * is unusable here — it preserves the key, so the "copy" would collide with the
- * original. `importJSON(exportJSON())` mints a new node; element children are not
- * carried by `exportJSON`, so they are cloned and re-appended recursively. */
+ * original. `$parseSerializedNode(exportJSON())` resolves the class through the
+ * EDITOR'S node registry by the serialized `type` (the same path a pasted or
+ * loaded document takes) and mints a new node; element children are not carried
+ * by `exportJSON`, so they are cloned and re-appended recursively. */
 function $cloneNode(node: LexicalNode): LexicalNode {
-  const klass = node.constructor as unknown as NodeKlass
-  const clone = klass.importJSON(node.exportJSON())
+  const clone = $parseSerializedNode(node.exportJSON())
   if ($isElementNode(node) && $isElementNode(clone)) {
     for (const child of node.getChildren()) clone.append($cloneNode(child))
   }

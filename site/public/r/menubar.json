@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Menubar",
   "description": "Skin for @llui/components/menubar; reuses the dropdown recipes.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["dropdown-menu", "floating-motion", "utils"],
   "files": [
     {

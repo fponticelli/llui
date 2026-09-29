@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Kbd",
   "description": "Keyboard key and chord display, on a semantic <kbd>.",
-  "dependencies": ["@llui/dom"],
+  "dependencies": ["@llui/dom@^0.14.0"],
   "registryDependencies": ["utils"],
   "files": [
     {

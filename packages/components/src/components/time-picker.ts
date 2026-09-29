@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { timePickerLocale } from '../locale/time-picker.js'
 import { allFiniteNumbers, finiteBound, finiteOrDefault } from '../utils/number.js'
@@ -182,17 +182,18 @@ export interface TimePickerParts {
     'aria-label': string
     'data-scope': 'time-picker'
     'data-part': 'root'
-    'data-format': Signal<TimeFormat>
+    'data-format': ReadSignal<TimeFormat>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   hoursInput: {
     type: 'number'
     role: 'spinbutton'
     'aria-label': string
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    disabled: Signal<boolean>
-    value: Signal<string>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'time-picker'
     'data-part': 'hours-input'
     onInput: (e: Event) => void
@@ -204,9 +205,9 @@ export interface TimePickerParts {
     'aria-label': string
     'aria-valuemin': 0
     'aria-valuemax': 59
-    'aria-valuenow': Signal<number>
-    disabled: Signal<boolean>
-    value: Signal<string>
+    'aria-valuenow': ReadSignal<number>
+    disabled: ReadSignal<boolean>
+    value: ReadSignal<string>
     'data-scope': 'time-picker'
     'data-part': 'minutes-input'
     onInput: (e: Event) => void
@@ -215,12 +216,12 @@ export interface TimePickerParts {
   periodTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'time-picker'
     'data-part': 'period-trigger'
-    'data-period': Signal<'AM' | 'PM'>
+    'data-period': ReadSignal<'AM' | 'PM'>
     onClick: (e: MouseEvent) => void
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 
@@ -232,7 +233,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<TimePickerState>,
+  state: ReadSignal<TimePickerState>,
   send: Send<TimePickerMsg>,
   opts: ConnectOptions = {},
 ): TimePickerParts {
@@ -244,6 +245,7 @@ export function connect(
       'data-scope': 'time-picker',
       'data-part': 'root',
       'data-format': state.map((s) => s.format),
+      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
     },
     hoursInput: {
       type: 'number',

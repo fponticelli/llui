@@ -1,8 +1,8 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type ViteDevServer } from 'vite'
+import type { Browser, Page } from 'playwright'
+import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
 import { readFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +11,9 @@ import type {
   motionProducts,
   transitionProducts,
 } from '../browser/overlay-motion.fixture.js'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../browser')
 const stylesRoot = resolve(import.meta.dirname, '../../src/styles')
@@ -47,44 +50,58 @@ const seconds = (value: string): number => {
 describe('overlay presence motion in Chromium', () => {
   let browser: Browser
   let page: Page
-  let server: ViteDevServer
+  let fixture: PrebuiltFixture
   let fixtureUrl: string
 
   beforeAll(async () => {
-    server = await createServer({
-      root: fixtureRoot,
-      logLevel: 'error',
-      resolve: {
+    // Built ONCE, served static (`scripts/lib/prebuilt-fixture.mjs`). Every
+    // test reloads the page, and on a Vite dev server each reload re-fetched
+    // the fixture's whole unbundled module graph — and shared the package's
+    // dependency-optimizer cache with every other `test/browser` suite running
+    // in a concurrent worker, whose re-optimizations could force-reload this
+    // page mid-wait. That is how `__motionReady` timed out at 30 s inside a
+    // parallel `turbo test` while the file took ~11 s alone.
+    ;[fixture, browser] = await Promise.all([
+      prebuildFixture({
+        root: fixtureRoot,
+        inputs: ['overlay-motion.fixture.html'],
         alias: {
           '@llui/dom': resolve(fixtureRoot, '../../../dom/src/index.ts'),
           '@llui/interactions': resolve(fixtureRoot, '../../../interactions/src/index.ts'),
         },
-      },
-      server: { host: '127.0.0.1', port: 0 },
-      define: {
-        __LLUI_AGENT__: 'true',
-        __LLUI_TRANSITIONS__: 'true',
-      },
-    })
-    await server.listen()
-    const address = server.httpServer?.address()
-    if (!address || typeof address === 'string') throw new Error('Vite did not bind a TCP port')
-    fixtureUrl = `http://127.0.0.1:${address.port}/overlay-motion.fixture.html`
-    browser = await chromium.launch({ headless: true })
+        define: {
+          __LLUI_AGENT__: 'true',
+          __LLUI_TRANSITIONS__: 'true',
+        },
+      }),
+      hermetic.launch({ headless: true }),
+    ])
+    fixtureUrl = fixture.url('overlay-motion.fixture.html')
     page = await browser.newPage()
   })
 
   beforeEach(async () => {
     await page.emulateMedia({ reducedMotion: 'no-preference' })
+    const errors: string[] = []
+    const onError = (error: Error): void => void errors.push(error.message)
+    page.on('pageerror', onError)
     await page.goto(fixtureUrl)
+    page.off('pageerror', onError)
     await page.addStyleTag({ content: baselineCss })
-    await page.waitForFunction(() => window.__motionReady === true)
+    // The bundled fixture sets `__motionReady` synchronously in its one module
+    // script, which runs before `load`: after `goto` it is ready or broken, so
+    // assert it and name the page's own error instead of waiting 30 s.
+    if (!(await page.evaluate(() => window.__motionReady === true))) {
+      throw new Error(
+        `overlay-motion fixture never became ready: ${errors.join('; ') || 'no page error'}`,
+      )
+    }
   })
 
   afterAll(async () => {
     await page?.close()
     await browser?.close()
-    await server?.close()
+    await fixture?.close()
   })
 
   const waitForStatus = async (status: 'open' | 'closed'): Promise<void> => {

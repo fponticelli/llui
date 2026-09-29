@@ -1,18 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setup, type E2EContext } from '../src/harness.js'
 import { mintAndBind, parseToolResult } from '../src/test-utils.js'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 let ctx: E2EContext
 beforeEach(async () => {
-  ctx = await setup()
+  ctx = await setup(hermetic)
 })
 afterEach(async () => {
   await ctx.close()
 })
 
 describe('e2e: send_message', () => {
-  it('inc dispatches successfully and state.count becomes 1', async () => {
-    await mintAndBind(ctx)
+  it('inc dispatches successfully and state.count becomes 1', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const result = await ctx.mcpClient.callTool({
       name: 'send_message',
@@ -29,16 +32,15 @@ describe('e2e: send_message', () => {
       // page.evaluate runs in the browser — inline all access to avoid
       // "ReferenceError: <helper> is not defined" (Node helpers can't be
       // serialised across the evaluate boundary).
-      const h = (window as unknown as { __lluiE2eHandle: { getState: () => { count: number } } })[
-        '__lluiE2eHandle'
-      ]
+      const h = window.__lluiE2eHandle
+      if (!h) throw new Error('__lluiE2eHandle is not installed')
       return h.getState()
     })
     expect(stateVal.count).toBe(1)
   })
 
-  it('signOut is rejected with human-only', async () => {
-    await mintAndBind(ctx)
+  it('signOut is rejected with human-only', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const result = await ctx.mcpClient.callTool({
       name: 'send_message',
@@ -53,8 +55,8 @@ describe('e2e: send_message', () => {
     expect(body.reason).toBe('human-only')
   })
 
-  it('sequence inc, inc, dec → count = 1', async () => {
-    await mintAndBind(ctx)
+  it('sequence inc, inc, dec → count = 1', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const send = (type: string) =>
       ctx.mcpClient.callTool({ name: 'send_message', arguments: { msg: { type } } })
@@ -64,9 +66,8 @@ describe('e2e: send_message', () => {
     await send('dec')
 
     const stateVal = await ctx.page.evaluate(() => {
-      const h = (window as unknown as { __lluiE2eHandle: { getState: () => { count: number } } })[
-        '__lluiE2eHandle'
-      ]
+      const h = window.__lluiE2eHandle
+      if (!h) throw new Error('__lluiE2eHandle is not installed')
       return h.getState()
     })
     expect(stateVal.count).toBe(1)

@@ -43,3 +43,29 @@ declare module '*/scripts/lib/registry-classes.mjs' {
     objectConsts: Map<string, ts.ObjectLiteralExpression>,
   ): ts.ObjectLiteralExpression | undefined
 }
+
+// Ambient types for `scripts/lib/prebuilt-fixture.mjs` (build a browser-test
+// fixture once and serve it static), for the same reason as above. Keep in
+// step with that file's JSDoc `PrebuildOptions` / `PrebuiltFixture`, which
+// `pnpm check:scripts` checks from the inside and the registry's
+// `tsconfig.test.json` (`allowJs`) checks across the import boundary.
+declare module '*/scripts/lib/prebuilt-fixture.mjs' {
+  import type { AliasOptions } from 'vite'
+
+  export interface PrebuildOptions {
+    readonly root: string
+    readonly inputs: readonly string[]
+    readonly alias?: AliasOptions
+    readonly define?: Record<string, string>
+  }
+
+  export interface PrebuiltFixture {
+    readonly origin: string
+    readonly dir: string
+    url(path: string): string
+    close(): Promise<void>
+  }
+
+  export function prebuildFixture(options: PrebuildOptions): Promise<PrebuiltFixture>
+  export function resolveServedFile(dir: string, rawUrl: string): string | null
+}

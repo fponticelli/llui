@@ -9,7 +9,7 @@ import { createCaptureRegistry } from '../src/notes/capture-registry.js'
 import { createEventBus } from '../src/notes/event-bus.js'
 import { createNotesMiddleware } from '../src/notes/middleware.js'
 import type { CreateNoteRequest, NoteFrontmatter, ServerEvent } from '../src/notes/types.js'
-import { waitUntil } from './wait-until.js'
+import { waitUntil } from '../../../scripts/lib/wait-until.mjs'
 
 interface Fixture {
   notesRoot: string

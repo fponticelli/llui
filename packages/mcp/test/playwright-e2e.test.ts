@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { resolve, dirname } from 'node:path'
 import { existsSync } from 'node:fs'
-import { setTimeout as delay } from 'node:timers/promises'
 import type { Browser, Page } from 'playwright'
 import type { ViteDevServer } from 'vite'
 import { LluiMcpServer } from '../src/index'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
 
 /**
  * End-to-end test for the full MCP auto-connect chain.
@@ -71,6 +71,7 @@ async function loadPlaywright(): Promise<typeof import('playwright') | null> {
 }
 
 const playwright = await loadPlaywright()
+const hermetic = useHermeticBrowser()
 
 interface Harness {
   mcp: LluiMcpServer
@@ -78,9 +79,16 @@ interface Harness {
   browser: Browser
   page: Page
   viteUrl: string
+  /** The bridge port the page's relay reported connecting to. */
+  relayPort: number
+  /** LIVE: every console error / page error the harness page has logged. */
   consoleErrors: string[]
-  wsErrorCount: number
+  /** LIVE: every console line mentioning `WebSocket` the page has logged. */
+  wsMessages: string[]
 }
+
+/** The line `startRelay`'s `onopen` logs (`packages/dom/src/signals/devtools.ts`). */
+const RELAY_CONNECTED = /^\[LLui MCP\] connected to ws:\/\/127\.0\.0\.1:(\d+)$/
 
 /**
  * Start a real vite dev server programmatically with file watching
@@ -122,7 +130,16 @@ async function startViteServer(): Promise<{ vite: ViteDevServer; viteUrl: string
   return { vite, viteUrl }
 }
 
-async function setupHarness(): Promise<Harness> {
+/**
+ * Everything a harness has started, in start order. `teardownHarness` stops it
+ * in reverse — including after a setup that failed PARTWAY, which is the case
+ * that matters: a `beforeAll` that times out waiting for the relay abandons
+ * `setupHarness` mid-flight, and a Vite server, a bridge and a Chromium that
+ * nobody closes keep the worker alive long after the file has failed.
+ */
+type Owned = Array<() => Promise<void> | void>
+
+async function setupHarness(owned: Owned): Promise<Harness> {
   if (!playwright) throw new Error('playwright unavailable')
 
   // 1. Start the MCP server on an OS-assigned port. This used to draw
@@ -133,48 +150,78 @@ async function setupHarness(): Promise<Harness> {
   //    and `startBridge()` resolves once the port is knowable — which is
   //    also what the browser must learn, via the marker file the Vite
   //    plugin serves from `/__llui_mcp_status`.
-  const mcp = new LluiMcpServer({ bridgePort: 0 })
+  //    The CDP tools' OWN fallback browser (the one `llui_screenshot` etc.
+  //    launch) gets the hermetic launcher too: in the product it is the
+  //    developer's unpoliced debugging browser, but a browser a TEST causes to
+  //    exist stays behind the network guard.
+  const mcp = new LluiMcpServer({
+    bridgePort: 0,
+    launchBrowser: (options) => hermetic.launch(options),
+  })
+  owned.push(() => mcp.stopBridge())
   await mcp.startBridge()
 
   // 2. Start vite dev server programmatically (no file watcher)
   const { vite, viteUrl } = await startViteServer()
+  owned.push(() => vite.close())
 
   // 3. Launch Chromium and capture console messages
-  const browser = await playwright.chromium.launch()
+  const browser = await hermetic.launch()
+  owned.push(() => browser.close())
   const page = await browser.newPage()
   const consoleErrors: string[] = []
-  let wsErrorCount = 0
+  const wsMessages: string[] = []
   page.on('console', (msg) => {
     if (msg.type() === 'error') consoleErrors.push(msg.text())
-    if (msg.text().includes('WebSocket')) wsErrorCount++
+    if (msg.text().includes('WebSocket')) wsMessages.push(msg.text())
   })
   page.on('pageerror', (e) => consoleErrors.push(e.message))
 
-  // 4. Navigate and wait for the auto-connect to complete.
-  //    `waitUntil: 'load'` (not 'networkidle') because dev-mode Vite
-  //    keeps a long-lived `/_llui/events` SSE channel open for the
-  //    auto-injected `@llui/devmode-annotate` HUD — the network is
-  //    never idle, and `networkidle` would always time out at 30s.
-  //    The 1500ms `delay` below covers the post-load auto-connect
-  //    handshake the test actually cares about.
+  // 4. Navigate and wait for the auto-connect to COMPLETE — observed as the
+  //    relay's own `onopen` line, armed before `goto` so it cannot be missed.
+  //    The bridge's `ws` server registers the client in the same synchronous
+  //    step that writes the 101, so by the time the page has seen `open` the
+  //    server has the client and every tool call below is served.
+  //
+  //    This used to be a flat `delay(1500)` after `load`, under a describe-level
+  //    `retry: 2`: a guess at how long the post-load status fetch + WS
+  //    handshake takes, and the error counters were SNAPSHOTS taken at the end
+  //    of it, so anything the page logged later was never checked.
+  //
+  //    No Playwright deadline of its own (`timeout: 0`): the wait is bounded by
+  //    the `beforeAll`'s `hookTimeout`, the one budget for this fixture.
+  //    `waitUntil: 'load'` (not 'networkidle') because dev-mode Vite keeps a
+  //    long-lived `/_llui/events` SSE channel open for the auto-injected
+  //    `@llui/devmode-annotate` HUD — the network is never idle.
+  const connected = page.waitForEvent('console', {
+    predicate: (msg) => RELAY_CONNECTED.test(msg.text()),
+    timeout: 0,
+  })
   await page.goto(viteUrl, { waitUntil: 'load' })
-  await delay(1500)
+  const relayPort = Number(RELAY_CONNECTED.exec((await connected).text())![1])
 
-  return { mcp, vite, browser, page, viteUrl, consoleErrors, wsErrorCount }
+  return { mcp, vite, browser, page, viteUrl, relayPort, consoleErrors, wsMessages }
 }
 
-async function teardownHarness(h: Harness): Promise<void> {
-  await h.browser.close()
-  await h.vite.close()
-  h.mcp.stopBridge()
-  // Give the dev server a moment to release its port + clean up the marker
-  await delay(200)
+async function teardownHarness(owned: Owned): Promise<void> {
+  // Reverse start order: browser, then Vite, then the bridge (whose stop
+  // removes the marker synchronously; its port was OS-assigned, so nothing can
+  // collide with it later and there is nothing to wait out). Every step runs
+  // even if an earlier one throws.
+  const errors: unknown[] = []
+  for (const stop of owned.splice(0).reverse()) {
+    try {
+      await stop()
+    } catch (err) {
+      errors.push(err)
+    }
+  }
+  if (errors.length > 0) throw new AggregateError(errors, 'harness teardown failed')
 }
 
-// Real headless browser + a real Vite dev server: correct but timing-sensitive
-// under full-repo parallel load, so retry transient starvation at the suite level.
-describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', { retry: 2 }, () => {
+describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', () => {
   let h: Harness
+  const owned: Owned = []
   let uncaughtHandler: ((err: Error) => void) | null = null
 
   beforeAll(async () => {
@@ -191,11 +238,11 @@ describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', { 
     }
     process.on('uncaughtException', uncaughtHandler)
 
-    h = await setupHarness()
+    h = await setupHarness(owned)
   })
 
   afterAll(async () => {
-    if (h) await teardownHarness(h)
+    await teardownHarness(owned)
     if (uncaughtHandler) {
       process.off('uncaughtException', uncaughtHandler)
       uncaughtHandler = null
@@ -224,6 +271,7 @@ describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', { 
   it('auto-connects to the actual MCP port via /__llui_mcp_status (no manual step)', async () => {
     // The MCP port is randomized per run; the browser must learn it from
     // the Vite middleware, not from the compile-time default.
+    expect(h.relayPort).toBe(h.mcp.boundPort())
     const state = (await h.mcp.handleToolCall('llui_get_state', {})) as {
       count: number
       logs: unknown[]
@@ -264,7 +312,8 @@ describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', { 
   it('does not produce WebSocket retry spam (≤1 error)', () => {
     // The on-demand relay should attempt the connection once and stop.
     // Anything more would be a regression to the old retry-loop behavior.
-    expect(h.wsErrorCount).toBeLessThanOrEqual(1)
+    // Read LIVE, at the end of the suite — not a snapshot from setup.
+    expect(h.wsMessages.length).toBeLessThanOrEqual(1)
   })
 
   it('does not log uncaught page errors', () => {
@@ -272,16 +321,17 @@ describe.skipIf(!playwright)('MCP auto-connect — real browser + real Vite', { 
   })
 })
 
-describe.skipIf(!playwright)('CDP tools via Playwright harness', { retry: 2 }, () => {
+describe.skipIf(!playwright)('CDP tools via Playwright harness', () => {
   let h: Harness
+  const owned: Owned = []
 
   beforeAll(async () => {
-    h = await setupHarness()
+    h = await setupHarness(owned)
     h.mcp.setDevUrl(h.viteUrl)
   })
 
   afterAll(async () => {
-    if (h) await teardownHarness(h)
+    await teardownHarness(owned)
   })
 
   it('llui_screenshot returns base64 PNG', async () => {

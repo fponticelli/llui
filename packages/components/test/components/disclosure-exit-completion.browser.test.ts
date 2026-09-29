@@ -1,10 +1,13 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type ViteDevServer } from 'vite'
+import type { Browser, Page } from 'playwright'
+import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../browser')
 
@@ -20,30 +23,24 @@ const fixtureRoot = resolve(dirname(fileURLToPath(import.meta.url)), '../browser
 describe('#264 — disclosure exit completion in Chromium', () => {
   let browser: Browser
   let page: Page
-  let server: ViteDevServer
+  let fixture: PrebuiltFixture
   let fixtureUrl: string
 
   beforeAll(async () => {
-    server = await createServer({
+    fixture = await prebuildFixture({
       root: fixtureRoot,
-      logLevel: 'error',
-      resolve: {
-        alias: {
-          '@llui/dom': resolve(fixtureRoot, '../../../dom/src/index.ts'),
-        },
+      inputs: ['disclosure-exit.fixture.html'],
+      alias: {
+        '@llui/dom': resolve(fixtureRoot, '../../../dom/src/index.ts'),
       },
-      server: { host: '127.0.0.1', port: 0 },
       define: {
         __LLUI_AGENT__: 'true',
         __LLUI_TRANSITIONS__: 'true',
       },
     })
-    await server.listen()
-    const address = server.httpServer?.address()
-    if (!address || typeof address === 'string') throw new Error('Vite did not bind a TCP port')
-    fixtureUrl = `http://127.0.0.1:${address.port}/disclosure-exit.fixture.html`
+    fixtureUrl = fixture.url('disclosure-exit.fixture.html')
 
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
   })
 
   beforeEach(async () => {
@@ -54,7 +51,7 @@ describe('#264 — disclosure exit completion in Chromium', () => {
 
   afterAll(async () => {
     await browser?.close()
-    await server?.close()
+    await fixture?.close()
   })
 
   const contentState = (

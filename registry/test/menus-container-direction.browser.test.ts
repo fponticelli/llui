@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 /**
- * #265 finding 6, in both actual demos: `dir="rtl"` on the APP CONTAINER
+ * #265 finding 6, on both styling paths: `dir="rtl"` on the APP CONTAINER
  * (`#app`), never on `<html>`. The dropdown menu portals its content to
  * `<body>`, OUTSIDE that container, so every direction consumer must resolve
  * from the menu's ANCHOR rather than from where the portal landed:
@@ -18,61 +18,72 @@
  * `dispatchEvent`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type ViteDevServer } from 'vite'
+import type { Browser, Page } from 'playwright'
+import { prebuildFixture, type PrebuiltFixture } from '../../scripts/lib/prebuilt-fixture.mjs'
 import { resolve } from 'node:path'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const repoRoot = resolve(import.meta.dirname, '../..')
 
 interface Demo {
   readonly name: string
   readonly dir: string
+  /** The HTML entry, relative to `dir`. */
+  readonly input: string
   readonly menuId: string
   readonly subValue: string
 }
 
 const DEMOS: readonly Demo[] = [
-  { name: 'baseline', dir: 'examples/components-demo', menuId: 'menu-demo', subValue: 'Share' },
-  { name: 'registry', dir: 'examples/registry-demo', menuId: 'demo-dropdown', subValue: 'team' },
+  // The Baseline path: a consumer composition in the Tailwind-free Baseline
+  // consumer (`compositions/menus.ts`), mounted inside `#app`.
+  {
+    name: 'baseline',
+    dir: 'examples/baseline-css',
+    input: 'src/test-fixtures/compositions.html',
+    menuId: 'menu-demo',
+    subValue: 'Share',
+  },
+  // The Registry path: the copied skins in the registry sync fixture.
+  {
+    name: 'registry',
+    dir: 'examples/registry-demo',
+    input: 'index.html',
+    menuId: 'demo-dropdown',
+    subValue: 'team',
+  },
 ]
 
-async function startExample(directory: string): Promise<{ server: ViteDevServer; url: string }> {
-  const server = await createServer({
-    root: resolve(repoRoot, directory),
-    logLevel: 'error',
-    server: { host: '127.0.0.1', port: 0 },
-  })
-  await server.listen()
-  const address = server.httpServer?.address()
-  if (address === null || address === undefined || typeof address === 'string') {
-    throw new Error(`Vite did not bind ${directory} to a TCP port`)
-  }
-  return { server, url: `http://127.0.0.1:${address.port}/` }
-}
-
-describe('menus under an RTL APP CONTAINER, in both demos (#265 finding 6)', () => {
+describe('menus under an RTL APP CONTAINER, on both paths (#265 finding 6)', () => {
   let browser: Browser
-  const servers: ViteDevServer[] = []
+  let builds: PrebuiltFixture[] = []
   const urls: Record<string, string> = {}
 
   beforeAll(async () => {
-    browser = await chromium.launch({ headless: true })
-    for (const demo of DEMOS) {
-      const { server, url } = await startExample(demo.dir)
-      servers.push(server)
-      urls[demo.name] = url
-      // Warm the cold dev server (dependency pre-bundling) HERE, under the
-      // hook's own budget, so no test pays for it against its 30 s timeout.
-      const warm = await browser.newPage()
-      await warm.goto(url)
-      await warm.locator('#app').waitFor({ state: 'attached', timeout: 90_000 })
-      await warm.close()
-    }
-  }, 180_000)
+    // Built once and served static (`scripts/lib/prebuilt-fixture.mjs`) rather
+    // than by a Vite dev server: a dev server compiled the app on demand inside
+    // the first test to navigate, re-sent its whole unbundled module graph to
+    // every fresh page, and shared the example's dependency-optimizer cache with
+    // every concurrent suite serving the same example (see that module's header).
+    // The builds replace the per-demo warm-up page this hook used to load.
+    const [launched, built] = await Promise.all([
+      hermetic.launch({ headless: true }),
+      Promise.all(
+        DEMOS.map((demo) =>
+          prebuildFixture({ root: resolve(repoRoot, demo.dir), inputs: [demo.input] }),
+        ),
+      ),
+    ])
+    browser = launched
+    builds = built
+    DEMOS.forEach((demo, i) => (urls[demo.name] = built[i]!.url(demo.input)))
+  }, 120_000)
 
   afterAll(async () => {
     await browser?.close()
-    await Promise.all(servers.map((server) => server.close()))
+    await Promise.all(builds.map((build) => build.close()))
   })
 
   async function open(demo: Demo, dir: 'ltr' | 'rtl'): Promise<Page> {

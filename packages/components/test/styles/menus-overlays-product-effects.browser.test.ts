@@ -35,6 +35,7 @@ import { LIVE_PATHS, useMenusOverlaysLiveHarness } from './menus-overlays-live-h
 import {
   FLOATING_PLACEMENT_PROBES,
   MENUS_OVERLAYS_DEFINITIONS,
+  isMenusOverlaysScenarioId,
   type MenusOverlaysDefinitionScenarioId,
 } from './menus-overlays-scenarios.js'
 import { bucketedKey, paintedColors, type RGB } from './pixel-probe.js'
@@ -47,13 +48,13 @@ interface CaseRef {
   readonly caseId: string
 }
 
-const scenarioIds = Object.keys(MENUS_OVERLAYS_DEFINITIONS) as MenusOverlaysDefinitionScenarioId[]
+const scenarioIds = Object.keys(MENUS_OVERLAYS_DEFINITIONS).filter(isMenusOverlaysScenarioId)
 
 /** Every case declaring `axis`, in definition order. */
 const casesWithAxis = (axis: Axis): CaseRef[] =>
   scenarioIds.flatMap((scenarioId) =>
     MENUS_OVERLAYS_DEFINITIONS[scenarioId].cases
-      .filter((scenarioCase) => (scenarioCase.environmentAxes as readonly string[]).includes(axis))
+      .filter((scenarioCase) => scenarioCase.environmentAxes.some((declared) => declared === axis))
       .map((scenarioCase) => ({ scenarioId, caseId: scenarioCase.id })),
   )
 
@@ -253,7 +254,7 @@ describe('menus-overlays product effects, live in Chromium (#265 G2)', () => {
       (scenarioId) =>
         scenarioId !== 'component:toast' &&
         MENUS_OVERLAYS_DEFINITIONS[scenarioId].cases.some(
-          (scenarioCase) => 'placement' in (scenarioCase.input as object),
+          (scenarioCase) => 'placement' in scenarioCase.input,
         ),
     )
     expect(floating.sort()).toEqual(
@@ -322,7 +323,8 @@ describe('menus-overlays product effects, live in Chromium (#265 G2)', () => {
             trigger.boundingBox(),
           ])
           if (c === null || t === null) throw new Error(`${label}: no geometry`)
-          const [sideName, align = 'center'] = placement.split('-') as [string, string?]
+          // A placement always names its side; `''` would fail the `data-side` read below.
+          const [sideName = '', align = 'center'] = placement.split('-')
           expect(side, label).toBe(sideName)
           // SIDE: the content sits entirely beyond the anchor's facing edge.
           if (sideName === 'top') expect(c.y + c.height, label).toBeLessThanOrEqual(t.y + 0.5)

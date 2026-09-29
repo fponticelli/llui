@@ -2,14 +2,22 @@
   // The registry ships SOURCE that consumers compile, so nothing in the repo
   // would type-check it by default — exactly how `src/styles/classes/*` rotted
   // into 116 dead utilities without a single failing test. `pnpm check:registry`
-  // (wired into `verify` and CI) compiles it here instead.
+  // (wired into `verify` and CI) compiles it here instead. The registry's own
+  // `test/` is compiled by `tsconfig.test.json` (#272), in the same script.
   //
   // The `@/` paths mirror what `llui add` rewrites to in a consumer project, so
   // the source is checked in the shape it is authored, not a repo-only variant.
+  //
+  // `types: []` because the source runs in a consumer's BROWSER: no ambient
+  // `@types/*` (the root `@types/node` included) may type `process`/`Buffer`
+  // for it. TypeScript 6 already defaults to `[]`, TypeScript 5 included every
+  // visible `@types` package — so the choice is stated here, not inherited from
+  // whichever compiler is installed. `tsconfig.test.json` opts back into Node.
   "extends": "../tsconfig.json",
   "include": ["llui"],
   "compilerOptions": {
     "noEmit": true,
+    "types": [],
     "paths": {
       "@/lib/*": ["./llui/lib/*"],
       "@/ui/*": ["./llui/ui/*"]

@@ -205,7 +205,7 @@ function recordingEnv(initial?: { hash?: string; pathname?: string }): Recorded 
   const calls: string[] = []
   const handlers: Array<{
     event: 'popstate' | 'hashchange'
-    handler: (newHash?: string) => void
+    handler: () => void
   }> = []
   let hash = initial?.hash ?? ''
   let pathname = initial?.pathname ?? '/'
@@ -280,12 +280,11 @@ function recordingEnv(initial?: { hash?: string; pathname?: string }): Recorded 
       historyLength++
     },
     fire() {
-      const landedHash = hash
       const fragmentChanged = observedHash !== hash
       for (const { event, handler } of handlers) if (event === 'popstate') handler()
       if (fragmentChanged) {
         for (const { event, handler } of handlers) {
-          if (event === 'hashchange') handler(landedHash)
+          if (event === 'hashchange') handler()
         }
       }
       observedHash = hash

@@ -3,14 +3,14 @@
   "type": "registry:ui",
   "title": "Async List",
   "description": "Skin for @llui/components/async-list — infinite list with sentinel, retry and error text.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["button", "utils"],
   "files": [
     {
       "path": "registry/llui/ui/async-list.ts",
       "type": "registry:ui",
       "target": "async-list.ts",
-      "content": "import { button, div, p } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { buttonVariants } from '@/ui/button'\n\n/**\n * Async list — skin for `@llui/components/async-list`. No shadcn counterpart.\n *\n * `sentinel` is the IntersectionObserver target that triggers the next page. It\n * must have real HEIGHT — a zero-height element never intersects, and the list\n * silently stops loading. `h-px` is enough and is why it is here rather than\n * left to the consumer.\n *\n * `data-status` on the root is the full lifecycle (`idle` / `loading` /\n * `loaded` / `error`), which is what lets the trigger and the error text style\n * themselves from the container instead of each tracking state.\n */\nexport const AsyncList = classPart(div, 'flex flex-col gap-2')\nexport const AsyncListSentinel = classPart(div, 'h-px w-full')\nexport const AsyncListLoadMoreTrigger = classPart(\n  button,\n  `${buttonVariants({ variant: 'outline', size: 'sm' })} self-center`,\n)\nexport const AsyncListRetryTrigger = classPart(\n  button,\n  `${buttonVariants({ variant: 'outline', size: 'sm' })} self-center`,\n)\nexport const AsyncListErrorText = classPart(p, 'text-center text-sm text-destructive')\n"
+      "content": "import { button, div, p } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { buttonVariants } from '@/ui/button'\n\n/**\n * Async list — skin for `@llui/components/async-list`. No shadcn counterpart.\n *\n * `sentinel` is the IntersectionObserver target that triggers the next page. It\n * must have real HEIGHT — a zero-height element never intersects, and the list\n * silently stops loading. `h-px` is enough and is why it is here rather than\n * left to the consumer.\n *\n * `data-status` on the root is the full lifecycle (`idle` / `loading` /\n * `loaded` / `error`), which is what lets the trigger and the error text style\n * themselves from the container instead of each tracking state. The root also\n * publishes `aria-busy` while a page loads, `data-empty` once a load settles\n * with nothing, and `data-exhausted` when no pages remain — the load-more\n * trigger steps back (`invisible`, keeping its space) rather than sitting there\n * disabled forever (#266).\n */\nexport const AsyncList = classPart(\n  div,\n  'group/async-list flex flex-col gap-2 aria-busy:cursor-progress',\n)\nexport const AsyncListSentinel = classPart(div, 'h-px w-full')\nexport const AsyncListLoadMoreTrigger = classPart(\n  button,\n  `${buttonVariants({ variant: 'outline', size: 'sm' })} self-center group-data-exhausted/async-list:invisible`,\n)\nexport const AsyncListRetryTrigger = classPart(\n  button,\n  `${buttonVariants({ variant: 'outline', size: 'sm' })} self-center`,\n)\nexport const AsyncListErrorText = classPart(p, 'text-center text-sm text-destructive')\n"
     }
   ]
 }

@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { allFiniteNumbers } from '../utils/number.js'
 
 /**
@@ -137,7 +137,9 @@ export function showScrollbars(state: ScrollAreaState, axis: 'x' | 'y'): boolean
 export function thumbPosition(state: ScrollAreaState, axis: 'x' | 'y'): number {
   if (axis === 'x') {
     const max = state.scrollWidth - state.clientWidth
-    return max > 0 ? state.scrollLeft / max : 0
+    // Distance from the START edge: an RTL viewport reports scrollLeft from 0
+    // DOWN to -max, so the magnitude is the position either way (#266).
+    return max > 0 ? Math.abs(state.scrollLeft) / max : 0
   }
   const max = state.scrollHeight - state.clientHeight
   return max > 0 ? state.scrollTop / max : 0
@@ -155,8 +157,8 @@ export interface ScrollAreaParts {
   root: {
     'data-scope': 'scroll-area'
     'data-part': 'root'
-    'data-scrolling': Signal<'' | undefined>
-    'data-hovered': Signal<'' | undefined>
+    'data-scrolling': ReadSignal<'' | undefined>
+    'data-hovered': ReadSignal<'' | undefined>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
   }
@@ -174,35 +176,35 @@ export interface ScrollAreaParts {
     'data-scope': 'scroll-area'
     'data-part': 'scrollbar'
     'data-axis': 'x'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
   scrollbarY: {
     'data-scope': 'scroll-area'
     'data-part': 'scrollbar'
     'data-axis': 'y'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
   thumbX: {
     'data-scope': 'scroll-area'
     'data-part': 'thumb'
     'data-axis': 'x'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   thumbY: {
     'data-scope': 'scroll-area'
     'data-part': 'thumb'
     'data-axis': 'y'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   corner: {
     'data-scope': 'scroll-area'
     'data-part': 'corner'
-    'data-visible': Signal<'' | undefined>
+    'data-visible': ReadSignal<'' | undefined>
   }
 }
 
 export function connect(
-  state: Signal<ScrollAreaState>,
+  state: ReadSignal<ScrollAreaState>,
   send: Send<ScrollAreaMsg>,
 ): ScrollAreaParts {
   return {
@@ -258,7 +260,8 @@ export function connect(
       style: state.map((st) => {
         const pos = thumbPosition(st, 'x')
         const size = thumbSize(st, 'x')
-        return `left:${(pos * (1 - size) * 100).toFixed(2)}%;width:${(size * 100).toFixed(2)}%;`
+        // Logical: the start edge is the right one under RTL (#266).
+        return `inset-inline-start:${(pos * (1 - size) * 100).toFixed(2)}%;width:${(size * 100).toFixed(2)}%;`
       }),
     },
     thumbY: {

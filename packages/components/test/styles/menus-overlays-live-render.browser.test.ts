@@ -297,23 +297,58 @@ describe('menus-overlays scenario renderer, mounted live in Chromium (#265 findi
     })
 
     it('drives a real four-phase presence lifecycle for a modal dialog', async () => {
-      // Read each page's `data-state` IMMEDIATELY after its own mount — with
-      // `motion: 'full'` a real CSS animation is running (the registry skin's
-      // `data-[state=opening]:animate-in`), and it genuinely completes and
-      // fires a real `animationend` a couple hundred ms later, which the
-      // real presence machine listens for and uses to advance status. A
-      // batched read (mount all three, then read all three) lets the first
-      // page's animation finish for real by the time it's read, which is a
-      // race against the SAME lifecycle this test exists to prove — not the
-      // absence of a four-phase machine.
-      const stateOf = async (page: Page) =>
-        page.locator('#case [data-scope="dialog"][data-part="content"]').getAttribute('data-state')
-      const openingPage = await openCase(path, 'component:dialog', 'opening', { motion: 'full' })
-      expect(await stateOf(openingPage)).toBe('opening')
-      const openPage = await openCase(path, 'component:dialog', 'modal', { motion: 'full' })
-      expect(await stateOf(openPage)).toBe('open')
-      const closingPage = await openCase(path, 'component:dialog', 'closing', { motion: 'full' })
-      expect(await stateOf(closingPage)).toBe('closing')
+      // With `motion: 'full'` a real CSS animation runs (the registry skin's
+      // `data-[state=opening]:animate-in`) and fires a real `animationend` a
+      // couple hundred ms later, which the presence machine uses to advance.
+      // Reading `data-state` from the test process after the mount RACES that
+      // animation: under load (#268: a parallel `turbo test`) the round trip
+      // outlived it and read `open` for the `opening` case. So the page
+      // records every `data-state` the content carries, from a
+      // MutationObserver installed BEFORE the mount: its callbacks are
+      // microtasks of the mounting task, so the first recorded state is the
+      // one the case mounted in, however slow the host — and the recording
+      // still proves the machine then advances on its own.
+      const record = async (page: Page) => {
+        await page.evaluate(() => {
+          const seen: string[] = []
+          ;(window as unknown as { __dialogStates: string[] }).__dialogStates = seen
+          new MutationObserver(() => {
+            const state = document
+              .querySelector('#case [data-scope="dialog"][data-part="content"]')
+              ?.getAttribute('data-state')
+            if (state != null && seen.at(-1) !== state) seen.push(state)
+          }).observe(document.body, { subtree: true, childList: true, attributes: true })
+        })
+      }
+      const statesOf = (page: Page) =>
+        page.evaluate(() => (window as unknown as { __dialogStates: string[] }).__dialogStates)
+      const openingPage = await openCase(
+        path,
+        'component:dialog',
+        'opening',
+        { motion: 'full' },
+        { beforeMount: record },
+      )
+      expect((await statesOf(openingPage))[0]).toBe('opening')
+      await expect
+        .poll(() => statesOf(openingPage), { timeout: 10_000 })
+        .toEqual(['opening', 'open'])
+      const openPage = await openCase(
+        path,
+        'component:dialog',
+        'modal',
+        { motion: 'full' },
+        { beforeMount: record },
+      )
+      expect(await statesOf(openPage)).toEqual(['open'])
+      const closingPage = await openCase(
+        path,
+        'component:dialog',
+        'closing',
+        { motion: 'full' },
+        { beforeMount: record },
+      )
+      expect((await statesOf(closingPage))[0]).toBe('closing')
     })
 
     it('every ToastType clears AA text contrast (>=4.5:1) and non-text contrast (>=3:1) in light, dark, and forced colors', async () => {

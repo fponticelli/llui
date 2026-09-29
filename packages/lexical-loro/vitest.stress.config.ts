@@ -3,7 +3,7 @@ import shared from '../../vitest.shared'
 
 // Do not use mergeConfig here: it concatenates `test.include`, which would make
 // this command run the whole normal suite before the stress file. Preserve the
-// shared defines/reporters/hooks explicitly, then replace discovery and the
+// shared defines/budgets explicitly, then replace discovery and the
 // per-test budget only for this dedicated runner.
 export default defineConfig({
   ...shared,

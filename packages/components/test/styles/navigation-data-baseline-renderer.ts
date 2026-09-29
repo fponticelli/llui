@@ -25,11 +25,13 @@ import {
   thead,
   tr,
   type Mountable,
+  type ReadSignal,
   type Send,
   type Signal,
 } from '@llui/dom'
 import type { ProductContract } from '@llui/cli'
 import {
+  dispatchScenarioSelection,
   resolveScenarioSelection,
   type PresentationScenarioEnvironment,
 } from '@llui/cli/presentation-scenarios'
@@ -611,15 +613,16 @@ const stepsAdapter: Adapter<StepsCaseInput> = (host, input, ctx) =>
 // the machine reports as unchecked or indeterminate the moment selection
 // changes (#264). Shared shape with the registry renderer's identical need.
 function tableCheckboxGlyph(
-  dataState: Signal<'checked' | 'unchecked' | 'indeterminate'>,
+  dataState: ReadSignal<'checked' | 'unchecked' | 'indeterminate'>,
 ): Mountable {
   return text(dataState.map((s) => (s === 'checked' ? '✓' : s === 'indeterminate' ? '−' : '')))
 }
 
 // `table.ts` tracks only sort STATE by design — its own doc says the
 // consumer "performs the actual data sort ... by feeding pre-sorted `rows`
-// back in" (see `examples/components-demo/src/sections/data.ts`'s identical
-// `resolveTableSort`). Without this follow-up, `toggleSort` flips
+// back in" (see the Baseline composition
+// `examples/baseline-css/src/test-fixtures/compositions/navigation-data.ts`'s
+// identical `resolveTableSort`). Without this follow-up, `toggleSort` flips
 // `aria-sort` on the header while every row stays in its original DOM
 // position — exactly the "gallery Table ignores sort" gap (#264). The
 // fixture's one sortable column ('name') is the row id itself.
@@ -924,24 +927,6 @@ export const BASELINE_ADAPTERS = {
   'registry:chip': chipAdapter,
 } as const satisfies Partial<Record<NavigationDataScenarioId, Adapter<never>>>
 
-function renderResolvedBaseline(
-  host: HTMLElement,
-  scenarioId: string,
-  caseId: string,
-  input: unknown,
-  environment: PresentationScenarioEnvironment,
-): Disposable {
-  const adapter = BASELINE_ADAPTERS[scenarioId as keyof typeof BASELINE_ADAPTERS]
-  if (adapter === undefined) {
-    throw new Error(`No baseline adapter registered for navigation-data scenario ${scenarioId}`)
-  }
-  return (adapter as Adapter<unknown>)(host, input, {
-    scenarioId: scenarioId as NavigationDataScenarioId,
-    caseId,
-    environment,
-  })
-}
-
 function assertBindings(scenarios: readonly NavigationDataJoinedScenario[]): void {
   const scenarioIds = scenarios.map(({ scenarioId }) => scenarioId).sort()
   const bindingIds = Object.keys(BASELINE_ADAPTERS).sort()
@@ -979,15 +964,7 @@ export function mountBaselineNavigationDataScenarios(
       host.dataset.scenarioId = scenario.scenarioId
       host.dataset.scenarioCase = scenarioCase.id
       container.append(host)
-      handles.push(
-        renderResolvedBaseline(
-          host,
-          resolved.scenarioId,
-          resolved.case.id,
-          resolved.case.input,
-          resolved.environment,
-        ),
-      )
+      handles.push(dispatchScenarioSelection(catalog, BASELINE_ADAPTERS, resolved, host, {}))
     }
   }
   return {

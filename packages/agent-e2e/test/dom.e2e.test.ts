@@ -1,18 +1,21 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { setup, type E2EContext } from '../src/harness.js'
 import { mintAndBind, parseToolResult } from '../src/test-utils.js'
+import { useHermeticBrowser } from '../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 let ctx: E2EContext
 beforeEach(async () => {
-  ctx = await setup()
+  ctx = await setup(hermetic)
 })
 afterEach(async () => {
   await ctx.close()
 })
 
 describe('e2e: DOM inspection', () => {
-  it('query_dom({name: "inc"}) returns an element with text "+"', async () => {
-    await mintAndBind(ctx)
+  it('query_dom({name: "inc"}) returns an element with text "+"', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const result = await ctx.mcpClient.callTool({
       name: 'query_dom',
@@ -29,8 +32,8 @@ describe('e2e: DOM inspection', () => {
     expect(body.elements[0]!.attrs['data-agent']).toBe('inc')
   })
 
-  it('describe_visible_content returns an outline with a button for "inc"', async () => {
-    await mintAndBind(ctx)
+  it('describe_visible_content returns an outline with a button for "inc"', async (testCtx) => {
+    await mintAndBind(ctx, testCtx)
 
     const result = await ctx.mcpClient.callTool({
       name: 'describe_visible_content',

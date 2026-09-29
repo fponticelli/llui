@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 
 /**
  * In View — tracks whether an element is visible in the viewport
@@ -52,7 +52,7 @@ export interface InViewParts {
   root: {
     'data-scope': 'in-view'
     'data-part': 'root'
-    'data-state': Signal<'visible' | 'hidden'>
+    'data-state': ReadSignal<'visible' | 'hidden'>
   }
 }
 
@@ -61,7 +61,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<InViewState>,
+  state: ReadSignal<InViewState>,
   _send: Send<InViewMsg>,
   _opts: ConnectOptions,
 ): InViewParts {

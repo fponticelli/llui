@@ -1,11 +1,15 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type Alias, type ViteDevServer } from 'vite'
+import type { Browser, Page } from 'playwright'
+import type { Alias } from 'vite'
 import { resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../../../scripts/lib/vite-source-aliases.mjs'
+import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
 import { loadProductContract } from './navigation-data-contract-source'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 /**
  * Closes the #264 review gap explicitly: density/closing-phase claims must be
@@ -15,7 +19,8 @@ import { loadProductContract } from './navigation-data-contract-source'
  * test, which is a real regression guard for the STYLESHEET but was never
  * evidence for the RENDERER). This file mounts
  * `mountBaselineNavigationDataScenarios` / `mountRegistryNavigationDataScenarios`
- * through a real Vite dev server for each example app and measures real
+ * through a prebuilt fixture per path (`examples/baseline-css` for the
+ * Baseline theme, `examples/registry-demo` for the Registry skins) and measures real
  * `getBoundingClientRect()` geometry and real `data-state`/`aria-hidden`/
  * `inert` on the live DOM those renderers produce.
  */
@@ -53,19 +58,19 @@ const sourceAliases: Alias[] = [
   { find: '@/ui', replacement: resolve(repoRoot, 'registry/llui/ui') },
 ]
 
-async function startExample(directory: string): Promise<{ server: ViteDevServer; url: string }> {
-  const server = await createServer({
+// Built once and served static (`scripts/lib/prebuilt-fixture.mjs`) rather
+// than by a Vite dev server: a dev server compiled the app on demand inside
+// the first test to navigate, re-sent its whole unbundled module graph to
+// every fresh page, and shared the example's dependency-optimizer cache with
+// every concurrent suite serving the same example (see that module's header).
+const FIXTURE = 'src/test-fixtures/navigation-data-live-render.html'
+
+function buildExample(directory: string): Promise<PrebuiltFixture> {
+  return prebuildFixture({
     root: resolve(repoRoot, directory),
-    logLevel: 'error',
-    resolve: { alias: sourceAliases },
-    server: { host: '127.0.0.1', port: 0 },
+    inputs: [FIXTURE],
+    alias: sourceAliases,
   })
-  await server.listen()
-  const address = server.httpServer?.address()
-  if (address === null || address === undefined || typeof address === 'string') {
-    throw new Error(`Vite did not bind ${directory} to a TCP port`)
-  }
-  return { server, url: `http://127.0.0.1:${address.port}/` }
 }
 
 interface Fixture {
@@ -83,39 +88,46 @@ declare global {
 
 describe('navigation/data scenario renderer, mounted live in Chromium (#264 item C)', () => {
   let browser: Browser
-  let servers: ViteDevServer[] = []
+  let builds: PrebuiltFixture[] = []
   let fixtures: Fixture[] = []
 
   beforeAll(async () => {
-    const [baseline, registryTailwind] = await Promise.all([
-      startExample('examples/components-demo'),
-      startExample('examples/registry-demo'),
+    const [baseline, registryTailwind, launched] = await Promise.all([
+      buildExample('examples/baseline-css'),
+      buildExample('examples/registry-demo'),
+      hermetic.launch({ headless: true }),
     ])
-    servers = [baseline.server, registryTailwind.server]
+    builds = [baseline, registryTailwind]
+    browser = launched
     fixtures = [
       {
         path: 'baseline',
-        url: `${baseline.url}src/test-fixtures/navigation-data-live-render.html`,
+        url: baseline.url(FIXTURE),
         mountFn: '__mountNavigationDataBaseline',
       },
       {
         path: 'registryTailwind',
-        url: `${registryTailwind.url}src/test-fixtures/navigation-data-live-render.html`,
+        url: registryTailwind.url(FIXTURE),
         mountFn: '__mountNavigationDataRegistry',
       },
     ]
-    browser = await chromium.launch({ headless: true })
   }, 120_000)
 
   afterAll(async () => {
     await browser?.close()
-    await Promise.all(servers.map((server) => server.close()))
+    await Promise.all(builds.map((build) => build.close()))
   })
 
-  async function openMounted(fixture: Fixture): Promise<Page> {
+  /** A page on the fixture, its mount function loaded but NOT yet called. */
+  async function openUnmounted(fixture: Fixture): Promise<Page> {
     const page = await browser.newPage()
     await page.goto(fixture.url)
     await page.waitForFunction((fn) => typeof window[fn] === 'function', fixture.mountFn)
+    return page
+  }
+
+  async function openMounted(fixture: Fixture): Promise<Page> {
+    const page = await openUnmounted(fixture)
     await page.evaluate(
       ({ fn, contract }) => {
         const mount = window[fn]
@@ -233,39 +245,140 @@ describe('navigation/data scenario renderer, mounted live in Chromium (#264 item
     expect(geometry.sidebarRoomy.height).toBeCloseTo(48, 0)
   })
 
+  // The closing case is a LIVE exit: both skins run a 0.2 s `accordion-up`
+  // animation on `[data-state="closing"]` that collapses `block-size` to 0, and
+  // the exit watcher (`exitCompletion`) settles the item to `closed` on its
+  // `animationend`. Racing that animation against the wall clock (reading the
+  // retention a round trip after the mount, or bounding the exit's end by its
+  // own duration on `performance.now()`) is a probability, not a proof: under
+  // load a 50 ms settle timer can itself slip past 200 ms. So the test takes
+  // the animation's clock away from the browser instead. In the same task as
+  // the mount — before any frame can advance it — each exit's own CSS
+  // animation is taken through the Web Animations API and PAUSED: the item
+  // must then stay `closing` (retained, armed by its `animationstart`, and
+  // settled by nothing) across frames and a generous real wait, which no
+  // timer-driven or immediate settle survives. Then it is FINISHED, and the
+  // item must already read `closed` when that `animationend` reaches `window`
+  // — i.e. inside the very dispatch the exit completes on, which no later
+  // timer can satisfy and a missing completion cannot either.
   it.each(['baseline', 'registryTailwind'] as const)(
     '%s retains the accordion/collapsible closing case visibly, driven by the real reducer',
     async (path) => {
       const fixture = fixtures.find((candidate) => candidate.path === path)!
-      const page = await openMounted(fixture)
-      const closing = await page.evaluate(() => {
-        const read = (scenarioId: string) => {
-          const root = document.querySelector<HTMLElement>(
-            `[data-scenario-id="${scenarioId}"][data-scenario-case="closing"]`,
-          )
-          if (root === null) throw new Error(`Missing closing case for ${scenarioId}`)
-          const content = root.querySelector<HTMLElement>('[data-state="closing"]')
-          if (content === null) throw new Error(`Missing [data-state="closing"] for ${scenarioId}`)
-          const style = getComputedStyle(content)
-          return {
-            display: style.display,
-            ariaHidden: content.getAttribute('aria-hidden'),
-            inert: content.hasAttribute('inert'),
-            height: content.getBoundingClientRect().height,
+      const page = await openUnmounted(fixture)
+      const closing = await page.evaluate(
+        async ({ fn, contract, pausedFrames, pausedWaitMs }) => {
+          const ids = ['component:accordion', 'component:collapsible'] as const
+          const mount = window[fn]
+          if (mount === undefined) throw new Error(`Missing window.${fn}`)
+          mount(contract)
+          const probes = ids.map((scenarioId) => {
+            const root = document.querySelector<HTMLElement>(
+              `[data-scenario-id="${scenarioId}"][data-scenario-case="closing"]`,
+            )
+            if (root === null) throw new Error(`Missing closing case for ${scenarioId}`)
+            const content = root.querySelector<HTMLElement>('[data-state="closing"]')
+            if (content === null) {
+              throw new Error(`Missing [data-state="closing"] for ${scenarioId} right after mount`)
+            }
+            // Synchronous with the mount: the exit animation has not advanced.
+            const style = getComputedStyle(content)
+            const exitName = style.animationName
+            const exits = content
+              .getAnimations()
+              .filter(
+                (animation) =>
+                  animation instanceof CSSAnimation && animation.animationName === exitName,
+              )
+            const exit = exits[0]
+            if (exits.length !== 1 || exit === undefined) {
+              throw new Error(
+                `${scenarioId}: expected one "${exitName}" exit, found ${exits.length}`,
+              )
+            }
+            exit.pause()
+            const duration = exit.effect?.getComputedTiming().duration
+            const retained = {
+              display: style.display,
+              ariaHidden: content.getAttribute('aria-hidden'),
+              inert: content.hasAttribute('inert'),
+              height: content.getBoundingClientRect().height,
+              exitDurationMs: typeof duration === 'number' ? duration : 0,
+            }
+            // Every `data-state` change, armed in the same task so none is missed.
+            const transitions: string[] = []
+            new MutationObserver(() => {
+              transitions.push(content.getAttribute('data-state') ?? '(none)')
+            }).observe(content, { attributes: true, attributeFilter: ['data-state'] })
+            const events: string[] = []
+            for (const type of ['animationstart', 'animationend'] as const) {
+              content.addEventListener(type, (event) => {
+                if (event.animationName === exitName) events.push(type)
+              })
+            }
+            return { scenarioId, content, exit, exitName, retained, transitions, events }
+          })
+
+          // Held: nothing may settle a paused exit, however long it is held.
+          for (let frame = 0; frame < pausedFrames; frame += 1) {
+            await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
           }
-        }
-        return {
-          accordion: read('component:accordion'),
-          collapsible: read('component:collapsible'),
-        }
-      })
+          await new Promise<void>((resolve) => setTimeout(resolve, pausedWaitMs))
+          const held = probes.map(({ content, exit, transitions, events }) => ({
+            state: content.getAttribute('data-state'),
+            playState: exit.playState,
+            transitions: [...transitions],
+            events: [...events],
+          }))
+
+          // Released: the exit's own `animationend` settles it, in that dispatch.
+          const released = await Promise.all(
+            probes.map(
+              ({ content, exit, exitName }) =>
+                new Promise<string | null>((resolve) => {
+                  const onEnd = (event: AnimationEvent): void => {
+                    if (event.target !== content || event.animationName !== exitName) return
+                    window.removeEventListener('animationend', onEnd)
+                    resolve(content.getAttribute('data-state'))
+                  }
+                  window.addEventListener('animationend', onEnd)
+                  exit.finish()
+                }),
+            ),
+          )
+          return probes.map(({ scenarioId, retained, transitions }, index) => ({
+            scenarioId,
+            retained,
+            held: held[index],
+            stateAtAnimationEnd: released[index],
+            transitions: [...transitions],
+          }))
+        },
+        { fn: fixture.mountFn, contract, pausedFrames: 10, pausedWaitMs: 1_000 },
+      )
       await page.close()
 
-      for (const [name, result] of Object.entries(closing)) {
-        expect(result.display, name).not.toBe('none')
-        expect(result.ariaHidden, name).toBe('true')
-        expect(result.inert, name).toBe(true)
-        expect(result.height, name).toBeGreaterThan(0)
+      expect(closing.map((entry) => entry.scenarioId)).toEqual([
+        'component:accordion',
+        'component:collapsible',
+      ])
+      for (const { scenarioId, retained, held, stateAtAnimationEnd, transitions } of closing) {
+        expect(retained.display, scenarioId).not.toBe('none')
+        expect(retained.ariaHidden, scenarioId).toBe('true')
+        expect(retained.inert, scenarioId).toBe(true)
+        expect(retained.height, scenarioId).toBeGreaterThan(0)
+        // A real exit animation is what the retention is for…
+        expect(retained.exitDurationMs, scenarioId).toBeGreaterThan(0)
+        // …it started (and so was armed) while held, and nothing settled it…
+        expect(held, scenarioId).toEqual({
+          state: 'closing',
+          playState: 'paused',
+          transitions: [],
+          events: ['animationstart'],
+        })
+        // …and its own end settled it, and only that.
+        expect(stateAtAnimationEnd, scenarioId).toBe('closed')
+        expect(transitions, scenarioId).toEqual(['closed'])
       }
     },
   )

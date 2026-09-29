@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { allFiniteNumbers, clamp, finiteBound, finiteOrDefault } from '../utils/number.js'
@@ -120,13 +120,13 @@ export function itemFill(state: RatingGroupState, index: number): ItemFill {
 export interface RatingItemParts {
   root: {
     role: 'radio'
-    'aria-checked': Signal<boolean>
-    'data-fill': Signal<ItemFill>
+    'aria-checked': ReadSignal<boolean>
+    'data-fill': ReadSignal<ItemFill>
     'data-scope': 'rating-group'
     'data-part': 'item'
     'data-value': string
-    'data-disabled': Signal<'' | undefined>
-    tabindex: Signal<number>
+    'data-disabled': ReadSignal<'' | undefined>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onPointerMove: (e: PointerEvent) => void
     onPointerLeave: (e: PointerEvent) => void
@@ -138,12 +138,12 @@ export interface RatingGroupParts {
   root: {
     role: 'radiogroup'
     'aria-label': string | undefined
-    'aria-disabled': Signal<'true' | undefined>
-    'aria-readonly': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    'aria-readonly': ReadSignal<'true' | undefined>
     'data-scope': 'rating-group'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-readonly': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-readonly': ReadSignal<'' | undefined>
   }
   item: (index: number) => RatingItemParts
 }
@@ -158,7 +158,7 @@ function logicalInlineFraction(state: RatingGroupState, rect: DOMRect, clientX: 
 }
 
 export function connect(
-  state: Signal<RatingGroupState>,
+  state: ReadSignal<RatingGroupState>,
   send: Send<RatingGroupMsg>,
   opts: ConnectOptions = {},
 ): RatingGroupParts {

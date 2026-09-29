@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { allFiniteNumbers, clamp, finiteBound, finiteOrDefault } from '../utils/number.js'
 
@@ -108,48 +108,58 @@ export function positionFromPoint(
   clientX: number,
   clientY: number,
 ): number {
+  // A horizontal split mirrors under RTL — the primary panel sits on the
+  // RIGHT — so its share is measured from the right edge (#266).
   const pct =
     state.orientation === 'horizontal'
-      ? ((clientX - rect.left) / rect.width) * 100
+      ? ((state.dir === 'rtl' ? rect.left + rect.width - clientX : clientX - rect.left) /
+          rect.width) *
+        100
       : ((clientY - rect.top) / rect.height) * 100
   return clamp(pct, state.min, state.max)
 }
 
 export interface SplitterParts {
+  /**
+   * A layout container: its panels hold the CONSUMER's content. It carries no
+   * disabled state — the resize trigger is the control and publishes its own
+   * (`aria-disabled`, out of the tab order). A root `data-disabled` made every
+   * disabled-state stylesheet dim the panels with it, taking ordinary text to
+   * 3.69:1 (#268 audit).
+   */
   root: {
     'data-scope': 'splitter'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
-    'data-dragging': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-dragging': ReadSignal<'' | undefined>
   }
   primaryPanel: {
     'data-scope': 'splitter'
     'data-part': 'primary-panel'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   secondaryPanel: {
     'data-scope': 'splitter'
     'data-part': 'secondary-panel'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   resizeTrigger: {
     role: 'separator'
-    'aria-orientation': Signal<Orientation>
-    'aria-valuemin': Signal<number>
-    'aria-valuemax': Signal<number>
-    'aria-valuenow': Signal<number>
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-orientation': ReadSignal<Orientation>
+    'aria-valuemin': ReadSignal<number>
+    'aria-valuemax': ReadSignal<number>
+    'aria-valuenow': ReadSignal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'splitter'
     'data-part': 'resize-trigger'
-    'data-orientation': Signal<Orientation>
-    tabindex: Signal<number>
+    'data-orientation': ReadSignal<Orientation>
+    tabindex: ReadSignal<number>
     onKeyDown: (e: KeyboardEvent) => void
     onPointerDown: (e: PointerEvent) => void
   }
 }
 
-export function connect(state: Signal<SplitterState>, send: Send<SplitterMsg>): SplitterParts {
+export function connect(state: ReadSignal<SplitterState>, send: Send<SplitterMsg>): SplitterParts {
   const sizeProp = (s: SplitterState, inverted: boolean): string => {
     const pos = s.position
     const axis = s.orientation === 'horizontal' ? 'width' : 'height'
@@ -162,7 +172,6 @@ export function connect(state: Signal<SplitterState>, send: Send<SplitterMsg>): 
       'data-scope': 'splitter',
       'data-part': 'root',
       'data-orientation': state.map((s) => s.orientation),
-      'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
       'data-dragging': state.map((s) => (s.dragging ? '' : undefined)),
     },
     primaryPanel: {

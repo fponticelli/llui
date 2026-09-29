@@ -437,7 +437,8 @@ describe('menus-overlays registry motion policy', () => {
       title: 'Overlay motion',
       description:
         'Shared presence, physical-side, and nonzero reduced-motion policy for overlay and transient skins.',
-      dependencies: [],
+      // Its presence recipes are tw-animate-css classes (registry-tw-animate.test.ts).
+      dependencies: ['tw-animate-css'],
       registryDependencies: [],
       files: [
         {
@@ -547,12 +548,16 @@ describe('menus-overlays registry motion policy', () => {
     expect(violations).toEqual([])
   })
 
-  it('wires every exported floating arrow through both demo runtimes and content roots', () => {
+  it('wires every exported floating arrow through both path runtimes and content roots', () => {
     expect([...arrowArtifacts.map(({ name }) => name)].sort()).toEqual(
       ['hover-card', 'popover', 'tooltip'].sort(),
     )
+    // One runtime per styling path: the Baseline theme's is the scenario
+    // renderer the Component Gallery's Baseline document mounts every
+    // floating case through; the Registry skins' is the copied-source sync
+    // fixture's own overlays section.
     const demoFiles = [
-      path.join(ROOT, 'examples/components-demo/src/sections/overlays.ts'),
+      path.join(ROOT, 'packages/components/test/styles/menus-overlays-baseline-renderer.ts'),
       path.join(ROOT, 'examples/registry-demo/src/sections/overlays.ts'),
     ]
 

@@ -12,13 +12,20 @@ import { buttonVariants } from './button'
  *
  * `data-status` on the root is the full lifecycle (`idle` / `loading` /
  * `loaded` / `error`), which is what lets the trigger and the error text style
- * themselves from the container instead of each tracking state.
+ * themselves from the container instead of each tracking state. The root also
+ * publishes `aria-busy` while a page loads, `data-empty` once a load settles
+ * with nothing, and `data-exhausted` when no pages remain — the load-more
+ * trigger steps back (`invisible`, keeping its space) rather than sitting there
+ * disabled forever (#266).
  */
-export const AsyncList = classPart(div, 'flex flex-col gap-2')
+export const AsyncList = classPart(
+  div,
+  'group/async-list flex flex-col gap-2 aria-busy:cursor-progress',
+)
 export const AsyncListSentinel = classPart(div, 'h-px w-full')
 export const AsyncListLoadMoreTrigger = classPart(
   button,
-  `${buttonVariants({ variant: 'outline', size: 'sm' })} self-center`,
+  `${buttonVariants({ variant: 'outline', size: 'sm' })} self-center group-data-exhausted/async-list:invisible`,
 )
 export const AsyncListRetryTrigger = classPart(
   button,

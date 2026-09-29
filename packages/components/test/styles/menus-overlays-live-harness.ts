@@ -5,21 +5,34 @@
  * source aliases, the contract join and the per-case mount protocol cannot
  * drift between suites.
  *
- * Each app (`examples/components-demo` for the baseline path,
- * `examples/registry-demo` for the registry path) serves its own
- * `src/test-fixtures/menus-overlays-live-render.ts`, which exposes a
- * per-case mount on `window`. Every case mounts in its OWN page: never a
- * shared style universe between two cases, or between the two paths.
+ * Each path's fixture root (`examples/baseline-css` — the Tailwind-free
+ * Baseline consumer — for the baseline path, `examples/registry-demo` for the
+ * registry path) serves its own `src/test-fixtures/menus-overlays-live-render.ts`,
+ * which exposes a per-case mount on `window`. Every case mounts in its OWN
+ * page: never a shared style universe between two cases, or between the two
+ * paths.
+ *
+ * Both fixtures are BUILT once per suite and served static
+ * (`scripts/lib/prebuilt-fixture.mjs`), not served by a Vite dev server. On a
+ * dev server the first page per path compiled the fixture on demand inside
+ * whichever test ran first — the ContextMenu virtual-pointer test, 5.3 s /
+ * 3.2 s alone at ambient load ~20 on 4 CPUs, past its 30 s budget inside a
+ * parallel `turbo test` — and every later page (one per test, several per
+ * toast test) re-fetched 107-134 unbundled modules through the dev server,
+ * sharing each example's dependency-optimizer cache with every other suite
+ * serving that example from a concurrent worker.
  *
  * Only for `// @vitest-environment node` suites: it starts real servers and
  * a real browser.
  */
 import { afterAll, afterEach, beforeAll } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type Alias, type ViteDevServer } from 'vite'
+import type { Browser, Page } from 'playwright'
+import type { Alias } from 'vite'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../../../scripts/lib/vite-source-aliases.mjs'
+import { prebuildFixture, type PrebuiltFixture } from '../../../../scripts/lib/prebuilt-fixture.mjs'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
 import { ProductContractSchema } from '@llui/cli'
 
 export const repoRoot = resolve(import.meta.dirname, '../../../..')
@@ -74,19 +87,14 @@ const sourceAliases: Alias[] = [
   ],
 ].flat()
 
-async function startExample(directory: string): Promise<{ server: ViteDevServer; url: string }> {
-  const server = await createServer({
+const FIXTURE = 'src/test-fixtures/menus-overlays-live-render.html'
+
+function buildExample(directory: string): Promise<PrebuiltFixture> {
+  return prebuildFixture({
     root: resolve(repoRoot, directory),
-    logLevel: 'error',
-    resolve: { alias: sourceAliases },
-    server: { host: '127.0.0.1', port: 0 },
+    inputs: [FIXTURE],
+    alias: sourceAliases,
   })
-  await server.listen()
-  const address = server.httpServer?.address()
-  if (address === null || address === undefined || typeof address === 'string') {
-    throw new Error(`Vite did not bind ${directory} to a TCP port`)
-  }
-  return { server, url: `http://127.0.0.1:${address.port}/` }
 }
 
 export interface Viewport {
@@ -120,23 +128,21 @@ export interface MenusOverlaysLiveHarness {
 /** Register the servers/browser lifecycle on the enclosing suite and return
  * the page helpers. Call once, at the top of a `describe`. */
 export function useMenusOverlaysLiveHarness(): MenusOverlaysLiveHarness {
+  const hermetic = useHermeticBrowser()
   let browser: Browser | undefined
-  let servers: ViteDevServer[] = []
+  let fixtures: PrebuiltFixture[] = []
   let urls: Record<LivePath, string> = { baseline: '', registryTailwind: '' }
   const openPages: Page[] = []
 
   beforeAll(async () => {
-    const [baseline, registryTailwind] = await Promise.all([
-      startExample('examples/components-demo'),
-      startExample('examples/registry-demo'),
+    const [baseline, registryTailwind, launched] = await Promise.all([
+      buildExample('examples/baseline-css'),
+      buildExample('examples/registry-demo'),
+      hermetic.launch({ headless: true }),
     ])
-    servers = [baseline.server, registryTailwind.server]
-    const fixture = 'src/test-fixtures/menus-overlays-live-render.html'
-    urls = {
-      baseline: `${baseline.url}${fixture}`,
-      registryTailwind: `${registryTailwind.url}${fixture}`,
-    }
-    browser = await chromium.launch({ headless: true })
+    fixtures = [baseline, registryTailwind]
+    browser = launched
+    urls = { baseline: baseline.url(FIXTURE), registryTailwind: registryTailwind.url(FIXTURE) }
   }, 120_000)
 
   afterEach(async () => {
@@ -145,18 +151,32 @@ export function useMenusOverlaysLiveHarness(): MenusOverlaysLiveHarness {
 
   afterAll(async () => {
     await browser?.close()
-    await Promise.all(servers.map((server) => server.close()))
+    await Promise.all(fixtures.map((fixture) => fixture.close()))
   })
 
   const newPage = async (path: LivePath, viewport?: Viewport): Promise<Page> => {
     if (browser === undefined) throw new Error('live harness used before beforeAll ran')
     const page = await browser.newPage({ viewport: viewport ?? { width: 1024, height: 768 } })
     openPages.push(page)
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
     await page.goto(urls[path])
-    await page.waitForFunction(
+    // The fixture is ONE bundled module script that assigns its mount function
+    // synchronously, and module scripts run before `load` — so by the time
+    // `goto` returns it is there or it never will be. Asserting instead of
+    // waiting turns a broken fixture into an immediate error naming the
+    // page's own exception, rather than a 30 s wait for a happy state that is
+    // not coming.
+    const ready = await page.evaluate(
       (name) => typeof window[name as keyof Window] === 'function',
       MOUNT_FN[path],
     )
+    if (!ready) {
+      throw new Error(
+        `${path} fixture loaded without defining window.${MOUNT_FN[path]}` +
+          (errors.length > 0 ? `: ${errors.join('; ')}` : ''),
+      )
+    }
     return page
   }
 

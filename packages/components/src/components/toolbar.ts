@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { focusRovingItem } from '../utils/roving.js'
 import { deriveOnceN, membershipSet } from '../utils/derive.js'
 import {
@@ -104,9 +104,9 @@ export interface ToolbarItemParts {
     'data-scope': 'toolbar'
     'data-part': 'item'
     'data-value': string
-    'data-disabled': Signal<'' | undefined>
-    'aria-disabled': Signal<'true' | undefined>
-    tabindex: Signal<number>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    tabindex: ReadSignal<number>
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: () => void
   }
@@ -117,7 +117,8 @@ export interface ToolbarGroupParts {
     role: 'group'
     'data-scope': 'toolbar'
     'data-part': 'group'
-    'aria-labelledby': string
+    /** The label part's id, or absent when `hasLabel: false`. */
+    'aria-labelledby': string | undefined
   }
   label: {
     id: string
@@ -129,22 +130,29 @@ export interface ToolbarGroupParts {
 export interface ToolbarParts {
   root: {
     role: 'toolbar'
-    'aria-orientation': Signal<Orientation>
+    'aria-orientation': ReadSignal<Orientation>
     'aria-label': string | undefined
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'toolbar'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   separator: {
     role: 'separator'
-    'aria-orientation': Signal<Orientation>
+    'aria-orientation': ReadSignal<Orientation>
     'data-scope': 'toolbar'
     'data-part': 'separator'
   }
   item: (value: string) => ToolbarItemParts
-  group: (label: string) => ToolbarGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (label: string, options?: { readonly hasLabel?: boolean }) => ToolbarGroupParts
 }
 
 export interface ConnectOptions {
@@ -153,7 +161,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<ToolbarState>,
+  state: ReadSignal<ToolbarState>,
   send: Send<ToolbarMsg>,
   opts: ConnectOptions,
 ): ToolbarParts {
@@ -167,7 +175,7 @@ export function connect(
   const stopValue = deriveOnceN((items: string[], disabled: string[], focused: string | null) =>
     rovingTabStop(items, disabled, focused),
   )
-  const tabStop = (value: string): Signal<number> =>
+  const tabStop = (value: string): ReadSignal<number> =>
     state.map((s) => {
       if (s.disabled || disabledItems(s.disabledItems).has(value)) return -1
       return stopValue(s.items, s.disabledItems, s.focused) === value ? 0 : -1
@@ -243,12 +251,12 @@ export function connect(
         }),
       },
     }),
-    group: (label: string): ToolbarGroupParts => ({
+    group: (label: string, options = {}): ToolbarGroupParts => ({
       root: {
         role: 'group',
         'data-scope': 'toolbar',
         'data-part': 'group',
-        'aria-labelledby': groupLabelId(label),
+        'aria-labelledby': options.hasLabel === false ? undefined : groupLabelId(label),
       },
       label: {
         id: groupLabelId(label),

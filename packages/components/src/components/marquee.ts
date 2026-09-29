@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { finiteBound } from '../utils/number.js'
 
 /**
@@ -110,11 +110,12 @@ export interface MarqueeParts {
   root: {
     'data-scope': 'marquee'
     'data-part': 'root'
-    'data-running': Signal<'' | undefined>
-    'data-direction': Signal<MarqueeDirection>
-    'data-axis': Signal<'horizontal' | 'vertical'>
-    'data-disabled': Signal<'' | undefined>
-    style: Signal<string>
+    'data-running': ReadSignal<'' | undefined>
+    'data-direction': ReadSignal<MarqueeDirection>
+    'data-axis': ReadSignal<'horizontal' | 'vertical'>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    style: ReadSignal<string>
     onMouseEnter: (e: MouseEvent) => void
     onMouseLeave: (e: MouseEvent) => void
   }
@@ -124,7 +125,7 @@ export interface MarqueeParts {
   }
 }
 
-export function connect(state: Signal<MarqueeState>, send: Send<MarqueeMsg>): MarqueeParts {
+export function connect(state: ReadSignal<MarqueeState>, send: Send<MarqueeMsg>): MarqueeParts {
   return {
     root: {
       'data-scope': 'marquee',
@@ -133,6 +134,8 @@ export function connect(state: Signal<MarqueeState>, send: Send<MarqueeMsg>): Ma
       'data-direction': state.map((s) => s.direction),
       'data-axis': state.map((s) => axis(s.direction)),
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      // Dimmed as disabled, so announced as disabled (#268 audit).
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
       style: state.map(
         (st) =>
           `--marquee-duration:${st.durationSec}s;` +

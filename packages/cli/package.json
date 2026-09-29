@@ -19,9 +19,17 @@
       "types": "./dist/registry.d.ts",
       "import": "./dist/registry.js"
     },
+    "./product-contract": {
+      "types": "./dist/product-contract.d.ts",
+      "import": "./dist/product-contract.js"
+    },
     "./presentation-scenarios": {
       "types": "./dist/presentation-scenarios.d.ts",
       "import": "./dist/presentation-scenarios.js"
+    },
+    "./gallery": {
+      "types": "./dist/gallery.d.ts",
+      "import": "./dist/gallery.js"
     }
   },
   "files": [

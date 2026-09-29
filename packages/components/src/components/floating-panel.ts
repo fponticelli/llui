@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { floatingPanelLocale } from '../locale/floating-panel.js'
 import { allFiniteNumbers, clamp, finiteBound, finiteOrDefault } from '../utils/number.js'
@@ -72,6 +72,10 @@ export type FloatingPanelMsg =
   | { type: 'setPosition'; x: number; y: number }
   /** @intent("Set the panel's size in pixels (clamped to min/max)") */
   | { type: 'setSize'; width: number; height: number }
+  /** @intent("Move the panel by a pixel offset (x right, y down)") */
+  | { type: 'moveBy'; dx: number; dy: number }
+  /** @intent("Resize the panel from one edge or corner by a pixel offset (clamped to min/max)") */
+  | { type: 'resizeBy'; handle: ResizeHandle; dx: number; dy: number }
 
 export interface FloatingPanelInit {
   position?: { x: number; y: number }
@@ -254,6 +258,20 @@ export function update(
       return [applyResize(state, msg.dx, msg.dy, state.resizing), []]
     case 'resizeEnd':
       return [{ ...state, resizing: null }, []]
+    // The keyboard's move and resize (#266): the same geometry as the pointer
+    // path, with no drag/resize "in progress" to start first. A maximized panel
+    // refuses both, exactly as it refuses `dragStart`/`resizeStart`.
+    case 'moveBy': {
+      if (state.maximized) return [state, []]
+      const x = state.position.x + msg.dx
+      const y = state.position.y + msg.dy
+      if (!allFiniteNumbers(x, y)) return [state, []]
+      return [{ ...state, position: { x, y } }, []]
+    }
+    case 'resizeBy':
+      if (state.maximized) return [state, []]
+      if (!allFiniteNumbers(msg.dx, msg.dy)) return [state, []]
+      return [applyResize(state, msg.dx, msg.dy, msg.handle), []]
     case 'setPosition':
       if (!allFiniteNumbers(msg.x, msg.y)) return [state, []]
       return [{ ...state, position: { x: msg.x, y: msg.y } }, []]
@@ -271,26 +289,45 @@ export interface FloatingPanelParts {
     'aria-label': string
     'data-scope': 'floating-panel'
     'data-part': 'root'
-    'data-dragging': Signal<'' | undefined>
-    'data-resizing': Signal<'' | undefined>
-    'data-minimized': Signal<'' | undefined>
-    'data-maximized': Signal<'' | undefined>
-    hidden: Signal<boolean>
-    style: Signal<string>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-resizing': ReadSignal<'' | undefined>
+    'data-minimized': ReadSignal<'' | undefined>
+    'data-maximized': ReadSignal<'' | undefined>
+    hidden: ReadSignal<boolean>
+    style: ReadSignal<string>
   }
+  /**
+   * Pointer drag starts here, and it is also a keyboard stop (#266): arrows
+   * move the panel 10px (50px with Shift). Physical under RTL — the panel is
+   * positioned with physical `left`/`top`.
+   */
   dragHandle: {
+    /**
+     * A focusable, NAMED group: without a role an `aria-label` is prohibited
+     * on a generic element and assistive tech announced nothing (#268 audit).
+     * `group`, not `button`: the handle is the title bar and CONTAINS the
+     * minimize/maximize/close buttons (a button may not), and its action is
+     * the arrow keys `aria-keyshortcuts` names, not an activation.
+     */
+    role: 'group'
+    tabindex: 0
+    'aria-label': string
+    'aria-keyshortcuts': string
     'data-scope': 'floating-panel'
     'data-part': 'drag-handle'
     onPointerDown: (e: PointerEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
   content: {
     'data-scope': 'floating-panel'
     'data-part': 'content'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   minimizeTrigger: {
     type: 'button'
     'aria-label': string
+    /** A toggle: `'true'` while minimized. */
+    'aria-pressed': ReadSignal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'minimize-trigger'
     onClick: (e: MouseEvent) => void
@@ -298,6 +335,8 @@ export interface FloatingPanelParts {
   maximizeTrigger: {
     type: 'button'
     'aria-label': string
+    /** A toggle: `'true'` while maximized. */
+    'aria-pressed': ReadSignal<'true' | 'false'>
     'data-scope': 'floating-panel'
     'data-part': 'maximize-trigger'
     onClick: (e: MouseEvent) => void
@@ -309,11 +348,20 @@ export interface FloatingPanelParts {
     'data-part': 'close-trigger'
     onClick: (e: MouseEvent) => void
   }
+  /** A resize grip; also a keyboard stop whose arrows resize from this grip (#266). */
   resizeHandle: (handle: ResizeHandle) => {
+    /** A focusable, named group (see `dragHandle`): its action is the arrow
+     *  keys, and a thin edge grip is a window-chrome affordance, not a
+     *  pointer button. */
+    role: 'group'
+    tabindex: 0
+    'aria-label': string
+    'aria-keyshortcuts': string
     'data-scope': 'floating-panel'
     'data-part': 'resize-handle'
     'data-handle': ResizeHandle
     onPointerDown: (e: PointerEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
 }
 
@@ -322,10 +370,35 @@ export interface ConnectOptions {
   minimizeLabel?: string
   maximizeLabel?: string
   closeLabel?: string
+  moveLabel?: string
+  resizeLabel?: string
+}
+
+/** Pixel step of one arrow press; Shift uses the large step. */
+const KEY_STEP = 10
+const KEY_STEP_LARGE = 50
+const ARROW_KEYS =
+  'ArrowLeft ArrowRight ArrowUp ArrowDown Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown'
+
+/** The physical `[dx, dy]` of an arrow press, or undefined for any other key. */
+function arrowDelta(e: KeyboardEvent): readonly [number, number] | undefined {
+  const step = e.shiftKey ? KEY_STEP_LARGE : KEY_STEP
+  switch (e.key) {
+    case 'ArrowLeft':
+      return [-step, 0]
+    case 'ArrowRight':
+      return [step, 0]
+    case 'ArrowUp':
+      return [0, -step]
+    case 'ArrowDown':
+      return [0, step]
+    default:
+      return undefined
+  }
 }
 
 export function connect(
-  state: Signal<FloatingPanelState>,
+  state: ReadSignal<FloatingPanelState>,
   send: Send<FloatingPanelMsg>,
   opts: ConnectOptions = {},
 ): FloatingPanelParts {
@@ -351,9 +424,19 @@ export function connect(
       }),
     },
     dragHandle: {
+      role: 'group',
+      tabindex: 0,
+      'aria-label': opts.moveLabel ?? locale.move,
+      'aria-keyshortcuts': ARROW_KEYS,
       'data-scope': 'floating-panel',
       'data-part': 'drag-handle',
       onPointerDown: tagSend(send, ['dragStart'], () => send({ type: 'dragStart' })),
+      onKeyDown: tagSend(send, ['moveBy'], (e) => {
+        const delta = arrowDelta(e)
+        if (delta === undefined) return
+        e.preventDefault()
+        send({ type: 'moveBy', dx: delta[0], dy: delta[1] })
+      }),
     },
     content: {
       'data-scope': 'floating-panel',
@@ -365,6 +448,7 @@ export function connect(
       'aria-label': opts.minimizeLabel ?? locale.minimize,
       'data-scope': 'floating-panel',
       'data-part': 'minimize-trigger',
+      'aria-pressed': state.map((st) => (st.minimized ? 'true' : 'false')),
       onClick: tagSend(send, ['toggleMinimize'], () => send({ type: 'toggleMinimize' })),
     },
     maximizeTrigger: {
@@ -372,6 +456,7 @@ export function connect(
       'aria-label': opts.maximizeLabel ?? locale.maximize,
       'data-scope': 'floating-panel',
       'data-part': 'maximize-trigger',
+      'aria-pressed': state.map((st) => (st.maximized ? 'true' : 'false')),
       onClick: tagSend(send, ['toggleMaximize'], () => send({ type: 'toggleMaximize' })),
     },
     closeTrigger: {
@@ -382,10 +467,20 @@ export function connect(
       onClick: tagSend(send, ['close'], () => send({ type: 'close' })),
     },
     resizeHandle: (handle: ResizeHandle) => ({
+      role: 'group',
+      tabindex: 0,
+      'aria-label': opts.resizeLabel ?? locale.resize,
+      'aria-keyshortcuts': ARROW_KEYS,
       'data-scope': 'floating-panel',
       'data-part': 'resize-handle',
       'data-handle': handle,
       onPointerDown: tagSend(send, ['resizeStart'], () => send({ type: 'resizeStart', handle })),
+      onKeyDown: tagSend(send, ['resizeBy'], (e) => {
+        const delta = arrowDelta(e)
+        if (delta === undefined) return
+        e.preventDefault()
+        send({ type: 'resizeBy', handle, dx: delta[0], dy: delta[1] })
+      }),
     }),
   }
 }

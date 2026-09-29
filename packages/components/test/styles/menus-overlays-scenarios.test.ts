@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { ProductContractSchema } from '@llui/cli'
 import { PRESENTATION_SCENARIO_ENVIRONMENT_VALUES } from '@llui/cli/presentation-scenarios'
+import { loadProductContract } from './navigation-data-contract-source'
 import {
   MENUS_OVERLAYS_DEFINITIONS,
   compileMenusOverlaysCatalog,
@@ -11,12 +8,7 @@ import {
   type MenusOverlaysDefinitionScenarioId,
 } from './menus-overlays-scenarios'
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
-const registry = JSON.parse(readFileSync(resolve(ROOT, 'registry/registry.json'), 'utf8')) as {
-  productContract?: unknown
-  items?: { name: string; registryDependencies?: string[] }[]
-}
-const contract = ProductContractSchema.parse(registry.productContract)
+const contract = loadProductContract()
 const canonicalFamily = contract.entries.filter(
   (entry) => entry.presentation.family === 'menus-overlays',
 )
@@ -91,7 +83,7 @@ describe('menus-overlays real per-product scenario catalog (compileScenarioFamil
       'component:menubar',
       'pattern:searchable-select',
     ] as const) {
-      const cases = MENUS_OVERLAYS_DEFINITIONS[id].cases as readonly { readonly id: string }[]
+      const cases: readonly { readonly id: string }[] = MENUS_OVERLAYS_DEFINITIONS[id].cases
       expect(
         cases.some((c) => c.id === 'opening' || c.id === 'closing'),
         id,

@@ -712,7 +712,7 @@ describe('table.connect — full grid keyboard nav with single tab stop', () => 
     // literal `-1`, and comparing that to 0 directly is a compile error rather
     // than a runtime count.
     const countTabStops = (s: ReturnType<typeof init>): number => {
-      const isTabStop = (part: { tabindex: Signal<number> | number }): boolean =>
+      const isTabStop = (part: { tabindex: ReadSignal<number> | number }): boolean =>
         read<number>(part.tabindex, s) === 0
       let zeroCount = 0
       for (const c of s.columns) {
@@ -979,7 +979,7 @@ describe('table activateRow / focusCell handlers', () => {
 
 // --- local helpers ---
 
-import { pathHandle, type Signal } from '@llui/dom'
+import { pathHandle, type ReadSignal, type Signal } from '@llui/dom'
 
 function signalState<S>(value: S): Signal<S> {
   return pathHandle<S>(() => value, '')

@@ -3,7 +3,7 @@
   "type": "registry:ui",
   "title": "Carousel",
   "description": "Skin for @llui/components/carousel, with indicators and prev/next.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["button", "icons", "utils"],
   "files": [
     {

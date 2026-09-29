@@ -43,12 +43,13 @@ import { applyAttr } from './element.js'
 import { createContext, useContext, type Context } from './context.js'
 import { isSignalHandle } from './handle.js'
 import { serializeNodes, escapeAttr } from './ssr.js'
-import type { Signal } from './types.js'
+import type { ReadSignal } from './types.js'
 
 // ── Public value type ───────────────────────────────────────────────
-/** A head value: a plain value (committed once) or a `Signal` (committed on
- * mount and on every change). Mirrors how `foreign` accepts handles-or-values. */
-export type HeadValue<T> = T | Signal<T>
+/** A head value: a plain value (committed once) or a signal of either kind
+ * (committed on mount and on every change). Mirrors how `foreign` accepts
+ * handles-or-values. */
+export type HeadValue<T> = T | ReadSignal<T>
 
 const EMPTY_DEPS: readonly string[] = []
 

@@ -13,6 +13,7 @@ import {
   releaseFile,
   releaseDropped,
   trackedFileCount,
+  uploadOf,
 } from '../../src/components/file-upload'
 import type { FileMeta, FileUploadMsg, FileUploadState } from '../../src/components/file-upload'
 import { pathHandle, component, mountApp, div } from '@llui/dom'
@@ -595,6 +596,93 @@ describe('connect releases its handles at unmount', () => {
     const state = init({ files: [meta] })
     expect(() => connect(signalOf(state), vi.fn(), { id: 'x' })).not.toThrow()
     expect(getFile(meta)).toBeDefined()
+  })
+})
+
+// #266: the machine picked files but had nowhere to put what happened to them
+// next, so every app re-invented progress, failure and retry beside it — and a
+// skin had no state to style. Upload lifecycle is now per-file state keyed by
+// the file's stable `id` (never its index, which shifts on removal).
+describe('file-upload upload lifecycle (#266)', () => {
+  const a: FileMeta = { id: 'a', name: 'a.pdf', size: 1, type: 'application/pdf', lastModified: 0 }
+  const b: FileMeta = { id: 'b', name: 'b.pdf', size: 1, type: 'application/pdf', lastModified: 0 }
+  const two = (): FileUploadState => init({ multiple: true, files: [a, b] })
+
+  it('progress, success, failure and retry move one file at a time', () => {
+    let s = two()
+    ;[s] = update(s, { type: 'uploadProgress', id: 'a', progress: 0.4 })
+    expect(uploadOf(s, 'a')).toEqual({ status: 'uploading', progress: 0.4, error: null })
+    expect(uploadOf(s, 'b')).toBeUndefined()
+    ;[s] = update(s, { type: 'uploadFailed', id: 'a', error: 'Network error' })
+    expect(uploadOf(s, 'a')).toEqual({ status: 'error', progress: 0.4, error: 'Network error' })
+    ;[s] = update(s, { type: 'retryUpload', id: 'a' })
+    expect(uploadOf(s, 'a')).toEqual({ status: 'uploading', progress: 0, error: null })
+    ;[s] = update(s, { type: 'uploadSucceeded', id: 'a' })
+    expect(uploadOf(s, 'a')).toEqual({ status: 'done', progress: 1, error: null })
+  })
+
+  it('progress is clamped to [0, 1] and refused for a file that is not there', () => {
+    const s0 = two()
+    expect(
+      uploadOf(update(s0, { type: 'uploadProgress', id: 'a', progress: 7 })[0], 'a')?.progress,
+    ).toBe(1)
+    expect(
+      uploadOf(update(s0, { type: 'uploadProgress', id: 'a', progress: -1 })[0], 'a')?.progress,
+    ).toBe(0)
+    expect(update(s0, { type: 'uploadProgress', id: 'nope', progress: 0.5 })[0]).toBe(s0)
+    expect(update(s0, { type: 'uploadProgress', id: 'a', progress: Number.NaN })[0]).toBe(s0)
+  })
+
+  it('retry is only meaningful after a failure', () => {
+    const s0 = two()
+    expect(update(s0, { type: 'retryUpload', id: 'a' })[0]).toBe(s0)
+    // Not while it is still going, and never after it finished: a stray retry
+    // must not restart an upload that is in flight or already done.
+    const [uploading] = update(s0, { type: 'uploadProgress', id: 'a', progress: 0.6 })
+    expect(update(uploading, { type: 'retryUpload', id: 'a' })[0]).toBe(uploading)
+    const [done] = update(uploading, { type: 'uploadSucceeded', id: 'a' })
+    expect(update(done, { type: 'retryUpload', id: 'a' })[0]).toBe(done)
+  })
+
+  it('removing or clearing files drops their upload entries', () => {
+    let s = two()
+    ;[s] = update(s, { type: 'uploadProgress', id: 'a', progress: 0.5 })
+    ;[s] = update(s, { type: 'uploadProgress', id: 'b', progress: 0.5 })
+    const [removed] = update(s, { type: 'removeFile', index: 0 })
+    expect(Object.keys(removed.uploads)).toEqual(['b'])
+    expect(update(s, { type: 'clear' })[0].uploads).toEqual({})
+  })
+
+  it('stays a JSON round-trip identity', () => {
+    const [s] = update(two(), { type: 'uploadFailed', id: 'b', error: 'Too slow' })
+    expect(JSON.parse(JSON.stringify(s))).toEqual(s)
+  })
+
+  it('item parts publish status, a labelled progressbar, error text and a retry trigger', () => {
+    const send = vi.fn()
+    const s = update(update(two(), { type: 'uploadProgress', id: 'a', progress: 0.42 })[0], {
+      type: 'uploadFailed',
+      id: 'b',
+      error: 'Network error',
+    })[0]
+    const parts = connect(signalOf(s), send, { id: 'fu' })
+    const first = parts.item(0)
+    const second = parts.item(1)
+    expect(read(first.item['data-upload-status'], s)).toBe('uploading')
+    expect(read(second.item['data-upload-status'], s)).toBe('error')
+    expect(first.itemProgress.role).toBe('progressbar')
+    expect(first.itemProgress['aria-label']).toBe('Upload progress')
+    expect(read(first.itemProgress['aria-valuenow'], s)).toBe(42)
+    expect(read(first.itemProgress.hidden, s)).toBe(false)
+    expect(read(second.itemProgress.hidden, s)).toBe(true)
+    expect(read(first.itemProgressRange.style, s)).toBe('width:42%')
+    expect(read(second.itemErrorText.hidden, s)).toBe(false)
+    expect(read(first.itemErrorText.hidden, s)).toBe(true)
+    expect(read(second.itemRetryTrigger.hidden, s)).toBe(false)
+    expect(read(first.itemRetryTrigger.hidden, s)).toBe(true)
+    second.itemRetryTrigger.onClick(new MouseEvent('click'))
+    expect(send).toHaveBeenCalledWith({ type: 'retryUpload', id: 'b' })
+    expect(read(parts.root['data-uploading'], s)).toBe('')
   })
 })
 

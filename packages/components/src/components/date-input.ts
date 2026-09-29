@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { dateInputLocale } from '../locale/date-input.js'
 
@@ -193,19 +193,25 @@ export interface DateInputParts {
   root: {
     'data-scope': 'date-input'
     'data-part': 'root'
-    'data-disabled': Signal<'' | undefined>
-    'data-invalid': Signal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
   }
   input: {
     type: 'text'
     inputmode: 'numeric'
     autocomplete: 'off'
     spellcheck: false
-    value: Signal<string>
-    disabled: Signal<boolean>
-    readonly: Signal<boolean>
-    required: Signal<boolean>
-    'aria-invalid': Signal<'true' | undefined>
+    value: ReadSignal<string>
+    disabled: ReadSignal<boolean>
+    readonly: ReadSignal<boolean>
+    required: ReadSignal<boolean>
+    'aria-invalid': ReadSignal<'true' | undefined>
+    /**
+     * The error text's id while the value is invalid — so the field names its
+     * own error rather than relying on the one-shot `role="alert"`
+     * announcement (#268). Absent without a `ConnectOptions.id`.
+     */
+    'aria-describedby': ReadSignal<string | undefined>
     placeholder?: string
     'data-scope': 'date-input'
     'data-part': 'input'
@@ -215,31 +221,40 @@ export interface DateInputParts {
   clearTrigger: {
     type: 'button'
     'aria-label': string
-    disabled: Signal<boolean>
+    disabled: ReadSignal<boolean>
     'data-scope': 'date-input'
     'data-part': 'clear-trigger'
     onClick: (e: MouseEvent) => void
   }
   errorText: {
+    /** `<id>:error` when `ConnectOptions.id` is given. */
+    id: string | undefined
     role: 'alert'
     'aria-live': 'polite'
     'data-scope': 'date-input'
     'data-part': 'error-text'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
 }
 
 export interface ConnectOptions {
   placeholder?: string
   clearLabel?: string
+  /**
+   * Base id. With it, the error text gets `<id>:error` and the input's
+   * `aria-describedby` names it while the value is invalid; without it the
+   * error is announced once (`role="alert"`) but not associated with the field.
+   */
+  id?: string
 }
 
 export function connect(
-  state: Signal<DateInputState>,
+  state: ReadSignal<DateInputState>,
   send: Send<DateInputMsg>,
   opts: ConnectOptions = {},
 ): DateInputParts {
   const locale = dateInputLocale()
+  const errorId = opts.id === undefined ? undefined : `${opts.id}:error`
   return {
     root: {
       'data-scope': 'date-input',
@@ -257,6 +272,7 @@ export function connect(
       readonly: state.map((s) => s.readonly),
       required: state.map((s) => s.required),
       'aria-invalid': state.map((s) => (s.error ? 'true' : undefined)),
+      'aria-describedby': state.map((s) => (s.error ? errorId : undefined)),
       ...(opts.placeholder !== undefined ? { placeholder: opts.placeholder } : {}),
       'data-scope': 'date-input',
       'data-part': 'input',
@@ -277,6 +293,7 @@ export function connect(
       onClick: tagSend(send, ['clear'], () => send({ type: 'clear' })),
     },
     errorText: {
+      id: errorId,
       role: 'alert',
       'aria-live': 'polite',
       'data-scope': 'date-input',

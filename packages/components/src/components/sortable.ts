@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { sortableLocale } from '../locale/sortable.js'
 import { allFiniteNumbers } from '../utils/number.js'
 
@@ -7,20 +7,21 @@ import { allFiniteNumbers } from '../utils/number.js'
  * Sortable — pointer-based reorderable list.
  *
  * State machine tracks the currently-dragged item and where it's hovering.
- * The app owns the actual array; listen for `drop` and use `reorder(arr, from, to)`
- * to compute the new order, or watch `currentIndex` during drag for live preview.
+ * The app owns the actual array: `droppedMove(prev, msg)` names the move a
+ * message COMPLETES — a pointer `drop`, or a keyboard `toggleGrab` while an item
+ * is grabbed — and `reorder(arr, from, to)` applies it. Watch `currentIndex`
+ * during a drag for a live preview.
  *
  * ```ts
  * type State = { items: string[]; sort: SortableState }
  *
  * update: (state, msg) => {
  *   switch (msg.type) {
- *     case 'sort':
- *       return [{ ...state, sort: sortable.update(state.sort, msg.msg)[0] }, []]
- *     case 'drop': {
- *       const d = state.sort.dragging
- *       if (!d) return [state, []]
- *       return [{ ...state, items: reorder(state.items, d.startIndex, d.currentIndex) }, []]
+ *     case 'sort': {
+ *       const moved = sortable.droppedMove(state.sort, msg.msg)
+ *       const [sort] = sortable.update(state.sort, msg.msg)
+ *       const items = moved ? reorder(state.items, moved.from, moved.to) : state.items
+ *       return [{ items, sort }, []]
  *     }
  *   }
  * }
@@ -53,6 +54,38 @@ import { allFiniteNumbers } from '../utils/number.js'
  *
  * Hook up pointermove/pointerup at the root (attachPointerHandlers) — or
  * wire them directly via `onPointerMove` / `onPointerUp` on the root part.
+ *
+ * **Screen readers.** A keyboard user who grabs, moves, drops or cancels needs
+ * to HEAR it — nothing on screen tells them where the item is. The machine
+ * therefore owns two more parts, and both must be rendered:
+ *
+ * - `liveRegion` — a polite, atomic `role="status"` region whose `text` (a
+ *   Signal, rendered as the region's CHILD, never spread as an attribute)
+ *   announces "Picked up Apple, item 2 of 5.", "Apple moved to position 3 of
+ *   5.", the drop and a cancel. Render it visually hidden (`sr-only`), never
+ *   `display: none` — a hidden live region is never announced. Pass
+ *   `itemLabel` to name the item; without it the announcements say "item".
+ * - `instructions` — the how-to text, `hidden`, which every handle references
+ *   through `aria-describedby` (a directly referenced hidden element still
+ *   provides a description, and stays out of the reading order). A consumer
+ *   that supplies its own keyboard help and does not render this part passes
+ *   `hasInstructions: false`, so no handle names an element that does not
+ *   exist (the `dialog` `hasDescription` precedent, #268).
+ *
+ * ```ts
+ * const { text: live, ...liveAttrs } = s.liveRegion
+ * const { text: howTo, ...howToAttrs } = s.instructions
+ * div({ ...liveAttrs, class: 'sr-only' }, [text(live)])
+ * div({ ...howToAttrs }, [text(howTo)])
+ * ```
+ *
+ * The grab is `aria-pressed` on the handle (a toggle button: pressed while
+ * the item is carried). `aria-grabbed` is NOT used: ARIA 1.1 deprecated it and
+ * `aria-dropeffect` with no replacement, and screen readers never broadly
+ * exposed either — the live region is how every mature implementation (dnd-kit,
+ * React Aria) conveys a drag. `aria-roledescription` is deliberately not set:
+ * it would replace "toggle button", the one cue that Space operates the handle.
+ * All text comes from `LocaleContext` (`Locale['sortable']`).
  */
 
 export interface DragState {
@@ -89,15 +122,42 @@ export interface DragState {
    * Current pointer Y (viewport coordinates). `deltaY = currentY - startY`.
    */
   currentY: number
+  /**
+   * How many items the origin container held when the drag started — the "N"
+   * in "item 2 of N", and the last slot a keyboard `moveBy` may reach.
+   */
+  count: number
 }
+
+/**
+ * What the live region says about the latest drag event, as DATA (the text is
+ * rendered by `connect` through the locale). Positions are 0-based here;
+ * `container` is the origin container, the only one whose region speaks.
+ */
+export type SortableAnnouncement =
+  | { kind: 'grabbed'; container: string; id: string; position: number; count: number }
+  | { kind: 'moved'; container: string; id: string; position: number; count: number }
+  | { kind: 'dropped'; container: string; id: string; from: number; to: number; count: number }
+  | { kind: 'cancelled'; container: string; id: string; position: number; count: number }
 
 export interface SortableState {
   dragging: DragState | null
+  /** The latest announcement; `null` before any drag and after a cross-container drop. */
+  announcement: SortableAnnouncement | null
 }
 
 export type SortableMsg =
   /** @humanOnly */
-  | { type: 'start'; id: string; index: number; container: string; x: number; y: number }
+  | {
+      type: 'start'
+      id: string
+      index: number
+      /** Items in the origin container (for "item X of N"). */
+      count: number
+      container: string
+      x: number
+      y: number
+    }
   /** @humanOnly */
   | { type: 'move'; index: number; container: string; x: number; y: number }
   /** @humanOnly */
@@ -105,34 +165,57 @@ export type SortableMsg =
   /** @humanOnly */
   | { type: 'cancel' }
   /** @humanOnly */
-  | { type: 'toggleGrab'; id: string; index: number; container: string }
+  | { type: 'toggleGrab'; id: string; index: number; count: number; container: string }
   /** @humanOnly */
   | { type: 'moveBy'; delta: number }
 
 export function init(): SortableState {
-  return { dragging: null }
+  return { dragging: null, announcement: null }
+}
+
+/** The announcement a drag's END makes: where it landed, or `null` for another list's drop. */
+function dropAnnouncement(d: DragState): SortableAnnouncement | null {
+  if (d.toContainer !== d.fromContainer) return null
+  return {
+    kind: 'dropped',
+    container: d.fromContainer,
+    id: d.id,
+    from: d.startIndex,
+    to: d.currentIndex,
+    count: d.count,
+  }
+}
+
+function grab(
+  id: string,
+  index: number,
+  count: number,
+  container: string,
+  x: number,
+  y: number,
+): SortableState {
+  return {
+    dragging: {
+      id,
+      startIndex: index,
+      currentIndex: index,
+      fromContainer: container,
+      toContainer: container,
+      startX: x,
+      startY: y,
+      currentX: x,
+      currentY: y,
+      count,
+    },
+    announcement: { kind: 'grabbed', container, id, position: index, count },
+  }
 }
 
 export function update(state: SortableState, msg: SortableMsg): [SortableState, never[]] {
   if (!allFiniteNumbers(msg)) return [state, []]
   switch (msg.type) {
     case 'start':
-      return [
-        {
-          dragging: {
-            id: msg.id,
-            startIndex: msg.index,
-            currentIndex: msg.index,
-            fromContainer: msg.container,
-            toContainer: msg.container,
-            startX: msg.x,
-            startY: msg.y,
-            currentX: msg.x,
-            currentY: msg.y,
-          },
-        },
-        [],
-      ]
+      return [grab(msg.id, msg.index, msg.count, msg.container, msg.x, msg.y), []]
     case 'move': {
       if (!state.dragging) return [state, []]
       if (
@@ -143,53 +226,105 @@ export function update(state: SortableState, msg: SortableMsg): [SortableState, 
       ) {
         return [state, []]
       }
+      const d = state.dragging
+      // A new SLOT in the origin list is announced; a coordinate-only move is
+      // not (it would re-announce on every pointer frame), and neither is a
+      // hover over another list, whose size this machine does not know.
+      const slotChanged = d.currentIndex !== msg.index || d.toContainer !== msg.container
+      const announcement: SortableAnnouncement | null =
+        slotChanged && msg.container === d.fromContainer
+          ? {
+              kind: 'moved',
+              container: d.fromContainer,
+              id: d.id,
+              position: msg.index,
+              count: d.count,
+            }
+          : state.announcement
       return [
         {
           dragging: {
-            ...state.dragging,
+            ...d,
             currentIndex: msg.index,
             toContainer: msg.container,
             currentX: msg.x,
             currentY: msg.y,
           },
+          announcement,
         },
         [],
       ]
     }
     case 'drop':
-      return state.dragging ? [{ dragging: null }, []] : [state, []]
-    case 'cancel':
-      return state.dragging ? [{ dragging: null }, []] : [state, []]
-    case 'toggleGrab':
-      if (state.dragging) {
-        // Already dragging — drop at current position
-        return [{ dragging: null }, []]
-      }
-      // Pick up (keyboard — no pointer position)
+      return state.dragging
+        ? [{ dragging: null, announcement: dropAnnouncement(state.dragging) }, []]
+        : [state, []]
+    case 'cancel': {
+      const d = state.dragging
+      if (!d) return [state, []]
       return [
         {
-          dragging: {
-            id: msg.id,
-            startIndex: msg.index,
-            currentIndex: msg.index,
-            fromContainer: msg.container,
-            toContainer: msg.container,
-            startX: 0,
-            startY: 0,
-            currentX: 0,
-            currentY: 0,
+          dragging: null,
+          announcement: {
+            kind: 'cancelled',
+            container: d.fromContainer,
+            id: d.id,
+            position: d.startIndex,
+            count: d.count,
           },
         },
         [],
       ]
+    }
+    case 'toggleGrab':
+      if (state.dragging) {
+        // Already dragging — drop at current position
+        return [{ dragging: null, announcement: dropAnnouncement(state.dragging) }, []]
+      }
+      // Pick up (keyboard — no pointer position)
+      return [grab(msg.id, msg.index, msg.count, msg.container, 0, 0), []]
     case 'moveBy': {
-      if (!state.dragging) return [state, []]
-      const next = Math.max(0, state.dragging.currentIndex + msg.delta)
+      const d = state.dragging
+      if (!d) return [state, []]
+      // Never past either end: the drop target is always a real slot.
+      const next = Math.min(Math.max(0, d.count - 1), Math.max(0, d.currentIndex + msg.delta))
       if (!Number.isFinite(next)) return [state, []]
-      if (next === state.dragging.currentIndex) return [state, []]
-      return [{ dragging: { ...state.dragging, currentIndex: next } }, []]
+      if (next === d.currentIndex) return [state, []]
+      return [
+        {
+          dragging: { ...d, currentIndex: next },
+          announcement: {
+            kind: 'moved',
+            container: d.fromContainer,
+            id: d.id,
+            position: next,
+            count: d.count,
+          },
+        },
+        [],
+      ]
     }
   }
+}
+
+/**
+ * The reorder a message COMPLETES, or `null`. A pointer `drop` and a keyboard
+ * `toggleGrab` while an item is grabbed both end a drag at `currentIndex`;
+ * `cancel` (Escape, pointercancel) ends one WITHOUT a move. Only a drop inside
+ * the container the drag started from is a reorder of that list — a drop onto
+ * another container is the consumer's transfer to handle.
+ *
+ * Call it with the state BEFORE `update` runs.
+ */
+export function droppedMove(
+  prev: SortableState,
+  msg: SortableMsg,
+): { from: number; to: number } | null {
+  const d = prev.dragging
+  if (d === null) return null
+  if (msg.type !== 'drop' && msg.type !== 'toggleGrab') return null
+  if (d.fromContainer !== d.toContainer) return null
+  return { from: d.startIndex, to: d.currentIndex }
 }
 
 export interface SortableParts {
@@ -197,7 +332,7 @@ export interface SortableParts {
     'data-scope': 'sortable'
     'data-part': 'root'
     'data-container-id': string
-    'data-dragging': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
     onPointerMove: (e: PointerEvent) => void
     onPointerUp: (e: PointerEvent) => void
     onPointerCancel: (e: PointerEvent) => void
@@ -210,11 +345,11 @@ export interface SortableParts {
     'data-part': 'item'
     'data-index': string
     'data-id': string
-    'data-dragging': Signal<'' | undefined>
-    'data-over': Signal<'' | undefined>
-    'data-shift': Signal<'up' | 'down' | undefined>
-    'style.transform': Signal<string | undefined>
-    'style.zIndex': Signal<string | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-over': ReadSignal<'' | undefined>
+    'data-shift': ReadSignal<'up' | 'down' | undefined>
+    'style.transform': ReadSignal<string | undefined>
+    'style.zIndex': ReadSignal<string | undefined>
   }
   handle: (
     id: string,
@@ -224,10 +359,40 @@ export interface SortableParts {
     'data-part': 'handle'
     role: 'button'
     tabindex: 0
-    'aria-grabbed': Signal<boolean>
+    /** A toggle button: pressed while this handle's item is carried. */
+    'aria-pressed': ReadSignal<boolean>
     'aria-label': string
+    /** The `instructions` part's id, or absent when `hasInstructions: false`. */
+    'aria-describedby': string | undefined
     onPointerDown: (e: PointerEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
+  }
+  /**
+   * The polite live region announcing grab / move / drop / cancel. `text` is
+   * the region's CHILD (a Signal), not an attribute: spread the rest and render
+   * `text(text)` inside. Keep it visually hidden but rendered (`sr-only`) — a
+   * `display: none` region is never announced. Only the ORIGIN container's
+   * region speaks, so connects that share one state never announce twice.
+   */
+  liveRegion: {
+    role: 'status'
+    'aria-live': 'polite'
+    'aria-atomic': 'true'
+    'data-scope': 'sortable'
+    'data-part': 'live-region'
+    text: ReadSignal<string>
+  }
+  /**
+   * The keyboard instructions every handle's `aria-describedby` points at.
+   * `hidden`: a directly referenced hidden element still supplies the
+   * description, and stays out of the reading order. `text` is its CHILD.
+   */
+  instructions: {
+    id: string
+    hidden: true
+    'data-scope': 'sortable'
+    'data-part': 'instructions'
+    text: string
   }
 }
 
@@ -259,10 +424,28 @@ export interface ConnectOptions {
    * underlying data order actually is.
    */
   layout?: '1d' | '2d'
+  /**
+   * The name a listener hears for an item, from its `id` ("Picked up Apple,
+   * item 2 of 5."; "Drag handle for Apple"). Without it the announcements say
+   * "item" and every handle has the same label.
+   */
+  itemLabel?: (id: string) => string
+  /**
+   * Whether the consumer renders the `instructions` part (default: true).
+   * When false, no handle carries `aria-describedby` — it would otherwise name
+   * an element that does not exist, a broken reference assistive technology
+   * reports as a missing description (the `dialog` `hasDescription` rule,
+   * #268). The default is ON, as for `dialog`, because the instructions are
+   * the ONLY place the keyboard model is described (the handle's name is just
+   * "Drag handle"): leaving them out must be a deliberate, visible choice, not
+   * the quiet default. `command-menu` defaults its description OFF only
+   * because its own view renders none; here the consumer renders the part.
+   */
+  hasInstructions?: boolean
 }
 
 export function connect(
-  state: Signal<SortableState>,
+  state: ReadSignal<SortableState>,
   send: Send<SortableMsg>,
   opts: ConnectOptions,
 ): SortableParts {
@@ -270,6 +453,24 @@ export function connect(
   const containerId = opts.id
   const layout = opts.layout ?? '1d'
   const locale = sortableLocale()
+  const instructionsId = `${containerId}:instructions`
+  const describedBy = opts.hasInstructions === false ? undefined : instructionsId
+  const labelOf = (id: string): string | undefined => opts.itemLabel?.(id)
+
+  function announce(a: SortableAnnouncement | null): string {
+    if (a === null || a.container !== containerId) return ''
+    const item = labelOf(a.id)
+    switch (a.kind) {
+      case 'grabbed':
+        return locale.grabbed(item, a.position + 1, a.count)
+      case 'moved':
+        return locale.moved(item, a.position + 1, a.count)
+      case 'dropped':
+        return locale.dropped(item, a.from + 1, a.to + 1, a.count)
+      case 'cancelled':
+        return locale.cancelled(item, a.position + 1, a.count)
+    }
+  }
 
   // Snapshots taken at drag start — stable throughout the drag so computing
   // the target index is not affected by items visually shifting via CSS.
@@ -362,7 +563,35 @@ export function connect(
     return null
   }
 
+  // The CURRENT position of a handle's item among its container's items. The
+  // `index` a handle closes over is frozen at render: a keyed `each()` moves
+  // the row nodes on a reorder without re-running their render, so after the
+  // first drop it names the wrong slot. The DOM is the live order.
+  function liveItems(handle: Element): { index: number | null; count: number } {
+    const itemEl = handle.closest('[data-scope="sortable"][data-part="item"]')
+    const rootEl = handle.closest('[data-scope="sortable"][data-part="root"]')
+    if (itemEl === null || rootEl === null) return { index: null, count: 0 }
+    const items = Array.from(rootEl.querySelectorAll('[data-scope="sortable"][data-part="item"]'))
+    const at = items.indexOf(itemEl)
+    return { index: at === -1 ? null : at, count: items.length }
+  }
+
   return {
+    liveRegion: {
+      role: 'status',
+      'aria-live': 'polite',
+      'aria-atomic': 'true',
+      'data-scope': 'sortable',
+      'data-part': 'live-region',
+      text: state.map((s) => announce(s.announcement)),
+    },
+    instructions: {
+      id: instructionsId,
+      hidden: true,
+      'data-scope': 'sortable',
+      'data-part': 'instructions',
+      text: locale.instructions,
+    },
     root: {
       'data-scope': 'sortable',
       'data-part': 'root',
@@ -496,11 +725,12 @@ export function connect(
       'data-part': 'handle',
       role: 'button',
       tabindex: 0,
-      'aria-grabbed': state.map((s) => {
+      'aria-pressed': state.map((s) => {
         const d = s.dragging
         return d?.id === id && d?.fromContainer === containerId
       }),
-      'aria-label': locale.handle,
+      'aria-label': locale.handle(labelOf(id)),
+      'aria-describedby': describedBy,
       onPointerDown: tagSend(send, ['start'], (e) => {
         e.preventDefault()
         const target = e.currentTarget as Element | null
@@ -513,31 +743,9 @@ export function connect(
             // Ignore — not all elements support pointer capture
           }
         }
-        // Compute the CURRENT DOM index of this handle's item — the captured
-        // `index` param is stale after a reorder (each() moves keyed nodes
-        // without re-running render, so the closure's index is frozen at
-        // initial mount). Walk up to find the containing item, then count its
-        // position among sibling items.
-        let currentIndex = index
-        if (target) {
-          const itemEl = (target as Element).closest<HTMLElement>(
-            '[data-scope="sortable"][data-part="item"]',
-          )
-          const rootEl = (target as Element).closest<HTMLElement>(
-            '[data-scope="sortable"][data-part="root"]',
-          )
-          if (itemEl && rootEl) {
-            const items = rootEl.querySelectorAll<HTMLElement>(
-              '[data-scope="sortable"][data-part="item"]',
-            )
-            for (let i = 0; i < items.length; i++) {
-              if (items[i] === itemEl) {
-                currentIndex = i
-                break
-              }
-            }
-          }
-        }
+        // The CURRENT DOM index of this handle's item (see `liveItems`).
+        const live = target ? liveItems(target) : { index: null, count: 0 }
+        const currentIndex = live.index ?? index
         // Snapshot positions BEFORE the drag starts, so subsequent pointermove
         // events can resolve the target index against stable (pre-transform)
         // positions. Otherwise items shifting via CSS would cause the target
@@ -547,27 +755,57 @@ export function connect(
           type: 'start',
           id,
           index: currentIndex,
+          count: Math.max(live.count, currentIndex + 1),
           container: containerId,
           x: e.clientX,
           y: e.clientY,
         })
       }),
       onKeyDown: tagSend(send, ['toggleGrab', 'cancel', 'moveBy'], (e) => {
+        const target = e.currentTarget instanceof HTMLElement ? e.currentTarget : null
+        const live = target ? liveItems(target) : { index: null, count: 0 }
         switch (e.key) {
           case ' ':
-          case 'Enter':
+          case 'Enter': {
             e.preventDefault()
-            send({ type: 'toggleGrab', id, index, container: containerId })
+            const dropping = state.peek().dragging !== null
+            const at = live.index ?? index
+            send({
+              type: 'toggleGrab',
+              id,
+              index: at,
+              count: Math.max(live.count, at + 1),
+              container: containerId,
+            })
+            // A drop the consumer applies MOVES this row, and moving a
+            // focused node drops its focus to <body>: the keyboard user
+            // would lose their place on the very item they just placed.
+            // Put focus back on the handle once the reorder has landed —
+            // now for a synchronous commit, next frame for a deferred one.
+            if (dropping && target !== null) {
+              const restore = (): void => {
+                const active = target.ownerDocument.activeElement
+                if (target.isConnected && (active === null || active === target.ownerDocument.body))
+                  target.focus()
+              }
+              restore()
+              if (typeof requestAnimationFrame === 'function') requestAnimationFrame(restore)
+            }
             return
+          }
           case 'Escape':
             e.preventDefault()
             send({ type: 'cancel' })
             return
           case 'ArrowDown':
-          case 'ArrowRight':
+          case 'ArrowRight': {
             e.preventDefault()
+            // The drop target is always a real slot: never past the last item.
+            const d = state.peek().dragging
+            if (d !== null && live.count > 0 && d.currentIndex >= live.count - 1) return
             send({ type: 'moveBy', delta: 1 })
             return
+          }
           case 'ArrowUp':
           case 'ArrowLeft':
             e.preventDefault()
@@ -598,4 +836,4 @@ export function reorder<T>(arr: readonly T[], from: number, to: number): T[] {
   return result
 }
 
-export const sortable = { init, update, connect, reorder }
+export const sortable = { init, update, connect, reorder, droppedMove }

@@ -1,11 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
 import { component, div, li, mountApp, text, type Mountable } from '@llui/dom'
 import { compileCandidates } from '../../scripts/lib/tailwind-compile.mjs'
 import { ProductContractSchema } from '../../packages/cli/src/product-contract'
-import { FORM_CONTROL_SCENARIOS } from '../../packages/components/test/styles/fixtures/form-control-scenarios'
+import {
+  FORM_CONTROL_SCENARIOS,
+  type FormControlScenario,
+} from '../../packages/components/test/styles/fixtures/form-control-scenarios'
 import { AngleSliderControl, AngleSliderThumb } from '../llui/ui/angle-slider'
 import { Button } from '../llui/ui/button'
 import { ButtonGroup } from '../llui/ui/button-group'
@@ -47,13 +50,21 @@ import { Textarea } from '../llui/ui/textarea'
 import { ThemeSwitchOption } from '../llui/ui/theme-switch'
 import { Toggle } from '../llui/ui/toggle'
 import { ToggleGroup, ToggleGroupItem } from '../llui/ui/toggle-group'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const ROOT = resolve(import.meta.dirname, '../..')
 const STYLES = resolve(ROOT, 'packages/components/src/styles')
-const registryManifest = JSON.parse(
+const registryManifest: unknown = JSON.parse(
   readFileSync(resolve(ROOT, 'registry/registry.json'), 'utf8'),
-) as {
-  productContract?: unknown
+)
+if (
+  typeof registryManifest !== 'object' ||
+  registryManifest === null ||
+  !('productContract' in registryManifest)
+) {
+  throw new Error('registry/registry.json carries no productContract')
 }
 const formProducts = ProductContractSchema.parse(registryManifest.productContract).entries.filter(
   ({ presentation }) => presentation.family === 'forms-controls',
@@ -68,6 +79,8 @@ const baselineCss = [
   .join('\n')
 
 type ScenarioId = keyof typeof FORM_CONTROL_SCENARIOS
+
+const isScenarioId = (id: string): id is ScenarioId => Object.hasOwn(FORM_CONTROL_SCENARIOS, id)
 type StylingPath = 'baseline' | 'registry'
 
 const applicableProductIds = (path: StylingPath): string[] =>
@@ -85,7 +98,8 @@ const renderedProductIds = (markup: string): string[] => {
   template.innerHTML = markup
   return [...template.content.querySelectorAll<HTMLElement>('[data-scenario-id]')]
     .map((element) => {
-      const scenarioId = element.dataset['scenarioId'] as ScenarioId
+      const scenarioId = element.dataset['scenarioId'] ?? ''
+      if (!isScenarioId(scenarioId)) throw new Error(`unknown scenario id ${scenarioId}`)
       return FORM_CONTROL_SCENARIOS[scenarioId].productId
     })
     .sort()
@@ -96,7 +110,10 @@ const concernProductIds = (
   concern: 'dark' | 'high-contrast' | 'rtl',
 ): string[] =>
   Object.values(FORM_CONTROL_SCENARIOS)
-    .filter((scenario) => {
+    // Widened to the row type: the table is `as const`, so without this the
+    // element is a union of literal tuples and `states.includes` only accepts
+    // the states EVERY scenario lists (`'default' | 'disabled'`).
+    .filter((scenario: FormControlScenario) => {
       const coverage = path === 'baseline' ? scenario.baseline : scenario.registryTailwind
       return (coverage === 'styled' || coverage === 'partial') && scenario.states.includes(concern)
     })
@@ -785,7 +802,7 @@ describe('forms-controls baseline/registry parity in real Tailwind + Chromium', 
     const compiled = await compileCandidates(fixture.candidates)
     expect(compiled.dead).toEqual([])
     registryCss = compiled.css
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
   })
 
   afterAll(async () => {
@@ -1001,7 +1018,7 @@ describe('forms-controls baseline/registry parity in real Tailwind + Chromium', 
 
   it('derives high-contrast coverage from canonical scenario IDs with explicit path truth', () => {
     const canonical = Object.entries(FORM_CONTROL_SCENARIOS)
-      .filter(([, value]) => value.states.includes('high-contrast'))
+      .filter(([, value]: [string, FormControlScenario]) => value.states.includes('high-contrast'))
       .map(([scenarioId]) => scenarioId)
       .sort()
     expect(Object.keys(HIGH_CONTRAST_COVERAGE).sort()).toEqual(canonical)

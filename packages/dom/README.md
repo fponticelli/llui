@@ -55,6 +55,8 @@ mountApp(document.getElementById('app')!, Counter)
 
 Element helpers (`div`, `button`, …) and structural primitives (`each`, `show`, `branch`, …) are **module imports**, not bag members. Combine multiple signals with `derived([a, b], (av, bv) => …)`.
 
+**Signal types.** `Signal<T>` is a _path_ signal (`state`, anything from `.at()`, an `each` row's `item`/`index`, `constant(v)`) and has `.at()`. `.map()` and `derived()` return a `MappedSignal<T>`, which has no path and so no `.at()` — and is **not** a `Signal`. `ReadSignal<T>` (`map` + `peek`) is the supertype of both, and it is what every read-only API accepts (element props, `text`, `each` items, `show`/`branch` conditions, `derived` inputs, `foreign` state, `island` props). Type a helper parameter `ReadSignal<T>` unless the helper calls `.at()` on it.
+
 ## Mountable — everything you build is a lazy description
 
 Every authoring helper (`el`/`div`/`text`/`each`/`show`/`branch`/`unsafeHtml`/`lazy`/`virtualEach`/`foreign`/`portal`/`provide`) returns a **`Mountable`** — a recipe materialized into live DOM at the point it is _placed_ (as an element child, or in a view / arm / row return). Consequences:
@@ -103,17 +105,26 @@ Factor sub-views as plain functions that take signal handles — they run via th
 
 ```typescript
 import { button, h1, text } from '@llui/dom'
-import type { Signal, Renderable } from '@llui/dom'
+import type { ReadSignal, Renderable } from '@llui/dom'
 
 type HeaderMsg = { type: 'menu' }
 
-function header(title: Signal<string>, send: (m: HeaderMsg) => void): Renderable {
+// `title` is only read, so it is a ReadSignal: both a slice and a derive fit.
+function header(title: ReadSignal<string>, send: (m: HeaderMsg) => void): Renderable {
   return [h1([text(title)]), button({ onClick: () => send({ type: 'menu' }) }, [text('☰')])]
 }
 
 // in view:
-view: ({ state, send }) => [...header(state.at('title'), send)]
+view: ({ state, send }) => [
+  ...header(state.at('title'), send),
+  ...header(
+    state.map((s) => `${s.title} (${s.unread})`),
+    send,
+  ),
+]
 ```
+
+A helper that calls `.at()` on its parameter takes `Signal<T>` instead — and then a `.map()`/`derived()` argument is a compile error (`MappedSignal<…>` is not assignable to `Signal<…>`), rather than a throw at mount.
 
 ## Effects
 

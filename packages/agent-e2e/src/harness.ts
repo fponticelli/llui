@@ -1,10 +1,11 @@
-import { chromium, type Browser, type Page } from '@playwright/test'
+import type { Browser, LaunchOptions, Page } from '@playwright/test'
 import {
   createLluiAgentServer,
   InMemoryTokenStore,
   defaultRateLimiter,
   type AgentServerHandle,
 } from '@llui/agent/server'
+import type { MintResponse } from '@llui/agent/protocol'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import type { IncomingMessage } from 'node:http'
@@ -20,12 +21,10 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type MintResult = {
-  token: string
-  wsUrl: string
-  lapUrl: string
-  tid: string
-}
+/** The fields of the `/agent/mint` response the harness uses — typed from the
+ * protocol's own envelope, so `token` is the branded `AgentToken` the client's
+ * `AgentOpenWS` effect expects. */
+export type MintResult = Pick<MintResponse, 'token' | 'wsUrl' | 'lapUrl' | 'tid'>
 
 export type E2EContext = {
   browser: Browser
@@ -48,9 +47,19 @@ export type E2EContext = {
   close: () => Promise<void>
 }
 
+/**
+ * Launches the browser. Tests pass the hermetic launcher from
+ * `scripts/lib/hermetic-browser.mjs` (`useHermeticBrowser()`, registered at the
+ * test file's top level), so every request the page makes is decided by the
+ * repo's network policy and an off-machine one fails the test.
+ */
+export interface BrowserLauncher {
+  launch(options?: LaunchOptions): Promise<Browser>
+}
+
 // ── setup ─────────────────────────────────────────────────────────────────────
 
-export async function setup(): Promise<E2EContext> {
+export async function setup(browserLauncher: BrowserLauncher): Promise<E2EContext> {
   // 1. Bundle the browser-side host app.
   const bundle = await bundleHost()
 
@@ -59,9 +68,9 @@ export async function setup(): Promise<E2EContext> {
     tokenStore: new InMemoryTokenStore(),
     identityResolver: async () => 'e2e-user',
     auditSink: { write: async () => undefined },
-    // Tests poll mint+connect (retry until the WS hello lands) which, under load,
-    // can exceed the production 30/min default. Rate limiting isn't under test
-    // here, so lift it well clear of any retry storm.
+    // Rate limiting isn't under test here, and the production 30/min default
+    // would make the suite's behaviour depend on how many LAP calls one test
+    // happens to make. Lift it clear of anything a test does.
     rateLimiter: defaultRateLimiter({ perBucket: '100000/minute' }),
   })
 
@@ -156,17 +165,13 @@ export async function setup(): Promise<E2EContext> {
   // every package's build/test at once), where a correct-but-CPU-starved browser
   // launch + bundle-serve + app mount can be slow. The vitest `hookTimeout` gives
   // the outer bound; these keep individual steps from tripping their own default.
-  const browser = await chromium.launch({ headless: true, timeout: 60_000 })
+  const browser = await browserLauncher.launch({ headless: true, timeout: 60_000 })
   const page = await browser.newPage()
   await page.goto(`http://localhost:${httpPort}/`)
   // Wait until host.ts has finished bootstrapping and exposed the globals.
-  await page.waitForFunction(
-    () => typeof (window as unknown as Record<string, unknown>)['__lluiE2eClient'] !== 'undefined',
-    undefined,
-    {
-      timeout: 30_000,
-    },
-  )
+  await page.waitForFunction(() => window.__lluiE2eClient !== undefined, undefined, {
+    timeout: 30_000,
+  })
 
   // ── Helper: mint + open WS ────────────────────────────────────────────────
   const mintToken = async (): Promise<MintResult> => {
@@ -179,9 +184,8 @@ export async function setup(): Promise<E2EContext> {
 
     // Ask the browser's AgentClient to open the WS for this token.
     await page.evaluate(async (b: MintResult) => {
-      const client = (window as unknown as Record<string, unknown>)['__lluiE2eClient'] as {
-        effectHandler: (e: unknown) => Promise<void>
-      }
+      const client = window.__lluiE2eClient
+      if (!client) throw new Error('__lluiE2eClient is not installed')
       await client.effectHandler({ type: 'AgentOpenWS', token: b.token, wsUrl: b.wsUrl })
     }, body)
 

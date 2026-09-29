@@ -148,4 +148,21 @@ describe('scroll-area.connect', () => {
     const shown = dims({ visibility: 'hover', overflowY: true, hovered: true })
     expect(read(p.scrollbarY['data-visible'], shown)).toBe('')
   })
+
+  // #266: in an RTL viewport the browser reports `scrollLeft` from 0 down to
+  // -(scrollWidth - clientWidth). The thumb read that as a NEGATIVE position
+  // and placed itself with physical `left`, so it slid out of its track the
+  // moment the user scrolled. Position is now the distance from the START edge
+  // and the thumb is placed with `inset-inline-start`.
+  it('the horizontal thumb tracks an RTL (negative) scrollLeft from the start edge', () => {
+    const p = connect(rootSignal(), vi.fn())
+    const base = { scrollWidth: 400, clientWidth: 100, overflowX: true }
+    const ltr = dims({ ...base, scrollLeft: 150 })
+    const rtl = dims({ ...base, scrollLeft: -150 })
+    expect(thumbPosition(rtl, 'x')).toBeCloseTo(0.5)
+    expect(thumbPosition(rtl, 'x')).toBe(thumbPosition(ltr, 'x'))
+    const style = read(p.thumbX.style, rtl)
+    expect(style).toContain('inset-inline-start:37.50%')
+    expect(style).not.toMatch(/(^|;)left:/)
+  })
 })

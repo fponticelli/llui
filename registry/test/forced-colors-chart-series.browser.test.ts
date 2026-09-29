@@ -1,18 +1,23 @@
 // @vitest-environment node
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright'
-import { createServer, type Alias, type ViteDevServer } from 'vite'
+import type { Browser, BrowserContext, Page } from 'playwright'
+import type { Alias } from 'vite'
 import { resolve } from 'node:path'
 import { sourceAliasesFromExports } from '../../scripts/lib/vite-source-aliases.mjs'
+import { prebuildFixture, type PrebuiltFixture } from '../../scripts/lib/prebuilt-fixture.mjs'
 import { contrast, srgb8ToLinear } from '../../scripts/lib/oklch.mjs'
 import {
   distinctPaintedColorCount,
   paintedColors,
   paintedSpatialSignature,
 } from '../../packages/components/test/styles/pixel-probe'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
 
-// Matches the fixture's SERIES keys (both examples' forced-colors-chart.ts).
+const hermetic = useHermeticBrowser()
+
+// Matches the fixture's SERIES keys (both paths' `src/test-fixtures/forced-colors-chart.ts`:
+// `examples/baseline-css` for the Baseline theme, `examples/registry-demo` for the Registry skins).
 const SERIES_KEYS = ['bar1', 'bar2', 'bar3', 'area1', 'area2', 'area3']
 
 /**
@@ -63,19 +68,19 @@ const sourceAliases: Alias[] = [
   }),
 ]
 
-async function startExample(directory: string): Promise<{ server: ViteDevServer; url: string }> {
-  const server = await createServer({
+const FIXTURE = 'src/test-fixtures/forced-colors-chart.html'
+
+// Built once and served static (`scripts/lib/prebuilt-fixture.mjs`): every
+// test opens its own forced-colors context, and on a Vite dev server each of
+// those pages re-fetched the fixture's whole unbundled module graph, the first
+// one compiling it on demand inside a test's budget, while sharing each
+// example's dependency-optimizer cache with every concurrent suite serving it.
+function buildExample(directory: string): Promise<PrebuiltFixture> {
+  return prebuildFixture({
     root: resolve(repoRoot, directory),
-    logLevel: 'error',
-    resolve: { alias: sourceAliases },
-    server: { host: '127.0.0.1', port: 0 },
+    inputs: [FIXTURE],
+    alias: sourceAliases,
   })
-  await server.listen()
-  const address = server.httpServer?.address()
-  if (address === null || address === undefined || typeof address === 'string') {
-    throw new Error(`Vite did not bind ${directory} to a TCP port`)
-  }
-  return { server, url: `http://127.0.0.1:${address.port}/` }
 }
 
 interface RGB {
@@ -126,6 +131,11 @@ async function paintedColorCount(page: Page, twoTone: boolean): Promise<number> 
     for (let x = 0; x < decoded.width; x++) {
       for (let y = 0; y < decoded.height; y++) {
         const [r, g, b, a] = decodedCtx.getImageData(x, y, 1, 1).data
+        // A 1x1 read always carries four channels; a short one is a broken
+        // probe, so it throws rather than defaulting into a skipped pixel.
+        if (r === undefined || g === undefined || b === undefined || a === undefined) {
+          throw new Error('getImageData(1x1) returned fewer than four channels')
+        }
         if (a === 0) continue
         colors.add(`${bucket(r)},${bucket(g)},${bucket(b)}`)
       }
@@ -179,6 +189,11 @@ async function patternColorCount(page: Page, patternId: string): Promise<number>
     for (let x = 0; x < canvas.width; x++) {
       for (let y = 0; y < canvas.height; y++) {
         const [r, g, b, a] = ctx.getImageData(x, y, 1, 1).data
+        // A 1x1 read always carries four channels; a short one is a broken
+        // probe, so it throws rather than defaulting into a skipped pixel.
+        if (r === undefined || g === undefined || b === undefined || a === undefined) {
+          throw new Error('getImageData(1x1) returned fewer than four channels')
+        }
         if (a === 0) continue
         colors.add(`${bucket(r)},${bucket(g)},${bucket(b)}`)
       }
@@ -278,28 +293,26 @@ async function selfCheckHarness(page: Page): Promise<void> {
 
 describe('forced-colors chart series distinctness (real pixels, both paths)', () => {
   let browser: Browser
-  let servers: ViteDevServer[] = []
+  let fixtures: PrebuiltFixture[] = []
   let demos: { path: 'baseline' | 'registryTailwind'; url: string }[] = []
 
   beforeAll(async () => {
-    const [baseline, registryTailwind] = await Promise.all([
-      startExample('examples/components-demo'),
-      startExample('examples/registry-demo'),
+    const [baseline, registryTailwind, launched] = await Promise.all([
+      buildExample('examples/baseline-css'),
+      buildExample('examples/registry-demo'),
+      hermetic.launch({ headless: true }),
     ])
-    servers = [baseline.server, registryTailwind.server]
+    fixtures = [baseline, registryTailwind]
+    browser = launched
     demos = [
-      { path: 'baseline', url: `${baseline.url}src/test-fixtures/forced-colors-chart.html` },
-      {
-        path: 'registryTailwind',
-        url: `${registryTailwind.url}src/test-fixtures/forced-colors-chart.html`,
-      },
+      { path: 'baseline', url: baseline.url(FIXTURE) },
+      { path: 'registryTailwind', url: registryTailwind.url(FIXTURE) },
     ]
-    browser = await chromium.launch({ headless: true })
   }, 120_000)
 
   afterAll(async () => {
     await browser?.close()
-    await Promise.all(servers.map((server) => server.close()))
+    await Promise.all(fixtures.map((fixture) => fixture.close()))
   })
 
   it.each(['baseline', 'registryTailwind'] as const)(

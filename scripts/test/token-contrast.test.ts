@@ -1,9 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
-import { chromium, type Browser } from 'playwright'
+import type { Browser } from 'playwright'
 import { appEntry, compileCandidates, resolveCssId } from '../lib/tailwind-compile.mjs'
 import { contrast, srgb8ToLinear } from '../lib/oklch.mjs'
+import { useHermeticBrowser } from '../lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 /**
  * ─── Nothing in this repo measured token CONTRAST (#250) ─────────────────────
@@ -87,7 +90,7 @@ import { contrast, srgb8ToLinear } from '../lib/oklch.mjs'
  *
  * ─── Source, not `dist/` ─────────────────────────────────────────────────────
  *
- * The demos render `@llui/components`'s BUILT `dist/styles/`, so a `src/` edit is
+ * The example apps render `@llui/components`'s BUILT `dist/styles/`, so a `src/` edit is
  * invisible to them until the package is rebuilt. This guard compiles through
  * `scripts/lib/tailwind-compile.mjs`, whose loader redirects `@llui/*` specifiers
  * to the workspace SOURCE for exactly that reason: the check describes the tree
@@ -205,7 +208,23 @@ const CELLS = [
 type Exemption = { reason: string; atLeast: number }
 
 const ALLOWED_BELOW_AA: Record<string, Exemption> = Object.fromEntries(
-  ['examples/components-demo/src/main.css', 'examples/registry-demo/src/main.css'].flatMap((file) =>
+  [
+    // A consumer brand override on the Tailwind-free Baseline path (moved
+    // here from the retired Baseline showcase's entry stylesheet): it
+    // overrides `--primary`/`--destructive` only, so `muted` stays upstream's.
+    'examples/baseline-css/src/test-fixtures/brand-override.css',
+    'examples/registry-demo/src/main.css',
+    // The #266 live-render fixture is `@import '../main.css'` plus two
+    // `@source` lines, so it IS registry-demo's palette, measured separately
+    // because it is its own entry. Same pair, same cells, same 4.349:1.
+    'examples/registry-demo/src/test-fixtures/specialized-tools-live-render.css',
+    // The Component Gallery's two path documents (#267) render the SHIPPED
+    // tokens with no override at all — `theme.css` on one, `tokens.css` on the
+    // other — so they carry the upstream pair unchanged, measured at the same
+    // 4.349:1 in the same three light cells.
+    'examples/component-gallery/src/baseline/baseline.css',
+    'examples/component-gallery/src/registry/registry.css',
+  ].flatMap((file) =>
     ['os=light x pref=light', 'os=light x pref=system', 'os=dark x pref=light'].map((cell) => [
       `${file}: muted: ${cell}`,
       {
@@ -218,7 +237,7 @@ const ALLOWED_BELOW_AA: Record<string, Exemption> = Object.fromEntries(
         // light-mode-only shortfall of 0.15.
         reason:
           'shadcn/ui upstream value for secondary text; changing it forks the palette from every shadcn theme',
-        // Measured 4.349:1 in all three light cells, on both demos.
+        // Measured 4.349:1 in all three light cells, in every entry above.
         atLeast: 4.34,
       },
     ]),
@@ -576,7 +595,7 @@ describe('design-token contrast (#250)', () => {
       compiled.set(entry, css)
     }
 
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
     try {
       for (const cell of CELLS) {
         const context = await browser.newContext({ colorScheme: cell.colorScheme })

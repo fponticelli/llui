@@ -78,9 +78,11 @@ by `scenarioId` and case `id`, never extra fields attached to a case.
 
 ## Fidelity to shadcn/ui
 
-Recipes are ported VERBATIM from shadcn/ui's source (new-york-v4, MIT © 2023
-shadcn), measured at a **98% mean class-set match** across the 45 components with
-an upstream counterpart — 38 of them at 100%.
+Recipes are ported from shadcn/ui's source (new-york-v4, MIT © 2023 shadcn), keeping
+the upstream classes and adding only what LLui needs: logical RTL utilities,
+`forced-colors:` variants and LLui's `data-*` attributes. When the port was measured, the class sets matched upstream at a **98% mean**
+across the components with an upstream counterpart, most of them exactly; recipes added
+since were ported the same way.
 
 Two items are ports of something that could not come across whole, and each says
 so in its own header: **`form`** is upstream's five recipes re-bound to
@@ -89,8 +91,8 @@ so in its own header: **`form`** is upstream's five recipes re-bound to
 tooltip/legend recipes, but draws with `@llui/components/chart` because Recharts
 is React-only.
 
-**`chip` has no upstream counterpart** and is excluded from that 45 rather than
-counted as a miss. It is `badge`'s geometry with its colour derived from its
+**`chip` has no upstream counterpart** and is excluded from that measurement
+rather than counted as a miss. It is `badge`'s geometry with its colour derived from its
 value (`chipHue` in `@llui/components/styles`), which shadcn has no equivalent
 of — see `llui/ui/chip.ts` for why the two colour declarations live in the recipe
 and not in a `--chip-fill` token.
@@ -201,13 +203,34 @@ keyboard roving-focus wiring unable to find the element it moves focus to.
    about avoiding a stuck instance. See `@llui/components`'s README (`accordion /
 collapsible exit motion`) for the full contract.
 
+## `@llui/*` dependencies carry a derived minimum
+
+Write every `@llui/*` entry in an item's `dependencies` as `@llui/<pkg>@workspace:^`
+— never a bare name, never a version. `pnpm build:registry` replaces it with
+`@llui/<pkg>@^<version>`, that package's version in `packages/`, exactly as
+`pnpm publish` rewrites a manifest; a bare name or a written-out version fails the
+build. `llui add` treats the pinned version as a MINIMUM and refuses (without
+`--force`) to copy an item into a project with an older package installed — a skin
+that uses a new token or part attribute otherwise copies cleanly and breaks at
+runtime (#273). `llui add --registry ./registry` resolves `workspace:^` the same way,
+from this directory's own `node_modules`. Non-`@llui` dependencies stay plain npm
+specs. `scripts/test/registry-dependency-minimums.test.ts` checks the whole built
+registry.
+
 ## Checks
 
 ```bash
-pnpm check:registry    # tsc over the source (nothing else in the repo compiles it)
+pnpm check:registry    # tsc over the source AND test/ (nothing else in the repo compiles either)
 pnpm test:scripts      # compiles every emitted class with real Tailwind; fails on dead ones
 pnpm build:registry    # regenerate site/public/r/*.json
 ```
+
+`check:registry` runs the package's own `check` script, which compiles two
+configs: `tsconfig.json` (the shipped `llui/` source, in the shape a consumer
+compiles it) and `tsconfig.test.json` (`test/` and `vitest.config.ts`, with node
+types). Vitest transpiles the tests with esbuild and never type-checks them, so
+without the second config a type error in a test fails nothing
+(`scripts/test/registry-typecheck-coverage.test.ts` pins both file sets).
 
 The second one is not optional decoration. The layer this replaced had 62 test files
 asserting substrings of class strings that no build ever compiled, and 116 utility

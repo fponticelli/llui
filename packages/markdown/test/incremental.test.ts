@@ -417,45 +417,138 @@ describe('reactive markdown — differential fuzz (streamed DOM vs cold DOM)', (
     }
   }
 
-  // KEPT above the shared 30s `testTimeout` (`vitest.shared.ts`, #147): this
-  // mounts and streams 120 documents through the real reactive path, which is
-  // legitimately slow — ~5s idle, ~19s when the rest of the monorepo's suites
-  // are running beside it. 30s is only ~1.6x that measured worst case, which is
-  // not enough headroom for the thing the shared budget exists to absorb.
-  // Widen the budget rather than thin the corpus — the trial count is the point.
-  it(
-    'streamed DOM equals a cold render across 120 generated documents',
-    { timeout: 60_000 },
-    () => {
-      const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
-      for (let trial = 0; trial < 120; trial++) {
-        const rnd = rng(trial * 7919 + 13)
-        const blocks: string[] = []
-        const count = 2 + Math.floor(rnd() * 6)
-        for (let i = 0; i < count; i++) blocks.push(BLOCKS[Math.floor(rnd() * BLOCKS.length)]!)
-        const doc = blocks.join('\n')
+  /** Stream `doc` in 1–12 character chunks, the shape an LLM token stream has:
+   * mid-word, mid-fence and mid-definition prefixes all occur. */
+  function streamed(doc: string, rnd: () => number): string[] {
+    const steps: string[] = []
+    for (let pos = 0; pos < doc.length; ) {
+      pos = Math.min(doc.length, pos + 1 + Math.floor(rnd() * 12))
+      steps.push(doc.slice(0, pos))
+    }
+    return steps
+  }
 
-        // Stream the document in 1–12 character chunks, the shape an LLM token
-        // stream has: mid-word, mid-fence and mid-definition prefixes all occur.
-        const steps: string[] = []
-        for (let pos = 0; pos < doc.length; ) {
-          pos = Math.min(doc.length, pos + 1 + Math.floor(rnd() * 12))
-          steps.push(doc.slice(0, pos))
-        }
+  /** Trial `trial`'s document, streamed as its successive prefixes. */
+  function trialSteps(trial: number): string[] {
+    const rnd = rng(trial * 7919 + 13)
+    const blocks: string[] = []
+    const count = 2 + Math.floor(rnd() * 6)
+    for (let i = 0; i < count; i++) blocks.push(BLOCKS[Math.floor(rnd() * BLOCKS.length)]!)
+    return streamed(blocks.join('\n'), rnd)
+  }
 
-        const live = mountReactive(steps[0] ?? '')
-        try {
-          for (const src of steps) {
-            live.set(src)
-            expect(domSig(body(live.container)), `trial ${trial} at ${JSON.stringify(src)}`).toBe(
-              coldHtml(src),
-            )
-          }
-        } finally {
-          live.cleanup()
-        }
+  /** EOF-ABSORBING blocks: a ``` / ~~~ fence and an HTML type-1 block (`<pre>`,
+   * `<script>`, `<textarea>`) run to their closer or to EOF, swallowing blank
+   * lines. Every one carries an INTERIOR blank line, so while it streams there are
+   * prefixes that end inside the still-open block right before that blank line —
+   * and the next chunk puts a blank line after the block's (EOF) end that only the
+   * NEW source has. That is the lie `EOF_ABSORBING_TYPES` exists to refuse
+   * (incremental.ts): reuse the block there and one block is split in two. The
+   * main corpus never produces it (its one fence has no blank line inside), so an
+   * emptied `EOF_ABSORBING_TYPES` survived the fuzz until this family existed.
+   * Reference syntax inside them must stay literal, which also pins the label
+   * guard against definitions that are not definitions. */
+  const ABSORBING_BLOCKS: readonly string[] = [
+    '```\nfenced\n\nstill fenced\n\nand more\n```\n',
+    '~~~md\n[a][r] in code\n\n[r]: /not-a-def\n~~~\n',
+    '<pre>\nraw\n\nstill raw\n\nand more\n</pre>\n',
+    '<script>\nlet x = 1\n\nx++\n\nx--\n</script>\n',
+  ]
+  /** The same blocks left UNCLOSED, as the last block: they absorb to EOF for the
+   * whole rest of the stream. */
+  const OPEN_TAILS: readonly string[] = [
+    '```\nopen fence\n\nto eof\n\nstill open\n',
+    '<pre>\nopen pre\n\n[r]: /not-a-def\n\nstill open\n',
+    '<textarea>\nopen\n\nstill open\n\nto eof\n',
+  ]
+  const EOF_BLOCKS: readonly string[] = [...BLOCKS, ...ABSORBING_BLOCKS, ...ABSORBING_BLOCKS]
+
+  /** EOF-family trial `trial`: 1–5 blocks weighted toward absorbing ones, ending in
+   * an unclosed absorbing block three times in four. Its own seed space, so the
+   * main corpus above is byte-for-byte unchanged. */
+  function eofTrialSteps(trial: number): string[] {
+    const rnd = rng(trial * 104729 + 71)
+    const blocks: string[] = []
+    const count = 1 + Math.floor(rnd() * 5)
+    for (let i = 0; i < count; i++) {
+      blocks.push(EOF_BLOCKS[Math.floor(rnd() * EOF_BLOCKS.length)]!)
+    }
+    if (rnd() < 0.75) blocks.push(OPEN_TAILS[Math.floor(rnd() * OPEN_TAILS.length)]!)
+    return streamed(blocks.join('\n'), rnd)
+  }
+
+  const EOF_TRIALS = 40
+
+  /** Which EOF-absorbing block type (if any) a streamed step drives into the guard:
+   * the previous prefix's LAST block is a `code`/`html` block whose end the NEW
+   * source follows with a blank line while the old source did not (the two
+   * `hasBlankLineSeal` checks of incremental.ts, disagreeing). */
+  function eofGuardReached(prev: string, next: string): 'code' | 'html' | undefined {
+    // Necessary condition, checked before paying for a parse: `prev` is a prefix of
+    // `next`, so a seal that `next` has and `prev` lacks at an end <= prev.length
+    // must reach its second line ending at or past prev.length, through whitespace
+    // only — i.e. the appended text opens with whitespace and a line ending.
+    if (!/^[ \t\r]*\n/.test(next.slice(prev.length))) return undefined
+    const last = parse(prev).children.at(-1)
+    const end = last?.position?.end.offset
+    if (last === undefined || end == null) return undefined
+    if (last.type !== 'code' && last.type !== 'html') return undefined
+    const seal = /^[ \t]*\r?\n[ \t]*\r?\n/
+    return seal.test(next.slice(end)) && !seal.test(prev.slice(end)) ? last.type : undefined
+  }
+
+  it('the EOF family streams into the EOF-absorbing reuse guard, for both block types', () => {
+    // Without this, a corpus or chunking edit could silently stop reaching the
+    // guard (for fences, for HTML, or both) and the family would go vacuous while
+    // staying green.
+    const reaching = { code: 0, html: 0 }
+    for (let trial = 0; trial < EOF_TRIALS; trial++) {
+      const steps = eofTrialSteps(trial)
+      const reached = new Set(steps.map((src, i) => i > 0 && eofGuardReached(steps[i - 1]!, src)))
+      if (reached.has('code')) reaching.code++
+      if (reached.has('html')) reaching.html++
+    }
+    // Seeded, so exact: a corpus or chunking edit that changes it must say so here.
+    expect(reaching).toEqual({ code: 13, html: 7 })
+  })
+
+  // ONE TEST PER TRIAL, over the same 120 seeded documents and every streamed step
+  // of each. This used to be a single test carrying all 120 on a raised 60 s budget
+  // (#147: ~5 s idle, ~19 s beside the monorepo's suites), and it still timed out
+  // (70-197 s at load ~25-38 on 4 CPUs). The cost is ~1650 streamed steps, each a
+  // live reactive update (incremental parse, the dev full-parse assertion, keyed
+  // reconcile) plus a cold oracle render, split roughly half and half, and none of
+  // it is shared between trials: there is no fixture to hoist and nothing to
+  // deduplicate (1507 of the 1647 streamed sources are distinct). Comparing only
+  // at checkpoints would miss a stale block that a later step heals, so every
+  // step is still compared. Splitting is the lever that keeps every comparison:
+  // a trial is ~0.1-0.25 s quiet and 3-4.5 s at that load, on the shared budget;
+  // a failure names its trial (rerun it alone with `-t "trial 17$"`); and the dev
+  // assertion's console.error is pinned to the trial that tripped it.
+  function streamTrial(label: string, steps: readonly string[]): void {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const live = mountReactive(steps[0] ?? '')
+    try {
+      for (const src of steps) {
+        live.set(src)
+        expect(domSig(body(live.container)), `${label} at ${JSON.stringify(src)}`).toBe(
+          coldHtml(src),
+        )
       }
-      expect(spy).not.toHaveBeenCalled()
-    },
-  )
+    } finally {
+      live.cleanup()
+    }
+    // The dev assertion (render.ts) logs here when the incremental tree diverges
+    // from a full parse; it then renders the full parse, so a divergence the
+    // guard should have prevented is visible ONLY through this spy.
+    expect(spy).not.toHaveBeenCalled()
+  }
+
+  it.each(Array.from({ length: 120 }, (_, trial) => trial))('trial %i', (trial) => {
+    streamTrial(`trial ${trial}`, trialSteps(trial))
+  })
+
+  it.each(Array.from({ length: EOF_TRIALS }, (_, trial) => trial))('eof trial %i', (trial) => {
+    streamTrial(`eof trial ${trial}`, eofTrialSteps(trial))
+  })
 })

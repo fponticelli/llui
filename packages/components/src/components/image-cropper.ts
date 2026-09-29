@@ -1,4 +1,4 @@
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { imageCropperLocale } from '../locale/image-cropper.js'
 import { allFiniteNumbers, clamp, finiteBound, positiveFinite } from '../utils/number.js'
@@ -58,6 +58,10 @@ export type ImageCropperMsg =
   | { type: 'reset' }
   /** @intent("Set the crop to a maximum-area centered selection") */
   | { type: 'centerFill' }
+  /** @intent("Move the crop area by a percentage of the image size (x right, y down)") */
+  | { type: 'nudge'; x: number; y: number }
+  /** @intent("Zoom the crop area about its centre: factor > 1 zooms in, < 1 zooms out") */
+  | { type: 'zoom'; factor: number }
 
 export interface ImageCropperInit {
   image?: { width: number; height: number }
@@ -321,16 +325,59 @@ export function update(
     case 'reset':
     case 'centerFill':
       return [{ ...state, crop: centerFill(state.image, state.aspectRatio) }, []]
+    // The keyboard's move (#266). A PERCENT of the natural image size, so one
+    // arrow press means the same visual step at any image resolution, and no
+    // drag has to be "in progress" for a key to move the box.
+    case 'nudge': {
+      if (!allFiniteNumbers(msg.x, msg.y)) return [state, []]
+      const crop = {
+        ...state.crop,
+        x: state.crop.x + (msg.x / 100) * state.image.width,
+        y: state.crop.y + (msg.y / 100) * state.image.height,
+      }
+      if (!allFiniteNumbers(crop)) return [state, []]
+      return [{ ...state, crop: fitCrop(crop, state.image, state.aspectRatio, state.minSize) }, []]
+    }
+    // Zoom about the centre (#266): scaling both axes by the same factor keeps
+    // a locked ratio by construction, and `fitCrop` applies minSize and bounds.
+    case 'zoom': {
+      const factor = positiveFinite(msg.factor)
+      if (factor === undefined) return [state, []]
+      const requested = {
+        x: 0,
+        y: 0,
+        width: state.crop.width / factor,
+        height: state.crop.height / factor,
+      }
+      if (!allFiniteNumbers(requested)) return [state, []]
+      // Settle the SIZE first (minSize, image bounds, ratio), then centre that
+      // settled size on the old centre — centring the raw size and clamping
+      // afterwards would let the minSize floor push the box off-centre.
+      const sized = fitCrop(requested, state.image, state.aspectRatio, state.minSize)
+      const crop = {
+        x: state.crop.x + (state.crop.width - sized.width) / 2,
+        y: state.crop.y + (state.crop.height - sized.height) / 2,
+        width: sized.width,
+        height: sized.height,
+      }
+      return [{ ...state, crop: fitCrop(crop, state.image, state.aspectRatio, state.minSize) }, []]
+    }
   }
 }
+
+/** Percent step of one arrow press; Shift multiplies it. */
+const NUDGE_STEP = 1
+const NUDGE_STEP_LARGE = 10
+/** One +/- press scales the crop by this factor. */
+const ZOOM_STEP = 1.1
 
 export interface ImageCropperParts {
   root: {
     'data-scope': 'image-cropper'
     'data-part': 'root'
-    'data-dragging': Signal<'' | undefined>
-    'data-resizing': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-dragging': ReadSignal<'' | undefined>
+    'data-resizing': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   image: {
     'data-scope': 'image-cropper'
@@ -338,11 +385,23 @@ export interface ImageCropperParts {
     onLoad: (e: Event) => void
     draggable: false
   }
+  /**
+   * The crop area: a focusable, named `group` (#266). Arrow keys move it 1% of
+   * the image (10% with Shift), `+`/`-` zoom it. Keys stay PHYSICAL under
+   * `dir="rtl"`: the image is never mirrored, so neither is the box on it.
+   * Geometry is written as an inline `style` in PERCENT of the image — a skin
+   * must not set position or size.
+   */
   cropBox: {
+    role: 'group'
+    tabindex: 0
+    'aria-label': ReadSignal<string>
+    'aria-keyshortcuts': string
     'data-scope': 'image-cropper'
     'data-part': 'crop-box'
-    style: Signal<string>
+    style: ReadSignal<string>
     onPointerDown: (e: PointerEvent) => void
+    onKeyDown: (e: KeyboardEvent) => void
   }
   resizeHandle: (handle: ResizeHandle) => {
     'data-scope': 'image-cropper'
@@ -361,14 +420,24 @@ export interface ImageCropperParts {
 
 export interface ConnectOptions {
   resetLabel?: string
+  /** Name of the crop area; its live geometry is appended. */
+  cropAreaLabel?: string
+}
+
+const ARROW_NUDGE: Readonly<Record<string, readonly [number, number]>> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
 }
 
 export function connect(
-  state: Signal<ImageCropperState>,
+  state: ReadSignal<ImageCropperState>,
   send: Send<ImageCropperMsg>,
   opts: ConnectOptions = {},
 ): ImageCropperParts {
   const locale = imageCropperLocale()
+  const cropAreaLabel = opts.cropAreaLabel ?? locale.cropArea
   return {
     root: {
       'data-scope': 'image-cropper',
@@ -387,6 +456,15 @@ export function connect(
       draggable: false,
     },
     cropBox: {
+      role: 'group',
+      tabindex: 0,
+      'aria-label': state.map((st) => {
+        const r = (n: number): number => Math.round(n)
+        const { x, y, width, height } = st.crop
+        return `${cropAreaLabel}: ${r(width)} × ${r(height)} at ${r(x)}, ${r(y)}`
+      }),
+      'aria-keyshortcuts':
+        'ArrowLeft ArrowRight ArrowUp ArrowDown Shift+ArrowLeft Shift+ArrowRight Shift+ArrowUp Shift+ArrowDown + -',
       'data-scope': 'image-cropper',
       'data-part': 'crop-box',
       style: state.map((st) => {
@@ -399,6 +477,24 @@ export function connect(
         return `left:${xp}%;top:${yp}%;width:${wp}%;height:${hp}%;`
       }),
       onPointerDown: tagSend(send, ['dragStart'], () => send({ type: 'dragStart' })),
+      onKeyDown: tagSend(send, ['nudge', 'zoom'], (e) => {
+        const arrow = ARROW_NUDGE[e.key]
+        if (arrow !== undefined) {
+          const step = e.shiftKey ? NUDGE_STEP_LARGE : NUDGE_STEP
+          e.preventDefault()
+          send({ type: 'nudge', x: arrow[0] * step, y: arrow[1] * step })
+          return
+        }
+        if (e.key === '+' || e.key === '=') {
+          e.preventDefault()
+          send({ type: 'zoom', factor: ZOOM_STEP })
+          return
+        }
+        if (e.key === '-' || e.key === '_') {
+          e.preventDefault()
+          send({ type: 'zoom', factor: 1 / ZOOM_STEP })
+        }
+      }),
     },
     resizeHandle: (handle: ResizeHandle) => ({
       'data-scope': 'image-cropper',

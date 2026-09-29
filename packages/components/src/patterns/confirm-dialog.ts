@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable } from '@llui/dom'
+import type { Send, ReadSignal, Mountable } from '@llui/dom'
 import { button, text, div, h2, p } from '@llui/dom'
 import {
   init as dialogInit,
@@ -130,7 +130,7 @@ export function update(
  * `examples/registry-demo`'s patterns section is the worked example.
  */
 export interface ConfirmDialogViewOptions {
-  state: Signal<ConfirmDialogState>
+  state: ReadSignal<ConfirmDialogState>
   send: Send<ConfirmDialogMsg>
   id: string
   /** Custom class for content root. */

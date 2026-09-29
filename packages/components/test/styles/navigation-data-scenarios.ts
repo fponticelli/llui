@@ -29,7 +29,14 @@ import {
   type PresentationScenarioEnvironmentAxis,
   type ResolvedPresentationScenarioSelection,
 } from '@llui/cli/presentation-scenarios'
+import { PRESENTATION_SCENARIO_IDS } from './presentation-scenario-ids'
 import type { ProductContract, ProductEntry } from '@llui/cli'
+import {
+  axes,
+  type Assert,
+  type Equal,
+  type ScenarioDefinitionsOf,
+} from './scenario-field-mutations'
 
 // Individual named consts, never a `Record`-typed lookup object: indexing a
 // type with an index signature (`Record<string, T>`) widens every property
@@ -37,22 +44,18 @@ import type { ProductContract, ProductEntry } from '@llui/cli'
 // silently poisons every case's `environmentAxes` field below with a spurious
 // `| undefined` and breaks `compileScenarioFamily`'s exactness check.
 const AX = {
-  theme: ['theme'] as readonly PresentationScenarioEnvironmentAxis[],
-  dir: ['direction'] as readonly PresentationScenarioEnvironmentAxis[],
-  motion: ['motion'] as readonly PresentationScenarioEnvironmentAxis[],
-  narrow: ['viewport'] as readonly PresentationScenarioEnvironmentAxis[],
-  forced: ['forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
-  themeForced: ['theme', 'forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
-  dirTheme: ['direction', 'theme'] as readonly PresentationScenarioEnvironmentAxis[],
-  dirForced: ['direction', 'forcedColors'] as readonly PresentationScenarioEnvironmentAxis[],
-  dirNarrow: ['direction', 'viewport'] as readonly PresentationScenarioEnvironmentAxis[],
-  dirMotion: ['direction', 'motion'] as readonly PresentationScenarioEnvironmentAxis[],
-  dirThemeForced: [
-    'direction',
-    'theme',
-    'forcedColors',
-  ] as readonly PresentationScenarioEnvironmentAxis[],
-  none: [] as readonly PresentationScenarioEnvironmentAxis[],
+  theme: axes('theme'),
+  dir: axes('direction'),
+  motion: axes('motion'),
+  narrow: axes('viewport'),
+  forced: axes('forcedColors'),
+  themeForced: axes('theme', 'forcedColors'),
+  dirTheme: axes('direction', 'theme'),
+  dirForced: axes('direction', 'forcedColors'),
+  dirNarrow: axes('direction', 'viewport'),
+  dirMotion: axes('direction', 'motion'),
+  dirThemeForced: axes('direction', 'theme', 'forcedColors'),
+  none: axes(),
 }
 
 // ---------------------------------------------------------------------------
@@ -1205,11 +1208,61 @@ export type NavigationDataResolved =
 export type NavigationDataScenarioId = keyof NavigationDataDefinitions & string
 export type NavigationDataPath = 'baseline' | 'registryTailwind'
 
+/** Every scenario's case-input TYPE — what its renderer adapters accept, on
+ * both paths. Keyed exactly by the definitions' scenario ids (`satisfies`
+ * rejects a missing or stale id). */
+export interface NavigationDataInputs {
+  readonly 'component:accordion': DisclosureCaseInput
+  readonly 'component:avatar': AvatarCaseInput
+  readonly 'component:breadcrumbs': BreadcrumbsCaseInput
+  readonly 'component:carousel': CarouselCaseInput
+  readonly 'component:chart': ChartCaseInput
+  readonly 'component:collapsible': DisclosureCaseInput
+  readonly 'component:marquee': MarqueeCaseInput
+  readonly 'component:meter': MeterCaseInput
+  readonly 'component:pagination': PaginationCaseInput
+  readonly 'component:progress': ProgressCaseInput
+  readonly 'component:sparkline': SparklineCaseInput
+  readonly 'component:steps': StepsCaseInput
+  readonly 'component:table': TableCaseInput
+  readonly 'component:tabs': TabsCaseInput
+  readonly 'component:toc': TocCaseInput
+  readonly 'component:tree-view': TreeViewCaseInput
+  readonly 'pattern:data-table': DataTableCaseInput
+  readonly 'registry:chip': ChipCaseInput
+  readonly 'registry:alert': AlertCaseInput
+  readonly 'registry:badge': BadgeCaseInput
+  readonly 'registry:card': CardCaseInput
+  readonly 'registry:empty': EmptyCaseInput
+  readonly 'registry:item': ItemCaseInput
+  readonly 'registry:kbd': KbdCaseInput
+  readonly 'registry:separator': SeparatorCaseInput
+  readonly 'registry:skeleton': BusyCaseInput
+  readonly 'registry:spinner': BusyCaseInput
+  readonly 'registry:typography': TypographyCaseInput
+  readonly 'registry:sidebar': SidebarCaseInput
+}
+
+type _NavigationDataInputsCoverDefinitions = Assert<
+  Equal<keyof NavigationDataInputs, NavigationDataScenarioId>
+>
+
+/** The definitions viewed at each scenario's case-input type. This assignment
+ * is the compile-time proof that every declared case input IS its scenario's
+ * input type, which is what lets a dimension harness mutate one field of a
+ * declared input and still hand the adapter a value of the adapter's type. */
+export const NAVIGATION_DATA_CASES: ScenarioDefinitionsOf<NavigationDataInputs> =
+  NAVIGATION_DATA_DEFINITIONS
+
 /** Compile the family catalog against a real ProductContract. Throws a
  * `PresentationScenarioError` if the contract's navigation-data products and
  * this module's keys are not in exact agreement (missing or stale). */
 export function compileNavigationDataCatalog(contract: ProductContract): NavigationDataCatalog {
-  return compileScenarioFamily(contract, 'navigation-data', NAVIGATION_DATA_DEFINITIONS)
+  return compileScenarioFamily(
+    contract,
+    PRESENTATION_SCENARIO_IDS['navigation-data'],
+    NAVIGATION_DATA_DEFINITIONS,
+  )
 }
 
 /**
@@ -1420,7 +1473,7 @@ export function joinNavigationDataScenarios(
     return {
       productId: scenario.productId,
       displayName: entry.displayName,
-      scenarioId: scenario.scenarioId as NavigationDataScenarioId,
+      scenarioId: scenario.scenarioId,
       defaultCaseId: scenario.defaultCaseId,
       cases: scenario.cases,
       presentation: entry.presentation,

@@ -31,9 +31,11 @@ overlay components), plus a namespace object at the bottom.
 - **`init(opts): XState`** — no signal args.
 - **`update(state, msg): [XState, never[]]`** — pure, synchronous, exhaustive
   `switch (msg.type)`. Most headless components emit no effects → `never[]`.
-- **`connect(state: Signal<XState>, send: Send<XMsg>, opts: ConnectOptions): XParts`** —
+- **`connect(state: ReadSignal<XState>, send: Send<XMsg>, opts: ConnectOptions): XParts`** —
   takes the **sliced signal handle** (the consumer passes `state.at('tabs')`), never an
-  accessor. Returns a **part-bag**: an object of prop-bags the consumer spreads onto
+  accessor. Type it `ReadSignal` (connect only reads it — a consumer may hand it a
+  `.map()`/`constant()`), and the reactive part-bag props `ReadSignal<…>` too; use
+  `Signal<…>` only for a parameter the code slices with `.at()` (e.g. a row handle). Returns a **part-bag**: an object of prop-bags the consumer spreads onto
   elements. Reactive props are `state.map(s => …)` signals; event handlers are wrapped in
   **`tagSend(send, ['variant', …], fn)`** (from `@llui/dom`) so the agent protocol knows
   which Msg variants a handler dispatches. Wrap EVERY handler in `tagSend`.
@@ -51,6 +53,16 @@ Parts carry static ARIA/`data-*` attributes + reactive `Signal` props + ids deri
 `id: string` (for ARIA cross-references like `aria-controls`/`aria-labelledby`) plus
 component-specific options. Use `data-scope` / `data-part` / `data-state` conventions for
 stable selectors. Address repeated items by value via sub-parts (e.g. `tabs.connect(...).item('a').trigger`).
+
+**An idref may only name a part the consumer MUST render.** If a part is optional — a
+description, instructions, a group's label, anything whose absence leaves the widget
+conformant — gate every `aria-labelledby`/`aria-describedby` pointing at it behind an
+explicit option (`hasDescription`, `hasInstructions`, `hasLabel`, `group(id, { hasLabel })`),
+default ON so the documented complete render is unchanged, and emit `undefined` when it is
+off. A broken idref is an accessibility defect and fails the gallery's markup probe. A part
+that supplies something ARIA REQUIRES (a dialog's or `role="img"`'s name, the reason for an
+invalid state) is mandatory instead: document it, give it no option (`dialog`'s title).
+`test/components/optional-part-idrefs.test.ts` pins every gated site.
 
 ## i18n
 
@@ -117,7 +129,8 @@ A component with a VISUAL surface is not finished when its machine is, and there
 consumers of its `data-*` contract, not one:
 
 1. **`registry/llui/ui/<name>.ts`** — the shadcn-styled skin, copied into consumer projects by
-   `llui add`, rendered in `examples/registry-demo`.
+   `llui add`, rendered by the Component Gallery's Registry skins document from the copies in
+   the `examples/registry-demo` sync fixture.
 2. **`packages/components/src/styles/theme.css`** — the opt-in BASELINE stylesheet, which
    styles the same parts with `[data-scope][data-part]` rules for apps with no Tailwind build.
    A component with no rules here is simply unstyled for every baseline consumer.
@@ -135,7 +148,13 @@ For the registry half specifically, two guards will fail the build if you skip e
   `MACHINE_OF` map, so a new skin that names no machine fails rather than silently falling out
   of coverage — add it there (`[]` for a layout-only skin).
 - **`scripts/test/registry-demo-sync.test.ts`** requires every published registry item to be
-  copied into the demo, byte-identical to what `llui add` produces today.
+  copied into that fixture, byte-identical to what `llui add` produces today.
+
+The **Component Gallery** (`examples/component-gallery`, `pnpm gallery`) then shows the
+component on both paths with no gallery edit: its entry comes from the ProductContract and
+its scenarios from the family catalog. `examples/component-gallery/test/coverage.test.ts`
+fails until the family's baseline and registry adapter maps render every declared case of
+every path the contract marks styled, partial or composed.
 
 Two things about the ATTRIBUTE NAMES your `connect` publishes, both learned from shipped bugs:
 

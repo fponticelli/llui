@@ -25,6 +25,7 @@ import { enSignaturePad } from './locale/signature-pad.js'
 import { enSortable } from './locale/sortable.js'
 import { enSparkline } from './locale/sparkline.js'
 import { enSteps } from './locale/steps.js'
+import { enTable } from './locale/table.js'
 import { enTagsInput } from './locale/tags-input.js'
 import { enTimePicker } from './locale/time-picker.js'
 import { enTimer } from './locale/timer.js'
@@ -62,6 +63,7 @@ export const en: Locale = {
   sortable: enSortable,
   sparkline: enSparkline,
   steps: enSteps,
+  table: enTable,
   tagsInput: enTagsInput,
   timePicker: enTimePicker,
   timer: enTimer,

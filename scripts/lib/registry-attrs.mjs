@@ -153,7 +153,16 @@ export function bareAttrsInCandidate(candidate) {
   return [...out]
 }
 
-/** Unwrap `Signal<X>` / `Reactive<X>` to X; anything else is returned as-is.
+/** Every single-argument wrapper a part-bag value is declared through. A part
+ * prop is a `.map()` result, so it is declared `ReadSignal<X>` (the read-only
+ * supertype of `Signal`/`MappedSignal`); a name missing here does not error —
+ * the declaration just yields NO VERDICT, so the gate fails OPEN. That is what
+ * the `ReadSignal` rename did until this set learned the name.
+ */
+const REACTIVE_WRAPPERS = new Set(['ReadSignal', 'Signal', 'MappedSignal', 'Reactive'])
+
+/** Unwrap `ReadSignal<X>` / `Signal<X>` / `MappedSignal<X>` / `Reactive<X>` to X;
+ * anything else is returned as-is.
  *
  * @param {ts.TypeNode} typeNode
  * @returns {ts.TypeNode}
@@ -162,7 +171,7 @@ function unwrapReactive(typeNode) {
   if (
     ts.isTypeReferenceNode(typeNode) &&
     ts.isIdentifier(typeNode.typeName) &&
-    (typeNode.typeName.text === 'Signal' || typeNode.typeName.text === 'Reactive') &&
+    REACTIVE_WRAPPERS.has(typeNode.typeName.text) &&
     typeNode.typeArguments?.length === 1
   ) {
     const only = typeNode.typeArguments[0]

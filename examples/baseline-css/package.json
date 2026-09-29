@@ -10,7 +10,8 @@
     "lint": "eslint src vite.config.ts"
   },
   "dependencies": {
-    "@llui/components": "workspace:*"
+    "@llui/components": "workspace:*",
+    "@llui/dom": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^6.0.0",

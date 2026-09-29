@@ -34,7 +34,7 @@ import {
   show,
   type Mountable,
   type Renderable,
-  type Signal,
+  type ReadSignal,
 } from '@llui/dom'
 import { registerNestedLayer } from '@llui/interactions'
 
@@ -61,11 +61,11 @@ const NESTED_LAYER_ATTR = 'data-llui-nested-layer'
 
 export interface OverlayRootConfig {
   /** Whether the overlay is shown. */
-  open: Signal<boolean>
+  open: ReadSignal<boolean>
   /** Viewport x of the anchor point (px). */
-  x: Signal<number>
+  x: ReadSignal<number>
   /** Viewport y of the anchor point (px). */
-  y: Signal<number>
+  y: ReadSignal<number>
   /** Stacking level — use {@link OVERLAY_Z}. */
   zIndex: number
   /** Extra CSS appended after positioning (e.g. a centering/lift transform). */
@@ -91,7 +91,7 @@ export function overlayRoot(cfg: OverlayRootConfig): Renderable {
     (x, y) =>
       `position:fixed;left:${x}px;top:${y}px;z-index:${cfg.zIndex}` +
       (cfg.transform ? `;${cfg.transform}` : ''),
-  ) as Signal<string>
+  )
   const layerId = `mdo-${++layerSeq}`
   return [
     // Register once for the overlay's lifetime; the resolver returns the live

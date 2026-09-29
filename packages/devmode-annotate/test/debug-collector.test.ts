@@ -251,6 +251,26 @@ describe('createConsoleCapture', () => {
     expect(cap.snapshot().map((e) => e.text)).toEqual(['b', 'c'])
     cap.dispose()
   })
+
+  it('wraps the global console by default and restores it on dispose', () => {
+    const original = console.info
+    const seen: unknown[][] = []
+    console.info = (...a: unknown[]): void => {
+      seen.push(a)
+    }
+    const stub = console.info
+    try {
+      const cap = createConsoleCapture()
+      expect(console.info).not.toBe(stub)
+      console.info('from', 'global')
+      expect(cap.snapshot().map((e) => `${e.level}:${e.text}`)).toEqual(['info:from global'])
+      expect(seen).toEqual([['from', 'global']])
+      cap.dispose()
+      expect(console.info).toBe(stub)
+    } finally {
+      console.info = original
+    }
+  })
 })
 
 describe('integration with submit() / handleCaptureRequest', () => {

@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 
 /**
  * Editable — inline text editor. Click preview to enter edit mode, Enter
@@ -61,15 +61,15 @@ export interface EditableParts {
   root: {
     'data-scope': 'editable'
     'data-part': 'root'
-    'data-editing': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-editing': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   preview: {
-    tabindex: Signal<number>
-    'aria-disabled': Signal<'true' | undefined>
+    tabindex: ReadSignal<number>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'editable'
     'data-part': 'preview'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
     onClick: (e: MouseEvent) => void
     onFocus: (e: FocusEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
@@ -77,27 +77,39 @@ export interface EditableParts {
   input: {
     'data-scope': 'editable'
     'data-part': 'input'
-    hidden: Signal<boolean>
-    value: Signal<string>
-    disabled: Signal<boolean>
+    hidden: ReadSignal<boolean>
+    value: ReadSignal<string>
+    disabled: ReadSignal<boolean>
     onInput: (e: Event) => void
     onKeyDown: (e: KeyboardEvent) => void
     onBlur: (e: FocusEvent) => void
   }
   submitTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: ReadSignal<boolean>
     'data-scope': 'editable'
     'data-part': 'submit-trigger'
     onClick: (e: MouseEvent) => void
   }
   cancelTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: ReadSignal<boolean>
     'data-scope': 'editable'
     'data-part': 'cancel-trigger'
     onClick: (e: MouseEvent) => void
   }
   editTrigger: {
     type: 'button'
+    /** Disabled with the editable: a disabled instance ignores the message
+     *  this trigger sends, so an enabled trigger would be a dead control
+     *  (#268 audit). */
+    disabled: ReadSignal<boolean>
     'data-scope': 'editable'
     'data-part': 'edit-trigger'
     onClick: (e: MouseEvent) => void
@@ -114,7 +126,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<EditableState>,
+  state: ReadSignal<EditableState>,
   send: Send<EditableMsg>,
   opts: ConnectOptions = {},
 ): EditableParts {
@@ -185,18 +197,21 @@ export function connect(
     },
     submitTrigger: {
       type: 'button',
+      disabled: state.map((s) => s.disabled),
       'data-scope': 'editable',
       'data-part': 'submit-trigger',
       onClick: () => trySubmit(),
     },
     cancelTrigger: {
       type: 'button',
+      disabled: state.map((s) => s.disabled),
       'data-scope': 'editable',
       'data-part': 'cancel-trigger',
       onClick: tagSend(send, ['cancel'], () => send({ type: 'cancel' })),
     },
     editTrigger: {
       type: 'button',
+      disabled: state.map((s) => s.disabled),
       'data-scope': 'editable',
       'data-part': 'edit-trigger',
       onClick: tagSend(send, ['edit'], () => send({ type: 'edit' })),

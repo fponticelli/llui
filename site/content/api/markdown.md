@@ -79,7 +79,7 @@ function collectDocumentLabels(root: Root): DocumentLabels
 Build a reactive Markdown view bound to a specific parser.
 
 - Plain `string` source → parsed once, rendered statically.
-- `Signal<string>` source → re-parsed on change; top-level blocks are keyed by a
+- `ReadSignal<string>` source → re-parsed on change; top-level blocks are keyed by a
   content hash (folding in the reference definitions each block resolves) and
   rendered through `each`, so unchanged earlier blocks keep their DOM and only the
   changing tail (and appended / newly-resolved blocks) rebuild. This makes
@@ -490,7 +490,7 @@ function collectDocumentLabels(root: Root): DocumentLabels
 Build a reactive Markdown view bound to a specific parser.
 
 - Plain `string` source → parsed once, rendered statically.
-- `Signal<string>` source → re-parsed on change; top-level blocks are keyed by a
+- `ReadSignal<string>` source → re-parsed on change; top-level blocks are keyed by a
   content hash (folding in the reference definitions each block resolves) and
   rendered through `each`, so unchanged earlier blocks keep their DOM and only the
   changing tail (and appended / newly-resolved blocks) rebuild. This makes

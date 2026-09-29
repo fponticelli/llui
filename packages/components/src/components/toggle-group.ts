@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import { flipArrow } from '../utils/direction.js'
 import { focusRovingItem } from '../utils/roving.js'
 import { nextEnabled, pruneToEnabled, rovingTabStop } from '../utils/list-navigation.js'
@@ -123,15 +123,15 @@ export interface ToggleGroupItemParts {
   root: {
     type: 'button'
     role: 'button'
-    'aria-pressed': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    'data-state': Signal<'on' | 'off'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-pressed': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'on' | 'off'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'toggle-group'
     'data-part': 'item'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -141,17 +141,17 @@ export interface ToggleGroupItemParts {
 export interface ToggleGroupParts {
   root: {
     role: 'group'
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     'data-scope': 'toggle-group'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
-    'data-disabled': Signal<'' | undefined>
+    'data-orientation': ReadSignal<Orientation>
+    'data-disabled': ReadSignal<'' | undefined>
   }
   item: (value: string) => ToggleGroupItemParts
 }
 
 export function connect(
-  state: Signal<ToggleGroupState>,
+  state: ReadSignal<ToggleGroupState>,
   send: Send<ToggleGroupMsg>,
 ): ToggleGroupParts {
   // Derived once per update and shared by every item (#124). The roving tab

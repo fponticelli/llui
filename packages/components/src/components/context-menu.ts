@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { resolvePortalTarget } from '../utils/portal-target.js'
 import { createOverlay, positionerProps } from '../utils/overlay-engine.js'
@@ -192,17 +192,17 @@ export interface ContextMenuParts {
   positioner: {
     'data-scope': 'context-menu'
     'data-part': 'positioner'
-    style: Signal<string>
+    style: ReadSignal<string>
   }
   content: {
     role: 'menu'
     id: string
     /** Virtually-focused (highlighted) item id at the root level. */
-    'aria-activedescendant': Signal<string | undefined>
+    'aria-activedescendant': ReadSignal<string | undefined>
     tabindex: -1
     /** Reflects the presence lifecycle: 'opening' | 'open' | 'closing' | 'closed'.
      * Stays mounted while 'closing' so the exit animation can run. */
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'context-menu'
     'data-part': 'content'
     onKeyDown: (e: KeyboardEvent) => void
@@ -212,7 +212,14 @@ export interface ContextMenuParts {
   item: (value: string) => ContextMenuItemParts
   checkboxItem: (value: string) => ContextMenuCheckItemParts
   radioItem: (value: string) => ContextMenuCheckItemParts
-  group: (id: string) => ContextMenuGroupParts
+  /**
+   * A labelled group's parts. The group names its `label` part through
+   * `aria-labelledby`; a consumer that renders the group WITHOUT that label
+   * passes `{ hasLabel: false }` so it never names an element that does not
+   * exist (an unlabelled `role="group"` is valid; a broken idref is not — the
+   * `dialog` `hasDescription` rule, #268). Default: true.
+   */
+  group: (id: string, options?: { readonly hasLabel?: boolean }) => ContextMenuGroupParts
   separator: () => ContextMenuSeparatorParts
   subTrigger: (value: string) => ContextMenuSubTriggerParts
   subPositioner: (value: string) => ContextMenuSubPositionerParts
@@ -245,7 +252,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<ContextMenuState>,
+  state: ReadSignal<ContextMenuState>,
   send: Send<ContextMenuMsg>,
   opts: ConnectOptions,
 ): ContextMenuParts {
@@ -323,7 +330,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<ContextMenuState>
+  state: ReadSignal<ContextMenuState>
   send: Send<ContextMenuMsg>
   parts: ContextMenuParts
   content: () => Renderable
@@ -381,7 +388,7 @@ export function overlay(opts: OverlayOptions): Mountable {
 export interface SubOverlayOptions {
   /** The subTrigger value this level opens under. */
   value: string
-  state: Signal<ContextMenuState>
+  state: ReadSignal<ContextMenuState>
   parts: Pick<ContextMenuParts, 'subTrigger' | 'subPositioner' | 'subContent'>
   content: () => Renderable
   target?: string | HTMLElement

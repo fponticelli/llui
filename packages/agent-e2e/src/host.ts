@@ -1,5 +1,5 @@
 import { component, mountApp, div, button, text, COMPILER_META_KEYS } from '@llui/dom'
-import type { AgentDocs, AgentContext } from '@llui/agent/protocol'
+import { parseServerFrame, type AgentDocs, type AgentContext } from '@llui/agent/protocol'
 import {
   createAgentClient,
   agentConnect,
@@ -8,10 +8,11 @@ import {
   type AgentEffect,
   type AgentClient,
 } from '@llui/agent/client'
+import type { RecordedFrame } from './e2e-globals.js'
 
 // ── State / Msg types ─────────────────────────────────────────────────────────
 
-type State = {
+export type State = {
   count: number
   lastDelete: string | null
   agent: {
@@ -21,7 +22,7 @@ type State = {
   }
 }
 
-type Msg =
+export type Msg =
   // ──────────────── annotated variants (exercised by e2e tests) ─────────────
   /** @intent("Increment the counter") */
   | { type: 'inc' }
@@ -269,6 +270,42 @@ AppWithMeta.__bindingDescriptors = [
 
 AppWithMeta[COMPILER_META_KEYS.schemaHash] = 'e2e-test-hash'
 
+// ── Server-frame log (test instrumentation) ───────────────────────────────────
+// Every frame the agent server sends this page, in arrival order, so a test
+// can wait for the protocol EVENT it depends on instead of sleeping and hoping
+// it happened: `hello-ack` (the server has recorded this client's hello — the
+// pairing is ready) and `watch` (a `/wait` long-poll is armed in this page).
+// Without them the suite slept 100 ms "to let the long-poll register" and
+// polled `describe` against private 10 s deadlines, under a package-wide
+// `retry: 2`.
+//
+// The listener is attached in the constructor, i.e. BEFORE the agent client
+// attaches its own, and both run in the same synchronous dispatch of the
+// message event — so by the time a test observes a frame here (from a later
+// task), the client has already handled it.
+const serverFrames: RecordedFrame[] = []
+const NativeWebSocket = globalThis.WebSocket
+class RecordingWebSocket extends NativeWebSocket {
+  constructor(url: string | URL, protocols?: string | string[]) {
+    super(url, protocols)
+    this.addEventListener('message', (ev: MessageEvent) => {
+      if (typeof ev.data !== 'string') return
+      let json: unknown
+      try {
+        json = JSON.parse(ev.data)
+      } catch {
+        // Not JSON — the client drops it too.
+        return
+      }
+      // Validated with the protocol's own schema, exactly as the agent client
+      // validates it — so the log holds the frames the client acts on.
+      const frame = parseServerFrame(json)
+      if (frame) serverFrames.push(frame)
+    })
+  }
+}
+globalThis.WebSocket = RecordingWebSocket
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 
 const root = document.getElementById('app')!
@@ -294,13 +331,9 @@ client = createAgentClient<State, Msg>({
   },
 })
 
-// Expose globals so the test harness (running in Node via Playwright
-// page.evaluate) can reach in without any in-browser MCP wiring.
-//
-// __lluiE2eClient: lets tests call client.effectHandler() to open a WS
-//   after minting a token — bypasses the "Connect with Claude" button.
-// __lluiE2eHandle: lets tests call handle.getState() to read state.
-;(globalThis as Record<string, unknown>)['__lluiE2eClient'] = client
-;(globalThis as Record<string, unknown>)['__lluiE2eHandle'] = handle
+// Expose the test globals (declared, with their types, in e2e-globals.ts).
+globalThis.__lluiE2eClient = client
+globalThis.__lluiE2eHandle = handle
+globalThis.__lluiE2eFrames = serverFrames
 
 client.start()

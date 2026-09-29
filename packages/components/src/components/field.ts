@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 
 /**
  * Field — label / description / error ARIA wiring for a single form control.
@@ -88,8 +88,9 @@ export interface FieldParts {
   root: {
     'data-scope': 'field'
     'data-part': 'root'
-    'data-invalid': Signal<'' | undefined>
-    'data-disabled': Signal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-disabled': ReadSignal<'' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
   }
   /** The `<label>`. `htmlFor` focuses the control on click. */
   label: {
@@ -102,11 +103,11 @@ export interface FieldParts {
   control: {
     id: string
     'aria-labelledby': string
-    'aria-describedby': Signal<string | undefined>
-    'aria-invalid': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    readOnly: Signal<boolean>
+    'aria-describedby': ReadSignal<string | undefined>
+    'aria-invalid': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    readOnly: ReadSignal<boolean>
     'data-scope': 'field'
     'data-part': 'control'
     onBlur: (e: FocusEvent) => void
@@ -138,7 +139,7 @@ export interface FieldConnectOptions {
 }
 
 export function connect(
-  state: Signal<FieldState>,
+  state: ReadSignal<FieldState>,
   send: Send<FieldMsg>,
   opts: FieldConnectOptions = {},
 ): FieldParts {
@@ -155,6 +156,11 @@ export function connect(
       'data-part': 'root',
       'data-invalid': state.map((s) => (s.invalid ? '' : undefined)),
       'data-disabled': state.map((s) => (s.disabled ? '' : undefined)),
+      // The whole field is inactive, not just its control: the dimmed label,
+      // description and error are announced as such (#268 audit — only the
+      // control said so, so its dimmed description read as a live, 1.96:1
+      // text failure).
+      'aria-disabled': state.map((s) => (s.disabled ? 'true' : undefined)),
     },
     label: {
       id: labelId,

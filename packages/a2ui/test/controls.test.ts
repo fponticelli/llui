@@ -273,3 +273,67 @@ describe('Modal (via @llui/components)', () => {
     expect(document.body.style.overflow).toBe('') // released on close
   })
 })
+
+// A surface's UI-state store is keyed by component id, and `updateComponents`
+// may re-type an id (the server replaces the node wholesale). A stored blob is
+// only ever that component's OWN state if its shape says so — a blob written by
+// the previous type must read as "no state yet", never be handed to the new
+// type's reducer as if it were its own.
+describe('UI state across a component re-type (same id)', () => {
+  function retype(components: ComponentNode[]): void {
+    handle.apply([{ version: 'v0.9', updateComponents: { surfaceId: 's', components } }])
+  }
+
+  const tabsNodes: ComponentNode[] = [
+    {
+      id: 'root',
+      component: 'Tabs',
+      tabs: [
+        { title: 'One', child: 'p1' },
+        { title: 'Two', child: 'p2' },
+      ],
+    },
+    { id: 'p1', component: 'Text', text: 'Panel one' },
+    { id: 'p2', component: 'Text', text: 'Panel two' },
+  ]
+  const modalNodes: ComponentNode[] = [
+    { id: 'root', component: 'Modal', trigger: 't', content: 'c' },
+    { id: 't', component: 'Text', text: 'Open' },
+    { id: 'c', component: 'Text', text: 'Dialog body' },
+  ]
+  const bodyPresent = (): boolean =>
+    [...container.querySelectorAll('.a2ui-text')].some((n) => n.textContent === 'Dialog body')
+  const tabTriggers = (): HTMLButtonElement[] => [
+    ...container.querySelectorAll<HTMLButtonElement>('.a2ui-tab'),
+  ]
+
+  it('a Modal that replaces a Tabs starts from its own initial state and opens', () => {
+    mount(tabsNodes, {})
+    tabTriggers()[1]!.click()
+    retype(modalNodes)
+    expect(bodyPresent()).toBe(false)
+    container.querySelector<HTMLElement>('.a2ui-modal-trigger')!.click()
+    expect(bodyPresent()).toBe(true)
+    container.querySelector<HTMLElement>('.a2ui-modal-close')!.click()
+    expect(bodyPresent()).toBe(false)
+  })
+
+  it('a Tabs that replaces a Modal starts on its first tab and navigates by keyboard', () => {
+    mount(modalNodes, {})
+    container.querySelector<HTMLElement>('.a2ui-modal-trigger')!.click()
+    container.querySelector<HTMLElement>('.a2ui-modal-close')!.click()
+    retype(tabsNodes)
+    expect(tabTriggers()[0]?.getAttribute('data-state')).toBe('active')
+    tabTriggers()[0]!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+    )
+    expect(tabTriggers()[1]?.getAttribute('data-state')).toBe('active')
+  })
+
+  it('keeps a component’s own state when an update re-sends the SAME type', () => {
+    mount(tabsNodes, {})
+    tabTriggers()[1]!.click()
+    retype(tabsNodes)
+    expect(tabTriggers()[1]?.getAttribute('data-state')).toBe('active')
+  })
+})

@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import {
   init,
   update,
@@ -54,7 +54,7 @@ export type AlertDialogConnectOptions = Omit<DialogConnectOptions, 'role'>
 export type AlertDialogParts = DialogParts
 
 export function connect(
-  state: Signal<DialogState>,
+  state: ReadSignal<DialogState>,
   send: Send<DialogMsg>,
   opts: AlertDialogConnectOptions,
 ): AlertDialogParts {
@@ -72,7 +72,7 @@ export interface AlertDialogOverlayOptions {
    * below — which is exactly how this one was missed the first time.
    */
   positionerClass?: string
-  state: Signal<DialogState>
+  state: ReadSignal<DialogState>
   send: Send<DialogMsg>
   parts: AlertDialogParts
   content: () => Renderable

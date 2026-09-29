@@ -21,6 +21,10 @@ import { decodeScenarioFamily as rootDecodeFamily } from '../src/index.js'
 import { resolveScenarioSelection as rootResolve } from '../src/index.js'
 // @ts-expect-error direct-subpath-only value
 import { decodeScenarioSelection as rootDecodeSelection } from '../src/index.js'
+// @ts-expect-error direct-subpath-only value
+import { dispatchScenarioSelection as rootDispatch } from '../src/index.js'
+// @ts-expect-error direct-subpath-only value
+import { bindScenarioAdapters as rootBind } from '../src/index.js'
 
 // @ts-expect-error direct-subpath-only type
 import type { PresentationScenarioJson as RootJson } from '../src/index.js'
@@ -50,6 +54,24 @@ import type { PresentationScenarioSelection as RootSelection } from '../src/inde
 import type { ResolvedPresentationScenarioSelection as RootResolved } from '../src/index.js'
 // @ts-expect-error direct-subpath-only type
 import type { PresentationScenarioErrorCode as RootErrorCode } from '../src/index.js'
+// @ts-expect-error direct-subpath-only type
+import type { PresentationScenarioFamilyIds as RootFamilyIds } from '../src/index.js'
+// @ts-expect-error direct-subpath-only type
+import type { PresentationScenarioCaseInput as RootCaseInput } from '../src/index.js'
+// @ts-expect-error direct-subpath-only type
+import type { PresentationScenarioAdapterContext as RootAdapterContext } from '../src/index.js'
+// @ts-expect-error direct-subpath-only type
+import type { PresentationScenarioAdapterExtra as RootAdapterExtra } from '../src/index.js'
+// @ts-expect-error direct-subpath-only type
+import type { NoPresentationScenarioAdapterExtra as RootNoExtra } from '../src/index.js'
+// @ts-expect-error direct-subpath-only type
+import type { PresentationScenarioAdapter as RootAdapter } from '../src/index.js'
+// @ts-expect-error direct-subpath-only type
+import type { PresentationScenarioAdapters as RootAdapters } from '../src/index.js'
+// @ts-expect-error direct-subpath-only type
+import type { PreparedPresentationScenario as RootPrepared } from '../src/index.js'
+// @ts-expect-error direct-subpath-only type
+import type { PresentationScenarioAdapterBinding as RootBinding } from '../src/index.js'
 
 void [
   rootEnvironmentValues,
@@ -62,6 +84,8 @@ void [
   rootDecodeFamily,
   rootResolve,
   rootDecodeSelection,
+  rootDispatch,
+  rootBind,
 ]
 type RootTypes =
   | RootJson
@@ -78,5 +102,14 @@ type RootTypes =
   | RootSelection
   | RootResolved
   | RootErrorCode
+  | RootFamilyIds
+  | RootCaseInput<never, never>
+  | RootAdapterContext
+  | RootAdapterExtra<never>
+  | RootNoExtra
+  | RootAdapter<never, never, never, never>
+  | RootAdapters<never, never, never>
+  | RootPrepared<never, never>
+  | RootBinding<never, never>
 declare const rootTypes: RootTypes
 void rootTypes

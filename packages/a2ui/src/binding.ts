@@ -3,7 +3,7 @@
  * bindings for the LLui element helpers, and one-shot reads for event handlers.
  */
 
-import { derived, isSignalHandle, type Reactive, type Signal } from '@llui/dom'
+import { derived, isSignalHandle, type Reactive, type ReadSignal } from '@llui/dom'
 import type { Catalog, EvalEnv, RenderContext, RenderScope } from './catalog.js'
 import { warnOnce } from './catalog.js'
 import {
@@ -26,13 +26,13 @@ export function displayString(value: JsonValue | undefined): string {
   return JSON.stringify(value)
 }
 
-function sourceFor(scope: RenderScope, path: string): Signal<JsonValue> {
+function sourceFor(scope: RenderScope, path: string): ReadSignal<JsonValue> {
   return path.startsWith('/') ? scope.root : scope.data
 }
 
 /** Map a maybe-reactive JSON value through a coercion, preserving reactivity. */
 function mapReactive<T>(r: Reactive<JsonValue>, fn: (v: JsonValue) => T): Reactive<T> {
-  return isSignalHandle(r) ? (r as Signal<JsonValue>).map(fn) : fn(r as JsonValue)
+  return isSignalHandle(r) ? (r as ReadSignal<JsonValue>).map(fn) : fn(r as JsonValue)
 }
 
 /**
@@ -84,7 +84,7 @@ export function firstCheckError(
   ctx: RenderContext,
   scope: RenderScope,
   checks: readonly Check[] | undefined,
-): Signal<string | null> | null {
+): ReadSignal<string | null> | null {
   if (!checks || checks.length === 0) return null
   const catalog = ctx.catalog
   return derived(scope.root, scope.data, (root, data): string | null => {
@@ -145,7 +145,7 @@ export function bindUrl(
 ): Reactive<string> {
   const r = bindString(ctx, scope, dyn)
   const clean = (s: string): string => sanitizeUrl(s, allowedProtocols) ?? ''
-  return isSignalHandle(r) ? (r as Signal<string>).map(clean) : clean(r as string)
+  return isSignalHandle(r) ? (r as ReadSignal<string>).map(clean) : clean(r as string)
 }
 
 function toNumber(value: JsonValue | undefined): number {

@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Mountable, Send, Signal } from '@llui/dom'
+import type { Mountable, Send, ReadSignal } from '@llui/dom'
 import {
   directionSyncMount,
   eventDirection,
@@ -188,16 +188,16 @@ export interface TabsItemParts {
   trigger: {
     type: 'button'
     role: 'tab'
-    'aria-selected': Signal<boolean>
+    'aria-selected': ReadSignal<boolean>
     'aria-controls': string
-    'aria-disabled': Signal<'true' | undefined>
+    'aria-disabled': ReadSignal<'true' | undefined>
     id: string
-    'data-state': Signal<'active' | 'inactive'>
-    'data-disabled': Signal<'' | undefined>
+    'data-state': ReadSignal<'active' | 'inactive'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'tabs'
     'data-part': 'trigger'
     'data-value': string
-    tabindex: Signal<number>
+    tabindex: ReadSignal<number>
     onClick: (e: MouseEvent) => void
     onKeyDown: (e: KeyboardEvent) => void
     onFocus: (e: FocusEvent) => void
@@ -207,8 +207,8 @@ export interface TabsItemParts {
     id: string
     'aria-labelledby': string
     tabindex: 0
-    hidden: Signal<boolean>
-    'data-state': Signal<'active' | 'inactive'>
+    hidden: ReadSignal<boolean>
+    'data-state': ReadSignal<'active' | 'inactive'>
     'data-scope': 'tabs'
     'data-part': 'panel'
     'data-value': string
@@ -220,7 +220,7 @@ export interface TabsParts {
     id: string
     'data-scope': 'tabs'
     'data-part': 'root'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
   }
   /**
    * A movable underline/highlight element. Position tracks the active
@@ -233,11 +233,11 @@ export interface TabsParts {
   indicator: {
     'data-scope': 'tabs'
     'data-part': 'indicator'
-    'data-orientation': Signal<Orientation>
+    'data-orientation': ReadSignal<Orientation>
   }
   list: {
     role: 'tablist'
-    'aria-orientation': Signal<Orientation>
+    'aria-orientation': ReadSignal<Orientation>
     'data-scope': 'tabs'
     'data-part': 'list'
   }
@@ -257,7 +257,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<TabsState>,
+  state: ReadSignal<TabsState>,
   send: Send<TabsMsg>,
   opts: ConnectOptions,
 ): TabsParts {

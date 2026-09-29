@@ -6,10 +6,13 @@ import {
   deriveFilename,
   deriveSlug,
   nextId,
+  filenameIdNum,
   parseFilename,
+  UnknownNoteKindError,
   padId,
   preview,
 } from '../src/note-format.js'
+import { isNoteKind } from '../src/note-types.js'
 import type { StatusTransition } from '../src/note-types.js'
 
 describe('deriveSlug', () => {
@@ -57,6 +60,24 @@ describe('deriveFilename / padId / nextId / parseFilename', () => {
   it('parseFilename rejects non-canonical names', () => {
     expect(parseFilename('status.jsonl')).toBeNull()
     expect(parseFilename('current-session')).toBeNull()
+  })
+  it('parseFilename THROWS on a canonical name whose kind is not a NoteKind', () => {
+    // `lasso` was a kind once; a file carrying it is a note this format cannot
+    // type, not a stray non-note — so it is reported, never typed as a NoteKind.
+    expect(() => parseFilename('003-human-lasso-old.md')).toThrow(UnknownNoteKindError)
+    expect(() => parseFilename('003-human-lasso-old.md')).toThrow(
+      /unknown note kind "lasso".*rect \| element \| text \| capture \| reply/,
+    )
+  })
+  it('filenameIdNum reads the id of ANY canonically-shaped name, unknown kind included', () => {
+    expect(filenameIdNum('012-llm-capture-some-slug.md')).toBe(12)
+    expect(filenameIdNum('003-human-lasso-old.md')).toBe(3)
+    expect(filenameIdNum('status.jsonl')).toBeNull()
+  })
+  it('isNoteKind accepts exactly NOTE_KINDS', () => {
+    expect(['rect', 'element', 'text', 'capture', 'reply'].every(isNoteKind)).toBe(true)
+    expect(isNoteKind('lasso')).toBe(false)
+    expect(isNoteKind(undefined)).toBe(false)
   })
 })
 

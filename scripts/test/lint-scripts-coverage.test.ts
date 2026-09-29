@@ -173,11 +173,35 @@ describe('scripts/ lint coverage (#256)', () => {
     // linted by nothing, which is #252/#256 re-opened one extension over and
     // in exactly the same silent way: the gates stay green because they never
     // look. Fail here instead, so the choice is deliberate.
-    const uncovered = gitFiles('scripts').filter(
+    //
+    // ONE shape is exempt, and only in pairs: `x.d.mts` beside a tracked
+    // `x.mjs`. It is the type surface of a helper that package test suites
+    // import (their tsconfigs have no `allowJs`), it holds declarations only,
+    // and it is not unchecked — the `.mjs` annotates each export as
+    // `typeof import('./x.mjs').name`, which resolves TO the declaration, so
+    // `check:scripts` compares the two. A `.d.mts` without its `.mjs` is
+    // uncovered like anything else.
+    const files = gitFiles('scripts')
+    const declarationFor = (f: string) =>
+      f.endsWith('.d.mts') && files.includes(f.replace(/\.d\.mts$/, '.mjs'))
+    const uncovered = files.filter(
       (f) =>
-        CODE_EXTENSIONS.some((e) => f.endsWith(e)) && !GATED_EXTENSIONS.some((e) => f.endsWith(e)),
+        CODE_EXTENSIONS.some((e) => f.endsWith(e)) &&
+        !GATED_EXTENSIONS.some((e) => f.endsWith(e)) &&
+        !declarationFor(f),
     )
     expect(uncovered).toEqual([])
+    // Each exempt declaration is really bound to its implementation.
+    for (const declaration of files.filter(declarationFor)) {
+      const base = path.basename(declaration, '.d.mts')
+      const implementation = readFileSync(
+        path.join(ROOT, declaration.replace(/\.d\.mts$/, '.mjs')),
+        'utf8',
+      )
+      expect(implementation, `${declaration} is not what its .mjs is typed against`).toContain(
+        `typeof import('./${base}.mjs')`,
+      )
+    }
   })
 
   it('resolves the type-aware scripts config for EVERY covered file', async () => {
@@ -197,9 +221,8 @@ describe('scripts/ lint coverage (#256)', () => {
       const config = (await eslint.calculateConfigForFile(file)) as ResolvedConfig
       const project = config.languageOptions?.parserOptions?.project
       // `Array.isArray` is typed `arg is any[]`, so narrowing an `unknown` with
-      // it hands back `any[]` and every read off it is unchecked — the exact
-      // trap this change documents at `scripts/lib/test-durations.mjs`, and one
-      // the lint gate cannot catch here because the sinks (`String(p)`, `!== 2`)
+      // it hands back `any[]` and every read off it is unchecked — a trap the
+      // lint gate cannot catch here because the sinks (`String(p)`, `!== 2`)
       // both accept `any`. Re-declare as `unknown[]` before reading.
       const projectPaths: readonly unknown[] = Array.isArray(project) ? project : []
       if (!projectPaths.some((p) => typeof p === 'string' && p.includes('tsconfig.scripts'))) {
@@ -294,13 +317,12 @@ describe('scripts/ lint coverage (#256)', () => {
     ).toBeGreaterThan(0)
 
     for (const step of invoking) {
-      // `continue-on-error` on the `Test durations` step is deliberate and
-      // documented; here it would silently turn a build-failing gate back into
-      // a log line. Checked on EVERY invocation, so a clean step followed by a
-      // neutered duplicate is caught too.
+      // `continue-on-error` here would silently turn a build-failing gate back
+      // into a log line. Checked on EVERY invocation, so a clean step followed
+      // by a neutered duplicate is caught too.
       expect(step).not.toContain('continue-on-error')
       // A step that never RUNS is neutered just as effectively. Scoped to this
-      // step's own keys, so the deliberate `if: always()` elsewhere is untouched.
+      // step's own keys, so a deliberate `if:` on another step is untouched.
       expect(step).not.toMatch(/^ {8}if:/m)
     }
 

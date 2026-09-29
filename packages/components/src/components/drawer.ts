@@ -1,4 +1,4 @@
-import type { Send, Signal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
+import type { Send, ReadSignal, Mountable, Renderable, TransitionOptions } from '@llui/dom'
 import { tagSend } from '@llui/dom'
 import { drawerLocale } from '../locale/drawer.js'
 import { resolvePortalTarget } from '../utils/portal-target.js'
@@ -104,16 +104,16 @@ export interface DrawerParts {
   trigger: {
     type: 'button'
     'aria-haspopup': 'dialog'
-    'aria-expanded': Signal<boolean>
+    'aria-expanded': ReadSignal<boolean>
     'aria-controls': string
     id: string
-    'data-state': Signal<'open' | 'closed'>
+    'data-state': ReadSignal<'open' | 'closed'>
     'data-scope': 'drawer'
     'data-part': 'trigger'
     onClick: (e: MouseEvent) => void
   }
   backdrop: {
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'drawer'
     'data-part': 'backdrop'
     'aria-hidden': 'true'
@@ -129,7 +129,7 @@ export interface DrawerParts {
     'aria-modal': 'true'
     'aria-labelledby': string
     tabindex: -1
-    'data-state': Signal<PresenceStatus>
+    'data-state': ReadSignal<PresenceStatus>
     'data-scope': 'drawer'
     'data-part': 'content'
     'data-side': DrawerSide
@@ -162,7 +162,7 @@ export interface ConnectOptions {
 }
 
 export function connect(
-  state: Signal<DrawerState>,
+  state: ReadSignal<DrawerState>,
   send: Send<DrawerMsg>,
   opts: ConnectOptions,
 ): DrawerParts {
@@ -238,7 +238,7 @@ export interface OverlayOptions {
    * `z-index` for the floating layer.
    */
   positionerClass?: string
-  state: Signal<DrawerState>
+  state: ReadSignal<DrawerState>
   send: Send<DrawerMsg>
   parts: DrawerParts
   content: () => Renderable

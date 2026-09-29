@@ -3,7 +3,10 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { chromium, type Browser, type Page } from 'playwright'
+import type { Browser, Page } from 'playwright'
+import { useHermeticBrowser } from '../../../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const STYLES = resolve(import.meta.dirname, '../../src/styles')
 const semanticTokens = readFileSync(resolve(STYLES, 'semantic-tokens.css'), 'utf8')
@@ -107,7 +110,7 @@ describe('baseline disabled-state foundation in Chromium', () => {
   let browser: Browser
 
   beforeAll(async () => {
-    browser = await chromium.launch({ headless: true })
+    browser = await hermetic.launch({ headless: true })
   })
 
   afterAll(async () => {

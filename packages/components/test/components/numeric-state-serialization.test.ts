@@ -483,10 +483,12 @@ describe('package-wide component-owned numeric message inventory (#214)', () => 
     it(`rejects sortable pointer/index payloads atomically (${bad})`, () => {
       const idle = sortable.init()
       for (const msg of [
-        { type: 'start' as const, id: 'a', index: bad, container: 'c', x: 10, y: 20 },
-        { type: 'start' as const, id: 'a', index: 0, container: 'c', x: bad, y: 20 },
-        { type: 'start' as const, id: 'a', index: 0, container: 'c', x: 10, y: bad },
-        { type: 'toggleGrab' as const, id: 'a', index: bad, container: 'c' },
+        { type: 'start' as const, id: 'a', index: bad, count: 3, container: 'c', x: 10, y: 20 },
+        { type: 'start' as const, id: 'a', index: 0, count: bad, container: 'c', x: 10, y: 20 },
+        { type: 'start' as const, id: 'a', index: 0, count: 3, container: 'c', x: bad, y: 20 },
+        { type: 'start' as const, id: 'a', index: 0, count: 3, container: 'c', x: 10, y: bad },
+        { type: 'toggleGrab' as const, id: 'a', index: bad, count: 3, container: 'c' },
+        { type: 'toggleGrab' as const, id: 'a', index: 0, count: bad, container: 'c' },
       ]) {
         expectIgnored(idle, sortable.update(idle, msg), `sortable ${msg.type}`)
       }
@@ -494,6 +496,7 @@ describe('package-wide component-owned numeric message inventory (#214)', () => 
         type: 'start',
         id: 'a',
         index: 0,
+        count: 3,
         container: 'c',
         x: 10,
         y: 20,

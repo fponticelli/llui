@@ -274,3 +274,173 @@ describe('attachFloating transactional state', () => {
     cleanup()
   })
 })
+
+describe('attachFloating re-measures after an ancestor animates (#268)', () => {
+  // The re-measure is deferred to the next animation frame, so a test drives
+  // frames by hand: `frame()` runs every callback queued so far.
+  let queued: FrameRequestCallback[] = []
+  const frame = (): void => {
+    const run = queued
+    queued = []
+    for (const callback of run) callback(0)
+  }
+  beforeEach(() => {
+    queued = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      queued.push(callback)
+      return queued.length
+    })
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+      queued[id - 1] = () => {}
+    })
+  })
+
+  it('recomputes when an animation or transition ends on an element containing the anchor', async () => {
+    const menu = document.createElement('div')
+    const anchor = document.createElement('button')
+    const unrelated = document.createElement('div')
+    menu.append(anchor)
+    document.body.append(menu, unrelated)
+    const floating = document.createElement('div')
+    floatingUi.computePosition.mockResolvedValue(positioned('right-start'))
+
+    const cleanup = attachFloating({ anchor, floating })
+    await flush()
+    const initial = floatingUi.computePosition.mock.calls.length
+
+    // A parent's enter zoom finishing moved the anchor's rect: re-measure,
+    // once per frame however many motions ended in it.
+    menu.dispatchEvent(new Event('animationend', { bubbles: true }))
+    anchor.dispatchEvent(new Event('transitionend', { bubbles: true }))
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial)
+    frame()
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 1)
+
+    // Something that cannot have moved the anchor does not.
+    unrelated.dispatchEvent(new Event('animationend', { bubbles: true }))
+    frame()
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 1)
+
+    // Disposal stops listening AND drops a re-measure already scheduled.
+    menu.dispatchEvent(new Event('animationend', { bubbles: true }))
+    cleanup()
+    frame()
+    menu.dispatchEvent(new Event('animationend', { bubbles: true }))
+    frame()
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 1)
+    menu.remove()
+    unrelated.remove()
+  })
+
+  it('recomputes when a motion ends on the floating content that holds the arrow', async () => {
+    // The arrow is absolutely positioned, so its offsets are measured from
+    // its CONTAINING BLOCK. While the content runs its enter zoom it has a
+    // transform, which makes the content (inside its border) that block; once
+    // the animation ends the positioner is. An arrow placed during the
+    // animation stayed 1px off afterwards whenever the content had a border,
+    // until something else happened to re-measure: the gallery's visual gate
+    // saw two renders of one case differ under load.
+    const anchor = document.createElement('button')
+    const floating = document.createElement('div')
+    const content = document.createElement('div')
+    const arrow = document.createElement('div')
+    content.append(arrow)
+    floating.append(content)
+    const elsewhere = document.createElement('div')
+    document.body.append(anchor, floating, elsewhere)
+    floatingUi.computePosition.mockResolvedValue(positioned('bottom'))
+
+    const cleanup = attachFloating({ anchor, floating, arrow })
+    await flush()
+    const initial = floatingUi.computePosition.mock.calls.length
+
+    content.dispatchEvent(new Event('animationend', { bubbles: true }))
+    frame()
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 1)
+
+    // The floating element itself moves the arrow's and the content's
+    // containing blocks too.
+    floating.dispatchEvent(new Event('transitionend', { bubbles: true }))
+    frame()
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 2)
+
+    // A motion that contains neither the anchor nor the arrow cannot move
+    // either of them.
+    elsewhere.dispatchEvent(new Event('animationend', { bubbles: true }))
+    frame()
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 2)
+    cleanup()
+    anchor.remove()
+    floating.remove()
+    elsewhere.remove()
+  })
+
+  it('recomputes on a motion of the floating element when there is no arrow', async () => {
+    const anchor = document.createElement('button')
+    const floating = document.createElement('div')
+    const inner = document.createElement('div')
+    floating.append(inner)
+    document.body.append(anchor, floating)
+    floatingUi.computePosition.mockResolvedValue(positioned('bottom'))
+
+    const cleanup = attachFloating({ anchor, floating })
+    await flush()
+    const initial = floatingUi.computePosition.mock.calls.length
+
+    floating.dispatchEvent(new Event('animationend', { bubbles: true }))
+    frame()
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 1)
+
+    // A descendant of the floating element that holds nothing the engine
+    // positions cannot move it.
+    inner.dispatchEvent(new Event('animationend', { bubbles: true }))
+    frame()
+    await flush()
+    expect(floatingUi.computePosition.mock.calls.length).toBe(initial + 1)
+    cleanup()
+    anchor.remove()
+    floating.remove()
+  })
+
+  it("measures after the ended motion's own handlers have changed the layout", async () => {
+    // The listener is a CAPTURE listener on the document, so it runs BEFORE
+    // the animating element's own `animationend` handlers (a presence machine
+    // settling its state, a class swap). Measuring from inside it read the
+    // layout those handlers were about to replace, and nothing re-measured
+    // afterwards when no size changed: the gallery's visual gate caught an
+    // arrow 1px off in 1 run of 8 in CI's Chromium.
+    const menu = document.createElement('div')
+    const anchor = document.createElement('button')
+    menu.append(anchor)
+    document.body.append(menu)
+    const floating = document.createElement('div')
+    const seen: string[] = []
+    floatingUi.computePosition.mockImplementation(() => {
+      seen.push(menu.dataset['state'] ?? 'unset')
+      return Promise.resolve(positioned('bottom'))
+    })
+    menu.addEventListener('animationend', () => {
+      menu.dataset['state'] = 'settled'
+    })
+
+    const cleanup = attachFloating({ anchor, floating })
+    await flush()
+    seen.length = 0
+
+    menu.dispatchEvent(new Event('animationend', { bubbles: true }))
+    await flush()
+    frame()
+    await flush()
+    expect(seen).toEqual(['settled'])
+    cleanup()
+    menu.remove()
+  })
+})

@@ -137,7 +137,7 @@ jobs:
       # ban is the `Scripts lint` step BELOW (#256, closed): ESLint now runs
       # here, type-aware, with the `no-unsafe-*` family and `no-explicit-any` at
       # error, and zero explicit `any`s survive. (This comment used to claim two
-      # did. Only ONE was TypeScript — `a11y-audit.ts`, now typed from
+      # did. Only ONE was TypeScript — `a11y-audit.ts` (since deleted), typed from
       # axe-core's own declarations. The other, `jfb-trace-start.ts`'s
       # `entries: any[]`, sits inside a TEMPLATE LITERAL: source text this
       # script splices into an upstream JS file, so no gate here has an opinion
@@ -172,11 +172,19 @@ jobs:
       - name: Scripts lint
         run: pnpm lint:scripts
 
-      # The registry ships SOURCE that only a consumer's build compiles, so
-      # `turbo check` never sees it. This is the same blind spot that let
-      # `src/styles/classes/*` accumulate 116 dead Tailwind utilities behind a
-      # green suite; the companion check is the compile-the-real-Tailwind test
-      # in `Test root scripts` below, which fails on a class that emits no CSS.
+      # The registry ships SOURCE that only a consumer's build compiles. This is
+      # the same blind spot that let `src/styles/classes/*` accumulate 116 dead
+      # Tailwind utilities behind a green suite; the companion check is the
+      # compile-the-real-Tailwind test in `Test root scripts` below, which fails
+      # on a class that emits no CSS.
+      #
+      # It delegates to the registry package's own `check`, which compiles both
+      # `llui/` (`tsconfig.json`) and `test/` + `vitest.config.ts`
+      # (`tsconfig.test.json`, #272 — vitest's esbuild transpile never
+      # type-checks, so before it nothing compiled the tests). `turbo check`
+      # runs that script too, but CACHED on registry-local inputs, while the
+      # tests import from `packages/*/test`, `examples/` and `scripts/lib/`;
+      # this step runs it uncached.
       - name: Registry type check
         run: pnpm check:registry
 
@@ -223,59 +231,38 @@ jobs:
         # running many package suites at once oversubscribes the 4-core runner
         # ~10x and starves timer-sensitive tests. Two at a time keeps load gentle.
         run: pnpm -r --workspace-concurrency=2 run test
-        # Opts this run into emitting per-file duration reports (#193). It costs
-        # nothing — vitest's stock `json` reporter runs alongside the default one
-        # — and it means the duration gate below reads the SAME run everyone
-        # looks at, rather than a second measurement pass that could drift from
-        # it.
+        # LLUI_VISUAL_REQUIRED makes the Component Gallery's visual gate (#268)
+        # FAIL when its baselines cannot be compared in this environment (none
+        # recorded yet, recorded on another browser build, or a rendering
+        # fingerprint — fonts, rasteriser — that differs) instead of falling
+        # back to its local determinism check — a gate that compares nothing is
+        # not a gate. Every capture is also written under LLUI_VISUAL_OUTPUT as a
+        # complete candidate baseline set, which the next step uploads.
         env:
+          LLUI_VISUAL_REQUIRED: '1'
           # RELATIVE on purpose, and it must stay that way: this job runs inside a
           # `container:`, where the workspace is mounted at /__w/<repo>/<repo> but
           # `github.workspace` still expands to the HOST path
-          # (/home/runner/work/...). That absolute value named a directory that
-          # does not exist in the container, so the reports went one place and the
-          # reader looked in another. Both sides resolve a relative value against
-          # the repo root (`vitest.shared.ts`, `scripts/check-test-durations.mjs`).
-          LLUI_TEST_DURATIONS: .test-durations
+          # (/home/runner/work/...). An absolute value built from it names a
+          # directory that does not exist in the container, so the writer and the
+          # upload below would look in different places. The gate resolves a
+          # relative value against the repo root
+          # (`examples/component-gallery/test/gates/visual.ts`).
+          LLUI_VISUAL_OUTPUT: .visual-output
 
-      # The slow-test signal that replaced the 5 s timeout canary (#193). Reads
-      # the reports the step above just wrote (`--no-run`) and diffs per-file
-      # durations against the committed baseline AFTER dividing out a same-run
-      # load factor, so a slower runner reports nothing while a single file that
-      # got 6x slower still does.
-      #
-      # REPORT-ONLY ON PURPOSE, and enforced by `continue-on-error` rather than by
-      # the absence of `--gate`. Omitting `--gate` only suppresses the REGRESSION
-      # verdict; the script still exits 1 when it finds no reports, cannot read the
-      # baseline, or aborts on load — and the first of those failed this job on the
-      # very first run, under a comment asserting it could not. A step whose whole
-      # contract is "cannot fail the job" has to say so in the one place the runner
-      # actually reads.
-      #
-      # An earlier revision DID gate, and it reddened on unchanged code: the
-      # committed baseline had been recorded on a loaded machine, so de-scaling
-      # inflated a file whose cost does not track load and reported a 3.33x
-      # "regression" that was not one. This runner also compares linux/x64
-      # against a darwin/arm64 baseline, where that mismatch is larger, and no
-      # amount of local testing can prove that cross-platform comparison stable.
-      # Print the numbers, let a few main-branch runs establish whether they are
-      # trustworthy, and add `--gate` then — not before.
-      #
-      # `if: always()` so a failing suite still leaves the duration verdict
-      # visible instead of hiding it behind the first red step.
-      - name: Test durations (report only)
-        if: always()
-        continue-on-error: true
-        run: pnpm check:test-durations --no-run
-        env:
-          # RELATIVE on purpose, and it must stay that way: this job runs inside a
-          # `container:`, where the workspace is mounted at /__w/<repo>/<repo> but
-          # `github.workspace` still expands to the HOST path
-          # (/home/runner/work/...). That absolute value named a directory that
-          # does not exist in the container, so the reports went one place and the
-          # reader looked in another. Both sides resolve a relative value against
-          # the repo root (`vitest.shared.ts`, `scripts/check-test-durations.mjs`).
-          LLUI_TEST_DURATIONS: .test-durations
+      # The visual gate's evidence (#268): diffs and failing captures, plus a
+      # complete candidate baseline set captured in THIS image. To (re)record
+      # baselines, review this artifact and commit its `visual-baselines/` as
+      # examples/component-gallery/test/visual-baselines/ (or run
+      # `pnpm gallery:visual:update`, which records in this same image).
+      - name: Upload visual gate output
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines
+          path: .visual-output
+          if-no-files-found: ignore
+          retention-days: 14
 
       # Root `scripts/` belongs to no workspace package, so `turbo test` above
       # cannot see it — these tests run under their own vitest config and would

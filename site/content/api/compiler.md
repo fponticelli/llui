@@ -34,7 +34,8 @@ The `@llui/eslint-plugin` package was removed when the rules migrated into this 
 | `peek-in-slot`                 | `.peek()` in a reactive slot — binds once and never updates; `.peek()` is for handlers/effects only       |
 | `pure-derive-body`             | A `.map`/derive body that isn't pure over plain values (side effects, `.at`/`.map`/`.peek`, node helpers) |
 | `no-node-construction-in-body` | Building element/text nodes inside a derive body — use a structural primitive (`show`/`branch`/`each`)    |
-| `prefer-at-over-map`           | `state.map((s) => s.x)` where `state.at('x')` is the more precise, narrower read                          |
+| `prefer-at-over-map`           | `state.map((s) => s.x)` where `state.at('x')` is the more precise, narrower read (path receivers only)    |
+| `at-after-map`                 | `.at()` on a mapped signal (`.map`/`derived`, or a `show`/`branch` arm param over a mapped condition)     |
 | `empty-props`                  | `div({}, [...])` — an empty props object; the helpers take a children-only call, so write `div([...])`    |
 
 **Cross-file / composition diagnostics** — view-helper resolution, dependency flow, and module emission:

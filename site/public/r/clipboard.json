@@ -3,14 +3,14 @@
   "type": "registry:ui",
   "title": "Clipboard",
   "description": "Skin for @llui/components/clipboard — copy field with a live-region indicator.",
-  "dependencies": ["@llui/dom", "@llui/components"],
+  "dependencies": ["@llui/dom@^0.14.0", "@llui/components@^0.20.1"],
   "registryDependencies": ["input", "utils"],
   "files": [
     {
       "path": "registry/llui/ui/clipboard.ts",
       "type": "registry:ui",
       "target": "clipboard.ts",
-      "content": "import { button, div, input, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { inputRecipe } from '@/ui/input'\n\n/**\n * Clipboard — skin for `@llui/components/clipboard`. No shadcn counterpart.\n *\n * `indicator` is an `aria-live` region, so it stays MOUNTED and swaps its text;\n * `data-copied` is the styling hook. Toggling it with `show` would unmount the\n * live region and announce nothing — the same trap the Combobox live region\n * documents.\n */\nexport const Clipboard = classPart(div, 'relative flex w-full max-w-sm items-center')\nexport const ClipboardInput = classPart(input, `${inputRecipe} pr-9 font-mono`)\nexport const ClipboardTrigger = classPart(\n  button,\n  \"absolute top-0 right-0 flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-copied:text-primary [&_svg:not([class*='size-'])]:size-4\",\n)\nexport const ClipboardIndicator = classPart(span, 'sr-only')\n"
+      "content": "import { button, div, input, span } from '@llui/dom'\nimport { classPart } from '@/lib/utils'\nimport { inputRecipe } from '@/ui/input'\n\n/**\n * Clipboard — skin for `@llui/components/clipboard`. No shadcn counterpart.\n *\n * `indicator` is an `aria-live` region, so it stays MOUNTED and swaps its text;\n * `data-copied` is the styling hook. Toggling it with `show` would unmount the\n * live region and announce nothing — the same trap the Combobox live region\n * documents.\n *\n * A REFUSED write (`copyFailed`: permission denied, insecure context) publishes\n * `data-failed` (#266). The indicator is then SHOWN as well as announced, in\n * destructive text on its own line, so a sighted user learns the copy did not\n * happen and can select the value in the read-only field by hand. It is\n * `sr-only` otherwise.\n *\n * The trigger sits at the logical END (`end-0`, `pe-9` reserving the room), so\n * it follows `dir=\"rtl\"` to the left edge.\n */\nexport const Clipboard = classPart(div, 'relative flex w-full max-w-sm flex-wrap items-center')\nexport const ClipboardInput = classPart(input, `${inputRecipe} pe-9 font-mono`)\nexport const ClipboardTrigger = classPart(\n  button,\n  \"absolute top-0 end-0 flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-copied:text-primary data-failed:text-destructive [&_svg:not([class*='size-'])]:size-4\",\n)\nexport const ClipboardIndicator = classPart(\n  span,\n  'sr-only data-failed:not-sr-only data-failed:basis-full data-failed:pt-1.5 data-failed:text-xs data-failed:text-destructive',\n)\n"
     }
   ]
 }

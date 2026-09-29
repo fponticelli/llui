@@ -31,6 +31,9 @@ All are module imports from `@llui/dom`. They own child scopes and reconcile.
 
 Mounts `render()` when `cond` is truthy, else `orElse?()`. `cond` is a `Signal`/`.map`.
 The arm is its own scope that receives state updates while mounted; toggling swaps arms.
+The arm's param is `cond` itself, narrowed: over `state.at('user')` it slices with
+`.at('name')`; over a `.map`/`derived` condition it is mapped too, so read fields with
+`.map((u) => u.name)` (`.at()` there is a type + build error). Same for `branch` arms.
 
 ```ts
 show(
@@ -57,7 +60,8 @@ branch(
 
 ### `each(items, { key, render, transition? })`
 
-Keyed list. `items` is `Signal<readonly T[]>`. `key: (item) => string | number` — **stable
+Keyed list. `items` is `ReadSignal<readonly T[]>` (a `.at()` slice or a `.map()`/`derived()`
+view both work). `key: (item) => string | number` — **stable
 identity is mandatory**. `render: (item: Signal<T>, index: Signal<number>) => Renderable`
 — both `item` and `index` are **signals** (the row is reused on reorder, so its position
 and contents change under it).
@@ -191,7 +195,10 @@ function header(header: Signal<HeaderState>, send: (m: Msg) => void): Renderable
 view: ({ state, send }) => [header(state.at('header'), send), main([...])]
 ```
 
-Pass `state.at('slice')` (or `state.map(...)`) down. Annotate the return as `Renderable`
+Pass `state.at('slice')` (or `state.map(...)`) down. Type the parameter by what the helper
+does with it: `Signal<T>` when it calls `.at()` (as `header` does — so it needs a `.at()`
+slice), `ReadSignal<T>` when it only reads (`.map`, `.peek`, a slot), which accepts a
+`state.map(...)` too. Annotate the return as `Renderable`
 (a list) or `Mountable` (a single element) — never `Node`/`Node[]`. A full child-component
 boundary (its own `component()` with an update cycle) is only for independent effect
 lifecycle or library packaging, not routine decomposition.

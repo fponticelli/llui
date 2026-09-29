@@ -183,15 +183,15 @@ describe('scripts/ type-check coverage (#252)', () => {
     ).toBeGreaterThan(0)
 
     // EVERY invocation must be un-neutered, not just the first. `continue-on-error`
-    // on the `Test durations` step is deliberate and documented; on this one it
-    // would silently turn a build-failing gate back into a log line. Checking all
+    // on this step would silently turn a build-failing gate back into a log
+    // line. Checking all
     // of them also means a clean step followed by a neutered duplicate is caught,
     // which a first-match check would wave through.
     for (const step of invoking) {
       expect(step).not.toContain('continue-on-error')
       // A step that never RUNS is neutered just as effectively as one that cannot
-      // fail. Scoped to this step's own keys, so the deliberate `if: always()` on
-      // the `Test durations` step is untouched.
+      // fail. Scoped to this step's own keys, so a deliberate `if:` on another
+      // step (e.g. the visual-output upload's `if: failure()`) is untouched.
       expect(step).not.toMatch(/^ {8}if:/m)
     }
 

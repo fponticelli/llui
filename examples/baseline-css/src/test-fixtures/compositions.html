@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Baseline compositions live fixture (test-only)</title>
+  </head>
+  <body>
+    <!-- The APP CONTAINER: `menus-container-direction.browser.test.ts` sets
+         `dir` on it, never on `<html>`, while every floating surface portals
+         to `<body>` outside it. -->
+    <main id="app" style="display: grid; gap: 1.5rem; padding: 1.5rem; max-inline-size: 64rem">
+      <!-- Inset like a card on a page: the Menubar submenu edge-flip test
+           needs the View menu far enough from the inline-start edge that
+           the flipped submenu fits. -->
+      <section id="menus" style="padding: 1.5rem"></section>
+      <section id="toast"></section>
+      <section id="navigation-data"></section>
+    </main>
+    <script type="module" src="./compositions.ts"></script>
+  </body>
+</html>

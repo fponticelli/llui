@@ -128,6 +128,14 @@ describe('helpers', () => {
 describe('time-picker.connect', () => {
   const p = connect(rootSignal(), vi.fn())
 
+  // #266: the group owns the border and focus ring, so the GROUP is what a
+  // disabled picker must dim — with the state on the root, the shared disabled
+  // foundation dims it once and keeps the segments inside it whole.
+  it('publishes disabled on the root group (#266)', () => {
+    expect(read(p.root['data-disabled'], init({ disabled: true }))).toBe('')
+    expect(read(p.root['data-disabled'], init())).toBeUndefined()
+  })
+
   it('typing an hour into a 12-hour picker keeps the meridiem (#125 defect 5)', () => {
     const send = vi.fn()
     const pc = connect(rootSignal(), send)

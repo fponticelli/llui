@@ -1,0 +1,47 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!README.md",
+        "$TURBO_ROOT$/registry/registry.json",
+        "$TURBO_ROOT$/registry/llui/**",
+        "$TURBO_ROOT$/registry/test/*-scenario-renderer.ts",
+        "$TURBO_ROOT$/registry/test/specialized-tools-frozen-icons.ts",
+        "$TURBO_ROOT$/examples/registry-demo/src/components/**",
+        "$TURBO_ROOT$/examples/registry-demo/src/lib/**",
+        "$TURBO_ROOT$/packages/components/src/**",
+        "$TURBO_ROOT$/packages/components/test/styles/**",
+        "$TURBO_ROOT$/scripts/lib/vite-source-aliases.mjs"
+      ]
+    },
+    "check": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!README.md",
+        "$TURBO_ROOT$/registry/registry.json",
+        "$TURBO_ROOT$/registry/llui/**",
+        "$TURBO_ROOT$/registry/test/**",
+        "$TURBO_ROOT$/packages/components/test/styles/**"
+      ]
+    },
+    "test": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!README.md",
+        "$TURBO_ROOT$/vitest.shared.ts",
+        "$TURBO_ROOT$/registry/registry.json",
+        "$TURBO_ROOT$/registry/llui/**",
+        "$TURBO_ROOT$/registry/test/**",
+        "$TURBO_ROOT$/examples/registry-demo/src/components/**",
+        "$TURBO_ROOT$/examples/registry-demo/src/lib/**",
+        "$TURBO_ROOT$/packages/components/src/**",
+        "$TURBO_ROOT$/packages/components/test/styles/**",
+        "$TURBO_ROOT$/scripts/lib/vite-source-aliases.mjs",
+        "$TURBO_ROOT$/packages/interactions/src/**"
+      ],
+      "env": ["LLUI_VISUAL_OUTPUT", "LLUI_VISUAL_REQUIRED", "LLUI_VISUAL_UPDATE"]
+    }
+  }
+}

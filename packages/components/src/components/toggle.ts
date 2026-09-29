@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 
 /**
  * Toggle button — a button that can be pressed or not. Unlike a checkbox,
@@ -48,11 +48,11 @@ export interface ToggleParts {
   root: {
     type: 'button'
     role: 'button'
-    'aria-pressed': Signal<boolean>
-    'aria-disabled': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    'data-state': Signal<'on' | 'off'>
-    'data-disabled': Signal<'' | undefined>
+    'aria-pressed': ReadSignal<boolean>
+    'aria-disabled': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    'data-state': ReadSignal<'on' | 'off'>
+    'data-disabled': ReadSignal<'' | undefined>
     'data-scope': 'toggle'
     'data-part': 'root'
     onClick: (e: MouseEvent) => void
@@ -60,7 +60,7 @@ export interface ToggleParts {
   }
 }
 
-export function connect(state: Signal<ToggleState>, send: Send<ToggleMsg>): ToggleParts {
+export function connect(state: ReadSignal<ToggleState>, send: Send<ToggleMsg>): ToggleParts {
   return {
     root: {
       type: 'button',

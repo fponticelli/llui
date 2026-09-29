@@ -16,6 +16,7 @@ describe('sortable 2D — DragState carries both X and Y', () => {
       type: 'start',
       id: 'a',
       index: 1,
+      count: 10,
       container: 'grid',
       x: 100,
       y: 50,
@@ -31,6 +32,7 @@ describe('sortable 2D — DragState carries both X and Y', () => {
       type: 'start',
       id: 'a',
       index: 1,
+      count: 10,
       container: 'grid',
       x: 100,
       y: 50,
@@ -47,6 +49,7 @@ describe('sortable 2D — DragState carries both X and Y', () => {
       type: 'start',
       id: 'a',
       index: 1,
+      count: 10,
       container: 'grid',
       x: 100,
       y: 50,
@@ -60,6 +63,7 @@ describe('sortable 2D — DragState carries both X and Y', () => {
       type: 'start',
       id: 'a',
       index: 1,
+      count: 10,
       container: 'grid',
       x: 100,
       y: 50,
@@ -76,6 +80,7 @@ describe('sortable 2D — dragged item transform carries both axes', () => {
     const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'grid', layout: '2d' })
     const item = parts.item('a', 0)
     const state: SortableState = {
+      announcement: null,
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -86,6 +91,7 @@ describe('sortable 2D — dragged item transform carries both axes', () => {
         startY: 50,
         currentX: 150,
         currentY: 80,
+        count: 10,
       },
     }
     expect(read(item['style.transform'], state)).toBe('translate(50px, 30px)')
@@ -95,6 +101,7 @@ describe('sortable 2D — dragged item transform carries both axes', () => {
     const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'list', layout: '1d' })
     const item = parts.item('a', 0)
     const state: SortableState = {
+      announcement: null,
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -105,6 +112,7 @@ describe('sortable 2D — dragged item transform carries both axes', () => {
         startY: 50,
         currentX: 150,
         currentY: 80,
+        count: 10,
       },
     }
     expect(read(item['style.transform'], state)).toBe('translateY(30px)')
@@ -114,6 +122,7 @@ describe('sortable 2D — dragged item transform carries both axes', () => {
     const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'list' })
     const item = parts.item('a', 0)
     const state: SortableState = {
+      announcement: null,
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -124,6 +133,7 @@ describe('sortable 2D — dragged item transform carries both axes', () => {
         startY: 50,
         currentX: 150,
         currentY: 80,
+        count: 10,
       },
     }
     expect(read(item['style.transform'], state)).toBe('translateY(30px)')
@@ -135,6 +145,7 @@ describe('sortable 2D — data-shift is suppressed in 2D', () => {
     const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'grid', layout: '2d' })
     const item = parts.item('b', 1)
     const state: SortableState = {
+      announcement: null,
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -145,6 +156,7 @@ describe('sortable 2D — data-shift is suppressed in 2D', () => {
         startY: 0,
         currentX: 0,
         currentY: 0,
+        count: 10,
       },
     }
     expect(read(item['data-shift'], state)).toBeUndefined()
@@ -154,6 +166,7 @@ describe('sortable 2D — data-shift is suppressed in 2D', () => {
     const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'list', layout: '1d' })
     const item = parts.item('b', 1)
     const state: SortableState = {
+      announcement: null,
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -164,6 +177,7 @@ describe('sortable 2D — data-shift is suppressed in 2D', () => {
         startY: 0,
         currentX: 0,
         currentY: 0,
+        count: 10,
       },
     }
     // Item at liveIndex=1 with drag 0→2 shifts up. The connect closure
@@ -294,6 +308,7 @@ describe('sortable 2D — non-dragged item per-item transform', () => {
       // (liveIndex=2) should shift left-by-one in array order —
       // visually, each takes the position its predecessor held.
       const state: SortableState = {
+        announcement: null,
         dragging: {
           id: 'a',
           startIndex: 0,
@@ -304,6 +319,7 @@ describe('sortable 2D — non-dragged item per-item transform', () => {
           startY: 40,
           currentX: 50,
           currentY: 130,
+          count: 10,
         },
       }
       // Item b (liveIndex=1, center {x: 160, y: 40}) should move to
@@ -332,6 +348,7 @@ describe('sortable 2D — non-dragged item per-item transform', () => {
     const parts = connect(rootSignal<SortableState>(), vi.fn(), { id: 'grid', layout: '2d' })
     const item = parts.item('b', 1)
     const state: SortableState = {
+      announcement: null,
       dragging: {
         id: 'a',
         startIndex: 0,
@@ -342,6 +359,7 @@ describe('sortable 2D — non-dragged item per-item transform', () => {
         startY: 0,
         currentX: 0,
         currentY: 0,
+        count: 10,
       },
     }
     expect(read(item['style.transform'], state)).toBeUndefined()

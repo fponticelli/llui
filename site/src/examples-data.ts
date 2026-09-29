@@ -26,9 +26,25 @@ export interface ExampleMeta {
    * SPAs use the flags directly.
    */
   vike?: boolean
+  /**
+   * The example builds ITSELF (its package `build` script) because it is more
+   * than one Vite build — the Component Gallery is a shell plus two isolated
+   * path documents. Its output uses a relative base, so it works under
+   * `/apps/<slug>/` unchanged; build-examples points the named env var at the
+   * staging directory instead of passing `--base`/`--outDir`.
+   */
+  selfBuildOutEnv?: string
 }
 
 export const EXAMPLES: ExampleMeta[] = [
+  {
+    slug: 'component-gallery',
+    pkg: '@llui/example-component-gallery',
+    title: 'Component Gallery',
+    blurb:
+      'Every component once, with deterministic scenarios, on both styling paths: Baseline theme and Registry skins.',
+    selfBuildOutEnv: 'LLUI_GALLERY_OUT',
+  },
   {
     slug: 'counter',
     pkg: '@llui/example-counter',
@@ -46,18 +62,6 @@ export const EXAMPLES: ExampleMeta[] = [
     pkg: '@llui/example-form-validation',
     title: 'Form Validation',
     blurb: 'A sign-up form with Zod schema validation and live field errors.',
-  },
-  {
-    slug: 'registry-demo',
-    pkg: '@llui/example-registry-demo',
-    title: 'Registry Demo',
-    blurb: 'Every registry component, from source copied into the app by `llui add`.',
-  },
-  {
-    slug: 'components-demo',
-    pkg: '@llui/example-components-demo',
-    title: 'Components Demo',
-    blurb: 'A gallery of the headless @llui/components primitives.',
   },
   {
     slug: 'dashboard',

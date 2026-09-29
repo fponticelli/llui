@@ -1,8 +1,11 @@
 // @vitest-environment node
 
 /**
- * Real-Chromium proof of the Toast contract in BOTH actual demos
- * (`examples/components-demo`, `examples/registry-demo`) — not only the
+ * Real-Chromium proof of the Toast contract in a live, consumer-driven
+ * composition on BOTH styling paths — the Baseline theme's
+ * (`examples/baseline-css/src/test-fixtures/compositions/toast.ts`, in the
+ * Tailwind-free Baseline consumer) and the Registry skins'
+ * (`examples/registry-demo`, the copied-source sync fixture) — not only the
  * isolated scenario-renderer harness in
  * `packages/components/test/styles/menus-overlays-live-render.browser.test.ts`
  * (#265, task item 1). Mirrors the pattern of
@@ -14,15 +17,20 @@
  */
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
-import { chromium, type Browser, type Page } from 'playwright'
-import { createServer, type ViteDevServer } from 'vite'
+import type { Browser, Page } from 'playwright'
+import { prebuildFixture, type PrebuiltFixture } from '../../scripts/lib/prebuilt-fixture.mjs'
 import { resolve } from 'node:path'
+import { useHermeticBrowser } from '../../scripts/lib/hermetic-browser.mjs'
+
+const hermetic = useHermeticBrowser()
 
 const repoRoot = resolve(import.meta.dirname, '../..')
 
 interface Demo {
   readonly path: 'baseline' | 'registryTailwind'
   readonly dir: string
+  /** The HTML entry, relative to `dir`. */
+  readonly input: string
   /** Locator for the button that pushes a toast of a given type. */
   readonly trigger: (type: string) => string
   /** Locator for the async (loading -> success) trigger. */
@@ -36,30 +44,27 @@ interface Demo {
 const DEMOS: readonly Demo[] = [
   {
     path: 'baseline',
-    dir: 'examples/components-demo',
+    dir: 'examples/baseline-css',
+    input: 'src/test-fixtures/compositions.html',
     trigger: (type) => `#toast-trigger-${type}`,
     asyncTrigger: '#toast-trigger-async',
   },
   {
     path: 'registryTailwind',
     dir: 'examples/registry-demo',
+    input: 'index.html',
     trigger: (type) => `[data-toast-demo-type="${type}"]`,
     asyncTrigger: '[data-toast-demo-type="async"]',
   },
 ]
 
-async function startExample(directory: string): Promise<{ server: ViteDevServer; url: string }> {
-  const server = await createServer({
-    root: resolve(repoRoot, directory),
-    logLevel: 'error',
-    server: { host: '127.0.0.1', port: 0 },
-  })
-  await server.listen()
-  const address = server.httpServer?.address()
-  if (address === null || address === undefined || typeof address === 'string') {
-    throw new Error(`Vite did not bind ${directory} to a TCP port`)
-  }
-  return { server, url: `http://127.0.0.1:${address.port}/` }
+// Built once and served static (`scripts/lib/prebuilt-fixture.mjs`) rather
+// than by a Vite dev server: a dev server compiled the app on demand inside
+// the first test to navigate, re-sent its whole unbundled module graph to
+// every fresh page, and shared the example's dependency-optimizer cache with
+// every concurrent suite serving the same example (see that module's header).
+function buildExample(demo: Demo): Promise<PrebuiltFixture> {
+  return prebuildFixture({ root: resolve(repoRoot, demo.dir), inputs: [demo.input] })
 }
 
 declare global {
@@ -118,25 +123,26 @@ async function recordToastStates(page: Page): Promise<void> {
 const statesOf = (page: Page, id: string): Promise<string[] | undefined> =>
   page.evaluate((key) => window.__toastStates?.[key], id)
 
-describe('actual Toast demos in Chromium (#265 task item 1)', () => {
+describe('live Toast compositions in Chromium, both paths (#265 task item 1)', () => {
   let browser: Browser
-  let servers: ViteDevServer[] = []
+  let builds: PrebuiltFixture[] = []
   const urls: Record<string, string> = {}
 
   beforeAll(async () => {
-    const [baseline, registry] = await Promise.all([
-      startExample('examples/components-demo'),
-      startExample('examples/registry-demo'),
+    const [built, launched] = await Promise.all([
+      Promise.all(DEMOS.map((demo) => buildExample(demo))),
+      hermetic.launch({ headless: true }),
     ])
-    servers = [baseline.server, registry.server]
-    urls.baseline = baseline.url
-    urls.registryTailwind = registry.url
-    browser = await chromium.launch({ headless: true })
-  }, 60_000)
+    builds = built
+    browser = launched
+    DEMOS.forEach((demo, i) => (urls[demo.path] = built[i]!.url(demo.input)))
+    // One build per path: the compile a dev server used to spread over the
+    // first test of each is paid here, once, under the hook's budget.
+  }, 120_000)
 
   afterAll(async () => {
     await browser?.close()
-    await Promise.all(servers.map((s) => s.close()))
+    await Promise.all(builds.map((build) => build.close()))
   })
 
   const REGION = '[data-scope="toast"][data-part="region"]'

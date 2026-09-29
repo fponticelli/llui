@@ -7,7 +7,7 @@ import {
   svg,
   type ElProps,
   type Mountable,
-  type Signal,
+  type ReadSignal,
 } from '@llui/dom'
 
 /**
@@ -15,7 +15,7 @@ import {
  *
  * `icon('lucide:star')` renders one of Iconify's ~200k glyphs — `lucide`,
  * `mdi`, `simple-icons`, `heroicons`, any set the API serves. The name may be a
- * `Signal<string>`, in which case the glyph follows it: a change clears the box
+ * `ReadSignal<string>`, in which case the glyph follows it: a change clears the box
  * and paints the new body once it arrives.
  *
  * Three properties of this module are load-bearing, and each has a cost:
@@ -236,11 +236,11 @@ function paint(host: SVGElement, data: IconData): void {
  * Render one Iconify glyph as a real `<svg>`.
  *
  * `name` is `prefix:name` (`'lucide:star'`, `'simple-icons:github'`; a bare
- * name is a Lucide glyph) or a `Signal<string>` of one, in which case the glyph
+ * name is a Lucide glyph) or a `ReadSignal<string>` of one, in which case the glyph
  * follows the signal. `props` spread onto the `<svg>`; `class` is passed through
  * as given, so a caller sizes and colours the glyph from there.
  */
-export function icon(name: string | Signal<string>, props?: ElProps): Mountable {
+export function icon(name: string | ReadSignal<string>, props?: ElProps): Mountable {
   // `onMount` hands a callback the BUILD's root container, NOT the element the
   // call sits inside — mounts are collected per build (a view, an arm, an
   // `each` row) and every callback in one gets the same container. This used

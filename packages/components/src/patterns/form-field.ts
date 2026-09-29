@@ -1,5 +1,5 @@
 import { tagSend } from '@llui/dom'
-import type { Send, Signal } from '@llui/dom'
+import type { Send, ReadSignal } from '@llui/dom'
 import type { StandardSchemaV1 } from '@standard-schema/spec'
 import { allFiniteNumbers } from '../utils/number.js'
 import {
@@ -237,8 +237,8 @@ export interface FormFieldFieldParts {
   root: {
     'data-scope': 'form-field'
     'data-part': 'field'
-    'data-invalid': Signal<'' | undefined>
-    'data-touched': Signal<'' | undefined>
+    'data-invalid': ReadSignal<'' | undefined>
+    'data-touched': ReadSignal<'' | undefined>
   }
   label: {
     id: string
@@ -249,12 +249,12 @@ export interface FormFieldFieldParts {
   control: {
     id: string
     'aria-labelledby': string
-    'aria-describedby': Signal<string | undefined>
-    'aria-invalid': Signal<'true' | undefined>
-    'aria-required': Signal<'true' | undefined>
-    'aria-busy': Signal<'true' | undefined>
-    disabled: Signal<boolean>
-    readOnly: Signal<boolean>
+    'aria-describedby': ReadSignal<string | undefined>
+    'aria-invalid': ReadSignal<'true' | undefined>
+    'aria-required': ReadSignal<'true' | undefined>
+    'aria-busy': ReadSignal<'true' | undefined>
+    disabled: ReadSignal<boolean>
+    readOnly: ReadSignal<boolean>
     'data-scope': 'form-field'
     'data-part': 'control'
     onBlur: (e: FocusEvent) => void
@@ -283,17 +283,17 @@ export interface FormFieldFieldParts {
     'aria-live': 'polite'
     'data-scope': 'form-field'
     'data-part': 'error'
-    hidden: Signal<boolean>
+    hidden: ReadSignal<boolean>
   }
   /** The error CONTENT, for rendering — never spread onto an element. */
   error: {
     /** First visible issue message for this field, or '' when no error is shown. */
-    message: Signal<string>
+    message: ReadSignal<string>
     /** Every issue mapped to this field (for custom rendering). */
-    issues: Signal<StandardSchemaV1.Issue[]>
+    issues: ReadSignal<StandardSchemaV1.Issue[]>
     /** True only when the field is invalid AND its error should be visible
      * (`touched || status === 'submitted'`). */
-    visible: Signal<boolean>
+    visible: ReadSignal<boolean>
   }
 }
 
@@ -301,15 +301,15 @@ export interface FormFieldParts {
   root: {
     'data-scope': 'form-field'
     'data-part': 'root'
-    'data-state': Signal<FormStatus>
-    'aria-busy': Signal<'true' | undefined>
+    'data-state': ReadSignal<FormStatus>
+    'aria-busy': ReadSignal<'true' | undefined>
   }
   submit: {
     type: 'submit'
     'data-scope': 'form-field'
     'data-part': 'submit'
-    'data-state': Signal<FormStatus>
-    disabled: Signal<boolean>
+    'data-state': ReadSignal<FormStatus>
+    disabled: ReadSignal<boolean>
   }
   /** Build the full part bag for the named field, with the form blur-to-touch
    * handler already merged into `control`. */
@@ -333,7 +333,7 @@ function issuesForField(state: FormFieldState, name: string): StandardSchemaV1.I
 }
 
 export function connect(
-  state: Signal<FormFieldState>,
+  state: ReadSignal<FormFieldState>,
   send: Send<FormFieldMsg>,
   opts: FormFieldConnectOptions,
 ): FormFieldParts {

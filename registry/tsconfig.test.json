@@ -1,0 +1,25 @@
+{
+  // Type-checks the registry's OWN tests and vitest config (#272). Vitest
+  // transpiles `test/` with esbuild, which strips types without checking them,
+  // and `tsconfig.json` next door includes only `llui` — so before this config a
+  // type error under `test/` failed no gate at all. Two stale-shape
+  // `Accordion`/`Collapsible` calls in `navigation-data-styles.test.ts` compiled
+  // nowhere and only crashed at runtime, and the first run of this config
+  // reported 11 more errors.
+  //
+  // A SEPARATE config rather than a wider `include` on `tsconfig.json`, because
+  // that one checks the shipped source in the shape a consumer compiles it, and
+  // must not gain test-only ambient types. `allowJs` lets the `.mjs` helpers the
+  // tests import from `scripts/lib/` resolve with inferred types (they are
+  // checked from the inside by `pnpm check:scripts`).
+  //
+  // The package `check` script runs both configs, so `turbo check` and
+  // `pnpm check:registry` (which delegates to it) cover both.
+  // `scripts/test/registry-typecheck-coverage.test.ts` pins the covered SET.
+  "extends": "./tsconfig.json",
+  "include": ["test", "vitest.config.ts"],
+  "compilerOptions": {
+    "allowJs": true,
+    "types": ["node"]
+  }
+}
