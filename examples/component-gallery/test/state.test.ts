@@ -85,6 +85,15 @@ describe('shell update', () => {
     expect(state.notices).toEqual([])
   })
 
+  it('keeps a deep-linked axis across a case that cannot vary it', () => {
+    const [state] = run(
+      initialState('?entry=accordion&case=closed&dir=rtl'),
+      { type: 'setCase', caseId: 'disabled' },
+      { type: 'setCase', caseId: 'closed' },
+    )
+    expect(search(state)).toBe('?entry=accordion&case=closed&dir=rtl')
+  })
+
   it('tracks each frame by document URL and retry generation, ignoring stale reports', () => {
     const [state] = run(initialState('?entry=tabs'))
     const [key] = Object.keys(state.frames)

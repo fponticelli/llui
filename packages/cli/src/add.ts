@@ -59,6 +59,41 @@ export interface AddResult {
   upgradeCommand: string | null
 }
 
+interface PlannedFile {
+  file: RegistryFile
+  dest: string
+  rel: string
+  skip: boolean
+}
+
+interface PlannedItem {
+  source: RegistryItem
+  files: PlannedFile[]
+}
+
+/** The index and full record must describe the same item before either is trusted for a copy. */
+function itemManifest(item: RegistryItem): object {
+  return {
+    name: item.name,
+    type: item.type,
+    title: item.title,
+    description: item.description,
+    dependencies: item.dependencies,
+    devDependencies: item.devDependencies,
+    registryDependencies: item.registryDependencies,
+    files: item.files.map(({ path, type, target }) => ({ path, type, target })),
+  }
+}
+
+function assertSameItem(listed: RegistryItem, full: RegistryItem): void {
+  if (JSON.stringify(itemManifest(listed)) !== JSON.stringify(itemManifest(full))) {
+    throw new Error(
+      `Registry item "${listed.name}" differs between the index and its full record. ` +
+        'Nothing was written. Retry when the registry serves a consistent version.',
+    )
+  }
+}
+
 /**
  * Copy registry items into the project.
  *
@@ -85,44 +120,58 @@ export async function add(options: AddOptions): Promise<AddResult> {
     mismatches.length === 0 ? null : upgradeCommandFor(await installCommand(cwd), mismatches)
   if (upgradeCommand !== null && !force) throw new VersionMismatchError(mismatches, upgradeCommand)
 
+  // Resolve every file decision and full remote record before the first write.
+  // A registry deploy or cache can serve an older index alongside newer item
+  // records; checking only the index's minimum would then approve newer source
+  // for an older app. The same preflight prevents a later bad record from
+  // leaving earlier items half-copied.
+  const plans: PlannedItem[] = []
+  for (const listed of items) {
+    const files: PlannedFile[] = []
+    for (const file of listed.files) {
+      const dir = targetDir(config, file.type)
+      const dest = path.join(cwd, dir, file.target)
+      files.push({
+        file,
+        dest,
+        rel: path.relative(cwd, dest).split(path.sep).join('/'),
+        skip: !overwrite && (await exists(dest)),
+      })
+    }
+    let source = listed
+    if (
+      !dryRun &&
+      files.some(({ skip }) => !skip) &&
+      isRemote(config.registry) &&
+      listed.files.some(({ content }) => content === undefined)
+    ) {
+      source = await loadRemoteItem(config.registry, listed.name)
+      assertSameItem(listed, source)
+      for (const [index, planned] of files.entries()) {
+        if (!planned.skip && source.files[index]?.content === undefined) {
+          throw new Error(
+            `Remote registry item "${listed.name}" has no content for "${planned.file.path}". ` +
+              'Nothing was written.',
+          )
+        }
+      }
+    }
+    plans.push({ source, files })
+  }
+
   const written: string[] = []
   const skipped: string[] = []
 
-  for (const listed of items) {
-    // Hydration is DEFERRED until a file is actually about to be written. The
-    // remote index strips file bodies but keeps the file LIST, so targets, skip
-    // decisions and the whole dry-run plan are answerable without it — and a
-    // preview that touches the network is not much of a preview. It is also
-    // resolved once per item, not once per file.
-    let hydrated: RegistryItem | null = null
-    const full = async (): Promise<RegistryItem> => {
-      if (hydrated === null) {
-        hydrated =
-          isRemote(config.registry) && listed.files.some((f) => f.content === undefined)
-            ? await loadRemoteItem(config.registry, listed.name)
-            : listed
-      }
-      return hydrated
-    }
-
-    for (const [index, file] of listed.files.entries()) {
-      const dir = targetDir(config, file.type)
-      const dest = path.join(cwd, dir, file.target)
-      const rel = path.relative(cwd, dest).split(path.sep).join('/')
-
-      if (!overwrite && (await exists(dest))) {
+  for (const { source, files } of plans) {
+    for (const [index, { file, dest, rel, skip }] of files.entries()) {
+      if (skip) {
         skipped.push(rel)
         continue
       }
       if (!dryRun) {
         await mkdir(path.dirname(dest), { recursive: true })
-        // Index and record list the same files in the same order, so the record's
-        // entry at this index is this file. Fall back to the index entry if a
-        // registry ever disagrees — `contentOf` then reports the missing body
-        // rather than writing the wrong one.
-        const source = (await full()).files[index] ?? file
-        const content = await contentOf(source, config.registry)
-        await writeFile(dest, rewriteImports(content, dir, config), 'utf8')
+        const content = await contentOf(source.files[index] ?? file, config.registry)
+        await writeFile(dest, rewriteImports(content, targetDir(config, file.type), config), 'utf8')
       }
       written.push(rel)
     }

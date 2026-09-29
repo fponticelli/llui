@@ -54,7 +54,7 @@ export const guardBrowser = (browser, onUnexpected) => {
     await routeContext(context, hooks)
   }
   browser.newContext = async (options) => {
-    const context = await newContext({ serviceWorkers: 'block', ...options })
+    const context = await newContext({ ...options, serviceWorkers: 'block' })
     await route(context)
     return context
   }
@@ -62,7 +62,7 @@ export const guardBrowser = (browser, onUnexpected) => {
   // detail. The page is still `about:blank` when the route lands, and it is
   // returned only after that, so nothing it loads escapes.
   browser.newPage = async (options) => {
-    const page = await newPage({ serviceWorkers: 'block', ...options })
+    const page = await newPage({ ...options, serviceWorkers: 'block' })
     await route(page.context())
     return page
   }

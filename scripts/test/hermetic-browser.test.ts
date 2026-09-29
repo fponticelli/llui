@@ -1,6 +1,13 @@
 import { createServer, type Server } from 'node:http'
 import { afterAll, afterEach, beforeAll, describe, expect, expectTypeOf, it } from 'vitest'
-import { chromium, type Browser, type LaunchOptions, type Page } from 'playwright'
+import {
+  chromium,
+  type Browser,
+  type BrowserContext,
+  type BrowserContextOptions,
+  type LaunchOptions,
+  type Page,
+} from 'playwright'
 
 import {
   assertNoUnexpectedRequests,
@@ -62,6 +69,37 @@ async function fetchFrom(page: Page, url: string): Promise<string> {
     }
   }, url)
 }
+
+describe('guardBrowser context options', () => {
+  for (const via of ['newPage', 'newContext'] as const) {
+    it(`forces service workers off through ${via}`, async () => {
+      let passed: BrowserContextOptions | undefined
+      const context = {
+        on: () => context,
+        pages: () => [],
+        route: async () => {},
+        routeWebSocket: async () => {},
+      } as unknown as BrowserContext
+      const page = { context: () => context } as Page
+      const browser = {
+        newContext: (options?: BrowserContextOptions) => {
+          passed = options
+          return Promise.resolve(context)
+        },
+        newPage: (options?: BrowserContextOptions) => {
+          passed = options
+          return Promise.resolve(page)
+        },
+      } as Browser
+      const guarded = guardBrowser(browser, () => {})
+
+      if (via === 'newPage') await guarded.newPage({ serviceWorkers: 'allow' })
+      else await guarded.newContext({ serviceWorkers: 'allow' })
+
+      expect(passed?.serviceWorkers).toBe('block')
+    })
+  }
+})
 
 describe('guardBrowser (a real Chromium)', () => {
   // A launcher of our own, so this describe owns its refused-request log
@@ -130,6 +168,25 @@ describe('guardBrowser (a real Chromium)', () => {
     expect(outcome).toEqual({ registered: false, count: 0 })
     await page.context().close()
   })
+
+  for (const via of ['newPage', 'newContext'] as const) {
+    it(`blocks service workers even when ${via} requests them`, async () => {
+      const page =
+        via === 'newPage'
+          ? await browser.newPage({ serviceWorkers: 'allow' })
+          : await (await browser.newContext({ serviceWorkers: 'allow' })).newPage()
+      try {
+        await page.goto(`${origin}/`)
+        const registration = await page.evaluate(async () => {
+          const worker = await navigator.serviceWorker.register('/sw.js')
+          return worker !== undefined
+        })
+        expect(registration).toBe(false)
+      } finally {
+        await page.context().close()
+      }
+    })
+  }
 })
 
 /**

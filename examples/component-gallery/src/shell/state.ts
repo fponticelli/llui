@@ -246,7 +246,11 @@ export function update(state: State, msg: Msg): [State, Effect[]] {
       // `remembered` for a case that does, instead of being reported dropped.
       const carried = { ...state.remembered, ...state.location.environment }
       const environment = pickAxes(carried, nextCase.environmentAxes)
-      return navigate(state, entryLocation(state, { caseId: msg.caseId, environment }), 'push')
+      return navigate(
+        { ...state, remembered: carried },
+        entryLocation(state, { caseId: msg.caseId, environment }),
+        'push',
+      )
     }
     case 'setAxis': {
       const environment = { ...state.location.environment, ...msg.patch }

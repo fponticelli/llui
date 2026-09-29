@@ -104,6 +104,54 @@ describe('remote registry', () => {
     await expect(readdir(path.join(cwd, 'src'))).rejects.toThrow()
   })
 
+  it('writes nothing when an item record needs a newer package than its index declares', async () => {
+    const file = (name: string, content?: string) => ({
+      path: `registry/llui/ui/${name}.ts`,
+      type: 'registry:ui',
+      target: `${name}.ts`,
+      ...(content === undefined ? {} : { content }),
+    })
+    const first = {
+      name: 'first',
+      type: 'registry:ui',
+      dependencies: [],
+      registryDependencies: [],
+      files: [file('first')],
+    }
+    const second = {
+      ...first,
+      name: 'second',
+      dependencies: ['@llui/components@^0.20.1'],
+      files: [file('second')],
+    }
+    const responses = new Map<string, unknown>([
+      ['registry.json', { name: 'test', items: [first, second] }],
+      ['first.json', { ...first, files: [file('first', 'export const first = true')] }],
+      [
+        'second.json',
+        {
+          ...second,
+          dependencies: ['@llui/components@^0.21.0'],
+          files: [file('second', 'export const second = true')],
+        },
+      ],
+    ])
+    vi.stubGlobal('fetch', async (url: string) => ({
+      ok: true,
+      json: async () => responses.get(url.slice(BASE.length + 1)),
+    }))
+    await mkdir(path.join(cwd, 'node_modules/@llui/components'), { recursive: true })
+    await writeFile(
+      path.join(cwd, 'node_modules/@llui/components/package.json'),
+      JSON.stringify({ name: '@llui/components', version: '0.20.1' }),
+    )
+
+    await expect(add({ cwd, config, names: ['first', 'second'] })).rejects.toThrow(
+      'differs between the index and its full record',
+    )
+    await expect(readdir(path.join(cwd, 'src'))).rejects.toThrow()
+  })
+
   it('surfaces a failed request with its status', async () => {
     await expect(
       add({ cwd, config: ConfigSchema.parse({ registry: `${BASE}/missing` }), names: ['button'] }),
