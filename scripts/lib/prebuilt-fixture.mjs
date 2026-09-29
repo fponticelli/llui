@@ -37,7 +37,7 @@
 // computed style, pixels, behaviour — is the same build of the same source.
 
 import { createServer } from 'node:http'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { extname, join, resolve, sep } from 'node:path'
 import { build } from 'vite'
@@ -111,8 +111,13 @@ export function resolveServedFile(dir, rawUrl) {
  * @param {PrebuildOptions} options
  * @returns {Promise<PrebuiltFixture>}
  */
-export async function prebuildFixture({ root, inputs, alias, define }) {
+export async function prebuildFixture({ root: givenRoot, inputs, alias, define }) {
   if (inputs.length === 0) throw new Error('prebuildFixture: no inputs')
+  // Vite resolves each HTML input to its REAL path and names the emitted page
+  // relative to `root`, so a root reached through a symlink (the default macOS
+  // tmpdir: `/var` -> `/private/var`) emits `../../private/...`, which
+  // rolldown rejects. Build from the real path.
+  const root = realpathSync(givenRoot)
   const base = mkdtempSync(join(tmpdir(), 'llui-fixture-'))
   const outDir = join(base, 'site')
   try {

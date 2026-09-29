@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -78,6 +78,26 @@ describe('prebuildFixture: build a browser-test fixture once, serve it static', 
       expect(resolveServedFile(dir, '/%E0%A4%A')).toBeNull()
     } finally {
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('builds a root reached through a symlink (macOS `/var` → `/private/var`)', async () => {
+    // Vite resolves an HTML input to its REAL path and names the emitted page
+    // relative to `root`. A symlinked root (the default macOS tmpdir) put the
+    // page at `../../private/…`, which rolldown rejects. Pinned with an
+    // explicit link so it fails on every platform, not only macOS.
+    const linkDir = mkdtempSync(join(tmpdir(), 'llui-prebuilt-link-'))
+    const linked = join(linkDir, 'root')
+    symlinkSync(root, linked, 'dir')
+    try {
+      const other = await prebuildFixture({ ...options(), root: linked })
+      try {
+        expect((await fetch(other.url('pages/second.html'))).status).toBe(200)
+      } finally {
+        await other.close()
+      }
+    } finally {
+      rmSync(linkDir, { recursive: true, force: true })
     }
   })
 

@@ -83,7 +83,9 @@ beforeAll(async () => {
       throw new Error(`packages/${name}/dist is missing — build the packages first`)
     }
   }
-  workDir = mkdtempSync(path.join(tmpdir(), 'llui-baseline-consumer-'))
+  // Real path: Vite names emitted pages relative to `root` from their REAL
+  // path, and the default macOS tmpdir is a symlink (`/var` -> `/private/var`).
+  workDir = realpathSync(mkdtempSync(path.join(tmpdir(), 'llui-baseline-consumer-')))
   consumerDir = path.join(workDir, 'consumer')
   const tarballs = path.join(workDir, 'tarballs')
   mkdirSync(tarballs, { recursive: true })
