@@ -1079,12 +1079,10 @@ export function createMenuTreeParts<Scope extends string, S extends MenuTreeStat
 
 // ---- engine-owned per-level submenu overlays (#265 A4) ----
 //
-// Replaces the consumer-wired `watchSubmenuPositioning` (a MutationObserver
-// polling the build root for `[data-part="subcontent"]` nodes and hand-rolling
-// `attachFloating` over them). Each submenu level is now its own
-// `createOverlay` instance — SINGLE-phase (no `visibleWhen`: a submenu level
-// is a synchronous boolean machine, exactly like select/combobox, so mount and
-// floating attach/detach happen together) with an explicit
+// Each submenu level is its own `createOverlay` instance — SINGLE-phase (no
+// `visibleWhen`: a submenu level is a synchronous boolean machine, exactly
+// like select/combobox, so mount and floating attach/detach happen together)
+// with an explicit
 // `nestedLayerOwner` naming its own subTrigger, which is what keeps #171's fix
 // (a modal opened over an open menu leaves it inert) working per LEVEL rather
 // than per root menu.
