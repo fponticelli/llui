@@ -76,7 +76,7 @@ beforeEach(async () => {
       }
     })
   })
-  await new Promise<void>((r) => lapServer.listen(0, () => r()))
+  await new Promise<void>((r) => lapServer.listen(0, '127.0.0.1', () => r()))
   const port = (lapServer.address() as AddressInfo).port
   lapUrl = `http://127.0.0.1:${port}`
 })

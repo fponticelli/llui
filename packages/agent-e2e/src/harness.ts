@@ -19,6 +19,13 @@ import { BindingMap } from 'llui-agent/internal/binding'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
 
+/**
+ * The one address the harness binds AND dials. A wildcard bind (`listen(0)`)
+ * lets another process take the same port on `127.0.0.1` on macOS, and a
+ * dial there reaches that server instead (`scripts/test/loopback-bind.test.ts`).
+ */
+const HOST = '127.0.0.1'
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 /** The fields of the `/agent/mint` response the harness uses — typed from the
@@ -109,7 +116,7 @@ export async function setup(browserLauncher: BrowserLauncher): Promise<E2EContex
       const rawBody =
         req.method && !['GET', 'HEAD'].includes(req.method) ? await readBody(req) : undefined
       const body: BodyInit | undefined = rawBody ? new Uint8Array(rawBody) : undefined
-      const webReq = new Request(`http://localhost:${ephemeralPort}${url}`, {
+      const webReq = new Request(`http://${HOST}:${ephemeralPort}${url}`, {
         method: req.method ?? 'GET',
         headers: nodeHeadersToRecord(req),
         body,
@@ -139,7 +146,7 @@ export async function setup(browserLauncher: BrowserLauncher): Promise<E2EContex
   // Forward WS upgrade events to the agent's WS handler.
   server.on('upgrade', agent.wsUpgrade)
 
-  await new Promise<void>((resolve) => server.listen(0, resolve))
+  await new Promise<void>((resolve) => server.listen(0, HOST, resolve))
   const httpPort = (server.address() as AddressInfo).port
   ephemeralPort = httpPort
 
@@ -167,7 +174,7 @@ export async function setup(browserLauncher: BrowserLauncher): Promise<E2EContex
   // the outer bound; these keep individual steps from tripping their own default.
   const browser = await browserLauncher.launch({ headless: true, timeout: 60_000 })
   const page = await browser.newPage()
-  await page.goto(`http://localhost:${httpPort}/`)
+  await page.goto(`http://${HOST}:${httpPort}/`)
   // Wait until host.ts has finished bootstrapping and exposed the globals.
   await page.waitForFunction(() => window.__lluiE2eClient !== undefined, undefined, {
     timeout: 30_000,
@@ -175,7 +182,7 @@ export async function setup(browserLauncher: BrowserLauncher): Promise<E2EContex
 
   // ── Helper: mint + open WS ────────────────────────────────────────────────
   const mintToken = async (): Promise<MintResult> => {
-    const res = await fetch(`http://localhost:${httpPort}/agent/mint`, { method: 'POST' })
+    const res = await fetch(`http://${HOST}:${httpPort}/agent/mint`, { method: 'POST' })
     if (!res.ok) {
       const text = await res.text()
       throw new Error(`mint failed: ${res.status} ${text}`)
@@ -254,7 +261,7 @@ function nodeHeadersToRecord(req: IncomingMessage): Record<string, string> {
 
 /**
  * Returns a `fetch` function that rewrites requests targeting
- * `http://localhost/agent/*` to `http://localhost:<port>/agent/*`.
+ * `http://localhost/agent/*` to `http://127.0.0.1:<port>/agent/*`.
  * This lets the bridge's forwardLap() reach our ephemeral test server.
  */
 function makeBoundFetch(port: number): typeof fetch {
@@ -269,9 +276,9 @@ function makeBoundFetch(port: number): typeof fetch {
     }
     // Rewrite bare /agent/* paths or http://localhost/... to use the right port.
     if (url.startsWith('/')) {
-      url = `http://localhost:${port}${url}`
+      url = `http://${HOST}:${port}${url}`
     } else if (url.startsWith('http://localhost/')) {
-      url = `http://localhost:${port}${url.slice('http://localhost'.length)}`
+      url = `http://${HOST}:${port}${url.slice('http://localhost'.length)}`
     }
     return fetch(url, init)
   }

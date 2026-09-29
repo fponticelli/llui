@@ -109,7 +109,11 @@ async function startViteServer(): Promise<{ vite: ViteDevServer; viteUrl: string
     server: {
       // Disable the FS watcher entirely — no HMR, no EMFILE.
       watch: null,
-      // Pick a random port so parallel test runs don't collide.
+      // Pick a random port so parallel test runs don't collide, on an
+      // explicit host: Vite's default `localhost` may bind `::1` while
+      // another process takes the same port on `127.0.0.1`
+      // (`scripts/test/loopback-bind.test.ts`).
+      host: '127.0.0.1',
       port: 0,
       strictPort: false,
     },
@@ -126,7 +130,7 @@ async function startViteServer(): Promise<{ vite: ViteDevServer; viteUrl: string
     await vite.close()
     throw new Error('vite dev server failed to bind a port')
   }
-  const viteUrl = `http://localhost:${addr.port}/`
+  const viteUrl = `http://127.0.0.1:${addr.port}/`
   return { vite, viteUrl }
 }
 

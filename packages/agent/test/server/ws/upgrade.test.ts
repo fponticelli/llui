@@ -55,7 +55,7 @@ function startServer(corsOrigins?: readonly string[]): Promise<void> {
   })
   server.on('upgrade', upgrade)
   return new Promise<void>((resolve) =>
-    server.listen(0, () => {
+    server.listen(0, '127.0.0.1', () => {
       port = (server.address() as AddressInfo).port
       resolve()
     }),
