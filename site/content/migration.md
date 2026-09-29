@@ -197,9 +197,9 @@ div({ ...t.root }, [t.directionSync, div({ ...t.list }, triggers)])
 `menu.floatingDir` is removed (placement reads `state.dir`), a menu's `dir` is never `null`,
 and `ContextMenuParts.trigger` and `MenubarParts.root` gained a required `id`.
 
-**Submenus are engine-owned.** `watchSubmenuPositioning` is removed; render each submenu with
-`subOverlay`. The registry's empty `DropdownMenuSubPositioner`, `ContextMenuSubPositioner`
-and `MenubarSubPositioner` recipes are removed with it.
+**Submenus get real positioning.** A hand-rolled submenu block still works, but renders pinned
+to its container's top-left corner. Render each submenu with `subOverlay` instead, which
+floats it beside its trigger and flips at the viewport edge.
 
 ```ts
 // before

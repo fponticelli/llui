@@ -400,8 +400,8 @@ export interface SubOverlayOptions {
 }
 
 /**
- * Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
- * consumer-wired `watchSubmenuPositioning` (removed). See
+ * Engine-owned floating overlay for one submenu level (#265 A4), positioned
+ * beside its `subTrigger`. See
  * `menu-machine.ts:subOverlay`'s doc comment for the full contract.
  */
 export function subOverlay(opts: SubOverlayOptions): Mountable {

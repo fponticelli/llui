@@ -599,8 +599,7 @@ export interface SubOverlayOptions {
 
 /**
  * Engine-owned floating overlay for one submenu level of an embedded menu
- * (#265 A4) — replaces the consumer-wired `watchSubmenuPositioning` (removed).
- * Unlike `menu`/`context-menu`'s own `subOverlay`, this one reads the ROOT
+ * (#265 A4). Unlike `menu`/`context-menu`'s own `subOverlay`, this one reads the ROOT
  * `MenubarState` and reaches into the one open menu's embedded `MenuState`
  * (`s.menuStates[menuId]`) for both open-membership and direction, because a
  * menubar's `overlay()` is likewise keyed on root state (`s.open === menuId`)

@@ -464,8 +464,7 @@ export interface SubOverlayOptions {
 }
 
 /**
- * Engine-owned floating overlay for one submenu level (#265 A4) — replaces the
- * consumer-wired `watchSubmenuPositioning` (removed). Call once per
+ * Engine-owned floating overlay for one submenu level (#265 A4). Call once per
  * `children`-bearing item, alongside its `subTrigger`, in place of the old
  * hand-rolled `show(isOpen, () => [div(subPositioner, [div(subContent, …)])])`:
  * `subOverlay` builds both wrapper divs itself and owns mount/floating/
