@@ -177,6 +177,11 @@ describe('live Toast compositions in Chromium, both paths (#265 task item 1)', (
           loading: { role: 'status', live: 'polite' },
           custom: { role: 'status', live: 'polite' },
         }
+        // This test is about each type's own parts, not exit motion (the
+        // expiry tests below cover both motion modes). Reduced motion keeps
+        // its six dismissals cheap: ~3 s of real exit animations timed out
+        // at 30 s under a parallel `pnpm -r run test`.
+        await page.emulateMedia({ reducedMotion: 'reduce' })
         for (const [type, expected] of Object.entries(expectations)) {
           await page.locator(demo.trigger(type)).click()
           const root = page.locator(`${ROOT}[data-type="${type}"]`).last()
@@ -352,6 +357,10 @@ describe('live Toast compositions in Chromium, both paths (#265 task item 1)', (
       })
 
       it('create -> tick-expiry -> closing -> animationend -> removal, under reduced motion (no wall-clock wait)', async () => {
+        // This test is about each type's own parts, not exit motion (the
+        // expiry tests below cover both motion modes). Reduced motion keeps
+        // its six dismissals cheap: ~3 s of real exit animations timed out
+        // at 30 s under a parallel `pnpm -r run test`.
         await page.emulateMedia({ reducedMotion: 'reduce' })
         await page.locator(demo.trigger('warning')).click()
         const root = page.locator(`${ROOT}[data-type="warning"]`).last()
